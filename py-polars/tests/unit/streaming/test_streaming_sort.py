@@ -57,7 +57,7 @@ def test_streaming_sort_multiple_columns_logical_types() -> None:
         ],
     }
 
-    result = pl.LazyFrame(data).sort("foo", "baz").collect(streaming=True)
+    result = pl.LazyFrame(data).sort("foo", "baz").collect(engine="streaming")
 
     expected = pl.DataFrame(
         {
@@ -86,7 +86,7 @@ def test_ooc_sort(tmp_path: Path, monkeypatch: Any) -> None:
 
     for descending in [True, False]:
         out = (
-            df.lazy().sort("idx", descending=descending).collect(streaming=True)
+            df.lazy().sort("idx", descending=descending).collect(engine="streaming")
         ).to_series()
 
         assert_series_equal(out, s.sort(descending=descending))
@@ -110,7 +110,7 @@ def test_streaming_sort(
         .to_frame("s")
         .lazy()
         .sort("s")
-        .collect(streaming=True)["s"]
+        .collect(engine="old-streaming")["s"]  # type: ignore[call-overload]
         .is_sorted()
     )
     (_, err) = capfd.readouterr()
@@ -152,7 +152,7 @@ def test_out_of_core_sort_9503(
     )
     lf = df.lazy()
 
-    result = lf.sort(df.columns).collect(streaming=True)
+    result = lf.sort(df.columns).collect(engine="streaming")
 
     assert result.shape == (1_000_000, 2)
     assert result["column_0"].flags["SORTED_ASC"]
@@ -194,7 +194,7 @@ def test_streaming_sort_multiple_columns(
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = str_ints_df
 
-    out = df.lazy().sort(["strs", "vals"]).collect(streaming=True)
+    out = df.lazy().sort(["strs", "vals"]).collect(engine="old-streaming")  # type: ignore[call-overload]
     assert_frame_equal(out, out.sort(["strs", "vals"]))
     err = capfd.readouterr().err
     assert "OOC sort forced" in err
@@ -213,7 +213,7 @@ def test_streaming_sort_sorted_flag() -> None:
         }
     ).sort("timestamp")
 
-    assert q.collect(streaming=True)["timestamp"].flags["SORTED_ASC"]
+    assert q.collect(engine="streaming")["timestamp"].flags["SORTED_ASC"]
 
 
 @pytest.mark.parametrize(
@@ -229,8 +229,8 @@ def test_streaming_sort_varying_order_and_dtypes(
 ) -> None:
     q = pl.scan_parquet(io_files_path / "foods*.parquet")
     df = q.collect()
-    assert_df_sorted_by(df, q.sort(sort_by).collect(streaming=True), sort_by)
-    assert_df_sorted_by(df, q.sort(sort_by).collect(streaming=False), sort_by)
+    assert_df_sorted_by(df, q.sort(sort_by).collect(engine="streaming"), sort_by)
+    assert_df_sorted_by(df, q.sort(sort_by).collect(engine="in-memory"), sort_by)
 
 
 def test_streaming_sort_fixed_reverse() -> None:
@@ -244,10 +244,10 @@ def test_streaming_sort_fixed_reverse() -> None:
     q = df.lazy().sort(by=["a", "b"], descending=descending)
 
     assert_df_sorted_by(
-        df, q.collect(streaming=True), ["a", "b"], descending=descending
+        df, q.collect(engine="streaming"), ["a", "b"], descending=descending
     )
     assert_df_sorted_by(
-        df, q.collect(streaming=False), ["a", "b"], descending=descending
+        df, q.collect(engine="in-memory"), ["a", "b"], descending=descending
     )
 
 
@@ -258,14 +258,17 @@ def test_reverse_variable_sort_13573() -> None:
             "b": ["four", "five", "six"],
         }
     ).lazy()
-    assert df.sort("a", "b", descending=[True, False]).collect(streaming=True).to_dict(
-        as_series=False
-    ) == {"a": ["two", "three", "one"], "b": ["five", "six", "four"]}
+    assert df.sort("a", "b", descending=[True, False]).collect(
+        engine="streaming"
+    ).to_dict(as_series=False) == {
+        "a": ["two", "three", "one"],
+        "b": ["five", "six", "four"],
+    }
 
 
 def test_nulls_last_streaming_sort() -> None:
     assert pl.LazyFrame({"x": [1, None]}).sort("x", nulls_last=True).collect(
-        streaming=True
+        engine="streaming"
     ).to_dict(as_series=False) == {"x": [1, None]}
 
 
@@ -283,13 +286,13 @@ def test_sort_descending_nulls_last(descending: bool, nulls_last: bool) -> None:
     assert_frame_equal(
         df.lazy()
         .sort("x", descending=descending, nulls_last=nulls_last)
-        .collect(streaming=True),
+        .collect(engine="streaming"),
         pl.DataFrame({"x": ref_x, "y": ref_y}),
     )
 
     assert_frame_equal(
         df.lazy()
         .sort(["x", "y"], descending=descending, nulls_last=nulls_last)
-        .collect(streaming=True),
+        .collect(engine="streaming"),
         pl.DataFrame({"x": ref_x, "y": ref_y}),
     )

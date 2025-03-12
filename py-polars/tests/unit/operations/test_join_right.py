@@ -1,4 +1,5 @@
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_right_join_schemas() -> None:
@@ -95,3 +96,12 @@ def test_join_right_different_key() -> None:
         "apple": ["x", "y", "z"],
         "ham2": ["a", "b", "d"],
     }
+
+
+def test_join_right_different_multikey() -> None:
+    left = pl.LazyFrame({"a": [1, 2], "b": [1, 2]})
+    right = pl.LazyFrame({"c": [1, 2], "d": [1, 2]})
+    result = left.join(right, left_on=["a", "b"], right_on=["c", "d"], how="right")
+    expected = pl.DataFrame({"c": [1, 2], "d": [1, 2]})
+    assert_frame_equal(result.collect(), expected)
+    assert result.collect_schema() == expected.schema

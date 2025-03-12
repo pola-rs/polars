@@ -2,7 +2,7 @@ use std::fmt::Formatter;
 use std::ops::Deref;
 use std::sync::Arc;
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "python")]
 use polars_utils::pl_serialize::deserialize_map_bytes;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

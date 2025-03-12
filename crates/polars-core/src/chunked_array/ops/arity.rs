@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::error::Error;
 
 use arrow::array::{Array, MutablePlString, StaticArray};
@@ -652,10 +653,10 @@ where
     G: PolarsDataType,
     V: PolarsDataType,
     F: for<'a> TernaryFnMut<
-        Option<T::Physical<'a>>,
-        Option<U::Physical<'a>>,
-        Option<G::Physical<'a>>,
-    >,
+            Option<T::Physical<'a>>,
+            Option<U::Physical<'a>>,
+            Option<G::Physical<'a>>,
+        >,
     V::Array: for<'a> ArrayFromIter<
         <F as TernaryFnMut<
             Option<T::Physical<'a>>,

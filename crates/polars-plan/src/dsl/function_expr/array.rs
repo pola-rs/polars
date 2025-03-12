@@ -6,6 +6,7 @@ use crate::{map, map_as_slice};
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ArrayFunction {
+    Length,
     Min,
     Max,
     Sum,
@@ -47,6 +48,7 @@ impl ArrayFunction {
                     &mut mapper.args().iter().map(|x| (x.name.as_str(), &x.dtype)),
                 )?,
             )),
+            Length => mapper.with_dtype(IDX_DTYPE),
             Min | Max => mapper.map_to_list_and_array_inner_dtype(),
             Sum => mapper.nested_sum_type(),
             ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
@@ -85,6 +87,7 @@ impl Display for ArrayFunction {
         use ArrayFunction::*;
         let name = match self {
             Concat => "concat",
+            Length => "length",
             Min => "min",
             Max => "max",
             Sum => "sum",
@@ -120,6 +123,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
         use ArrayFunction::*;
         match func {
             Concat => map_as_slice!(concat_arr),
+            Length => map!(length),
             Min => map!(min),
             Max => map!(max),
             Sum => map!(sum),
@@ -147,6 +151,29 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Explode => map_as_slice!(explode),
         }
     }
+}
+
+pub(super) fn length(s: &Column) -> PolarsResult<Column> {
+    let array = s.array()?;
+    let width = array.width();
+    let width = IdxSize::try_from(width)
+        .map_err(|_| polars_err!(bigidx, ctx = "array length", size = width))?;
+
+    let mut c = Column::new_scalar(array.name().clone(), width.into(), array.len());
+    if let Some(validity) = array.rechunk_validity() {
+        let mut series = c.into_materialized_series().clone();
+
+        // SAFETY: We keep datatypes intact and call compute_len afterwards.
+        let chunks = unsafe { series.chunks_mut() };
+        assert_eq!(chunks.len(), 1);
+
+        chunks[0] = chunks[0].with_validity(Some(validity));
+
+        series.compute_len();
+        c = series.into_column();
+    }
+
+    Ok(c)
 }
 
 pub(super) fn max(s: &Column) -> PolarsResult<Column> {
@@ -240,6 +267,7 @@ pub(super) fn contains(s: &[Column]) -> PolarsResult<Column> {
     Ok(is_in(
         item.as_materialized_series(),
         array.as_materialized_series(),
+        true,
     )?
     .with_name(array.name().clone())
     .into_column())

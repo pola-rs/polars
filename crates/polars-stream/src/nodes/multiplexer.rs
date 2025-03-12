@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use super::compute_node_prelude::*;
 use crate::morsel::SourceToken;

@@ -17,11 +17,11 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         &self,
         other: &Series,
         validate: JoinValidation,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> PolarsResult<LeftJoinIds> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, false, join_nulls)?;
+        validate.validate_probe(&lhs, &rhs, false, nulls_equal)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
@@ -37,7 +37,15 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 let build_null_count = other.null_count();
-                hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls, build_null_count)
+                hash_join_tuples_left(
+                    lhs,
+                    rhs,
+                    None,
+                    None,
+                    validate,
+                    nulls_equal,
+                    build_null_count,
+                )
             },
             T::BinaryOffset => {
                 let lhs = lhs.binary_offset().unwrap();
@@ -47,19 +55,27 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let build_null_count = other.null_count();
-                hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls, build_null_count)
+                hash_join_tuples_left(
+                    lhs,
+                    rhs,
+                    None,
+                    None,
+                    validate,
+                    nulls_equal,
+                    build_null_count,
+                )
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
                 let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
                 let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
-                lhs.hash_join_left(rhs, validate, join_nulls)
+                lhs.hash_join_left(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
                     let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                    num_group_join_left(lhs, rhs, validate, join_nulls)
+                    num_group_join_left(lhs, rhs, validate, nulls_equal)
                 })
             },
             _ => {
@@ -74,16 +90,16 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 match (lhs, rhs) {
                     (B::Small(lhs), B::Small(rhs)) => {
                         // Turbofish: see #17137.
-                        num_group_join_left::<UInt32Type>(&lhs, &rhs, validate, join_nulls)
+                        num_group_join_left::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     (B::Large(lhs), B::Large(rhs)) => {
                         // Turbofish: see #17137.
-                        num_group_join_left::<UInt64Type>(&lhs, &rhs, validate, join_nulls)
+                        num_group_join_left::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
-                        nyi = "Mismatch bit repr Hash Left Join between {lhs_dtype} and {rhs_dtype}",
-                    );
+                            nyi = "Mismatch bit repr Hash Left Join between {lhs_dtype} and {rhs_dtype}",
+                        );
                     },
                 }
             },
@@ -95,7 +111,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         &self,
         other: &Series,
         anti: bool,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> PolarsResult<Vec<IdxSize>> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
@@ -115,9 +131,9 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 if anti {
-                    hash_join_tuples_left_anti(lhs, rhs, join_nulls)
+                    hash_join_tuples_left_anti(lhs, rhs, nulls_equal)
                 } else {
-                    hash_join_tuples_left_semi(lhs, rhs, join_nulls)
+                    hash_join_tuples_left_semi(lhs, rhs, nulls_equal)
                 }
             },
             T::BinaryOffset => {
@@ -128,22 +144,22 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 if anti {
-                    hash_join_tuples_left_anti(lhs, rhs, join_nulls)
+                    hash_join_tuples_left_anti(lhs, rhs, nulls_equal)
                 } else {
-                    hash_join_tuples_left_semi(lhs, rhs, join_nulls)
+                    hash_join_tuples_left_semi(lhs, rhs, nulls_equal)
                 }
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
                 let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
                 let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
-                lhs.hash_join_semi_anti(rhs, anti, join_nulls)?
+                lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
             },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
                     let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                    num_group_join_anti_semi(lhs, rhs, anti, join_nulls)
+                    num_group_join_anti_semi(lhs, rhs, anti, nulls_equal)
                 })
             },
             _ => {
@@ -158,11 +174,11 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 match (lhs, rhs) {
                     (B::Small(lhs), B::Small(rhs)) => {
                         // Turbofish: see #17137.
-                        num_group_join_anti_semi::<UInt32Type>(&lhs, &rhs, anti, join_nulls)
+                        num_group_join_anti_semi::<UInt32Type>(&lhs, &rhs, anti, nulls_equal)
                     },
                     (B::Large(lhs), B::Large(rhs)) => {
                         // Turbofish: see #17137.
-                        num_group_join_anti_semi::<UInt64Type>(&lhs, &rhs, anti, join_nulls)
+                        num_group_join_anti_semi::<UInt64Type>(&lhs, &rhs, anti, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
@@ -179,11 +195,11 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         &self,
         other: &Series,
         validate: JoinValidation,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> PolarsResult<(InnerJoinIds, bool)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, true, join_nulls)?;
+        validate.validate_probe(&lhs, &rhs, true, nulls_equal)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
@@ -210,7 +226,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                         rhs,
                         swapped,
                         validate,
-                        join_nulls,
+                        nulls_equal,
                         build_null_count,
                     )?,
                     !swapped,
@@ -234,7 +250,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                         rhs,
                         swapped,
                         validate,
-                        join_nulls,
+                        nulls_equal,
                         build_null_count,
                     )?,
                     !swapped,
@@ -244,13 +260,13 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             T::Struct(_) => {
                 let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
                 let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
-                lhs.hash_join_inner(rhs, validate, join_nulls)
+                lhs.hash_join_inner(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
                     let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                    group_join_inner::<$T>(lhs, rhs, validate, join_nulls)
+                    group_join_inner::<$T>(lhs, rhs, validate, nulls_equal)
                 })
             },
             _ => {
@@ -265,11 +281,11 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 match (lhs, rhs) {
                     (B::Small(lhs), B::Small(rhs)) => {
                         // Turbofish: see #17137.
-                        group_join_inner::<UInt32Type>(&lhs, &rhs, validate, join_nulls)
+                        group_join_inner::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     (B::Large(lhs), BitRepr::Large(rhs)) => {
                         // Turbofish: see #17137.
-                        group_join_inner::<UInt64Type>(&lhs, &rhs, validate, join_nulls)
+                        group_join_inner::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
@@ -285,11 +301,11 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         &self,
         other: &Series,
         validate: JoinValidation,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
-        validate.validate_probe(&lhs, &rhs, true, join_nulls)?;
+        validate.validate_probe(&lhs, &rhs, true, nulls_equal)?;
 
         let lhs_dtype = lhs.dtype();
         let rhs_dtype = rhs.dtype();
@@ -305,7 +321,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
-                hash_join_tuples_outer(lhs, rhs, swapped, validate, join_nulls)
+                hash_join_tuples_outer(lhs, rhs, swapped, validate, nulls_equal)
             },
             T::BinaryOffset => {
                 let lhs = lhs.binary_offset().unwrap();
@@ -314,19 +330,19 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
-                hash_join_tuples_outer(lhs, rhs, swapped, validate, join_nulls)
+                hash_join_tuples_outer(lhs, rhs, swapped, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
                 let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
                 let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
-                lhs.hash_join_outer(rhs, validate, join_nulls)
+                lhs.hash_join_outer(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
                     let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                    hash_join_outer(lhs, rhs, validate, join_nulls)
+                    hash_join_outer(lhs, rhs, validate, nulls_equal)
                 })
             },
             _ => {
@@ -338,14 +354,16 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 match (lhs, rhs) {
                     (B::Small(lhs), B::Small(rhs)) => {
                         // Turbofish: see #17137.
-                        hash_join_outer::<UInt32Type>(&lhs, &rhs, validate, join_nulls)
+                        hash_join_outer::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     (B::Large(lhs), B::Large(rhs)) => {
                         // Turbofish: see #17137.
-                        hash_join_outer::<UInt64Type>(&lhs, &rhs, validate, join_nulls)
+                        hash_join_outer::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
-                        polars_bail!(nyi = "Mismatch bit repr Hash Join Outer between {lhs_dtype} and {rhs_dtype}");
+                        polars_bail!(
+                            nyi = "Mismatch bit repr Hash Join Outer between {lhs_dtype} and {rhs_dtype}"
+                        );
                     },
                 }
             },
@@ -373,7 +391,7 @@ fn group_join_inner<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
     validate: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<(InnerJoinIds, bool)>
 where
     T: PolarsDataType,
@@ -404,14 +422,24 @@ where
                     .collect::<Vec<_>>();
                 Ok((
                     hash_join_tuples_inner(
-                        splitted_a, splitted_b, swapped, validate, join_nulls, 0,
+                        splitted_a,
+                        splitted_b,
+                        swapped,
+                        validate,
+                        nulls_equal,
+                        0,
                     )?,
                     !swapped,
                 ))
             } else {
                 Ok((
                     hash_join_tuples_inner(
-                        splitted_a, splitted_b, swapped, validate, join_nulls, 0,
+                        splitted_a,
+                        splitted_b,
+                        swapped,
+                        validate,
+                        nulls_equal,
+                        0,
                     )?,
                     !swapped,
                 ))
@@ -429,7 +457,7 @@ where
                     splitted_b,
                     swapped,
                     validate,
-                    join_nulls,
+                    nulls_equal,
                     build_null_count,
                 )?,
                 !swapped,
@@ -478,7 +506,7 @@ fn num_group_join_left<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
     validate: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<LeftJoinIds>
 where
     T: PolarsNumericType,
@@ -499,7 +527,7 @@ where
         (0, 0, 1, 1) => {
             let keys_a = chunks_as_slices(&splitted_a);
             let keys_b = chunks_as_slices(&splitted_b);
-            hash_join_tuples_left(keys_a, keys_b, None, None, validate, join_nulls, 0)
+            hash_join_tuples_left(keys_a, keys_b, None, None, validate, nulls_equal, 0)
         },
         (0, 0, _, _) => {
             let keys_a = chunks_as_slices(&splitted_a);
@@ -513,7 +541,7 @@ where
                 mapping_left.as_deref(),
                 mapping_right.as_deref(),
                 validate,
-                join_nulls,
+                nulls_equal,
                 0,
             )
         },
@@ -529,7 +557,7 @@ where
                 mapping_left.as_deref(),
                 mapping_right.as_deref(),
                 validate,
-                join_nulls,
+                nulls_equal,
                 build_null_count,
             )
         },
@@ -540,7 +568,7 @@ fn hash_join_outer<T>(
     ca_in: &ChunkedArray<T>,
     other: &ChunkedArray<T>,
     validate: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)>
 where
     T: PolarsNumericType,
@@ -563,7 +591,7 @@ where
                 .iter()
                 .flat_map(|ca| ca.downcast_iter().map(|arr| arr.values().as_slice()))
                 .collect::<Vec<_>>();
-            hash_join_tuples_outer(iters_a, iters_b, swapped, validate, join_nulls)
+            hash_join_tuples_outer(iters_a, iters_b, swapped, validate, nulls_equal)
         },
         _ => {
             let iters_a = splitted_a
@@ -574,7 +602,7 @@ where
                 .iter()
                 .flat_map(|ca| ca.downcast_iter().map(|arr| arr.iter()))
                 .collect::<Vec<_>>();
-            hash_join_tuples_outer(iters_a, iters_b, swapped, validate, join_nulls)
+            hash_join_tuples_outer(iters_a, iters_b, swapped, validate, nulls_equal)
         },
     }
 }
@@ -612,7 +640,7 @@ fn num_group_join_anti_semi<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
     anti: bool,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
@@ -633,27 +661,27 @@ where
             let keys_a = chunks_as_slices(&splitted_a);
             let keys_b = chunks_as_slices(&splitted_b);
             if anti {
-                hash_join_tuples_left_anti(keys_a, keys_b, join_nulls)
+                hash_join_tuples_left_anti(keys_a, keys_b, nulls_equal)
             } else {
-                hash_join_tuples_left_semi(keys_a, keys_b, join_nulls)
+                hash_join_tuples_left_semi(keys_a, keys_b, nulls_equal)
             }
         },
         (0, 0, _, _) => {
             let keys_a = chunks_as_slices(&splitted_a);
             let keys_b = chunks_as_slices(&splitted_b);
             if anti {
-                hash_join_tuples_left_anti(keys_a, keys_b, join_nulls)
+                hash_join_tuples_left_anti(keys_a, keys_b, nulls_equal)
             } else {
-                hash_join_tuples_left_semi(keys_a, keys_b, join_nulls)
+                hash_join_tuples_left_semi(keys_a, keys_b, nulls_equal)
             }
         },
         _ => {
             let keys_a = get_arrays(&splitted_a);
             let keys_b = get_arrays(&splitted_b);
             if anti {
-                hash_join_tuples_left_anti(keys_a, keys_b, join_nulls)
+                hash_join_tuples_left_anti(keys_a, keys_b, nulls_equal)
             } else {
-                hash_join_tuples_left_semi(keys_a, keys_b, join_nulls)
+                hash_join_tuples_left_semi(keys_a, keys_b, nulls_equal)
             }
         },
     }

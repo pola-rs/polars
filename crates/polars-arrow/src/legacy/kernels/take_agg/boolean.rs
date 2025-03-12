@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use super::*;
 
 /// Take kernel for single chunk and an iterator as index.
@@ -21,11 +22,7 @@ pub unsafe fn take_min_bool_iter_unchecked_nulls<I: IntoIterator<Item = usize>>(
             null_count += 1;
         }
     }
-    if null_count == len {
-        None
-    } else {
-        Some(true)
-    }
+    if null_count == len { None } else { Some(true) }
 }
 
 /// Take kernel for single chunk and an iterator as index.
@@ -69,11 +66,7 @@ pub unsafe fn take_max_bool_iter_unchecked_nulls<I: IntoIterator<Item = usize>>(
             null_count += 1;
         }
     }
-    if null_count == len {
-        None
-    } else {
-        Some(false)
-    }
+    if null_count == len { None } else { Some(false) }
 }
 
 /// Take kernel for single chunk and an iterator as index.

@@ -1,11 +1,13 @@
-use super::{new_empty_array, new_null_array, Array, Splitable};
+use super::{Array, Splitable, new_empty_array, new_null_array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 
 use crate::compute::utils::combine_validities_and;
 

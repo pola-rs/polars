@@ -27,7 +27,7 @@ impl BinaryFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use BinaryFunction::*;
         match self {
-            Contains { .. } => mapper.with_dtype(DataType::Boolean),
+            Contains => mapper.with_dtype(DataType::Boolean),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "binary_encoding")]
             HexDecode(_) | Base64Decode(_) => mapper.with_same_dtype(),
@@ -44,7 +44,7 @@ impl Display for BinaryFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use BinaryFunction::*;
         let s = match self {
-            Contains { .. } => "contains",
+            Contains => "contains",
             StartsWith => "starts_with",
             EndsWith => "ends_with",
             #[cfg(feature = "binary_encoding")]

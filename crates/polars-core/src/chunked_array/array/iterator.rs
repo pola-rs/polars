@@ -2,7 +2,7 @@ use std::ptr::NonNull;
 
 use super::*;
 use crate::chunked_array::list::iterator::AmortizedListIter;
-use crate::series::amortized_iter::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
+use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
 
 impl ArrayChunked {
     /// This is an iterator over a [`ArrayChunked`] that save allocations.
@@ -195,9 +195,7 @@ impl ArrayChunked {
         F: FnMut(Option<AmortSeries>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
-        {
-            self.amortized_iter().map(f).collect_ca(self.name().clone())
-        }
+        self.amortized_iter().map(f).collect_ca(self.name().clone())
     }
 
     /// Try apply a closure `F` elementwise.
@@ -218,9 +216,7 @@ impl ArrayChunked {
     where
         F: FnMut(Option<AmortSeries>),
     {
-        {
-            self.amortized_iter().for_each(f)
-        }
+        self.amortized_iter().for_each(f)
     }
 }
 

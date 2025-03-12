@@ -2,6 +2,7 @@ use std::hash::Hash;
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
@@ -14,7 +15,7 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
-use polars_io::{is_cloud_url, HiveOptions, RowIndex};
+use polars_io::{HiveOptions, RowIndex, is_cloud_url};
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::IEJoinOptions;
 use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinTypeOptions};
@@ -23,8 +24,8 @@ use polars_ops::prelude::{JoinArgs, JoinType};
 use polars_time::DynamicGroupOptions;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::RollingGroupOptions;
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -71,7 +72,7 @@ impl Default for StrptimeOptions {
 pub enum JoinTypeOptionsIR {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(all(feature = "serde", not(feature = "ir_serde")), serde(skip))]
     // Fused cross join and filter (only in in-memory engine)
     Cross { predicate: ExprIR },
 }
@@ -192,7 +193,8 @@ pub type FileCount = u32;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Generic options for all file types.
 pub struct FileScanOptions {
-    pub slice: Option<(i64, usize)>,
+    // Slice applied before predicates
+    pub pre_slice: Option<(i64, usize)>,
     pub with_columns: Option<Arc<[PlSmallStr]>>,
     pub cache: bool,
     pub row_index: Option<RowIndex>,
@@ -202,6 +204,46 @@ pub struct FileScanOptions {
     pub glob: bool,
     pub include_file_paths: Option<PlSmallStr>,
     pub allow_missing_columns: bool,
+}
+
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum Engine {
+    Auto,
+    OldStreaming,
+    Streaming,
+    InMemory,
+    Gpu,
+}
+
+impl FromStr for Engine {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            // "cpu" for backwards compatibility
+            "auto" => Ok(Engine::Auto),
+            "cpu" | "in-memory" => Ok(Engine::InMemory),
+            "streaming" => Ok(Engine::Streaming),
+            "old-streaming" => Ok(Engine::OldStreaming),
+            "gpu" => Ok(Engine::Gpu),
+            v => Err(format!(
+                "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'old-streaming', 'gpu'}}, got {v}",
+            )),
+        }
+    }
+}
+
+impl Engine {
+    pub fn into_static_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::OldStreaming => "old-streaming",
+            Self::Streaming => "streaming",
+            Self::InMemory => "in-memory",
+            Self::Gpu => "gpu",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
@@ -289,6 +331,39 @@ pub struct AnonymousScanOptions {
     pub fmt_str: &'static str,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum SyncOnCloseType {
+    /// Don't call sync on close.
+    #[default]
+    None,
+
+    /// Sync only the file contents.
+    Data,
+    /// Synce the file contents and the metadata.
+    All,
+}
+
+/// Options that apply to all sinks.
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct SinkOptions {
+    /// Call sync when closing the file.
+    pub sync_on_close: SyncOnCloseType,
+
+    /// The output file needs to maintain order of the data that comes in.
+    pub maintain_order: bool,
+}
+
+impl Default for SinkOptions {
+    fn default() -> Self {
+        Self {
+            sync_on_close: Default::default(),
+            maintain_order: true,
+        }
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SinkType {
@@ -296,8 +371,22 @@ pub enum SinkType {
     File {
         path: Arc<PathBuf>,
         file_type: FileType,
+        sink_options: SinkOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
+    Partition {
+        path_f_string: Arc<PathBuf>,
+        file_type: FileType,
+        sink_options: SinkOptions,
+        variant: PartitionVariant,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    },
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum PartitionVariant {
+    MaxSize(IdxSize),
 }
 
 impl SinkType {

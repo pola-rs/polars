@@ -2005,7 +2005,7 @@ def test_allow_missing_columns(
         match="enabling `allow_missing_columns`",
     ):
         pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
-            streaming=streaming
+            engine="streaming" if streaming else "in-memory"
         )
 
     assert_frame_equal(
@@ -2020,7 +2020,7 @@ def test_allow_missing_columns(
     assert_frame_equal(
         pl.scan_parquet(paths, parallel=parallel, allow_missing_columns=True)  # type: ignore[arg-type]
         .select(projection)
-        .collect(streaming=streaming),
+        .collect(engine="streaming" if streaming else "in-memory"),
         expected,
     )
 
@@ -2995,3 +2995,127 @@ def test_final_masked_optional_iteration_21378() -> None:
 
     output = pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.f).collect()
     assert_frame_equal(df.filter(pl.col.f), output)
+
+
+def test_predicate_empty_is_in_21450() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    df.write_parquet(f)
+
+    f.seek(0)
+    assert_frame_equal(
+        df.clear(),
+        pl.scan_parquet(f).filter(pl.col("a").is_in([])).collect(),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_filter_statistics_load_missing_column_21391(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path
+    dfs = [pl.DataFrame({"x": 1, "y": 1}), pl.DataFrame({"x": 2})]
+
+    for i, df in enumerate(dfs):
+        df.write_parquet(root / f"{i}.parquet")
+
+    assert_frame_equal(
+        (
+            pl.scan_parquet(root, allow_missing_columns=True)
+            .filter(pl.col("y") == 1)
+            .collect()
+        ),
+        pl.DataFrame({"x": 1, "y": 1}),
+    )
+
+
+@pytest.mark.parametrize(
+    "ty",
+    [
+        (lambda i: i, pl.Int8, True),
+        (lambda i: datetime(year=2025, month=9, day=i), pl.Datetime, True),
+        (lambda i: float(i), pl.Float32, True),
+        (lambda i: str(i), pl.String, True),
+        (lambda i: str(i) + "make it a bit longer", pl.String, True),
+        (lambda i: [i, i + 7] * (i % 3), pl.List(pl.Int32), True),
+        (lambda i: {"x": i}, pl.Struct({"x": pl.Int32}), True),
+        (lambda i: [i, i + 3, i + 7], pl.Array(pl.Int32, 3), False),
+    ],
+)
+def test_filter_nulls_21538(ty: tuple[Callable[[int], Any], pl.DataType, bool]) -> None:
+    i_to_value, dtype, do_no_dicts = ty
+
+    patterns: list[list[int | None]] = [
+        [None, None, None, None, None],
+        [1, None, None, 2, None],
+        [None, 1, 2, 3, 4],
+        [1, 2, 3, 4, None],
+        [None, 1, 2, 3, None],
+        [None, 1, None, 3, None],
+        [1, 2, 3, 4, 5],
+    ]
+
+    df = pl.DataFrame(
+        [
+            pl.Series(
+                f"p{i}", [None if v is None else i_to_value(v) for v in pattern], dtype
+            )
+            for i, pattern in enumerate(patterns)
+        ]
+    )
+
+    fs = []
+
+    dicts_f = io.BytesIO()
+    df.write_parquet(dicts_f)
+    fs += [dicts_f]
+
+    if do_no_dicts:
+        no_dicts_f = io.BytesIO()
+        pq.write_table(df.to_arrow(), no_dicts_f, use_dictionary=False)
+        fs += [no_dicts_f]
+
+    for f in fs:
+        for i in range(len(patterns)):
+            f.seek(0)
+            assert_frame_equal(
+                pl.scan_parquet(f).filter(pl.col(f"p{i}").is_null()).collect(),
+                df.filter(pl.col(f"p{i}").is_null()),
+            )
+
+            f.seek(0)
+            assert_frame_equal(
+                pl.scan_parquet(f).filter(pl.col(f"p{i}").is_not_null()).collect(),
+                df.filter(pl.col(f"p{i}").is_not_null()),
+            )
+
+
+def test_unspecialized_decoding_prefiltering() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [None, None, None, "abc"],
+            "b": [False, True, False, True],
+        }
+    )
+
+    cols = df.columns
+
+    encodings = dict.fromkeys(cols, "DELTA_LENGTH_BYTE_ARRAY")
+    encodings["b"] = "PLAIN"
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_dictionary=False,
+        column_encoding=encodings,
+    )
+
+    f.seek(0)
+    expr = pl.col("b")
+    result = (
+        pl.scan_parquet(f, parallel="prefiltered")
+        .filter(expr)
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(result, df.filter(expr))

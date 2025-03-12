@@ -1,5 +1,6 @@
+use std::sync::LazyLock;
+
 use arrow::array::MutableBinaryArray;
-use once_cell::sync::Lazy;
 use polars_utils::hashing::hash_to_partition;
 
 use super::*;
@@ -7,7 +8,7 @@ use crate::pipeline::PARTITION_SIZE;
 
 const OB_SIZE: usize = 2048;
 
-static SPILL_SIZE: Lazy<usize> = Lazy::new(|| {
+static SPILL_SIZE: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("POLARS_STREAMING_GROUPBY_SPILL_SIZE")
         .map(|v| v.parse::<usize>().unwrap())
         .unwrap_or(10_000)

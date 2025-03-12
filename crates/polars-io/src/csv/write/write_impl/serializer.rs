@@ -38,7 +38,7 @@ use arrow::legacy::time_zone::Tz;
 use arrow::types::NativeType;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
-use memchr::{memchr3, memchr_iter};
+use memchr::{memchr_iter, memchr3};
 use num_traits::NumCast;
 use polars_core::prelude::*;
 
@@ -289,11 +289,11 @@ fn date_and_time_serializer<'a, Underlying: NativeType, T: std::fmt::Display>(
     sample_value: T,
     mut convert: impl FnMut(Underlying) -> T + Send + 'a,
     mut format_fn: impl for<'b> FnMut(
-            &T,
-            ChronoFormatIter<'b, 'a>,
-        ) -> chrono::format::DelayedFormat<ChronoFormatIter<'b, 'a>>
-        + Send
-        + 'a,
+        &T,
+        ChronoFormatIter<'b, 'a>,
+    ) -> chrono::format::DelayedFormat<ChronoFormatIter<'b, 'a>>
+    + Send
+    + 'a,
     options: &SerializeOptions,
 ) -> PolarsResult<Box<dyn Serializer<'a> + Send + 'a>> {
     let array = array.as_any().downcast_ref().unwrap();
@@ -716,7 +716,9 @@ mod test {
             let serialized = std::str::from_utf8(&buf).unwrap();
             // Don't use `assert_eq!()` because it prints debug format and it's hard to read with all the escapes.
             if serialized != expected {
-                panic!("CSV string {s:?} wasn't serialized correctly: expected: `{expected}`, got: `{serialized}`");
+                panic!(
+                    "CSV string {s:?} wasn't serialized correctly: expected: `{expected}`, got: `{serialized}`"
+                );
             }
         }
 

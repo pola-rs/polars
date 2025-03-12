@@ -2,9 +2,7 @@ use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
 
-use crate::chunked_array::builder::{get_list_builder, AnonymousOwnedListBuilder};
-#[cfg(feature = "object")]
-use crate::chunked_array::object::registry::ObjectRegistry;
+use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
 use crate::prelude::*;
 use crate::utils::any_values_to_supertype;
 
@@ -140,7 +138,7 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => any_values_to_struct(values, fields, strict)?,
             #[cfg(feature = "object")]
-            DataType::Object(_, registry) => any_values_to_object(values, registry)?,
+            DataType::Object(_) => any_values_to_object(values)?,
             DataType::Null => Series::new_null(PlSmallStr::EMPTY, values.len()),
             dt => {
                 polars_bail!(
@@ -626,7 +624,7 @@ fn any_values_to_list(
         },
 
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => polars_bail!(nyi = "Nested object types"),
+        DataType::Object(_) => polars_bail!(nyi = "Nested object types"),
 
         _ => {
             let list_inner_type = match inner_type {
@@ -864,44 +862,22 @@ fn any_values_to_struct(
 }
 
 #[cfg(feature = "object")]
-fn any_values_to_object(
-    values: &[AnyValue],
-    registry: &Option<Arc<ObjectRegistry>>,
-) -> PolarsResult<Series> {
-    let mut builder = match registry {
-        None => {
-            use crate::chunked_array::object::registry;
-            let converter = registry::get_object_converter();
-            let mut builder = registry::get_object_builder(PlSmallStr::EMPTY, values.len());
-            for av in values {
-                match av {
-                    AnyValue::Object(val) => builder.append_value(val.as_any()),
-                    AnyValue::Null => builder.append_null(),
-                    _ => {
-                        // This is needed because in Python users can send mixed types.
-                        // This only works if you set a global converter.
-                        let any = converter(av.as_borrowed());
-                        builder.append_value(&*any)
-                    },
-                }
-            }
-            builder
-        },
-        Some(registry) => {
-            let mut builder = (*registry.builder_constructor)(PlSmallStr::EMPTY, values.len());
-            for av in values {
-                match av {
-                    AnyValue::Object(val) => builder.append_value(val.as_any()),
-                    AnyValue::ObjectOwned(val) => builder.append_value(val.0.as_any()),
-                    AnyValue::Null => builder.append_null(),
-                    _ => {
-                        polars_bail!(SchemaMismatch: "expected object");
-                    },
-                }
-            }
-            builder
-        },
-    };
+fn any_values_to_object(values: &[AnyValue]) -> PolarsResult<Series> {
+    use crate::chunked_array::object::registry;
+    let converter = registry::get_object_converter();
+    let mut builder = registry::get_object_builder(PlSmallStr::EMPTY, values.len());
+    for av in values {
+        match av {
+            AnyValue::Object(val) => builder.append_value(val.as_any()),
+            AnyValue::Null => builder.append_null(),
+            _ => {
+                // This is needed because in Python users can send mixed types.
+                // This only works if you set a global converter.
+                let any = converter(av.as_borrowed());
+                builder.append_value(&*any)
+            },
+        }
+    }
 
     Ok(builder.to_series())
 }

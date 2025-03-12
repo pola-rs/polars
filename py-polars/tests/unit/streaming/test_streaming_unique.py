@@ -29,9 +29,9 @@ def test_streaming_out_of_core_unique(
     q = q.join(q, how="cross").select(df.columns).head(10_000)
 
     # uses out-of-core unique
-    df1 = q.join(q.head(1000), how="cross").unique().collect(streaming=True)
+    df1 = q.join(q.head(1000), how="cross").unique().collect(engine="streaming")
     # this ensures the cross join gives equal result but uses the in-memory unique
-    df2 = q.join(q.head(1000), how="cross").collect(streaming=True).unique()
+    df2 = q.join(q.head(1000), how="cross").collect(engine="streaming").unique()
     assert df1.shape == df2.shape
 
     # TODO: Re-enable this check when this issue is fixed: https://github.com/pola-rs/polars/issues/10466
@@ -44,12 +44,12 @@ def test_streaming_unique(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.DataFrame({"a": [1, 2, 2, 2], "b": [3, 4, 4, 4], "c": [5, 6, 7, 7]})
     q = df.lazy().unique(subset=["a", "c"], maintain_order=False).sort(["a", "b", "c"])
-    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+    assert_frame_equal(q.collect(engine="old-streaming"), q.collect(engine="in-memory"))  # type: ignore[call-overload]
 
     q = df.lazy().unique(subset=["b", "c"], maintain_order=False).sort(["a", "b", "c"])
-    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+    assert_frame_equal(q.collect(engine="old-streaming"), q.collect(engine="in-memory"))  # type: ignore[call-overload]
 
     q = df.lazy().unique(subset=None, maintain_order=False).sort(["a", "b", "c"])
-    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+    assert_frame_equal(q.collect(engine="old-streaming"), q.collect(engine="in-memory"))  # type: ignore[call-overload]
     (_, err) = capfd.readouterr()
     assert "df -> re-project-sink -> sort_multiple" in err

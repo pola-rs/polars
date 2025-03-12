@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 pub(super) mod single_keys;
 mod single_keys_dispatch;
 mod single_keys_inner;
@@ -7,13 +8,13 @@ mod single_keys_outer;
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
 use arrow::array::ArrayRef;
-use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
+use polars_core::utils::_set_partition_size;
 use polars_utils::index::ChunkId;
 pub(super) use single_keys::*;
+pub use single_keys_dispatch::SeriesJoin;
 #[cfg(feature = "asof_join")]
 pub(super) use single_keys_dispatch::prepare_binary;
-pub use single_keys_dispatch::SeriesJoin;
 use single_keys_inner::*;
 use single_keys_left::*;
 use single_keys_outer::*;
@@ -129,13 +130,13 @@ pub trait JoinDispatch: IntoDf {
         s_right: &Series,
         slice: Option<(i64, usize)>,
         anti: bool,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> PolarsResult<DataFrame> {
         let ca_self = self.to_df();
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let idx = s_left.hash_join_semi_anti(s_right, anti, join_nulls)?;
+        let idx = s_left.hash_join_semi_anti(s_right, anti, nulls_equal)?;
         // SAFETY:
         // indices are in bounds
         Ok(unsafe { ca_self._finish_anti_semi_join(&idx, slice) })
@@ -153,7 +154,7 @@ pub trait JoinDispatch: IntoDf {
 
         // Get the indexes of the joined relations
         let (mut join_idx_l, mut join_idx_r) =
-            s_left.hash_join_outer(s_right, args.validation, args.join_nulls)?;
+            s_left.hash_join_outer(s_right, args.validation, args.nulls_equal)?;
 
         try_raise_keyboard_interrupt();
         if let Some((offset, len)) = args.slice {

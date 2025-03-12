@@ -22,7 +22,7 @@ if TYPE_CHECKING:
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_csv, pl.DataFrame.write_csv),
-        # (pl.scan_ndjson, pl.DataFrame.write_ndjson), not yet implemented for streaming
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
     ],
 )
 def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
@@ -51,6 +51,7 @@ def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc", False, True),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet", True, True),
         (pl.scan_csv, pl.DataFrame.write_csv, "csv", False, False),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl", False, False),
     ],
 )
 @pytest.mark.parametrize("missing_column", [False, True])
@@ -131,10 +132,8 @@ def test_multiscan_projection(
         base_projection[::-1],
     ]:
         assert_frame_equal(
-            scan(multiscan_path, **args)
-            .collect(new_streaming=True)  # type: ignore[call-overload]
-            .select(projection),
-            scan(multiscan_path, **args).select(projection).collect(new_streaming=True),  # type: ignore[call-overload]
+            scan(multiscan_path, **args).collect(engine="streaming").select(projection),
+            scan(multiscan_path, **args).select(projection).collect(engine="streaming"),
         )
 
     for remove in range(len(base_projection)):
@@ -148,11 +147,11 @@ def test_multiscan_projection(
             print(projection)
             assert_frame_equal(
                 scan(multiscan_path, **args)
-                .collect(new_streaming=True)  # type: ignore[call-overload]
+                .collect(engine="streaming")
                 .select(projection),
                 scan(multiscan_path, **args)
                 .select(projection)
-                .collect(new_streaming=True),  # type: ignore[call-overload]
+                .collect(engine="streaming"),
             )
 
 
@@ -187,7 +186,7 @@ def test_multiscan_hive_predicate(
     write(b, b_path)
     write(c, c_path)
 
-    full = scan(multiscan_path).collect(new_streaming=True)  # type: ignore[call-overload]
+    full = scan(multiscan_path).collect(engine="streaming")
     full_ri = full.with_row_index("ri", 42)
 
     last_pred = None
@@ -208,7 +207,7 @@ def test_multiscan_hive_predicate(
             last_pred = pred
             assert_frame_equal(
                 full.filter(pred),
-                scan(multiscan_path).filter(pred).collect(new_streaming=True),  # type: ignore[call-overload]
+                scan(multiscan_path).filter(pred).collect(engine="streaming"),
             )
 
             assert_frame_equal(
@@ -216,7 +215,7 @@ def test_multiscan_hive_predicate(
                 scan(multiscan_path)
                 .with_row_index("ri", 42)
                 .filter(pred)
-                .collect(new_streaming=True),  # type: ignore[call-overload]
+                .collect(engine="streaming"),
             )
     except Exception as _:
         print(last_pred)
@@ -229,6 +228,7 @@ def test_multiscan_hive_predicate(
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
         (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
     ],
 )
 @pytest.mark.write_disk
@@ -308,12 +308,7 @@ def test_multiscan_row_index(
                 reason="See https://github.com/pola-rs/polars/issues/21211"
             ),
         ),
-        pytest.param(
-            pl.scan_ndjson,
-            pl.DataFrame.write_ndjson,
-            "ndjson",
-            marks=pytest.mark.xfail(reason="NYI"),
-        ),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
     ],
 )
 @pytest.mark.write_disk
@@ -340,7 +335,7 @@ def test_schema_mismatch_type_mismatch(
         pl.exceptions.SchemaError,
         match="data type mismatch for column xyz_col: expected: i64, found: str",
     ):
-        q.collect(new_streaming=True)  # type: ignore[call-overload]
+        q.collect(engine="streaming")
 
 
 @pytest.mark.parametrize(
@@ -356,12 +351,7 @@ def test_schema_mismatch_type_mismatch(
                 reason="See https://github.com/pola-rs/polars/issues/21211"
             ),
         ),
-        # pytest.param(
-        #     pl.scan_ndjson,
-        #     pl.DataFrame.write_ndjson,
-        #     "ndjson",
-        #     marks=pytest.mark.xfail(reason="NYI"),
-        # ),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
     ],
 )
 @pytest.mark.write_disk
@@ -385,7 +375,7 @@ def test_schema_mismatch_order_mismatch(
     q = scan(multiscan_path)
 
     with pytest.raises(pl.exceptions.SchemaError):
-        q.collect(new_streaming=True)  # type: ignore[call-overload]
+        q.collect(engine="streaming")
 
 
 @pytest.mark.parametrize(
@@ -397,11 +387,7 @@ def test_schema_mismatch_order_mismatch(
             pl.scan_csv,
             pl.DataFrame.write_csv,
         ),
-        # pytest.param(
-        #     pl.scan_ndjson,
-        #     pl.DataFrame.write_ndjson,
-        #     marks=pytest.mark.xfail(reason="NYI"),
-        # ),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
     ],
 )
 def test_multiscan_head(
@@ -415,7 +401,7 @@ def test_multiscan_head(
         f.seek(0)
 
     assert_frame_equal(
-        scan([a, b]).head(5).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan([a, b]).head(5).collect(engine="streaming"),
         pl.Series("c1", range(5)).to_frame(),
     )
 
@@ -425,15 +411,11 @@ def test_multiscan_head(
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
-        # (
-        #     pl.scan_csv,
-        #     pl.DataFrame.write_csv,
-        # ),
-        # pytest.param(
-        #     pl.scan_ndjson,
-        #     pl.DataFrame.write_ndjson,
-        #     marks=pytest.mark.xfail(reason="NYI"),
-        # ),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+        (
+            pl.scan_csv,
+            pl.DataFrame.write_csv,
+        ),
     ],
 )
 def test_multiscan_tail(
@@ -447,7 +429,7 @@ def test_multiscan_tail(
         f.seek(0)
 
     assert_frame_equal(
-        scan([a, b]).tail(5).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan([a, b]).tail(5).collect(engine="streaming"),
         pl.Series("c1", range(5, 10)).to_frame(),
     )
 
@@ -457,15 +439,11 @@ def test_multiscan_tail(
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
-        # (
-        #     pl.scan_csv,
-        #     pl.DataFrame.write_csv,
-        # ),
-        # pytest.param(
-        #     pl.scan_ndjson,
-        #     pl.DataFrame.write_ndjson,
-        #     marks=pytest.mark.xfail(reason="NYI"),
-        # ),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+        (
+            pl.scan_csv,
+            pl.DataFrame.write_csv,
+        ),
     ],
 )
 def test_multiscan_slice_middle(
@@ -489,22 +467,22 @@ def test_multiscan_slice_middle(
     ] + expected_series
 
     assert_frame_equal(
-        scan(fs).slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan(fs).slice(offset, 17).collect(engine="streaming"),
         pl.DataFrame(expected_series),
     )
     assert_frame_equal(
-        scan(fs, row_index_name="ri").slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan(fs, row_index_name="ri").slice(offset, 17).collect(engine="streaming"),
         pl.DataFrame(ri_expected_series),
     )
 
     # Negative slices
     offset = -(13 * 7 - offset)
     assert_frame_equal(
-        scan(fs).slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan(fs).slice(offset, 17).collect(engine="streaming"),
         pl.DataFrame(expected_series),
     )
     assert_frame_equal(
-        scan(fs, row_index_name="ri").slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan(fs, row_index_name="ri").slice(offset, 17).collect(engine="streaming"),
         pl.DataFrame(ri_expected_series),
     )
 
@@ -514,19 +492,8 @@ def test_multiscan_slice_middle(
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
-        pytest.param(
-            pl.scan_csv,
-            pl.DataFrame.write_csv,
-            "csv",
-            marks=pytest.mark.may_fail_auto_streaming,
-            # negatives slices are not yet implemented for CSV
-        ),
-        # pytest.param(
-        #     pl.scan_ndjson,
-        #     pl.DataFrame.write_ndjson,
-        #     "ndjson",
-        #     marks=pytest.mark.xfail(reason="NYI"),
-        # ),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
+        (pl.scan_csv, pl.DataFrame.write_csv, "jsonl"),
     ],
 )
 @given(offset=st.integers(-100, 100), length=st.integers(0, 101))
@@ -537,18 +504,6 @@ def test_multiscan_slice_parametric(
     offset: int,
     length: int,
 ) -> None:
-    # Once CSV negative slicing is implemented this should be removed. If we
-    # don't do this, this test is flaky.
-    if ext == "csv":
-        f = io.BytesIO()
-        write(pl.Series("a", [1]).to_frame(), f)
-        f.seek(0)
-        try:
-            scan(f).slice(-1, 1).collect(new_streaming=True)  # type: ignore[call-overload]
-            pytest.fail("This should crash")
-        except pl.exceptions.ComputeError:
-            pass
-
     ref = io.BytesIO()
     write(pl.Series("c1", [i % 7 for i in range(13 * 7)]).to_frame(), ref)
     ref.seek(0)
@@ -560,7 +515,7 @@ def test_multiscan_slice_parametric(
 
     assert_frame_equal(
         scan(ref).slice(offset, length).collect(),
-        scan(fs).slice(offset, length).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan(fs).slice(offset, length).collect(engine="streaming"),
     )
 
     ref.seek(0)
@@ -573,5 +528,32 @@ def test_multiscan_slice_parametric(
         .collect(),
         scan(fs, row_index_name="ri", row_index_offset=42)
         .slice(offset, length)
-        .collect(new_streaming=True),  # type: ignore[call-overload]
+        .collect(engine="streaming"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+        # (pl.scan_ndjson, pl.DataFrame.write_ndjson), not yet implemented for streaming
+    ],
+)
+def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
+    f = io.BytesIO()
+    write(pl.DataFrame({"a": [5, 10, 1996]}), f)
+    bs = f.getvalue()
+
+    out = scan([bs] * 1023)
+
+    assert_frame_equal(
+        out.collect(),
+        pl.DataFrame(
+            {
+                "a": [5, 10, 1996] * 1023,
+            }
+        ),
     )

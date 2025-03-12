@@ -150,6 +150,7 @@ StartBy: TypeAlias = Literal[
     "saturday",
     "sunday",
 ]
+SyncOnCloseMethod: TypeAlias = Literal["data", "all"]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UnicodeForm: TypeAlias = Literal["NFC", "NFKC", "NFD", "NFKD"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
@@ -303,7 +304,9 @@ SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
 MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]
 
 # LazyFrame engine selection
-EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
+EngineType: TypeAlias = Union[
+    Literal["auto", "in-memory", "streaming", "gpu"], "GPUEngine"
+]
 
 FileSource: TypeAlias = Union[
     str,

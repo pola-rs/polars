@@ -8,7 +8,7 @@ use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::*;
 use arrow::record_batch::RecordBatchT;
-use arrow::types::{i256, NativeType};
+use arrow::types::{NativeType, i256};
 use ethnum::AsI256;
 use polars_error::PolarsResult;
 use polars_parquet::read::{self as p_read};

@@ -3,8 +3,8 @@ use std::cell::Cell;
 use std::hash::Hash;
 use std::mem::MaybeUninit;
 
-use bytemuck::allocation::zeroed_vec;
 use bytemuck::Zeroable;
+use bytemuck::allocation::zeroed_vec;
 
 use crate::aliases::PlRandomState;
 
@@ -186,8 +186,8 @@ impl<K: Hash + Eq, V> FastFixedCache<K, V> {
     /// Returns the older index based on access time, where unoccupied slots
     /// are considered infinitely old.
     unsafe fn older_idx(&mut self, i1: usize, i2: usize) -> usize {
-        let age1 = self.slots.get_unchecked(i1).last_access.get();
-        let age2 = self.slots.get_unchecked(i2).last_access.get();
+        let age1 = unsafe { self.slots.get_unchecked(i1).last_access.get() };
+        let age2 = unsafe { self.slots.get_unchecked(i2).last_access.get() };
         match (age1, age2) {
             (0, _) => i1,
             (_, 0) => i2,

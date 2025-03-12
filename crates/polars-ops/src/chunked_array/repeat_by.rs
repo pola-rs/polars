@@ -15,7 +15,7 @@ fn check_lengths(length_srs: usize, length_by: usize) -> PolarsResult<()> {
 
 fn new_by(by: &IdxCa, len: usize) -> IdxCa {
     if let Some(x) = by.get(0) {
-        let values = std::iter::repeat(x).take(len).collect::<Vec<IdxSize>>();
+        let values = std::iter::repeat_n(x, len).collect::<Vec<IdxSize>>();
         IdxCa::new(PlSmallStr::EMPTY, values)
     } else {
         IdxCa::full_null(PlSmallStr::EMPTY, len)
@@ -32,7 +32,7 @@ where
         (left_len, right_len) if left_len == right_len => {
             Ok(arity::binary(ca, by, |arr, by| {
                 let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
-                    opt_by.map(|by| std::iter::repeat(opt_v.copied()).take(*by as usize))
+                    opt_by.map(|by| std::iter::repeat_n(opt_v.copied(), *by as usize))
                 });
 
                 // SAFETY: length of iter is trusted.
@@ -64,7 +64,7 @@ fn repeat_by_bool(ca: &BooleanChunked, by: &IdxCa) -> PolarsResult<ListChunked> 
         (left_len, right_len) if left_len == right_len => {
             Ok(arity::binary(ca, by, |arr, by| {
                 let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
-                    opt_by.map(|by| std::iter::repeat(opt_v).take(*by as usize))
+                    opt_by.map(|by| std::iter::repeat_n(opt_v, *by as usize))
                 });
 
                 // SAFETY: length of iter is trusted.
@@ -91,7 +91,7 @@ fn repeat_by_binary(ca: &BinaryChunked, by: &IdxCa) -> PolarsResult<ListChunked>
         (left_len, right_len) if left_len == right_len => {
             Ok(arity::binary(ca, by, |arr, by| {
                 let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
-                    opt_by.map(|by| std::iter::repeat(opt_v).take(*by as usize))
+                    opt_by.map(|by| std::iter::repeat_n(opt_v, *by as usize))
                 });
 
                 // SAFETY: length of iter is trusted.

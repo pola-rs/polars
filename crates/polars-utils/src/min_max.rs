@@ -17,38 +17,22 @@ pub trait MinMax: Sized {
     // Binary operators that return either the minimum or maximum.
     #[inline(always)]
     fn min_propagate_nan(self, other: Self) -> Self {
-        if self.nan_min_lt(&other) {
-            self
-        } else {
-            other
-        }
+        if self.nan_min_lt(&other) { self } else { other }
     }
 
     #[inline(always)]
     fn max_propagate_nan(self, other: Self) -> Self {
-        if self.nan_max_lt(&other) {
-            other
-        } else {
-            self
-        }
+        if self.nan_max_lt(&other) { other } else { self }
     }
 
     #[inline(always)]
     fn min_ignore_nan(self, other: Self) -> Self {
-        if self.nan_max_lt(&other) {
-            self
-        } else {
-            other
-        }
+        if self.nan_max_lt(&other) { self } else { other }
     }
 
     #[inline(always)]
     fn max_ignore_nan(self, other: Self) -> Self {
-        if self.nan_min_lt(&other) {
-            other
-        } else {
-            self
-        }
+        if self.nan_min_lt(&other) { other } else { self }
     }
 }
 

@@ -21,14 +21,29 @@ impl GroupByDynamicExec {
         state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
+        use crate::executors::group_by_rolling::sort_and_groups;
+
         df.as_single_chunk_par();
-        let keys = self
+
+        let mut keys = self
             .keys
             .iter()
             .map(|e| e.evaluate(&df, state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let (mut time_key, mut keys, groups) = df.group_by_dynamic(keys, &self.options)?;
+        let group_by = if !self.keys.is_empty() {
+            Some(sort_and_groups(&mut df, &mut keys)?)
+        } else {
+            None
+        };
+
+        let (mut time_key, bounds, groups) = df.group_by_dynamic(group_by, &self.options)?;
+        POOL.install(|| {
+            keys.iter_mut().for_each(|key| {
+                unsafe { *key = key.agg_first(&groups) };
+            })
+        });
+        keys.extend(bounds);
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);

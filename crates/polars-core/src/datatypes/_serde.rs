@@ -170,7 +170,7 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             #[cfg(feature = "object")]
-            Object(name, _) => Self::Object(name.to_string()),
+            Object(name) => Self::Object(name.to_string()),
             dt => panic!("{dt:?} not supported"),
         }
     }
@@ -230,7 +230,7 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(precision, scale),
             #[cfg(feature = "object")]
-            Object(_) => Self::Object("unknown", None),
+            Object(_) => Self::Object("unknown"),
         }
     }
 }

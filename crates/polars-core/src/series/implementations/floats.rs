@@ -1,3 +1,5 @@
+use polars_compute::rolling::QuantileMethod;
+
 use super::*;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
@@ -373,6 +375,10 @@ macro_rules! impl_dyn_series {
 
             fn as_any_mut(&mut self) -> &mut dyn Any {
                 &mut self.0
+            }
+
+            fn as_phys_any(&self) -> &dyn Any {
+                &self.0
             }
 
             fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

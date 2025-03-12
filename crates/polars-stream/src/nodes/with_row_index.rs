@@ -3,9 +3,9 @@ use polars_core::utils::Container;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
 pub struct WithRowIndexNode {
     name: PlSmallStr,

@@ -1,4 +1,4 @@
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
@@ -7,7 +7,7 @@ use super::*;
 /// Only keeps track of membership in right table
 pub(super) fn build_table_semi_anti<T, I>(
     keys: Vec<I>,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> Vec<PlHashSet<<T as ToTotalOrd>::TotalOrdItem>>
 where
     T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
@@ -25,7 +25,7 @@ where
             keys.into_iter().for_each(|k| {
                 let k = k.to_total_ord();
                 if partition_no == hash_to_partition(k.dirty_hash(), n_partitions)
-                    && (!k.is_null() || join_nulls)
+                    && (!k.is_null() || nulls_equal)
                 {
                     hash_tbl.insert(k);
                 }
@@ -41,7 +41,7 @@ where
 fn semi_anti_impl<T, I>(
     probe: Vec<I>,
     build: Vec<I>,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> impl ParallelIterator<Item = (IdxSize, bool)>
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
@@ -49,7 +49,7 @@ where
     <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Hash + Eq + DirtyHash + IsNull,
 {
     // first we hash one relation
-    let hash_sets = build_table_semi_anti(build, join_nulls);
+    let hash_sets = build_table_semi_anti(build, nulls_equal);
 
     // we determine the offset so that we later know which index to store in the join tuples
     let offsets = probe_to_offsets(&probe);
@@ -95,14 +95,14 @@ where
 pub(super) fn hash_join_tuples_left_anti<T, I>(
     probe: Vec<I>,
     build: Vec<I>,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> Vec<IdxSize>
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
     T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
     <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Hash + Eq + DirtyHash + IsNull,
 {
-    let par_iter = semi_anti_impl(probe, build, join_nulls)
+    let par_iter = semi_anti_impl(probe, build, nulls_equal)
         .filter(|tpls| !tpls.1)
         .map(|tpls| tpls.0);
     POOL.install(|| par_iter.collect())
@@ -111,14 +111,14 @@ where
 pub(super) fn hash_join_tuples_left_semi<T, I>(
     probe: Vec<I>,
     build: Vec<I>,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> Vec<IdxSize>
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
     T: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
     <T as ToTotalOrd>::TotalOrdItem: Send + Sync + Hash + Eq + DirtyHash + IsNull,
 {
-    let par_iter = semi_anti_impl(probe, build, join_nulls)
+    let par_iter = semi_anti_impl(probe, build, nulls_equal)
         .filter(|tpls| tpls.1)
         .map(|tpls| tpls.0);
     POOL.install(|| par_iter.collect())

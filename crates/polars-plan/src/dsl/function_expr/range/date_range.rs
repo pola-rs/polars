@@ -1,6 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
-use polars_time::{datetime_range_impl, ClosedWindow, Duration};
+use polars_time::{ClosedWindow, Duration, datetime_range_impl};
 
 use super::utils::{
     ensure_range_bounds_contain_exactly_one_value, temporal_ranges_impl_broadcast,

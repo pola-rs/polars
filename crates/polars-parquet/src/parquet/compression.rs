@@ -165,7 +165,7 @@ pub fn decompress(
         )),
         #[cfg(feature = "snappy")]
         Compression::Snappy => {
-            use snap::raw::{decompress_len, Decoder};
+            use snap::raw::{Decoder, decompress_len};
 
             let len = decompress_len(input_buf)?;
             if len > output_buf.len() {

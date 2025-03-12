@@ -97,7 +97,7 @@ pub fn get_list_builder(
                 list_capacity,
                 value_capacity,
                 rev_map.clone(),
-            )
+            );
         },
         #[cfg(feature = "dtype-categorical")]
         DataType::Enum(Some(rev_map), ordering) => {
@@ -117,7 +117,7 @@ pub fn get_list_builder(
 
     match &physical_type {
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => {
+        DataType::Object(_) => {
             let builder = get_object_builder(PlSmallStr::EMPTY, 0).get_list_builder(
                 name,
                 value_capacity,

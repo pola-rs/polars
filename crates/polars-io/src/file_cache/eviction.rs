@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fs4::fs_std::FileExt;
 use polars_error::{PolarsError, PolarsResult};
 
-use super::cache_lock::{GlobalFileCacheGuardExclusive, GLOBAL_FILE_CACHE_LOCK};
+use super::cache_lock::{GLOBAL_FILE_CACHE_LOCK, GlobalFileCacheGuardExclusive};
 use super::metadata::EntryMetadata;
 use crate::pl_async;
 
@@ -100,7 +100,10 @@ impl EvictionCandidate {
             Ok(v) => v.as_secs(),
             Err(_) => {
                 if verbose {
-                    eprintln!("[EvictionManager] evict_files: skipping {} (last accessed time was updated)", path.to_str().unwrap());
+                    eprintln!(
+                        "[EvictionManager] evict_files: skipping {} (last accessed time was updated)",
+                        path.to_str().unwrap()
+                    );
                 }
                 return;
             },

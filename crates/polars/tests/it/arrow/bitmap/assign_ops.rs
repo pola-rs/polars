@@ -1,19 +1,16 @@
-use arrow::bitmap::{binary_assign, unary_assign, Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, MutableBitmap, binary_assign, unary_assign};
 use proptest::prelude::*;
 
 use super::bitmap_strategy;
 
 #[test]
 fn basics() {
-    let mut b = MutableBitmap::from_iter(std::iter::repeat(true).take(10));
+    let mut b = MutableBitmap::from_iter(std::iter::repeat_n(true, 10));
     unary_assign(&mut b, |x: u8| !x);
-    assert_eq!(
-        b,
-        MutableBitmap::from_iter(std::iter::repeat(false).take(10))
-    );
+    assert_eq!(b, MutableBitmap::from_iter(std::iter::repeat_n(false, 10)));
 
-    let mut b = MutableBitmap::from_iter(std::iter::repeat(true).take(10));
-    let c = Bitmap::from_iter(std::iter::repeat(true).take(10));
+    let mut b = MutableBitmap::from_iter(std::iter::repeat_n(true, 10));
+    let c = Bitmap::from_iter(std::iter::repeat_n(true, 10));
     binary_assign(&mut b, &c, |x: u8, y| x | y);
     assert_eq!(
         b,
@@ -25,8 +22,8 @@ fn basics() {
 fn binary_assign_oob() {
     // this check we don't have an oob access if the bitmaps are size T + 1
     // and we do some slicing.
-    let a = MutableBitmap::from_iter(std::iter::repeat(true).take(65));
-    let b = MutableBitmap::from_iter(std::iter::repeat(true).take(65));
+    let a = MutableBitmap::from_iter(std::iter::repeat_n(true, 65));
+    let b = MutableBitmap::from_iter(std::iter::repeat_n(true, 65));
 
     let a: Bitmap = a.into();
     let a = a.sliced(10, 20);

@@ -279,3 +279,9 @@ def test_unique_nan_12950() -> None:
     df = pl.DataFrame({"x": float("nan")})
     result = df.unique()
     assert_frame_equal(result, df)
+
+
+def test_unique_lengths_21654() -> None:
+    for n in range(0, 1000, 37):
+        df = pl.DataFrame({"x": pl.int_range(n, eager=True)})
+        assert df.unique().height == n

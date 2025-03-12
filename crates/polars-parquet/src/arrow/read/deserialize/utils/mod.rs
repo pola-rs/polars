@@ -7,12 +7,13 @@ use arrow::array::{Array, IntoBoxedArray, Splitable};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
+use polars_compute::filter::filter_boolean_kernel;
 
 use self::filter::Filter;
 use super::{BasicDecompressor, InitNested, NestedState, PredicateFilter};
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::parquet::schema::Repetition;
 
 #[derive(Debug)]
@@ -240,17 +241,17 @@ pub(crate) fn unspecialized_decode<T: Default>(
 
             let mut iter = |mut f: u64, mut v: u64| {
                 while f != 0 {
-                    let offset = f.trailing_ones();
+                    let offset = f.trailing_zeros();
+
+                    let skip = (v & (1u64 << offset).wrapping_sub(1)).count_ones() as usize;
+                    for _ in 0..skip {
+                        decode_one()?;
+                    }
 
                     if (v >> offset) & 1 != 0 {
                         target.push(decode_one()?);
                     } else {
                         target.push(T::default());
-                    }
-
-                    let skip = (v & (1u64 << offset).wrapping_sub(1)).count_ones() as usize;
-                    for _ in 0..skip {
-                        decode_one()?;
                     }
 
                     v >>= offset + 1;
@@ -275,7 +276,7 @@ pub(crate) fn unspecialized_decode<T: Default>(
 
             iter(f, v)?;
 
-            validity.extend_from_bitmap(&page_validity);
+            validity.extend_from_bitmap(&filter_boolean_kernel(&page_validity, &mask));
         },
         (Some(Filter::Predicate(_)), _) => todo!(),
     }
@@ -298,7 +299,7 @@ pub(super) trait Decoder: Sized {
     /// The state that this decoder derives from a [`DataPage`]. This is bound to the page.
     type Translation<'a>: StateTranslation<'a, Self>;
     /// The dictionary representation that the decoder uses
-    type Dict: Array;
+    type Dict: Array + Clone;
     /// The target state that this Decoder decodes into.
     type DecodedState: Decoded;
 
@@ -337,11 +338,15 @@ pub(super) trait Decoder: Sized {
         decoded: &mut Self::DecodedState,
         pred_true_mask: &mut BitmapBuilder,
         predicate: &PredicateFilter,
+        dict: Option<Self::Dict>,
         dtype: &ArrowDataType,
     ) -> ParquetResult<()> {
         let is_optional = state.is_optional;
 
         let mut intermediate_array = self.with_capacity(state.translation.num_rows());
+        if let Some(dict) = dict.as_ref() {
+            self.apply_dictionary(&mut intermediate_array, dict)?;
+        }
         self.extend_filtered_with_state(
             state,
             &mut intermediate_array,
@@ -349,7 +354,7 @@ pub(super) trait Decoder: Sized {
             None,
         )?;
         let intermediate_array = self
-            .finalize(dtype.clone(), None, intermediate_array)?
+            .finalize(dtype.clone(), dict, intermediate_array)?
             .into_boxed();
 
         let mask = if let Some(validity) = intermediate_array.validity() {
@@ -357,7 +362,7 @@ pub(super) trait Decoder: Sized {
             let mask = predicate.predicate.evaluate(ignore_validity_array.as_ref());
 
             if predicate.predicate.evaluate_null() {
-                &mask | validity
+                arrow::bitmap::or_not(&mask, validity)
             } else {
                 &mask & validity
             }
@@ -533,6 +538,7 @@ impl<D: Decoder> PageDecoder<D> {
                         &mut target,
                         &mut pred_true_mask,
                         p,
+                        self.dict.clone(),
                         &self.dtype,
                     )?
                 },

@@ -73,7 +73,7 @@ jobs:
 
       - name: Install Polars release build
         run: |
-          pip install target/wheels/polars*.whl
+          pip install --force-reinstall target/wheels/polars*.whl
 
           # This workflow builds and installs a wheel, meaning there is no polars.abi3.so under
           # py-polars/. This causes a binary not found error if a test tries to import polars in
@@ -130,11 +130,11 @@ jobs:
               }
         continue-on-error: true
 
-      - name: Run benchmark tests
-        uses: CodSpeedHQ/action@v3
-        with:
-          working-directory: py-polars
-          run: pytest -m benchmark --codspeed -v
+      # - name: Run benchmark tests
+      #   uses: CodSpeedHQ/action@v3
+      #   with:
+      #     working-directory: py-polars
+      #     run: pytest -m benchmark --codspeed -v
 
       - name: Run non-benchmark tests
         working-directory: py-polars

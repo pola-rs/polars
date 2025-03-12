@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use arrow::temporal_conversions::{time64ns_to_time, NANOSECONDS};
+use arrow::temporal_conversions::{NANOSECONDS, time64ns_to_time};
 use chrono::Timelike;
 
 use super::*;

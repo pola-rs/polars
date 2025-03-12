@@ -9,9 +9,9 @@ use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_io::RowIndex;
 use polars_mem_engine::create_physical_plan;
-use polars_plan::dsl::{FileScan, ScanSource};
+use polars_plan::dsl::{FileScan, ScanFlags, ScanSource};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FunctionIR, IRAggExpr, LiteralValue, IR};
+use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue};
 use polars_plan::prelude::{FileType, GroupbyOptions, SinkType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -19,11 +19,11 @@ use polars_utils::unique_column_name;
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
-use crate::nodes::io_sources::multi_scan::MultiscanRowRestriction;
 use crate::nodes::io_sources::RowRestriction;
+use crate::nodes::io_sources::multi_scan::MultiscanRowRestriction;
 use crate::physical_plan::lower_expr::{
-    build_length_preserving_select_stream, build_select_stream, is_elementwise_rec_cached,
-    lower_exprs, ExprCache,
+    ExprCache, build_length_preserving_select_stream, build_select_stream,
+    is_elementwise_rec_cached, lower_exprs,
 };
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -227,11 +227,14 @@ pub fn lower_ir(
             },
             SinkType::File {
                 path,
+                sink_options,
                 file_type,
-                cloud_options: _,
+                cloud_options,
             } => {
                 let path = path.clone();
+                let sink_options = sink_options.clone();
                 let file_type = file_type.clone();
+                let cloud_options = cloud_options.clone();
 
                 match file_type {
                     #[cfg(feature = "ipc")]
@@ -239,8 +242,10 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "parquet")]
@@ -248,8 +253,10 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "csv")]
@@ -257,8 +264,10 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "json")]
@@ -266,10 +275,35 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
+                }
+            },
+            SinkType::Partition {
+                path_f_string,
+                sink_options,
+                variant,
+                file_type,
+                cloud_options,
+            } => {
+                let path_f_string = path_f_string.clone();
+                let sink_options = sink_options.clone();
+                let variant = variant.clone();
+                let file_type = file_type.clone();
+                let cloud_options = cloud_options.clone();
+
+                let phys_input = lower_ir!(*input)?;
+                PhysNodeKind::PartitionSink {
+                    path_f_string,
+                    sink_options,
+                    variant,
+                    file_type,
+                    input: phys_input,
+                    cloud_options,
                 }
             },
         },
@@ -404,15 +438,6 @@ pub fn lower_ir(
                     match ScanSource::from_sources(scan_sources) {
                         Err(s) => scan_sources = s,
                         Ok(scan_source) => {
-                            #[cfg(feature = "ipc")]
-                            if matches!(scan_type, FileScan::Ipc { .. }) {
-                                // @TODO: All the things the IPC source does not support yet.
-                                if matches!(&scan_source, ScanSource::Path(p) if polars_io::is_cloud_url(p))
-                                {
-                                    todo!();
-                                }
-                            }
-
                             // Operation ordering:
                             // * with_row_index() -> slice() -> filter()
 
@@ -421,14 +446,19 @@ pub fn lower_ir(
                                 Option<RowIndex>,
                                 Option<(i64, usize)>,
                                 Option<ExprIR>,
-                            ) = match &scan_type {
+                            ) = match &*scan_type {
                                 #[cfg(feature = "parquet")]
                                 FileScan::Parquet { .. } => (None, None, None),
                                 #[cfg(feature = "ipc")]
                                 FileScan::Ipc { .. } => (None, None, predicate.take()),
                                 #[cfg(feature = "csv")]
                                 FileScan::Csv { options, .. } => {
+                                    // Note: We dispatch negative slice to separate node.
+                                    #[allow(clippy::nonminimal_bool)]
                                     if options.parse_options.comment_prefix.is_none()
+                                        && !file_options
+                                            .pre_slice
+                                            .is_some_and(|(offset, _)| offset < 0)
                                         && std::env::var("POLARS_DISABLE_EXPERIMENTAL_CSV_SLICE")
                                             .as_deref()
                                             != Ok("1")
@@ -440,11 +470,13 @@ pub fn lower_ir(
                                         // return an accurate line count :'(.
                                         (
                                             file_options.row_index.take(),
-                                            file_options.slice.take(),
+                                            file_options.pre_slice.take(),
                                             predicate.take(),
                                         )
                                     }
                                 },
+                                #[cfg(feature = "json")]
+                                FileScan::NDJson { .. } => (None, None, predicate.take()),
                                 _ => todo!(),
                             };
 
@@ -524,7 +556,7 @@ pub fn lower_ir(
                 });
 
                 let mut row_restriction = None;
-                if let Some((offset, len)) = file_options.slice.take() {
+                if let Some((offset, len)) = file_options.pre_slice.take() {
                     if offset < 0 {
                         let offset = (-offset) as usize;
                         row_restriction = Some(MultiscanRowRestriction::NegativeSlice(offset, len));
@@ -534,6 +566,55 @@ pub fn lower_ir(
                             RowRestriction::Slice(start..start + len),
                         ));
                     }
+                }
+
+                let mut do_filter_after_scan = false;
+                if let Some(predicate) = predicate.as_ref() {
+                    // Predicates are an interesting case here. Predicates have a non-zero cost if
+                    // passed and it is sometimes easier or necessary to still filter afterwards.
+                    //
+                    // There are certain columns that are actually present in the file (physical
+                    // columns) and columns that are added by the readers (logical columns) for example
+                    // row index or file path.
+                    //
+                    // The following table describes what we do.
+                    //
+                    //                       | Logical & physical | Logical | Physical | Neither |
+                    //                       |                    |         |          |         |
+                    // Pass filter to reader |                yes |      no |      yes |      no |
+                    //                       |                    |         |          |         |
+                    // Filter after scan     |                yes |     yes |       no |     yes |
+                    //
+                    // Note that:
+                    // - `allow_missing_columns=True` makes all columns possibly logical.
+
+                    let mut live_columns = PlHashSet::new();
+                    live_columns.extend(polars_plan::utils::aexpr_to_leaf_names_iter(
+                        predicate.node(),
+                        expr_arena,
+                    ));
+
+                    let mut num_live_multiscan_columns = 0;
+                    num_live_multiscan_columns += usize::from(
+                        file_options
+                            .include_file_paths
+                            .as_ref()
+                            .is_some_and(|ifp| live_columns.contains(ifp)),
+                    );
+                    if let Some(hive_df) = hive_parts.as_ref() {
+                        for c in hive_df.df().get_columns() {
+                            num_live_multiscan_columns +=
+                                usize::from(live_columns.contains(c.name()));
+                        }
+                    }
+
+                    let pass_predicate_to_single_scan = scan_type
+                        .flags()
+                        .contains(ScanFlags::SPECIALIZED_PREDICATE_FILTER)
+                        && num_live_multiscan_columns < live_columns.len();
+                    do_filter_after_scan = file_options.allow_missing_columns
+                        || num_live_multiscan_columns > 0
+                        || !pass_predicate_to_single_scan;
                 }
 
                 // The schema afterwards only includes the projected columns.
@@ -568,12 +649,16 @@ pub fn lower_ir(
                 schema = proj_schema;
 
                 if let Some(predicate) = predicate {
-                    let source_node = phys_sm.insert(PhysNode {
-                        output_schema: schema,
-                        kind: node,
-                    });
-                    let stream = PhysStream::first(source_node);
-                    return build_filter_stream(stream, predicate, expr_arena, phys_sm, expr_cache);
+                    if do_filter_after_scan {
+                        let source_node = phys_sm.insert(PhysNode {
+                            output_schema: schema,
+                            kind: node,
+                        });
+                        let stream = PhysStream::first(source_node);
+                        return build_filter_stream(
+                            stream, predicate, expr_arena, phys_sm, expr_cache,
+                        );
+                    }
                 }
 
                 node

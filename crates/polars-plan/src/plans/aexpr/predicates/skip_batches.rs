@@ -3,6 +3,7 @@
 
 use polars_core::prelude::{AnyValue, DataType, Scalar};
 use polars_core::schema::Schema;
+use polars_utils::aliases::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -11,7 +12,7 @@ use super::super::evaluate::{constant_evaluate, into_column};
 use super::super::{AExpr, BooleanFunction, Operator, OutputName};
 use crate::dsl::FunctionExpr;
 use crate::plans::predicates::get_binary_expr_col_and_lv;
-use crate::plans::{ExprIR, LiteralValue};
+use crate::plans::{ExprIR, LiteralValue, aexpr_to_leaf_names_iter, rename_columns};
 use crate::prelude::FunctionOptions;
 
 /// Return a new boolean expression determines whether a batch can be skipped based on min, max and
@@ -45,9 +46,7 @@ fn aexpr_to_skip_batch_predicate_rec(
     use Operator as O;
 
     macro_rules! rec {
-        ($node:expr) => {{
-            aexpr_to_skip_batch_predicate_rec($node, expr_arena, schema, depth + 1)
-        }};
+        ($node:expr) => {{ aexpr_to_skip_batch_predicate_rec($node, expr_arena, schema, depth + 1) }};
     }
     macro_rules! and {
         ($l:expr, $($r:expr),+ $(,)?) => {{
@@ -86,19 +85,13 @@ fn aexpr_to_skip_batch_predicate_rec(
         ($op:ident, $l:expr, $r:expr) => {{ binexpr!(op: O::$op, $l, $r) }};
     }
     macro_rules! lt {
-        ($l:expr, $r:expr) => {{
-            binexpr!(Lt, $l, $r)
-        }};
+        ($l:expr, $r:expr) => {{ binexpr!(Lt, $l, $r) }};
     }
     macro_rules! gt {
-        ($l:expr, $r:expr) => {{
-            binexpr!(Gt, $l, $r)
-        }};
+        ($l:expr, $r:expr) => {{ binexpr!(Gt, $l, $r) }};
     }
-    macro_rules! eq_missing {
-        ($l:expr, $r:expr) => {{
-            binexpr!(EqValidity, $l, $r)
-        }};
+    macro_rules! eq {
+        ($l:expr, $r:expr) => {{ binexpr!(Eq, $l, $r) }};
     }
     macro_rules! null_count {
         ($i:expr) => {{
@@ -113,7 +106,7 @@ fn aexpr_to_skip_batch_predicate_rec(
         ($i:expr) => {{
             let expr = null_count!($i);
             let idx_zero = lv!(0);
-            eq_missing!(expr, idx_zero)
+            eq!(expr, idx_zero)
         }};
     }
     macro_rules! has_nulls {
@@ -169,32 +162,16 @@ fn aexpr_to_skip_batch_predicate_rec(
         }};
     }
     macro_rules! col {
-        (len) => {{
-            col!(PlSmallStr::from_static("len"))
-        }};
-        ($name:expr) => {{
-            expr_arena.add(AExpr::Column($name))
-        }};
-        (min: $name:expr) => {{
-            col!(format_pl_smallstr!("{}_min", $name))
-        }};
-        (max: $name:expr) => {{
-            col!(format_pl_smallstr!("{}_max", $name))
-        }};
-        (null_count: $name:expr) => {{
-            col!(format_pl_smallstr!("{}_nc", $name))
-        }};
+        (len) => {{ col!(PlSmallStr::from_static("len")) }};
+        ($name:expr) => {{ expr_arena.add(AExpr::Column($name)) }};
+        (min: $name:expr) => {{ col!(format_pl_smallstr!("{}_min", $name)) }};
+        (max: $name:expr) => {{ col!(format_pl_smallstr!("{}_max", $name)) }};
+        (null_count: $name:expr) => {{ col!(format_pl_smallstr!("{}_nc", $name)) }};
     }
     macro_rules! lv {
-        ($lv:expr) => {{
-            expr_arena.add(AExpr::Literal(LiteralValue::OtherScalar(Scalar::from($lv))))
-        }};
-        (idx: $lv:expr) => {{
-            expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize($lv)))
-        }};
-        (bool: $lv:expr) => {{
-            expr_arena.add(AExpr::Literal(LiteralValue::Boolean($lv)))
-        }};
+        ($lv:expr) => {{ expr_arena.add(AExpr::Literal(LiteralValue::OtherScalar(Scalar::from($lv)))) }};
+        (idx: $lv:expr) => {{ expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize($lv))) }};
+        (bool: $lv:expr) => {{ expr_arena.add(AExpr::Literal(LiteralValue::Boolean($lv))) }};
     }
 
     if let Some(Some(lv)) = constant_evaluate(e, expr_arena, schema, 0) {
@@ -207,7 +184,7 @@ fn aexpr_to_skip_batch_predicate_rec(
         }
     }
 
-    match expr_arena.get(e) {
+    let specialized = match expr_arena.get(e) {
         AExpr::Explode(_) => None,
         AExpr::Alias(_, _) => None,
         AExpr::Column(_) => None,
@@ -242,7 +219,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                             } else {
                                 let col_nc = col!(null_count: col);
                                 let idx_zero = lv!(idx: 0);
-                                eq_missing!(col_nc, idx_zero)
+                                eq!(col_nc, idx_zero)
                             }
                         },
                         not_null: {
@@ -260,7 +237,7 @@ fn aexpr_to_skip_batch_predicate_rec(
 
                             let col_nc = col!(null_count: col);
                             let len = col!(len);
-                            let all_nulls = eq_missing!(col_nc, len);
+                            let all_nulls = eq!(col_nc, len);
 
                             or!(all_nulls, min_gt, max_lt)
                         }
@@ -291,18 +268,18 @@ fn aexpr_to_skip_batch_predicate_rec(
                             } else {
                                 let col_nc = col!(null_count: col);
                                 let len = col!(len);
-                                eq_missing!(col_nc, len)
+                                eq!(col_nc, len)
                             }
                         },
                         not_null: {
                             let col_min = col!(min: col);
                             let col_max = col!(max: col);
-                            let min_eq = eq_missing!(col_min, lv_node);
-                            let max_eq = eq_missing!(col_max, lv_node);
+                            let min_eq = eq!(col_min, lv_node);
+                            let max_eq = eq!(col_max, lv_node);
 
                             let col_nc = col!(null_count: col);
                             let idx_zero = lv!(idx: 0);
-                            let no_nulls = eq_missing!(col_nc, idx_zero);
+                            let no_nulls = eq!(col_nc, idx_zero);
 
                             and!(no_nulls, min_eq, max_eq)
                         }
@@ -397,7 +374,7 @@ fn aexpr_to_skip_batch_predicate_rec(
         } => match function {
             FunctionExpr::Boolean(f) => match f {
                 #[cfg(feature = "is_in")]
-                BooleanFunction::IsIn => {
+                BooleanFunction::IsIn { .. } => {
                     let lv_node = input[1].node();
                     match (
                         into_column(input[0].node(), expr_arena, schema, 0),
@@ -442,7 +419,7 @@ fn aexpr_to_skip_batch_predicate_rec(
 
                             let col_nc = col!(null_count: col);
                             let idx_zero = lv!(idx: 0);
-                            let col_has_no_nulls = eq_missing!(col_nc, idx_zero);
+                            let col_has_no_nulls = eq!(col_nc, idx_zero);
 
                             let lv_has_not_nulls = has_no_nulls!(lv_node);
                             let null_case = or!(lv_has_not_nulls, col_has_no_nulls);
@@ -458,7 +435,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     // col(A).is_null() -> null_count(A) == 0
                     let col_nc = col!(null_count: col);
                     let idx_zero = lv!(idx: 0);
-                    Some(eq_missing!(col_nc, idx_zero))
+                    Some(eq!(col_nc, idx_zero))
                 },
                 BooleanFunction::IsNotNull => {
                     let col = into_column(input[0].node(), expr_arena, schema, 0)?;
@@ -466,7 +443,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     // col(A).is_not_null() -> null_count(A) == LEN
                     let col_nc = col!(null_count: col);
                     let len = col!(len);
-                    Some(eq_missing!(col_nc, len))
+                    Some(eq!(col_nc, len))
                 },
                 #[cfg(feature = "is_between")]
                 BooleanFunction::IsBetween { closed } => {
@@ -524,5 +501,43 @@ fn aexpr_to_skip_batch_predicate_rec(
         AExpr::Window { .. } => None,
         AExpr::Slice { .. } => None,
         AExpr::Len => None,
+    };
+
+    if let Some(specialized) = specialized {
+        return Some(specialized);
     }
+
+    // If we don't have a specialized implementation we can check if the whole block is constant
+    // and fill that value in. This is especially useful when filtering hive partitions which are
+    // filtered using this expression and which set their min == max.
+    //
+    // Essentially, what this does is
+    //     E -> all(col(A_min) == col(A_max) & col(A_nc) == 0 for A in LIVE(E)) & ~(E)
+
+    let live_columns = PlIndexMap::from_iter(aexpr_to_leaf_names_iter(e, expr_arena).map(|col| {
+        let min_name = format_pl_smallstr!("{col}_min");
+        (col, min_name)
+    }));
+    // Rename all uses of column names with the min value.
+    let expr = rename_columns(e, expr_arena, &live_columns);
+    let mut expr = expr_arena.add(AExpr::Function {
+        input: vec![ExprIR::new(expr, OutputName::Alias(PlSmallStr::EMPTY))],
+        function: FunctionExpr::Boolean(BooleanFunction::Not),
+        options: FunctionOptions {
+            collect_groups: crate::plans::ApplyOptions::ElementWise,
+            ..Default::default()
+        },
+    });
+    for col in live_columns.keys() {
+        let col_min = col!(min: col);
+        let col_max = col!(max: col);
+        let col_nc = col!(null_count: col);
+
+        let min_is_max = binexpr!(Eq, col_min, col_max); // Eq so that (None == None) == None
+        let idx_zero = lv!(idx: 0);
+        let has_no_nulls = eq!(col_nc, idx_zero);
+
+        expr = and!(min_is_max, has_no_nulls, expr);
+    }
+    Some(expr)
 }

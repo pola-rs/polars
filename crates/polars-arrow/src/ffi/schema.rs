@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::ptr;
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::ArrowSchema;
@@ -272,6 +272,7 @@ unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
         "I" => ArrowDataType::UInt32,
         "l" => ArrowDataType::Int64,
         "L" => ArrowDataType::UInt64,
+        "_pli128" => ArrowDataType::Int128,
         "e" => ArrowDataType::Float16,
         "f" => ArrowDataType::Float32,
         "g" => ArrowDataType::Float64,

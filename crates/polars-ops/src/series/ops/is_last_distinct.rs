@@ -10,7 +10,7 @@ use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
-    if s.len() == 0 {
+    if s.is_empty() {
         return Ok(BooleanChunked::full_null(s.name().clone(), 0));
     } else if s.len() == 1 {
         return Ok(BooleanChunked::new(s.name().clone(), &[true]));
@@ -76,31 +76,19 @@ fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
                     first_true_found = true;
                     all_found &= first_true_found;
                     out.set(idx, true);
-                    if all_found {
-                        Some(())
-                    } else {
-                        None
-                    }
+                    if all_found { Some(()) } else { None }
                 },
                 Some(false) if !first_false_found => {
                     first_false_found = true;
                     all_found &= first_false_found;
                     out.set(idx, true);
-                    if all_found {
-                        Some(())
-                    } else {
-                        None
-                    }
+                    if all_found { Some(()) } else { None }
                 },
                 None if !first_null_found => {
                     first_null_found = true;
                     all_found &= first_null_found;
                     out.set(idx, true);
-                    if all_found {
-                        Some(())
-                    } else {
-                        None
-                    }
+                    if all_found { Some(()) } else { None }
                 },
                 _ => None,
             });

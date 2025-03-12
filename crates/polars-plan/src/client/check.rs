@@ -1,4 +1,4 @@
-use polars_core::error::{polars_err, PolarsResult};
+use polars_core::error::{PolarsResult, polars_err};
 use polars_io::path_utils::is_cloud_url;
 
 use crate::dsl::{DslPlan, FileScan, ScanSources};
@@ -11,9 +11,9 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
     for plan_node in dsl.into_iter() {
         match plan_node {
             #[cfg(feature = "python")]
-            DslPlan::PythonScan { .. } => return ineligible_error("contains Python scan"),
+            DslPlan::PythonScan { .. } => (),
             DslPlan::GroupBy { apply, .. } if apply.is_some() => {
-                return ineligible_error("contains map groups")
+                return ineligible_error("contains map groups");
             },
             DslPlan::Scan {
                 sources, scan_type, ..
@@ -32,7 +32,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                     },
                 }
 
-                if matches!(scan_type, FileScan::Anonymous { .. }) {
+                if matches!(&**scan_type, FileScan::Anonymous { .. }) {
                     return ineligible_error("contains anonymous scan");
                 }
             },

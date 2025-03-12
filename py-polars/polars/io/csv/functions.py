@@ -171,7 +171,7 @@ def read_csv(
         Stop reading from CSV file after reading `n_rows`.
         During multi-threaded parsing, an upper bound of `n_rows`
         rows cannot be guaranteed.
-    encoding : {'utf8', 'utf8-lossy', ...}
+    encoding : {'utf8', 'utf8-lossy', 'windows-1252', 'windows-1252-lossy', ...}
         Lossy means that invalid utf8 values are replaced with `�`
         characters. When using other encodings than `utf8` or
         `utf8-lossy`, the input is first decoded in memory with
@@ -228,16 +228,18 @@ def read_csv(
     --------
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
 
+    Warnings
+    --------
+    Calling `read_csv().lazy()` is an antipattern as this forces Polars to materialize
+    a full csv file and therefore cannot push any optimizations into the reader.
+    Therefore always prefer `scan_csv` if you want to work with `LazyFrame` s.
+
     Notes
     -----
     If the schema is inferred incorrectly (e.g. as `pl.Int64` instead of `pl.Float64`),
     try to increase the number of lines used to infer the schema with
     `infer_schema_length` or override the inferred dtype for those columns with
     `schema_overrides`.
-
-    This operation defaults to a `rechunk` operation at the end, meaning that all data
-    will be stored continuously in memory. Set `rechunk=False` if you are benchmarking
-    the csv-reader. A `rechunk` is an expensive operation.
 
     Examples
     --------

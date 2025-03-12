@@ -54,7 +54,7 @@ struct CountStarExpr {
     // Paths to the input files
     sources: ScanSources,
     // File Type
-    scan_type: FileScan,
+    scan_type: Box<FileScan>,
     // Column Alias
     alias: Option<PlSmallStr>,
 }
@@ -74,7 +74,7 @@ fn visit_logical_plan_for_scan_paths(
                 Buffers(Vec<MemSlice>),
             }
 
-            let mut scan_type: Option<FileScan> = None;
+            let mut scan_type: Option<Box<FileScan>> = None;
             let mut sources = None;
             for input in inputs {
                 match visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, true) {
@@ -82,14 +82,14 @@ fn visit_logical_plan_for_scan_paths(
                         match (expr.sources, &mut sources) {
                             (
                                 ScanSources::Paths(paths),
-                                Some(MutableSources::Paths(ref mut mutable_paths)),
+                                Some(MutableSources::Paths(mutable_paths)),
                             ) => mutable_paths.extend_from_slice(&paths[..]),
                             (ScanSources::Paths(paths), None) => {
                                 sources = Some(MutableSources::Paths(paths.to_vec()))
                             },
                             (
                                 ScanSources::Buffers(buffers),
-                                Some(MutableSources::Buffers(ref mut mutable_buffers)),
+                                Some(MutableSources::Buffers(mutable_buffers)),
                             ) => mutable_buffers.extend_from_slice(&buffers[..]),
                             (ScanSources::Buffers(buffers), None) => {
                                 sources = Some(MutableSources::Buffers(buffers.to_vec()))
@@ -101,8 +101,8 @@ fn visit_logical_plan_for_scan_paths(
                             None => scan_type = Some(expr.scan_type),
                             Some(scan_type) => {
                                 // All scans must be of the same type (e.g. csv / parquet)
-                                if std::mem::discriminant(scan_type)
-                                    != std::mem::discriminant(&expr.scan_type)
+                                if std::mem::discriminant(&**scan_type)
+                                    != std::mem::discriminant(&*expr.scan_type)
                                 {
                                     return None;
                                 }
@@ -125,7 +125,7 @@ fn visit_logical_plan_for_scan_paths(
         },
         IR::Scan {
             scan_type, sources, ..
-        } if !matches!(scan_type, FileScan::Anonymous { .. }) => Some(CountStarExpr {
+        } if !matches!(&**scan_type, FileScan::Anonymous { .. }) => Some(CountStarExpr {
             sources: sources.clone(),
             scan_type: scan_type.clone(),
             node,

@@ -119,6 +119,20 @@ fn visualize_plan_rec(
             #[allow(unreachable_patterns)]
             _ => todo!(),
         },
+        PhysNodeKind::PartitionSink {
+            input, file_type, ..
+        } => match file_type {
+            #[cfg(feature = "parquet")]
+            FileType::Parquet(_) => ("parquet-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "ipc")]
+            FileType::Ipc(_) => ("ipc-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "csv")]
+            FileType::Csv(_) => ("csv-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "json")]
+            FileType::Json(_) => ("json-partition-sink".to_string(), from_ref(input)),
+            #[allow(unreachable_patterns)]
+            _ => todo!(),
+        },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
             ("in-memory-map".to_string(), from_ref(input))
         },
@@ -163,7 +177,7 @@ fn visualize_plan_rec(
             predicate,
             file_options,
         } => {
-            let name = match scan_type {
+            let name = match &**scan_type {
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet { .. } => "parquet-source",
                 #[cfg(feature = "csv")]
@@ -201,7 +215,7 @@ fn visualize_plan_rec(
                 write!(f, r#"\nrow index: name: "{}", offset: {}"#, name, offset).unwrap();
             }
 
-            if let Some((offset, len)) = file_options.slice {
+            if let Some((offset, len)) = file_options.pre_slice {
                 write!(f, "\nslice: offset: {}, len: {}", offset, len).unwrap();
             }
 
@@ -247,7 +261,7 @@ fn visualize_plan_rec(
                 escape_graphviz(&format!("{:?}", args.how))
             )
             .unwrap();
-            if args.join_nulls {
+            if args.nulls_equal {
                 write!(label, r"\njoin-nulls").unwrap();
             }
             (label, &[*input_left, *input_right][..])

@@ -1,18 +1,18 @@
 use std::ops::Range;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_io::predicates::ScanIOPredicate;
-use polars_utils::index::AtomicIdxSize;
+use polars_utils::IdxSize;
 
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskPriority};
 use crate::async_executor::AbortOnDropHandle;
-use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 
 #[cfg(feature = "csv")]
@@ -20,6 +20,8 @@ pub mod csv;
 #[cfg(feature = "ipc")]
 pub mod ipc;
 pub mod multi_scan;
+#[cfg(feature = "json")]
+pub mod ndjson;
 #[cfg(feature = "parquet")]
 pub mod parquet;
 
@@ -166,16 +168,17 @@ impl PhaseOutcomeToken {
     }
 
     /// Indicate that the phase was stopped before finishing.
-    fn stop(&self) {
+    pub fn stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
     }
 
     /// Returns whether the phase was stopped before finishing.
-    fn was_stopped(&self) -> bool {
+    pub fn was_stopped(&self) -> bool {
         self.stop.load(Ordering::Relaxed)
     }
+
     /// Returns whether the phase was finished completely.
-    fn did_finish(&self) -> bool {
+    pub fn did_finish(&self) -> bool {
         !self.was_stopped()
     }
 }
@@ -280,6 +283,6 @@ pub trait SourceNode: Sized + Send + Sync {
         output_recv: Receiver<SourceOutput>,
         state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     );
 }

@@ -36,7 +36,7 @@ pub(super) fn streamable_join(args: &JoinArgs) -> bool {
                 JoinCoalesce::JoinSpecific | JoinCoalesce::CoalesceColumns
             )
         },
-        JoinType::Full { .. } => true,
+        JoinType::Full => true,
         _ => false,
     };
     supported && !args.validation.needs_checks()

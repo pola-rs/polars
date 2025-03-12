@@ -1,10 +1,10 @@
 use polars_plan::prelude::*;
 use pyo3::prelude::*;
 
+use crate::PyExpr;
 use crate::conversion::Wrap;
 use crate::expr::ToExprs;
 use crate::prelude::DataType;
-use crate::PyExpr;
 
 #[pyfunction]
 pub fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {

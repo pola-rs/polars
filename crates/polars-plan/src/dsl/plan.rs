@@ -13,7 +13,7 @@ use super::*;
 // (Major, Minor)
 // Add a field -> increment minor
 // Remove or modify a field -> increment major and reset minor
-pub static DSL_VERSION: (u16, u16) = (0, 0);
+pub static DSL_VERSION: (u16, u16) = (0, 1);
 static DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -33,8 +33,8 @@ pub enum DslPlan {
         sources: ScanSources,
         /// Materialized at IR except for AnonymousScan.
         file_info: Option<FileInfo>,
-        file_options: FileScanOptions,
-        scan_type: FileScan,
+        file_options: Box<FileScanOptions>,
+        scan_type: Box<FileScan>,
         /// Local use cases often repeatedly collect the same `LazyFrame` (e.g. in interactive notebook use-cases),
         /// so we cache the IR conversion here, as the path expansion can be quite slow (especially for cloud paths).
         #[cfg_attr(feature = "serde", serde(skip))]

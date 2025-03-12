@@ -115,7 +115,7 @@ fn test_parquet_statistics_no_skip() {
 fn test_parquet_statistics() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     init_files();
-    std::env::set_var("POLARS_PANIC_IF_PARQUET_PARSED", "1");
+    unsafe { std::env::set_var("POLARS_PANIC_IF_PARQUET_PARSED", "1") };
     let par = true;
 
     // Test single predicates
@@ -136,7 +136,7 @@ fn test_parquet_statistics() -> PolarsResult<()> {
 
     // issue: 13427
     let out = scan_foods_parquet(par)
-        .filter(col("calories").is_in(lit(Series::new("".into(), [0, 500]))))
+        .filter(col("calories").is_in(lit(Series::new("".into(), [0, 500])), false))
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
 
@@ -350,7 +350,7 @@ fn test_parquet_statistics() -> PolarsResult<()> {
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
 
-    std::env::remove_var("POLARS_PANIC_IF_PARQUET_PARSED");
+    unsafe { std::env::remove_var("POLARS_PANIC_IF_PARQUET_PARSED") };
 
     Ok(())
 }
@@ -399,7 +399,7 @@ fn test_scan_parquet_limit_9001() {
             let sliced = options.slice.unwrap();
             sliced.1 == 3
         },
-        IR::Scan { file_options, .. } => file_options.slice == Some((0, 3)),
+        IR::Scan { file_options, .. } => file_options.pre_slice == Some((0, 3)),
         _ => true,
     });
 }

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::fmt::Debug;
 
 use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
@@ -177,7 +178,7 @@ impl TakeChunked for Series {
                 take_chunked_unchecked_struct(ca, by, sorted, avoid_sharing).into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => take_unchecked_object(self, by, sorted),
+            Object(_) => take_unchecked_object(self, by, sorted),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
                 let ca = self.decimal().unwrap();
@@ -280,7 +281,7 @@ impl TakeChunked for Series {
                 take_opt_chunked_unchecked_struct(ca, by, avoid_sharing).into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => take_opt_unchecked_object(self, by, avoid_sharing),
+            Object(_) => take_opt_unchecked_object(self, by, avoid_sharing),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
                 let ca = self.decimal().unwrap();
@@ -431,11 +432,9 @@ unsafe fn take_unchecked_object<const B: u64>(
     by: &[ChunkId<B>],
     _sorted: IsSorted,
 ) -> Series {
-    let DataType::Object(_, reg) = s.dtype() else {
-        unreachable!()
-    };
-    let reg = reg.as_ref().unwrap();
-    let mut builder = (*reg.builder_constructor)(s.name().clone(), by.len());
+    use polars_core::chunked_array::object::registry::get_object_builder;
+
+    let mut builder = get_object_builder(s.name().clone(), by.len());
 
     by.iter().for_each(|chunk_id| {
         let (chunk_idx, array_idx) = chunk_id.extract();
@@ -451,11 +450,9 @@ unsafe fn take_opt_unchecked_object<const B: u64>(
     by: &[ChunkId<B>],
     _allow_sharing: bool,
 ) -> Series {
-    let DataType::Object(_, reg) = s.dtype() else {
-        unreachable!()
-    };
-    let reg = reg.as_ref().unwrap();
-    let mut builder = (*reg.builder_constructor)(s.name().clone(), by.len());
+    use polars_core::chunked_array::object::registry::get_object_builder;
+
+    let mut builder = get_object_builder(s.name().clone(), by.len());
 
     by.iter().for_each(|chunk_id| {
         if chunk_id.is_null() {

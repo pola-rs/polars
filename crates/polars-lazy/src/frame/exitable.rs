@@ -1,6 +1,6 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, channel};
 
 use polars_core::POOL;
 
@@ -8,7 +8,7 @@ use super::*;
 
 impl LazyFrame {
     pub fn collect_concurrently(self) -> PolarsResult<InProcessQuery> {
-        let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
+        let (mut state, mut physical_plan, _) = self.prepare_collect(false, None)?;
 
         let (tx, rx) = channel();
         let token = state.cancel_token();

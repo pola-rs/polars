@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(feature = "decompress")]
 use std::io::Read;
 use std::mem::MaybeUninit;
@@ -7,6 +8,9 @@ use super::parser::next_line_position;
 use super::parser::next_line_position_naive;
 use super::splitfields::SplitFields;
 
+/// TODO: Remove this in favor of parallel CountLines::analyze_chunk
+///
+/// (see https://github.com/pola-rs/polars/issues/19078)
 pub(crate) fn get_file_chunks(
     bytes: &[u8],
     n_chunks: usize,

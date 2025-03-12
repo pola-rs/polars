@@ -1,5 +1,7 @@
 use std::ops::DerefMut;
 
+use polars_compute::rolling::QuantileMethod;
+
 use super::*;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
@@ -177,7 +179,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
         let tul = self.0.time_unit();
         match rhs.dtype() {
-            DataType::Int64 => Ok((&self.0 .0 * rhs.i64().unwrap())
+            DataType::Int64 => Ok((&self.0.0 * rhs.i64().unwrap())
                 .into_duration(tul)
                 .into_series()),
             dt if dt.is_integer() => {
@@ -185,7 +187,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 self.multiply(&rhs)
             },
             dt if dt.is_float() => {
-                let phys = &self.0 .0;
+                let phys = &self.0.0;
                 let phys_float = phys.cast(dt).unwrap();
                 let out = std::ops::Mul::mul(&phys_float, rhs)?
                     .cast(&DataType::Int64)
@@ -205,7 +207,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 if tul == *tur {
                     // Returns a constant as f64.
                     Ok(std::ops::Div::div(
-                        &self.0 .0.cast(&DataType::Float64).unwrap(),
+                        &self.0.0.cast(&DataType::Float64).unwrap(),
                         &rhs.duration().unwrap().0.cast(&DataType::Float64).unwrap(),
                     )?
                     .into_series())
@@ -214,7 +216,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                     self.divide(&rhs)
                 }
             },
-            DataType::Int64 => Ok((&self.0 .0 / rhs.i64().unwrap())
+            DataType::Int64 => Ok((&self.0.0 / rhs.i64().unwrap())
                 .into_duration(tul)
                 .into_series()),
             dt if dt.is_integer() => {
@@ -222,7 +224,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 self.divide(&rhs)
             },
             dt if dt.is_float() => {
-                let phys = &self.0 .0;
+                let phys = &self.0.0;
                 let phys_float = phys.cast(dt).unwrap();
                 let out = std::ops::Div::div(&phys_float, rhs)?
                     .cast(&DataType::Int64)
@@ -535,6 +537,10 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_phys_any(&self) -> &dyn Any {
+        self.0.physical()
     }
 
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

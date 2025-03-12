@@ -1,8 +1,10 @@
 use std::any::Any;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
+use polars_utils::IdxSize;
 
 use super::Splitable;
+use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::array::{Array, FromFfi, MutableArray, ToFfi};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{ArrowDataType, PhysicalType};
@@ -211,5 +213,78 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for NullArray {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let dtype = array.dtype().clone();
         Self::try_new(dtype, array.array().len())
+    }
+}
+
+pub struct NullArrayBuilder {
+    dtype: ArrowDataType,
+    length: usize,
+}
+
+impl NullArrayBuilder {
+    pub fn new(dtype: ArrowDataType) -> Self {
+        Self { dtype, length: 0 }
+    }
+}
+
+impl StaticArrayBuilder for NullArrayBuilder {
+    type Array = NullArray;
+
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
+    }
+
+    fn reserve(&mut self, _additional: usize) {}
+
+    fn freeze(self) -> NullArray {
+        NullArray::new(self.dtype, self.length)
+    }
+
+    fn freeze_reset(&mut self) -> Self::Array {
+        let out = NullArray::new(self.dtype.clone(), self.length);
+        self.length = 0;
+        out
+    }
+
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        self.length += length;
+    }
+
+    fn subslice_extend(
+        &mut self,
+        _other: &NullArray,
+        _start: usize,
+        length: usize,
+        _share: ShareStrategy,
+    ) {
+        self.length += length;
+    }
+
+    fn subslice_extend_repeated(
+        &mut self,
+        _other: &NullArray,
+        _start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        self.length += length * repeats;
+    }
+
+    unsafe fn gather_extend(
+        &mut self,
+        _other: &NullArray,
+        idxs: &[IdxSize],
+        _share: ShareStrategy,
+    ) {
+        self.length += idxs.len();
+    }
+
+    fn opt_gather_extend(&mut self, _other: &NullArray, idxs: &[IdxSize], _share: ShareStrategy) {
+        self.length += idxs.len();
     }
 }

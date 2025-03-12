@@ -122,9 +122,7 @@ fn interpolate_nearest(s: &Series) -> Series {
             let s = s.to_physical_repr();
 
             macro_rules! dispatch {
-                ($ca:expr) => {{
-                    interpolate_impl($ca, near_interp).into_series()
-                }};
+                ($ca:expr) => {{ interpolate_impl($ca, near_interp).into_series() }};
             }
             let out = downcast_as_macro_arg_physical!(s, dispatch);
             out.cast(logical).unwrap()

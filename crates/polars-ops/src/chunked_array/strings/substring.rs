@@ -1,7 +1,9 @@
+use std::cmp::Ordering;
+
 use arrow::array::View;
 use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary_elementwise};
 use polars_core::prelude::{ChunkFullNull, Int64Chunked, StringChunked, UInt64Chunked};
-use polars_error::{polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_ensure};
 
 fn head_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
     if let (Some(str_val), Some(n)) = (opt_str_val, opt_n) {
@@ -13,10 +15,9 @@ fn head_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
 }
 
 fn head_binary_values(str_val: &str, n: i64) -> usize {
-    if n == 0 {
-        0
-    } else {
-        let end_idx = if n > 0 {
+    match n.cmp(&0) {
+        Ordering::Equal => 0,
+        Ordering::Greater => {
             if n as usize >= str_val.len() {
                 return str_val.len();
             }
@@ -26,7 +27,8 @@ fn head_binary_values(str_val: &str, n: i64) -> usize {
                 .nth(n as usize)
                 .map(|(idx, _)| idx)
                 .unwrap_or(str_val.len())
-        } else {
+        },
+        _ => {
             // End after the nth codepoint from the end.
             str_val
                 .char_indices()
@@ -34,8 +36,7 @@ fn head_binary_values(str_val: &str, n: i64) -> usize {
                 .nth((-n - 1) as usize)
                 .map(|(idx, _)| idx)
                 .unwrap_or(0)
-        };
-        end_idx
+        },
     }
 }
 
@@ -51,10 +52,10 @@ fn tail_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
 fn tail_binary_values(str_val: &str, n: i64) -> usize {
     // `max_len` is guaranteed to be at least the total number of characters.
     let max_len = str_val.len();
-    if n == 0 {
-        max_len
-    } else {
-        let start_idx = if n > 0 {
+
+    match n.cmp(&0) {
+        Ordering::Equal => max_len,
+        Ordering::Greater => {
             if n as usize >= max_len {
                 return 0;
             }
@@ -65,15 +66,15 @@ fn tail_binary_values(str_val: &str, n: i64) -> usize {
                 .nth((n - 1) as usize)
                 .map(|(idx, _)| idx)
                 .unwrap_or(0)
-        } else {
+        },
+        _ => {
             // Start after the nth codepoint
             str_val
                 .char_indices()
                 .nth((-n) as usize)
                 .map(|(idx, _)| idx)
                 .unwrap_or(max_len)
-        };
-        start_idx
+        },
     }
 }
 

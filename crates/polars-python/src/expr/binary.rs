@@ -1,8 +1,8 @@
 use polars::prelude::DataType;
 use pyo3::prelude::*;
 
-use crate::prelude::Wrap;
 use crate::PyExpr;
+use crate::prelude::Wrap;
 
 #[pymethods]
 impl PyExpr {
@@ -53,7 +53,7 @@ impl PyExpr {
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "Invalid endianness: {kind}. Valid values are \"little\" or \"big\"."
-                )))
+                )));
             },
         };
         Ok(self

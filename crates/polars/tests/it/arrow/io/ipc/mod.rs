@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::datatypes::{ArrowSchema, ArrowSchemaRef, Field};
-use arrow::io::ipc::read::{read_file_metadata, FileReader};
-use arrow::io::ipc::write::*;
 use arrow::io::ipc::IpcField;
+use arrow::io::ipc::read::{FileReader, read_file_metadata};
+use arrow::io::ipc::write::*;
 use arrow::record_batch::RecordBatchT;
 use polars::prelude::PlSmallStr;
 use polars_error::*;

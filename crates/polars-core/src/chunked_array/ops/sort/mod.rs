@@ -19,12 +19,12 @@ use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
+use crate::POOL;
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
-use crate::POOL;
 
 fn partition_nulls<T: Copy>(
     values: &mut [T],
@@ -208,7 +208,7 @@ where
         let mut vals = Vec::with_capacity(ca.len());
 
         if !options.nulls_last {
-            let iter = std::iter::repeat(T::Native::default()).take(null_count);
+            let iter = std::iter::repeat_n(T::Native::default(), null_count);
             vals.extend(iter);
         }
 
@@ -225,7 +225,7 @@ where
         sort_impl_unstable(mut_slice, options);
 
         if options.nulls_last {
-            vals.extend(std::iter::repeat(T::Native::default()).take(ca.null_count()));
+            vals.extend(std::iter::repeat_n(T::Native::default(), ca.null_count()));
         }
 
         let arr = PrimitiveArray::new(
@@ -534,7 +534,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                     length_so_far = values.len() as i64;
                     offsets.push(length_so_far);
                 }
-                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
+                offsets.extend(std::iter::repeat_n(length_so_far, null_count));
 
                 // SAFETY: offsets are correctly created.
                 let arr = unsafe {
@@ -547,7 +547,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                 ChunkedArray::with_chunk(self.name().clone(), arr)
             },
             (_, false) => {
-                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
+                offsets.extend(std::iter::repeat_n(length_so_far, null_count));
 
                 for val in v {
                     values.extend_from_slice(val);
@@ -593,11 +593,24 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         let mut idx = (0..(arr.len() as IdxSize)).collect::<Vec<_>>();
 
         let argsort = |args| {
-            sort_unstable_by_branch(args, options, |a, b| unsafe {
-                let a = arr.value_unchecked(*a as usize);
-                let b = arr.value_unchecked(*b as usize);
-                a.tot_cmp(&b)
-            });
+            if options.maintain_order {
+                sort_by_branch(
+                    args,
+                    options.descending,
+                    |a, b| unsafe {
+                        let a = arr.value_unchecked(*a as usize);
+                        let b = arr.value_unchecked(*b as usize);
+                        a.tot_cmp(&b)
+                    },
+                    options.multithreaded,
+                );
+            } else {
+                sort_unstable_by_branch(args, options, |a, b| unsafe {
+                    let a = arr.value_unchecked(*a as usize);
+                    let b = arr.value_unchecked(*b as usize);
+                    a.tot_cmp(&b)
+                });
+            }
         };
 
         if self.null_count() == 0 {

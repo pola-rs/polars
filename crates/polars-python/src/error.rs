@@ -4,20 +4,20 @@ use std::io::{Error as IoError, ErrorKind};
 
 use polars::prelude::PolarsError;
 use polars_error::PolarsWarning;
+use pyo3::PyTypeInfo;
 use pyo3::exceptions::{
     PyDeprecationWarning, PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError,
     PyRuntimeError, PyUserWarning,
 };
 use pyo3::prelude::*;
-use pyo3::PyTypeInfo;
 
+use crate::Wrap;
 use crate::exceptions::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
     InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
     SQLInterfaceError, SQLSyntaxError, SchemaError, SchemaFieldNotFoundError, ShapeError,
     StringCacheMismatchError, StructFieldNotFoundError,
 };
-use crate::Wrap;
 
 pub enum PyPolarsErr {
     Polars(PolarsError),
@@ -68,6 +68,9 @@ impl From<PyPolarsErr> for PyErr {
         use PyPolarsErr::*;
         match err {
             Polars(err) => match err {
+                PolarsError::AssertionError(err) => {
+                    pyo3::exceptions::PyAssertionError::new_err(err.to_string())
+                },
                 PolarsError::ColumnNotFound(name) => ColumnNotFoundError::new_err(name.to_string()),
                 PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
                 PolarsError::Duplicate(err) => DuplicateError::new_err(err.to_string()),

@@ -1,6 +1,6 @@
 //! Boolean operators of [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics).
 use crate::array::{Array, BooleanArray};
-use crate::bitmap::{binary, quaternary, ternary, unary, Bitmap};
+use crate::bitmap::{Bitmap, binary, quaternary, ternary, unary};
 use crate::datatypes::ArrowDataType;
 use crate::scalar::BooleanScalar;
 

@@ -3,17 +3,16 @@ use std::path::Path;
 use memchr::memchr2_iter;
 use num_traits::Pow;
 use polars_core::prelude::*;
-use polars_core::{config, POOL};
+use polars_core::{POOL, config};
 use polars_error::feature_gated;
-use polars_utils::index::Bounded;
 use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
+use super::CsvParseOptions;
 use super::buffer::Buffer;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
-use super::CsvParseOptions;
 use crate::path_utils::is_cloud_url;
 use crate::utils::compression::maybe_decompress_bytes;
 
@@ -43,7 +42,7 @@ pub fn count_rows(
     let owned = &mut vec![];
     let reader_bytes = maybe_decompress_bytes(mmap.as_ref(), owned)?;
 
-    count_rows_from_slice(
+    count_rows_from_slice_par(
         reader_bytes,
         separator,
         quote_char,
@@ -55,7 +54,7 @@ pub fn count_rows(
 
 /// Read the number of rows without parsing columns
 /// useful for count(*) queries
-pub fn count_rows_from_slice(
+pub fn count_rows_from_slice_par(
     mut bytes: &[u8],
     separator: u8,
     quote_char: Option<u8>,
@@ -89,27 +88,55 @@ pub fn count_rows_from_slice(
     })
     .unwrap_or(1);
 
+    if n_threads == 1 {
+        return count_rows_from_slice(bytes, quote_char, comment_prefix, eol_char, has_header);
+    }
+
     let file_chunks: Vec<(usize, usize)> =
         get_file_chunks(bytes, n_threads, None, separator, quote_char, eol_char);
 
     let iter = file_chunks.into_par_iter().map(|(start, stop)| {
-        let local_bytes = &bytes[start..stop];
-        let row_iterator = SplitLines::new(local_bytes, quote_char, eol_char, comment_prefix);
+        let bytes = &bytes[start..stop];
+
         if comment_prefix.is_some() {
-            Ok(row_iterator
-                .filter(|line| !line.is_empty() && !is_comment_line(line, comment_prefix))
-                .count())
+            SplitLines::new(bytes, quote_char, eol_char, comment_prefix)
+                .filter(|line| !is_comment_line(line, comment_prefix))
+                .count()
         } else {
-            Ok(row_iterator.count())
+            CountLines::new(quote_char, eol_char).count(bytes).0
         }
     });
 
-    let count_result: PolarsResult<usize> = POOL.install(|| iter.sum());
+    let n: usize = POOL.install(|| iter.sum());
 
-    match count_result {
-        Ok(val) => Ok(val - (has_header as usize)),
-        Err(err) => Err(err),
+    Ok(n - (has_header as usize))
+}
+
+/// Read the number of rows without parsing columns
+pub fn count_rows_from_slice(
+    mut bytes: &[u8],
+    quote_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
+    eol_char: u8,
+    has_header: bool,
+) -> PolarsResult<usize> {
+    for _ in 0..bytes.len() {
+        if bytes[0] != eol_char {
+            break;
+        }
+
+        bytes = &bytes[1..];
     }
+
+    let n = if comment_prefix.is_some() {
+        SplitLines::new(bytes, quote_char, eol_char, comment_prefix)
+            .filter(|line| !is_comment_line(line, comment_prefix))
+            .count()
+    } else {
+        CountLines::new(quote_char, eol_char).count(bytes).0
+    };
+
+    Ok(n - (has_header as usize))
 }
 
 /// Skip the utf-8 Byte Order Mark.
@@ -740,7 +767,7 @@ impl CountLines {
         }
     }
 
-    // Returns count and offset in slice
+    /// Returns count and offset to split for remainder in slice.
     #[cfg(feature = "simd")]
     pub fn count(&self, bytes: &[u8]) -> (usize, usize) {
         let mut total_idx = 0;
@@ -879,10 +906,10 @@ pub(super) fn skip_this_line_naive(input: &[u8], eol_char: u8) -> &[u8] {
 /// # Arguments
 /// * `bytes` - input to parse
 /// * `offset` - offset in bytes in total input. This is 0 if single threaded. If multi-threaded every
-///              thread has a different offset.
+///   thread has a different offset.
 /// * `projection` - Indices of the columns to project.
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
-///               fields are written to the buffers. The UTF8 data will be parsed later.
+///   fields are written to the buffers. The UTF8 data will be parsed later.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn parse_lines(
     mut bytes: &[u8],

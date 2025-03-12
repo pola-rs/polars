@@ -507,7 +507,7 @@ def test_decimal_streaming() -> None:
         {"group": choice("abc"), "value": randrange(10**32) / scale} for _ in range(20)
     ]
     lf = pl.LazyFrame(data, schema_overrides={"value": pl.Decimal(scale=18)})
-    assert lf.group_by("group").agg(pl.sum("value")).collect(streaming=True).sort(
+    assert lf.group_by("group").agg(pl.sum("value")).collect(engine="streaming").sort(
         "group"
     ).to_dict(as_series=False) == {
         "group": ["a", "b", "c"],

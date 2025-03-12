@@ -1,6 +1,6 @@
 use std::collections::BinaryHeap;
 
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, Sender, channel};
 
 /// Stores the state for which inserter we need to poll.
 enum PollState {
@@ -55,6 +55,31 @@ impl<T: Ord> Linearizer<T> {
             receivers,
             poll_state: PollState::PollAll,
             heap: BinaryHeap::with_capacity(num_inserters),
+        };
+        (slf, inserters)
+    }
+
+    pub fn new_with_maintain_order(
+        num_inserters: usize,
+        buffer_size: usize,
+        maintain_order: bool,
+    ) -> (Self, Vec<Inserter<T>>) {
+        if maintain_order {
+            return Self::new(num_inserters, buffer_size);
+        }
+
+        let (sender, receiver) = channel(buffer_size * num_inserters);
+        let receivers = vec![receiver];
+        let inserters = (0..num_inserters)
+            .map(|_| Inserter {
+                sender: sender.clone(),
+            })
+            .collect();
+
+        let slf = Self {
+            receivers,
+            poll_state: PollState::PollAll,
+            heap: BinaryHeap::with_capacity(1),
         };
         (slf, inserters)
     }

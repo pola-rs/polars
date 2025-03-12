@@ -1,9 +1,9 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
-use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::FooterRef;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use arrow_format::ipc::planus::ReadAsRoot;
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};

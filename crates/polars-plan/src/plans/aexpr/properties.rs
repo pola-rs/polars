@@ -64,7 +64,7 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
         // for inspection. (e.g. `is_in(<literal>)`).
         #[cfg(feature = "is_in")]
         Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+            function: FunctionExpr::Boolean(BooleanFunction::IsIn { .. }),
             input,
             ..
         } => (|| {
@@ -92,12 +92,13 @@ where
 {
     nodes
         .iter()
-        .all(|n| is_elementwise_rec(expr_arena.get(n.into()), expr_arena))
+        .all(|n| is_elementwise_rec(n.into(), expr_arena))
 }
 
 /// Recursive variant of `is_elementwise`
-pub fn is_elementwise_rec<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>) -> bool {
+pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     let mut stack = unitvec![];
+    let mut ae = expr_arena.get(node);
 
     loop {
         if !is_elementwise(&mut stack, ae, expr_arena) {
@@ -288,7 +289,7 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                 for name in aexpr_to_leaf_names(agg, expr_arena) {
                     let dtype = _input_schema.get(&name).unwrap();
 
-                    if let DataType::Object(_, _) = dtype {
+                    if let DataType::Object(_) = dtype {
                         return false;
                     }
                 }

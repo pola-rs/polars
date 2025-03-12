@@ -9,8 +9,8 @@ use std::ops::{Deref, DerefMut};
 mod schema;
 
 pub use any_value::*;
-use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::bitmask::BitMask;
 pub use arrow::legacy::utils::*;
 pub use arrow::trusted_len::TrustMyLength;
 use flatten::*;
@@ -21,8 +21,8 @@ pub use series::*;
 pub use supertype::*;
 pub use {arrow, rayon};
 
-use crate::prelude::*;
 use crate::POOL;
+use crate::prelude::*;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);

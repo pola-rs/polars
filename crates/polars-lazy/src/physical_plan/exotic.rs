@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
+use polars_expr::{ExpressionConversionState, create_physical_expr};
 
 use crate::prelude::*;
 

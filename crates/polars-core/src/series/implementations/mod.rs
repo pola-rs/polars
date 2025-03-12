@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
@@ -27,12 +28,14 @@ mod time;
 use std::any::Any;
 use std::borrow::Cow;
 
+use polars_compute::rolling::QuantileMethod;
+
 use super::*;
+use crate::chunked_array::AsSinglePtr;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
-use crate::chunked_array::AsSinglePtr;
 
 // Utility wrapper struct
 pub(crate) struct SeriesWrap<T>(pub T);
@@ -446,6 +449,10 @@ macro_rules! impl_dyn_series {
 
             fn as_any_mut(&mut self) -> &mut dyn Any {
                 &mut self.0
+            }
+
+            fn as_phys_any(&self) -> &dyn Any {
+                &self.0
             }
 
             fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

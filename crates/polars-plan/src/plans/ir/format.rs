@@ -251,13 +251,13 @@ impl<'a> IRDisplay<'a> {
 
                 write_scan(
                     f,
-                    scan_type.into(),
+                    (&**scan_type).into(),
                     sources,
                     indent,
                     n_columns,
                     file_info.schema.len(),
                     &predicate,
-                    file_options.slice,
+                    file_options.pre_slice,
                     file_options.row_index.as_ref(),
                 )
             },
@@ -392,6 +392,7 @@ impl<'a> IRDisplay<'a> {
                 let name = match payload {
                     SinkType::Memory => "SINK (memory)",
                     SinkType::File { .. } => "SINK (file)",
+                    SinkType::Partition { .. } => "SINK (partition)",
                 };
                 write!(f, "{:indent$}{name}", "")?;
                 self.with_root(*input)._format(f, sub_indent)
@@ -522,7 +523,10 @@ impl Display for ExprIRDisplay<'_> {
                     _ => {
                         if let Some((order_by, _)) = order_by {
                             let order_by = self.with_root(order_by);
-                            write!(f, "{function}.over(partition_by: {partition_by}, order_by: {order_by})")
+                            write!(
+                                f,
+                                "{function}.over(partition_by: {partition_by}, order_by: {order_by})"
+                            )
                         } else {
                             write!(f, "{function}.over({partition_by})")
                         }

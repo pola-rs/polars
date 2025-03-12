@@ -1,39 +1,34 @@
-use std::cmp::Reverse;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use polars_core::config;
-use polars_core::frame::column::ScalarColumn;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, IntoColumn, IDX_DTYPE};
+use polars_core::frame::column::ScalarColumn;
+use polars_core::prelude::{Column, IDX_DTYPE, IntoColumn};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
+use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
-use polars_io::RowIndex;
 use polars_plan::dsl::{ScanSource, ScanSourceRef, ScanSources};
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::priority::Priority;
-use polars_utils::{format_pl_smallstr, IdxSize};
+use polars_utils::{IdxSize, format_pl_smallstr};
 
 use super::{RowRestriction, SourceNode, SourceOutput};
-use crate::async_executor::{spawn, AbortOnDropHandle};
-use crate::async_primitives::connector::{connector, Receiver};
-use crate::async_primitives::linearizer::{self, Linearizer};
+use crate::async_executor::{AbortOnDropHandle, spawn};
+use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::SourceToken;
-use crate::nodes::io_sources::SourceOutputPort;
+use crate::nodes::io_sources::{PhaseOutcomeToken, SourceOutputPort};
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
-use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
 
 fn source_name(scan_source: ScanSourceRef<'_>, index: usize) -> PlSmallStr {
     match scan_source {
@@ -58,7 +53,7 @@ pub struct MultiScanNode<T: MultiScanable> {
     name: String,
     sources: ScanSources,
 
-    hive_parts: Option<HivePartitionsDf>,
+    hive_parts: Option<Arc<HivePartitionsDf>>,
     allow_missing_columns: bool,
     include_file_paths: Option<PlSmallStr>,
 
@@ -78,7 +73,7 @@ impl<T: MultiScanable> MultiScanNode<T> {
     pub fn new(
         sources: ScanSources,
 
-        hive_parts: Option<HivePartitionsDf>,
+        hive_parts: Option<Arc<HivePartitionsDf>>,
         allow_missing_columns: bool,
         include_file_paths: Option<PlSmallStr>,
 
@@ -261,7 +256,7 @@ fn resolve_source_projection(
             .join(", ");
         polars_bail!(
             SchemaMismatch:
-            "'{source_name}' does not contains column(s) {columns}, which are present in the first scanned file. Consider enabling `allow_missing_columns`."
+            "'{source_name}' does not contain column(s) {columns}, which are present in the first scanned file. Consider enabling `allow_missing_columns`."
         );
     }
 
@@ -403,8 +398,9 @@ pub trait MultiScanable: SourceNode + Sized + Send + Sync {
 
     const BASE_NAME: &'static str;
 
-    const DOES_PRED_PD: bool;
-    const DOES_SLICE_PD: bool;
+    /// Does the SourceNode have a specialized implementation for filtering, i.e. is it better to
+    /// filter within the ScanSource or just place a filter after the scan source.
+    const SPECIALIZED_PRED_PD: bool;
 
     fn new(
         source: ScanSource,
@@ -455,7 +451,7 @@ struct SourcePhase {
     /// We don't use this to communicate anything, it is just a sanity check.
     source_idx: usize,
     content: SourcePhaseContent,
-    unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+    unrestricted_row_count: Option<tokio::sync::oneshot::Receiver<IdxSize>>,
     missing_columns: Option<Bitmap>,
 }
 
@@ -465,7 +461,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
     }
 
     fn is_source_output_parallel(&self, _is_receiver_serial: bool) -> bool {
-        false
+        true
     }
 
     fn spawn_source(
@@ -474,7 +470,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         mut send_port_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
         assert!(unrestricted_row_count.is_none());
 
@@ -691,6 +687,9 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             join_handles.extend(si_send.into_iter().zip(slice_tx).enumerate().map(
                 |(mut i, (mut si_send, mut slice_tx))| {
                     let sources = sources.clone();
+                    let hive_parts = hive_parts.clone();
+                    let include_file_paths = include_file_paths.clone();
+                    let row_restriction = row_restriction.clone();
                     let read_options = read_options.clone();
                     let cloud_options = cloud_options.clone();
                     let file_schema = file_schema.clone();
@@ -742,13 +741,16 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                             if is_selected {
                                 let row_count = source.unrestricted_row_count().await?;
+                                let unrestricted_row_count_rx = {
+                                    let (tx, rx) = tokio::sync::oneshot::channel();
+                                    tx.send(row_count).unwrap();
+                                    rx
+                                };
                                 let phase = SourcePhase {
                                     source_idx: i,
                                     content: SourcePhaseContent::OneShot(DataFrame::empty()),
                                     missing_columns: None,
-                                    unrestricted_row_count: Some(Arc::new(AtomicIdxSize::new(
-                                        row_count,
-                                    ))),
+                                    unrestricted_row_count: Some(unrestricted_row_count_rx),
                                 };
                                 // Wait for the orchestrator task to actually be interested in the output
                                 // of this file.
@@ -792,13 +794,18 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     if let Some(name) = &row_index_name {
                                         df.with_row_index_mut(name.clone(), None);
                                     }
+
+                                    let unrestricted_row_count_rx = {
+                                        let (tx, rx) = tokio::sync::oneshot::channel();
+                                      tx.send(row_count).unwrap();
+                                        rx
+                                    };
+
                                     let phase = SourcePhase {
                                         source_idx: i,
                                         content: SourcePhaseContent::OneShot(df),
                                         missing_columns: missing_columns.clone(),
-                                        unrestricted_row_count: Some(Arc::new(AtomicIdxSize::new(
-                                            row_count,
-                                        ))),
+                                        unrestricted_row_count: Some(unrestricted_row_count_rx),
                                     };
 
                                     // Wait for the orchestrator task to actually be interested in the output
@@ -823,9 +830,61 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 }
                             }
 
-                            let unrestricted_row_count = row_index_name
-                                .is_some()
-                                .then(|| Arc::new(AtomicIdxSize::new(0)));
+                            let predicate = match &row_restriction {
+                                Some(RowRestriction::Predicate(predicate)) => Some(predicate),
+                                _ => None,
+                            };
+                            if let Some(predicate) = predicate.filter(|_| T::SPECIALIZED_PRED_PD) {
+                                let mut num_live_logical_columns = 0;
+                                num_live_logical_columns += usize::from(
+                                        include_file_paths
+                                        .as_ref()
+                                        .is_some_and(|ifp| predicate.live_columns.contains(ifp)),
+                                );
+                                if let Some(hive_df) = hive_parts.as_deref() {
+                                    for c in hive_df.df().get_columns() {
+                                        num_live_logical_columns += usize::from(predicate.live_columns.contains(c.name()));
+                                    }
+                                }
+
+                                if num_live_logical_columns < predicate.live_columns.len() {
+                                    let mut predicate = predicate.clone();
+                                    let mut constant_columns = Vec::new();
+
+                                    if let Some(ifp) = include_file_paths.as_ref().filter(|ifp| predicate.live_columns.contains(*ifp)) {
+                                        constant_columns.push((ifp.clone(), Scalar::from(source_name(sources.at(i), i))));
+                                    }
+                                    // @NOTE: No row index as that is generated by the source.
+                                    if let Some(hive_df) = hive_parts.as_deref() {
+                                        for c in hive_df.df().get_columns() {
+                                            if predicate.live_columns.contains(c.name()) {
+                                                constant_columns.push((c.name().clone(), Scalar::new(c.dtype().clone(), c.get(i).unwrap().into_static())));
+                                            }
+                                        }
+                                    }
+                                    if let Some(missing_columns) = missing_columns.as_ref() {
+                                        for idx in missing_columns.true_idx_iter() {
+                                            let (name, dtype) = file_schema.get_at_index(idx).unwrap();
+                                            if predicate.live_columns.contains(name) {
+                                                constant_columns.push((name.clone(), Scalar::null(dtype.clone())));
+                                            }
+                                        }
+                                    }
+
+                                    if !constant_columns.is_empty() {
+                                        predicate.set_external_constant_columns(constant_columns);
+                                    }
+                                    source.with_row_restriction(Some(RowRestriction::Predicate(predicate)));
+                                }
+                            }
+
+                            let (unrestricted_row_count_tx, mut unrestricted_row_count_rx) =
+                                if row_index_name.is_some() {
+                                    let (tx, rx) = tokio::sync::oneshot::channel() ;
+                                    (Some(tx), Some(rx))
+                                } else {
+                                    (None,None)
+                                };
 
                             source.with_projection(Some(&source_projection));
                             source.spawn_source(
@@ -833,7 +892,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 output_recv,
                                 &state,
                                 &mut join_handles,
-                                unrestricted_row_count.clone(),
+                                unrestricted_row_count_tx,
                             );
                             let mut join_handles: FuturesUnordered<_> =
                                 join_handles.drain(..).map(AbortOnDropHandle::new).collect();
@@ -855,7 +914,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     source_idx: i,
                                     content: SourcePhaseContent::Channels(rx),
                                     missing_columns: missing_columns.clone(),
-                                    unrestricted_row_count: unrestricted_row_count.clone(),
+                                    unrestricted_row_count: unrestricted_row_count_rx.take(),
                                 };
 
                                 // Wait for the orchestrator task to actually be interested in the output
@@ -897,20 +956,79 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                 }
             ));
 
-            let (mut pass_task_send, pass_task_recv) = (0..num_pipelines)
-                .map(|_| {
-                    connector::<(
-                        Receiver<Morsel>,
-                        linearizer::Inserter<Priority<Reverse<MorselSeq>, Morsel>>,
-                    )>()
-                })
+            struct PhaseSourcePass {
+                recv: Receiver<Morsel>,
+                start_morsel_seq: MorselSeq,
+
+                source_name: PlSmallStr,
+                current_scan: usize,
+                missing_columns: Option<Bitmap>,
+                row_index: Option<RowIndex>,
+
+                max_morsel_seq: Arc<AtomicU64>,
+                outcome: PhaseOutcomeToken,
+                #[expect(unused)]
+                wait_token: WaitToken,
+            }
+
+            let (mut pass_phase_send, pass_phase_recv) = (0..num_pipelines)
+                .map(|_| connector::<Sender<Morsel>>())
                 .collect::<(Vec<_>, Vec<_>)>();
-            join_handles.extend(pass_task_recv.into_iter().map(|mut pass_task_recv| {
+            let (mut pass_source_send, pass_source_recv) = (0..num_pipelines)
+                .map(|_| connector::<PhaseSourcePass>())
+                .collect::<(Vec<_>, Vec<_>)>();
+
+
+            join_handles.extend(pass_phase_recv.into_iter().zip(pass_source_recv).map(|(mut pass_phase_recv, mut pass_source_recv)| {
+                let file_schema = file_schema.clone();
+                let projection = projection.clone();
+                let include_file_paths = include_file_paths.clone();
+                let hive_parts = hive_parts.clone();
                 spawn(TaskPriority::High, async move {
-                    while let Ok((mut recv, mut send)) = pass_task_recv.recv().await {
-                        while let Ok(v) = recv.recv().await {
-                            if send.insert(Priority(Reverse(v.seq()), v)).await.is_err() {
-                                break;
+                    'phase_loop: while let Ok(mut send) = pass_phase_recv.recv().await {
+                        let source_token = SourceToken::new();
+                        let wait_group = WaitGroup::default();
+
+                        while let Ok(mut phase_source_pass) = pass_source_recv.recv().await {
+                            while let Ok(rg) = phase_source_pass.recv.recv().await {
+                                let original_seq = rg.seq();
+                                let original_source_token = rg.source_token().clone();
+
+                                let df = rg.into_df();
+                                let df = process_dataframe(
+                                    df,
+                                    &phase_source_pass.source_name,
+                                    phase_source_pass.current_scan,
+                                    hive_parts.as_deref(),
+                                    phase_source_pass.missing_columns.as_ref(),
+                                    include_file_paths.as_ref(),
+                                    file_schema.as_ref(),
+                                    projection.as_ref(),
+                                    phase_source_pass.row_index.as_ref(),
+                                );
+                                let df = match df {
+                                    Ok(df) => df,
+                                    Err(err) => {
+                                        return Err(err);
+                                    },
+                                };
+
+                                let seq = phase_source_pass.start_morsel_seq.offset_by(original_seq);
+                                let mut morsel = Morsel::new(df, seq, source_token.clone());
+                                morsel.set_consume_token(wait_group.token());
+
+                                if send.send(morsel).await.is_err() {
+                                    return Ok(());
+                                }
+
+                                phase_source_pass.max_morsel_seq.store(seq.to_u64(), Ordering::Relaxed);
+                                wait_group.wait().await;
+                                if source_token.stop_requested() {
+                                    original_source_token.stop();
+                                    phase_source_pass.outcome.stop();
+
+                                    continue 'phase_loop;
+                                }
                             }
                         }
                     }
@@ -919,21 +1037,22 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                 })
             }));
 
-            let file_schema = file_schema;
-            let projection = projection;
             let sources = sources.clone();
             let mut skipable_file_mask = skipable_file_mask.clone();
             join_handles.push(spawn(TaskPriority::High, async move {
                 let mut seq = MorselSeq::default();
                 let mut current_scan = first_scan_source;
+                let mut unrestricted_row_count_rx = None;
 
                 // Every phase we are given a new send channel.
                 'phase_loop: while let Ok(phase_output) = send_port_recv.recv().await {
-                    // @TODO: Make this parallel compatible if there is no row count or slice.
-                    let mut send = phase_output.port.serial();
-
-                    let source_token = SourceToken::new();
-                    let wait_group = WaitGroup::default();
+                    let send = phase_output.port.parallel();
+                    for (pass_phase_send, send) in pass_phase_send.iter_mut().zip(send)
+                    {
+                        if pass_phase_send.send(send).await.is_err() {
+                            return Ok(());
+                        };
+                    }
 
                     while current_scan < sources.len() {
                         if let Some(skipable_file_mask) = skipable_file_mask.as_mut() {
@@ -950,11 +1069,13 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                         }
 
                         let source_name = source_name(sources.at(current_scan), current_scan);
-                        let hive_part = hive_parts.as_ref();
                         let si_recv = &mut si_recv[current_scan % max_concurrent_scans];
                         let Ok(phase) = si_recv.recv().await else {
                             return Ok(());
                         };
+
+                        // This is sent with the first phase.
+                        unrestricted_row_count_rx = unrestricted_row_count_rx.or(phase.unrestricted_row_count);
 
                         // Sanity Check: Is the worker currently on the same source as we are?
                         assert_eq!(phase.source_idx, current_scan);
@@ -964,39 +1085,44 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             skipable_file_mask.slice(1, skipable_file_mask.len() - 1);
                         }
 
+
                         match phase.content {
                             // In certain cases, we don't actually need to read physical data from the
                             // file so we get back a row count.
                             SourcePhaseContent::OneShot(df) => {
                                 if is_selected {
-                                    let df = process_dataframe(
-                                        df,
-                                        &source_name,
+                                    let (mut tx, rx) = connector();
+                                    let wg = WaitGroup::default();
+                                    let outcome = PhaseOutcomeToken::new();
+                                    let max_morsel_seq = Arc::new(AtomicU64::new(0));
+                                    if pass_source_send[seq.to_u64() as usize % num_pipelines].send(PhaseSourcePass {
+                                        recv: rx,
+                                        start_morsel_seq: seq,
+
+                                        source_name: source_name.clone(),
                                         current_scan,
-                                        hive_part,
-                                        phase.missing_columns.as_ref(),
-                                        include_file_paths.as_ref(),
-                                        file_schema.as_ref(),
-                                        projection.as_ref(),
-                                        row_index.as_ref(),
-                                    );
-                                    let df = match df {
-                                        Ok(df) => df,
-                                        Err(err) => {
-                                            return Err(err);
-                                        },
-                                    };
+                                        missing_columns: phase.missing_columns.clone(),
+                                        row_index: row_index.clone(),
 
-                                    let mut morsel = Morsel::new(df, seq, source_token.clone());
-                                    morsel.set_consume_token(wait_group.token());
-                                    seq = seq.successor();
-
-                                    if send.send(morsel).await.is_err() {
-                                        break 'phase_loop;
+                                        max_morsel_seq: max_morsel_seq.clone(),
+                                        outcome: outcome.clone(),
+                                        wait_token: wg.token(),
+                                    }).await.is_err() {
+                                        return Ok(());
                                     }
 
-                                    wait_group.wait().await;
-                                    if source_token.stop_requested() {
+                                    if tx.send(Morsel::new(df, MorselSeq::new(0), SourceToken::new())).await.is_err() {
+                                        break 'phase_loop;
+                                    }
+                                    drop(tx); // Drop the channel so that the passer task waits for
+                                              // a new source.
+
+                                    wg.wait().await;
+                                    seq = seq.max(unsafe { MorselSeq::from_u64(max_morsel_seq.load(Ordering::Relaxed)) });
+                                    let did_finish = outcome.did_finish();
+                                    seq = seq.successor();
+
+                                    if !did_finish {
                                         phase_output.outcome.stop();
                                         continue 'phase_loop;
                                     }
@@ -1005,108 +1131,73 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             SourcePhaseContent::Channels(rx) => {
                                 assert!(is_selected);
 
-                                match rx {
+                                let mut distributor = None;
+                                let rxs = match rx {
                                     SourceInput::Serial(mut rx) => {
-                                        while let Ok(rg) = rx.recv().await {
-                                            let original_source_token = rg.source_token().clone();
-
-                                            let df = rg.into_df();
-                                            let df = process_dataframe(
-                                                df,
-                                                &source_name,
-                                                current_scan,
-                                                hive_part,
-                                                phase.missing_columns.as_ref(),
-                                                include_file_paths.as_ref(),
-                                                file_schema.as_ref(),
-                                                projection.as_ref(),
-                                                row_index.as_ref(),
-                                            );
-                                            let df = match df {
-                                                Ok(df) => df,
-                                                Err(err) => {
-                                                    return Err(err);
-                                                },
-                                            };
-
-                                            let mut morsel = Morsel::new(df, seq, source_token.clone());
-                                            morsel.set_consume_token(wait_group.token());
-                                            seq = seq.successor();
-
-                                            if send.send(morsel).await.is_err() {
-                                                break 'phase_loop;
+                                        let mut offset = seq.to_u64() as usize;
+                                        let (mut txs, rxs) = (0..num_pipelines).map(|_| connector()).collect::<(Vec<_>, Vec<_>)>();
+                                        distributor = Some(AbortOnDropHandle::new(spawn(TaskPriority::High, async move {
+                                            while let Ok(m) = rx.recv().await {
+                                                if txs[offset % num_pipelines].send(m).await.is_err() {
+                                                    return Ok(());
+                                                }
+                                                offset += 1;
                                             }
-
-                                            wait_group.wait().await;
-                                            if source_token.stop_requested() {
-                                                original_source_token.stop();
-                                                phase_output.outcome.stop();
-                                                continue 'phase_loop;
-                                            }
-                                        }
+                                            PolarsResult::Ok(())
+                                        })));
+                                        rxs
                                     },
-                                    SourceInput::Parallel(rxs) => {
-                                        let (mut linearizer, inserters) =
-                                            Linearizer::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
-                                        for ((rx, pass_task_send), inserter) in rxs
-                                            .into_iter()
-                                            .zip(pass_task_send.iter_mut())
-                                            .zip(inserters)
-                                        {
-                                            if pass_task_send.send((rx, inserter)).await.is_err() {
-                                                return Ok(());
-                                            };
-                                        }
+                                    SourceInput::Parallel(rxs) => rxs,
+                                };
 
-                                        while let Some(rg) = linearizer.get().await {
-                                            let rg = rg.1;
+                                let mut futures = Vec::with_capacity(rxs.len());
+                                for (rx, pass_source_send) in rxs.into_iter().zip(pass_source_send.iter_mut()) {
+                                    let wg = WaitGroup::default();
+                                    let outcome = PhaseOutcomeToken::new();
+                                    let max_morsel_seq = Arc::new(AtomicU64::new(0));
+                                    if pass_source_send.send(PhaseSourcePass {
+                                        recv: rx,
+                                        start_morsel_seq: seq,
 
-                                            let original_source_token = rg.source_token().clone();
+                                        source_name: source_name.clone(),
+                                        current_scan,
+                                        missing_columns: phase.missing_columns.clone(),
+                                        row_index: row_index.clone(),
 
-                                            let df = rg.into_df();
-                                            let df = process_dataframe(
-                                                df,
-                                                &source_name,
-                                                current_scan,
-                                                hive_part,
-                                                phase.missing_columns.as_ref(),
-                                                include_file_paths.as_ref(),
-                                                file_schema.as_ref(),
-                                                projection.as_ref(),
-                                                row_index.as_ref(),
-                                            );
-                                            let df = match df {
-                                                Ok(df) => df,
-                                                Err(err) => {
-                                                    return Err(err);
-                                                },
-                                            };
+                                        max_morsel_seq: max_morsel_seq.clone(),
+                                        outcome: outcome.clone(),
+                                        wait_token: wg.token(),
+                                    }).await.is_err() {
+                                        return Ok(());
+                                    }
+                                    futures.push((max_morsel_seq, outcome, async move { wg.wait().await }));
+                                }
 
-                                            let mut morsel = Morsel::new(df, seq, source_token.clone());
-                                            morsel.set_consume_token(wait_group.token());
-                                            seq = seq.successor();
+                                if let Some(distributor) = distributor.take() {
+                                    distributor.await?;
+                                }
+                                let mut did_finish = true;
+                                for (max_morsel_seq, outcome, f) in futures {
+                                    f.await;
+                                    seq = seq.max(unsafe { MorselSeq::from_u64(max_morsel_seq.load(Ordering::Relaxed)) });
+                                    did_finish &= outcome.did_finish();
+                                }
+                                seq = seq.successor();
 
-                                            if send.send(morsel).await.is_err() {
-                                                break 'phase_loop;
-                                            }
-
-                                            wait_group.wait().await;
-                                            if source_token.stop_requested() {
-                                                original_source_token.stop();
-                                                phase_output.outcome.stop();
-                                                continue 'phase_loop;
-                                            }
-                                        }
-                                    },
+                                if !did_finish {
+                                    phase_output.outcome.stop();
+                                    continue 'phase_loop;
                                 }
                             },
                         }
 
+
                         if let Some(ri) = row_index.as_mut() {
-                            let source_num_rows = phase
-                                .unrestricted_row_count
+                            let source_num_rows = unrestricted_row_count_rx
+                                .take()
                                 .unwrap()
-                                .load(Ordering::Relaxed);
+                                .await
+                                .unwrap();
                             ri.offset += source_num_rows;
                         }
                         current_scan += 1;

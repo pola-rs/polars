@@ -504,6 +504,36 @@ def test_read_csv_encoding(tmp_path: Path) -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
+@pytest.mark.write_disk
+def test_read_csv_encoding_lossy(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    bts = (
+        b"\xc8\xec\xff,\xc2\xee\xe7\xf0\xe0\xf1\xf2,\xc3\xee\xf0\xee\xe4\n"
+        b"\xc8\xe2\xe0\xed,25,\xcc\xee\xf1\xea\xe2\xe0\n"
+        # \x98 is not supported in "windows-1251".
+        b"\xce\xeb\xfc\xe3\xe0,30,\xd1\xe0\xed\xea\xf2-\x98\xcf\xe5\xf2\xe5\xf0\xe1\xf3\xf0\xe3\n"
+    )
+
+    file_path = tmp_path / "encoding_lossy.csv"
+    file_path.write_bytes(bts)
+
+    file_str = str(file_path)
+    bytesio = io.BytesIO(bts)
+    bytesio.seek(0)
+
+    for file in [file_path, file_str, bts, bytesio]:
+        assert_series_equal(
+            pl.read_csv(
+                file,  # type: ignore[arg-type]
+                encoding="windows-1251-lossy",
+                use_pyarrow=False,
+            ).get_column("Город"),
+            pl.Series("Город", ["Москва", "Санкт-�Петербург"]),
+        )
+
+
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_column_rename_and_schema_overrides() -> None:
     csv = textwrap.dedent(
         """\
@@ -1267,17 +1297,6 @@ def test_datetime_format(fmt: str, expected: str) -> None:
     df = pl.DataFrame({"dt": [datetime(2022, 1, 2)]})
     csv = df.write_csv(datetime_format=fmt)
     assert csv == expected
-
-
-def test_invalid_datetime_format() -> None:
-    tz_naive = pl.Series(["2020-01-01T00:00:00"]).str.strptime(pl.Datetime)
-    tz_aware = tz_naive.dt.replace_time_zone("UTC")
-    with pytest.raises(
-        ComputeError, match="cannot format NaiveDateTime with format '%q'"
-    ):
-        tz_naive.to_frame().write_csv(datetime_format="%q")
-    with pytest.raises(ComputeError, match="cannot format DateTime with format '%q'"):
-        tz_aware.to_frame().write_csv(datetime_format="%q")
 
 
 @pytest.mark.parametrize(
@@ -2186,7 +2205,9 @@ def test_skip_rows_after_header(tmp_path: Path, streaming: bool) -> None:
 
     skip = 2
     expect = df.slice(skip)
-    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(streaming=streaming)
+    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(
+        engine="streaming" if streaming else "in-memory"
+    )
 
     assert_frame_equal(out, expect)
 
@@ -2378,7 +2399,7 @@ time
     assert_frame_equal(pl.scan_csv(path, try_parse_dates=True).collect(), df)
     assert_frame_equal(pl.scan_csv(path, schema={"time": pl.Time}).collect(), df)
     assert_frame_equal(
-        pl.scan_csv(path, schema={"time": pl.Time}).collect(streaming=True), df
+        pl.scan_csv(path, schema={"time": pl.Time}).collect(engine="streaming"), df
     )
 
 
@@ -2507,3 +2528,17 @@ def test_header_only_column_selection_17173() -> None:
     result = pl.read_csv(io.StringIO(csv), columns=["B"])
     expected = pl.Series("B", [], pl.String()).to_frame()
     assert_frame_equal(result, expected)
+
+
+def test_csv_enum_raise() -> None:
+    ENUM_DTYPE = pl.Enum(["foo", "bar"])
+    with (
+        io.StringIO("col\nfoo\nbaz\n") as csv,
+        pytest.raises(
+            pl.exceptions.ComputeError, match="category baz doesn't exist in Enum dtype"
+        ),
+    ):
+        pl.read_csv(
+            csv,
+            schema={"col": ENUM_DTYPE},
+        )

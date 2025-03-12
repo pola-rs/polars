@@ -1,8 +1,8 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use polars_core::frame::DataFrame;
 use polars_core::POOL;
+use polars_core::frame::DataFrame;
 use polars_utils::priority::Priority;
 use polars_utils::sync::SyncPtr;
 

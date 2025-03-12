@@ -25,6 +25,7 @@ pub mod hyperloglogplus;
 pub mod if_then_else;
 pub mod min_max;
 pub mod propagate_dictionary;
+pub mod rolling;
 pub mod size;
 pub mod sum;
 pub mod unique;

@@ -658,7 +658,7 @@ impl Display for FunctionExpr {
             Atan2 => return write!(f, "arctan2"),
             #[cfg(feature = "sign")]
             Sign => "sign",
-            FillNull { .. } => "fill_null",
+            FillNull => "fill_null",
             #[cfg(feature = "rolling_window")]
             RollingExpr(func, ..) => return write!(f, "{func}"),
             #[cfg(feature = "rolling_window_by")]

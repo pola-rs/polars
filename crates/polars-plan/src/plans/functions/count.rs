@@ -7,20 +7,16 @@ use arrow::io::ipc::read::get_row_count as count_rows_ipc_sync;
     feature = "csv"
 ))]
 use polars_core::error::feature_gated;
+#[cfg(any(feature = "json", feature = "parquet"))]
+use polars_io::SerReader;
 #[cfg(any(feature = "parquet", feature = "json"))]
 use polars_io::cloud::CloudOptions;
-#[cfg(feature = "csv")]
-use polars_io::csv::read::{
-    count_rows as count_rows_csv, count_rows_from_slice as count_rows_csv_from_slice,
-};
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::parquet::read::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::pl_async::{get_runtime, with_concurrency_budget};
-#[cfg(any(feature = "json", feature = "parquet"))]
-use polars_io::SerReader;
 
 use super::*;
 
@@ -96,7 +92,7 @@ fn count_all_rows_csv(
     sources
         .iter()
         .map(|source| match source {
-            ScanSourceRef::Path(path) => count_rows_csv(
+            ScanSourceRef::Path(path) => polars_io::csv::read::count_rows(
                 path,
                 parse_options.separator,
                 parse_options.quote_char,
@@ -107,7 +103,7 @@ fn count_all_rows_csv(
             _ => {
                 let memslice = source.to_memslice()?;
 
-                count_rows_csv_from_slice(
+                polars_io::csv::read::count_rows_from_slice_par(
                     &memslice[..],
                     parse_options.separator,
                     parse_options.quote_char,

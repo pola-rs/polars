@@ -22,6 +22,7 @@ pub mod floor_divmod;
 pub mod functions;
 pub mod hashing;
 pub mod idx_map;
+pub mod idx_mapper;
 pub mod idx_vec;
 pub mod mem;
 pub mod min_max;
@@ -30,12 +31,14 @@ pub mod priority;
 pub mod select;
 pub mod slice;
 pub mod sort;
+pub mod sparse_init_vec;
 pub mod sync;
 #[cfg(feature = "sysinfo")]
 pub mod sys;
 pub mod total_ord;
 
 pub use functions::*;
+pub mod file;
 
 pub mod aliases;
 pub mod fixedringbuffer;

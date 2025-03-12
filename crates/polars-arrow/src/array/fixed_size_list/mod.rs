@@ -1,4 +1,4 @@
-use super::{new_empty_array, new_null_array, Array, ArrayRef, Splitable};
+use super::{Array, ArrayRef, Splitable, new_empty_array, new_null_array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
@@ -6,9 +6,11 @@ mod ffi;
 pub(super) mod fmt;
 mod iterator;
 
+mod builder;
+pub use builder::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::format_tuple;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -59,7 +61,7 @@ impl FixedSizeListArray {
             values.len() / size,
             length,
         );
-        polars_ensure!(size != 0 || values.len() == 0, ComputeError:
+        polars_ensure!(size != 0 || values.is_empty(), ComputeError:
             "zero width FixedSizeListArray has values (length = {}).",
             values.len(),
         );
@@ -82,7 +84,7 @@ impl FixedSizeListArray {
 
     #[inline]
     fn has_invariants(&self) -> bool {
-        let has_valid_length = (self.size == 0 && self.values().len() == 0)
+        let has_valid_length = (self.size == 0 && self.values().is_empty())
             || (self.size > 0
                 && self.values().len() % self.size() == 0
                 && self.values().len() / self.size() == self.length);

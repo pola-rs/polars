@@ -8,17 +8,19 @@ use std::cmp::Ordering;
 
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::kernels::rolling;
-use arrow::legacy::kernels::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
-};
-use arrow::legacy::kernels::rolling::nulls::RollingAggWindowNulls;
 use arrow::legacy::kernels::take_agg::*;
-use arrow::legacy::prelude::QuantileMethod;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
+use polars_compute::rolling::no_nulls::{
+    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
+};
+use polars_compute::rolling::nulls::RollingAggWindowNulls;
+use polars_compute::rolling::quantile_filter::SealedRolling;
+use polars_compute::rolling::{
+    self, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams, quantile_filter,
+};
 use polars_utils::float::IsFloat;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
@@ -31,10 +33,10 @@ use crate::frame::group_by::GroupsIdx;
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
+use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use crate::{apply_method_physical_integer, POOL};
+use crate::{POOL, apply_method_physical_integer};
 
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
@@ -234,20 +236,12 @@ macro_rules! impl_take_extremum {
         impl TakeExtremum for $tp {
             #[inline(always)]
             fn take_min(self, other: Self) -> Self {
-                if self < other {
-                    self
-                } else {
-                    other
-                }
+                if self < other { self } else { other }
             }
 
             #[inline(always)]
             fn take_max(self, other: Self) -> Self {
-                if self > other {
-                    self
-                } else {
-                    other
-                }
+                if self > other { self } else { other }
             }
         }
     };
@@ -343,7 +337,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
 {
     let invalid_quantile = !(0.0..=1.0).contains(&quantile);
     if invalid_quantile {
@@ -423,7 +417,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + SealedRolling,
 {
     match groups {
         GroupsType::Idx(groups) => {

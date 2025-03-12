@@ -1,7 +1,6 @@
 use std::cmp::Reverse;
 use std::io::Cursor;
 use std::ops::Range;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use polars_core::config;
@@ -11,24 +10,23 @@ use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_core::utils::arrow::array::TryExtend;
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_core::utils::arrow::io::ipc::read::{
-    get_row_count_from_blocks, prepare_projection, read_file_metadata, FileMetadata, FileReader,
-    ProjectionInfo,
+    FileMetadata, FileReader, ProjectionInfo, get_row_count_from_blocks, prepare_projection,
+    read_file_metadata,
 };
 use polars_core::utils::slice_offsets;
-use polars_error::{polars_err, ErrString, PolarsError, PolarsResult};
+use polars_error::{ErrString, PolarsError, PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
+use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::utils::columns_to_projection;
-use polars_io::RowIndex;
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{ScanSource, ScanSourceRef};
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::index::AtomicIdxSize;
+use polars_utils::IdxSize;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
-use polars_utils::IdxSize;
 
 use super::multi_scan::MultiScanable;
 use super::{RowRestriction, SourceNode, SourceOutput};
@@ -37,7 +35,7 @@ use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{get_ideal_morsel_size, SourceToken};
+use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
@@ -66,7 +64,7 @@ impl IpcSourceNode {
         source: ScanSource,
         file_info: FileInfo,
         options: IpcScanOptions,
-        _cloud_options: Option<CloudOptions>,
+        cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
         mut metadata: Option<Arc<FileMetadata>>,
     ) -> PolarsResult<Self> {
@@ -77,7 +75,7 @@ impl IpcSourceNode {
         let IpcScanOptions = options;
 
         let FileScanOptions {
-            slice,
+            pre_slice: slice,
             with_columns,
             cache: _, // @TODO
             row_index,
@@ -89,10 +87,30 @@ impl IpcSourceNode {
             allow_missing_columns: _,
         } = file_options;
 
-        let memslice = source.as_scan_source_ref().to_memslice()?;
+        let memslice = {
+            if let ScanSourceRef::Path(p) = source.as_scan_source_ref() {
+                if source.run_async() {
+                    polars_io::file_cache::init_entries_from_uri_list(
+                        &[Arc::from(p.to_str().unwrap())],
+                        cloud_options.as_ref(),
+                    )?;
+                }
+            }
+
+            // check_latest: IR resolution does not download IPC.
+
+            source
+                .as_scan_source_ref()
+                .to_memslice_async_check_latest(source.run_async())?
+        };
+
+        #[allow(clippy::match_single_binding)]
         let metadata = match metadata.take() {
-            Some(md) => md,
-            None => Arc::new(read_file_metadata(&mut std::io::Cursor::new(
+            // TODO: Don't know why, this metadata does not match the file. This was during testing
+            // against a cloud scan:
+            // * ComputeError: out-of-spec: InvalidBuffersLength { buffers_size: 7200, file_size: 453 }
+            // Some(md) => md,
+            _ => Arc::new(read_file_metadata(&mut std::io::Cursor::new(
                 memslice.as_ref(),
             ))?),
         };
@@ -140,7 +158,7 @@ fn slice_take(slice: &mut Range<usize>, n: usize) -> Range<usize> {
     let offset = slice.start;
     let length = slice.len();
 
-    assert!(offset < n);
+    assert!(offset <= n);
 
     let chunk_length = (n - offset).min(length);
     let rng = offset..offset + chunk_length;
@@ -177,7 +195,7 @@ impl SourceNode for IpcSourceNode {
         mut output_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
         // Split size for morsels.
         let max_morsel_size = get_max_morsel_size();
@@ -352,7 +370,7 @@ impl SourceNode for IpcSourceNode {
                 )?;
                 let num_rows = IdxSize::try_from(num_rows)
                     .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = num_rows))?;
-                rc.store(num_rows, Ordering::Relaxed);
+                _ = rc.send(num_rows);
             }
 
             let mut morsel_seq: u64 = 0;
@@ -489,8 +507,7 @@ impl MultiScanable for IpcSourceNode {
 
     const BASE_NAME: &'static str = "ipc";
 
-    const DOES_PRED_PD: bool = false;
-    const DOES_SLICE_PD: bool = true;
+    const SPECIALIZED_PRED_PD: bool = false;
 
     async fn new(
         source: ScanSource,
@@ -500,7 +517,21 @@ impl MultiScanable for IpcSourceNode {
     ) -> PolarsResult<Self> {
         let options = options.clone();
 
-        let memslice = source.as_scan_source_ref().to_memslice()?;
+        // TODO
+        // * `to_memslice_async_check_latest` being a non-async function is not ideal.
+        // * This is also downloading the whole file even if there is a projection
+        let memslice = {
+            if let ScanSourceRef::Path(p) = source.as_scan_source_ref() {
+                polars_io::file_cache::init_entries_from_uri_list(
+                    &[Arc::from(p.to_str().unwrap())],
+                    cloud_options,
+                )?;
+            }
+
+            source
+                .as_scan_source_ref()
+                .to_memslice_async_check_latest(source.run_async())?
+        };
         let metadata = Arc::new(read_file_metadata(&mut std::io::Cursor::new(
             memslice.as_ref(),
         ))?);

@@ -1,7 +1,7 @@
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::utils::arrow::ffi;
-use polars_core::POOL;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::PyList;

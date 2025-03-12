@@ -6,11 +6,11 @@ use polars_core::schema::Schema;
 use polars_ops::frame::_merge_sorted_dfs;
 use polars_utils::pl_str::PlSmallStr;
 
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::morsel::{get_ideal_morsel_size, SourceToken};
+use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
 pub struct MergeSortedNode {
     key_column_idx: usize,

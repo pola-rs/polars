@@ -28,8 +28,8 @@ use polars_plan::global::_set_n_rows_for_scan;
 #[cfg(feature = "python")]
 pub(crate) use self::python_scan::*;
 use super::*;
-use crate::prelude::*;
 use crate::ScanPredicate;
+use crate::prelude::*;
 
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {
@@ -57,7 +57,7 @@ impl Executor for DataFrameExec {
 
 pub(crate) struct AnonymousScanExec {
     pub(crate) function: Arc<dyn AnonymousScan>,
-    pub(crate) file_options: FileScanOptions,
+    pub(crate) file_options: Box<FileScanOptions>,
     pub(crate) file_info: FileInfo,
     pub(crate) predicate: Option<ScanPredicate>,
     pub(crate) output_schema: Option<SchemaRef>,
@@ -67,7 +67,7 @@ pub(crate) struct AnonymousScanExec {
 impl Executor for AnonymousScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let mut args = AnonymousScanArgs {
-            n_rows: self.file_options.slice.map(|x| {
+            n_rows: self.file_options.pre_slice.map(|x| {
                 assert_eq!(x.0, 0);
                 x.1
             }),

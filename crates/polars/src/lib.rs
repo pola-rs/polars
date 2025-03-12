@@ -187,28 +187,28 @@
 //!     - `string_pad` - `zfill`, `ljust`, `rjust`
 //!     - `string_to_integer` - `parse_int`
 //! * `object` - Support for generic ChunkedArrays called [`ObjectChunked<T>`] (generic over `T`).
-//!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
+//!   These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:
 //!     - `nightly` - Several nightly only features such as SIMD and specialization.
 //!     - `performant` - more fast paths, slower compile times.
 //!     - `bigidx` - Activate this feature if you expect >> 2^32 rows. This is rarely needed.
-//!                  This allows Polars to scale up beyond 2^32 rows by using an index with a `u64` data type.
-//!                  Polars will be a bit slower with this feature activated as many data structures
-//!                  are less cache efficient.
+//!       This allows Polars to scale up beyond 2^32 rows by using an index with a `u64` data type.
+//!       Polars will be a bit slower with this feature activated as many data structures
+//!       are less cache efficient.
 //!     - `cse` - Activate common subplan elimination optimization
 //! * IO related:
 //!     - `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
-//!                 Can be used for JSON and more serde supported serialization formats.
+//!       Can be used for JSON and more serde supported serialization formats.
 //!     - `serde-lazy` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
-//!                 Can be used for JSON and more serde supported serialization formats.
+//!       Can be used for JSON and more serde supported serialization formats.
 //!     - `parquet` - Read Apache Parquet format
 //!     - `json` - JSON serialization
 //!     - `ipc` - Arrow's IPC format serialization
 //!     - `decompress` - Automatically infer compression of csvs and decompress them.
-//!                      Supported compressions:
-//!                         - gzip
-//!                         - zlib
-//!                         - zstd
+//!       Supported compressions:
+//!          - gzip
+//!          - zlib
+//!          - zstd
 //!
 //! [`StringChunked`]: crate::datatypes::StringChunked
 //! [column selection]: polars_lazy::dsl::col
@@ -217,10 +217,10 @@
 //!
 //! * [`DataFrame`] operations:
 //!     - `dynamic_group_by` - Groupby based on a time window instead of predefined keys.
-//!                           Also activates rolling window group by operations.
+//!       Also activates rolling window group by operations.
 //!     - `sort_multiple` - Allow sorting a [`DataFrame`] on multiple columns
 //!     - `rows` - Create [`DataFrame`] from rows and extract rows from [`DataFrame`]s.
-//!                Also activates `pivot` and `transpose` operations
+//!       Also activates `pivot` and `transpose` operations
 //!     - `asof_join` - Join ASOF, to join on nearest keys instead of exact equality match.
 //!     - `cross_join` - Create the Cartesian product of two [`DataFrame`]s.
 //!     - `semi_anti_join` - SEMI and ANTI joins.
@@ -325,13 +325,13 @@
 //! ### Custom allocator
 //! An OLAP query engine does a lot of heap allocations. It is recommended to use a custom
 //! allocator, (we have found this to have up to ~25% runtime influence).
-//! [JeMalloc](https://crates.io/crates/jemallocator) and
+//! [JeMalloc](https://crates.io/crates/tikv-jemallocator) and
 //! [Mimalloc](https://crates.io/crates/mimalloc) for instance, show a significant
 //! performance gain in runtime as well as memory usage.
 //!
 //! #### Jemalloc Usage
 //! ```ignore
-//! use jemallocator::Jemalloc;
+//! use tikv_jemallocator::Jemalloc;
 //!
 //! #[global_allocator]
 //! static GLOBAL: Jemalloc = Jemalloc;
@@ -340,7 +340,7 @@
 //! #### Cargo.toml
 //! ```toml
 //! [dependencies]
-//! jemallocator = { version = "*" }
+//! tikv-jemallocator = { version = "*" }
 //! ```
 //!
 //! #### Mimalloc Usage
@@ -397,12 +397,12 @@
 //! * `POLARS_MAX_THREADS` -> maximum number of threads used to initialize thread pool (on startup).
 //! * `POLARS_VERBOSE` -> print logging info to stderr.
 //! * `POLARS_NO_PARTITION` -> polars may choose to partition the group_by operation, based on data
-//!                            cardinality. Setting this env var will turn partitioned group_by's off.
+//!   cardinality. Setting this env var will turn partitioned group_by's off.
 //! * `POLARS_PARTITION_UNIQUE_COUNT` -> at which (estimated) key count a partitioned group_by should run.
-//!                                          defaults to `1000`, any higher cardinality will run default group_by.
+//!   defaults to `1000`, any higher cardinality will run default group_by.
 //! * `POLARS_FORCE_PARTITION` -> force partitioned group_by if the keys and aggregations allow it.
 //! * `POLARS_ALLOW_EXTENSION` -> allows for [`ObjectChunked<T>`] to be used in arrow, opening up possibilities like using
-//!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
+//!   `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
 //! * `POLARS_PANIC_ON_ERR` -> panic instead of returning an Error.
 //! * `POLARS_BACKTRACE_IN_ERR` -> include a Rust backtrace in Error messages.

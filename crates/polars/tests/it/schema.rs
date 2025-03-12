@@ -215,9 +215,11 @@ fn test_schema_insert_at_index() {
         ),
     );
 
-    assert!(schema
-        .new_inserting_at_index(4, "oob".into(), String)
-        .is_err());
+    assert!(
+        schema
+            .new_inserting_at_index(4, "oob".into(), String)
+            .is_err()
+    );
 }
 
 #[test]
@@ -547,8 +549,8 @@ fn test_set_dtype() {
 
 #[test]
 fn test_infer_schema() {
-    use polars_core::frame::row::infer_schema;
     use DataType::{Int32, Null, String};
+    use polars_core::frame::row::infer_schema;
 
     // Sample data as a vector of tuples (column name, value)
     let data: Vec<Vec<(PlSmallStr, DataType)>> = vec![

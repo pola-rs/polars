@@ -27,15 +27,6 @@ def test_engine_selection_invalid_raises(df: pl.LazyFrame) -> None:
         df.collect(engine="unknown")  # type: ignore[call-overload]
 
 
-def test_engine_selection_streaming_warns(df: pl.LazyFrame, engine: EngineType) -> None:
-    expect = df.collect()
-    with pytest.warns(
-        UserWarning, match="GPU engine does not support streaming or background"
-    ):
-        got = df.collect(engine=engine, streaming=True)
-        assert_frame_equal(expect, got)
-
-
 def test_engine_selection_background_warns(
     df: pl.LazyFrame, engine: EngineType
 ) -> None:

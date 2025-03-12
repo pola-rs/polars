@@ -131,7 +131,9 @@ def prepare_file_arg(
 
     When `encoding` is not `utf8` or `utf8-lossy`, the whole file is
     first read in Python and decoded using the specified encoding and
-    returned as a `BytesIO` (for usage with `read_csv`).
+    returned as a `BytesIO` (for usage with `read_csv`). If encoding
+    ends with "-lossy", characters that can't be decoded are replaced
+    with `�`.
 
     A `bytes` file is returned as a `BytesIO` if `use_pyarrow=True`.
 
@@ -157,6 +159,11 @@ def prepare_file_arg(
         encoding in {"utf8", "utf8-lossy"} if encoding else True
     )
     encoding_str = encoding if encoding else "utf8"
+    encoding_str, encoding_errors = (
+        (encoding_str[:-6], "replace")
+        if encoding_str.endswith("-lossy")
+        else (encoding_str, "strict")
+    )
 
     # PyArrow allows directories, so we only check that something is not
     # a dir if we are not using PyArrow
@@ -164,7 +171,7 @@ def prepare_file_arg(
 
     if isinstance(file, bytes):
         if not has_utf8_utf8_lossy_encoding:
-            file = file.decode(encoding_str).encode("utf8")
+            file = file.decode(encoding_str, errors=encoding_errors).encode("utf8")
         return _check_empty(
             BytesIO(file), context="bytes", raise_if_empty=raise_if_empty
         )
@@ -180,7 +187,11 @@ def prepare_file_arg(
     if isinstance(file, BytesIO):
         if not has_utf8_utf8_lossy_encoding:
             return _check_empty(
-                BytesIO(file.read().decode(encoding_str).encode("utf8")),
+                BytesIO(
+                    file.read()
+                    .decode(encoding_str, errors=encoding_errors)
+                    .encode("utf8")
+                ),
                 context="BytesIO",
                 read_position=file.tell(),
                 raise_if_empty=raise_if_empty,
@@ -197,7 +208,11 @@ def prepare_file_arg(
     if isinstance(file, Path):
         if not has_utf8_utf8_lossy_encoding:
             return _check_empty(
-                BytesIO(file.read_bytes().decode(encoding_str).encode("utf8")),
+                BytesIO(
+                    file.read_bytes()
+                    .decode(encoding_str, errors=encoding_errors)
+                    .encode("utf8")
+                ),
                 context=f"Path ({file!r})",
                 raise_if_empty=raise_if_empty,
             )
@@ -220,13 +235,16 @@ def prepare_file_arg(
                         normalize_filepath(file, check_not_directory=check_not_dir)
                     )
                 # decode first
-                with Path(file).open(encoding=encoding_str) as f:
+                with Path(file).open(
+                    encoding=encoding_str, errors=encoding_errors
+                ) as f:
                     return _check_empty(
                         BytesIO(f.read().encode("utf8")),
                         context=f"{file!r}",
                         raise_if_empty=raise_if_empty,
                     )
             storage_options["encoding"] = encoding
+            storage_options["errors"] = encoding_errors
             return fsspec.open(file, **storage_options)
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
@@ -242,12 +260,13 @@ def prepare_file_arg(
                         ]
                     )
             storage_options["encoding"] = encoding
+            storage_options["errors"] = encoding_errors
             return fsspec.open_files(file, **storage_options)
 
     if isinstance(file, str):
         file = normalize_filepath(file, check_not_directory=check_not_dir)
         if not has_utf8_utf8_lossy_encoding:
-            with Path(file).open(encoding=encoding_str) as f:
+            with Path(file).open(encoding=encoding_str, errors=encoding_errors) as f:
                 return _check_empty(
                     BytesIO(f.read().encode("utf8")),
                     context=f"{file!r}",

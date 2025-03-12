@@ -133,7 +133,7 @@ impl PredicatePushDown<'_> {
                     out
                 },
                 PushdownEligibility::NoPushdown => {
-                    return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+                    return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
                 },
             };
 
@@ -378,7 +378,7 @@ impl PredicatePushDown<'_> {
                     blocked_names.push(col);
                 }
 
-                match &scan_type {
+                match &*scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => {},
                     #[cfg(feature = "ipc")]
@@ -459,9 +459,9 @@ impl PredicatePushDown<'_> {
                     }
                 }
 
-                let mut do_optimization = match &scan_type {
+                let mut do_optimization = match &*scan_type {
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => options.slice.is_none(),
+                    FileScan::Csv { .. } => options.pre_slice.is_none(),
                     FileScan::Anonymous { function, .. } => function.allows_predicate_pushdown(),
                     #[cfg(feature = "json")]
                     FileScan::NDJson { .. } => true,
@@ -516,9 +516,8 @@ impl PredicatePushDown<'_> {
                 let local_predicates = match options.keep_strategy {
                     UniqueKeepStrategy::Any => {
                         let condition = |e: &ExprIR| {
-                            let ae = expr_arena.get(e.node());
                             // if not elementwise -> to local
-                            !is_elementwise_rec(ae, expr_arena)
+                            !is_elementwise_rec(e.node(), expr_arena)
                         };
                         transfer_to_local_by_expr_ir(expr_arena, &mut acc_predicates, condition)
                     },
@@ -751,7 +750,7 @@ impl PredicatePushDown<'_> {
                 if let Some(predicate) = predicate {
                     // For IO plugins we only accept streamable expressions as
                     // we want to apply the predicates to the batches.
-                    if !is_elementwise_rec(expr_arena.get(predicate.node()), expr_arena)
+                    if !is_elementwise_rec(predicate.node(), expr_arena)
                         && matches!(options.python_source, PythonScanSource::IOPlugin)
                     {
                         let lp = PythonScan { options };

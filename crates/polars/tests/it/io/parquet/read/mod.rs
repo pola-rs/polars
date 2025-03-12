@@ -19,9 +19,9 @@ use polars_parquet::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDec
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
 use polars_parquet::parquet::metadata::ColumnChunkMetadata;
 use polars_parquet::parquet::page::DataPage;
-use polars_parquet::parquet::read::{get_column_iterator, read_metadata, BasicDecompressor};
-use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
+use polars_parquet::parquet::read::{BasicDecompressor, get_column_iterator, read_metadata};
 use polars_parquet::parquet::schema::Repetition;
+use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
 use polars_parquet::parquet::types::int96_to_i64_ns;
 use polars_parquet::read::PageReader;
 use polars_utils::mmap::MemReader;

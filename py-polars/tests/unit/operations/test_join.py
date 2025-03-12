@@ -164,6 +164,15 @@ def test_deprecated() -> None:
     )
 
 
+def test_deprecated_parameter_join_nulls() -> None:
+    df = pl.DataFrame({"a": [1, None]})
+    with pytest.deprecated_call(
+        match=r"The argument `join_nulls` for `DataFrame.join` is deprecated. It has been renamed to `nulls_equal`"
+    ):
+        result = df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
+    assert_frame_equal(result, df)
+
+
 def test_join_on_expressions() -> None:
     df_a = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -940,11 +949,11 @@ def test_join_4_columns_with_validity() -> None:
         d=pl.col("a"),
     )
 
-    assert a.join(a, on=["a", "b", "c", "d"], how="inner", join_nulls=True).shape == (
+    assert a.join(a, on=["a", "b", "c", "d"], how="inner", nulls_equal=True).shape == (
         644,
         4,
     )
-    assert a.join(a, on=["a", "b", "c", "d"], how="inner", join_nulls=False).shape == (
+    assert a.join(a, on=["a", "b", "c", "d"], how="inner", nulls_equal=False).shape == (
         115,
         4,
     )
@@ -1069,14 +1078,14 @@ def test_join_empty_literal_17027() -> None:
     assert (
         df1.lazy()
         .join(df2.lazy(), on=pl.lit(0), how="inner")
-        .collect(streaming=True)
+        .collect(engine="streaming")
         .height
         == 0
     )
     assert (
         df1.lazy()
         .join(df2.lazy(), on=pl.lit(0), how="left")
-        .collect(streaming=True)
+        .collect(engine="streaming")
         .height
         == 1
     )

@@ -47,7 +47,7 @@ pub struct GenericJoinProbe<K: ExtraPayload> {
     /// cached output names
     output_names: Option<Vec<PlSmallStr>>,
     args: JoinArgs,
-    join_nulls: bool,
+    nulls_equal: bool,
     row_values: RowValues,
 }
 
@@ -66,7 +66,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
         amortized_hashes: Vec<u64>,
         context: &PExecutionContext,
         args: JoinArgs,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> Self {
         if swapped_or_left && args.should_coalesce() {
             let tmp = DataChunk {
@@ -100,7 +100,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
             swapped_or_left,
             output_names: None,
             args,
-            join_nulls,
+            nulls_equal,
             row_values: RowValues::new(join_columns_right, !swapped_or_left),
         }
     }
@@ -164,7 +164,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                     let indexes_right = &indexes_right.0;
                     self.join_tuples_a.extend_from_slice(indexes_right);
                     self.join_tuples_b
-                        .extend(std::iter::repeat(df_idx_left).take(indexes_right.len()));
+                        .extend(std::iter::repeat_n(df_idx_left, indexes_right.len()));
                 },
                 None => {
                     self.join_tuples_b.push(df_idx_left);
@@ -188,10 +188,10 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
         let mut hashes = std::mem::take(&mut self.hashes);
         let rows = self
             .row_values
-            .get_values(context, chunk, self.join_nulls)?;
+            .get_values(context, chunk, self.nulls_equal)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
-        if self.join_nulls || rows.null_count() == 0 {
+        if self.nulls_equal || rows.null_count() == 0 {
             let iter = hashes.iter().zip(rows.values_iter()).enumerate();
             self.match_left(iter);
         } else {
@@ -238,7 +238,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                 let indexes_left = &indexes_left.0;
                 self.join_tuples_a.extend_from_slice(indexes_left);
                 self.join_tuples_b
-                    .extend(std::iter::repeat(df_idx_right).take(indexes_left.len()));
+                    .extend(std::iter::repeat_n(df_idx_right, indexes_left.len()));
             }
         }
     }
@@ -253,10 +253,10 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
         let mut hashes = std::mem::take(&mut self.hashes);
         let rows = self
             .row_values
-            .get_values(context, chunk, self.join_nulls)?;
+            .get_values(context, chunk, self.nulls_equal)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
-        if self.join_nulls || rows.null_count() == 0 {
+        if self.nulls_equal || rows.null_count() == 0 {
             let iter = hashes.iter().zip(rows.values_iter()).enumerate();
             self.match_inner(iter);
         } else {

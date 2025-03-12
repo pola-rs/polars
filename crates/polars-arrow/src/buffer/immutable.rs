@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
 
 use either::Either;
@@ -89,6 +90,10 @@ impl<T> Buffer<T> {
         }
     }
 
+    pub fn from_static(data: &'static [T]) -> Self {
+        Self::from_storage(SharedStorage::from_static(data))
+    }
+
     /// Returns the number of bytes in the buffer
     #[inline]
     pub fn len(&self) -> usize {
@@ -106,6 +111,20 @@ impl<T> Buffer<T> {
     /// more data than the length of `Self`.
     pub fn is_sliced(&self) -> bool {
         self.storage.len() != self.length
+    }
+
+    /// Expands this slice to the maximum allowed by the underlying storage.
+    /// Only expands towards the end, the offset isn't changed. That is, element
+    /// i before and after this operation refer to the same element.
+    pub fn expand_end_to_storage(self) -> Self {
+        unsafe {
+            let offset = self.ptr.offset_from(self.storage.as_ptr()) as usize;
+            Self {
+                ptr: self.ptr,
+                length: self.storage.len() - offset,
+                storage: self.storage,
+            }
+        }
     }
 
     /// Returns the byte slice stored in this buffer

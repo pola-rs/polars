@@ -26,9 +26,9 @@ mod schema;
 pub use aliases::*;
 pub use any_value::*;
 pub use arrow::array::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray};
-pub use arrow::datatypes::reshape::*;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
+pub use arrow::datatypes::reshape::*;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
@@ -70,9 +70,9 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
     type OwnedPhysical: std::fmt::Debug + Send + Sync + Clone + PartialEq;
     type ZeroablePhysical<'a>: Zeroable + From<Self::Physical<'a>>;
     type Array: for<'a> StaticArray<
-        ValueT<'a> = Self::Physical<'a>,
-        ZeroableValueT<'a> = Self::ZeroablePhysical<'a>,
-    >;
+            ValueT<'a> = Self::Physical<'a>,
+            ZeroableValueT<'a> = Self::ZeroablePhysical<'a>,
+        >;
     type IsNested;
     type HasViews;
     type IsStruct;
@@ -87,16 +87,16 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
 pub trait PolarsNumericType: 'static
 where
     Self: for<'a> PolarsDataType<
-        OwnedPhysical = Self::Native,
-        Physical<'a> = Self::Native,
-        ZeroablePhysical<'a> = Self::Native,
-        Array = PrimitiveArray<Self::Native>,
-        IsNested = FalseT,
-        HasViews = FalseT,
-        IsStruct = FalseT,
-        IsObject = FalseT,
-        IsLogical = FalseT,
-    >,
+            OwnedPhysical = Self::Native,
+            Physical<'a> = Self::Native,
+            ZeroablePhysical<'a> = Self::Native,
+            Array = PrimitiveArray<Self::Native>,
+            IsNested = FalseT,
+            HasViews = FalseT,
+            IsStruct = FalseT,
+            IsObject = FalseT,
+            IsLogical = FalseT,
+        >,
 {
     type Native: NumericNative;
 }
@@ -296,7 +296,7 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type IsLogical = FalseT;
 
     fn get_dtype() -> DataType {
-        DataType::Object(T::type_name(), None)
+        DataType::Object(T::type_name())
     }
 }
 

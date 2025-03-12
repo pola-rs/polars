@@ -2,24 +2,20 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    AnyValue, ArrowField, ArrowSchema, BooleanChunked, ChunkFilter, Column, DataType, IdxCa,
-    IntoColumn,
+    ArrowField, ArrowSchema, BooleanChunked, ChunkFilter, Column, DataType, IdxCa, IntoColumn,
 };
-use polars_core::scalar::Scalar;
 use polars_core::series::{IsSorted, Series};
 use polars_core::utils::arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_io::hive;
 use polars_io::predicates::{ColumnPredicateExpr, ScanIOPredicate, SpecializedColumnPredicateExpr};
-use polars_io::prelude::_internal::calc_prefilter_cost;
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
+use polars_io::prelude::_internal::calc_prefilter_cost;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, PredicateFilter};
-use polars_plan::dsl::ScanSources;
-use polars_plan::plans::hive::HivePartitions;
+use polars_utils::IdxSize;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::IdxSize;
 
 use super::row_group_data_fetch::RowGroupData;
 use crate::async_executor;
@@ -27,11 +23,6 @@ use crate::nodes::TaskPriority;
 
 /// Turns row group data into DataFrames.
 pub(super) struct RowGroupDecoder {
-    pub(super) scan_sources: ScanSources,
-    pub(super) hive_partitions: Option<Arc<Vec<HivePartitions>>>,
-    pub(super) hive_partitions_width: usize,
-    pub(super) include_file_paths: Option<PlSmallStr>,
-    pub(super) reader_schema: Arc<ArrowSchema>,
     pub(super) projected_arrow_schema: Arc<ArrowSchema>,
     pub(super) row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
     pub(super) predicate: Option<ScanIOPredicate>,
@@ -61,10 +52,7 @@ impl RowGroupDecoder {
     ) -> PolarsResult<DataFrame> {
         let row_group_data = Arc::new(row_group_data);
 
-        let out_width = self.row_index.is_some() as usize
-            + self.projected_arrow_schema.len()
-            + self.hive_partitions_width
-            + self.include_file_paths.is_some() as usize;
+        let out_width = self.row_index.is_some() as usize + self.projected_arrow_schema.len();
 
         let mut out_columns = Vec::with_capacity(out_width);
 
@@ -89,29 +77,7 @@ impl RowGroupDecoder {
 
         let projection_height = slice_range.len();
 
-        let shared_file_state = row_group_data
-            .shared_file_state
-            .get_or_init(|| self.shared_file_state_init_func(&row_group_data))
-            .await;
-
-        assert_eq!(shared_file_state.path_index, row_group_data.path_index);
-
-        let mut hive_cols_iter = shared_file_state.hive_series.iter().map(|s| {
-            debug_assert!(s.len() >= projection_height);
-            s.slice(0, projection_height)
-        });
-
-        hive::merge_sorted_to_schema_order(
-            &mut decoded_cols.into_iter(),
-            &mut hive_cols_iter,
-            &self.reader_schema,
-            &mut out_columns,
-        );
-
-        if let Some(file_path_series) = &shared_file_state.file_path_series {
-            debug_assert!(file_path_series.len() >= projection_height);
-            out_columns.push(file_path_series.slice(0, projection_height));
-        }
+        out_columns.extend(decoded_cols);
 
         let df = unsafe { DataFrame::new_no_checks(projection_height, out_columns) };
 
@@ -136,46 +102,6 @@ impl RowGroupDecoder {
         assert_eq!(df.width(), out_width); // `out_width` should have been calculated correctly
 
         Ok(df)
-    }
-
-    async fn shared_file_state_init_func(&self, row_group_data: &RowGroupData) -> SharedFileState {
-        let path_index = row_group_data.path_index;
-
-        let hive_series = if let Some(hp) = self.hive_partitions.as_deref() {
-            let v = hp[path_index].materialize_partition_columns();
-            v.into_iter()
-                .map(|s| {
-                    s.into_column()
-                        .new_from_index(0, row_group_data.file_max_row_group_height)
-                })
-                .collect()
-        } else {
-            vec![]
-        };
-
-        // @scalar-opt
-        let file_path_series = self.include_file_paths.clone().map(|file_path_col| {
-            Column::new_scalar(
-                file_path_col,
-                Scalar::new(
-                    DataType::String,
-                    AnyValue::StringOwned(
-                        self.scan_sources
-                            .get(path_index)
-                            .unwrap()
-                            .to_include_path_name()
-                            .into(),
-                    ),
-                ),
-                row_group_data.file_max_row_group_height,
-            )
-        });
-
-        SharedFileState {
-            path_index,
-            hive_series,
-            file_path_series,
-        }
     }
 
     fn materialize_row_index(
@@ -457,13 +383,6 @@ fn calc_cols_per_thread(
     parallel.then_some((cols_per_thread, remainder))
 }
 
-/// State shared across row groups for a single file.
-pub(super) struct SharedFileState {
-    path_index: usize,
-    hive_series: Vec<Column>,
-    file_path_series: Option<Column>,
-}
-
 // Pre-filtered
 
 impl RowGroupDecoder {
@@ -478,24 +397,11 @@ impl RowGroupDecoder {
         let row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
 
-        let shared_file_state = row_group_data
-            .shared_file_state
-            .get_or_init(|| self.shared_file_state_init_func(&row_group_data))
-            .await;
-
-        assert_eq!(shared_file_state.path_index, row_group_data.path_index);
-
         let mut live_columns = Vec::with_capacity(
-            self.row_index.is_some() as usize
-                + self.predicate_arrow_field_indices.len()
-                + self.hive_partitions_width
-                + self.include_file_paths.is_some() as usize,
+            self.row_index.is_some() as usize + self.predicate_arrow_field_indices.len(),
         );
         let mut masks = Vec::with_capacity(
-            self.row_index.is_some() as usize
-                + self.predicate_arrow_field_indices.len()
-                + self.hive_partitions_width
-                + self.include_file_paths.is_some() as usize,
+            self.row_index.is_some() as usize + self.predicate_arrow_field_indices.len(),
         );
 
         if let Some(s) = self.materialize_row_index(
@@ -515,9 +421,7 @@ impl RowGroupDecoder {
         let mut opt_decode_err = None;
 
         let use_column_predicates = scan_predicate.column_predicates.is_sumwise_complete
-            && self.include_file_paths.is_none()
             && self.row_index.is_none()
-            && self.hive_partitions.is_none()
             && self
                 .predicate_arrow_field_indices
                 .iter()
@@ -573,24 +477,14 @@ impl RowGroupDecoder {
                     },
                 }
             });
-        let hive_cols_iter = shared_file_state.hive_series.iter().map(|s| {
-            debug_assert!(s.len() >= projection_height);
-            s.slice(0, projection_height)
-        });
 
         for (c, m) in decoded_live_cols_iter {
             live_columns.push(c);
             masks.push(m);
         }
-        live_columns.extend(hive_cols_iter);
         opt_decode_err.transpose()?;
 
-        if let Some(file_path_series) = &shared_file_state.file_path_series {
-            debug_assert!(file_path_series.len() >= projection_height);
-            live_columns.push(file_path_series.slice(0, projection_height));
-        }
-
-        let (mut live_df_filtered, mask) = if use_column_predicates {
+        let (live_df_filtered, mask) = if use_column_predicates {
             assert!(scan_predicate.column_predicates.is_sumwise_complete);
             if masks.len() == 1 {
                 (
@@ -649,37 +543,11 @@ impl RowGroupDecoder {
             )
         };
 
-        let filtered_height = live_df_filtered.height();
-
         if self.non_predicate_arrow_field_indices.is_empty() {
             // User or test may have explicitly requested prefiltering
-
-            hive::merge_sorted_to_schema_order(
-                unsafe {
-                    &mut live_df_filtered
-                        .get_columns_mut()
-                        .drain(..)
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                },
-                &mut shared_file_state
-                    .hive_series
-                    .iter()
-                    .map(|s| s.slice(0, filtered_height)),
-                &self.reader_schema,
-                unsafe { live_df_filtered.get_columns_mut() },
-            );
-
-            unsafe {
-                live_df_filtered.get_columns_mut().extend(
-                    shared_file_state
-                        .file_path_series
-                        .as_ref()
-                        .map(|c| c.slice(0, filtered_height)),
-                )
-            }
-
-            return Ok(live_df_filtered);
+            return Ok(live_df_filtered
+                .select(self.projected_arrow_schema.iter_names().cloned())
+                .unwrap());
         }
 
         let mask_bitmap = {
@@ -750,30 +618,7 @@ impl RowGroupDecoder {
 
         opt_decode_err.transpose()?;
 
-        let mut out = Vec::with_capacity(
-            merged.len()
-                + shared_file_state.hive_series.len()
-                + shared_file_state.file_path_series.is_some() as usize,
-        );
-
-        hive::merge_sorted_to_schema_order(
-            &mut merged.into_iter(),
-            &mut shared_file_state
-                .hive_series
-                .iter()
-                .map(|s| s.slice(0, filtered_height)),
-            &self.reader_schema,
-            &mut out,
-        );
-
-        out.extend(
-            shared_file_state
-                .file_path_series
-                .as_ref()
-                .map(|c| c.slice(0, filtered_height)),
-        );
-
-        let df = unsafe { DataFrame::new_no_checks(expected_num_rows, out) };
+        let df = unsafe { DataFrame::new_no_checks(expected_num_rows, merged) };
         Ok(df)
     }
 }

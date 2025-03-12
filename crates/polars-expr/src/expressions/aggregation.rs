@@ -4,10 +4,11 @@ use arrow::array::*;
 use arrow::compute::concatenate::concatenate;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::Offsets;
+use polars_compute::rolling::QuantileMethod;
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::{NoNull, _split_offsets};
-use polars_core::POOL;
+use polars_core::utils::{_split_offsets, NoNull};
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
 use rayon::prelude::*;
@@ -566,6 +567,12 @@ impl PartitionedAggregation for AggregationExpr {
                         let count = &fields[1];
                         let (agg_count, agg_s) =
                             unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
+
+                        let agg_count = agg_count.idx().unwrap();
+                        // Ensure that we don't divide by zero.
+                        let agg_count = agg_count
+                            .apply_values(|v| if v == 0 { 1 } else { v })
+                            .into_series();
                         let agg_s = &agg_s / &agg_count;
                         Ok(agg_s?.with_name(new_name).into_column())
                     },
@@ -595,7 +602,7 @@ impl PartitionedAggregation for AggregationExpr {
                     offsets.push(length_so_far);
                     values.push(s.chunks()[0].clone());
 
-                    if s.len() == 0 {
+                    if s.is_empty() {
                         can_fast_explode = false;
                     }
                     Ok(())

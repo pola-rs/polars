@@ -6,7 +6,8 @@ use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
-use polars_compute::sum::{wrapping_sum_arr, WrappingSum};
+use polars_compute::rolling::QuantileMethod;
+use polars_compute::sum::{WrappingSum, wrapping_sum_arr};
 use polars_utils::min_max::MinMax;
 use polars_utils::sync::SyncPtr;
 pub use quantile::*;
@@ -94,7 +95,7 @@ where
 
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let idx = self.first_non_null().unwrap();
                 unsafe { self.get_unchecked(idx) }
@@ -107,9 +108,7 @@ where
                 .downcast_iter()
                 .filter_map(MinMaxKernel::min_ignore_nan_kernel)
                 .reduce(MinMax::min_ignore_nan),
-        };
-
-        result
+        }
     }
 
     fn max(&self) -> Option<T::Native> {
@@ -118,7 +117,7 @@ where
         }
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let idx = if T::get_dtype().is_float() {
                     float_arg_max_sorted_ascending(self)
@@ -141,9 +140,7 @@ where
                 .downcast_iter()
                 .filter_map(MinMaxKernel::max_ignore_nan_kernel)
                 .reduce(MinMax::max_ignore_nan),
-        };
-
-        result
+        }
     }
 
     fn min_max(&self) -> Option<(T::Native, T::Native)> {
@@ -152,7 +149,7 @@ where
         }
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
                 let max = {
@@ -189,9 +186,7 @@ where
                         MinMax::max_ignore_nan(max1, max2),
                     )
                 }),
-        };
-
-        result
+        }
     }
 
     fn mean(&self) -> Option<f64> {
@@ -227,11 +222,7 @@ impl BooleanChunked {
             return None;
         }
         if nc == 0 {
-            if self.all() {
-                Some(true)
-            } else {
-                Some(false)
-            }
+            if self.all() { Some(true) } else { Some(false) }
         } else {
             // we can unwrap as we already checked empty and all null above
             if (self.sum().unwrap() + nc as IdxSize) == len as IdxSize {
@@ -246,11 +237,7 @@ impl BooleanChunked {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
-        if self.any() {
-            Some(true)
-        } else {
-            Some(false)
-        }
+        if self.any() { Some(true) } else { Some(false) }
     }
     pub fn mean(&self) -> Option<f64> {
         if self.is_empty() || self.null_count() == self.len() {
@@ -461,7 +448,7 @@ impl CategoricalChunked {
             let rev_map = self.get_rev_map();
             // Fast path where all categories are used
             let c = if self._can_fast_unique() {
-                self.get_rev_map().get_categories().min_ignore_nan_kernel()
+                rev_map.get_categories().min_ignore_nan_kernel()
             } else {
                 // SAFETY:
                 // Indices are in bounds
@@ -474,10 +461,7 @@ impl CategoricalChunked {
             };
             rev_map.find(c.unwrap())
         } else {
-            match self._can_fast_unique() {
-                true => Some(0),
-                false => self.physical().min(),
-            }
+            self.physical().min()
         }
     }
 
@@ -489,7 +473,7 @@ impl CategoricalChunked {
             let rev_map = self.get_rev_map();
             // Fast path where all categories are used
             let c = if self._can_fast_unique() {
-                self.get_rev_map().get_categories().max_ignore_nan_kernel()
+                rev_map.get_categories().max_ignore_nan_kernel()
             } else {
                 // SAFETY:
                 // Indices are in bounds
@@ -502,10 +486,7 @@ impl CategoricalChunked {
             };
             rev_map.find(c.unwrap())
         } else {
-            match self._can_fast_unique() {
-                true => Some((self.get_rev_map().len() - 1) as u32),
-                false => self.physical().max(),
-            }
+            self.physical().max()
         }
     }
 }
@@ -533,14 +514,16 @@ impl ChunkAggSeries for CategoricalChunked {
             DataType::Categorical(r, _) => match self.min_categorical() {
                 None => Scalar::new(self.dtype().clone(), AnyValue::Null),
                 Some(v) => {
-                    let RevMapping::Local(arr, _) = &**r.as_ref().unwrap() else {
-                        unreachable!()
+                    let r = r.as_ref().unwrap();
+                    let arr = match &**r {
+                        RevMapping::Local(arr, _) => arr,
+                        RevMapping::Global(_, arr, _) => arr,
                     };
                     Scalar::new(
                         self.dtype().clone(),
                         AnyValue::CategoricalOwned(
                             v,
-                            r.as_ref().unwrap().clone(),
+                            r.clone(),
                             SyncPtr::from_const(arr as *const _),
                         ),
                     )
@@ -570,14 +553,16 @@ impl ChunkAggSeries for CategoricalChunked {
             DataType::Categorical(r, _) => match self.max_categorical() {
                 None => Scalar::new(self.dtype().clone(), AnyValue::Null),
                 Some(v) => {
-                    let RevMapping::Local(arr, _) = &**r.as_ref().unwrap() else {
-                        unreachable!()
+                    let r = r.as_ref().unwrap();
+                    let arr = match &**r {
+                        RevMapping::Local(arr, _) => arr,
+                        RevMapping::Global(_, arr, _) => arr,
                     };
                     Scalar::new(
                         self.dtype().clone(),
                         AnyValue::CategoricalOwned(
                             v,
-                            r.as_ref().unwrap().clone(),
+                            r.clone(),
                             SyncPtr::from_const(arr as *const _),
                         ),
                     )
@@ -657,9 +642,12 @@ impl<T: PolarsObject> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
+    use polars_compute::rolling::QuantileMethod;
+
     use crate::prelude::*;
 
     #[test]
+    #[cfg(not(miri))]
     fn test_var() {
         // Validated with numpy. Note that numpy uses ddof as an argument which
         // influences results. The default ddof=0, we chose ddof=1, which is

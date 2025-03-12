@@ -86,16 +86,14 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
                 }
             },
             #[cfg(feature = "object")]
-            Object(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
+            Object(_) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
             dt if dt.is_primitive_numeric() || dt.is_logical() => {
                 macro_rules! dispatch {
-                    ($ca:expr, $n:expr, $fill_value:expr) => {{
-                        shift_and_fill_numeric($ca, $n, $fill_value).into_column()
-                    }};
+                    ($ca:expr, $n:expr, $fill_value:expr) => {{ shift_and_fill_numeric($ca, $n, $fill_value).into_column() }};
                 }
                 let out = downcast_as_macro_arg_physical!(physical, dispatch, n, fill_value);
                 unsafe { out.from_physical_unchecked(logical) }

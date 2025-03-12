@@ -5,7 +5,7 @@ use polars_error::to_compute_err;
 use polars_time::chunkedarray::string::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::string::infer::{
-    infer_pattern_single, DatetimeInfer, StrpTimeParser, TryFromWithUnit,
+    DatetimeInfer, StrpTimeParser, TryFromWithUnit, infer_pattern_single,
 };
 use polars_utils::vec::PushUnchecked;
 
@@ -309,7 +309,6 @@ impl CategoricalField {
             self.builder.append_null();
             return Ok(());
         }
-
         if validate_utf8(bytes) {
             if needs_escaping {
                 polars_ensure!(bytes.len() > 1, ComputeError: "invalid csv file\n\nField `{}` is not properly escaped.", std::str::from_utf8(bytes).map_err(to_compute_err)?);
@@ -329,13 +328,19 @@ impl CategoricalField {
                 // SAFETY:
                 // just did utf8 check
                 let key = unsafe { std::str::from_utf8_unchecked(&self.escape_scratch) };
-                self.builder.append_value(key);
+                if self.is_enum {
+                    self.builder.try_append_value(key)?;
+                } else {
+                    self.builder.append_value(key);
+                }
             } else {
                 // SAFETY:
                 // just did utf8 check
-                unsafe {
-                    self.builder
-                        .append_value(std::str::from_utf8_unchecked(bytes))
+                let key = unsafe { std::str::from_utf8_unchecked(bytes) };
+                if self.is_enum {
+                    self.builder.try_append_value(key)?
+                } else {
+                    self.builder.append_value(key)
                 }
             }
         } else if ignore_errors {

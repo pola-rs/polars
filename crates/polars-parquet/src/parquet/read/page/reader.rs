@@ -5,6 +5,7 @@ use polars_parquet_format::thrift::protocol::TCompactInputProtocol;
 use polars_utils::mmap::{MemReader, MemSlice};
 
 use super::PageIterator;
+use crate::parquet::CowBuffer;
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetadata, Descriptor};
@@ -12,7 +13,6 @@ use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, PageType,
     ParquetPageHeader,
 };
-use crate::parquet::CowBuffer;
 use crate::write::Encoding;
 
 /// This meta is a small part of [`ColumnChunkMetadata`].

@@ -6,13 +6,13 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::{get_lf, Wrap};
+use crate::conversion::{Wrap, get_lf};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::map::lazy::binary_lambda;
 use crate::prelude::vec_extract_wrapped;
 use crate::utils::EnterPolarsExt;
-use crate::{map, PyDataFrame, PyExpr, PyLazyFrame, PySeries};
+use crate::{PyDataFrame, PyExpr, PyLazyFrame, PySeries, map};
 
 macro_rules! set_unwrapped_or_0 {
     ($($var:ident),+ $(,)?) => {

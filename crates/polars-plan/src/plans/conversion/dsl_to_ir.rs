@@ -161,7 +161,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
                 }
 
-                let sources = match &scan_type {
+                let sources = match &*scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { cloud_options, .. } => sources
                         .expand_paths_with_hive_update(&mut file_options, cloud_options.as_ref())?,
@@ -179,7 +179,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     FileScan::Anonymous { .. } => sources,
                 };
 
-                let mut file_info = match &mut scan_type {
+                let mut file_info = match &mut *scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet {
                         options,
@@ -291,17 +291,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 }
 
                 file_options.include_file_paths =
-                    file_options.include_file_paths.filter(|_| match scan_type {
-                        #[cfg(feature = "parquet")]
-                        FileScan::Parquet { .. } => true,
-                        #[cfg(feature = "ipc")]
-                        FileScan::Ipc { .. } => true,
-                        #[cfg(feature = "csv")]
-                        FileScan::Csv { .. } => true,
-                        #[cfg(feature = "json")]
-                        FileScan::NDJson { .. } => true,
-                        FileScan::Anonymous { .. } => false,
-                    });
+                    file_options
+                        .include_file_paths
+                        .filter(|_| match &*scan_type {
+                            #[cfg(feature = "parquet")]
+                            FileScan::Parquet { .. } => true,
+                            #[cfg(feature = "ipc")]
+                            FileScan::Ipc { .. } => true,
+                            #[cfg(feature = "csv")]
+                            FileScan::Csv { .. } => true,
+                            #[cfg(feature = "json")]
+                            FileScan::NDJson { .. } => true,
+                            FileScan::Anonymous { .. } => false,
+                        });
 
                 if let Some(ref file_path_col) = file_options.include_file_paths {
                     let schema = Arc::make_mut(&mut file_info.schema);
@@ -336,7 +338,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         .unwrap();
                 }
 
-                let ir = if sources.is_empty() && !matches!(scan_type, FileScan::Anonymous { .. }) {
+                let ir = if sources.is_empty() && !matches!(&*scan_type, FileScan::Anonymous { .. })
+                {
                     IR::DataFrameScan {
                         df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
                         schema: file_info.schema,
@@ -368,7 +371,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     scan_fn,
                     schema,
                     python_source: options.python_source,
-                    ..Default::default()
+                    validate_schema: options.validate_schema,
+                    output_schema: Default::default(),
+                    with_columns: Default::default(),
+                    n_rows: Default::default(),
+                    predicate: Default::default(),
                 },
             }
         },
@@ -567,8 +574,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 )
                 .map_err(|e| e.context(failed_here!(sort)))?;
 
-                nulls_last.extend(std::iter::repeat(n).take(exprs.len()));
-                descending.extend(std::iter::repeat(d).take(exprs.len()));
+                nulls_last.extend(std::iter::repeat_n(n, exprs.len()));
+                descending.extend(std::iter::repeat_n(d, exprs.len()));
                 expanded_cols.extend(exprs);
             }
             sort_options.nulls_last = nulls_last;
@@ -576,7 +583,36 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             ctxt.conversion_optimizer
                 .fill_scratch(&expanded_cols, ctxt.expr_arena);
-            let by_column = expanded_cols;
+            let mut by_column = expanded_cols;
+
+            // Remove null columns in multi-columns sort
+            if by_column.len() > 1 {
+                let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
+                let mut null_columns = vec![];
+
+                for (i, c) in by_column.iter().enumerate() {
+                    if let DataType::Null =
+                        c.dtype(&input_schema, Context::Default, ctxt.expr_arena)?
+                    {
+                        null_columns.push(i);
+                    }
+                }
+                // All null columns, only take one.
+                if null_columns.len() == by_column.len() {
+                    by_column.truncate(1);
+                    sort_options.nulls_last.truncate(1);
+                    sort_options.descending.truncate(1);
+                }
+                // Remove the null columns
+                else if !null_columns.is_empty() {
+                    for i in null_columns.into_iter().rev() {
+                        by_column.remove(i);
+                        sort_options.nulls_last.remove(i);
+                        sort_options.descending.remove(i);
+                    }
+                }
+            };
 
             let lp = IR::Sort {
                 input,
@@ -665,7 +701,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt,
             )
             .map_err(|e| e.context(failed_here!(join)))
-            .map(|t| t.0)
+            .map(|t| t.0);
         },
         DslPlan::HStack {
             input,
@@ -945,7 +981,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 Ok(node.unwrap())
             } else {
                 to_alp_impl(owned(dsl), ctxt)
-            }
+            };
         },
     };
     Ok(ctxt.lp_arena.add(v))
@@ -998,11 +1034,15 @@ fn expand_filter(
                 }
 
                 let msg = if cfg!(feature = "python") {
-                    format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
+                    format!(
+                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression."
+                    )
                 } else {
-                    format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression.")
+                    format!(
+                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
+                    )
                 };
                 polars_bail!(ComputeError: msg)
             },

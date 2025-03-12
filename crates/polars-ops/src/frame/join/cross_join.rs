@@ -1,6 +1,6 @@
 use polars_core::utils::{
-    concat_df_unchecked, CustomIterTools, NoNull, _set_partition_size,
-    accumulate_dataframes_vertical_unchecked, split,
+    _set_partition_size, CustomIterTools, NoNull, accumulate_dataframes_vertical_unchecked,
+    concat_df_unchecked, split,
 };
 use polars_utils::pl_str::PlSmallStr;
 

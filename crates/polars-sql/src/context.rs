@@ -855,7 +855,7 @@ impl SQLContext {
                                 validation: Default::default(),
                                 suffix: None,
                                 slice: None,
-                                join_nulls: false,
+                                nulls_equal: false,
                                 coalesce: Default::default(),
                                 maintain_order: polars_ops::frame::MaintainOrderJoin::Left,
                             },

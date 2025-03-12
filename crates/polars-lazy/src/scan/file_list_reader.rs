@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
-use polars_io::cloud::CloudOptions;
 use polars_io::RowIndex;
+use polars_io::cloud::CloudOptions;
 use polars_plan::prelude::UnionArgs;
 
 use crate::prelude::*;
