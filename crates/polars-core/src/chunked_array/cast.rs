@@ -303,7 +303,7 @@ impl ChunkCast for StringChunked {
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(rev_map, ordering) => {
                 let Some(rev_map) = rev_map else {
-                    polars_bail!(ComputeError: "can not cast / initialize Enum without categories present")
+                    polars_bail!(ComputeError: "cannot cast / initialize Enum without categories present")
                 };
                 CategoricalChunked::from_string_to_enum(self, rev_map.get_categories(), *ordering)
                     .map(|ca| {
@@ -444,6 +444,10 @@ impl ChunkCast for BooleanChunked {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
                 cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)
+            },
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_, _) | DataType::Enum(_, _) => {
+                polars_bail!(InvalidOperation: "cannot cast Boolean to Categorical");
             },
             _ => cast_impl(self.name().clone(), &self.chunks, dtype, options),
         }
