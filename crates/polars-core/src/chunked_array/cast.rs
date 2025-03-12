@@ -303,7 +303,7 @@ impl ChunkCast for StringChunked {
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(rev_map, ordering) => {
                 let Some(rev_map) = rev_map else {
-                    polars_bail!(ComputeError: "cannot cast / initialize Enum without categories present")
+                    polars_bail!(InvalidOperation: "cannot cast / initialize Enum without categories present")
                 };
                 CategoricalChunked::from_string_to_enum(self, rev_map.get_categories(), *ordering)
                     .map(|ca| {
