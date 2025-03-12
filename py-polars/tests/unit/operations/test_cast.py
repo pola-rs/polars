@@ -714,3 +714,10 @@ def test_overflowing_cast_literals_21023() -> None:
             ),
             pl.Series([-128], dtype=pl.Int8).to_frame(),
         )
+
+
+def test_invalid_empty_cast_to_empty_enum() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="cannot cast to Enum without categories present"
+    ):
+        pl.Series([], dtype=pl.Enum)
