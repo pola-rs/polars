@@ -1861,12 +1861,13 @@ def test_join_null_equal(order: Literal["none", "left_right", "right_left"]) -> 
     lhs = pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3]})
     with_null = pl.DataFrame({"x": [1, None], "z": [1, 2]})
     without_null = pl.DataFrame({"x": [1, 3], "z": [1, 3]})
+    check_row_order = order != "none"
 
     # Inner join.
     assert_frame_equal(
         lhs.join(with_null, on="x", nulls_equal=True, maintain_order=order),
         pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
-        check_row_order=order is not None,
+        check_row_order=check_row_order,
     )
     assert_frame_equal(
         lhs.join(without_null, on="x", nulls_equal=True),
@@ -1877,14 +1878,14 @@ def test_join_null_equal(order: Literal["none", "left_right", "right_left"]) -> 
     assert_frame_equal(
         lhs.join(with_null, on="x", how="left", nulls_equal=True, maintain_order=order),
         pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
-        check_row_order=order is not None,
+        check_row_order=check_row_order,
     )
     assert_frame_equal(
         lhs.join(
             without_null, on="x", how="left", nulls_equal=True, maintain_order=order
         ),
         pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, None, None]}),
-        check_row_order=order is not None,
+        check_row_order=check_row_order,
     )
 
     # Full join.
@@ -1898,7 +1899,7 @@ def test_join_null_equal(order: Literal["none", "left_right", "right_left"]) -> 
             maintain_order=order,
         ),
         pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
-        check_row_order=order is not None,
+        check_row_order=check_row_order,
     )
     if order == "left_right":
         expected = pl.DataFrame(
@@ -1923,6 +1924,6 @@ def test_join_null_equal(order: Literal["none", "left_right", "right_left"]) -> 
             without_null, on="x", how="full", nulls_equal=True, maintain_order=order
         ),
         expected,
-        check_row_order=order is not None,
+        check_row_order=check_row_order,
         check_column_order=False,
     )
