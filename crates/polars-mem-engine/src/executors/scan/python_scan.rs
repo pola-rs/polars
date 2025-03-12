@@ -15,13 +15,17 @@ pub(crate) struct PythonScanExec {
 }
 
 impl PythonScanExec {
+    /// Get the output schema. E.g. the schema the plugins produce, not consume.
+    fn get_schema(&self) -> &SchemaRef {
+        self.options
+            .output_schema
+            .as_ref()
+            .unwrap_or(&self.options.schema)
+    }
+
     fn check_schema(&self, df: &DataFrame) -> PolarsResult<()> {
         if self.options.validate_schema {
-            let output_schema = self
-                .options
-                .output_schema
-                .as_ref()
-                .unwrap_or(&self.options.schema);
+            let output_schema = self.get_schema();
             polars_ensure!(df.schema() == output_schema, SchemaMismatch: "user provided schema: {:?} doesn't match the DataFrame schema: {:?}", output_schema, df.schema());
         }
         Ok(())
@@ -167,6 +171,9 @@ impl Executor for PythonScanExec {
                                 polars_bail!(ComputeError: "caught exception during execution of a Python source, exception: {}", err)
                             },
                         }
+                    }
+                    if chunks.is_empty() {
+                        return Ok(DataFrame::empty_with_schema(self.get_schema().as_ref()));
                     }
                     let df = accumulate_dataframes_vertical(chunks)?;
 

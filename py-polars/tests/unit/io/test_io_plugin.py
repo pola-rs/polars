@@ -55,3 +55,17 @@ def test_defer() -> None:
     )
     with pytest.raises(pl.exceptions.SchemaError):
         lf.collect()
+
+
+def test_empty_iterator_io_plugin() -> None:
+    def _io_source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        yield from []
+
+    schema = pl.Schema([("a", pl.Int64)])
+    df = register_io_source(_io_source, schema=schema)
+    assert df.collect().schema == schema
