@@ -26,7 +26,6 @@ use crate::async_executor::spawn;
 use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
-use crate::nodes::io_sinks::sync_on_close;
 use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
 
 pub struct IpcSinkNode {
@@ -322,7 +321,7 @@ impl SinkNode for IpcSinkNode {
             drop(writer);
 
             if let Writeable::Local(file) = &mut file {
-                sync_on_close(sink_options.sync_on_close, file)?;
+                polars_io::utils::sync_on_close::sync_on_close(sink_options.sync_on_close, file)?;
             }
 
             file.close()?;

@@ -15,6 +15,7 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
+use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_io::{HiveOptions, RowIndex, is_cloud_url};
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::IEJoinOptions;
@@ -329,19 +330,6 @@ pub struct LogicalPlanUdfOptions {
 pub struct AnonymousScanOptions {
     pub skip_rows: Option<usize>,
     pub fmt_str: &'static str,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum SyncOnCloseType {
-    /// Don't call sync on close.
-    #[default]
-    None,
-
-    /// Sync only the file contents.
-    Data,
-    /// Synce the file contents and the metadata.
-    All,
 }
 
 /// Options that apply to all sinks.

@@ -15,7 +15,7 @@ use polars_utils::priority::Priority;
 use super::{SinkInputPort, SinkNode};
 use crate::async_executor::spawn;
 use crate::async_primitives::connector::Receiver;
-use crate::nodes::io_sinks::{parallelize_receive_task, tokio_sync_on_close};
+use crate::nodes::io_sinks::parallelize_receive_task;
 use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
 
 pub struct CsvSinkNode {
@@ -154,7 +154,11 @@ impl SinkNode for CsvSinkNode {
             }
 
             if let AsyncWriteable::Local(file) = &mut file {
-                tokio_sync_on_close(sink_options.sync_on_close, file).await?;
+                polars_io::utils::sync_on_close::tokio_sync_on_close(
+                    sink_options.sync_on_close,
+                    file,
+                )
+                .await?;
             }
 
             file.close().await?;
