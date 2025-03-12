@@ -451,7 +451,7 @@ fn test_with_projection() -> PolarsResult<()> {
     buf.set_position(0);
 
     let read_df = AvroReader::new(buf)
-        .with_projection(Some(vec![0, 1]))
+        .with_projection(Some(vec![0, 1].into_boxed_slice().into()))
         .finish()?;
 
     assert!(expected_df.equals(&read_df));
@@ -478,7 +478,11 @@ fn test_with_columns() -> PolarsResult<()> {
     buf.set_position(0);
 
     let read_df = AvroReader::new(buf)
-        .with_columns(Some(vec!["i64".to_string(), "string".to_string()]))
+        .with_columns(Some(
+            vec!["i64".into(), "string".into()]
+                .into_boxed_slice()
+                .into(),
+        ))
         .finish()?;
 
     assert!(expected_df.equals(&read_df));

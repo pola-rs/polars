@@ -61,7 +61,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     n_rows: Option<usize>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     arrow_schema: &ArrowSchema,
-    row_index: Option<RowIndex>,
+    mut row_index: Option<&mut RowIndex>,
 ) -> PolarsResult<DataFrame> {
     use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
@@ -69,12 +69,12 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     let mut parsed_dfs = Vec::with_capacity(1024);
 
     while let Some(batch) = reader.next_record_batch()? {
-        let current_num_rows = num_rows as IdxSize;
         num_rows += batch.len();
         let mut df = DataFrame::from(batch);
 
-        if let Some(rc) = &row_index {
-            df.with_row_index_mut(rc.name.clone(), Some(current_num_rows + rc.offset));
+        if let Some(rc) = &mut row_index {
+            df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
+            rc.offset += df.height() as IdxSize;
         }
 
         if let Some(predicate) = &predicate {

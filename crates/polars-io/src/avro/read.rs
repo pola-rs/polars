@@ -5,6 +5,8 @@ use arrow::record_batch::RecordBatch;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 
+use crate::RowIndex;
+use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::shared::{ArrowReader, finish_reader};
 
@@ -27,15 +29,17 @@ use crate::shared::{ArrowReader, finish_reader};
 /// }
 /// ```
 #[must_use]
-pub struct AvroReader<R> {
+pub struct AvroReader<'a, R> {
     reader: R,
     rechunk: bool,
     n_rows: Option<usize>,
-    columns: Option<Vec<String>>,
-    projection: Option<Vec<usize>>,
+    columns: Option<Arc<[PlSmallStr]>>,
+    projection: Option<Arc<[usize]>>,
+    row_index: Option<&'a mut RowIndex>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
 }
 
-impl<R: Read + Seek> AvroReader<R> {
+impl<'a, R: Read + Seek> AvroReader<'a, R> {
     /// Get schema of the Avro File
     pub fn schema(&mut self) -> PolarsResult<Schema> {
         let schema = self.arrow_schema()?;
@@ -58,15 +62,43 @@ impl<R: Read + Seek> AvroReader<R> {
 
     /// Set the reader's column projection. This counts from 0, meaning that
     /// `vec![0, 4]` would select the 1st and 5th column.
-    pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
+    pub fn with_projection(mut self, projection: Option<Arc<[usize]>>) -> Self {
         self.projection = projection;
         self
     }
 
     /// Columns to select/ project
-    pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
+    ///
+    /// This will take precedence over projection
+    pub fn with_columns(mut self, columns: Option<Arc<[PlSmallStr]>>) -> Self {
         self.columns = columns;
         self
+    }
+
+    /// Column to for sequential index
+    pub fn with_row_index(mut self, row_index: Option<&'a mut RowIndex>) -> Self {
+        self.row_index = row_index;
+        self
+    }
+
+    /// Predicate to apply
+    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
+        self.predicate = predicate;
+        self
+    }
+
+    /// Count the number of rows without the predicate
+    pub fn unfiltered_count(mut self) -> PolarsResult<usize> {
+        let metadata =
+            avro::avro_schema::read::read_metadata(&mut self.reader).map_err(to_compute_err)?;
+        let schema = read::infer_schema(&metadata.record)?;
+
+        let avro_reader = avro::read::Reader::new(&mut self.reader, metadata, schema, None);
+        let mut num_rows = 0;
+        for batch in avro_reader {
+            num_rows += batch?.len();
+        }
+        Ok(num_rows)
     }
 }
 
@@ -79,7 +111,7 @@ where
     }
 }
 
-impl<R> SerReader<R> for AvroReader<R>
+impl<R> SerReader<R> for AvroReader<'_, R>
 where
     R: Read + Seek,
 {
@@ -90,6 +122,8 @@ where
             n_rows: None,
             columns: None,
             projection: None,
+            row_index: None,
+            predicate: None,
         }
     }
 
@@ -105,7 +139,11 @@ where
         let schema = read::infer_schema(&metadata.record)?;
 
         if let Some(columns) = &self.columns {
-            self.projection = Some(columns_to_projection(columns, &schema)?);
+            self.projection = Some(
+                columns_to_projection(columns, &schema)?
+                    .into_boxed_slice()
+                    .into(),
+            );
         }
 
         let (projection, projected_schema) = if let Some(projection) = self.projection {
@@ -124,9 +162,9 @@ where
             avro_reader,
             rechunk,
             self.n_rows,
-            None,
+            self.predicate,
             &projected_schema,
-            None,
+            self.row_index,
         )
     }
 }

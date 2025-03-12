@@ -204,7 +204,14 @@ impl<R: MmapBytesReader> IpcReader<R> {
 
         let reader = read::FileReader::new(self.reader, metadata, self.projection, self.n_rows);
 
-        finish_reader(reader, rechunk, None, predicate, &schema, self.row_index)
+        finish_reader(
+            reader,
+            rechunk,
+            None,
+            predicate,
+            &schema,
+            self.row_index.as_mut(),
+        )
     }
 }
 
@@ -293,7 +300,14 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
             let ipc_reader =
                 read::FileReader::new(self.reader, metadata, self.projection, self.n_rows);
-            let df = finish_reader(ipc_reader, rechunk, None, None, &schema, self.row_index)?;
+            let df = finish_reader(
+                ipc_reader,
+                rechunk,
+                None,
+                None,
+                &schema,
+                self.row_index.as_mut(),
+            )?;
             Ok(df)
         })()?;
 
