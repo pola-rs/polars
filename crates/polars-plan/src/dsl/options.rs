@@ -341,6 +341,9 @@ pub struct SinkOptions {
 
     /// The output file needs to maintain order of the data that comes in.
     pub maintain_order: bool,
+
+    /// Recursively create all the directories in the path.
+    pub mkdir: bool,
 }
 
 impl Default for SinkOptions {
@@ -348,6 +351,7 @@ impl Default for SinkOptions {
         Self {
             sync_on_close: Default::default(),
             maintain_order: true,
+            mkdir: false,
         }
     }
 }

@@ -2,6 +2,7 @@ use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
 use polars_io::utils::file::Writeable;
+use polars_io::utils::mkdir::mkdir_recursive;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::format_pl_smallstr;
@@ -189,6 +190,10 @@ fn create_physical_plan_impl(
 
                             use polars_io::parquet::write::ParquetWriter;
 
+                            if sink_options.mkdir {
+                                mkdir_recursive(path.as_path())?;
+                            }
+
                             let path = path.as_ref().display().to_string();
                             let mut file = polars_io::utils::file::Writeable::try_new(
                                 &path,
@@ -223,6 +228,10 @@ fn create_physical_plan_impl(
                             use polars_io::SerWriter;
                             use polars_io::ipc::IpcWriter;
 
+                            if sink_options.mkdir {
+                                mkdir_recursive(path.as_path())?;
+                            }
+
                             let path = path.as_ref().display().to_string();
                             let mut file = polars_io::utils::file::Writeable::try_new(
                                 &path,
@@ -255,6 +264,10 @@ fn create_physical_plan_impl(
 
                             use polars_io::SerWriter;
                             use polars_io::csv::write::CsvWriter;
+
+                            if sink_options.mkdir {
+                                mkdir_recursive(path.as_path())?;
+                            }
 
                             let path = path.as_ref().display().to_string();
                             let mut file = polars_io::utils::file::Writeable::try_new(
@@ -302,6 +315,10 @@ fn create_physical_plan_impl(
 
                             use polars_io::SerWriter;
                             use polars_io::json::{JsonFormat, JsonWriter};
+
+                            if sink_options.mkdir {
+                                mkdir_recursive(path.as_path())?;
+                            }
 
                             let path = path.as_ref().display().to_string();
                             let mut file = polars_io::utils::file::Writeable::try_new(
