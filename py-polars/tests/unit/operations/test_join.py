@@ -1822,3 +1822,29 @@ def test_select_len_after_semi_anti_join_21343() -> None:
     q = lhs.join(rhs, on="a", how="anti").select(pl.len())
 
     assert q.collect().item() == 0
+
+
+def test_multi_leftjoin_empty_right_21701() -> None:
+    parent_data = {
+        "id": [1, 30, 80],
+        "parent_field1": [3, 20, 17],
+    }
+    parent_df = pl.LazyFrame(parent_data)
+    child_df = pl.LazyFrame(
+        [],
+        schema={"id": pl.Int32(), "parent_id": pl.Int32(), "child_field1": pl.Int32()},
+    )
+    subchild_df = pl.LazyFrame(
+        [], schema={"child_id": pl.Int32(), "subchild_field1": pl.Int32()}
+    )
+
+    joined_df = parent_df.join(
+        child_df.join(
+            subchild_df, left_on=pl.col("id"), right_on=pl.col("child_id"), how="left"
+        ),
+        left_on=pl.col("id"),
+        right_on=pl.col("parent_id"),
+        how="left",
+    )
+    joined_df = joined_df.select("id", "parent_field1")
+    assert_frame_equal(joined_df.collect(), parent_df.collect(), check_row_order=False)
