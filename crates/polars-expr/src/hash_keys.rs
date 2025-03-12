@@ -27,15 +27,7 @@ pub fn hash_keys_variant_for_dtype(dt: &DataType) -> HashKeysVariant {
             HashKeysVariant::RowEncoded
         },
 
-        DataType::BinaryOffset
-        | DataType::Array(_, _)
-        | DataType::List(_)
-        | DataType::Object(_)
-        | DataType::Categorical(_, _)
-        | DataType::Struct(_)
-        | DataType::Unknown(_) => HashKeysVariant::RowEncoded,
-
-        _ => unreachable!(),
+        _ => HashKeysVariant::RowEncoded,
     }
 }
 
@@ -46,24 +38,35 @@ macro_rules! downcast_single_key_ca {
         #[allow(unused_imports)]
         use polars_core::datatypes::DataType::*;
         match $self.dtype() {
+            #[cfg(feature = "dtype-i8")]
             DataType::Int8 => { let $ca = $self.i8().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-i16")]
             DataType::Int16 => { let $ca = $self.i16().unwrap(); $($body)* },
             DataType::Int32 => { let $ca = $self.i32().unwrap(); $($body)* },
             DataType::Int64 => { let $ca = $self.i64().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => { let $ca = $self.u8().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => { let $ca = $self.u16().unwrap(); $($body)* },
             DataType::UInt32 => { let $ca = $self.u32().unwrap(); $($body)* },
             DataType::UInt64 => { let $ca = $self.u64().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-i128")]
             DataType::Int128 => { let $ca = $self.i128().unwrap(); $($body)* },
             DataType::Float32 => { let $ca = $self.f32().unwrap(); $($body)* },
             DataType::Float64 => { let $ca = $self.f64().unwrap(); $($body)* },
 
+            #[cfg(feature = "dtype-date")]
             DataType::Date => { let $ca = $self.date().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-time")]
             DataType::Time => { let $ca = $self.time().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(..) => { let $ca = $self.datetime().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-duration")]
             DataType::Duration(..) => { let $ca = $self.duration().unwrap(); $($body)* },
 
+            #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(..) => { let $ca = $self.decimal().unwrap(); $($body)* },
+            #[cfg(feature = "dtype-categorical")]
             DataType::Enum(..) => { let $ca = $self.categorical().unwrap().physical(); $($body)* },
 
             _ => unreachable!(),
