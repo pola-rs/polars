@@ -23,15 +23,16 @@ use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 use polars_utils::{IdxSize, format_pl_smallstr};
+use tokio::sync::oneshot;
 
 use super::{RowRestriction, SourceNode, SourceOutput};
 use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
 use crate::async_executor::{AbortOnDropHandle, spawn};
-use crate::async_primitives::connector::{Receiver, Sender, connector};
+use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::SourceToken;
-use crate::nodes::io_sources::{PhaseOutcomeToken, SourceOutputPort};
+use crate::nodes::io_sources::SourceOutputPort;
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
 
 fn source_name(scan_source: ScanSourceRef<'_>, index: usize) -> PlSmallStr {
@@ -447,7 +448,7 @@ fn max_concurrent_scans(num_pipelines: usize) -> usize {
 
 enum SourcePhaseContent {
     /// 1+ columns, 0+ rows
-    Channels(SourceInput),
+    Channels(SourceInput, oneshot::Receiver<bool>),
     /// 0 columns / 0 rows
     OneShot(DataFrame),
 }
@@ -457,7 +458,6 @@ struct SourcePhase {
     content: SourcePhaseContent,
     unrestricted_row_count: Option<tokio::sync::oneshot::Receiver<IdxSize>>,
     missing_columns: Option<Bitmap>,
-    outcome: PhaseOutcomeToken,
 }
 
 impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
@@ -756,7 +756,6 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     content: SourcePhaseContent::OneShot(DataFrame::empty()),
                                     missing_columns: None,
                                     unrestricted_row_count: Some(unrestricted_row_count_rx),
-                                    outcome: PhaseOutcomeToken::new(),
                                 };
                                 // Wait for the orchestrator task to actually be interested in the output
                                 // of this file.
@@ -812,7 +811,6 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                         content: SourcePhaseContent::OneShot(df),
                                         missing_columns: missing_columns.clone(),
                                         unrestricted_row_count: Some(unrestricted_row_count_rx),
-                                        outcome: PhaseOutcomeToken::new(),
                                     };
 
                                     // Wait for the orchestrator task to actually be interested in the output
@@ -917,13 +915,13 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     (SourceOutputPort::Serial(tx), SourceInput::Serial(rx))
                                 };
 
+                                let (source_finished_tx, source_finished_rx) = oneshot::channel();
                                 let (outcome, wait_group, tx) = SourceOutput::from_port(tx);
                                 let phase = SourcePhase {
                                     source_idx: i,
-                                    content: SourcePhaseContent::Channels(rx),
+                                    content: SourcePhaseContent::Channels(rx, source_finished_rx),
                                     missing_columns: missing_columns.clone(),
                                     unrestricted_row_count: unrestricted_row_count_rx.take(),
-                                    outcome: outcome.clone(),
                                 };
 
                                 // Wait for the orchestrator task to actually be interested in the output
@@ -939,7 +937,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                                 // Wait for the phase to end.
                                 wait_group.wait().await;
-                                if outcome.did_finish() {
+                                let did_finish = outcome.did_finish();
+                                if source_finished_tx.send(did_finish).is_err() {
+                                    return Ok(());
+                                }
+                                if did_finish {
                                     break;
                                 }
                             }
@@ -963,87 +965,19 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                 }
             ));
 
-            struct PhaseSourcePass {
-                recv: Receiver<Morsel>,
-                source_name: PlSmallStr,
-                current_scan: usize,
-                missing_columns: Option<Bitmap>,
-                row_index: Option<RowIndex>,
-
-                outcome: PhaseOutcomeToken,
-                #[expect(unused)]
-                wait_token: WaitToken,
-            }
-
-            let (mut pass_phase_send, mut pass_phase_recv) = connector::<Sender<Morsel>>();
-            let (mut pass_source_send, mut pass_source_recv) = connector::<PhaseSourcePass>();
-
-            let file_schema = file_schema.clone();
-            let projection = projection.clone();
-            let include_file_paths = include_file_paths.clone();
-            let hive_parts = hive_parts.clone();
-            join_handles.push(spawn(TaskPriority::High, async move {
-                let mut seq = MorselSeq::default();
-
-                while let Ok(mut send) = pass_phase_recv.recv().await {
-                    let source_token = SourceToken::new();
-                    let wait_group = WaitGroup::default();
-
-                    while let Ok(mut phase_source_pass) = pass_source_recv.recv().await {
-                        let mut stopped = false;
-                        while let Ok(rg) = phase_source_pass.recv.recv().await {
-                            let original_source_token = rg.source_token().clone();
-
-                            let df = rg.into_df();
-                            let df = process_dataframe(
-                                df,
-                                &phase_source_pass.source_name,
-                                phase_source_pass.current_scan,
-                                hive_parts.as_deref(),
-                                phase_source_pass.missing_columns.as_ref(),
-                                include_file_paths.as_ref(),
-                                file_schema.as_ref(),
-                                projection.as_ref(),
-                                phase_source_pass.row_index.as_ref(),
-                            )?;
-
-                            let mut morsel = Morsel::new(df, seq, source_token.clone());
-                            seq = seq.successor();
-                            morsel.set_consume_token(wait_group.token());
-
-                            if send.send(morsel).await.is_err() {
-                                return Ok(());
-                            }
-
-                            wait_group.wait().await;
-                            if source_token.stop_requested() {
-                                original_source_token.stop();
-                                phase_source_pass.outcome.stop();
-                                stopped = true;
-                            }
-                        }
-                        if stopped {
-                            break;
-                        }
-                    }
-                }
-
-                Ok(())
-            }));
-
             let sources = sources.clone();
             let mut skipable_file_mask = skipable_file_mask.clone();
             join_handles.push(spawn(TaskPriority::High, async move {
+                let mut seq = MorselSeq::default();
                 let mut current_scan = first_scan_source;
                 let mut unrestricted_row_count_rx = None;
 
                 // Every phase we are given a new send channel.
                 'phase_loop: while let Ok(phase_output) = send_port_recv.recv().await {
-                    let send = phase_output.port.serial();
-                    if pass_phase_send.send(send).await.is_err() {
-                        return Ok(());
-                    };
+                    let source_token = SourceToken::new();
+                    let wait_group = WaitGroup::default();
 
+                    let mut send = phase_output.port.serial();
                     while current_scan < sources.len() {
                         if let Some(skipable_file_mask) = skipable_file_mask.as_mut() {
                             assert_eq!(sources.len() - current_scan, skipable_file_mask.len());
@@ -1081,47 +1015,38 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             // file so we get back a row count.
                             SourcePhaseContent::OneShot(df) => {
                                 if is_selected {
-                                    let (mut tx, rx) = connector();
-                                    let wg = WaitGroup::default();
-                                    let outcome = PhaseOutcomeToken::new();
-                                    if pass_source_send.send(PhaseSourcePass {
-                                        recv: rx,
-
-                                        source_name: source_name.clone(),
+                                    let df = process_dataframe(
+                                        df,
+                                        &source_name,
                                         current_scan,
-                                        missing_columns: phase.missing_columns.clone(),
-                                        row_index: row_index.clone(),
+                                        hive_parts.as_deref(),
+                                        phase.missing_columns.as_ref(),
+                                        include_file_paths.as_ref(),
+                                        file_schema.as_ref(),
+                                        projection.as_ref(),
+                                        row_index.as_ref(),
+                                    )?;
 
-                                        outcome: outcome.clone(),
-                                        wait_token: wg.token(),
-                                    }).await.is_err() {
+                                    let mut morsel = Morsel::new(df, seq, source_token.clone());
+                                    seq = seq.successor();
+                                    morsel.set_consume_token(wait_group.token());
+
+                                    if send.send(morsel).await.is_err() {
                                         return Ok(());
                                     }
 
-                                    if tx.send(Morsel::new(df, MorselSeq::new(0), SourceToken::new())).await.is_err() {
-                                        break 'phase_loop;
-                                    }
-                                    drop(tx); // Drop the channel so that the passer task waits for
-                                              // a new source.
-
-                                    wg.wait().await;
-                                    if !outcome.did_finish() {
-                                        stopped = true;
+                                    wait_group.wait().await;
+                                    if source_token.stop_requested() {
                                         phase_output.outcome.stop();
-
-                                        // The worker actually sees whether the source is finished or
-                                        // not. So if it is finished, we advance the source counter.
-                                        if !phase.outcome.did_finish() {
-                                            continue 'phase_loop;
-                                        }
+                                        continue 'phase_loop;
                                     }
                                 }
                             },
-                            SourcePhaseContent::Channels(rx) => {
+                            SourcePhaseContent::Channels(rx, source_finished_rx) => {
                                 assert!(is_selected);
 
                                 let mut linearizer_tasks: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>> = FuturesUnordered::new();
-                                let rx = match rx {
+                                let mut rx = match rx {
                                     SourceInput::Serial(rx) => rx,
                                     SourceInput::Parallel(rxs) => {
                                         let (mut tx, rx) = connector();
@@ -1152,36 +1077,47 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     },
                                 };
 
-                                let wg = WaitGroup::default();
-                                let outcome = PhaseOutcomeToken::new();
-                                if pass_source_send.send(PhaseSourcePass {
-                                    recv: rx,
+                                while let Ok(morsel) = rx.recv().await {
+                                    let (df, _, original_source_token, consume_token) = morsel.into_inner();
+                                    drop(consume_token);
+                                    let df = process_dataframe(
+                                        df,
+                                        &source_name,
+                                        current_scan,
+                                        hive_parts.as_deref(),
+                                        phase.missing_columns.as_ref(),
+                                        include_file_paths.as_ref(),
+                                        file_schema.as_ref(),
+                                        projection.as_ref(),
+                                        row_index.as_ref(),
+                                    )?;
 
-                                    source_name: source_name.clone(),
-                                    current_scan,
-                                    missing_columns: phase.missing_columns.clone(),
-                                    row_index: row_index.clone(),
+                                    let mut morsel = Morsel::new(df, seq, source_token.clone());
+                                    seq = seq.successor();
+                                    morsel.set_consume_token(wait_group.token());
 
-                                    outcome: outcome.clone(),
-                                    wait_token: wg.token(),
-                                }).await.is_err() {
-                                    return Ok(());
+                                    if send.send(morsel).await.is_err() {
+                                        return Ok(());
+                                    }
+
+                                    wait_group.wait().await;
+                                    if source_token.stop_requested() {
+                                        original_source_token.stop();
+                                        stopped = true;
+                                    }
                                 }
 
+                                drop(rx);
+                                let Ok(is_finished) = source_finished_rx.await else {
+                                    return Ok(());
+                                };
                                 while let Some(res) = linearizer_tasks.next().await {
                                     res?
                                 }
 
-                                wg.wait().await;
-                                if !outcome.did_finish() {
-                                    stopped = true;
+                                if !is_finished {
                                     phase_output.outcome.stop();
-
-                                    // The worker actually sees whether the source is finished or
-                                    // not. So if it is finished, we advance the source counter.
-                                    if !phase.outcome.did_finish() {
-                                        continue 'phase_loop;
-                                    }
+                                    continue 'phase_loop;
                                 }
                             },
                         }
@@ -1198,6 +1134,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                         current_scan += 1;
 
                         if stopped {
+                            phase_output.outcome.stop();
                             continue 'phase_loop;
                         }
                     }

@@ -185,10 +185,12 @@ impl SourceNode for ParquetSourceNode {
 
             // Every phase we are given a new send port.
             while let Ok(phase_output) = output_recv.recv().await {
+                let source_token = SourceToken::new();
                 let morsel_senders = phase_output.port.parallel();
                 let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
                 for (send_to, port) in send_to.iter_mut().zip(morsel_senders) {
-                    let (outcome, wait_group, morsel_output) = MorselOutput::from_port(port);
+                    let (outcome, wait_group, morsel_output) =
+                        MorselOutput::from_port(port, source_token.clone());
                     _ = send_to.send(morsel_output).await;
                     morsel_outcomes.push((outcome, wait_group));
                 }
@@ -218,18 +220,18 @@ impl SourceNode for ParquetSourceNode {
             |(mut recv_from, mut raw_morsel_rx)| {
                 spawn(TaskPriority::Low, async move {
                     'port_recv: while let Ok(mut morsel_output) = recv_from.recv().await {
-                        let source_token = SourceToken::new();
                         let wait_group = WaitGroup::default();
 
                         while let Ok((df, seq)) = raw_morsel_rx.recv().await {
-                            let mut morsel = Morsel::new(df, seq, source_token.clone());
+                            let mut morsel =
+                                Morsel::new(df, seq, morsel_output.source_token.clone());
                             morsel.set_consume_token(wait_group.token());
                             if morsel_output.port.send(morsel).await.is_err() {
                                 break;
                             }
 
                             wait_group.wait().await;
-                            if source_token.stop_requested() {
+                            if morsel_output.source_token.stop_requested() {
                                 morsel_output.outcome.stop();
                                 continue 'port_recv;
                             }
