@@ -102,6 +102,10 @@ def test_partition_by_key(
         pl.Series("a", [3], pl.Int64),
     )
 
+    scan_flags = (
+        {"schema": pl.Schema({"a": pl.String()})} if io_type["ext"] == "csv" else {}
+    )
+
     # Change the datatype.
     (io_type["sink"])(
         lf,
@@ -113,19 +117,27 @@ def test_partition_by_key(
     )
 
     assert_series_equal(
-        (io_type["scan"])(tmp_path / f"0.{io_type['ext']}").collect().to_series(),
+        (io_type["scan"])(tmp_path / f"0.{io_type['ext']}", **scan_flags)
+        .collect()
+        .to_series(),
         pl.Series("a", ["0", "0"], pl.String),
     )
     assert_series_equal(
-        (io_type["scan"])(tmp_path / f"1.{io_type['ext']}").collect().to_series(),
+        (io_type["scan"])(tmp_path / f"1.{io_type['ext']}", **scan_flags)
+        .collect()
+        .to_series(),
         pl.Series("a", ["1", "1"], pl.String),
     )
     assert_series_equal(
-        (io_type["scan"])(tmp_path / f"2.{io_type['ext']}").collect().to_series(),
+        (io_type["scan"])(tmp_path / f"2.{io_type['ext']}", **scan_flags)
+        .collect()
+        .to_series(),
         pl.Series("a", ["2", "2"], pl.String),
     )
     assert_series_equal(
-        (io_type["scan"])(tmp_path / f"3.{io_type['ext']}").collect().to_series(),
+        (io_type["scan"])(tmp_path / f"3.{io_type['ext']}", **scan_flags)
+        .collect()
+        .to_series(),
         pl.Series("a", ["3"], pl.String),
     )
 
