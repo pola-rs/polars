@@ -8,12 +8,22 @@ pub(super) fn median_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-        #[cfg(feature = "dtype-duration")]
-        DataType::Duration(tu) => {
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Date => {
+            const MS_IN_DAY: i64 = 86_400_000;
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| s.as_ref().median().map(|v| (v * (MS_IN_DAY as f64)) as i64))
+                })
+                .with_name(ca.name().clone());
+            out.into_datetime(TimeUnit::Milliseconds, None)
+                .into_series()
+        },
+        dt if dt.is_temporal() => {
             let out: Int64Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().median().map(|v| v as i64)))
                 .with_name(ca.name().clone());
-            out.into_duration(*tu).into_series()
+            out.cast(dt).unwrap()
         },
         _ => {
             let out: Float64Chunked = ca
