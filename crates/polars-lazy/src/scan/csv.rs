@@ -77,8 +77,8 @@ impl LazyCsvReader {
     }
 
     /// Set the number of rows to use when inferring the csv schema.
-    /// the default is 100 rows.
-    /// Setting to `None` will do a full table scan, very slow.
+    /// The default is 100 rows.
+    /// Setting to [None] will do a full table scan, which is very slow.
     #[must_use]
     pub fn with_infer_schema_length(mut self, num_rows: Option<usize>) -> Self {
         self.read_options.infer_schema_length = num_rows;
