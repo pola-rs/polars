@@ -1271,7 +1271,7 @@ impl Series {
             _ if max_items >= self.len() => {
                 // this will always leave a trailing ", " after the last item
                 // but for long lists, this is faster than checking against the length each time
-                for item in self.iter() {
+                for item in self.rechunk().iter() {
                     write!(result, "{item}, ").unwrap();
                 }
                 // remove trailing ", " and replace with closing brace
