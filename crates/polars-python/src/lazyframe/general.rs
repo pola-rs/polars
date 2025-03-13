@@ -733,7 +733,7 @@ impl PyLazyFrame {
         retries: usize,
         sink_options: Wrap<SinkOptions>,
         engine: Wrap<Engine>,
-    ) -> PyResult<()> {
+    ) -> PyResult<Option<PyLazyFrame>> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
         let options = ParquetWriteOptions {
@@ -777,6 +777,7 @@ impl PyLazyFrame {
                 ),
             }
         })
+        .map(|lf| lf.map(Into::into))
     }
 
     #[cfg(all(feature = "streaming", feature = "ipc"))]
@@ -795,7 +796,7 @@ impl PyLazyFrame {
         retries: usize,
         sink_options: Wrap<SinkOptions>,
         engine: Wrap<Engine>,
-    ) -> PyResult<()> {
+    ) -> PyResult<Option<PyLazyFrame>> {
         let options = IpcWriterOptions {
             compression: compression.map(|c| c.0),
             compat_level: compat_level.0,
@@ -836,6 +837,7 @@ impl PyLazyFrame {
                 ),
             }
         })
+        .map(|lf| lf.map(Into::into))
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
@@ -866,7 +868,7 @@ impl PyLazyFrame {
         retries: usize,
         sink_options: Wrap<SinkOptions>,
         engine: Wrap<Engine>,
-    ) -> PyResult<()> {
+    ) -> PyResult<Option<PyLazyFrame>> {
         let quote_style = quote_style.map_or(QuoteStyle::default(), |wrap| wrap.0);
         let null_value = null_value.unwrap_or(SerializeOptions::default().null);
 
@@ -924,6 +926,7 @@ impl PyLazyFrame {
                 ),
             }
         })
+        .map(|lf| lf.map(Into::into))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -938,7 +941,7 @@ impl PyLazyFrame {
         retries: usize,
         sink_options: Wrap<SinkOptions>,
         engine: Wrap<Engine>,
-    ) -> PyResult<()> {
+    ) -> PyResult<Option<PyLazyFrame>> {
         let options = JsonWriterOptions {};
 
         let cloud_options = {
@@ -971,6 +974,7 @@ impl PyLazyFrame {
                 ),
             }
         })
+        .map(|lf| lf.map(Into::into))
     }
 
     fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {

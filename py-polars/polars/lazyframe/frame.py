@@ -2409,6 +2409,64 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return Schema(self._ldf.collect_schema(), check_dtypes=False)
 
+    @overload
+    def sink_parquet(
+        self,
+        path: str | Path,
+        *,
+        compression: str = "zstd",
+        compression_level: int | None = None,
+        statistics: bool | str | dict[str, bool] = True,
+        row_group_size: int | None = None,
+        data_page_size: int | None = None,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        _type_check: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        collapse_joins: bool = True,
+        no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
+        sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
+        lazy: Literal[False],
+        engine: EngineType = "auto",
+    ) -> None: ...
+    @overload
+    def sink_parquet(
+        self,
+        path: str | Path,
+        *,
+        compression: str = "zstd",
+        compression_level: int | None = None,
+        statistics: bool | str | dict[str, bool] = True,
+        row_group_size: int | None = None,
+        data_page_size: int | None = None,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        _type_check: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        collapse_joins: bool = True,
+        no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
+        sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
+        lazy: Literal[True],
+        engine: EngineType = "auto",
+    ) -> LazyFrame: ...
     @unstable()
     def sink_parquet(
         self,
@@ -2435,8 +2493,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
+        lazy: bool = False,
         engine: EngineType = "auto",
-    ) -> None:
+    ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
 
@@ -2536,6 +2595,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `all` syncs the file contents and metadata.
         mkdir: bool
             Recursively create all the directories in the path.
+        lazy: bool
+            Wait to start execution until `collect` is called.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
@@ -2612,9 +2673,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
             "mkdir": mkdir,
+            "lazy": lazy,
         }
 
-        return lf.sink_parquet(
+        opt_lf = lf.sink_parquet(
             target=target,
             compression=compression,
             compression_level=compression_level,
@@ -2628,6 +2690,63 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             engine=engine,
         )
 
+        if opt_lf is None:
+            return None
+        else:
+            return LazyFrame._from_pyldf(opt_lf)
+
+    @overload
+    def sink_ipc(
+        self,
+        path: str | Path,
+        *,
+        compression: IpcCompression | None = "zstd",
+        compat_level: CompatLevel | None = None,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        _type_check: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        collapse_joins: bool = True,
+        no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
+        sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
+        lazy: Literal[True],
+        engine: EngineType = "auto",
+    ) -> LazyFrame: ...
+    @overload
+    def sink_ipc(
+        self,
+        path: str | Path,
+        *,
+        compression: IpcCompression | None = "zstd",
+        compat_level: CompatLevel | None = None,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        _type_check: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        collapse_joins: bool = True,
+        no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
+        sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
+        lazy: Literal[False],
+        engine: EngineType = "auto",
+    ) -> None: ...
     @unstable()
     def sink_ipc(
         self,
@@ -2651,8 +2770,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
+        lazy: bool = False,
         engine: EngineType = "auto",
-    ) -> None:
+    ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
 
@@ -2721,6 +2841,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `all` syncs the file contents and metadata.
         mkdir: bool
             Recursively create all the directories in the path.
+        lazy: bool
+            Wait to start execution until `collect` is called.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
@@ -2780,6 +2902,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
             "mkdir": mkdir,
+            "lazy": lazy,
         }
 
         if compat_level is None:
@@ -2790,7 +2913,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if compression is None:
             compression = "uncompressed"
 
-        return lf.sink_ipc(
+        opt_lf = lf.sink_ipc(
             target=target,
             compression=compression,
             compat_level=compat_level,
@@ -2801,6 +2924,85 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             engine=engine,
         )
 
+        if opt_lf is None:
+            return None
+        else:
+            return LazyFrame._from_pyldf(opt_lf)
+
+    @overload
+    def sink_csv(
+        self,
+        path: str | Path,
+        *,
+        include_bom: bool = False,
+        include_header: bool = True,
+        separator: str = ",",
+        line_terminator: str = "\n",
+        quote_char: str = '"',
+        batch_size: int = 1024,
+        datetime_format: str | None = None,
+        date_format: str | None = None,
+        time_format: str | None = None,
+        float_scientific: bool | None = None,
+        float_precision: int | None = None,
+        null_value: str | None = None,
+        quote_style: CsvQuoteStyle | None = None,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        _type_check: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        collapse_joins: bool = True,
+        no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
+        sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
+        lazy: Literal[False],
+        engine: EngineType = "auto",
+    ) -> None: ...
+    @overload
+    def sink_csv(
+        self,
+        path: str | Path,
+        *,
+        include_bom: bool = False,
+        include_header: bool = True,
+        separator: str = ",",
+        line_terminator: str = "\n",
+        quote_char: str = '"',
+        batch_size: int = 1024,
+        datetime_format: str | None = None,
+        date_format: str | None = None,
+        time_format: str | None = None,
+        float_scientific: bool | None = None,
+        float_precision: int | None = None,
+        null_value: str | None = None,
+        quote_style: CsvQuoteStyle | None = None,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        _type_check: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        collapse_joins: bool = True,
+        no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
+        sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
+        lazy: Literal[True],
+        engine: EngineType = "auto",
+    ) -> LazyFrame: ...
     @unstable()
     def sink_csv(
         self,
@@ -2835,8 +3037,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
+        lazy: bool = False,
         engine: EngineType = "auto",
-    ) -> None:
+    ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a CSV file.
 
@@ -2950,6 +3153,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `all` syncs the file contents and metadata.
         mkdir: bool
             Recursively create all the directories in the path.
+        lazy: bool
+            Wait to start execution until `collect` is called.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
@@ -3015,9 +3220,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
             "mkdir": mkdir,
+            "lazy": lazy,
         }
 
-        return lf.sink_csv(
+        opt_lf = lf.sink_csv(
             target=target,
             include_bom=include_bom,
             include_header=include_header,
@@ -3039,6 +3245,59 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             engine=engine,
         )
 
+        if opt_lf is None:
+            return None
+        else:
+            return LazyFrame._from_pyldf(opt_lf)
+
+    @overload
+    def sink_ndjson(
+        self,
+        path: str | Path,
+        *,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        _type_check: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        collapse_joins: bool = True,
+        no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
+        sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
+        lazy: Literal[False],
+        engine: EngineType = "auto",
+    ) -> None: ...
+    @overload
+    def sink_ndjson(
+        self,
+        path: str | Path,
+        *,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        _type_check: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        collapse_joins: bool = True,
+        no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
+        sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
+        lazy: Literal[True],
+        engine: EngineType = "auto",
+    ) -> LazyFrame: ...
     @unstable()
     def sink_ndjson(
         self,
@@ -3060,8 +3319,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
+        lazy: bool = False,
         engine: EngineType = "auto",
-    ) -> None:
+    ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to an NDJSON file.
 
@@ -3124,6 +3384,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `all` syncs the file contents and metadata.
         mkdir: bool
             Recursively create all the directories in the path.
+        lazy: bool
+            Wait to start execution until `collect` is called.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
@@ -3183,9 +3445,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
             "mkdir": mkdir,
+            "lazy": lazy,
         }
 
-        return lf.sink_json(
+        opt_lf = lf.sink_json(
             target=target,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
@@ -3193,6 +3456,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             sink_options=sink_options,
             engine=engine,
         )
+
+        if opt_lf is None:
+            return None
+        else:
+            return LazyFrame._from_pyldf(opt_lf)
 
     def _set_sink_optimizations(
         self,

@@ -92,9 +92,9 @@ impl<'py> FromPyObject<'py> for Wrap<SinkOptions> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = ob.extract::<pyo3::Bound<'_, PyDict>>()?;
 
-        if parsed.len() != 3 {
+        if parsed.len() != 4 {
             return Err(PyValueError::new_err(
-                "`sink_options` must be a dictionary with the exactly 3 field.",
+                "`sink_options` must be a dictionary with the exactly 4 field.",
             ));
         }
 
@@ -114,10 +114,15 @@ impl<'py> FromPyObject<'py> for Wrap<SinkOptions> {
             .ok_or_else(|| PyValueError::new_err("`sink_options` must contain `mkdir` field"))?;
         let mkdir = mkdir.extract::<bool>()?;
 
+        let lazy = PyDictMethods::get_item(&parsed, "lazy")?
+            .ok_or_else(|| PyValueError::new_err("`sink_options` must be `lazy` field"))?;
+        let lazy = lazy.extract::<bool>()?;
+
         Ok(Wrap(SinkOptions {
             sync_on_close,
             maintain_order,
             mkdir,
+            lazy,
         }))
     }
 }
