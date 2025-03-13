@@ -244,3 +244,9 @@ def test_group_by_errors() -> None:
         match=r"HAVING clause not valid outside of GROUP BY",
     ):
         df.sql("SELECT a, COUNT(a) AS n FROM self HAVING n > 1")
+
+
+def test_group_by_output_struct() -> None:
+    df = pl.DataFrame({"g": [1], "x": [2], "y": [3]})
+    out = df.group_by("g").agg(pl.struct(pl.col.x.min(), pl.col.y.sum()))
+    assert out.rows() == [(1, {"x": 2, "y": 3})]

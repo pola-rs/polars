@@ -158,11 +158,23 @@ fn try_lower_elementwise_scalar_agg_expr(
         {
             let node = node.clone();
             let input = input.clone();
-            let new_inputs = input
+            let new_input = input
                 .into_iter()
-                .map(|i| lower_rec!(i.node(), inside_agg))
+                .map(|i| {
+                    // The function may be sensitive to names (e.g. pl.struct), so we restore them.
+                    let new_node = lower_rec!(i.node(), inside_agg)?;
+                    Some(ExprIR::new(new_node, OutputName::Alias(i.output_name().clone())))
+                })
                 .collect::<Option<Vec<_>>>()?;
-            Some(expr_arena.add(node.replace_inputs(&new_inputs)))
+
+            let mut new_node = node.clone();
+            match &mut new_node {
+                AExpr::Function { input, .. } | AExpr::AnonymousFunction { input, .. } => {
+                    *input = new_input;
+                },
+                _ => unreachable!(),
+            }
+            Some(expr_arena.add(new_node))
         },
 
         AExpr::Function { .. } | AExpr::AnonymousFunction { .. } => None,

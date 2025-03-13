@@ -531,11 +531,24 @@ fn lower_exprs_with_ctx(
                 options,
                 ..
             } if options.is_elementwise() => {
-                let inner_exprs = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
-                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_exprs, ctx)?;
-                let func_expr = node.clone().replace_inputs(&trans_exprs);
+                let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
+
+                // The function may be sensitive to names (e.g. pl.struct), so we restore them.
+                let new_input = trans_exprs
+                    .into_iter()
+                    .zip(inner_exprs)
+                    .map(|(trans, orig)| ExprIR::new(trans, OutputName::Alias(orig.output_name().clone())))
+                    .collect_vec();
+                let mut new_node = node.clone();
+                match &mut new_node {
+                    AExpr::Function { input, .. } | AExpr::AnonymousFunction { input, .. } => {
+                        *input = new_input;
+                    },
+                    _ => unreachable!(),
+                }
                 input_streams.insert(trans_input);
-                transformed_exprs.push(ctx.expr_arena.add(func_expr));
+                transformed_exprs.push(ctx.expr_arena.add(new_node));
             },
 
             AExpr::BinaryExpr { left, op, right } => {
