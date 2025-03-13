@@ -144,6 +144,10 @@ impl FunctionOptions {
         self.check_lengths.0
     }
 
+    pub fn set_elementwise(&mut self) {
+        self.collect_groups = ApplyOptions::ElementWise
+    }
+
     pub fn is_elementwise(&self) -> bool {
         matches!(
             self.collect_groups,
