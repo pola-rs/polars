@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use polars::prelude::{PartitionVariant, SinkOptions, SyncOnCloseType};
+use polars::prelude::sync_on_close::SyncOnCloseType;
+use polars::prelude::{PartitionVariant, SinkOptions};
 use polars_utils::IdxSize;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
@@ -79,9 +80,9 @@ impl<'py> FromPyObject<'py> for Wrap<SinkOptions> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = ob.extract::<pyo3::Bound<'_, PyDict>>()?;
 
-        if parsed.len() != 2 {
+        if parsed.len() != 3 {
             return Err(PyValueError::new_err(
-                "`sink_options` must be a dictionary with the exactly 2 field.",
+                "`sink_options` must be a dictionary with the exactly 3 field.",
             ));
         }
 
@@ -95,9 +96,14 @@ impl<'py> FromPyObject<'py> for Wrap<SinkOptions> {
             })?;
         let maintain_order = maintain_order.extract::<bool>()?;
 
+        let mkdir = PyDictMethods::get_item(&parsed, "mkdir")?
+            .ok_or_else(|| PyValueError::new_err("`sink_options` must be `mkdir` field"))?;
+        let mkdir = mkdir.extract::<bool>()?;
+
         Ok(Wrap(SinkOptions {
             sync_on_close,
             maintain_order,
+            mkdir,
         }))
     }
 }

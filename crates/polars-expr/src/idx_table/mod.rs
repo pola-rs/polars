@@ -6,6 +6,7 @@ use polars_utils::IdxSize;
 use crate::hash_keys::HashKeys;
 
 mod row_encoded;
+mod single_key;
 
 pub trait IdxTable: Any + Send + Sync {
     /// Creates a new empty IdxTable similar to this one.
@@ -67,6 +68,44 @@ pub trait IdxTable: Any + Send + Sync {
     fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize;
 }
 
-pub fn new_idx_table(_key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
-    Box::new(row_encoded::RowEncodedIdxTable::new())
+pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
+    if key_schema.len() > 1 {
+        Box::new(row_encoded::RowEncodedIdxTable::new())
+    } else {
+        use single_key::SingleKeyIdxTable as SKIT;
+        match key_schema.get_at_index(0).unwrap().1 {
+            #[cfg(feature = "dtype-u8")]
+            DataType::UInt8 => Box::new(SKIT::<UInt8Type>::new()),
+            #[cfg(feature = "dtype-u16")]
+            DataType::UInt16 => Box::new(SKIT::<UInt16Type>::new()),
+            DataType::UInt32 => Box::new(SKIT::<UInt32Type>::new()),
+            DataType::UInt64 => Box::new(SKIT::<UInt64Type>::new()),
+            #[cfg(feature = "dtype-i8")]
+            DataType::Int8 => Box::new(SKIT::<Int8Type>::new()),
+            #[cfg(feature = "dtype-i16")]
+            DataType::Int16 => Box::new(SKIT::<Int16Type>::new()),
+            DataType::Int32 => Box::new(SKIT::<Int32Type>::new()),
+            DataType::Int64 => Box::new(SKIT::<Int64Type>::new()),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => Box::new(SKIT::<Int128Type>::new()),
+            DataType::Float32 => Box::new(SKIT::<Float32Type>::new()),
+            DataType::Float64 => Box::new(SKIT::<Float64Type>::new()),
+
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => Box::new(SKIT::<Int32Type>::new()),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => Box::new(SKIT::<Int64Type>::new()),
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(_) => Box::new(SKIT::<Int64Type>::new()),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => Box::new(SKIT::<Int64Type>::new()),
+
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => Box::new(SKIT::<Int128Type>::new()),
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(_, _) => Box::new(SKIT::<UInt32Type>::new()),
+
+            _ => Box::new(row_encoded::RowEncodedIdxTable::new()),
+        }
+    }
 }

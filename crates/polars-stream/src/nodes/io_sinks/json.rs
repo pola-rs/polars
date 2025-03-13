@@ -12,7 +12,7 @@ use polars_utils::priority::Priority;
 use super::{SinkInputPort, SinkNode};
 use crate::async_executor::spawn;
 use crate::async_primitives::connector::Receiver;
-use crate::nodes::io_sinks::{parallelize_receive_task, tokio_sync_on_close};
+use crate::nodes::io_sinks::parallelize_receive_task;
 use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
 
 pub struct NDJsonSinkNode {
@@ -103,6 +103,10 @@ impl SinkNode for NDJsonSinkNode {
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             use tokio::io::AsyncWriteExt;
 
+            if sink_options.mkdir {
+                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
+            }
+
             let mut file = polars_io::utils::file::AsyncWriteable::try_new(
                 path.to_str().unwrap(),
                 cloud_options.as_ref(),
@@ -116,7 +120,11 @@ impl SinkNode for NDJsonSinkNode {
             }
 
             if let AsyncWriteable::Local(file) = &mut file {
-                tokio_sync_on_close(sink_options.sync_on_close, file).await?;
+                polars_io::utils::sync_on_close::tokio_sync_on_close(
+                    sink_options.sync_on_close,
+                    file,
+                )
+                .await?;
             }
 
             file.close().await?;

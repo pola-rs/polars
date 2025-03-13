@@ -1,6 +1,8 @@
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
+use polars_io::utils::file::Writeable;
+use polars_io::utils::mkdir::mkdir_recursive;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::format_pl_smallstr;
@@ -13,7 +15,7 @@ use self::python_dsl::PythonScanSource;
 use super::super::executors::{self, Executor};
 use super::*;
 use crate::ScanPredicate;
-use crate::executors::CachePrefiller;
+use crate::executors::{CachePrefiller, SinkExecutor};
 use crate::predicate::PhysicalColumnPredicates;
 
 fn partitionable_gb(
@@ -164,15 +166,188 @@ fn create_physical_plan_impl(
                 predicate_serialized,
             }))
         },
-        Sink { payload, .. } => match payload {
-            SinkType::Memory => {
-                polars_bail!(InvalidOperation: "memory sink not supported in the standard engine")
-            },
-            SinkType::File { file_type, .. } | SinkType::Partition { file_type, .. } => {
-                polars_bail!(InvalidOperation:
-                    "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_{file_type:?}()'"
-                )
-            },
+        Sink { input, payload } => {
+            let input = recurse!(input, state)?;
+            match payload {
+                SinkType::Memory => Ok(Box::new(SinkExecutor {
+                    input,
+                    name: "mem".to_string(),
+                    f: Box::new(move |df, _state| Ok(Some(df))),
+                })),
+                SinkType::File {
+                    file_type,
+                    path,
+                    sink_options,
+                    cloud_options,
+                } => match file_type {
+                    #[cfg(feature = "parquet")]
+                    FileType::Parquet(options) => Ok(Box::new(SinkExecutor {
+                        input,
+                        name: "parquet".to_string(),
+                        f: Box::new(move |mut df, _state| {
+                            use std::io::BufWriter;
+                            use std::ops::DerefMut;
+
+                            use polars_io::parquet::write::ParquetWriter;
+
+                            if sink_options.mkdir {
+                                mkdir_recursive(path.as_path())?;
+                            }
+
+                            let path = path.as_ref().display().to_string();
+                            let mut file = polars_io::utils::file::Writeable::try_new(
+                                &path,
+                                cloud_options.as_ref(),
+                            )?;
+                            ParquetWriter::new(BufWriter::new(file.deref_mut()))
+                                .with_compression(options.compression)
+                                .with_statistics(options.statistics)
+                                .with_row_group_size(options.row_group_size)
+                                .with_data_page_size(options.data_page_size)
+                                .finish(&mut df)?;
+
+                            if let Writeable::Local(file) = &mut file {
+                                polars_io::utils::sync_on_close::sync_on_close(
+                                    sink_options.sync_on_close,
+                                    file,
+                                )?;
+                            }
+                            file.close()?;
+
+                            Ok(None)
+                        }),
+                    })),
+                    #[cfg(feature = "ipc")]
+                    FileType::Ipc(options) => Ok(Box::new(SinkExecutor {
+                        input,
+                        name: "ipc".to_string(),
+                        f: Box::new(move |mut df, _state| {
+                            use std::io::BufWriter;
+                            use std::ops::DerefMut;
+
+                            use polars_io::SerWriter;
+                            use polars_io::ipc::IpcWriter;
+
+                            if sink_options.mkdir {
+                                mkdir_recursive(path.as_path())?;
+                            }
+
+                            let path = path.as_ref().display().to_string();
+                            let mut file = polars_io::utils::file::Writeable::try_new(
+                                &path,
+                                cloud_options.as_ref(),
+                            )?;
+                            IpcWriter::new(BufWriter::new(file.deref_mut()))
+                                .with_compression(options.compression)
+                                .with_compat_level(options.compat_level)
+                                .finish(&mut df)?;
+
+                            if let Writeable::Local(file) = &mut file {
+                                polars_io::utils::sync_on_close::sync_on_close(
+                                    sink_options.sync_on_close,
+                                    file,
+                                )?;
+                            }
+
+                            file.close()?;
+
+                            Ok(None)
+                        }),
+                    })),
+                    #[cfg(feature = "csv")]
+                    FileType::Csv(options) => Ok(Box::new(SinkExecutor {
+                        input,
+                        name: "csv".to_string(),
+                        f: Box::new(move |mut df, _state| {
+                            use std::io::BufWriter;
+                            use std::ops::DerefMut;
+
+                            use polars_io::SerWriter;
+                            use polars_io::csv::write::CsvWriter;
+
+                            if sink_options.mkdir {
+                                mkdir_recursive(path.as_path())?;
+                            }
+
+                            let path = path.as_ref().display().to_string();
+                            let mut file = polars_io::utils::file::Writeable::try_new(
+                                &path,
+                                cloud_options.as_ref(),
+                            )?;
+                            CsvWriter::new(BufWriter::new(file.deref_mut()))
+                                .include_bom(options.include_bom)
+                                .include_header(options.include_header)
+                                .with_separator(options.serialize_options.separator)
+                                .with_line_terminator(
+                                    options.serialize_options.line_terminator.clone(),
+                                )
+                                .with_quote_char(options.serialize_options.quote_char)
+                                .with_batch_size(options.batch_size)
+                                .with_datetime_format(
+                                    options.serialize_options.datetime_format.clone(),
+                                )
+                                .with_date_format(options.serialize_options.date_format.clone())
+                                .with_time_format(options.serialize_options.time_format.clone())
+                                .with_float_scientific(options.serialize_options.float_scientific)
+                                .with_float_precision(options.serialize_options.float_precision)
+                                .with_null_value(options.serialize_options.null.clone())
+                                .with_quote_style(options.serialize_options.quote_style)
+                                .finish(&mut df)?;
+
+                            if let Writeable::Local(file) = &mut file {
+                                polars_io::utils::sync_on_close::sync_on_close(
+                                    sink_options.sync_on_close,
+                                    file,
+                                )?;
+                            }
+                            file.close()?;
+
+                            Ok(None)
+                        }),
+                    })),
+                    #[cfg(feature = "json")]
+                    FileType::Json(_) => Ok(Box::new(SinkExecutor {
+                        input,
+                        name: "ndjson".to_string(),
+                        f: Box::new(move |mut df, _state| {
+                            use std::io::BufWriter;
+                            use std::ops::DerefMut;
+
+                            use polars_io::SerWriter;
+                            use polars_io::json::{JsonFormat, JsonWriter};
+
+                            if sink_options.mkdir {
+                                mkdir_recursive(path.as_path())?;
+                            }
+
+                            let path = path.as_ref().display().to_string();
+                            let mut file = polars_io::utils::file::Writeable::try_new(
+                                &path,
+                                cloud_options.as_ref(),
+                            )?;
+                            JsonWriter::new(BufWriter::new(file.deref_mut()))
+                                .with_json_format(JsonFormat::JsonLines)
+                                .finish(&mut df)?;
+
+                            if let Writeable::Local(file) = &mut file {
+                                polars_io::utils::sync_on_close::sync_on_close(
+                                    sink_options.sync_on_close,
+                                    file,
+                                )?;
+                            }
+
+                            file.close()?;
+
+                            Ok(None)
+                        }),
+                    })),
+                },
+                SinkType::Partition { .. } => {
+                    polars_bail!(InvalidOperation:
+                        "partition sinks not yet supported in standard engine."
+                    )
+                },
+            }
         },
         Union { inputs, options } => {
             let inputs = state.with_new_branch(|new_state| {

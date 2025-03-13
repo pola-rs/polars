@@ -102,14 +102,12 @@ impl SourceNode for CsvSourceNode {
 
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_right());
 
-        let source_token = SourceToken::new();
         let (line_batch_receivers, chunk_reader, line_batch_source_task_handle) =
             self.init_line_batch_source(num_pipelines, unrestricted_row_count);
 
         join_handles.extend(line_batch_receivers.into_iter().zip(recv_from).map(
             |(mut line_batch_rx, mut recv_from)| {
                 let chunk_reader = chunk_reader.clone();
-                let source_token = source_token.clone();
                 let wait_group = WaitGroup::default();
 
                 spawn(TaskPriority::Low, async move {
@@ -129,7 +127,8 @@ impl SourceNode for CsvSourceNode {
                                 row_offset,
                             )?;
 
-                            let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
+                            let mut morsel =
+                                Morsel::new(df, morsel_seq, morsel_output.source_token.clone());
                             morsel.set_consume_token(wait_group.token());
 
                             if morsel_output.port.send(morsel).await.is_err() {
@@ -138,7 +137,7 @@ impl SourceNode for CsvSourceNode {
 
                             wait_group.wait().await;
 
-                            if source_token.stop_requested() {
+                            if morsel_output.source_token.stop_requested() {
                                 morsel_output.outcome.stop();
                                 break;
                             }
@@ -153,11 +152,13 @@ impl SourceNode for CsvSourceNode {
         join_handles.push(spawn(TaskPriority::Low, async move {
             // Every phase we are given a new send port.
             while let Ok(phase_output) = output_recv.recv().await {
+                let source_token = SourceToken::new();
                 let morsel_senders = phase_output.port.parallel();
                 let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
 
                 for (send_to, port) in send_to.iter_mut().zip(morsel_senders) {
-                    let (outcome, wait_group, morsel_output) = MorselOutput::from_port(port);
+                    let (outcome, wait_group, morsel_output) =
+                        MorselOutput::from_port(port, source_token.clone());
                     _ = send_to.send(morsel_output).await;
                     morsel_outcomes.push((outcome, wait_group));
                 }

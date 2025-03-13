@@ -119,7 +119,7 @@ impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
                 .get_unchecked(start_idx + group_len)
                 .to_usize();
             self.offsets
-                .try_extend_from_slice(other_offsets, group_start, group_len)
+                .try_extend_from_slice(other_offsets, start_idx, group_len)
                 .unwrap();
             self.inner_builder.subslice_extend(
                 other_values,
@@ -161,20 +161,20 @@ impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
                 let mut group_len = 1;
                 let in_bounds = start_idx < other.len();
 
-                while group_start + group_len < idxs.len()
-                    && idxs[group_start + group_len] as usize == start_idx + group_len
-                    && (start_idx + group_len < other.len()) == in_bounds
-                {
-                    group_len += 1;
-                }
-
                 if in_bounds {
+                    while group_start + group_len < idxs.len()
+                        && idxs[group_start + group_len] as usize == start_idx + group_len
+                        && start_idx + group_len < other.len()
+                    {
+                        group_len += 1;
+                    }
+
                     let start_offset = other_offsets.get_unchecked(start_idx).to_usize();
                     let stop_offset = other_offsets
                         .get_unchecked(start_idx + group_len)
                         .to_usize();
                     self.offsets
-                        .try_extend_from_slice(other_offsets, group_start, group_len)
+                        .try_extend_from_slice(other_offsets, start_idx, group_len)
                         .unwrap();
                     self.inner_builder.subslice_extend(
                         other_values,
@@ -183,6 +183,11 @@ impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
                         share,
                     );
                 } else {
+                    while group_start + group_len < idxs.len()
+                        && idxs[group_start + group_len] as usize >= other.len()
+                    {
+                        group_len += 1;
+                    }
                     self.offsets.extend_constant(group_len);
                 }
                 group_start += group_len;

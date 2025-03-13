@@ -14,7 +14,7 @@ use crate::async_executor::AbortOnDropHandle;
 use crate::async_primitives::connector;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
+use crate::morsel::{Morsel, MorselSeq, get_ideal_morsel_size};
 use crate::nodes::io_sources::MorselOutput;
 
 /// Outputs a stream of morsels in reverse order from which they were received.
@@ -141,7 +141,6 @@ impl MorselStreamReverser {
         };
 
         let combined_df = Arc::new(combined_df);
-        let source_token = SourceToken::new();
         let chunk_size = get_ideal_morsel_size();
         let n_chunks = combined_df.height().div_ceil(chunk_size);
         let num_pipelines = phase_tx_receivers.len();
@@ -174,7 +173,6 @@ impl MorselStreamReverser {
             .map(|mut phase_tx_receiver| {
                 let chunk_idx_arc = chunk_idx_arc.clone();
                 let combined_df = combined_df.clone();
-                let source_token = source_token.clone();
                 let row_index = row_index.clone();
                 AbortOnDropHandle::new(async_executor::spawn(
                     async_executor::TaskPriority::Low,
@@ -218,7 +216,7 @@ impl MorselStreamReverser {
                             let mut morsel = Morsel::new(
                                 df,
                                 MorselSeq::new(chunk_idx as u64),
-                                source_token.clone(),
+                                morsel_output.source_token.clone(),
                             );
 
                             morsel.set_consume_token(wait_group.token());
@@ -229,7 +227,7 @@ impl MorselStreamReverser {
 
                             wait_group.wait().await;
 
-                            if source_token.stop_requested() {
+                            if morsel_output.source_token.stop_requested() {
                                 morsel_output.outcome.stop();
                                 drop(morsel_output);
 

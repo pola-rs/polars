@@ -42,6 +42,7 @@ use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
+use polars_utils::total_ord::TotalHash;
 pub use schema::SchemaExtPl;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
@@ -325,6 +326,7 @@ pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 pub trait NumericNative:
     TotalOrd
     + PartialOrd
+    + TotalHash
     + NativeType
     + Num
     + NumCast

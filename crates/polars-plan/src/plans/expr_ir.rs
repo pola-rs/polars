@@ -197,6 +197,14 @@ impl ExprIR {
         self.output_name = OutputName::Alias(name)
     }
 
+    pub fn with_alias(&self, name: PlSmallStr) -> Self {
+        Self {
+            output_name: OutputName::Alias(name),
+            node: self.node,
+            output_dtype: self.output_dtype.clone(),
+        }
+    }
+
     pub(crate) fn set_columnlhs(&mut self, name: PlSmallStr) {
         debug_assert!(matches!(
             self.output_name,

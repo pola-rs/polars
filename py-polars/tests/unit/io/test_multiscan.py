@@ -539,7 +539,6 @@ def test_multiscan_slice_parametric(
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_csv, pl.DataFrame.write_csv),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-        # (pl.scan_ndjson, pl.DataFrame.write_ndjson), not yet implemented for streaming
     ],
 )
 def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
@@ -556,4 +555,53 @@ def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
                 "a": [5, 10, 1996] * 1023,
             }
         ),
+    )
+
+
+def test_deadlock_stop_requested(tmp_path: Path, monkeypatch: Any) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        }
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=1)
+
+    monkeypatch.setenv("POLARS_MAX_THREADS", "2")
+    monkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
+
+    left_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
+    right_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
+
+    left = pl.scan_parquet(left_fs)  # type: ignore[arg-type]
+    right = pl.scan_parquet(right_fs)  # type: ignore[arg-type]
+
+    left.join(right, pl.col.a == pl.col.a).collect(engine="streaming").height
+
+
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+    ],
+)
+def test_deadlock_linearize(scan: Any, write: Any) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        }
+    )
+
+    f = io.BytesIO()
+    write(df, f)
+    fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
+    lf = scan(fs).head(100)
+
+    assert_frame_equal(
+        lf.collect(engine="streaming", slice_pushdown=False),
+        pl.concat([df] * 10),
     )

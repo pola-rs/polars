@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::POOL;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
@@ -15,6 +16,7 @@ use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
 use polars_plan::prelude::{FileType, FunctionFlags};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
@@ -59,6 +61,7 @@ struct GraphConversionContext<'a> {
     graph: Graph,
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     expr_conversion_state: ExpressionConversionState,
+    num_pipelines: usize,
 }
 
 pub fn physical_plan_to_graph(
@@ -66,6 +69,8 @@ pub fn physical_plan_to_graph(
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
+    // Get the number of threads from the rayon thread-pool as that respects our config.
+    let num_pipelines = POOL.current_num_threads();
     let expr_depth_limit = get_expr_depth_limit()?;
     let mut ctx = GraphConversionContext {
         phys_sm,
@@ -73,6 +78,7 @@ pub fn physical_plan_to_graph(
         graph: Graph::with_capacity(phys_sm.len()),
         phys_to_graph: SecondaryMap::with_capacity(phys_sm.len()),
         expr_conversion_state: ExpressionConversionState::new(false, expr_depth_limit),
+        num_pipelines,
     };
 
     to_graph_rec(root, &mut ctx)?;
@@ -799,14 +805,30 @@ fn to_graph_rec<'a>(
             let right_key_schema =
                 compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?;
 
-            let left_key_selectors = left_on
+            // We use key columns entirely by position, and allow duplicate names in key selectors,
+            // so just assign arbitrary unique names for the selectors.
+            let unique_left_on = left_on
+                .iter()
+                .enumerate()
+                .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{i}")))
+                .collect_vec();
+            let unique_right_on = right_on
+                .iter()
+                .enumerate()
+                .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{i}")))
+                .collect_vec();
+
+            let left_key_selectors = unique_left_on
                 .iter()
                 .map(|e| create_stream_expr(e, ctx, &left_input_schema))
                 .try_collect_vec()?;
-            let right_key_selectors = right_on
+            let right_key_selectors = unique_right_on
                 .iter()
                 .map(|e| create_stream_expr(e, ctx, &right_input_schema))
                 .try_collect_vec()?;
+
+            let unique_key_schema =
+                compute_output_schema(&right_input_schema, &unique_left_on, ctx.expr_arena)?;
 
             ctx.graph.add_node(
                 nodes::joins::equi_join::EquiJoinNode::new(
@@ -814,9 +836,11 @@ fn to_graph_rec<'a>(
                     right_input_schema,
                     left_key_schema,
                     right_key_schema,
+                    unique_key_schema,
                     left_key_selectors,
                     right_key_selectors,
                     args,
+                    ctx.num_pipelines,
                 )?,
                 [
                     (left_input_key, input_left.port),

@@ -33,6 +33,10 @@ pub fn verbose() -> bool {
     std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
 }
 
+pub fn get_engine_affinity() -> String {
+    std::env::var("POLARS_ENGINE_AFFINITY").unwrap_or_else(|_| "auto".to_string())
+}
+
 /// Prints a log message if sensitive verbose logging has been enabled.
 pub fn verbose_print_sensitive<F: Fn() -> String>(create_log_message: F) {
     fn do_log(create_log_message: &dyn Fn() -> String) {

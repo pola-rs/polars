@@ -29,7 +29,6 @@ use crate::async_executor::spawn;
 use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
-use crate::nodes::io_sinks::sync_on_close;
 use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
 
 pub struct ParquetSinkNode {
@@ -244,6 +243,10 @@ impl SinkNode for ParquetSinkNode {
         let parquet_schema = self.parquet_schema.clone();
         let encodings = self.encodings.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
+            if sink_options.mkdir {
+                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
+            }
+
             let mut file = polars_io::utils::file::Writeable::try_new(
                 path.to_str().unwrap(),
                 cloud_options.as_ref(),
@@ -276,7 +279,7 @@ impl SinkNode for ParquetSinkNode {
             drop(writer);
 
             if let Writeable::Local(file) = &mut file {
-                sync_on_close(sink_options.sync_on_close, file)?;
+                polars_io::utils::sync_on_close::sync_on_close(sink_options.sync_on_close, file)?;
             }
 
             file.close()?;

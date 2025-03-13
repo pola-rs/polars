@@ -126,19 +126,15 @@ async fn select_keys(
     state: &ExecutionState,
 ) -> PolarsResult<HashKeys> {
     let mut key_columns = Vec::new();
-    for (i, selector) in key_selectors.iter().enumerate() {
-        // We use key columns entirely by position, and allow duplicate names,
-        // so just assign arbitrary unique names.
-        let unique_name = format_pl_smallstr!("__POLARS_KEYCOL_{i}");
-        let s = selector.evaluate(df, state).await?;
-        key_columns.push(s.into_column().with_name(unique_name));
+    for selector in key_selectors {
+        key_columns.push(selector.evaluate(df, state).await?.into_column());
     }
     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
     Ok(HashKeys::from_df(
         &keys,
         params.random_state.clone(),
         params.args.nulls_equal,
-        true,
+        false,
     ))
 }
 
@@ -347,7 +343,6 @@ impl SampleState {
         recv: &[PortState],
         num_pipelines: usize,
         params: &mut EquiJoinParams,
-        table: &mut Option<Box<dyn IdxTable>>,
     ) -> PolarsResult<Option<BuildState>> {
         let left_saturated = self.left_len >= *SAMPLE_LIMIT;
         let right_saturated = self.right_len >= *SAMPLE_LIMIT;
@@ -416,12 +411,6 @@ impl SampleState {
 
         // Transition to building state.
         params.left_is_build = Some(left_is_build);
-        *table = Some(if left_is_build {
-            new_idx_table(params.left_key_schema.clone())
-        } else {
-            new_idx_table(params.right_key_schema.clone())
-        });
-
         let mut sampled_build_morsels =
             BufferedStream::new(core::mem::take(&mut self.left), MorselSeq::default());
         let mut sampled_probe_morsels =
@@ -431,12 +420,7 @@ impl SampleState {
         }
 
         let partitioner = HashPartitioner::new(num_pipelines, 0);
-        let mut build_state = BuildState {
-            local_builders: (0..num_pipelines)
-                .map(|_| LocalBuilder::default())
-                .collect(),
-            sampled_probe_morsels,
-        };
+        let mut build_state = BuildState::new(num_pipelines, num_pipelines, sampled_probe_morsels);
 
         // Simulate the sample build morsels flowing into the build side.
         if !sampled_build_morsels.is_empty() {
@@ -489,13 +473,31 @@ struct LocalBuilder {
     morsel_idxs_offsets_per_p: Vec<usize>,
 }
 
-#[derive(Default)]
 struct BuildState {
     local_builders: Vec<LocalBuilder>,
     sampled_probe_morsels: BufferedStream,
 }
 
 impl BuildState {
+    fn new(
+        num_pipelines: usize,
+        num_partitions: usize,
+        sampled_probe_morsels: BufferedStream,
+    ) -> Self {
+        let local_builders = (0..num_pipelines)
+            .map(|_| LocalBuilder {
+                morsels: Vec::new(),
+                sketch_per_p: vec![CardinalitySketch::default(); num_partitions],
+                morsel_idxs_values_per_p: vec![Vec::new(); num_partitions],
+                morsel_idxs_offsets_per_p: vec![0; num_partitions],
+            })
+            .collect();
+        Self {
+            local_builders,
+            sampled_probe_morsels,
+        }
+    }
+
     async fn partition_and_sink(
         mut recv: Receiver<Morsel>,
         local: &mut LocalBuilder,
@@ -504,19 +506,6 @@ impl BuildState {
         state: &ExecutionState,
     ) -> PolarsResult<()> {
         let track_unmatchable = params.emit_unmatched_build();
-        local
-            .sketch_per_p
-            .resize_with(partitioner.num_partitions(), Default::default);
-        local
-            .morsel_idxs_values_per_p
-            .resize_with(partitioner.num_partitions(), Default::default);
-
-        if local.morsel_idxs_offsets_per_p.is_empty() {
-            local
-                .morsel_idxs_offsets_per_p
-                .resize(partitioner.num_partitions(), 0);
-        }
-
         let (key_selectors, payload_selector);
         if params.left_is_build.unwrap() {
             payload_selector = &params.left_payload_select;
@@ -1195,6 +1184,7 @@ struct EquiJoinParams {
     preserve_order_probe: bool,
     left_key_schema: Arc<Schema>,
     left_key_selectors: Vec<StreamExpr>,
+    #[allow(dead_code)]
     right_key_schema: Arc<Schema>,
     right_key_selectors: Vec<StreamExpr>,
     left_payload_select: Vec<Option<PlSmallStr>>,
@@ -1229,18 +1219,21 @@ pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
     num_pipelines: usize,
-    table: Option<Box<dyn IdxTable>>,
+    table: Box<dyn IdxTable>,
 }
 
 impl EquiJoinNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         left_input_schema: Arc<Schema>,
         right_input_schema: Arc<Schema>,
         left_key_schema: Arc<Schema>,
         right_key_schema: Arc<Schema>,
+        unique_key_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         args: JoinArgs,
+        num_pipelines: usize,
     ) -> PolarsResult<Self> {
         let left_is_build = match args.maintain_order {
             MaintainOrderJoin::None => {
@@ -1253,14 +1246,6 @@ impl EquiJoinNode {
             MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => Some(false),
             MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => Some(true),
         };
-
-        let table = left_is_build.map(|lib| {
-            if lib {
-                new_idx_table(left_key_schema.clone())
-            } else {
-                new_idx_table(right_key_schema.clone())
-            }
-        });
 
         let preserve_order_probe = args.maintain_order != MaintainOrderJoin::None;
         let preserve_order_build = matches!(
@@ -1284,7 +1269,11 @@ impl EquiJoinNode {
         )?;
 
         let state = if left_is_build.is_some() {
-            EquiJoinState::Build(BuildState::default())
+            EquiJoinState::Build(BuildState::new(
+                num_pipelines,
+                num_pipelines,
+                BufferedStream::default(),
+            ))
         } else {
             EquiJoinState::Sample(SampleState::default())
         };
@@ -1294,7 +1283,7 @@ impl EquiJoinNode {
             Arc::new(select_schema(&right_input_schema, &right_payload_select));
         Ok(Self {
             state,
-            num_pipelines: 0,
+            num_pipelines,
             params: EquiJoinParams {
                 left_is_build,
                 preserve_order_build,
@@ -1310,7 +1299,7 @@ impl EquiJoinNode {
                 args,
                 random_state: PlRandomState::new(),
             },
-            table,
+            table: new_idx_table(unique_key_schema),
         })
     }
 }
@@ -1321,7 +1310,7 @@ impl ComputeNode for EquiJoinNode {
     }
 
     fn initialize(&mut self, num_pipelines: usize) {
-        self.num_pipelines = num_pipelines;
+        assert!(num_pipelines == self.num_pipelines);
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
@@ -1334,12 +1323,9 @@ impl ComputeNode for EquiJoinNode {
 
         // If we are sampling and both sides are done/filled, transition to building.
         if let EquiJoinState::Sample(sample_state) = &mut self.state {
-            if let Some(build_state) = sample_state.try_transition_to_build(
-                recv,
-                self.num_pipelines,
-                &mut self.params,
-                &mut self.table,
-            )? {
+            if let Some(build_state) =
+                sample_state.try_transition_to_build(recv, self.num_pipelines, &mut self.params)?
+            {
                 self.state = EquiJoinState::Build(build_state);
             }
         }
@@ -1355,9 +1341,9 @@ impl ComputeNode for EquiJoinNode {
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
                 let probe_state = if self.params.preserve_order_build {
-                    build_state.finalize_ordered(&self.params, self.table.as_deref().unwrap())
+                    build_state.finalize_ordered(&self.params, &*self.table)
                 } else {
-                    build_state.finalize_unordered(&self.params, self.table.as_deref().unwrap())
+                    build_state.finalize_unordered(&self.params, &*self.table)
                 };
                 self.state = EquiJoinState::Probe(probe_state);
             }
@@ -1529,9 +1515,6 @@ impl ComputeNode for EquiJoinNode {
                 assert!(recv_ports[probe_idx].is_none());
                 let receivers = recv_ports[build_idx].take().unwrap().parallel();
 
-                build_state
-                    .local_builders
-                    .resize_with(self.num_pipelines, Default::default);
                 let partitioner = HashPartitioner::new(self.num_pipelines, 0);
                 for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers) {
                     join_handles.push(scope.spawn_task(

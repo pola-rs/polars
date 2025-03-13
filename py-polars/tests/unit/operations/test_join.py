@@ -21,7 +21,7 @@ from polars.exceptions import (
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import JoinStrategy
+    from polars._typing import JoinStrategy, PolarsDataType
 
 
 def test_semi_anti_join() -> None:
@@ -663,15 +663,20 @@ def test_join_sorted_fast_paths_null() -> None:
 
 def test_full_outer_join_list_() -> None:
     schema = {"id": pl.Int64, "vals": pl.List(pl.Float64)}
-
+    join_schema = {**schema, **{k + "_right": t for (k, t) in schema.items()}}
     df1 = pl.DataFrame({"id": [1], "vals": [[]]}, schema=schema)  # type: ignore[arg-type]
     df2 = pl.DataFrame({"id": [2, 3], "vals": [[], [4]]}, schema=schema)  # type: ignore[arg-type]
-    assert df1.join(df2, on="id", how="full").to_dict(as_series=False) == {
-        "id": [None, None, 1],
-        "vals": [None, None, []],
-        "id_right": [2, 3, None],
-        "vals_right": [[], [4.0], None],
-    }
+    expected = pl.DataFrame(
+        {
+            "id": [None, None, 1],
+            "vals": [None, None, []],
+            "id_right": [2, 3, None],
+            "vals_right": [[], [4.0], None],
+        },
+        schema=join_schema,  # type: ignore[arg-type]
+    )
+    out = df1.join(df2, on="id", how="full", maintain_order="right_left")
+    assert_frame_equal(out, expected)
 
 
 @pytest.mark.slow
@@ -1700,16 +1705,24 @@ def test_select_after_join_where_20831() -> None:
     assert q.select(pl.len()).collect().item() == 6
 
 
-def test_join_on_struct() -> None:
+@pytest.mark.parametrize(
+    ("dtype", "data"),
+    [
+        (pl.Struct, [{"x": 1}, {"x": 2}, {"x": 3}, {"x": 4}]),
+        (pl.List, [[1], [2, 2], [3, 3, 3], [4, 4, 4, 4]]),
+        (pl.Array(pl.Int64, 2), [[1, 1], [2, 2], [3, 3], [4, 4]]),
+    ],
+)
+def test_join_on_nested(dtype: PolarsDataType, data: list[Any]) -> None:
     lhs = pl.DataFrame(
         {
-            "a": [{"x": 1}, {"x": 2}, {"x": 3}],
+            "a": data[:3],
             "b": [1, 2, 3],
         }
     )
     rhs = pl.DataFrame(
         {
-            "a": [{"x": 4}, {"x": 2}],
+            "a": [data[3], data[1]],
             "c": [4, 2],
         }
     )
@@ -1717,7 +1730,7 @@ def test_join_on_struct() -> None:
     assert_frame_equal(
         lhs.join(rhs, on="a", how="left", maintain_order="left"),
         pl.select(
-            a=pl.Series([{"x": 1}, {"x": 2}, {"x": 3}]),
+            a=pl.Series(data[:3]),
             b=pl.Series([1, 2, 3]),
             c=pl.Series([None, 2, None]),
         ),
@@ -1726,14 +1739,14 @@ def test_join_on_struct() -> None:
         lhs.join(rhs, on="a", how="right", maintain_order="right"),
         pl.select(
             b=pl.Series([None, 2]),
-            a=pl.Series([{"x": 4}, {"x": 2}]),
+            a=pl.Series([data[3], data[1]]),
             c=pl.Series([4, 2]),
         ),
     )
     assert_frame_equal(
         lhs.join(rhs, on="a", how="inner"),
         pl.select(
-            a=pl.Series([{"x": 2}]),
+            a=pl.Series([data[1]]),
             b=pl.Series([2]),
             c=pl.Series([2]),
         ),
@@ -1741,34 +1754,32 @@ def test_join_on_struct() -> None:
     assert_frame_equal(
         lhs.join(rhs, on="a", how="full", maintain_order="left_right"),
         pl.select(
-            a=pl.Series([{"x": 1}, {"x": 2}, {"x": 3}, None]),
+            a=pl.Series(data[:3] + [None]),
             b=pl.Series([1, 2, 3, None]),
-            a_right=pl.Series([None, {"x": 2}, None, {"x": 4}]),
+            a_right=pl.Series([None, data[1], None, data[3]]),
             c=pl.Series([None, 2, None, 4]),
         ),
     )
     assert_frame_equal(
         lhs.join(rhs, on="a", how="semi"),
         pl.select(
-            a=pl.Series([{"x": 2}]),
+            a=pl.Series([data[1]]),
             b=pl.Series([2]),
         ),
     )
     assert_frame_equal(
         lhs.join(rhs, on="a", how="anti", maintain_order="left"),
         pl.select(
-            a=pl.Series([{"x": 1}, {"x": 3}]),
+            a=pl.Series([data[0], data[2]]),
             b=pl.Series([1, 3]),
         ),
     )
     assert_frame_equal(
         lhs.join(rhs, how="cross", maintain_order="left_right"),
         pl.select(
-            a=pl.Series([{"x": 1}, {"x": 1}, {"x": 2}, {"x": 2}, {"x": 3}, {"x": 3}]),
+            a=pl.Series([data[0], data[0], data[1], data[1], data[2], data[2]]),
             b=pl.Series([1, 1, 2, 2, 3, 3]),
-            a_right=pl.Series(
-                [{"x": 4}, {"x": 2}, {"x": 4}, {"x": 2}, {"x": 4}, {"x": 2}]
-            ),
+            a_right=pl.Series([data[3], data[1], data[3], data[1], data[3], data[1]]),
             c=pl.Series([4, 2, 4, 2, 4, 2]),
         ),
     )
@@ -1822,3 +1833,102 @@ def test_select_len_after_semi_anti_join_21343() -> None:
     q = lhs.join(rhs, on="a", how="anti").select(pl.len())
 
     assert q.collect().item() == 0
+
+
+def test_multi_leftjoin_empty_right_21701() -> None:
+    parent_data = {
+        "id": [1, 30, 80],
+        "parent_field1": [3, 20, 17],
+    }
+    parent_df = pl.LazyFrame(parent_data)
+    child_df = pl.LazyFrame(
+        [],
+        schema={"id": pl.Int32(), "parent_id": pl.Int32(), "child_field1": pl.Int32()},
+    )
+    subchild_df = pl.LazyFrame(
+        [], schema={"child_id": pl.Int32(), "subchild_field1": pl.Int32()}
+    )
+
+    joined_df = parent_df.join(
+        child_df.join(
+            subchild_df, left_on=pl.col("id"), right_on=pl.col("child_id"), how="left"
+        ),
+        left_on=pl.col("id"),
+        right_on=pl.col("parent_id"),
+        how="left",
+    )
+    joined_df = joined_df.select("id", "parent_field1")
+    assert_frame_equal(joined_df.collect(), parent_df.collect(), check_row_order=False)
+
+
+@pytest.mark.parametrize("order", ["none", "left_right", "right_left"])
+def test_join_null_equal(order: Literal["none", "left_right", "right_left"]) -> None:
+    lhs = pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3]})
+    with_null = pl.DataFrame({"x": [1, None], "z": [1, 2]})
+    without_null = pl.DataFrame({"x": [1, 3], "z": [1, 3]})
+    check_row_order = order != "none"
+
+    # Inner join.
+    assert_frame_equal(
+        lhs.join(with_null, on="x", nulls_equal=True, maintain_order=order),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
+        check_row_order=check_row_order,
+    )
+    assert_frame_equal(
+        lhs.join(without_null, on="x", nulls_equal=True),
+        pl.DataFrame({"x": [1], "y": [1], "z": [1]}),
+    )
+
+    # Left join.
+    assert_frame_equal(
+        lhs.join(with_null, on="x", how="left", nulls_equal=True, maintain_order=order),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
+        check_row_order=check_row_order,
+    )
+    assert_frame_equal(
+        lhs.join(
+            without_null, on="x", how="left", nulls_equal=True, maintain_order=order
+        ),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, None, None]}),
+        check_row_order=check_row_order,
+    )
+
+    # Full join.
+    assert_frame_equal(
+        lhs.join(
+            with_null,
+            on="x",
+            how="full",
+            nulls_equal=True,
+            coalesce=True,
+            maintain_order=order,
+        ),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
+        check_row_order=check_row_order,
+    )
+    if order == "left_right":
+        expected = pl.DataFrame(
+            {
+                "x": [1, None, None, None],
+                "x_right": [1, None, None, 3],
+                "y": [1, 2, 3, None],
+                "z": [1, None, None, 3],
+            }
+        )
+    else:
+        expected = pl.DataFrame(
+            {
+                "x": [1, None, None, None],
+                "x_right": [1, 3, None, None],
+                "y": [1, None, 2, 3],
+                "z": [1, 3, None, None],
+            }
+        )
+    assert_frame_equal(
+        lhs.join(
+            without_null, on="x", how="full", nulls_equal=True, maintain_order=order
+        ),
+        expected,
+        check_row_order=check_row_order,
+        check_column_order=False,
+    )

@@ -244,7 +244,7 @@ def test_streaming_join_and_union() -> None:
 
     b = pl.LazyFrame({"a": [1, 2, 4, 8]})
 
-    c = a.join(b, on="a")
+    c = a.join(b, on="a", maintain_order="left_right")
     # The join node latest ensures that the dispatcher
     # needs to replace placeholders in unions.
     q = pl.concat([a, b, c])
