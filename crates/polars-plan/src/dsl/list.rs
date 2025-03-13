@@ -168,11 +168,11 @@ impl ListNameSpace {
     ///   This behavior is more expensive than defaulting to returning an `Error`.
     #[cfg(feature = "list_gather")]
     pub fn gather(self, index: Expr, null_on_oob: bool) -> Expr {
-        self.0.map_many_private(
+        self.0.apply_many_private(
             FunctionExpr::ListExpr(ListFunction::Gather(null_on_oob)),
             &[index],
             false,
-            None,
+            false,
         )
     }
 
@@ -301,13 +301,22 @@ impl ListNameSpace {
     /// Check if the list array contain an element
     pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
         let other = other.into();
-
-        self.0.map_many_private(
-            FunctionExpr::ListExpr(ListFunction::Contains),
-            &[other],
-            false,
-            None,
-        )
+        
+        if has_leaf_literal(&other) {
+            self.0.map_many_private(
+                FunctionExpr::ListExpr(ListFunction::Contains),
+                &[other],
+                false,
+                None,
+            )
+        } else {
+            self.0.apply_many_private(
+                FunctionExpr::ListExpr(ListFunction::Contains),
+                &[other],
+                false,
+                false,
+            )
+        }
     }
     #[cfg(feature = "list_count")]
     /// Count how often the value produced by ``element`` occurs.
