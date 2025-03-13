@@ -301,7 +301,7 @@ impl ListNameSpace {
     /// Check if the list array contain an element
     pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
         let other = other.into();
-        
+
         if has_leaf_literal(&other) {
             self.0.map_many_private(
                 FunctionExpr::ListExpr(ListFunction::Contains),

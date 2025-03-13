@@ -8,7 +8,7 @@ use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, ArenaExprIter, DataFrameUdf, IR, IRAggExpr};
-use polars_plan::prelude::GroupbyOptions;
+use polars_plan::prelude::{ApplyOptions, GroupbyOptions};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -154,7 +154,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
-            if options.is_elementwise() =>
+            if options.is_elementwise() && options.collect_groups != ApplyOptions::ApplyList =>
         {
             let node = node.clone();
             let input = input.clone();
@@ -163,7 +163,10 @@ fn try_lower_elementwise_scalar_agg_expr(
                 .map(|i| {
                     // The function may be sensitive to names (e.g. pl.struct), so we restore them.
                     let new_node = lower_rec!(i.node(), inside_agg)?;
-                    Some(ExprIR::new(new_node, OutputName::Alias(i.output_name().clone())))
+                    Some(ExprIR::new(
+                        new_node,
+                        OutputName::Alias(i.output_name().clone()),
+                    ))
                 })
                 .collect::<Option<Vec<_>>>()?;
 

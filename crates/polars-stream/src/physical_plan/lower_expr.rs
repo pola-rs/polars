@@ -530,7 +530,7 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 options,
                 ..
-            } if options.is_elementwise() => {
+            } if options.is_elementwise() && options.collect_groups != ApplyOptions::ApplyList => {
                 let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
 
@@ -538,7 +538,9 @@ fn lower_exprs_with_ctx(
                 let new_input = trans_exprs
                     .into_iter()
                     .zip(inner_exprs)
-                    .map(|(trans, orig)| ExprIR::new(trans, OutputName::Alias(orig.output_name().clone())))
+                    .map(|(trans, orig)| {
+                        ExprIR::new(trans, OutputName::Alias(orig.output_name().clone()))
+                    })
                     .collect_vec();
                 let mut new_node = node.clone();
                 match &mut new_node {

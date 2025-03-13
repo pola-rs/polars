@@ -149,8 +149,8 @@ impl FunctionOptions {
     }
 
     pub fn is_elementwise(&self) -> bool {
-        self.collect_groups == ApplyOptions::ElementWise
-        && !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
+        matches!(self.collect_groups, ApplyOptions::ElementWise | ApplyOptions::ApplyList)
+            && !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
             && !self.flags.contains(FunctionFlags::RETURNS_SCALAR)
     }
 
