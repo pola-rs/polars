@@ -66,12 +66,18 @@ def test_right_join_schemas_multikey() -> None:
         "b_right",
         "c_right",
     ]
-    assert a.join(b, on=["a", "b"], how="right", coalesce=True).to_dict(
-        as_series=False
-    ) == {"c": [1, 3], "a": [1, 3], "b": [1, 3], "c_right": [1, 3]}
-    assert b.join(a, on=["a", "b"], how="right", coalesce=True).to_dict(
-        as_series=False
-    ) == {"c": [1, None, 3], "a": [1, 2, 3], "b": [1, 2, 3], "c_right": [1, 2, 3]}
+    assert_frame_equal(
+        a.join(b, on=["a", "b"], how="right", coalesce=True),
+        pl.DataFrame({"c": [1, 3], "a": [1, 3], "b": [1, 3], "c_right": [1, 3]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        b.join(a, on=["a", "b"], how="right", coalesce=True),
+        pl.DataFrame(
+            {"c": [1, None, 3], "a": [1, 2, 3], "b": [1, 2, 3], "c_right": [1, 2, 3]}
+        ),
+        check_row_order=False,
+    )
 
 
 def test_join_right_different_key() -> None:
