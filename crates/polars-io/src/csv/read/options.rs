@@ -224,7 +224,7 @@ impl CsvReadOptions {
         self
     }
 
-    /// Number of rows to use for schema inference. Pass [None] to use all rows.
+    /// Number of rows to use for schema inference. Pass [None] to use all rows, pass 0 to read all columns as [`String`]
     pub fn with_infer_schema_length(mut self, infer_schema_length: Option<usize>) -> Self {
         self.infer_schema_length = infer_schema_length;
         self
