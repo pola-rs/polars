@@ -700,7 +700,7 @@ impl LazyFrame {
             !matches!(
                 lp_arena.get(lp_top),
                 IR::Sink {
-                    payload: SinkType::File { .. } | SinkType::Partition { .. },
+                    payload: SinkTypeIR::File { .. } | SinkTypeIR::Partition { .. },
                     ..
                 }
             )
