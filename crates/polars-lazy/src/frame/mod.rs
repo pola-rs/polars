@@ -766,7 +766,7 @@ impl LazyFrame {
 
         #[cfg(feature = "new_streaming")]
         {
-            if let Some(result) = self.try_new_streaming_if_requested(payload.clone()) {
+            if let Some(result) = self.try_new_streaming_if_requested() {
                 return result.map(|v| v.unwrap_or_else(DataFrame::empty));
             }
         }
@@ -1034,10 +1034,7 @@ impl LazyFrame {
     }
 
     #[cfg(feature = "new_streaming")]
-    pub fn try_new_streaming_if_requested(
-        &mut self,
-        payload: SinkType,
-    ) -> Option<PolarsResult<Option<DataFrame>>> {
+    pub fn try_new_streaming_if_requested(&mut self) -> Option<PolarsResult<Option<DataFrame>>> {
         let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
         let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1");
 
@@ -1055,6 +1052,7 @@ impl LazyFrame {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
             };
+
             let _hold = StringCacheHolder::hold();
             let f = || {
                 polars_stream::run_query(
