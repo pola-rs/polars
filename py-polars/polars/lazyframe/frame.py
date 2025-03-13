@@ -2434,6 +2434,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
         engine: EngineType = "auto",
     ) -> None:
         """
@@ -2533,6 +2534,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+        mkdir: bool
+            Recursively create all the directories in the path.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
@@ -2608,6 +2611,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sink_options = {
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
+            "mkdir": mkdir,
         }
 
         return lf.sink_parquet(
@@ -2646,6 +2650,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
         engine: EngineType = "auto",
     ) -> None:
         """
@@ -2714,6 +2719,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+        mkdir: bool
+            Recursively create all the directories in the path.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
@@ -2772,6 +2779,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sink_options = {
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
+            "mkdir": mkdir,
         }
 
         if compat_level is None:
@@ -2826,6 +2834,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
         engine: EngineType = "auto",
     ) -> None:
         """
@@ -2939,6 +2948,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+        mkdir: bool
+            Recursively create all the directories in the path.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
@@ -3003,6 +3014,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sink_options = {
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
+            "mkdir": mkdir,
         }
 
         return lf.sink_csv(
@@ -3047,6 +3059,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
+        mkdir: bool = False,
         engine: EngineType = "auto",
     ) -> None:
         """
@@ -3109,6 +3122,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+        mkdir: bool
+            Recursively create all the directories in the path.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
@@ -3167,6 +3182,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sink_options = {
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
+            "mkdir": mkdir,
         }
 
         return lf.sink_json(

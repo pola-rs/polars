@@ -243,6 +243,10 @@ impl SinkNode for ParquetSinkNode {
         let parquet_schema = self.parquet_schema.clone();
         let encodings = self.encodings.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
+            if sink_options.mkdir {
+                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
+            }
+
             let mut file = polars_io::utils::file::Writeable::try_new(
                 path.to_str().unwrap(),
                 cloud_options.as_ref(),

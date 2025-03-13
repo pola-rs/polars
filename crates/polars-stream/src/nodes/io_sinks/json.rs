@@ -103,6 +103,10 @@ impl SinkNode for NDJsonSinkNode {
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             use tokio::io::AsyncWriteExt;
 
+            if sink_options.mkdir {
+                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
+            }
+
             let mut file = polars_io::utils::file::AsyncWriteable::try_new(
                 path.to_str().unwrap(),
                 cloud_options.as_ref(),
