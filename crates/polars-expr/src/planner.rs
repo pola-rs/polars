@@ -365,51 +365,17 @@ fn create_physical_expr_inner(
             let input = create_physical_expr_inner(expr, ctxt, expr_arena, schema, state)?;
             polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
             state.local.has_implode |= matches!(agg, IRAggExpr::Implode(_));
-            let mut allow_threading = state.allow_threading;
+            let allow_threading = state.allow_threading;
 
             match ctxt {
                 Context::Default if !matches!(agg, IRAggExpr::Quantile { .. }) => {
                     use {GroupByMethod as GBM, IRAggExpr as I};
 
                     let groupby = match agg {
-                        I::Min { propagate_nans, .. } => {
-                            #[cfg(feature = "dtype-categorical")]
-                            {
-                                let field = expr_arena.get(expression).to_field(
-                                    schema,
-                                    Context::Aggregation,
-                                    expr_arena,
-                                )?;
-                                if let DataType::Categorical(_, _) = field.dtype {
-                                    // Categoricals cannot use multithreaded min/max algorithm.
-                                    allow_threading = false;
-                                }
-                            }
-                            if *propagate_nans {
-                                GBM::NanMin
-                            } else {
-                                GBM::Min
-                            }
-                        },
-                        I::Max { propagate_nans, .. } => {
-                            #[cfg(feature = "dtype-categorical")]
-                            {
-                                let field = expr_arena.get(expression).to_field(
-                                    schema,
-                                    Context::Aggregation,
-                                    expr_arena,
-                                )?;
-                                if let DataType::Categorical(_, _) = field.dtype {
-                                    // Categoricals cannot use multithreaded min/max algorithm.
-                                    allow_threading = false;
-                                }
-                            }
-                            if *propagate_nans {
-                                GBM::NanMax
-                            } else {
-                                GBM::Max
-                            }
-                        },
+                        I::Min { propagate_nans, .. } if *propagate_nans => GBM::NanMin,
+                        I::Min { .. } => GBM::Min,
+                        I::Max { propagate_nans, .. } if *propagate_nans => GBM::NanMax,
+                        I::Max { .. } => GBM::Max,
                         I::Median(_) => GBM::Median,
                         I::NUnique(_) => GBM::NUnique,
                         I::First(_) => GBM::First,
