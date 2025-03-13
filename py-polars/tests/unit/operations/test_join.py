@@ -675,9 +675,8 @@ def test_full_outer_join_list_() -> None:
         },
         schema=join_schema,  # type: ignore[arg-type]
     )
-    assert_frame_equal(
-        df1.join(df2, on="id", how="full"), expected, check_row_order=False
-    )
+    out = df1.join(df2, on="id", how="full", maintain_order="right_left")
+    assert_frame_equal(out, expected)
 
 
 @pytest.mark.slow
