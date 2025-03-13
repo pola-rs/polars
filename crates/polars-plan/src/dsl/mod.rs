@@ -1581,17 +1581,7 @@ impl Expr {
     pub fn replace<E: Into<Expr>>(self, old: E, new: E) -> Expr {
         let old = old.into();
         let new = new.into();
-
-        // If we search and replace by literals, we can run on batches.
-        let literal_searchers = matches!(&old, Expr::Literal(_)) & matches!(&new, Expr::Literal(_));
-
-        let args = [old, new];
-
-        if literal_searchers {
-            self.map_many_private(FunctionExpr::Replace, &args, false, None)
-        } else {
-            self.apply_many_private(FunctionExpr::Replace, &args, false, false)
-        }
+        self.apply_many_private(FunctionExpr::Replace, &[old, new], false, false)
     }
 
     #[cfg(feature = "replace")]
@@ -1606,29 +1596,16 @@ impl Expr {
         let old = old.into();
         let new = new.into();
 
-        // If we replace by literals, we can run on batches.
-        let literal_searchers = matches!(&old, Expr::Literal(_)) & matches!(&new, Expr::Literal(_));
-
         let mut args = vec![old, new];
         if let Some(default) = default {
             args.push(default.into())
         }
-
-        if literal_searchers {
-            self.map_many_private(
-                FunctionExpr::ReplaceStrict { return_dtype },
-                &args,
-                false,
-                None,
-            )
-        } else {
-            self.apply_many_private(
-                FunctionExpr::ReplaceStrict { return_dtype },
-                &args,
-                false,
-                false,
-            )
-        }
+        self.apply_many_private(
+            FunctionExpr::ReplaceStrict { return_dtype },
+            &args,
+            false,
+            false,
+        )
     }
 
     #[cfg(feature = "cutqcut")]
