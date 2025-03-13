@@ -1036,7 +1036,7 @@ fn _ensure_lengths(s: &[Column]) -> bool {
 fn _check_same_length(s: &[Column], fn_name: &str) -> Result<(), PolarsError> {
     polars_ensure!(
         _ensure_lengths(s),
-        ComputeError: "all series in `str.{}()` should have equal or unit length",
+        ShapeMismatch: "all series in `str.{}()` should have equal or unit length",
         fn_name
     );
     Ok(())
