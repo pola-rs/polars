@@ -142,8 +142,10 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     #[cfg(feature = "cse")]
     let _cse_plan_changed = if comm_subplan_elim {
         let members = get_or_init_members!();
-
-        if members.has_joins_or_unions && members.has_duplicate_scans() && !members.has_cache {
+        if (members.has_sink_multiple || members.has_joins_or_unions)
+            && members.has_duplicate_scans()
+            && !members.has_cache
+        {
             if verbose {
                 eprintln!("found multiple sources; run comm_subplan_elim")
             }

@@ -350,6 +350,21 @@ pub fn lower_ir(
             },
         },
 
+        IR::SinkMultiple { inputs } => {
+            let mut sinks = Vec::with_capacity(inputs.len());
+            for input in inputs.clone() {
+                let phys_node_stream = match ir_arena.get(input) {
+                    IR::Sink { .. } => lower_ir!(input)?,
+                    _ => lower_ir!(ir_arena.add(IR::Sink {
+                        input,
+                        payload: SinkTypeIR::Memory
+                    }))?,
+                };
+                sinks.push(phys_node_stream.node);
+            }
+            PhysNodeKind::SinkMultiple { sinks }
+        },
+
         #[cfg(feature = "merge_sorted")]
         IR::MergeSorted {
             input_left,

@@ -46,6 +46,12 @@ fn visualize_plan_rec(
             ),
             &[][..],
         ),
+        PhysNodeKind::SinkMultiple { sinks } => {
+            for sink in sinks {
+                visualize_plan_rec(*sink, phys_sm, expr_arena, visited, out);
+            }
+            return;
+        },
         PhysNodeKind::Select {
             input,
             selectors,

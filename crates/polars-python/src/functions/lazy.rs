@@ -9,6 +9,7 @@ use crate::conversion::any_value::py_object_to_any_value;
 use crate::conversion::{Wrap, get_lf};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
+use crate::lazyframe::PyOptFlags;
 use crate::map::lazy::binary_lambda;
 use crate::prelude::vec_extract_wrapped;
 use crate::utils::EnterPolarsExt;
@@ -117,47 +118,42 @@ pub fn col(name: &str) -> PyExpr {
 pub fn collect_all(
     lfs: Vec<PyLazyFrame>,
     engine: Wrap<Engine>,
+    optflags: PyOptFlags,
     py: Python,
 ) -> PyResult<Vec<PyDataFrame>> {
-    use polars_core::utils::rayon::prelude::*;
-
-    py.enter_polars(|| {
-        polars_core::POOL.install(|| {
-            lfs.par_iter()
-                .map(|lf| {
-                    let df = lf.ldf.clone().collect_with_engine(engine.0)?;
-                    Ok(PyDataFrame::new(df))
-                })
-                .collect::<PolarsResult<Vec<_>>>()
-        })
-    })
+    let plans = lfs.into_iter().map(|lf| lf.ldf.logical_plan).collect();
+    let dfs =
+        py.enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner))?;
+    Ok(dfs.into_iter().map(Into::into).collect())
 }
 
 #[pyfunction]
-pub fn collect_all_with_callback(lfs: Vec<PyLazyFrame>, engine: Wrap<Engine>, lambda: PyObject) {
-    use polars_core::utils::rayon::prelude::*;
+pub fn collect_all_with_callback(
+    lfs: Vec<PyLazyFrame>,
+    engine: Wrap<Engine>,
+    optflags: PyOptFlags,
+    lambda: PyObject,
+    py: Python,
+) {
+    let plans = lfs.into_iter().map(|lf| lf.ldf.logical_plan).collect();
+    let result = py
+        .enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner))
+        .map(|dfs| {
+            dfs.into_iter()
+                .map(Into::into)
+                .collect::<Vec<PyDataFrame>>()
+        });
 
-    polars_core::POOL.spawn(move || {
-        let result = lfs
-            .par_iter()
-            .map(|lf| {
-                let df = lf.ldf.clone().collect_with_engine(engine.0)?;
-                Ok(PyDataFrame::new(df))
-            })
-            .collect::<polars_core::error::PolarsResult<Vec<_>>>()
-            .map_err(PyPolarsErr::from);
-
-        Python::with_gil(|py| match result {
-            Ok(dfs) => {
-                lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
-            },
-            Err(err) => {
-                lambda
-                    .call1(py, (PyErr::from(err),))
-                    .map_err(|err| err.restore(py))
-                    .ok();
-            },
-        })
+    Python::with_gil(|py| match result {
+        Ok(dfs) => {
+            lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
+        },
+        Err(err) => {
+            lambda
+                .call1(py, (PyErr::from(err),))
+                .map_err(|err| err.restore(py))
+                .ok();
+        },
     })
 }
 

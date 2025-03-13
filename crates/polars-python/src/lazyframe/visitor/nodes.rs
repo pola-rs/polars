@@ -647,6 +647,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a Sink node",
         )),
+        IR::SinkMultiple { .. } => Err(PyNotImplementedError::new_err(
+            "Not expecting to see a SinkMultiple node",
+        )),
         #[cfg(feature = "merge_sorted")]
         IR::MergeSorted {
             input_left,

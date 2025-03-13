@@ -140,6 +140,7 @@ impl IR {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
+            SinkMultiple { .. } => SinkMultiple { inputs },
             SimpleProjection { columns, .. } => SimpleProjection {
                 input: inputs.pop().unwrap(),
                 columns: columns.clone(),
@@ -162,7 +163,12 @@ impl IR {
     pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
         use IR::*;
         match self {
-            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
+            Slice { .. }
+            | Cache { .. }
+            | Distinct { .. }
+            | Union { .. }
+            | MapFunction { .. }
+            | SinkMultiple { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
             Select { expr, .. } => container.extend_from_slice(expr),
@@ -209,11 +215,7 @@ impl IR {
     {
         use IR::*;
         let input = match self {
-            Union { inputs, .. } => {
-                container.extend(inputs.iter().cloned());
-                return;
-            },
-            HConcat { inputs, .. } => {
+            Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
                 container.extend(inputs.iter().cloned());
                 return;
             },

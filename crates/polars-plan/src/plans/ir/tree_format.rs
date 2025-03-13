@@ -360,6 +360,14 @@ impl<'a> TreeFmtNode<'a> {
                         ),
                         vec![self.lp_node(None, *input)],
                     ),
+                    SinkMultiple { inputs } => ND(
+                        wh(h, "SINK_MULTIPLE"),
+                        inputs
+                            .iter()
+                            .enumerate()
+                            .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
+                            .collect(),
+                    ),
                     SimpleProjection { input, columns } => {
                         let num_columns = columns.as_ref().len();
                         let total_columns = lp.lp_arena.get(*input).schema(lp.lp_arena).len();

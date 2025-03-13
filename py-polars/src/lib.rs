@@ -17,7 +17,7 @@ use polars_python::expr::PyExpr;
 use polars_python::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
 use polars_python::lazyframe::PyInProcessQuery;
-use polars_python::lazyframe::{PyLazyFrame, PyPartitioning};
+use polars_python::lazyframe::{PyLazyFrame, PyOptFlags, PyPartitioning};
 use polars_python::lazygroupby::PyLazyGroupBy;
 use polars_python::series::PySeries;
 #[cfg(feature = "sql")]
@@ -90,6 +90,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
+    m.add_class::<PyOptFlags>().unwrap();
     #[cfg(not(target_arch = "wasm32"))]
     m.add_class::<PyInProcessQuery>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();

@@ -31,6 +31,7 @@ pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_compute::rolling::QuantileMethod;
+use polars_core::POOL;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
@@ -42,6 +43,7 @@ use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_plan::global::FETCH_ROWS;
 use polars_utils::pl_str::PlSmallStr;
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 use crate::frame::cached_arenas::CachedArena;
 #[cfg(feature = "streaming")]
@@ -767,7 +769,7 @@ impl LazyFrame {
         #[cfg(feature = "new_streaming")]
         {
             if let Some(result) = self.try_new_streaming_if_requested() {
-                return result.map(|v| v.unwrap_or_else(DataFrame::empty));
+                return result.map(|v| v.unwrap());
             }
         }
 
@@ -790,7 +792,7 @@ impl LazyFrame {
                     &mut alp_plan.expr_arena,
                 );
                 drop(string_cache_hold);
-                result.map(|v| v.unwrap_or_else(DataFrame::empty))
+                result.map(|v| v.unwrap())
             }),
             _ if matches!(payload, SinkType::Partition { .. }) => Err(polars_err!(
                 InvalidOperation: "partition sinks are not supported on for the '{}' engine",
@@ -818,6 +820,113 @@ impl LazyFrame {
                 );
                 physical_plan.execute(&mut state)
             },
+        }
+    }
+
+    pub fn collect_all_with_engine(
+        plans: Vec<DslPlan>,
+        mut engine: Engine,
+        opt_state: OptFlags,
+    ) -> PolarsResult<Vec<DataFrame>> {
+        if plans.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Default engine for collect_all is InMemory
+        if engine == Engine::Auto {
+            engine = Engine::InMemory;
+        }
+        // Gpu uses some hacks to dispatch.
+        if engine == Engine::Gpu {
+            engine = Engine::InMemory;
+        }
+
+        let mut sink_multiple = LazyFrame {
+            logical_plan: DslPlan::SinkMultiple { inputs: plans },
+            opt_state,
+            cached_arena: Arc::new(Mutex::new(None)),
+        };
+
+        #[cfg(feature = "new_streaming")]
+        {
+            if let Some(result) = sink_multiple.try_new_streaming_if_requested() {
+                return result.map(|v| v.unwrap_err());
+            }
+        }
+
+        match engine {
+            Engine::Auto => unreachable!(),
+            Engine::Streaming => {
+                feature_gated!(
+                    "new_streaming",
+                    sink_multiple = sink_multiple.with_new_streaming(true)
+                )
+            },
+            Engine::OldStreaming => feature_gated!(
+                "streaming",
+                sink_multiple = sink_multiple.with_streaming(true)
+            ),
+            _ => {},
+        }
+        let mut alp_plan = sink_multiple.clone().to_alp_optimized()?;
+
+        if engine == Engine::Streaming {
+            feature_gated!("new_streaming", {
+                let string_cache_hold = StringCacheHolder::hold();
+                let result = polars_stream::run_query(
+                    alp_plan.lp_top,
+                    &mut alp_plan.lp_arena,
+                    &mut alp_plan.expr_arena,
+                );
+                drop(string_cache_hold);
+                return result.map(|v| v.unwrap_err());
+            });
+        }
+
+        let IR::SinkMultiple { inputs } = alp_plan.root() else {
+            unreachable!()
+        };
+
+        let mut physical_plans = Vec::with_capacity(inputs.len());
+        for input in inputs.clone() {
+            physical_plans.push(create_physical_plan(
+                input,
+                &mut alp_plan.lp_arena,
+                &mut alp_plan.expr_arena,
+            )?);
+        }
+
+        match engine {
+            Engine::Gpu => polars_bail!(
+                InvalidOperation: "collect_all is not supported for the gpu engine"
+            ),
+            Engine::InMemory => {
+                // We don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
+                // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
+                // within bounds
+                let state = ExecutionState::new();
+                let out = POOL.install(|| {
+                    physical_plans
+                        .chunks_mut(POOL.current_num_threads() * 3)
+                        .map(|chunk| {
+                            chunk
+                                .into_par_iter()
+                                .enumerate()
+                                .map(|(idx, input)| {
+                                    let mut input = std::mem::take(input);
+                                    let mut state = state.split();
+                                    state.branch_idx += idx;
+                                    let df = input.execute(&mut state)?;
+                                    Ok(df)
+                                })
+                                .collect::<PolarsResult<Vec<_>>>()
+                        })
+                        .collect::<PolarsResult<Vec<_>>>()
+                });
+                Ok(out?.into_iter().flatten().collect())
+            },
+            Engine::OldStreaming => panic!("This is no longer supported"),
+            _ => unreachable!(),
         }
     }
 
@@ -1034,7 +1143,9 @@ impl LazyFrame {
     }
 
     #[cfg(feature = "new_streaming")]
-    pub fn try_new_streaming_if_requested(&mut self) -> Option<PolarsResult<Option<DataFrame>>> {
+    pub fn try_new_streaming_if_requested(
+        &mut self,
+    ) -> Option<PolarsResult<Result<DataFrame, Vec<DataFrame>>>> {
         let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
         let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1");
 

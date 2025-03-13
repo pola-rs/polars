@@ -349,6 +349,7 @@ fn create_physical_plan_impl(
                 },
             }
         },
+        SinkMultiple { .. } => unreachable!("should have been called differently"),
         Union { inputs, options } => {
             let inputs = state.with_new_branch(|new_state| {
                 inputs

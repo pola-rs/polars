@@ -315,6 +315,13 @@ impl<'a> IRDotDisplay<'a> {
                     })
                 })?;
             },
+            SinkMultiple { inputs } => {
+                for input in inputs {
+                    self.with_root(*input)._format(f, Some(id), last)?;
+                }
+
+                write_label(f, id, |f| f.write_str("SINK MULTIPLE"))?;
+            },
             SimpleProjection { input, columns } => {
                 let num_columns = columns.as_ref().len();
                 let total_columns = self.lp.lp_arena.get(*input).schema(self.lp.lp_arena).len();

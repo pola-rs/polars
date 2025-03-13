@@ -21,6 +21,7 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
+from polars.lazyframe.opt_flags import OptFlags
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -1686,41 +1687,27 @@ def collect_all(
     list of DataFrames
         The collected DataFrames, returned in the same order as the input LazyFrames.
     """
+    optflags = OptFlags(
+        _type_coercion=type_coercion,
+        _type_check=_type_check,
+        predicate_pushdown=predicate_pushdown,
+        projection_pushdown=projection_pushdown,
+        simplify_expression=simplify_expression,
+        slice_pushdown=slice_pushdown,
+        comm_subplan_elim=comm_subplan_elim,
+        comm_subexpr_elim=comm_subexpr_elim,
+        cluster_with_columns=cluster_with_columns,
+        collapse_joins=collapse_joins,
+        check_order_observe=_check_order,
+    )
     if no_optimization:
-        predicate_pushdown = False
-        projection_pushdown = False
-        slice_pushdown = False
-        comm_subplan_elim = False
-        comm_subexpr_elim = False
-        cluster_with_columns = False
-        collapse_joins = False
+        optflags.no_optimizations()
 
     if engine in ("streaming", "old-streaming"):
         issue_unstable_warning("Streaming mode is considered unstable.")
 
-    prepared = []
-
-    for lf in lazy_frames:
-        type_check = _type_check
-        ldf = lf._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=False,
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=False,
-        )
-        prepared.append(ldf)
-
-    out = plr.collect_all(prepared, engine)
+    lfs = [lf._ldf for lf in lazy_frames]
+    out = plr.collect_all(lfs, engine, optflags._pyoptflags)
 
     # wrap the pydataframes into dataframe
     result = [wrap_df(pydf) for pydf in out]
@@ -1858,44 +1845,32 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
+    optflags = OptFlags(
+        _type_coercion=type_coercion,
+        _type_check=_type_check,
+        predicate_pushdown=predicate_pushdown,
+        projection_pushdown=projection_pushdown,
+        simplify_expression=simplify_expression,
+        slice_pushdown=slice_pushdown,
+        comm_subplan_elim=comm_subplan_elim,
+        comm_subexpr_elim=comm_subexpr_elim,
+        cluster_with_columns=cluster_with_columns,
+        collapse_joins=collapse_joins,
+        check_order_observe=_check_order,
+    )
     if no_optimization:
-        predicate_pushdown = False
-        projection_pushdown = False
-        slice_pushdown = False
-        comm_subplan_elim = False
-        comm_subexpr_elim = False
-        cluster_with_columns = False
-        collapse_joins = False
+        optflags.no_optimizations()
 
     if engine in ("streaming", "old-streaming"):
         issue_unstable_warning("Streaming mode is considered unstable.")
 
-    prepared = []
-
-    for lf in lazy_frames:
-        type_check = _type_check
-        ldf = lf._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=False,
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=False,
-        )
-        prepared.append(ldf)
-
     result: (
         _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
     ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-    plr.collect_all_with_callback(prepared, engine, result._callback_all)
+    lfs = [lf._ldf for lf in lazy_frames]
+    plr.collect_all_with_callback(
+        lfs, engine, optflags._pyoptflags, result._callback_all
+    )
     return result
 
 
