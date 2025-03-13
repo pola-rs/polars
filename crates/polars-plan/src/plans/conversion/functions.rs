@@ -58,6 +58,7 @@ pub(super) fn convert_functions(
             polars_ensure!(&e[1].is_scalar(arena), ComputeError: "'n' must be scalar value");
             polars_ensure!(&e[2].is_scalar(arena), ComputeError: "'fill_value' must be scalar value");
         },
+        #[cfg(feature = "replace")]
         F::Replace | F::ReplaceStrict { .. } => {
             let old = &e[1];
             let new = &e[1];
