@@ -59,6 +59,15 @@ impl<T: PartialEq> PartialEq for Buffer<T> {
     }
 }
 
+impl<T: Eq> Eq for Buffer<T> {}
+
+impl<T: std::hash::Hash> std::hash::Hash for Buffer<T> {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_slice().hash(state);
+    }
+}
+
 impl<T: std::fmt::Debug> std::fmt::Debug for Buffer<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(&**self, f)

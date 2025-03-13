@@ -3,9 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
+from hypothesis import given
 
 import polars as pl
-from polars.io.partition import PartitionMaxSize
+from polars.io.partition import PartitionByKey, PartitionMaxSize
+from polars.testing import assert_series_equal
+from polars.testing.asserts.frame import assert_frame_equal
+from polars.testing.parametric.strategies import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -59,3 +63,123 @@ def test_max_size_partition(
 
         length -= max_size
         i += 1
+
+
+@pytest.mark.parametrize("io_type", io_types)
+@pytest.mark.write_disk
+def test_partition_by_key(
+    tmp_path: Path,
+    io_type: IOType,
+) -> None:
+    lf = pl.Series("a", [i % 4 for i in range(7)], pl.Int64).to_frame().lazy()
+
+    (io_type["sink"])(
+        lf,
+        PartitionByKey(tmp_path / f"{{part}}.{io_type['ext']}", by="a"),
+        engine="streaming",
+        # We need to sync here because platforms do not guarantee that a close on
+        # one thread is immediately visible on another thread.
+        #
+        # "Multithreaded processes and close()"
+        # https://man7.org/linux/man-pages/man2/close.2.html
+        sync_on_close="data",
+    )
+
+    assert_series_equal(
+        (io_type["scan"])(tmp_path / f"0.{io_type['ext']}").collect().to_series(),
+        pl.Series("a", [0, 0], pl.Int64),
+    )
+    assert_series_equal(
+        (io_type["scan"])(tmp_path / f"1.{io_type['ext']}").collect().to_series(),
+        pl.Series("a", [1, 1], pl.Int64),
+    )
+    assert_series_equal(
+        (io_type["scan"])(tmp_path / f"2.{io_type['ext']}").collect().to_series(),
+        pl.Series("a", [2, 2], pl.Int64),
+    )
+    assert_series_equal(
+        (io_type["scan"])(tmp_path / f"3.{io_type['ext']}").collect().to_series(),
+        pl.Series("a", [3], pl.Int64),
+    )
+
+    scan_flags = (
+        {"schema": pl.Schema({"a": pl.String()})} if io_type["ext"] == "csv" else {}
+    )
+
+    # Change the datatype.
+    (io_type["sink"])(
+        lf,
+        PartitionByKey(
+            tmp_path / f"{{part}}.{io_type['ext']}", by=pl.col.a.cast(pl.String())
+        ),
+        engine="streaming",
+        sync_on_close="data",
+    )
+
+    assert_series_equal(
+        (io_type["scan"])(tmp_path / f"0.{io_type['ext']}", **scan_flags)
+        .collect()
+        .to_series(),
+        pl.Series("a", ["0", "0"], pl.String),
+    )
+    assert_series_equal(
+        (io_type["scan"])(tmp_path / f"1.{io_type['ext']}", **scan_flags)
+        .collect()
+        .to_series(),
+        pl.Series("a", ["1", "1"], pl.String),
+    )
+    assert_series_equal(
+        (io_type["scan"])(tmp_path / f"2.{io_type['ext']}", **scan_flags)
+        .collect()
+        .to_series(),
+        pl.Series("a", ["2", "2"], pl.String),
+    )
+    assert_series_equal(
+        (io_type["scan"])(tmp_path / f"3.{io_type['ext']}", **scan_flags)
+        .collect()
+        .to_series(),
+        pl.Series("a", ["3"], pl.String),
+    )
+
+
+# We only deal with self-describing formats
+@pytest.mark.parametrize("io_type", [io_types[2], io_types[3]])
+@pytest.mark.write_disk
+@given(
+    df=dataframes(
+        min_cols=1,
+        excluded_dtypes=[
+            pl.Decimal,  # Bug see: https://github.com/pola-rs/polars/issues/21684
+            pl.Categorical,  # We cannot ensure the string cache is properly held.
+        ],
+    )
+)
+def test_partition_by_key_parametric(
+    tmp_path_factory: pytest.TempPathFactory,
+    io_type: IOType,
+    df: pl.DataFrame,
+) -> None:
+    col1 = df.columns[0]
+
+    tmp_path = tmp_path_factory.mktemp("data")
+
+    dfs = df.partition_by(col1)
+    (io_type["sink"])(
+        df.lazy(),
+        PartitionByKey(tmp_path / f"{{part}}.{io_type['ext']}", by=col1),
+        engine="streaming",
+        # We need to sync here because platforms do not guarantee that a close on
+        # one thread is immediately visible on another thread.
+        #
+        # "Multithreaded processes and close()"
+        # https://man7.org/linux/man-pages/man2/close.2.html
+        sync_on_close="data",
+    )
+
+    for i, df in enumerate(dfs):
+        assert_frame_equal(
+            df,
+            (io_type["scan"])(
+                tmp_path / f"{i}.{io_type['ext']}",
+            ).collect(),
+        )

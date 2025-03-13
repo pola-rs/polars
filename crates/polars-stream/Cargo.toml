@@ -18,6 +18,7 @@ crossbeam-utils = { workspace = true }
 futures = { workspace = true }
 memmap = { workspace = true }
 parking_lot = { workspace = true }
+percent-encoding = { workspace = true }
 pin-project-lite = { workspace = true }
 polars-io = { workspace = true, features = ["async"] }
 polars-utils = { workspace = true }

@@ -3517,6 +3517,7 @@ dependencies = [
  "futures",
  "memmap2",
  "parking_lot",
+ "percent-encoding",
  "pin-project-lite",
  "polars-arrow",
  "polars-core",

@@ -1,84 +1,66 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use polars_core::prelude::PlHashMap;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
+use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
-use polars_plan::dsl::{FileType, PartitionVariant, SinkOptions};
+use polars_plan::dsl::{FileType, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::SinkNode;
+use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
+use crate::async_executor::{AbortOnDropHandle, spawn};
+use crate::async_primitives::wait_group::WaitGroup;
+use crate::async_primitives::{connector, distributor_channel};
+use crate::nodes::{Morsel, PhaseOutcome, TaskPriority};
 
+pub mod by_key;
 pub mod max_size;
 
-pub type ArgsToPathFn = Arc<
-    dyn Send
-        + Sync
-        + Fn(PlHashMap<PlSmallStr, PlSmallStr>) -> (PathBuf, PlHashMap<PlSmallStr, PlSmallStr>),
->;
-pub type CreateNewSinkFn = Arc<
-    dyn Send
-        + Sync
-        + Fn(
-            SchemaRef,
-            PlHashMap<PlSmallStr, PlSmallStr>,
-        ) -> PolarsResult<(
-            PathBuf,
-            Box<dyn SinkNode + Send + Sync>,
-            PlHashMap<PlSmallStr, PlSmallStr>,
-        )>,
->;
+pub type CreateNewSinkFn =
+    Arc<dyn Send + Sync + Fn(SchemaRef, PathBuf) -> PolarsResult<Box<dyn SinkNode + Send + Sync>>>;
 
-pub fn get_args_to_path_fn(
-    variant: &PartitionVariant,
-    path_f_string: Arc<PathBuf>,
-) -> ArgsToPathFn {
-    match variant {
-        PartitionVariant::MaxSize(_) => Arc::new(move |args: PlHashMap<PlSmallStr, PlSmallStr>| {
-            let part_str = PlSmallStr::from_static("part");
-            let path = path_f_string
-                .as_ref()
-                .display()
-                .to_string()
-                .replace("{part}", args.get(&part_str).unwrap());
-            let path = std::path::PathBuf::from(path);
-            (path, args)
-        }) as _,
+pub fn format_path(path: &Path, format_args: &PlHashMap<PlSmallStr, PlSmallStr>) -> PathBuf {
+    // @Optimize: This can use aho-corasick.
+    let mut path = path.display().to_string();
+    for (name, value) in format_args {
+        let needle = &format!("{{{name}}}");
+        path = path.replace(needle, value);
     }
+    std::path::PathBuf::from(path)
 }
+
 pub fn get_create_new_fn(
     file_type: FileType,
     sink_options: SinkOptions,
-    args_to_path: ArgsToPathFn,
     cloud_options: Option<CloudOptions>,
 ) -> CreateNewSinkFn {
     match file_type {
         #[cfg(feature = "ipc")]
-        FileType::Ipc(ipc_writer_options) => Arc::new(move |input_schema, args| {
-            let (path, args) = args_to_path(args);
+        FileType::Ipc(ipc_writer_options) => Arc::new(move |input_schema, path| {
             let sink = Box::new(super::ipc::IpcSinkNode::new(
                 input_schema,
-                path.clone(),
+                path,
                 sink_options.clone(),
                 ipc_writer_options,
                 cloud_options.clone(),
             )) as Box<dyn SinkNode + Send + Sync>;
-            Ok((path, sink, args))
+            Ok(sink)
         }) as _,
         #[cfg(feature = "json")]
-        FileType::Json(_ndjson_writer_options) => Arc::new(move |_input_schema, args| {
-            let (path, args) = args_to_path(args);
+        FileType::Json(_ndjson_writer_options) => Arc::new(move |_input_schema, path| {
             let sink = Box::new(super::json::NDJsonSinkNode::new(
-                path.clone(),
+                path,
                 sink_options.clone(),
                 cloud_options.clone(),
             )) as Box<dyn SinkNode + Send + Sync>;
-            Ok((path, sink, args))
+            Ok(sink)
         }) as _,
         #[cfg(feature = "parquet")]
-        FileType::Parquet(parquet_writer_options) => Arc::new(move |input_schema, args| {
-            let (path, args) = args_to_path(args);
+        FileType::Parquet(parquet_writer_options) => Arc::new(move |input_schema, path: PathBuf| {
             let sink = Box::new(super::parquet::ParquetSinkNode::new(
                 input_schema,
                 path.as_path(),
@@ -86,19 +68,18 @@ pub fn get_create_new_fn(
                 &parquet_writer_options,
                 cloud_options.clone(),
             )?) as Box<dyn SinkNode + Send + Sync>;
-            Ok((path, sink, args))
+            Ok(sink)
         }) as _,
         #[cfg(feature = "csv")]
-        FileType::Csv(csv_writer_options) => Arc::new(move |input_schema, args| {
-            let (path, args) = args_to_path(args);
+        FileType::Csv(csv_writer_options) => Arc::new(move |input_schema, path| {
             let sink = Box::new(super::csv::CsvSinkNode::new(
-                path.clone(),
+                path,
                 input_schema,
                 sink_options.clone(),
                 csv_writer_options.clone(),
                 cloud_options.clone(),
             )) as Box<dyn SinkNode + Send + Sync>;
-            Ok((path, sink, args))
+            Ok(sink)
         }) as _,
         #[cfg(not(any(
             feature = "csv",
@@ -110,4 +91,88 @@ pub fn get_create_new_fn(
             panic!("activate source feature")
         },
     }
+}
+
+enum SinkSender {
+    Connector(connector::Sender<Morsel>),
+    Distributor(distributor_channel::Sender<Morsel>),
+}
+
+impl SinkSender {
+    pub async fn send(&mut self, morsel: Morsel) -> Result<(), Morsel> {
+        match self {
+            SinkSender::Connector(sender) => sender.send(morsel).await,
+            SinkSender::Distributor(sender) => sender.send(morsel).await,
+        }
+    }
+}
+
+async fn open_new_sink(
+    path_f_string: &Path,
+    create_new_sink: &CreateNewSinkFn,
+    format_args: &PlHashMap<PlSmallStr, PlSmallStr>,
+    sink_input_schema: SchemaRef,
+    num_pipelines: usize,
+    partition_name: &'static str,
+    verbose: bool,
+) -> PolarsResult<
+    Option<(
+        FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
+        SinkSender,
+    )>,
+> {
+    let path = format_path(path_f_string, format_args);
+
+    if verbose {
+        eprintln!(
+            "[partition[{partition_name}]]: Start on new file '{}'",
+            path.display()
+        );
+    }
+
+    let mut node = (create_new_sink)(sink_input_schema.clone(), path)?;
+    let mut join_handles = Vec::new();
+    let (sink_input, sender) = if node.is_sink_input_parallel() {
+        let (tx, dist_rxs) = distributor_channel::distributor_channel(
+            num_pipelines,
+            DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
+        );
+        let (txs, rxs) = (0..num_pipelines)
+            .map(|_| connector::connector())
+            .collect::<(Vec<_>, Vec<_>)>();
+        join_handles.extend(dist_rxs.into_iter().zip(txs).map(|(mut dist_rx, mut tx)| {
+            spawn(TaskPriority::High, async move {
+                while let Ok(morsel) = dist_rx.recv().await {
+                    if tx.send(morsel).await.is_err() {
+                        break;
+                    }
+                }
+                Ok(())
+            })
+        }));
+
+        (SinkInputPort::Parallel(rxs), SinkSender::Distributor(tx))
+    } else {
+        let (tx, rx) = connector::connector();
+        (SinkInputPort::Serial(rx), SinkSender::Connector(tx))
+    };
+
+    let state = ExecutionState::new();
+    let (mut sink_input_tx, sink_input_rx) = connector::connector();
+    node.spawn_sink(num_pipelines, sink_input_rx, &state, &mut join_handles);
+    let mut join_handles =
+        FuturesUnordered::from_iter(join_handles.into_iter().map(AbortOnDropHandle::new));
+
+    let (_, outcome) = PhaseOutcome::new_shared_wait(WaitGroup::default().token());
+    if sink_input_tx.send((outcome, sink_input)).await.is_err() {
+        // If this sending failed, probably some error occurred.
+        drop(sender);
+        while let Some(res) = join_handles.next().await {
+            res?;
+        }
+
+        return Ok(None);
+    }
+
+    Ok(Some((join_handles, sender)))
 }

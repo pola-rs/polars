@@ -9,6 +9,7 @@ use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
 use pyo3::{Bound, FromPyObject, PyAny, PyResult, pyclass, pymethods};
 
+use crate::expr::PyExpr;
 use crate::prelude::Wrap;
 
 #[derive(Clone)]
@@ -32,6 +33,17 @@ impl PyPartitioning {
         PyPartitioning {
             path: Arc::new(path),
             variant: PartitionVariant::MaxSize(max_size),
+        }
+    }
+
+    #[staticmethod]
+    pub fn new_by_key(path: PathBuf, by: Vec<PyExpr>, include_key: bool) -> PyPartitioning {
+        PyPartitioning {
+            path: Arc::new(path),
+            variant: PartitionVariant::ByKey {
+                key_exprs: by.into_iter().map(|e| e.inner).collect(),
+                include_key,
+            },
         }
     }
 
@@ -86,18 +98,20 @@ impl<'py> FromPyObject<'py> for Wrap<SinkOptions> {
             ));
         }
 
-        let sync_on_close = PyDictMethods::get_item(&parsed, "sync_on_close")?
-            .ok_or_else(|| PyValueError::new_err("`sink_options` must be `sync_on_close` field"))?;
+        let sync_on_close =
+            PyDictMethods::get_item(&parsed, "sync_on_close")?.ok_or_else(|| {
+                PyValueError::new_err("`sink_options` must contain `sync_on_close` field")
+            })?;
         let sync_on_close = sync_on_close.extract::<Wrap<SyncOnCloseType>>()?.0;
 
         let maintain_order =
             PyDictMethods::get_item(&parsed, "maintain_order")?.ok_or_else(|| {
-                PyValueError::new_err("`sink_options` must be `maintain_order` field")
+                PyValueError::new_err("`sink_options` must contain `maintain_order` field")
             })?;
         let maintain_order = maintain_order.extract::<bool>()?;
 
         let mkdir = PyDictMethods::get_item(&parsed, "mkdir")?
-            .ok_or_else(|| PyValueError::new_err("`sink_options` must be `mkdir` field"))?;
+            .ok_or_else(|| PyValueError::new_err("`sink_options` must contain `mkdir` field"))?;
         let mkdir = mkdir.extract::<bool>()?;
 
         Ok(Wrap(SinkOptions {

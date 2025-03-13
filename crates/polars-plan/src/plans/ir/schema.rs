@@ -36,9 +36,9 @@ impl IR {
             HConcat { .. } => "hconcat",
             ExtContext { .. } => "ext_context",
             Sink { payload, .. } => match payload {
-                SinkType::Memory => "sink (memory)",
-                SinkType::File { .. } => "sink (file)",
-                SinkType::Partition { .. } => "sink (partition)",
+                SinkTypeIR::Memory => "sink (memory)",
+                SinkTypeIR::File { .. } => "sink (file)",
+                SinkTypeIR::Partition { .. } => "sink (partition)",
             },
             SimpleProjection { .. } => "simple_projection",
             #[cfg(feature = "merge_sorted")]

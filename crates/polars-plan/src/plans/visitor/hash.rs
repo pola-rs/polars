@@ -179,7 +179,7 @@ impl Hash for HashableEqLP<'_> {
                 }
             },
             IR::Sink { input: _, payload } => {
-                payload.hash(state);
+                payload.traverse_and_hash(self.expr_arena, state);
             },
             IR::Cache {
                 input: _,

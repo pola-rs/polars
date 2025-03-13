@@ -5,14 +5,17 @@ use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::bitmap::MutableBitmap;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_io::RowIndex;
 use polars_mem_engine::create_physical_plan;
-use polars_plan::dsl::{FileScan, ScanFlags, ScanSource};
+use polars_plan::dsl::{
+    FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, ScanFlags, ScanSource,
+    SinkTypeIR,
+};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue};
-use polars_plan::prelude::{FileType, GroupbyOptions, SinkType};
+use polars_plan::plans::{AExpr, Context, FunctionIR, IR, IRAggExpr, LiteralValue};
+use polars_plan::prelude::{FileType, GroupbyOptions};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::unique_column_name;
@@ -221,16 +224,16 @@ pub fn lower_ir(
         },
 
         IR::Sink { input, payload } => match payload {
-            SinkType::Memory => {
+            SinkTypeIR::Memory => {
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::InMemorySink { input: phys_input }
             },
-            SinkType::File {
+            SinkTypeIR::File(FileSinkType {
                 path,
                 sink_options,
                 file_type,
                 cloud_options,
-            } => {
+            }) => {
                 let path = path.clone();
                 let sink_options = sink_options.clone();
                 let file_type = file_type.clone();
@@ -283,28 +286,67 @@ pub fn lower_ir(
                     },
                 }
             },
-            SinkType::Partition {
+            SinkTypeIR::Partition(PartitionSinkTypeIR {
                 path_f_string,
                 sink_options,
                 variant,
                 file_type,
                 cloud_options,
-            } => {
+            }) => {
                 let path_f_string = path_f_string.clone();
                 let sink_options = sink_options.clone();
                 let variant = variant.clone();
                 let file_type = file_type.clone();
                 let cloud_options = cloud_options.clone();
 
-                let phys_input = lower_ir!(*input)?;
-                PhysNodeKind::PartitionSink {
+                let mut input = lower_ir!(*input)?;
+                let input_schema = match &variant {
+                    PartitionVariantIR::MaxSize(_) => output_schema.clone(),
+                    PartitionVariantIR::ByKey {
+                        key_exprs,
+                        include_key: _,
+                    } => {
+                        if key_exprs.is_empty() {
+                            polars_bail!(InvalidOperation: "cannot partition by-key without key expressions");
+                        }
+
+                        let mut select_output_schema = output_schema.as_ref().clone();
+                        for key_expr in key_exprs.iter() {
+                            select_output_schema.insert(
+                                key_expr.output_name().clone(),
+                                key_expr
+                                    .dtype(output_schema.as_ref(), Context::Default, expr_arena)?
+                                    .clone(),
+                            );
+                        }
+
+                        let select_output_schema = Arc::new(select_output_schema);
+                        let node = phys_sm.insert(PhysNode {
+                            output_schema: select_output_schema.clone(),
+                            kind: PhysNodeKind::Select {
+                                input,
+                                selectors: key_exprs.clone(),
+                                extend_original: true,
+                            },
+                        });
+                        input = PhysStream::first(node);
+
+                        select_output_schema
+                    },
+                };
+
+                let node_kind = PhysNodeKind::PartitionSink {
                     path_f_string,
                     sink_options,
                     variant,
                     file_type,
-                    input: phys_input,
+                    input,
                     cloud_options,
-                }
+                };
+                // We need to correct the schema here as the ByKey might adjust the schema before
+                // it gets passed to the PartitionSink.
+                let node_key = phys_sm.insert(PhysNode::new(input_schema, node_kind));
+                return Ok(PhysStream::first(node_key));
             },
         },
 

@@ -177,16 +177,16 @@ where
         Sink { input, payload } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             match payload {
-                SinkType::Memory => {
+                SinkTypeIR::Memory => {
                     Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn SinkTrait>
                 },
                 #[allow(unused_variables)]
-                SinkType::File {
+                SinkTypeIR::File(FileSinkType {
                     path,
-                    sink_options: _,
                     file_type,
+                    sink_options: _,
                     cloud_options,
-                } => {
+                }) => {
                     let path = path.as_ref().as_path();
                     match &file_type {
                         #[cfg(feature = "parquet")]
@@ -223,7 +223,7 @@ where
                         _ => unreachable!(),
                     }
                 },
-                SinkType::Partition { .. } => {
+                SinkTypeIR::Partition { .. } => {
                     polars_bail!(InvalidOperation: "partitioning sink not supported in old streaming engine")
                 },
             }

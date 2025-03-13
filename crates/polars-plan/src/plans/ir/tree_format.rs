@@ -353,9 +353,9 @@ impl<'a> TreeFmtNode<'a> {
                         wh(
                             h,
                             match payload {
-                                SinkType::Memory => "SINK (memory)",
-                                SinkType::File { .. } => "SINK (file)",
-                                SinkType::Partition { .. } => "SINK (partition)",
+                                SinkTypeIR::Memory => "SINK (memory)",
+                                SinkTypeIR::File { .. } => "SINK (file)",
+                                SinkTypeIR::Partition { .. } => "SINK (partition)",
                             },
                         ),
                         vec![self.lp_node(None, *input)],

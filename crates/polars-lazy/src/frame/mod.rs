@@ -700,7 +700,7 @@ impl LazyFrame {
             !matches!(
                 lp_arena.get(lp_top),
                 IR::Sink {
-                    payload: SinkType::File { .. } | SinkType::Partition { .. },
+                    payload: SinkTypeIR::File { .. } | SinkTypeIR::Partition { .. },
                     ..
                 }
             )
@@ -820,12 +820,12 @@ impl LazyFrame {
         engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
-            SinkType::File {
+            SinkType::File(FileSinkType {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 sink_options,
                 file_type: FileType::Parquet(options),
                 cloud_options,
-            },
+            }),
             engine,
             "collect().write_parquet()",
         )
@@ -845,12 +845,12 @@ impl LazyFrame {
         engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
-            SinkType::File {
+            SinkType::File(FileSinkType {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 sink_options,
                 file_type: FileType::Ipc(options),
                 cloud_options,
-            },
+            }),
             engine,
             "collect().write_ipc()",
         )
@@ -870,12 +870,12 @@ impl LazyFrame {
         engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
-            SinkType::File {
+            SinkType::File(FileSinkType {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 sink_options,
                 file_type: FileType::Csv(options),
                 cloud_options,
-            },
+            }),
             engine,
             "collect().write_csv()",
         )
@@ -895,12 +895,12 @@ impl LazyFrame {
         engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
-            SinkType::File {
+            SinkType::File(FileSinkType {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 sink_options,
                 file_type: FileType::Json(options),
                 cloud_options,
-            },
+            }),
             engine,
             "collect().write_ndjson()` or `collect().write_json()",
         )
@@ -921,13 +921,13 @@ impl LazyFrame {
         engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
-            SinkType::Partition {
+            SinkType::Partition(PartitionSinkType {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
                 sink_options,
                 variant,
                 file_type: FileType::Parquet(options),
                 cloud_options,
-            },
+            }),
             engine,
             "collect().write_parquet()",
         )
@@ -948,13 +948,13 @@ impl LazyFrame {
         engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
-            SinkType::Partition {
+            SinkType::Partition(PartitionSinkType {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
                 sink_options,
                 variant,
                 file_type: FileType::Ipc(options),
                 cloud_options,
-            },
+            }),
             engine,
             "collect().write_ipc()",
         )
@@ -975,13 +975,13 @@ impl LazyFrame {
         engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
-            SinkType::Partition {
+            SinkType::Partition(PartitionSinkType {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
                 sink_options,
                 variant,
                 file_type: FileType::Csv(options),
                 cloud_options,
-            },
+            }),
             engine,
             "collect().write_csv()",
         )
@@ -1002,13 +1002,13 @@ impl LazyFrame {
         engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
-            SinkType::Partition {
+            SinkType::Partition(PartitionSinkType {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
                 sink_options,
                 variant,
                 file_type: FileType::Json(options),
                 cloud_options,
-            },
+            }),
             engine,
             "collect().write_ndjson()` or `collect().write_json()",
         )
@@ -1029,19 +1029,18 @@ impl LazyFrame {
             let mut new_stream_lazy = self.clone();
             new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
             new_stream_lazy.opt_state &= !OptFlags::STREAMING;
+            new_stream_lazy.logical_plan = DslPlan::Sink {
+                input: Arc::new(new_stream_lazy.logical_plan),
+                payload,
+            };
             let mut alp_plan = match new_stream_lazy.to_alp_optimized() {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
             };
-            let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
-                input: alp_plan.lp_top,
-                payload,
-            });
-
             let _hold = StringCacheHolder::hold();
             let f = || {
                 polars_stream::run_query(
-                    stream_lp_top,
+                    alp_plan.lp_top,
                     &mut alp_plan.lp_arena,
                     &mut alp_plan.expr_arena,
                 )
