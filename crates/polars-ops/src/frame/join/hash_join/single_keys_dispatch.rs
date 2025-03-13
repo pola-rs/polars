@@ -65,6 +65,17 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     build_null_count,
                 )
             },
+            T::List(_) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_left(rhs, validate, nulls_equal)
+            },
+            #[cfg(feature = "dtype-array")]
+            T::Array(_, _) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_left(rhs, validate, nulls_equal)
+            },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
                 let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
@@ -148,6 +159,17 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 } else {
                     hash_join_tuples_left_semi(lhs, rhs, nulls_equal)
                 }
+            },
+            T::List(_) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
+            },
+            #[cfg(feature = "dtype-array")]
+            T::Array(_, _) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
@@ -256,6 +278,17 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     !swapped,
                 ))
             },
+            T::List(_) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_inner(rhs, validate, nulls_equal)
+            },
+            #[cfg(feature = "dtype-array")]
+            T::Array(_, _) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_inner(rhs, validate, nulls_equal)
+            },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
                 let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
@@ -331,6 +364,17 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 hash_join_tuples_outer(lhs, rhs, swapped, validate, nulls_equal)
+            },
+            T::List(_) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_outer(rhs, validate, nulls_equal)
+            },
+            #[cfg(feature = "dtype-array")]
+            T::Array(_, _) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_outer(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
