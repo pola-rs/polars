@@ -24,12 +24,18 @@ def test_right_join_schemas() -> None:
     ]
 
     # coalesces the join key, so the key of the right table remains
-    assert b.join(a, on="a", how="right", coalesce=True).to_dict(as_series=False) == {
-        "b": [1, None, 3],
-        "c": [1, None, 3],
-        "a": [1, 2, 3],
-        "b_right": [1, 2, 3],
-    }
+    assert_frame_equal(
+        b.join(a, on="a", how="right", coalesce=True),
+        pl.DataFrame(
+            {
+                "b": [1, None, 3],
+                "c": [1, None, 3],
+                "a": [1, 2, 3],
+                "b_right": [1, 2, 3],
+            }
+        ),
+        check_row_order=False,
+    )
     assert b.join(a, on="a", how="right", coalesce=False).columns == [
         "a",
         "b",

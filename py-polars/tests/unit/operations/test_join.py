@@ -663,15 +663,20 @@ def test_join_sorted_fast_paths_null() -> None:
 
 def test_full_outer_join_list_() -> None:
     schema = {"id": pl.Int64, "vals": pl.List(pl.Float64)}
-
+    join_schema = {**schema, **{k + "_right": t for (k, t) in schema.items()}}
     df1 = pl.DataFrame({"id": [1], "vals": [[]]}, schema=schema)  # type: ignore[arg-type]
     df2 = pl.DataFrame({"id": [2, 3], "vals": [[], [4]]}, schema=schema)  # type: ignore[arg-type]
-    assert df1.join(df2, on="id", how="full").to_dict(as_series=False) == {
-        "id": [None, None, 1],
-        "vals": [None, None, []],
-        "id_right": [2, 3, None],
-        "vals_right": [[], [4.0], None],
-    }
+    expected = pl.DataFrame(
+        {
+            "id": [None, None, 1],
+            "vals": [None, None, []],
+            "id_right": [2, 3, None],
+            "vals_right": [[], [4.0], None],
+        },
+        schema=join_schema,  # type: ignore[arg-type]
+    )
+    out = df1.join(df2, on="id", how="full", maintain_order="right_left")
+    assert_frame_equal(out, expected)
 
 
 @pytest.mark.slow
@@ -1854,3 +1859,76 @@ def test_multi_leftjoin_empty_right_21701() -> None:
     )
     joined_df = joined_df.select("id", "parent_field1")
     assert_frame_equal(joined_df.collect(), parent_df.collect(), check_row_order=False)
+
+
+@pytest.mark.parametrize("order", ["none", "left_right", "right_left"])
+def test_join_null_equal(order: Literal["none", "left_right", "right_left"]) -> None:
+    lhs = pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3]})
+    with_null = pl.DataFrame({"x": [1, None], "z": [1, 2]})
+    without_null = pl.DataFrame({"x": [1, 3], "z": [1, 3]})
+    check_row_order = order != "none"
+
+    # Inner join.
+    assert_frame_equal(
+        lhs.join(with_null, on="x", nulls_equal=True, maintain_order=order),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
+        check_row_order=check_row_order,
+    )
+    assert_frame_equal(
+        lhs.join(without_null, on="x", nulls_equal=True),
+        pl.DataFrame({"x": [1], "y": [1], "z": [1]}),
+    )
+
+    # Left join.
+    assert_frame_equal(
+        lhs.join(with_null, on="x", how="left", nulls_equal=True, maintain_order=order),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
+        check_row_order=check_row_order,
+    )
+    assert_frame_equal(
+        lhs.join(
+            without_null, on="x", how="left", nulls_equal=True, maintain_order=order
+        ),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, None, None]}),
+        check_row_order=check_row_order,
+    )
+
+    # Full join.
+    assert_frame_equal(
+        lhs.join(
+            with_null,
+            on="x",
+            how="full",
+            nulls_equal=True,
+            coalesce=True,
+            maintain_order=order,
+        ),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
+        check_row_order=check_row_order,
+    )
+    if order == "left_right":
+        expected = pl.DataFrame(
+            {
+                "x": [1, None, None, None],
+                "x_right": [1, None, None, 3],
+                "y": [1, 2, 3, None],
+                "z": [1, None, None, 3],
+            }
+        )
+    else:
+        expected = pl.DataFrame(
+            {
+                "x": [1, None, None, None],
+                "x_right": [1, 3, None, None],
+                "y": [1, None, 2, 3],
+                "z": [1, 3, None, None],
+            }
+        )
+    assert_frame_equal(
+        lhs.join(
+            without_null, on="x", how="full", nulls_equal=True, maintain_order=order
+        ),
+        expected,
+        check_row_order=check_row_order,
+        check_column_order=False,
+    )
