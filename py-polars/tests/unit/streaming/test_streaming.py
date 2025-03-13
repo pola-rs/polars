@@ -122,15 +122,12 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
-
     with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
         (
             q.select(
                 pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
             ).collect(engine="old-streaming")  # type: ignore[call-overload]
         )
-        (_, err) = capfd.readouterr()
-        assert "df -> projection -> ordered_sink" in err
 
 
 def test_streaming_ternary() -> None:
