@@ -74,6 +74,6 @@ def test_double_lazy_error(sink: Any) -> None:
 
     with pytest.raises(
         pl.exceptions.InvalidOperationError,
-        match="cannot create a sink on top of a lazy sink",
+        match="cannot create a sink on top of another sink",
     ):
         sink(sink(df.lazy(), "a", lazy=True), "b")

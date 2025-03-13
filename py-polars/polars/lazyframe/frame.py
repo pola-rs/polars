@@ -2435,7 +2435,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
-        lazy: Literal[False],
+        lazy: Literal[False] = ...,
         engine: EngineType = "auto",
     ) -> None: ...
     @overload
@@ -2718,9 +2718,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
-        lazy: Literal[True],
+        lazy: Literal[False] = ...,
         engine: EngineType = "auto",
-    ) -> LazyFrame: ...
+    ) -> None: ...
     @overload
     def sink_ipc(
         self,
@@ -2744,9 +2744,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
-        lazy: Literal[False],
+        lazy: Literal[True],
         engine: EngineType = "auto",
-    ) -> None: ...
+    ) -> LazyFrame: ...
     @unstable()
     def sink_ipc(
         self,
@@ -2963,7 +2963,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
-        lazy: Literal[False],
+        lazy: Literal[False] = ...,
         engine: EngineType = "auto",
     ) -> None: ...
     @overload
@@ -3271,7 +3271,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
-        lazy: Literal[False],
+        lazy: Literal[False] = ...,
         engine: EngineType = "auto",
     ) -> None: ...
     @overload

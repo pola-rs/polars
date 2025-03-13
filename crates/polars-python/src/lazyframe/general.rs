@@ -757,15 +757,15 @@ impl PyLazyFrame {
             )
         };
 
+        let lazy = sink_options.0.lazy;
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            match target {
+            let ldf = match target {
                 SinkTarget::Path(path) => ldf.sink_parquet(
                     &path as &dyn AsRef<Path>,
                     options,
                     cloud_options,
                     sink_options.0,
-                    engine.0,
                 ),
                 SinkTarget::Partition(partition) => ldf.sink_parquet_partitioned(
                     partition.path.as_ref(),
@@ -773,11 +773,16 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
-                    engine.0,
                 ),
+            }?;
+
+            if lazy {
+                return Ok(Some(ldf.into()));
             }
+
+            ldf.collect_with_engine(engine.0)?;
+            PolarsResult::Ok(None)
         })
-        .map(|lf| lf.map(Into::into))
     }
 
     #[cfg(all(feature = "streaming", feature = "ipc"))]
@@ -821,11 +826,12 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
+        let lazy = sink_options.0.lazy;
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            match target {
+            let ldf = match target {
                 SinkTarget::Path(path) => {
-                    ldf.sink_ipc(path, options, cloud_options, sink_options.0, engine.0)
+                    ldf.sink_ipc(path, options, cloud_options, sink_options.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_ipc_partitioned(
                     partition.path.as_ref(),
@@ -833,11 +839,16 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
-                    engine.0,
                 ),
+            }?;
+
+            if lazy {
+                return Ok(Some(ldf.into()));
             }
+
+            ldf.collect_with_engine(engine.0)?;
+            PolarsResult::Ok(None)
         })
-        .map(|lf| lf.map(Into::into))
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
@@ -910,11 +921,12 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
+        let lazy = sink_options.0.lazy;
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            match target {
+            let ldf = match target {
                 SinkTarget::Path(path) => {
-                    ldf.sink_csv(path, options, cloud_options, sink_options.0, engine.0)
+                    ldf.sink_csv(path, options, cloud_options, sink_options.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_csv_partitioned(
                     partition.path.as_ref(),
@@ -922,11 +934,16 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
-                    engine.0,
                 ),
+            }?;
+
+            if lazy {
+                return Ok(Some(ldf.into()));
             }
+
+            ldf.collect_with_engine(engine.0)?;
+            PolarsResult::Ok(None)
         })
-        .map(|lf| lf.map(Into::into))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -958,11 +975,12 @@ impl PyLazyFrame {
             )
         };
 
+        let lazy = sink_options.0.lazy;
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            match target {
+            let ldf = match target {
                 SinkTarget::Path(path) => {
-                    ldf.sink_json(path, options, cloud_options, sink_options.0, engine.0)
+                    ldf.sink_json(path, options, cloud_options, sink_options.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_json_partitioned(
                     partition.path.as_ref(),
@@ -970,11 +988,16 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
-                    engine.0,
                 ),
+            }?;
+
+            if lazy {
+                return Ok(Some(ldf.into()));
             }
+
+            ldf.collect_with_engine(engine.0)?;
+            PolarsResult::Ok(None)
         })
-        .map(|lf| lf.map(Into::into))
     }
 
     fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {
