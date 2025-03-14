@@ -1203,6 +1203,7 @@ impl Expr {
 
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
+        // TODO: this optimization should be done during conversion to IR.
         if other_constant {
             self.map_many_private(
                 BooleanFunction::IsIn { nulls_equal }.into(),
@@ -1580,6 +1581,7 @@ impl Expr {
         let old = old.into();
         let new = new.into();
         // If we search and replace by constants, we can run on batches.
+        // TODO: this optimization should be done during conversion to IR.
         let literal_args = is_column_independent(&old) && is_column_independent(&new);
         let args = [old, new];
         if literal_args {
@@ -1602,6 +1604,7 @@ impl Expr {
         let new = new.into();
 
         // If we replace by constants, we can run on batches.
+        // TODO: this optimization should be done during conversion to IR.
         let literal_args = is_column_independent(&old) && is_column_independent(&new);
 
         let mut args = vec![old, new];
