@@ -1585,7 +1585,7 @@ impl Expr {
         let old = old.into();
         let new = new.into();
         // If we search and replace by literals, we can run on batches.
-        let literal_args = all_leafs_literal(&old) && all_leafs_literal(&new);
+        let literal_args = all_leaves_literal(&old) && all_leaves_literal(&new);
         let args = [old, new];
         if literal_args {
             self.map_many_private(FunctionExpr::Replace, &args, false, None)
@@ -1607,7 +1607,7 @@ impl Expr {
         let new = new.into();
 
         // If we replace by literals, we can run on batches.
-        let literal_args = all_leafs_literal(&old) && all_leafs_literal(&new);
+        let literal_args = all_leaves_literal(&old) && all_leaves_literal(&new);
 
         let mut args = vec![old, new];
         if let Some(default) = default {

@@ -85,7 +85,7 @@ pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
 }
 
 /// Check if all leaf expressions are literals.
-pub(crate) fn all_leafs_literal(e: &Expr) -> bool {
+pub(crate) fn all_leaves_literal(e: &Expr) -> bool {
     match e {
         Expr::Literal(_) => true,
         _ => expr_to_leaf_column_exprs_iter(e).all(|e| matches!(e, Expr::Literal(_))),
