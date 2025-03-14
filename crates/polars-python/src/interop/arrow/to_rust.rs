@@ -25,7 +25,7 @@ fn normalize_arrow_fields(field: &ArrowField) -> ArrowField {
     // with (for us) irrelevant metadata; recreate the field using the inner (standard) dtype
     match field {
         ArrowField {
-            dtype: ArrowDataType::Struct(ref fields),
+            dtype: ArrowDataType::Struct(fields),
             ..
         } => {
             let mut normalized = false;
