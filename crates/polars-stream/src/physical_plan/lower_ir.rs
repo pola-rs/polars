@@ -471,11 +471,24 @@ pub fn lower_ir(
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
                 }
             } else {
+                let use_multi_file_reader = {
+                    // Forced dispatch to updated multiscan
+                    #[cfg(feature = "json")]
+                    {
+                        matches!(&*scan_type, FileScan::NDJson { .. })
+                    }
+                    #[cfg(not(feature = "json"))]
+                    {
+                        false
+                    }
+                };
+
                 let mut scan_sources = scan_sources;
                 if hive_parts.is_none()
                     && file_options.include_file_paths.is_none()
                     && !file_options.allow_missing_columns
                     && std::env::var("POLARS_FORCE_MULTISCAN").as_deref() != Ok("1")
+                    && !use_multi_file_reader
                 {
                     match ScanSource::from_sources(scan_sources) {
                         Err(s) => scan_sources = s,
@@ -665,11 +678,13 @@ pub fn lower_ir(
                 } else {
                     file_schema.clone()
                 };
+
                 let mut node = PhysNodeKind::MultiScan {
                     scan_sources,
                     hive_parts,
                     scan_type,
                     file_schema,
+                    output_schema: output_schema.clone(),
                     allow_missing_columns: file_options.allow_missing_columns,
                     include_file_paths: file_options.include_file_paths,
                     row_restriction,
@@ -678,17 +693,28 @@ pub fn lower_ir(
                     row_index: file_options.row_index,
                 };
 
-                let proj_schema = Arc::new(schema.try_project(output_schema.iter_names_cloned())?);
-                let source_node = phys_sm.insert(PhysNode {
-                    output_schema: schema,
-                    kind: node,
-                });
-                let stream = PhysStream::first(source_node);
-                node = PhysNodeKind::SimpleProjection {
-                    input: stream,
-                    columns: output_schema.iter_names_cloned().collect(),
+                (node, schema) = if use_multi_file_reader {
+                    (node, output_schema.clone())
+                } else {
+                    let proj_schema =
+                        Arc::new(schema.try_project(output_schema.iter_names_cloned())?);
+                    let source_node = phys_sm.insert(PhysNode {
+                        output_schema: if use_multi_file_reader {
+                            output_schema.clone()
+                        } else {
+                            schema
+                        },
+                        kind: node,
+                    });
+                    let stream = PhysStream::first(source_node);
+                    (
+                        PhysNodeKind::SimpleProjection {
+                            input: stream,
+                            columns: output_schema.iter_names_cloned().collect(),
+                        },
+                        proj_schema,
+                    )
                 };
-                schema = proj_schema;
 
                 if let Some(predicate) = predicate {
                     if do_filter_after_scan {

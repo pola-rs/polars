@@ -21,6 +21,7 @@ repository = "https://github.com/pola-rs/polars"
 ahash = ">=0.8.5"
 aho-corasick = "1.1"
 arboard = { version = "3.4.0", default-features = false }
+async-trait = { version = "0.1.59" }
 atoi_simd = "0.16"
 atomic-waker = "1"
 avro-schema = { version = "0.3" }

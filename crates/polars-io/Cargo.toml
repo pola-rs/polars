@@ -19,7 +19,7 @@ polars-utils = { workspace = true, features = ['mmap'] }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
-async-trait = { version = "0.1.59", optional = true }
+async-trait = { workspace = true, optional = true }
 atoi_simd = { workspace = true, optional = true }
 blake3 = { version = "1.6.1", optional = true }
 bytes = { workspace = true }

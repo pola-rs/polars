@@ -2,37 +2,33 @@ use std::cmp::Reverse;
 use std::ops::Range;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use chunk_reader::ChunkReader;
 use line_batch_processor::{LineBatchProcessor, LineBatchProcessorOutputPort};
 use negative_slice_pass::MorselStreamReverser;
 use polars_core::config;
 use polars_core::schema::SchemaRef;
-use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::estimate_n_lines_in_file;
 use polars_io::utils::compression::maybe_decompress_bytes;
-use polars_io::{RowIndex, ndjson};
 use polars_plan::dsl::{NDJsonReadOptions, ScanSource};
-use polars_plan::plans::{FileInfo, ndjson_file_info};
-use polars_plan::prelude::FileScanOptions;
 use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::mmap::MemSlice;
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
+use polars_utils::slice_enum::Slice;
 use row_index_limit_pass::ApplyRowIndexOrLimit;
 
-use super::multi_scan::MultiScanable;
-use super::{RowRestriction, SourceNode, SourceOutput};
+use super::multi_file_reader::extra_ops::apply::ApplyExtraOps;
+use super::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
+use super::multi_file_reader::reader_interface::{FileReader, FileReaderCallbacks};
 use crate::async_executor::{AbortOnDropHandle, spawn};
-use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
-use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
-use crate::nodes::io_sources::MorselOutput;
+use crate::nodes::io_sources::multi_file_reader::extra_ops::ExtraOperations;
+use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::{MorselSeq, TaskPriority};
 mod chunk_reader;
 mod line_batch_distributor;
@@ -41,99 +37,127 @@ mod negative_slice_pass;
 mod row_index_limit_pass;
 
 #[derive(Clone)]
-pub struct NDJsonSourceNode {
+pub struct NDJsonFileReader {
     scan_source: ScanSource,
-    file_info: FileInfo,
-    file_options: Box<FileScanOptions>,
-    options: NDJsonReadOptions,
-    schema: Option<SchemaRef>,
+    #[allow(unused)] // TODO
+    cloud_options: Option<Arc<CloudOptions>>,
+    options: Arc<NDJsonReadOptions>,
     verbose: bool,
 }
 
-impl NDJsonSourceNode {
+impl NDJsonFileReader {
     pub fn new(
         scan_source: ScanSource,
-        file_info: FileInfo,
-        file_options: Box<FileScanOptions>,
-        options: NDJsonReadOptions,
+        cloud_options: Option<Arc<CloudOptions>>,
+        options: Arc<NDJsonReadOptions>,
     ) -> Self {
         let verbose = config::verbose();
 
         Self {
             scan_source,
-            file_info,
-            file_options,
+            cloud_options,
             options,
-            schema: None,
             verbose,
         }
     }
 }
 
-impl SourceNode for NDJsonSourceNode {
-    fn name(&self) -> &str {
-        "ndjson_source"
+#[async_trait]
+impl FileReader for NDJsonFileReader {
+    async fn initialize(&mut self) -> PolarsResult<()> {
+        Ok(())
     }
 
-    fn is_source_output_parallel(&self, _is_receiver_serial: bool) -> bool {
-        true
-    }
+    fn begin_read(
+        &self,
+        projected_schema: &SchemaRef,
+        extra_ops: ApplyExtraOps,
 
-    fn spawn_source(
-        &mut self,
         num_pipelines: usize,
-        mut output_recv: Receiver<SourceOutput>,
-        _state: &ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
-    ) {
+        callbacks: FileReaderCallbacks,
+    ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)> {
         let verbose = self.verbose;
 
-        self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_right());
-
-        let global_bytes = match self.scan_source_bytes() {
-            Ok(v) => v,
-            e @ Err(_) => {
-                join_handles.push(spawn(TaskPriority::Low, async move {
-                    e?;
-                    unreachable!()
-                }));
-                return;
-            },
+        let (mut row_index, pre_slice) = match extra_ops {
+            ApplyExtraOps::Uninitialized {
+                final_output_schema: _,
+                projected_file_schema: _,
+                extra_ops:
+                    ExtraOperations {
+                        row_index,
+                        pre_slice,
+                        cast_columns: None,
+                        predicate: None,
+                        missing_columns: None,
+                        include_file_paths: None,
+                    },
+                scan_source_idx: _,
+                sources: _,
+                hive_parts: None,
+            } => (row_index, pre_slice),
+            ApplyExtraOps::Noop => (None, None),
+            v => panic!("invalid state {:?}", v),
         };
+
+        let FileReaderCallbacks {
+            file_schema_tx,
+            n_rows_in_file_tx,
+            row_position_on_end_tx,
+        } = callbacks;
+
+        // TODO: This currently downloads and decompresses everything upfront in a blocking manner.
+        // Ideally we have a streaming download/decompression.
+        let global_bytes = self.scan_source_bytes()?;
+
+        let infer_schema_length = self.options.infer_schema_length;
+
+        let global_bytes_ref = &global_bytes;
+
+        let opt_file_schema_handle = file_schema_tx.map(|tx| {
+            let global_bytes = global_bytes_ref.clone();
+
+            AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
+                _ = tx.send(Arc::new(polars_io::ndjson::infer_schema(
+                    &mut global_bytes.as_ref(),
+                    infer_schema_length,
+                )?));
+
+                PolarsResult::Ok(())
+            }))
+        });
 
         let mut is_negative_slice = false;
 
         // Convert (offset, len) to Range
         // Note: This is converted to right-to-left for negative slice (i.e. range.start is position
         // from end).
-        let global_slice: Option<Range<usize>> =
-            if let Some((offset, len)) = self.file_options.pre_slice {
-                if offset < 0 {
+        let global_slice: Option<Range<usize>> = if let Some(slice) = pre_slice.clone() {
+            match slice {
+                Slice::Positive { offset, len } => Some(offset..offset.saturating_add(len)),
+                Slice::Negative {
+                    offset_from_end,
+                    len,
+                } => {
                     is_negative_slice = true;
                     // array: [_ _ _ _ _]
                     // slice: [    _ _  ]
-                    // in:    offset: -3, len: 2
+                    // in:    offset_from_end: 3, len: 2
                     // out:   1..3 (right-to-left)
-                    let offset_rev = -offset as usize;
-                    Some(offset_rev.saturating_sub(len)..offset_rev)
-                } else {
-                    Some(offset as usize..offset as usize + len)
-                }
-            } else {
-                None
-            };
+                    Some(offset_from_end.saturating_sub(len)..offset_from_end)
+                },
+            }
+        } else {
+            None
+        };
 
-        let (total_row_count_tx, total_row_count_rx) =
-            if is_negative_slice && self.file_options.row_index.is_some() {
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                (Some(tx), Some(rx))
-            } else {
-                (None, None)
-            };
+        let (total_row_count_tx, total_row_count_rx) = if is_negative_slice && row_index.is_some() {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
 
-        let needs_total_row_count =
-            total_row_count_tx.is_some() || unrestricted_row_count.is_some();
+        let needs_total_row_count = total_row_count_tx.is_some() || n_rows_in_file_tx.is_some();
 
         let chunk_size: usize = {
             let n_bytes_to_split = if let Some(x) = global_slice.as_ref() {
@@ -187,21 +211,17 @@ impl SourceNode for NDJsonSourceNode {
                 is_negative_slice: {}",
                 chunk_size,
                 global_bytes.len().div_ceil(chunk_size),
-                &self.file_options.row_index,
+                &row_index,
                 &global_slice,
                 is_negative_slice,
             );
         }
 
-        let (mut phase_tx_senders, mut phase_tx_receivers) = (0..num_pipelines)
-            .map(|_| connector::<MorselOutput>())
-            .collect::<(Vec<_>, Vec<_>)>();
-
         // Note: This counts from the end of file for negative slice.
         let n_rows_to_skip = global_slice.as_ref().map_or(0, |x| x.start);
 
         let (opt_linearizer, mut linearizer_inserters) =
-            if global_slice.is_some() || self.file_options.row_index.is_some() {
+            if global_slice.is_some() || row_index.is_some() {
                 let (a, b) =
                     Linearizer::<Priority<Reverse<MorselSeq>, DataFrame>>::new(num_pipelines, 1);
                 (Some(a), b)
@@ -211,6 +231,8 @@ impl SourceNode for NDJsonSourceNode {
 
         let output_to_linearizer = opt_linearizer.is_some();
 
+        let mut output_port = None;
+
         let opt_post_process_handle = if is_negative_slice {
             // Note: This is right-to-left
             let negative_slice = global_slice.clone().unwrap();
@@ -219,28 +241,27 @@ impl SourceNode for NDJsonSourceNode {
                 eprintln!("[NDJSON source]: Initialize morsel stream reverser");
             }
 
+            let (morsel_senders, rx) = FileReaderOutputSend::new_parallel(num_pipelines);
+            output_port = Some(rx);
+
             Some(AbortOnDropHandle::new(spawn(
                 TaskPriority::High,
                 MorselStreamReverser {
                     morsel_receiver: opt_linearizer.unwrap(),
-                    phase_tx_receivers: std::mem::take(&mut phase_tx_receivers),
+                    morsel_senders,
                     offset_len_rtl: (
                         negative_slice.start,
                         negative_slice.end - negative_slice.start,
                     ),
                     // The correct row index offset can only be known after total row count is
                     // available. This is handled by the MorselStreamReverser.
-                    row_index: self
-                        .file_options
-                        .row_index
-                        .take()
-                        .map(|x| (x, total_row_count_rx.unwrap())),
+                    row_index: row_index.take().map(|x| (x, total_row_count_rx.unwrap())),
                     verbose,
                 }
                 .run(),
             )))
-        } else if global_slice.is_some() || self.file_options.row_index.is_some() {
-            let mut row_index = self.file_options.row_index.take();
+        } else if global_slice.is_some() || row_index.is_some() {
+            let mut row_index = row_index.take();
 
             if verbose {
                 eprintln!("[NDJSON source]: Initialize ApplyRowIndexOrLimit");
@@ -250,45 +271,49 @@ impl SourceNode for NDJsonSourceNode {
                 // Update the row index offset according to the slice start.
                 let Some(v) = ri.offset.checked_add(n_rows_to_skip as IdxSize) else {
                     let offset = ri.offset;
-                    join_handles.push(spawn(TaskPriority::Low, async move {
-                        polars_bail!(
-                            ComputeError:
-                            "row_index with offset {} overflows at {} rows",
-                            offset, n_rows_to_skip
-                        );
-                    }));
-                    return;
+
+                    polars_bail!(
+                        ComputeError:
+                        "row_index with offset {} overflows at {} rows",
+                        offset, n_rows_to_skip
+                    )
                 };
                 ri.offset = v;
             }
 
-            Some(AbortOnDropHandle::new(spawn(
-                TaskPriority::High,
-                ApplyRowIndexOrLimit {
-                    morsel_receiver: opt_linearizer.unwrap(),
-                    phase_tx_receivers: std::mem::take(&mut phase_tx_receivers),
-                    // Note: The line batch distributor handles skipping lines until the offset,
-                    // we only need to handle the limit here.
-                    limit: global_slice.as_ref().map(|x| x.len()),
-                    row_index,
-                    verbose,
-                }
-                .run(),
-            )))
+            let (morsel_tx, rx) = FileReaderOutputSend::new_serial();
+            output_port = Some(rx);
+
+            let limit = global_slice.as_ref().map(|x| x.len());
+
+            let task = ApplyRowIndexOrLimit {
+                morsel_receiver: opt_linearizer.unwrap(),
+                morsel_tx,
+                // Note: The line batch distributor handles skipping lines until the offset,
+                // we only need to handle the limit here.
+                limit,
+                row_index,
+                verbose,
+            };
+
+            if limit == Some(0) {
+                None
+            } else {
+                Some(AbortOnDropHandle::new(spawn(
+                    TaskPriority::High,
+                    task.run(),
+                )))
+            }
         } else {
             None
         };
 
-        let chunk_reader = match self.try_init_chunk_reader().map(Arc::new) {
-            Ok(v) => v,
-            e @ Err(_) => {
-                join_handles.push(spawn(TaskPriority::Low, async move {
-                    e?;
-                    unreachable!()
-                }));
-                return;
-            },
-        };
+        // FIXME: We should not just use the passed `projected_schema` here. This causes an assumption
+        // that all columns are present and match the target type.
+        //
+        // Instead, we should run a schema inference pass on this file to determine which columns
+        // we have. Then, we should selectively coerce the datatype we use for parsing.
+        let chunk_reader = Arc::new(self.try_init_chunk_reader(projected_schema)?);
 
         if !is_negative_slice {
             get_memory_prefetch_func(verbose)(global_bytes.as_ref());
@@ -297,7 +322,15 @@ impl SourceNode for NDJsonSourceNode {
         let (line_batch_distribute_tx, line_batch_distribute_receivers) =
             distributor_channel(num_pipelines, 1);
 
-        let source_token = SourceToken::new();
+        let mut morsel_senders = if !output_to_linearizer {
+            let (senders, outp) = FileReaderOutputSend::new_parallel(num_pipelines);
+            assert!(output_port.is_none());
+            output_port = Some(outp);
+            senders
+        } else {
+            vec![]
+        };
+
         // Initialize in reverse as we want to manually pop from either the linearizer or the phase receivers depending
         // on if we have negative slice.
         let line_batch_processor_handles = line_batch_distribute_receivers
@@ -307,7 +340,6 @@ impl SourceNode for NDJsonSourceNode {
             .map(|(worker_idx, line_batch_rx)| {
                 let global_bytes = global_bytes.clone();
                 let chunk_reader = chunk_reader.clone();
-                let source_token = source_token.clone();
 
                 AbortOnDropHandle::new(spawn(
                     TaskPriority::Low,
@@ -324,10 +356,7 @@ impl SourceNode for NDJsonSourceNode {
                             }
                         } else {
                             LineBatchProcessorOutputPort::Direct {
-                                phase_tx: None,
-                                phase_tx_receiver: phase_tx_receivers.pop().unwrap(),
-                                source_token: source_token.clone(),
-                                wait_group: WaitGroup::default(),
+                                tx: morsel_senders.pop().unwrap(),
                             }
                         },
                         needs_total_row_count,
@@ -352,22 +381,43 @@ impl SourceNode for NDJsonSourceNode {
             .run(),
         ));
 
-        join_handles.push(spawn(TaskPriority::Low, async move {
-            let mut row_count = line_batch_distributor_task_handle.await?;
+        let finishing_handle = spawn(TaskPriority::Low, async move {
+            // Number of rows skipped by the line batch distributor.
+            let n_rows_skipped: usize = line_batch_distributor_task_handle.await?;
+            // Number of rows processed by the line batch processors.
+            let mut n_rows_processed: usize = 0;
 
             if verbose {
                 eprintln!("[NDJSON source]: line batch distributor handle returned");
             }
 
             for handle in line_batch_processor_handles {
-                let n_rows_processed = handle.await?;
-                if needs_total_row_count {
-                    row_count = row_count.checked_add(n_rows_processed).unwrap();
-                }
+                n_rows_processed = n_rows_processed.saturating_add(handle.await?);
             }
+
+            let total_row_count = if needs_total_row_count {
+                n_rows_skipped.checked_add(n_rows_processed).unwrap()
+            } else {
+                0
+            };
 
             if verbose {
                 eprintln!("[NDJSON source]: line batch processor handles returned");
+            }
+
+            if let Some(row_position_on_end_tx) = row_position_on_end_tx {
+                let n = n_rows_skipped
+                    .saturating_add(n_rows_processed)
+                    .min(match pre_slice {
+                        Some(Slice::Positive { offset, len }) => offset.saturating_add(len),
+                        Some(Slice::Negative { .. }) => unimplemented!(),
+                        None => usize::MAX,
+                    });
+
+                let n = IdxSize::try_from(n)
+                    .map_err(|_| polars_err!(bigidx, ctx = "ndjson file", size = n))?;
+
+                _ = row_position_on_end_tx.send(n);
             }
 
             if let Some(tx) = total_row_count_tx {
@@ -377,29 +427,30 @@ impl SourceNode for NDJsonSourceNode {
                     eprintln!(
                         "[NDJSON source]: \
                         send total row count: {}",
-                        row_count
+                        total_row_count
                     )
                 }
-                _ = tx.send(row_count);
+                _ = tx.send(total_row_count);
             }
 
-            if let Some(unrestricted_row_count) = unrestricted_row_count {
+            if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
                 assert!(needs_total_row_count);
 
                 if verbose {
-                    eprintln!(
-                        "[NDJSON source]: send unrestricted_row_count: {}",
-                        row_count
-                    );
+                    eprintln!("[NDJSON source]: send n_rows_in_file: {}", total_row_count);
                 }
 
-                let num_rows = row_count;
+                let num_rows = total_row_count;
                 let num_rows = IdxSize::try_from(num_rows)
                     .map_err(|_| polars_err!(bigidx, ctx = "ndjson file", size = num_rows))?;
-                _ = unrestricted_row_count.send(num_rows);
+                _ = n_rows_in_file_tx.send(num_rows);
             }
 
             if let Some(handle) = opt_post_process_handle {
+                handle.await?;
+            }
+
+            if let Some(handle) = opt_file_schema_handle {
                 handle.await?;
             }
 
@@ -408,49 +459,15 @@ impl SourceNode for NDJsonSourceNode {
             }
 
             Ok(())
-        }));
+        });
 
-        join_handles.push(spawn(TaskPriority::Low, async move {
-            // Every phase we are given a new send port.
-            while let Ok(phase_output) = output_recv.recv().await {
-                let source_token = SourceToken::new();
-                let morsel_senders = phase_output.port.parallel();
-
-                let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
-
-                for (phase_tx_senders, port) in phase_tx_senders.iter_mut().zip(morsel_senders) {
-                    let (outcome, wait_group, morsel_output) =
-                        MorselOutput::from_port(port, source_token.clone());
-                    _ = phase_tx_senders.send(morsel_output).await;
-                    morsel_outcomes.push((outcome, wait_group));
-                }
-
-                let mut is_finished = true;
-
-                for (outcome, wait_group) in morsel_outcomes.into_iter() {
-                    wait_group.wait().await;
-                    is_finished &= outcome.did_finish();
-                }
-
-                if is_finished {
-                    break;
-                }
-
-                phase_output.outcome.stop();
-            }
-
-            Ok(())
-        }));
+        Ok((output_port.unwrap(), finishing_handle))
     }
 }
 
-impl NDJsonSourceNode {
-    fn try_init_chunk_reader(&mut self) -> PolarsResult<ChunkReader> {
-        ChunkReader::try_new(
-            &self.options,
-            self.schema.as_ref().unwrap(),
-            self.file_options.with_columns.as_deref(),
-        )
+impl NDJsonFileReader {
+    fn try_init_chunk_reader(&self, schema: &SchemaRef) -> PolarsResult<ChunkReader> {
+        ChunkReader::try_new(&self.options, schema)
     }
 
     fn scan_source_bytes(&self) -> PolarsResult<MemSlice> {
@@ -472,94 +489,5 @@ impl NDJsonSourceNode {
         };
 
         Ok(mem_slice)
-    }
-}
-
-impl MultiScanable for NDJsonSourceNode {
-    type ReadOptions = NDJsonReadOptions;
-
-    const BASE_NAME: &'static str = "ndjson";
-    const SPECIALIZED_PRED_PD: bool = false;
-
-    async fn new(
-        source: ScanSource,
-        options: &Self::ReadOptions,
-        cloud_options: Option<&CloudOptions>,
-        row_index: Option<PlSmallStr>,
-    ) -> PolarsResult<Self> {
-        let has_row_index = row_index.as_ref().is_some();
-
-        let file_options = Box::new(FileScanOptions {
-            row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
-            ..Default::default()
-        });
-
-        let ndjson_options = options.clone();
-        let mut file_info = ndjson_file_info(
-            &source.clone().into_sources(),
-            &file_options,
-            &ndjson_options,
-            cloud_options,
-        )?;
-
-        let schema = Arc::make_mut(&mut file_info.schema);
-
-        if has_row_index {
-            // @HACK: This is really hacky because the NDJSON schema wrongfully adds the row index.
-            schema.shift_remove(
-                file_options
-                    .row_index
-                    .as_ref()
-                    .map(|x| x.name.as_str())
-                    .unwrap(),
-            );
-        }
-
-        for (name, dtype) in schema.iter_mut() {
-            if let Some(dtype_override) = options
-                .schema_overwrite
-                .as_ref()
-                .and_then(|x| x.get(name))
-                .or_else(|| options.schema.as_ref().and_then(|x| x.get(name)))
-            {
-                *dtype = dtype_override.clone();
-            }
-        }
-
-        Ok(Self::new(source, file_info, file_options, ndjson_options))
-    }
-
-    fn with_projection(&mut self, projection: Option<&Bitmap>) {
-        self.file_options.with_columns = projection.map(|p| {
-            p.true_idx_iter()
-                .map(|idx| self.file_info.schema.get_at_index(idx).unwrap().0.clone())
-                .collect()
-        });
-    }
-
-    fn with_row_restriction(&mut self, row_restriction: Option<RowRestriction>) {
-        self.file_options.pre_slice = None;
-
-        match row_restriction {
-            None => {},
-            Some(RowRestriction::Slice(rng)) => {
-                self.file_options.pre_slice = Some((rng.start as i64, rng.end - rng.start))
-            },
-            Some(RowRestriction::Predicate(_)) => unreachable!(),
-        }
-    }
-
-    async fn unrestricted_row_count(&mut self) -> PolarsResult<IdxSize> {
-        let mem_slice = self.scan_source_bytes()?;
-
-        // TODO: Parallelize this over the async executor
-        let num_rows = ndjson::count_rows(&mem_slice);
-        let num_rows = IdxSize::try_from(num_rows)
-            .map_err(|_| polars_err!(bigidx, ctx = "ndjson file", size = num_rows))?;
-        Ok(num_rows)
-    }
-
-    async fn physical_schema(&mut self) -> PolarsResult<SchemaRef> {
-        Ok(self.file_info.schema.clone())
     }
 }

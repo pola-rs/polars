@@ -311,7 +311,7 @@ fn resolve_source_projection(
     Ok((source_projection.freeze(), missing_columns))
 }
 
-fn scan_predicate_to_mask(
+pub fn scan_predicate_to_mask(
     scan_predicate: &ScanIOPredicate,
     file_schema: &Schema,
     hive_schema: &Schema,

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use nodes::io_sources::multi_scan::MultiscanRowRestriction;
 use parking_lot::Mutex;
 use polars_core::POOL;
 use polars_core::prelude::PlRandomState;
@@ -18,6 +19,7 @@ use polars_plan::prelude::{FileType, FunctionFlags};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
+use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
 
@@ -27,6 +29,8 @@ use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::MorselSeq;
 use crate::nodes;
 use crate::nodes::io_sinks::SinkComputeNode;
+use crate::nodes::io_sources::RowRestriction;
+use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -434,6 +438,7 @@ fn to_graph_rec<'a>(
             scan_sources,
             hive_parts,
             scan_type,
+            output_schema,
             file_schema,
             allow_missing_columns,
             include_file_paths,
@@ -538,26 +543,57 @@ fn to_graph_rec<'a>(
                 polars_plan::dsl::FileScan::NDJson {
                     options,
                     cloud_options,
-                } => ctx.graph.add_node(
-                    nodes::io_sources::SourceComputeNode::new(
-                        nodes::io_sources::multi_scan::MultiScanNode::<
-                            nodes::io_sources::ndjson::NDJsonSourceNode,
-                        >::new(
-                            scan_sources.clone(),
-                            hive_parts.clone().map(Arc::new),
-                            *allow_missing_columns,
-                            include_file_paths.clone(),
-                            file_schema.clone(),
-                            projection.clone(),
-                            row_index.clone(),
-                            row_restriction.clone(),
-                            predicate,
-                            options.clone(),
-                            cloud_options.clone(),
+                } => {
+                    let (pre_slice, predicate) = match row_restriction.clone() {
+                        Some(MultiscanRowRestriction::Source(RowRestriction::Slice(range))) => (
+                            Some(Slice::Positive {
+                                offset: range.start,
+                                len: range.len(),
+                            }),
+                            None,
                         ),
-                    ),
-                    [],
-                ),
+                        Some(MultiscanRowRestriction::Source(RowRestriction::Predicate(
+                            predicate,
+                        ))) => (None, Some(predicate.clone())),
+                        Some(MultiscanRowRestriction::NegativeSlice(offset_from_end, len)) => (
+                            Some(Slice::Negative {
+                                offset_from_end,
+                                len,
+                            }),
+                            None,
+                        ),
+                        None => (None, None),
+                    };
+
+                    let mut hive_parts = hive_parts.clone();
+
+                    let projected_file_schema =
+                        nodes::io_sources::multi_file_reader::initialization::projection::resolve_projections(
+                            output_schema,
+                            file_schema,
+                            &mut hive_parts,
+                            row_index.as_ref().map(|ri| ri.name.as_str()),
+                            include_file_paths.as_ref().map(|x| x.as_str()),
+                        );
+
+                    ctx.graph.add_node(
+                        nodes::io_sources::multi_file_reader::MultiFileReader::new(
+                            scan_sources.clone(),
+                            Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>,
+                            cloud_options.clone().map(Arc::new),
+                            output_schema.clone(),
+                            projected_file_schema,
+                            row_index.clone(),
+                            pre_slice,
+                            predicate,
+                            hive_parts.map(Arc::new),
+                            include_file_paths.clone(),
+                            *allow_missing_columns,
+                        ),
+                        [],
+                    )
+                },
+
                 _ => todo!(),
             }
         },
@@ -682,20 +718,8 @@ fn to_graph_rec<'a>(
                         )
                     },
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { options, .. } => {
-                        assert!(predicate.is_none());
-
-                        ctx.graph.add_node(
-                            nodes::io_sources::SourceComputeNode::new(
-                                nodes::io_sources::ndjson::NDJsonSourceNode::new(
-                                    scan_source,
-                                    file_info,
-                                    file_options,
-                                    options,
-                                ),
-                            ),
-                            [],
-                        )
+                    FileScan::NDJson { .. } => {
+                        unreachable!()
                     },
                     _ => todo!(),
                 }

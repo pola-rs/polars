@@ -493,7 +493,7 @@ def test_multiscan_slice_middle(
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
-        (pl.scan_csv, pl.DataFrame.write_csv, "jsonl"),
+        (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
     ],
 )
 @given(offset=st.integers(-100, 100), length=st.integers(0, 101))

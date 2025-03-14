@@ -203,6 +203,9 @@ pub enum PhysNodeKind {
         /// `allow_missing_columns == false`.
         file_schema: SchemaRef,
 
+        /// Final output schema of morsels being sent out of MultiScan.
+        output_schema: SchemaRef,
+
         /// Selection of `file_schema` columns should to be included in the output morsels.
         projection: Option<Bitmap>,
 

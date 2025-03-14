@@ -10,6 +10,7 @@ description = "Private crate for the streaming execution engine for the Polars D
 
 [dependencies]
 arrow = { workspace = true }
+async-trait = { workspace = true }
 atomic-waker = { workspace = true }
 crossbeam-channel = { workspace = true }
 crossbeam-deque = { workspace = true }
@@ -28,7 +29,7 @@ recursive = { workspace = true }
 slotmap = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 
-polars-core = { workspace = true }
+polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
