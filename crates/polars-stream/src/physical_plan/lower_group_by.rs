@@ -19,7 +19,7 @@ use slotmap::SlotMap;
 use super::lower_expr::lower_exprs;
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
-    build_select_stream, compute_output_schema, is_input_independent,
+    build_select_stream, compute_output_schema, is_fake_elementwise_function, is_input_independent,
 };
 use crate::physical_plan::lower_ir::build_slice_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -154,15 +154,30 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
-            if options.is_elementwise() =>
+            if options.is_elementwise() && !is_fake_elementwise_function(node) =>
         {
             let node = node.clone();
             let input = input.clone();
-            let new_inputs = input
+            let new_input = input
                 .into_iter()
-                .map(|i| lower_rec!(i.node(), inside_agg))
+                .map(|i| {
+                    // The function may be sensitive to names (e.g. pl.struct), so we restore them.
+                    let new_node = lower_rec!(i.node(), inside_agg)?;
+                    Some(ExprIR::new(
+                        new_node,
+                        OutputName::Alias(i.output_name().clone()),
+                    ))
+                })
                 .collect::<Option<Vec<_>>>()?;
-            Some(expr_arena.add(node.replace_inputs(&new_inputs)))
+
+            let mut new_node = node.clone();
+            match &mut new_node {
+                AExpr::Function { input, .. } | AExpr::AnonymousFunction { input, .. } => {
+                    *input = new_input;
+                },
+                _ => unreachable!(),
+            }
+            Some(expr_arena.add(new_node))
         },
 
         AExpr::Function { .. } | AExpr::AnonymousFunction { .. } => None,

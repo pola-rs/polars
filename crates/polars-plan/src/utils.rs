@@ -76,14 +76,25 @@ where
     current_expr.into_iter().any(matches)
 }
 
-/// Check if leaf expression is a literal
-#[cfg(feature = "is_in")]
-pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
-    match e {
-        Expr::Literal(_) => true,
-        _ => expr_to_leaf_column_exprs_iter(e).any(|e| matches!(e, Expr::Literal(_))),
-    }
+/// Check if expression is independent from any column.
+pub(crate) fn is_column_independent(expr: &Expr) -> bool {
+    !expr.into_iter().any(|e| match e {
+        Expr::Nth(_)
+        | Expr::Column(_)
+        | Expr::Columns(_)
+        | Expr::DtypeColumn(_)
+        | Expr::IndexColumn(_)
+        | Expr::Wildcard
+        | Expr::Len
+        | Expr::SubPlan(..)
+        | Expr::Selector(_) => true,
+
+        #[cfg(feature = "dtype-struct")]
+        Expr::Field(_) => true,
+        _ => false,
+    })
 }
+
 /// Check if leaf expression returns a scalar
 #[cfg(feature = "is_in")]
 pub(crate) fn all_return_scalar(e: &Expr) -> bool {
