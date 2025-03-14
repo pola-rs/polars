@@ -8512,6 +8512,28 @@ class Expr:
         │ 2   ┆ 14  ┆ 3.0  │
         │ 2   ┆ 11  ┆ 2.0  │
         └─────┴─────┴──────┘
+
+        Divide by the length or number of non-null values
+        to compute the percentile rank.
+
+        >>> df = pl.DataFrame({"a": [6, 7, None, 14, 11]})
+        >>> df.with_columns(
+        ...     pct=pl.col("a").rank() / pl.len(),
+        ...     pct_valid=pl.col("a").rank() / pl.count("a"),
+        ... )
+        shape: (5, 3)
+        ┌──────┬──────┬───────────┐
+        │ a    ┆ pct  ┆ pct_valid │
+        │ ---  ┆ ---  ┆ ---       │
+        │ i64  ┆ f64  ┆ f64       │
+        ╞══════╪══════╪═══════════╡
+        │ 6    ┆ 0.2  ┆ 0.25      │
+        │ 7    ┆ 0.4  ┆ 0.5       │
+        │ null ┆ null ┆ null      │
+        │ 14   ┆ 0.8  ┆ 1.0       │
+        │ 11   ┆ 0.6  ┆ 0.75      │
+        └──────┴──────┴───────────┘
+
         """
         return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
 
