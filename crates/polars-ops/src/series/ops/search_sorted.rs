@@ -81,16 +81,16 @@ pub fn search_sorted(
             let ca = _get_rows_encoded_ca(
                 "".into(),
                 &[s.as_ref().clone().into_column()],
-                &[false],
+                &[descending],
                 &[false],
             )?;
             let search_values = _get_rows_encoded_ca(
                 "".into(),
                 &[search_values.clone().into_column()],
-                &[false],
+                &[descending],
                 &[false],
             )?;
-            let idx = binary_search_ca(&ca, search_values.iter(), side, descending);
+            let idx = binary_search_ca(&ca, search_values.iter(), side, false);
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         _ => polars_bail!(opq = search_sorted, original_dtype),
