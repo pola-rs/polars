@@ -564,3 +564,10 @@ def test_rolling_bool() -> None:
         assert out["sum_a"].to_list() == out["sum_a_ref"].to_list()
         assert out["max_a"].to_list() == out["max_a_ref"].to_list()
         assert out["min_a"].to_list() == out["min_a_ref"].to_list()
+
+
+def test_rolling_var_zero_weight() -> None:
+    assert_series_equal(
+        pl.Series([1.0, None, 1.0, 2.0]).rolling_var(2),
+        pl.Series([None, None, None, 0.5]),
+    )
