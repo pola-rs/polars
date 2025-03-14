@@ -78,18 +78,20 @@ where
 
 /// Check if expression is independent from any column.
 pub(crate) fn is_column_independent(expr: &Expr) -> bool {
-    expr.into_iter().all(|e| match e {
-        Expr::Nth(_)
-        | Expr::Column(_)
-        | Expr::Columns(_)
-        | Expr::DtypeColumn(_)
-        | Expr::IndexColumn(_)
-        | Expr::Wildcard
-        | Expr::Len
-        | Expr::SubPlan(..)
-        | Expr::Field(_)
-        | Expr::Selector(_) => false,
-        _ => true,
+    !expr.into_iter().any(|e| {
+        matches!(
+            e,
+            Expr::Nth(_)
+                | Expr::Column(_)
+                | Expr::Columns(_)
+                | Expr::DtypeColumn(_)
+                | Expr::IndexColumn(_)
+                | Expr::Wildcard
+                | Expr::Len
+                | Expr::SubPlan(..)
+                | Expr::Field(_)
+                | Expr::Selector(_)
+        )
     })
 }
 
