@@ -345,9 +345,6 @@ pub struct SinkOptions {
 
     /// Recursively create all the directories in the path.
     pub mkdir: bool,
-
-    /// Wait to start execution until `collect` is called.
-    pub lazy: bool,
 }
 
 impl Default for SinkOptions {
@@ -356,7 +353,6 @@ impl Default for SinkOptions {
             sync_on_close: Default::default(),
             maintain_order: true,
             mkdir: false,
-            lazy: false,
         }
     }
 }

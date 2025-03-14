@@ -717,7 +717,7 @@ impl PyLazyFrame {
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (
         target, compression, compression_level, statistics, row_group_size, data_page_size,
-        cloud_options, credential_provider, retries, sink_options, engine
+        cloud_options, credential_provider, retries, sink_options
     ))]
     fn sink_parquet(
         &self,
@@ -732,8 +732,7 @@ impl PyLazyFrame {
         credential_provider: Option<PyObject>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
-        engine: Wrap<Engine>,
-    ) -> PyResult<Option<PyLazyFrame>> {
+    ) -> PyResult<PyLazyFrame> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
         let options = ParquetWriteOptions {
@@ -757,10 +756,9 @@ impl PyLazyFrame {
             )
         };
 
-        let lazy = sink_options.0.lazy;
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            let ldf = match target {
+            match target {
                 SinkTarget::Path(path) => ldf.sink_parquet(
                     &path as &dyn AsRef<Path>,
                     options,
@@ -774,21 +772,17 @@ impl PyLazyFrame {
                     cloud_options,
                     sink_options.0,
                 ),
-            }?;
-
-            if lazy {
-                return Ok(Some(ldf.into()));
             }
-
-            ldf.collect_with_engine(engine.0)?;
-            PolarsResult::Ok(None)
+            .into()
         })
+        .map(Into::into)
+        .map_err(Into::into)
     }
 
     #[cfg(all(feature = "streaming", feature = "ipc"))]
     #[pyo3(signature = (
         target, compression, compat_level, cloud_options, credential_provider, retries,
-        sink_options, engine
+        sink_options
     ))]
     fn sink_ipc(
         &self,
@@ -800,8 +794,7 @@ impl PyLazyFrame {
         credential_provider: Option<PyObject>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
-        engine: Wrap<Engine>,
-    ) -> PyResult<Option<PyLazyFrame>> {
+    ) -> PyResult<PyLazyFrame> {
         let options = IpcWriterOptions {
             compression: compression.map(|c| c.0),
             compat_level: compat_level.0,
@@ -826,10 +819,9 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        let lazy = sink_options.0.lazy;
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            let ldf = match target {
+            match target {
                 SinkTarget::Path(path) => {
                     ldf.sink_ipc(path, options, cloud_options, sink_options.0)
                 },
@@ -840,22 +832,17 @@ impl PyLazyFrame {
                     cloud_options,
                     sink_options.0,
                 ),
-            }?;
-
-            if lazy {
-                return Ok(Some(ldf.into()));
             }
-
-            ldf.collect_with_engine(engine.0)?;
-            PolarsResult::Ok(None)
         })
+        .map(Into::into)
+        .map_err(Into::into)
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
     #[pyo3(signature = (
         target, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
         datetime_format, date_format, time_format, float_scientific, float_precision, null_value,
-        quote_style, cloud_options, credential_provider, retries, sink_options, engine
+        quote_style, cloud_options, credential_provider, retries, sink_options
     ))]
     fn sink_csv(
         &self,
@@ -878,8 +865,7 @@ impl PyLazyFrame {
         credential_provider: Option<PyObject>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
-        engine: Wrap<Engine>,
-    ) -> PyResult<Option<PyLazyFrame>> {
+    ) -> PyResult<PyLazyFrame> {
         let quote_style = quote_style.map_or(QuoteStyle::default(), |wrap| wrap.0);
         let null_value = null_value.unwrap_or(SerializeOptions::default().null);
 
@@ -921,10 +907,9 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        let lazy = sink_options.0.lazy;
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            let ldf = match target {
+            match target {
                 SinkTarget::Path(path) => {
                     ldf.sink_csv(path, options, cloud_options, sink_options.0)
                 },
@@ -935,20 +920,15 @@ impl PyLazyFrame {
                     cloud_options,
                     sink_options.0,
                 ),
-            }?;
-
-            if lazy {
-                return Ok(Some(ldf.into()));
             }
-
-            ldf.collect_with_engine(engine.0)?;
-            PolarsResult::Ok(None)
         })
+        .map(Into::into)
+        .map_err(Into::into)
     }
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "json"))]
-    #[pyo3(signature = (target, cloud_options, credential_provider, retries, sink_options, engine))]
+    #[pyo3(signature = (target, cloud_options, credential_provider, retries, sink_options))]
     fn sink_json(
         &self,
         py: Python,
@@ -957,8 +937,7 @@ impl PyLazyFrame {
         credential_provider: Option<PyObject>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
-        engine: Wrap<Engine>,
-    ) -> PyResult<Option<PyLazyFrame>> {
+    ) -> PyResult<PyLazyFrame> {
         let options = JsonWriterOptions {};
 
         let cloud_options = {
@@ -975,10 +954,9 @@ impl PyLazyFrame {
             )
         };
 
-        let lazy = sink_options.0.lazy;
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            let ldf = match target {
+            match target {
                 SinkTarget::Path(path) => {
                     ldf.sink_json(path, options, cloud_options, sink_options.0)
                 },
@@ -989,15 +967,10 @@ impl PyLazyFrame {
                     cloud_options,
                     sink_options.0,
                 ),
-            }?;
-
-            if lazy {
-                return Ok(Some(ldf.into()));
             }
-
-            ldf.collect_with_engine(engine.0)?;
-            PolarsResult::Ok(None)
         })
+        .map(Into::into)
+        .map_err(Into::into)
     }
 
     fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {

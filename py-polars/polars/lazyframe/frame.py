@@ -2673,10 +2673,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
             "mkdir": mkdir,
-            "lazy": lazy,
         }
 
-        opt_lf = lf.sink_parquet(
+        lf = lf.sink_parquet(
             target=target,
             compression=compression,
             compression_level=compression_level,
@@ -2687,13 +2686,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
-            engine=engine,
         )
+        lf = LazyFrame._from_pyldf(lf)
 
-        if opt_lf is None:
+        if not lazy:
+            lf.collect(engine=engine)
             return None
-        else:
-            return LazyFrame._from_pyldf(opt_lf)
+        return lf
 
     @overload
     def sink_ipc(
@@ -2902,7 +2901,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
             "mkdir": mkdir,
-            "lazy": lazy,
         }
 
         if compat_level is None:
@@ -2913,7 +2911,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if compression is None:
             compression = "uncompressed"
 
-        opt_lf = lf.sink_ipc(
+        lf = lf.sink_ipc(
             target=target,
             compression=compression,
             compat_level=compat_level,
@@ -2921,13 +2919,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
-            engine=engine,
         )
+        lf = LazyFrame._from_pyldf(lf)
 
-        if opt_lf is None:
+        if not lazy:
+            lf.collect(engine=engine)
             return None
-        else:
-            return LazyFrame._from_pyldf(opt_lf)
+        return lf
 
     @overload
     def sink_csv(
@@ -3220,10 +3218,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
             "mkdir": mkdir,
-            "lazy": lazy,
         }
 
-        opt_lf = lf.sink_csv(
+        lf = lf.sink_csv(
             target=target,
             include_bom=include_bom,
             include_header=include_header,
@@ -3242,13 +3239,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
-            engine=engine,
         )
+        lf = LazyFrame._from_pyldf(lf)
 
-        if opt_lf is None:
+        if not lazy:
+            lf.collect(engine=engine)
             return None
-        else:
-            return LazyFrame._from_pyldf(opt_lf)
+        return lf
 
     @overload
     def sink_ndjson(
@@ -3445,22 +3442,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
             "mkdir": mkdir,
-            "lazy": lazy,
         }
 
-        opt_lf = lf.sink_json(
+        lf = lf.sink_json(
             target=target,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
-            engine=engine,
         )
+        lf = LazyFrame._from_pyldf(lf)
 
-        if opt_lf is None:
+        if not lazy:
+            lf.collect(engine=engine)
             return None
-        else:
-            return LazyFrame._from_pyldf(opt_lf)
+        return lf
 
     def _set_sink_optimizations(
         self,
