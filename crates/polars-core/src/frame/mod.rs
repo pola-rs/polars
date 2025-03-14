@@ -2136,19 +2136,12 @@ impl DataFrame {
             }
         }
 
-        #[cfg(feature = "dtype-struct")]
-        let has_struct = by_column
-            .iter()
-            .any(|s| matches!(s.dtype(), DataType::Struct(_)));
-
-        #[cfg(not(feature = "dtype-struct"))]
-        #[allow(non_upper_case_globals)]
-        const has_struct: bool = false;
+        let has_nested = by_column.iter().any(|s| s.dtype().is_nested());
 
         // a lot of indirection in both sorting and take
         let mut df = self.clone();
         let df = df.as_single_chunk_par();
-        let mut take = match (by_column.len(), has_struct) {
+        let mut take = match (by_column.len(), has_nested) {
             (1, false) => {
                 let s = &by_column[0];
                 let options = SortOptions {
@@ -2172,7 +2165,7 @@ impl DataFrame {
             },
             _ => {
                 if sort_options.nulls_last.iter().all(|&x| x)
-                    || has_struct
+                    || has_nested
                     || std::env::var("POLARS_ROW_FMT_SORT").is_ok()
                 {
                     argsort_multiple_row_fmt(

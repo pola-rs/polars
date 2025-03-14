@@ -19,6 +19,7 @@ use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
+use super::row_encode::_get_rows_encoded_ca;
 use crate::POOL;
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
@@ -679,6 +680,37 @@ impl ChunkSort<StructType> for StructChunked {
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
         let bin = self.get_row_encoded(options).unwrap();
+        bin.arg_sort(Default::default())
+    }
+}
+
+impl ChunkSort<ListType> for ListChunked {
+    fn sort_with(&self, mut options: SortOptions) -> ListChunked {
+        options.multithreaded &= POOL.current_num_threads() > 1;
+        let idx = self.arg_sort(options);
+        let mut out = unsafe { self.take_unchecked(&idx) };
+
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        out.set_sorted_flag(s);
+        out
+    }
+
+    fn sort(&self, descending: bool) -> ListChunked {
+        self.sort_with(SortOptions::new().with_order_descending(descending))
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        let bin = _get_rows_encoded_ca(
+            self.name().clone(),
+            &[self.clone().into_column()],
+            &[options.descending],
+            &[options.nulls_last],
+        )
+        .unwrap();
         bin.arg_sort(Default::default())
     }
 }
