@@ -92,6 +92,7 @@ pub(crate) fn is_column_independent(expr: &Expr) -> bool {
         _ => true,
     })
 }
+
 /// Check if leaf expression returns a scalar
 #[cfg(feature = "is_in")]
 pub(crate) fn all_return_scalar(e: &Expr) -> bool {
