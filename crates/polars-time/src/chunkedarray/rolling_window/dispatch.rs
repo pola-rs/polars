@@ -198,7 +198,11 @@ pub trait SeriesOpsTime: AsSeries {
         let mut s = self.as_series().clone();
         if matches!(
             s.dtype(),
-            DataType::Boolean | DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
+            DataType::Boolean
+                | DataType::Int8
+                | DataType::UInt8
+                | DataType::Int16
+                | DataType::UInt16
         ) {
             s = s.cast(&DataType::Int64).unwrap();
         }
@@ -221,7 +225,11 @@ pub trait SeriesOpsTime: AsSeries {
             s = s.to_float()?;
         } else if matches!(
             s.dtype(),
-            DataType::Boolean | DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
+            DataType::Boolean
+                | DataType::Int8
+                | DataType::UInt8
+                | DataType::Int16
+                | DataType::UInt16
         ) {
             s = s.cast(&DataType::Int64).unwrap();
         }
@@ -279,10 +287,13 @@ pub trait SeriesOpsTime: AsSeries {
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
         let s = self.as_series().clone();
-        
+
         // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
-        if s.dtype() == &DataType::Boolean  {
-            return s.cast(&DataType::UInt8)?.rolling_min_by(by, options)?.cast(&DataType::Boolean);
+        if s.dtype() == &DataType::Boolean {
+            return s
+                .cast(&DataType::UInt8)?
+                .rolling_min_by(by, options)?
+                .cast(&DataType::Boolean);
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
@@ -303,10 +314,13 @@ pub trait SeriesOpsTime: AsSeries {
         if options.weights.is_some() {
             s = s.to_float()?;
         }
-        
+
         // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
-        if s.dtype() == &DataType::Boolean  {
-            return s.cast(&DataType::UInt8)?.rolling_min(options)?.cast(&DataType::Boolean);
+        if s.dtype() == &DataType::Boolean {
+            return s
+                .cast(&DataType::UInt8)?
+                .rolling_min(options)?
+                .cast(&DataType::Boolean);
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
@@ -328,10 +342,13 @@ pub trait SeriesOpsTime: AsSeries {
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
         let s = self.as_series().clone();
-        
+
         // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
-        if s.dtype() == &DataType::Boolean  {
-            return s.cast(&DataType::UInt8)?.rolling_max_by(by, options)?.cast(&DataType::Boolean);
+        if s.dtype() == &DataType::Boolean {
+            return s
+                .cast(&DataType::UInt8)?
+                .rolling_max_by(by, options)?
+                .cast(&DataType::Boolean);
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
@@ -352,10 +369,13 @@ pub trait SeriesOpsTime: AsSeries {
         if options.weights.is_some() {
             s = s.to_float()?;
         }
-        
+
         // Our rolling kernels don't yet support boolean, use UInt8 as a workaround for now.
-        if s.dtype() == &DataType::Boolean  {
-            return s.cast(&DataType::UInt8)?.rolling_max(options)?.cast(&DataType::Boolean);
+        if s.dtype() == &DataType::Boolean {
+            return s
+                .cast(&DataType::UInt8)?
+                .rolling_max(options)?
+                .cast(&DataType::Boolean);
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {

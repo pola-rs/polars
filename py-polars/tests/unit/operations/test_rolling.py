@@ -554,12 +554,12 @@ def test_rolling_bool() -> None:
     period: str | timedelta
     for period in ("2d", timedelta(days=2)):
         out = df.rolling(index_column="dt", period=period).agg(
-            sum_a = pl.col.a.sum(),
-            min_a = pl.col.a.min(),
-            max_a = pl.col.a.max(),
-            sum_a_ref = pl.col.a.cast(pl.Int32).sum(),
-            min_a_ref = pl.col.a.cast(pl.Int32).min().cast(pl.Boolean),
-            max_a_ref = pl.col.a.cast(pl.Int32).max().cast(pl.Boolean),
+            sum_a=pl.col.a.sum(),
+            min_a=pl.col.a.min(),
+            max_a=pl.col.a.max(),
+            sum_a_ref=pl.col.a.cast(pl.Int32).sum(),
+            min_a_ref=pl.col.a.cast(pl.Int32).min().cast(pl.Boolean),
+            max_a_ref=pl.col.a.cast(pl.Int32).max().cast(pl.Boolean),
         )
         assert out["sum_a"].to_list() == out["sum_a_ref"].to_list()
         assert out["max_a"].to_list() == out["max_a_ref"].to_list()
