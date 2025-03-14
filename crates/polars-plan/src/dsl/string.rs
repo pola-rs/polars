@@ -114,14 +114,14 @@ impl StringNameSpace {
         ascii_case_insensitive: bool,
         overlapping: bool,
     ) -> Expr {
-        self.0.map_many_private(
+        self.0.apply_many_private(
             FunctionExpr::StringExpr(StringFunction::FindMany {
                 ascii_case_insensitive,
                 overlapping,
             }),
             &[patterns],
             false,
-            None,
+            false,
         )
     }
 
