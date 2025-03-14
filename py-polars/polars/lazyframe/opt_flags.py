@@ -7,8 +7,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 class OptFlags:
     """Optimization flags used during query optimization."""
 
-    _pyoptflags: PyOptFlags
-
     def __init__(
         self,
         *,

@@ -349,7 +349,9 @@ fn create_physical_plan_impl(
                 },
             }
         },
-        SinkMultiple { .. } => unreachable!("returns multiple dataframes and is handled separately in polars-lazy"),
+        SinkMultiple { .. } => {
+            unreachable!("returns multiple dataframes and is handled separately in polars-lazy")
+        },
         Union { inputs, options } => {
             let inputs = state.with_new_branch(|new_state| {
                 inputs
