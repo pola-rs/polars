@@ -1198,7 +1198,7 @@ impl Expr {
     #[cfg(feature = "is_in")]
     pub fn is_in<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Self {
         let other = other.into();
-        
+
         // TODO: I believe this should be all_leaves_literal but this crashes
         // the IN SQL subquery with unknown column errors.
         let has_literal = has_leaf_literal(&other);

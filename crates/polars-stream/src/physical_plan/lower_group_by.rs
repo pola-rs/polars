@@ -19,7 +19,7 @@ use slotmap::SlotMap;
 use super::lower_expr::lower_exprs;
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
-    build_select_stream, compute_output_schema, is_fake_elementwise_function, is_input_independent
+    build_select_stream, compute_output_schema, is_fake_elementwise_function, is_input_independent,
 };
 use crate::physical_plan::lower_ir::build_slice_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;

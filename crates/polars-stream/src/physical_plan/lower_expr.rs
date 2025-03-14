@@ -84,7 +84,7 @@ pub(crate) fn is_elementwise_rec_cached(
 
                 loop {
                     let ae = arena.get(expr_key);
-                    
+
                     if is_fake_elementwise_function(ae) {
                         return false;
                     }
