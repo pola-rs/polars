@@ -804,6 +804,12 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
 }
 
 pub fn is_in(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<BooleanChunked> {
+    let other_dtype = other.dtype();
+    debug_assert!(other_dtype.is_list());
+    let other = other.explode().unwrap();
+    let other = &other;
+    dbg!(s, other);
+
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_, _) | DataType::Enum(_, _) => {
