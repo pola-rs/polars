@@ -1044,10 +1044,6 @@ impl LazyFrame {
             let mut new_stream_lazy = self.clone();
             new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
             new_stream_lazy.opt_state &= !OptFlags::STREAMING;
-            new_stream_lazy.logical_plan = DslPlan::Sink {
-                input: Arc::new(new_stream_lazy.logical_plan),
-                payload,
-            };
             let mut alp_plan = match new_stream_lazy.to_alp_optimized() {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
