@@ -1198,17 +1198,12 @@ impl Expr {
     #[cfg(feature = "is_in")]
     pub fn is_in<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Self {
         let other = other.into();
-
-        // TODO: I believe this should be all_leaves_literal but this crashes
-        // the IN SQL subquery with unknown column errors.
-        let has_literal = has_leaf_literal(&other);
-
-        // lit(true).is_in() returns a scalar.
+        let other_constant = is_column_independent(&other);
         let returns_scalar = all_return_scalar(&self);
 
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
-        if has_literal {
+        if other_constant {
             self.map_many_private(
                 BooleanFunction::IsIn { nulls_equal }.into(),
                 arguments,
@@ -1584,8 +1579,8 @@ impl Expr {
     pub fn replace<E: Into<Expr>>(self, old: E, new: E) -> Expr {
         let old = old.into();
         let new = new.into();
-        // If we search and replace by literals, we can run on batches.
-        let literal_args = all_leaves_literal(&old) && all_leaves_literal(&new);
+        // If we search and replace by constants, we can run on batches.
+        let literal_args = is_column_independent(&old) && is_column_independent(&new);
         let args = [old, new];
         if literal_args {
             self.map_many_private(FunctionExpr::Replace, &args, false, None)
@@ -1606,8 +1601,8 @@ impl Expr {
         let old = old.into();
         let new = new.into();
 
-        // If we replace by literals, we can run on batches.
-        let literal_args = all_leaves_literal(&old) && all_leaves_literal(&new);
+        // If we replace by constants, we can run on batches.
+        let literal_args = is_column_independent(&old) && is_column_independent(&new);
 
         let mut args = vec![old, new];
         if let Some(default) = default {
