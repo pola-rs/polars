@@ -297,8 +297,8 @@ impl StringNameSpace {
     /// Convert a String column into a Date/Datetime/Time column.
     #[cfg(feature = "temporal")]
     pub fn strptime(self, dtype: DataType, options: StrptimeOptions, ambiguous: Expr) -> Expr {
-        // Only elementwise if the format is explicitly set.
-        if options.format.is_some() {
+        // Only elementwise if the format is explicitly set, or we're constant.
+        if options.format.is_some() || is_column_independent(&self.0) {
             self.0.map_many_private(
                 StringFunction::Strptime(dtype, options).into(),
                 &[ambiguous],
