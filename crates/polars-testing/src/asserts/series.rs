@@ -38,7 +38,7 @@ macro_rules! assert_series_equal {
             #[allow(unused_mut)]
             let mut options = $crate::asserts::SeriesEqualOptions::default();
             $(options = $options;)?
-            
+
             match $crate::asserts::assert_series_equal($left, $right, options) {
                 Ok(_) => {},
                 Err(e) => panic!("{}", e),
