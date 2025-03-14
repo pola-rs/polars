@@ -224,7 +224,9 @@ impl CsvReadOptions {
         self
     }
 
-    /// Number of rows to use for schema inference. Pass [None] to use all rows.
+    /// Set the number of rows to use when inferring the csv schema.
+    /// The default is 100 rows.
+    /// Setting to [None] will do a full table scan, which is very slow.
     pub fn with_infer_schema_length(mut self, infer_schema_length: Option<usize>) -> Self {
         self.infer_schema_length = infer_schema_length;
         self
