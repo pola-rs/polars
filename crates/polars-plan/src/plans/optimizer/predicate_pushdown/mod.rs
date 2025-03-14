@@ -718,10 +718,10 @@ impl PredicatePushDown<'_> {
 
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
-            // Pushed down passed these nodes
-            lp @ Sink { .. } => {
+            lp @ Sink { .. } | lp @ SinkMultiple { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
+            // Pushed down passed these nodes
             lp @ HStack { .. }
             | lp @ Select { .. }
             | lp @ SimpleProjection { .. }

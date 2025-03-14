@@ -397,6 +397,19 @@ impl<'a> IRDisplay<'a> {
                 write!(f, "{:indent$}{name}", "")?;
                 self.with_root(*input)._format(f, sub_indent)
             },
+            SinkMultiple { inputs } => {
+                // 3 levels of indentation
+                // - 0 => SINK_MULTIPLE ... END SINK_MULTIPLE
+                // - 1 => PLAN 0, PLAN 1, ... PLAN N
+                // - 2 => actual formatting of plans
+                let sub_sub_indent = sub_indent + 2;
+                write!(f, "{:indent$}SINK_MULTIPLE", "")?;
+                for (i, plan) in inputs.iter().enumerate() {
+                    write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
+                    self.with_root(*plan)._format(f, sub_sub_indent)?;
+                }
+                write!(f, "\n{:indent$}END SINK_MULTIPLE", "")
+            },
             SimpleProjection { input, columns } => {
                 let num_columns = columns.as_ref().len();
                 let total_columns = self.lp.lp_arena.get(*input).schema(self.lp.lp_arena).len();

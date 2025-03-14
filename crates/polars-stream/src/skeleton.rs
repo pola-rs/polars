@@ -10,11 +10,13 @@ use polars_plan::prelude::expr_ir::ExprIR;
 use polars_utils::arena::{Arena, Node};
 use slotmap::{SecondaryMap, SlotMap};
 
+use crate::physical_plan::PhysNodeKind;
+
 pub fn run_query(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<Option<DataFrame>> {
+) -> PolarsResult<Result<DataFrame, Vec<DataFrame>>> {
     if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_IR") {
         let plan = IRPlan {
             lp_top: node,
@@ -30,6 +32,7 @@ pub fn run_query(
         let visualization = crate::physical_plan::visualize_plan(root, &phys_sm, expr_arena);
         std::fs::write(visual_path, visualization).unwrap();
     }
+
     let (mut graph, phys_to_graph) =
         crate::physical_plan::physical_plan_to_graph(root, &phys_sm, expr_arena)?;
 
@@ -45,5 +48,24 @@ pub fn run_query(
         }
     }
 
-    Ok(results.remove(phys_to_graph[root]))
+    match ir_arena.get(node) {
+        IR::SinkMultiple { inputs } => {
+            let phys_node = &phys_sm[root];
+            let PhysNodeKind::SinkMultiple { sinks } = phys_node.kind() else {
+                unreachable!();
+            };
+
+            Ok(Err(sinks
+                .iter()
+                .map(|phys_node_key| {
+                    results
+                        .remove(phys_to_graph[*phys_node_key])
+                        .unwrap_or_else(DataFrame::empty)
+                })
+                .collect()))
+        },
+        _ => Ok(Ok(results
+            .remove(phys_to_graph[root])
+            .unwrap_or_else(DataFrame::empty))),
+    }
 }

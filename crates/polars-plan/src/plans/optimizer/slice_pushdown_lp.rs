@@ -561,7 +561,7 @@ impl SlicePushDown {
                 let lp = HConcat {inputs, schema, options};
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
             }
-            (lp @ Sink { .. }, _) => {
+            (lp @ Sink { .. }, _) | (lp @ SinkMultiple { .. }, _) => {
                 // Slice can always be pushed down for sinks
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
             }

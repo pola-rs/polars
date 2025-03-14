@@ -28,7 +28,10 @@ pub enum DslPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache { input: Arc<DslPlan>, id: usize },
+    Cache {
+        input: Arc<DslPlan>,
+        id: usize,
+    },
     Scan {
         sources: ScanSources,
         /// Materialized at IR except for AnonymousScan.
@@ -121,6 +124,9 @@ pub enum DslPlan {
         input: Arc<DslPlan>,
         payload: SinkType,
     },
+    SinkMultiple {
+        inputs: Vec<DslPlan>,
+    },
     #[cfg(feature = "merge_sorted")]
     MergeSorted {
         input_left: Arc<DslPlan>,
@@ -162,6 +168,7 @@ impl Clone for DslPlan {
             Self::HConcat { inputs, options } => Self::HConcat { inputs: inputs.clone(), options: options.clone() },
             Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
+            Self::SinkMultiple { inputs } => Self::SinkMultiple { inputs: inputs.clone() },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone() },
             Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},

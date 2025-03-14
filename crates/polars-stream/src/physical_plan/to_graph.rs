@@ -103,6 +103,15 @@ fn to_graph_rec<'a>(
             nodes::in_memory_source::InMemorySourceNode::new(df.clone(), MorselSeq::default()),
             [],
         ),
+        SinkMultiple { sinks } => {
+            // @NOTE: This is always the root node and gets ignored by the physical_plan anyway so
+            // we give one of the inputs back.
+            let node = to_graph_rec(sinks[0], ctx)?;
+            for sink in &sinks[1..] {
+                to_graph_rec(*sink, ctx)?;
+            }
+            return Ok(node);
+        },
 
         StreamingSlice {
             input,

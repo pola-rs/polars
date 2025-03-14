@@ -986,6 +986,14 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let lp = IR::Sink { input, payload };
             return run_conversion(lp, ctxt, "sink");
         },
+        DslPlan::SinkMultiple { inputs } => {
+            let inputs = inputs
+                .into_iter()
+                .map(|lp| to_alp_impl(lp, ctxt))
+                .collect::<PolarsResult<Vec<_>>>()
+                .map_err(|e| e.context(failed_here!(vertical concat)))?;
+            IR::SinkMultiple { inputs }
+        },
         #[cfg(feature = "merge_sorted")]
         DslPlan::MergeSorted {
             input_left,

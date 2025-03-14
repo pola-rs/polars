@@ -148,6 +148,11 @@ pub enum IR {
         input: Node,
         payload: SinkTypeIR,
     },
+    /// Node that allows for multiple plans to be executed in parallel with common subplan
+    /// elimination and everything.
+    SinkMultiple {
+        inputs: Vec<Node>,
+    },
     #[cfg(feature = "merge_sorted")]
     MergeSorted {
         input_left: Node,

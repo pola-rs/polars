@@ -300,8 +300,8 @@ pub fn lower_ir(
                 let cloud_options = cloud_options.clone();
 
                 let mut input = lower_ir!(*input)?;
-                let input_schema = match &variant {
-                    PartitionVariantIR::MaxSize(_) => output_schema.clone(),
+                match &variant {
+                    PartitionVariantIR::MaxSize(_) => {},
                     PartitionVariantIR::ByKey {
                         key_exprs,
                         include_key: _,
@@ -310,12 +310,13 @@ pub fn lower_ir(
                             polars_bail!(InvalidOperation: "cannot partition by-key without key expressions");
                         }
 
-                        let mut select_output_schema = output_schema.as_ref().clone();
+                        let input_schema = &phys_sm[input.node].output_schema;
+                        let mut select_output_schema = input_schema.as_ref().clone();
                         for key_expr in key_exprs.iter() {
                             select_output_schema.insert(
                                 key_expr.output_name().clone(),
                                 key_expr
-                                    .dtype(output_schema.as_ref(), Context::Default, expr_arena)?
+                                    .dtype(input_schema.as_ref(), Context::Default, expr_arena)?
                                     .clone(),
                             );
                         }
@@ -330,24 +331,33 @@ pub fn lower_ir(
                             },
                         });
                         input = PhysStream::first(node);
-
-                        select_output_schema
                     },
                 };
 
-                let node_kind = PhysNodeKind::PartitionSink {
+                PhysNodeKind::PartitionSink {
                     path_f_string,
                     sink_options,
                     variant,
                     file_type,
                     input,
                     cloud_options,
-                };
-                // We need to correct the schema here as the ByKey might adjust the schema before
-                // it gets passed to the PartitionSink.
-                let node_key = phys_sm.insert(PhysNode::new(input_schema, node_kind));
-                return Ok(PhysStream::first(node_key));
+                }
             },
+        },
+
+        IR::SinkMultiple { inputs } => {
+            let mut sinks = Vec::with_capacity(inputs.len());
+            for input in inputs.clone() {
+                let phys_node_stream = match ir_arena.get(input) {
+                    IR::Sink { .. } => lower_ir!(input)?,
+                    _ => lower_ir!(ir_arena.add(IR::Sink {
+                        input,
+                        payload: SinkTypeIR::Memory
+                    }))?,
+                };
+                sinks.push(phys_node_stream.node);
+            }
+            PhysNodeKind::SinkMultiple { sinks }
         },
 
         #[cfg(feature = "merge_sorted")]

@@ -296,6 +296,13 @@ impl IR {
                 };
                 DslPlan::Sink { input, payload }
             },
+            IR::SinkMultiple { inputs } => {
+                let inputs = inputs
+                    .into_iter()
+                    .map(|node| convert_to_lp(node, lp_arena))
+                    .collect();
+                DslPlan::SinkMultiple { inputs }
+            },
             #[cfg(feature = "merge_sorted")]
             IR::MergeSorted {
                 input_left,

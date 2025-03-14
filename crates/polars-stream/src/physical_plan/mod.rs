@@ -54,6 +54,10 @@ impl PhysNode {
             kind,
         }
     }
+
+    pub fn kind(&self) -> &PhysNodeKind {
+        &self.kind
+    }
 }
 
 /// A handle representing a physical stream of data with a fixed schema in the
@@ -145,6 +149,10 @@ pub enum PhysNodeKind {
         file_type: FileType,
         input: PhysStream,
         cloud_options: Option<CloudOptions>,
+    },
+
+    SinkMultiple {
+        sinks: Vec<PhysNodeKey>,
     },
 
     /// Generic fallback for (as-of-yet) unsupported streaming mappings.
@@ -327,6 +335,13 @@ fn visit_node_inputs_mut(
                 for input in inputs {
                     rec!(input.node);
                     visit(input);
+                }
+            },
+
+            PhysNodeKind::SinkMultiple { sinks } => {
+                for sink in sinks {
+                    rec!(*sink);
+                    visit(&mut PhysStream::first(*sink));
                 }
             },
         }

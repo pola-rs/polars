@@ -1,6 +1,7 @@
 mod exitable;
 #[cfg(feature = "pymethods")]
 mod general;
+mod optflags;
 #[cfg(feature = "pymethods")]
 mod serde;
 mod sink;
@@ -9,7 +10,7 @@ pub mod visitor;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use exitable::PyInProcessQuery;
-use polars::prelude::{Engine, LazyFrame};
+use polars::prelude::{Engine, LazyFrame, OptFlags};
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyAnyMethods;
@@ -25,9 +26,22 @@ pub struct PyLazyFrame {
     pub ldf: LazyFrame,
 }
 
+#[pyclass]
+#[repr(transparent)]
+#[derive(Clone)]
+pub struct PyOptFlags {
+    pub inner: OptFlags,
+}
+
 impl From<LazyFrame> for PyLazyFrame {
     fn from(ldf: LazyFrame) -> Self {
         PyLazyFrame { ldf }
+    }
+}
+
+impl From<OptFlags> for PyOptFlags {
+    fn from(inner: OptFlags) -> Self {
+        PyOptFlags { inner }
     }
 }
 

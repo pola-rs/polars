@@ -822,7 +822,7 @@ impl ProjectionPushDown {
             } => process_hconcat(self, inputs, schema, options, ctx, lp_arena, expr_arena),
             lp @ Union { .. } => process_generic(self, lp, ctx, lp_arena, expr_arena),
             // These nodes only have inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ Sink { .. } => {
+            lp @ Slice { .. } | lp @ Sink { .. } | lp @ SinkMultiple { .. } => {
                 process_generic(self, lp, ctx, lp_arena, expr_arena)
             },
             Cache { .. } => {
