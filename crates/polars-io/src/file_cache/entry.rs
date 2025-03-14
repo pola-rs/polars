@@ -51,7 +51,7 @@ impl Inner {
         let verbose = config::verbose();
 
         {
-            let cache_guard = GLOBAL_FILE_CACHE_LOCK.lock_any();
+            let cache_guard = GLOBAL_FILE_CACHE_LOCK.lock_shared();
             // We want to use an exclusive lock here to avoid an API call in the case where only the
             // local TTL was updated.
             let metadata_file = &mut self.metadata.acquire_exclusive().unwrap();
@@ -85,7 +85,7 @@ impl Inner {
     fn try_open_check_latest(&mut self) -> PolarsResult<std::fs::File> {
         let verbose = config::verbose();
         let remote_metadata = &self.file_fetcher.fetch_metadata()?;
-        let cache_guard = GLOBAL_FILE_CACHE_LOCK.lock_any();
+        let cache_guard = GLOBAL_FILE_CACHE_LOCK.lock_shared();
 
         {
             let metadata_file = &mut self.metadata.acquire_shared().unwrap();

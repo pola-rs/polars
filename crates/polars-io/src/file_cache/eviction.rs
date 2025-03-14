@@ -182,7 +182,7 @@ impl EvictionManager {
                 match result {
                     Ok(_) if self.files_to_remove.as_ref().unwrap().is_empty() => {},
                     Ok(_) => loop {
-                        if let Some(guard) = GLOBAL_FILE_CACHE_LOCK.try_lock_exclusive() {
+                        if let Some(guard) = GLOBAL_FILE_CACHE_LOCK.try_lock_eviction() {
                             if verbose {
                                 eprintln!(
                                     "[EvictionManager] got exclusive cache lock, evicting {} files",
