@@ -9,6 +9,8 @@ use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 #[cfg(feature = "timezones")]
+use chrono_tz::TZ_VARIANTS;
+#[cfg(feature = "timezones")]
 use polars_core::prelude::PolarsResult;
 
 /// Localize datetime according to given time zone.
@@ -45,4 +47,9 @@ pub(crate) fn localize_datetime_opt(
 pub(crate) fn unlocalize_datetime(ndt: NaiveDateTime, tz: &Tz) -> NaiveDateTime {
     // e.g. '2021-01-01 03:00CDT' -> '2021-01-01 03:00'
     tz.from_utc_datetime(&ndt).naive_local()
+}
+
+#[cfg(feature = "timezones")]
+pub fn known_timezones() -> [&'static str; TZ_VARIANTS.len()] {
+    core::array::from_fn(|i| TZ_VARIANTS[i].name())
 }
