@@ -1198,7 +1198,7 @@ impl Expr {
     #[cfg(feature = "is_in")]
     pub fn is_in<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Self {
         let other = other.into();
-        let has_literal = has_leaf_literal(&other);
+        let has_literal = all_leafs_literal(&other);
 
         // lit(true).is_in() returns a scalar.
         let returns_scalar = all_return_scalar(&self);
@@ -1581,7 +1581,14 @@ impl Expr {
     pub fn replace<E: Into<Expr>>(self, old: E, new: E) -> Expr {
         let old = old.into();
         let new = new.into();
-        self.apply_many_private(FunctionExpr::Replace, &[old, new], false, false)
+        // If we search and replace by literals, we can run on batches.
+        let literal_args = all_leafs_literal(&old) && all_leafs_literal(&new);
+        let args = [old, new];
+        if literal_args {
+            self.map_many_private(FunctionExpr::Replace, &args, false, None)
+        } else {
+            self.apply_many_private(FunctionExpr::Replace, &args, false, false)
+        }
     }
 
     #[cfg(feature = "replace")]
@@ -1596,16 +1603,29 @@ impl Expr {
         let old = old.into();
         let new = new.into();
 
+        // If we replace by literals, we can run on batches.
+        let literal_args = all_leafs_literal(&old) && all_leafs_literal(&new);
+
         let mut args = vec![old, new];
         if let Some(default) = default {
             args.push(default.into())
         }
-        self.apply_many_private(
-            FunctionExpr::ReplaceStrict { return_dtype },
-            &args,
-            false,
-            false,
-        )
+
+        if literal_args {
+            self.map_many_private(
+                FunctionExpr::ReplaceStrict { return_dtype },
+                &args,
+                false,
+                None,
+            )
+        } else {
+            self.apply_many_private(
+                FunctionExpr::ReplaceStrict { return_dtype },
+                &args,
+                false,
+                false,
+            )
+        }
     }
 
     #[cfg(feature = "cutqcut")]
