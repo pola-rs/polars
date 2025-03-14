@@ -172,6 +172,7 @@ impl GlobalLock {
 
             if let Some(LockedState::Eviction) = this.state {
                 // Try again
+                drop(this);
                 return self.lock_shared();
             }
 
