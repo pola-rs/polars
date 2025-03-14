@@ -42,6 +42,34 @@ struct LowerExprContext<'a> {
     cache: &'a mut ExprCache,
 }
 
+pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
+    // The in-memory engine treats ApplyList as elementwise but this is not actually
+    // the case. It doesn't cause any problems for the in-memory engine because of
+    // how it does the execution but it causes errors for new-streaming.
+
+    // Some other functions are also marked as elementwise for filter pushdown
+    // but aren't actually elementwise (e.g. arguments aren't same length).
+    match expr {
+        AExpr::AnonymousFunction { options, .. } => {
+            options.collect_groups == ApplyOptions::ApplyList
+        },
+        AExpr::Function {
+            function, options, ..
+        } => {
+            if options.collect_groups == ApplyOptions::ApplyList {
+                return true;
+            }
+
+            use FunctionExpr as F;
+            matches!(
+                function,
+                F::Boolean(BooleanFunction::IsIn { .. }) | F::Replace | F::ReplaceStrict { .. }
+            )
+        },
+        _ => false,
+    }
+}
+
 pub(crate) fn is_elementwise_rec_cached(
     expr_key: ExprNodeKey,
     arena: &Arena<AExpr>,
@@ -56,19 +84,8 @@ pub(crate) fn is_elementwise_rec_cached(
 
                 loop {
                     let ae = arena.get(expr_key);
-
-                    // The in-memory engine treats ApplyList as elementwise but this is not actually
-                    // the case. It doesn't cause any problems for the in-memory engine because of
-                    // how it does the execution but it causes errors for new-streaming.
-                    if let AExpr::AnonymousFunction {
-                        options:
-                            FunctionOptions {
-                                collect_groups: ApplyOptions::ApplyList,
-                                ..
-                            },
-                        ..
-                    } = ae
-                    {
+                    
+                    if is_fake_elementwise_function(ae) {
                         return false;
                     }
 
@@ -530,7 +547,7 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 options,
                 ..
-            } if options.is_elementwise() && options.collect_groups != ApplyOptions::ApplyList => {
+            } if options.is_elementwise() && !is_fake_elementwise_function(node) => {
                 let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
 

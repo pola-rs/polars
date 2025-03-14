@@ -8,7 +8,7 @@ use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, ArenaExprIter, DataFrameUdf, IR, IRAggExpr};
-use polars_plan::prelude::{ApplyOptions, GroupbyOptions};
+use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -19,7 +19,7 @@ use slotmap::SlotMap;
 use super::lower_expr::lower_exprs;
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
-    build_select_stream, compute_output_schema, is_input_independent,
+    build_select_stream, compute_output_schema, is_fake_elementwise_function, is_input_independent
 };
 use crate::physical_plan::lower_ir::build_slice_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -154,7 +154,7 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
-            if options.is_elementwise() && options.collect_groups != ApplyOptions::ApplyList =>
+            if options.is_elementwise() && !is_fake_elementwise_function(node) =>
         {
             let node = node.clone();
             let input = input.clone();
