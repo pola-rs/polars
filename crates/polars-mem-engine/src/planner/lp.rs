@@ -95,6 +95,45 @@ pub fn create_physical_plan(
     }
 }
 
+pub struct MultiplePhysicalPlans {
+    pub cache_prefiller: Option<Box<dyn Executor>>,
+    pub physical_plans: Vec<Box<dyn Executor>>,
+}
+pub fn create_multiple_physical_plans(
+    roots: &[Node],
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<MultiplePhysicalPlans> {
+    let mut state = ConversionState::new()?;
+    let mut cache_nodes = Default::default();
+    let plans = state.with_new_branch(|new_state| {
+        roots
+            .iter()
+            .map(|&node| {
+                create_physical_plan_impl(node, lp_arena, expr_arena, new_state, &mut cache_nodes)
+            })
+            .collect::<PolarsResult<Vec<_>>>()
+    })?;
+
+    let cache_prefiller = (!cache_nodes.is_empty()).then(|| {
+        struct Empty;
+        impl Executor for Empty {
+            fn execute(&mut self, _cache: &mut ExecutionState) -> PolarsResult<DataFrame> {
+                Ok(DataFrame::empty())
+            }
+        }
+        Box::new(CachePrefiller {
+            caches: cache_nodes,
+            phys_plan: Box::new(Empty),
+        }) as _
+    });
+
+    Ok(MultiplePhysicalPlans {
+        cache_prefiller,
+        physical_plans: plans,
+    })
+}
+
 #[recursive]
 fn create_physical_plan_impl(
     root: Node,
@@ -350,7 +389,7 @@ fn create_physical_plan_impl(
             }
         },
         SinkMultiple { .. } => {
-            unreachable!("returns multiple dataframes and is handled separately in polars-lazy")
+            unreachable!("should be handled with create_multiple_physical_plans")
         },
         Union { inputs, options } => {
             let inputs = state.with_new_branch(|new_state| {

@@ -36,7 +36,7 @@ use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::RowIndex;
-use polars_mem_engine::{Executor, create_physical_plan};
+use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
 use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
@@ -887,14 +887,11 @@ impl LazyFrame {
             unreachable!()
         };
 
-        let mut physical_plans = Vec::with_capacity(inputs.len());
-        for input in inputs.clone() {
-            physical_plans.push(create_physical_plan(
-                input,
-                &mut alp_plan.lp_arena,
-                &mut alp_plan.expr_arena,
-            )?);
-        }
+        let mut multiplan = create_multiple_physical_plans(
+            inputs.clone().as_slice(),
+            &mut alp_plan.lp_arena,
+            &mut alp_plan.expr_arena,
+        )?;
 
         match engine {
             Engine::Gpu => polars_bail!(
@@ -904,9 +901,13 @@ impl LazyFrame {
                 // We don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
                 // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
                 // within bounds
-                let state = ExecutionState::new();
+                let mut state = ExecutionState::new();
+                if let Some(mut cache_prefiller) = multiplan.cache_prefiller {
+                    cache_prefiller.execute(&mut state)?;
+                }
                 let out = POOL.install(|| {
-                    physical_plans
+                    multiplan
+                        .physical_plans
                         .chunks_mut(POOL.current_num_threads() * 3)
                         .map(|chunk| {
                             chunk
@@ -916,6 +917,7 @@ impl LazyFrame {
                                     let mut input = std::mem::take(input);
                                     let mut state = state.split();
                                     state.branch_idx += idx;
+
                                     let df = input.execute(&mut state)?;
                                     Ok(df)
                                 })
