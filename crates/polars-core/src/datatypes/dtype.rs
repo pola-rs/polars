@@ -881,6 +881,19 @@ impl DataType {
         }
     }
 
+    /// Return how deeply nested the list is.
+    /// 0 is no nesting (no list type),
+    /// 1 is [T]
+    /// 2 is [[T]]
+    /// etc
+    pub fn nested_level_list(&self) -> u32 {
+        if let DataType::List(inner) = self {
+            1 + inner.nested_level_list()
+        } else {
+            0
+        }
+    }
+
     /// Answers if this type matches the given type of a schema.
     ///
     /// Allows (nested) Null types in this type to match any type in the schema,
