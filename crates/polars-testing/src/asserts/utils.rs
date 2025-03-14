@@ -1,24 +1,38 @@
-use std::ops::{BitAnd, BitOr, BitXor, Not};
+use std::ops::Not;
 
 use polars_core::datatypes::unpack_dtypes;
 use polars_core::prelude::*;
 use polars_ops::series::abs;
 
-// **Note:** Created a struct with a default implementation
-// for the user to create default arguments. This seems to be the
-// idiomatic approach and resolves Clippy's "too many parameters (9/7)"
-// suggestion.
+/// Configuration options for comparing Series equality.
+///
+/// Controls the behavior of Series equality comparisons by specifying
+/// which aspects to check and the tolerance for floating point comparisons.
 pub struct SeriesEqualOptions {
+    /// Whether to check that the data types match.
     pub check_dtypes: bool,
+    /// Whether to check that the Series names match.
     pub check_names: bool,
+    /// Whether to check that elements appear in the same order.
     pub check_order: bool,
+    /// Whether to check for exact equality (true) or approximate equality (false) for floating point values.
     pub check_exact: bool,
+    /// Relative tolerance for approximate equality of floating point values.
     pub rtol: f64,
+    /// Absolute tolerance for approximate equality of floating point values.
     pub atol: f64,
+    /// Whether to compare categorical values as strings.
     pub categorical_as_str: bool,
 }
 
 impl Default for SeriesEqualOptions {
+    /// Creates a new `SeriesEqualOptions` with default settings.
+    ///
+    /// Default configuration:
+    /// - Checks data types, names, and order
+    /// - Uses exact equality comparisons
+    /// - Sets relative tolerance to 1e-5 and absolute tolerance to 1e-8 for floating point comparisons
+    /// - Does not convert categorical values to strings for comparison
     fn default() -> Self {
         Self {
             check_dtypes: true,
@@ -33,46 +47,55 @@ impl Default for SeriesEqualOptions {
 }
 
 impl SeriesEqualOptions {
+    /// Creates a new `SeriesEqualOptions` with default settings.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Sets whether to check that data types match.
     pub fn with_check_dtypes(mut self, value: bool) -> Self {
         self.check_dtypes = value;
         self
     }
 
+    /// Sets whether to check that Series names match.
     pub fn with_check_names(mut self, value: bool) -> Self {
         self.check_names = value;
         self
     }
 
+    /// Sets whether to check that elements appear in the same order.
     pub fn with_check_order(mut self, value: bool) -> Self {
         self.check_order = value;
         self
     }
 
+    /// Sets whether to check for exact equality (true) or approximate equality (false) for floating point values.
     pub fn with_check_exact(mut self, value: bool) -> Self {
         self.check_exact = value;
         self
     }
 
+    /// Sets the relative tolerance for approximate equality of floating point values.
     pub fn with_rtol(mut self, value: f64) -> Self {
         self.rtol = value;
         self
     }
 
+    /// Sets the absolute tolerance for approximate equality of floating point values.
     pub fn with_atol(mut self, value: f64) -> Self {
         self.atol = value;
         self
     }
 
+    /// Sets whether to compare categorical values as strings.
     pub fn with_categorical_as_str(mut self, value: bool) -> Self {
         self.categorical_as_str = value;
         self
     }
 }
 
+/// Change a (possibly nested) Categorical data type to a String data type.
 pub fn categorical_dtype_to_string_dtype(dtype: &DataType) -> DataType {
     match dtype {
         DataType::Categorical(..) => DataType::String,
@@ -101,6 +124,7 @@ pub fn categorical_dtype_to_string_dtype(dtype: &DataType) -> DataType {
     }
 }
 
+/// Cast a (possibly nested) Categorical Series to a String Series.
 pub fn categorical_series_to_string(s: &Series) -> Series {
     let dtype = s.dtype();
     let noncat_dtype = categorical_dtype_to_string_dtype(dtype);
@@ -112,22 +136,25 @@ pub fn categorical_series_to_string(s: &Series) -> Series {
     }
 }
 
+/// Returns true if both DataTypes are floating point types.
 pub fn comparing_floats(left: &DataType, right: &DataType) -> bool {
     left.is_float() && right.is_float()
 }
 
+/// Returns true if both DataTypes are list-like (either List or Array types).
 pub fn comparing_lists(left: &DataType, right: &DataType) -> bool {
     matches!(left, DataType::List(_) | DataType::Array(_, _))
         && matches!(right, DataType::List(_) | DataType::Array(_, _))
 }
 
+/// Returns true if both DataTypes are struct types.
 pub fn comparing_structs(left: &DataType, right: &DataType) -> bool {
     left.is_struct() && right.is_struct()
 }
 
-// **Change**: When translating this code to Rust, there originally was
-// no `unpack_dtypes()` functionality in the code base, so I created it in
-// `polars-core/src/datatypes/dtype.rs` and Gijs merged the PR (#21574).
+/// Returns true if both DataTypes are nested types (lists or structs) that contain floating point types within them.
+/// First checks if both types are either lists or structs, then unpacks their nested DataTypes to determine if
+/// at least one floating point type exists in each of the nested structures.
 pub fn comparing_nested_floats(left: &DataType, right: &DataType) -> bool {
     if !comparing_lists(left, right) && !comparing_structs(left, right) {
         return false;
@@ -142,20 +169,10 @@ pub fn comparing_nested_floats(left: &DataType, right: &DataType) -> bool {
     left_has_floats && right_has_floats
 }
 
-// **Change:** The Python function originally took both `left` and `right`
-// as input parameters and returned both, but I just made it take a
-// single Series and used tuple destructuring.
-pub fn sort_series(s: &Series) -> PolarsResult<Series> {
-    s.sort(SortOptions::default())
-        .map_err(|_| polars_err!(op = "sort", s.dtype()))
-}
-
+/// Ensures that null values in two Series match exactly and returns an error if any mismatches are found.
 pub fn assert_series_null_values_match(left: &Series, right: &Series) -> PolarsResult<()> {
     let null_value_mismatch = left.is_null().not_equal(&right.is_null());
 
-    // **Change**: Rather than simply returning the Series as Lists
-    // I thought it made more sense to return null value counts from the
-    // left and right Series
     if null_value_mismatch.any() {
         return Err(polars_err!(
             assertion_error = "Series",
@@ -168,6 +185,7 @@ pub fn assert_series_null_values_match(left: &Series, right: &Series) -> PolarsR
     Ok(())
 }
 
+/// Validates that NaN patterns are identical between two float Series, returning error if any mismatches are found.
 pub fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsResult<()> {
     if !comparing_floats(left.dtype(), right.dtype()) {
         return Ok(());
@@ -177,9 +195,6 @@ pub fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsRe
 
     let nan_value_mismatch = left_nan.not_equal(&right_nan);
 
-    // **Change**: Rather than simply returning the Series as Lists
-    // I thought it made more sense to return NaN value counts from the
-    // left and right Series
     let left_nan_count = left_nan.sum().unwrap_or(0);
     let right_nan_count = right_nan.sum().unwrap_or(0);
 
@@ -195,12 +210,32 @@ pub fn assert_series_nan_values_match(left: &Series, right: &Series) -> PolarsRe
     Ok(())
 }
 
+/// Verifies that two Series have values within a specified tolerance.
+///
+/// This function checks if the values in `left` and `right` Series that are marked as unequal
+/// in the `unequal` boolean array are within the specified relative and absolute tolerances.
+///
+/// # Arguments
+///
+/// * `left` - The first Series to compare
+/// * `right` - The second Series to compare
+/// * `unequal` - Boolean ChunkedArray indicating which elements to check (true = check this element)
+/// * `rtol` - Relative tolerance (multiplied by the absolute value of the right Series)
+/// * `atol` - Absolute tolerance added to the relative tolerance
+///
+/// # Returns
+///
+/// * `Ok(())` if all values are within tolerance
+/// * `Err` with details about problematic values if any values exceed the tolerance
+///
+/// # Formula
+///
+/// Values are considered within tolerance if:
+/// `|left - right| <= (rtol * |right| + atol)` OR values are exactly equal
+///
 pub fn assert_series_values_within_tolerance(
     left: &Series,
     right: &Series,
-    // **Change**: In Python, this input type is a Series,
-    // but in Rust, to use the `.filter()` method on a Series
-    // the object inside the filter must be a `ChunkedArray`.
     unequal: &ChunkedArray<BooleanType>,
     rtol: f64,
     atol: f64,
@@ -213,10 +248,6 @@ pub fn assert_series_values_within_tolerance(
 
     let right_abs = abs(&right_unequal)?;
 
-    // **Change**: The scalar values needed to be converted into Series
-    // so that arithmetic operations between the Series could happen.
-    // I looked through the Rust API documentation and didn't see
-    // any method for multiplying a Series by a scalar.
     let rtol_series = Series::new("rtol".into(), &[rtol]);
     let atol_series = Series::new("atol".into(), &[atol]);
 
@@ -232,9 +263,6 @@ pub fn assert_series_values_within_tolerance(
     if within_tolerance.all() {
         Ok(())
     } else {
-        // **Change**: Rather than simply returning the Series as Lists
-        // I thought it made more sense to return the problematic values in both
-        // left and right Series
         let exceeded_indices = within_tolerance.not();
         let problematic_left = left_unequal.filter(&exceeded_indices)?;
         let problematic_right = right_unequal.filter(&exceeded_indices)?;
@@ -248,6 +276,38 @@ pub fn assert_series_values_within_tolerance(
     }
 }
 
+/// Compares two Series for equality with configurable options for ordering, exact matching, and tolerance.
+///
+/// This function verifies that the values in `left` and `right` Series are equal according to
+/// the specified comparison criteria. It handles different types including floats and nested types
+/// with appropriate equality checks.
+///
+/// # Arguments
+///
+/// * `left` - The first Series to compare
+/// * `right` - The second Series to compare
+/// * `check_order` - If true, elements must be in the same order; if false, Series will be sorted before comparison
+/// * `check_exact` - If true, requires exact equality; if false, allows approximate equality for floats within tolerance
+/// * `rtol` - Relative tolerance for float comparison (used when `check_exact` is false)
+/// * `atol` - Absolute tolerance for float comparison (used when `check_exact` is false)
+/// * `categorical_as_str` - If true, converts categorical Series to strings before comparison
+///
+/// # Returns
+///
+/// * `Ok(())` if Series match according to specified criteria
+/// * `Err` with details about mismatches if Series differ
+///
+/// # Behavior
+///
+/// 1. Handles categorical Series based on `categorical_as_str` flag
+/// 2. Sorts Series if `check_order` is false
+/// 3. For nested float types, delegates to `assert_series_nested_values_equal`
+/// 4. For non-float types or when `check_exact` is true, requires exact match
+/// 5. For float types with approximate matching:
+///    - Verifies null values match using `assert_series_null_values_match`
+///    - Verifies NaN values match using `assert_series_nan_values_match`
+///    - Verifies float values are within tolerance using `assert_series_values_within_tolerance`
+///
 pub fn assert_series_values_equal(
     left: &Series,
     right: &Series,
@@ -267,24 +327,15 @@ pub fn assert_series_values_equal(
     };
 
     let (left, right) = if !check_order {
-        (sort_series(&left)?, sort_series(&right)?)
+        (
+            left.sort(SortOptions::default())?,
+            right.sort(SortOptions::default())?,
+        )
     } else {
         (left.clone(), right.clone())
     };
 
-    // **Change**: After looking through the Rust API documentation, it seems
-    // there is no direct `ne_missing()` function in Rust like there is in
-    // Python for Series, so I had to break it down into smaller parts
-    // which can be refactored later, if that functionality is eventually made.
-    let left_null = left.is_null();
-    let right_null = right.is_null();
-    let null_mismatch = left_null.clone().bitxor(right_null.clone());
-
-    let values_equal = left.equal(&right)?;
-    let both_null = left_null.bitand(right_null);
-
-    let combined_equal = values_equal.bitor(both_null);
-    let unequal = combined_equal.not().bitor(null_mismatch);
+    let unequal = left.not_equal_missing(&right)?;
 
     if comparing_nested_floats(left.dtype(), right.dtype()) {
         let filtered_left = left.filter(&unequal)?;
@@ -332,6 +383,38 @@ pub fn assert_series_values_equal(
     Ok(())
 }
 
+/// Recursively compares nested Series structures (lists or structs) for equality.
+///
+/// This function handles the comparison of complex nested data structures by recursively
+/// applying appropriate equality checks based on the nested data type.
+///
+/// # Arguments
+///
+/// * `left` - The first nested Series to compare
+/// * `right` - The second nested Series to compare
+/// * `check_exact` - If true, requires exact equality; if false, allows approximate equality for floats
+/// * `rtol` - Relative tolerance for float comparison (used when `check_exact` is false)
+/// * `atol` - Absolute tolerance for float comparison (used when `check_exact` is false)
+/// * `categorical_as_str` - If true, converts categorical Series to strings before comparison
+///
+/// # Returns
+///
+/// * `Ok(())` if nested Series match according to specified criteria
+/// * `Err` with details about mismatches if Series differ
+///
+/// # Behavior
+///
+/// For List types:
+/// 1. Iterates through corresponding elements in both Series
+/// 2. Returns error if null values are encountered
+/// 3. Creates single-element Series for each value and explodes them
+/// 4. Recursively calls `assert_series_values_equal` on the exploded Series
+///
+/// For Struct types:
+/// 1. Unnests both struct Series to access their columns
+/// 2. Iterates through corresponding columns
+/// 3. Recursively calls `assert_series_values_equal` on each column pair
+///
 pub fn assert_series_nested_values_equal(
     left: &Series,
     right: &Series,
@@ -352,18 +435,9 @@ pub fn assert_series_nested_values_equal(
                     s2
                 ));
             } else {
-                // **Change**: This had to convert `AnyValue` to Series because
-                // the input type for `assert_series_values_equal()` are Series
-                // objects and not `AnyValue`, which would cause an error.
                 let s1_series = Series::new("".into(), &[s1.clone()]);
                 let s2_series = Series::new("".into(), &[s2.clone()]);
 
-                // **Change**: Using `explode()` to prevent infinite recursion.
-                // When an `AnyValue` representing a nested structure (like a list) is wrapped in a new Series,
-                // it creates another layer of nesting. Without `explode()`, this would cause infinite recursion
-                // as each recursive call would add more nesting instead of resolving it.
-                // The `explode()` call flattens one level of the nested structure before comparison,
-                // breaking the recursive cycle.
                 match assert_series_values_equal(
                     &s1_series.explode()?,
                     &s2_series.explode()?,
@@ -379,11 +453,6 @@ pub fn assert_series_nested_values_equal(
             }
         }
     } else {
-        // **Change**: This section had to be modified because
-        // using `unnest()` on a Struct type in Rust creates a DataFrame
-        // not a Series. Thus, I had to find a workaround so that the
-        // `assert_series_values_equal()` function would have the proper
-        // input of Series.
         let ls = left.struct_()?.clone().unnest();
         let rs = right.struct_()?.clone().unnest();
 
@@ -409,16 +478,45 @@ pub fn assert_series_nested_values_equal(
     Ok(())
 }
 
+/// Verifies that two Series are equal according to a set of configurable criteria.
+///
+/// This function serves as the main entry point for comparing Series, checking various
+/// metadata properties before comparing the actual values.
+///
+/// # Arguments
+///
+/// * `left` - The first Series to compare
+/// * `right` - The second Series to compare
+/// * `options` - A `SeriesEqualOptions` struct containing configuration parameters:
+///   * `check_names` - If true, verifies Series names match
+///   * `check_dtypes` - If true, verifies data types match
+///   * `check_order` - If true, elements must be in the same order
+///   * `check_exact` - If true, requires exact equality for float values
+///   * `rtol` - Relative tolerance for float comparison
+///   * `atol` - Absolute tolerance for float comparison
+///   * `categorical_as_str` - If true, converts categorical Series to strings before comparison
+///
+/// # Returns
+///
+/// * `Ok(())` if Series match according to all specified criteria
+/// * `Err` with details about the first mismatch encountered:
+///   * Length mismatch
+///   * Name mismatch (if checking names)
+///   * Data type mismatch (if checking dtypes)
+///   * Value mismatches (via `assert_series_values_equal`)
+///
+/// # Order of Checks
+///
+/// 1. Series length
+/// 2. Series names (if `check_names` is true)
+/// 3. Data types (if `check_dtypes` is true)
+/// 4. Series values (delegated to `assert_series_values_equal`)
+///
 pub fn assert_series_equal(
     left: &Series,
     right: &Series,
     options: SeriesEqualOptions,
 ) -> PolarsResult<()> {
-    // **Change**: The Python code has an `_assert_correct_input_type()`
-    // function to make sure that both inputs are Series. However,
-    // this was not implemented in Rust due to Rust's strict
-    // static type-checking system.
-
     if left.len() != right.len() {
         return Err(polars_err!(
             assertion_error = "Series",

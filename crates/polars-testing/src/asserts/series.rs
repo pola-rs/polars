@@ -1,28 +1,48 @@
-// **Note:** Some tests and helper functions in this file create collections using `vec![]`
-// where a direct array might seem more concise. However, these are intentionally using
-// `vec![]` to ensure runtime flexibility, support iterator methods like `.iter()`,
-// and satisfy trait bounds requiring `Clone` and `ExactSizeIterator`.
-// The tests that use this start on line 446.
-#![allow(clippy::useless_vec)]
-
+/// Asserts that two series are equal according to the specified options.
+///
+/// This macro compares two Polars Series objects and panics with a detailed error message if they are not equal.
+/// It provides two forms:
+/// - With custom comparison options
+/// - With default comparison options
+///
+/// # Example
+///
+/// ```
+/// use polars_core::prelude::*;
+/// use polars_testing::assert_series_equal;
+/// use polars_testing::asserts::SeriesEqualOptions;
+///
+/// // Create two series to compare
+/// let s1 = Series::new("a".into(), &[1, 2, 3]);
+/// let s2 = Series::new("a".into(), &[1, 2, 3]);
+///
+/// // Assert with default options
+/// assert_series_equal!(&s1, &s2);
+///
+/// // Assert with custom options
+/// let options = SeriesEqualOptions::default()
+///     .with_check_exact(true)
+///     .with_check_dtypes(false);
+/// assert_series_equal!(&s1, &s2, options);
+/// ```
+///
+/// # Panics
+///
+/// Panics when the series are not equal according to the specified comparison criteria.
+///
 #[macro_export]
 macro_rules! assert_series_equal {
-    // **Note:** Allows the user to use the macro with custom options.
-    (custom = $left:expr, $right:expr, $options:expr) => {
-        match $crate::asserts::assert_series_equal($left, $right, $options) {
-            Ok(_) => {},
-            Err(e) => panic!("{}", e),
-        }
-    };
-    // **Note:** Allows the user to use the macro with default options enabled.
-    (default = $left:expr, $right:expr) => {
-        match $crate::asserts::assert_series_equal(
-            $left,
-            $right,
-            $crate::asserts::SeriesEqualOptions::default(),
-        ) {
-            Ok(_) => {},
-            Err(e) => panic!("{}", e),
+    ($left:expr, $right:expr $(, $options:expr)?) => {
+        {
+            #[allow(unused_assignments)]
+            #[allow(unused_mut)]
+            let mut options = $crate::asserts::SeriesEqualOptions::default();
+            $(options = $options;)?
+            
+            match $crate::asserts::assert_series_equal($left, $right, options) {
+                Ok(_) => {},
+                Err(e) => panic!("{}", e),
+            }
         }
     };
 }
@@ -53,7 +73,7 @@ mod tests {
         let s1 = Series::new("".into(), &[1, 2]);
         let s2 = Series::new("".into(), &[1, 2, 3]);
 
-        assert_series_equal!(default = &s1, &s2)
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -62,7 +82,7 @@ mod tests {
         let s1 = Series::new("s1".into(), &[1, 2, 3]);
         let s2 = Series::new("s2".into(), &[1, 2, 3]);
 
-        assert_series_equal!(default = &s1, &s2)
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -72,7 +92,7 @@ mod tests {
 
         let options = crate::asserts::SeriesEqualOptions::default().with_check_names(false);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     #[test]
@@ -81,7 +101,7 @@ mod tests {
         let s1 = Series::new("".into(), &[1, 2, 3]);
         let s2 = Series::new("".into(), &["1", "2", "3"]);
 
-        assert_series_equal!(default = &s1, &s2)
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -91,7 +111,7 @@ mod tests {
 
         let options = crate::asserts::SeriesEqualOptions::default().with_check_dtypes(false);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     // Testing basic equality
@@ -101,7 +121,7 @@ mod tests {
         let s1 = Series::new("".into(), &[1, 2, 3]);
         let s2 = Series::new("".into(), &[2, 3, 4]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -109,7 +129,7 @@ mod tests {
         let s1 = Series::new("".into(), &[1, 2, 3]);
         let s2 = Series::new("".into(), &[1, 2, 3]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -118,7 +138,7 @@ mod tests {
         let s1 = Series::new("".into(), &["foo", "bar"]);
         let s2 = Series::new("".into(), &["moo", "car"]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -126,7 +146,7 @@ mod tests {
         let s1 = Series::new("".into(), &["foo", "bar"]);
         let s2 = Series::new("".into(), &["foo", "bar"]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -135,7 +155,7 @@ mod tests {
         let s1 = Series::new("".into(), &[1.1, 2.2, 3.3]);
         let s2 = Series::new("".into(), &[2.2, 3.3, 4.4]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -143,7 +163,7 @@ mod tests {
         let s1 = Series::new("".into(), &[1.1, 2.2, 3.3]);
         let s2 = Series::new("".into(), &[1.1, 2.2, 3.3]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     // Testing float value precision equality
@@ -155,7 +175,7 @@ mod tests {
 
         let options = crate::asserts::SeriesEqualOptions::default().with_check_exact(false);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     #[test]
@@ -165,7 +185,7 @@ mod tests {
 
         let options = crate::asserts::SeriesEqualOptions::default().with_check_exact(false);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     #[test]
@@ -175,7 +195,7 @@ mod tests {
 
         let options = crate::asserts::SeriesEqualOptions::default().with_check_exact(false);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     #[test]
@@ -187,7 +207,7 @@ mod tests {
             .with_check_exact(false)
             .with_rtol(0.01);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     #[test]
@@ -200,7 +220,7 @@ mod tests {
             .with_check_exact(false)
             .with_atol(0.005);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     // Testing equality with special values
@@ -209,7 +229,7 @@ mod tests {
         let s1 = Series::default();
         let s2 = Series::default();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -217,7 +237,7 @@ mod tests {
         let s1 = Series::new("".into(), &[f64::NAN, f64::NAN, f64::NAN]);
         let s2 = Series::new("".into(), &[f64::NAN, f64::NAN, f64::NAN]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -225,7 +245,7 @@ mod tests {
         let s1 = Series::new("".into(), &[None::<i32>, None::<i32>, None::<i32>]);
         let s2 = Series::new("".into(), &[None::<i32>, None::<i32>, None::<i32>]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -234,7 +254,7 @@ mod tests {
         let s1 = Series::new("".into(), &[1.0, f64::INFINITY, 3.0]);
         let s2 = Series::new("".into(), &[1.0, f64::NEG_INFINITY, 3.0]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -242,7 +262,7 @@ mod tests {
         let s1 = Series::new("".into(), &[1.0, f64::INFINITY, f64::NEG_INFINITY]);
         let s2 = Series::new("".into(), &[1.0, f64::INFINITY, f64::NEG_INFINITY]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     // Testing null and nan counts for floats
@@ -254,7 +274,7 @@ mod tests {
 
         let options = crate::asserts::SeriesEqualOptions::default().with_check_exact(false);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     #[test]
@@ -265,7 +285,7 @@ mod tests {
 
         let options = crate::asserts::SeriesEqualOptions::default().with_check_exact(false);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     // Testing sorting operations
@@ -277,7 +297,7 @@ mod tests {
 
         let options = crate::asserts::SeriesEqualOptions::default();
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     #[test]
@@ -287,7 +307,7 @@ mod tests {
 
         let options = crate::asserts::SeriesEqualOptions::default().with_check_order(false);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     // Testing categorical operations
@@ -303,7 +323,7 @@ mod tests {
             .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
 
         disable_string_cache();
     }
@@ -317,7 +337,7 @@ mod tests {
             .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -332,7 +352,7 @@ mod tests {
 
         let options = crate::asserts::SeriesEqualOptions::default().with_categorical_as_str(true);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     #[test]
@@ -346,7 +366,7 @@ mod tests {
 
         let options = crate::asserts::SeriesEqualOptions::default().with_categorical_as_str(true);
 
-        assert_series_equal!(custom = &s1, &s2, options);
+        assert_series_equal!(&s1, &s2, options);
     }
 
     // Testing equality of nested values
@@ -371,7 +391,7 @@ mod tests {
             ],
         );
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -394,7 +414,7 @@ mod tests {
             ],
         );
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -418,7 +438,7 @@ mod tests {
             ],
         );
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -441,7 +461,7 @@ mod tests {
             ],
         );
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -450,9 +470,7 @@ mod tests {
         let field1 = Series::new("field1".into(), &["a", "d", "g"]);
         let field2 = Series::new("field2".into(), &["b", "e", "h"]);
 
-        // **Note**: This is where Clippy warns about an unnecessary `vec!`. Says 
-        // it can be an array, for example `[field1.clone(), field2.clone()]`.
-        let s1_fields = vec![field1.clone(), field2.clone()];
+        let s1_fields = [field1.clone(), field2.clone()];
         let s1_struct =
             StructChunked::from_series("".into(), field1.len(), s1_fields.iter()).unwrap();
         let s1 = s1_struct.into_series();
@@ -460,14 +478,12 @@ mod tests {
         let field1_alt = Series::new("field1".into(), &["a", "DIFFERENT", "g"]);
         let field2_alt = Series::new("field2".into(), &["b", "e", "h"]);
 
-        // **Note**: This is where Clippy warns about an unnecessary `vec!`. Says 
-        // it can be an array, for example `[field1.clone(), field2.clone()]`.
-        let s2_fields = vec![field1_alt.clone(), field2_alt.clone()];
+        let s2_fields = [field1_alt.clone(), field2_alt.clone()];
         let s2_struct =
             StructChunked::from_series("".into(), field1_alt.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -475,21 +491,17 @@ mod tests {
         let field1 = Series::new("field1".into(), &["a", "d", "g"]);
         let field2 = Series::new("field2".into(), &["b", "e", "h"]);
 
-        // **Note**: This is where Clippy warns about an unnecessary `vec!`. Says 
-        // it can be an array, for example `[field1.clone(), field2.clone()]`.
-        let s1_fields = vec![field1.clone(), field2.clone()];
+        let s1_fields = [field1.clone(), field2.clone()];
         let s1_struct =
             StructChunked::from_series("".into(), field1.len(), s1_fields.iter()).unwrap();
         let s1 = s1_struct.into_series();
 
-        // **Note**: This is where Clippy warns about an unnecessary `vec!`. Says 
-        // it can be an array, for example `[field1.clone(), field2.clone()]`.
-        let s2_fields = vec![field1.clone(), field2.clone()];
+        let s2_fields = [field1.clone(), field2.clone()];
         let s2_struct =
             StructChunked::from_series("".into(), field1.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -499,20 +511,16 @@ mod tests {
         let value = Series::new("value".into(), &["a", "b", "c"]);
         let active = Series::new("active".into(), &[true, false, true]);
 
-        // **Note**: This is where Clippy warns about an unnecessary `vec!`. Says 
-        // it can be an array, for example `[field1.clone(), field2.clone()]`.
-        let s1_fields = vec![id.clone(), value.clone(), active.clone()];
+        let s1_fields = [id.clone(), value.clone(), active.clone()];
         let s1_struct = StructChunked::from_series("".into(), id.len(), s1_fields.iter()).unwrap();
         let s1 = s1_struct.into_series();
 
         let id_alt = Series::new("id".into(), &[1, 99, 3]);
-        // **Note**: This is where Clippy warns about an unnecessary `vec!`. Says 
-        // it can be an array, for example `[field1.clone(), field2.clone()]`.
-        let s2_fields = vec![id_alt.clone(), value.clone(), active.clone()];
+        let s2_fields = [id_alt.clone(), value.clone(), active.clone()];
         let s2_struct = StructChunked::from_series("".into(), id.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -521,19 +529,15 @@ mod tests {
         let value = Series::new("value".into(), &["a", "b", "c"]);
         let active = Series::new("active".into(), &[true, false, true]);
 
-        // **Note**: This is where Clippy warns about an unnecessary `vec!`. Says 
-        // it can be an array, for example `[field1.clone(), field2.clone()]`.
-        let s1_fields = vec![id.clone(), value.clone(), active.clone()];
+        let s1_fields = [id.clone(), value.clone(), active.clone()];
         let s1_struct = StructChunked::from_series("".into(), id.len(), s1_fields.iter()).unwrap();
         let s1 = s1_struct.into_series();
 
-        // **Note**: This is where Clippy warns about an unnecessary `vec!`. Says 
-        // it can be an array, for example `[field1.clone(), field2.clone()]`.
-        let s2_fields = vec![id.clone(), value.clone(), active.clone()];
+        let s2_fields = [id.clone(), value.clone(), active.clone()];
         let s2_struct = StructChunked::from_series("".into(), id.len(), s2_fields.iter()).unwrap();
         let s2 = s2_struct.into_series();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     // Testing equality of deeply nested values
@@ -548,7 +552,7 @@ mod tests {
         let outer_list_2 = Series::new("outer".into(), &[inner_list_2]);
         let s2 = Series::new("nested".into(), &[outer_list_2]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
     #[test]
     fn test_deeply_nested_list_float_match() {
@@ -561,7 +565,7 @@ mod tests {
         let outer_list_2 = Series::new("".into(), &[inner_list_2]);
         let s2 = Series::new("".into(), &[outer_list_2]);
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     // Testing equality of temporal types
@@ -579,7 +583,7 @@ mod tests {
             .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
             .unwrap();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -594,7 +598,7 @@ mod tests {
             .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
             .unwrap();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     // Testing equality of decimal types
@@ -608,7 +612,7 @@ mod tests {
             .cast(&DataType::Decimal(Some(10), Some(2)))
             .unwrap();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -620,7 +624,7 @@ mod tests {
             .cast(&DataType::Decimal(Some(10), Some(2)))
             .unwrap();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     // Testing equality of binary types
@@ -634,7 +638,7 @@ mod tests {
             .cast(&DataType::Binary)
             .unwrap();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 
     #[test]
@@ -646,6 +650,6 @@ mod tests {
             .cast(&DataType::Binary)
             .unwrap();
 
-        assert_series_equal!(default = &s1, &s2);
+        assert_series_equal!(&s1, &s2);
     }
 }

@@ -85,6 +85,7 @@ test-doc:  ## Run doc examples
 	    -p polars-lazy \
 	    -p polars-io \
 	    -p polars-core \
+		-p polars-testing \
 		-p polars-sql
 
 .PHONY: bench-save
