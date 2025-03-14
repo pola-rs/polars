@@ -360,19 +360,6 @@ pub trait SeriesOpsTime: AsSeries {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             let mut ca = ca.clone();
 
-            if let Some(idx) = ca.first_non_null() {
-                let k = ca.get(idx).unwrap();
-                // TODO! remove this!
-                // This is a temporary hack to improve numeric stability.
-                // var(X) = var(X - k)
-                // This is temporary as we will rework the rolling methods
-                // the 100.0 absolute boundary is arbitrarily chosen.
-                // the algorithm will square numbers, so it loses precision rapidly
-                if k.abs() > 100.0 {
-                    ca = ca - k;
-                }
-            }
-
             rolling_agg_by(
                 &ca,
                 by,
@@ -390,19 +377,6 @@ pub trait SeriesOpsTime: AsSeries {
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             let mut ca = ca.clone();
-
-            if let Some(idx) = ca.first_non_null() {
-                let k = ca.get(idx).unwrap();
-                // TODO! remove this!
-                // This is a temporary hack to improve numeric stability.
-                // var(X) = var(X - k)
-                // This is temporary as we will rework the rolling methods
-                // the 100.0 absolute boundary is arbitrarily chosen.
-                // the algorithm will square numbers, so it loses precision rapidly
-                if k.abs() > 100.0 {
-                    ca = ca - k;
-                }
-            }
 
             rolling_agg(
                 &ca,
