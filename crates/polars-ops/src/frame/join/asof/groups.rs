@@ -513,8 +513,8 @@ pub trait AsofJoinBy: IntoDf {
             &left_asof,
             &right_asof,
             tolerance.is_some(),
-            left_by.is_empty() && right_by.is_empty(),
             check_sortedness,
+            !(left_by.is_empty() && right_by.is_empty()),
         )?;
 
         let mut left_by = self_df.select(left_by)?;

@@ -5123,8 +5123,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 (i.e., strictly less-than / strictly greater-than).
         check_sortedness
             Check the sortedness of the asof keys. If the keys are not sorted Polars
-            will error, or in case of 'by' argument raise a warning. This might become
-            a hard error in the future.
+            will error. Currently, sortedness cannot be checked if 'by' groups are
+            provided.
 
 
         Examples
