@@ -196,13 +196,12 @@ pub trait SeriesOpsTime: AsSeries {
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
         let mut s = self.as_series().clone();
+        if s.dtype() == &DataType::Boolean {
+            s = s.cast(&DataType::new_idxsize()).unwrap();
+        }
         if matches!(
             s.dtype(),
-            DataType::Boolean
-                | DataType::Int8
-                | DataType::UInt8
-                | DataType::Int16
-                | DataType::UInt16
+            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
         ) {
             s = s.cast(&DataType::Int64).unwrap();
         }
@@ -223,13 +222,11 @@ pub trait SeriesOpsTime: AsSeries {
         let mut s = self.as_series().clone();
         if options.weights.is_some() {
             s = s.to_float()?;
+        } else if s.dtype() == &DataType::Boolean {
+            s = s.cast(&DataType::new_idxsize()).unwrap();
         } else if matches!(
             s.dtype(),
-            DataType::Boolean
-                | DataType::Int8
-                | DataType::UInt8
-                | DataType::Int16
-                | DataType::UInt16
+            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
         ) {
             s = s.cast(&DataType::Int64).unwrap();
         }
