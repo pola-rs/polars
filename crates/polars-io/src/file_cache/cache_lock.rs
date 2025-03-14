@@ -67,9 +67,10 @@ pub(super) static GLOBAL_FILE_CACHE_LOCK: LazyLock<GlobalLock> = LazyLock::new(|
 });
 
 pub(super) enum LockedState {
+    /// Shared between threads and other processes.
     Shared,
     #[allow(dead_code)]
-    /// Files are being evicted.
+    /// Locked exclusively by the eviction task of this process.
     Eviction,
 }
 
