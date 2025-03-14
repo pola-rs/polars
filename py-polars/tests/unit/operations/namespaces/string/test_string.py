@@ -1196,6 +1196,23 @@ def test_replace_many(
     )
 
 
+def test_replace_many_groupby() -> None:
+    df = pl.DataFrame(
+        {
+            "x": ["a", "b", "c", "d", "e", "f", "g", "h", "i"],
+            "g": [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        }
+    )
+    out = df.group_by("g").agg(pl.col.x.str.replace_many(pl.col.x.head(2), ""))
+    expected = pl.DataFrame(
+        {
+            "g": [0, 1, 2],
+            "x": [["", "", "c"], ["", "", "f"], ["", "", "i"]],
+        }
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
+
+
 @pytest.mark.parametrize(
     ("mapping", "case_insensitive", "expected"),
     [
