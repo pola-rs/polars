@@ -114,14 +114,18 @@ pub fn col(name: &str) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> {
+pub fn collect_all(
+    lfs: Vec<PyLazyFrame>,
+    engine: Wrap<Engine>,
+    py: Python,
+) -> PyResult<Vec<PyDataFrame>> {
     use polars_core::utils::rayon::prelude::*;
 
     py.enter_polars(|| {
         polars_core::POOL.install(|| {
             lfs.par_iter()
                 .map(|lf| {
-                    let df = lf.ldf.clone().collect()?;
+                    let df = lf.ldf.clone().collect_with_engine(engine.0)?;
                     Ok(PyDataFrame::new(df))
                 })
                 .collect::<PolarsResult<Vec<_>>>()
@@ -130,14 +134,14 @@ pub fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFram
 }
 
 #[pyfunction]
-pub fn collect_all_with_callback(lfs: Vec<PyLazyFrame>, lambda: PyObject) {
+pub fn collect_all_with_callback(lfs: Vec<PyLazyFrame>, engine: Wrap<Engine>, lambda: PyObject) {
     use polars_core::utils::rayon::prelude::*;
 
     polars_core::POOL.spawn(move || {
         let result = lfs
             .par_iter()
             .map(|lf| {
-                let df = lf.ldf.clone().collect()?;
+                let df = lf.ldf.clone().collect_with_engine(engine.0)?;
                 Ok(PyDataFrame::new(df))
             })
             .collect::<polars_core::error::PolarsResult<Vec<_>>>()
