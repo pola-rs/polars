@@ -1,4 +1,7 @@
-from polars.polars import PyOptFlags
+import contextlib
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import PyOptFlags
 
 
 class OptFlags:
