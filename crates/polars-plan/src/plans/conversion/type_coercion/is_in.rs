@@ -1,11 +1,14 @@
 use super::*;
 
 pub(super) fn resolve_is_in(
-    input: &[ExprIR],
+    node: Node,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &Arena<IR>,
     lp_node: Node,
 ) -> PolarsResult<Option<AExpr>> {
+    let AExpr::Function { input, .. } = expr_arena.get(node) else {
+        unreachable!()
+    };
     let input_schema = get_schema(lp_arena, lp_node);
     let other_e = &input[1];
     let (_, type_left) = unpack!(get_aexpr_and_type(
@@ -38,9 +41,12 @@ pub(super) fn resolve_is_in(
     // 2    [[1]]
     // 3    [[5, 3]]
 
+    // If types are equal we implode the rhs to create a scalar list.
     let ae_builder = AExprBuilder::new(other_e.node(), expr_arena);
     use DataType as D;
+    dbg!(&type_left, &type_other);
     let ae_builder = match (&type_left, &type_other) {
+        (a, b) if a == b => ae_builder,
         (_, D::List(other_inner)) => {
             if other_inner.as_ref() == &type_left
                 || (type_left == D::Null)
@@ -52,7 +58,6 @@ pub(super) fn resolve_is_in(
             polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_left, &type_other)
         },
         // types are equal, cast b
-        //(a, b) if a == b => other_e.clone(),
         // all-null can represent anything (and/or empty list), so cast to target dtype
         (_, D::Null) => ae_builder.cast(type_left, CastOptions::NonStrict),
         (D::Decimal(_, _), dt) if dt.is_primitive_numeric() => {

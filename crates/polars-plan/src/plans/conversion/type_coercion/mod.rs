@@ -159,13 +159,22 @@ impl OptimizationRule for TypeCoercionRule {
             } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
             #[cfg(feature = "is_in")]
             AExpr::Function {
-                function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
-                ref input,
-                options,
+                function: FunctionExpr::Boolean(BooleanFunction::IsIn { .. }),
+                ..
             } => {
-                let Some(casted_expr) = is_in::resolve_is_in(input, expr_arena, lp_arena, lp_node)?
+                let Some(casted_expr) =
+                    is_in::resolve_is_in(expr_node, expr_arena, lp_arena, lp_node)?
                 else {
                     return Ok(None);
+                };
+
+                let AExpr::Function {
+                    function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
+                    ref input,
+                    options,
+                } = *expr_arena.get(expr_node)
+                else {
+                    unreachable!()
                 };
 
                 let mut input = input.to_vec();
