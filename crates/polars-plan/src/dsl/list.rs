@@ -302,22 +302,14 @@ impl ListNameSpace {
     pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
         let other = other.into();
 
-        if has_leaf_literal(&other) {
-            self.0.map_many_private(
-                FunctionExpr::ListExpr(ListFunction::Contains),
-                &[other],
-                false,
-                None,
-            )
-        } else {
-            self.0.apply_many_private(
-                FunctionExpr::ListExpr(ListFunction::Contains),
-                &[other],
-                false,
-                false,
-            )
-        }
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Contains),
+            &[other],
+            false,
+            None,
+        )
     }
+
     #[cfg(feature = "list_count")]
     /// Count how often the value produced by ``element`` occurs.
     pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {
