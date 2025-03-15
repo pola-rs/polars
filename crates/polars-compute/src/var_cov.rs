@@ -61,6 +61,14 @@ impl VarState {
         }
     }
 
+    fn clear_zero_weight_nan(&mut self) {
+        // Clear NaNs due to division by zero.
+        if self.weight == 0.0 {
+            self.mean = 0.0;
+            self.dp = 0.0;
+        }
+    }
+
     pub(crate) fn new_single(x: f64) -> Self {
         let mut out = Self::default();
         out.insert_one(x);
@@ -76,6 +84,7 @@ impl VarState {
         self.dp += (new_mean - x) * delta_mean;
         self.weight = new_weight;
         self.mean = new_mean;
+        self.clear_zero_weight_nan();
     }
 
     pub fn remove_one(&mut self, x: f64) {
@@ -87,6 +96,7 @@ impl VarState {
         self.dp -= (new_mean - x) * delta_mean;
         self.weight = new_weight;
         self.mean = new_mean;
+        self.clear_zero_weight_nan();
     }
 
     pub fn combine(&mut self, other: &Self) {
@@ -101,6 +111,7 @@ impl VarState {
         self.dp += other.dp + other.weight * (new_mean - other.mean) * delta_mean;
         self.weight = new_weight;
         self.mean = new_mean;
+        self.clear_zero_weight_nan();
     }
 
     pub fn finalize(&self, ddof: u8) -> Option<f64> {
