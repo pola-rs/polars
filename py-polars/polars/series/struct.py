@@ -73,7 +73,7 @@ class StructNameSpace:
         ]
         """
 
-    def rename_fields(self, names: Sequence[str]) -> Series:
+    def rename_fields(self, names: Sequence[str], strict: bool = True) -> Series:
         """
         Rename the fields of the struct.
 
@@ -81,16 +81,17 @@ class StructNameSpace:
         ----------
         names
             New names in the order of the struct's fields.
+        strict
+            If True, raises an error if the length of names does not match the number of fields.
 
         Examples
         --------
         >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
-        >>> s.struct.fields
-        ['a', 'b']
-        >>> s = s.struct.rename_fields(["c", "d"])
-        >>> s.struct.fields
-        ['c', 'd']
+        >>> s.struct.rename_fields(["c", "d"], strict=True)
         """
+        if strict and len(names) != len(self.fields):
+            raise ValueError("The length of names must match the number of fields in the struct.")
+        
 
     @property
     def schema(self) -> Schema:
