@@ -650,3 +650,10 @@ def test_function_expr_scalar_identification_18755() -> None:
         pl.DataFrame({"a": [1, 2]}).with_columns(pl.lit(5).shrink_dtype().alias("b")),
         pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int8)}),
     )
+
+
+def test_concat_deprecation() -> None:
+    with pytest.deprecated_call(match="`ExprStringNameSpace.concat` is deprecated."):
+        pl.Series(["foo"]).str.concat()
+    with pytest.deprecated_call(match="`ExprStringNameSpace.concat` is deprecated."):
+        pl.DataFrame({"foo": ["bar"]}).select(pl.all().str.concat())
