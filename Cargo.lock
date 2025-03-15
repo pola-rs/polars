@@ -3676,7 +3676,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.25.0"
+version = "1.25.1"
 dependencies = [
  "either",
  "libc",
