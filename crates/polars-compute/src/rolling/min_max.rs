@@ -19,7 +19,7 @@ pub struct MinMaxWindow<'a, T, P> {
     policy: PhantomData<P>,
 }
 
-impl<'a, T: NativeType, P: MinMaxPolicy> MinMaxWindow<'a, T, P> {
+impl<T: NativeType, P: MinMaxPolicy> MinMaxWindow<'_, T, P> {
     /// # Safety
     /// The index must be in-bounds.
     unsafe fn insert_nonnull_value(&mut self, idx: usize) {
