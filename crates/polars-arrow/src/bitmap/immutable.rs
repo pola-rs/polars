@@ -51,6 +51,7 @@ const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 /// // when sliced (or cloned), it is no longer possible to `into_mut`.
 /// let same: Bitmap = sliced.into_mut().left().unwrap();
 /// ```
+#[derive(Default)]
 pub struct Bitmap {
     storage: SharedStorage<u8>,
     // Both offset and length are measured in bits. They are used to bound the
@@ -87,12 +88,6 @@ impl std::fmt::Debug for Bitmap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (bytes, offset, len) = self.as_slice();
         fmt(bytes, offset, len, f)
-    }
-}
-
-impl Default for Bitmap {
-    fn default() -> Self {
-        MutableBitmap::new().into()
     }
 }
 

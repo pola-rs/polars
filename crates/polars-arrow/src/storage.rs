@@ -51,6 +51,8 @@ struct SharedStorageInner<T> {
     phantom: PhantomData<T>,
 }
 
+unsafe impl<T: Sync + Send> Sync for SharedStorageInner<T> {}
+
 impl<T> SharedStorageInner<T> {
     pub fn from_vec(mut v: Vec<T>) -> Self {
         let length_in_bytes = v.len() * size_of::<T>();
@@ -102,7 +104,29 @@ pub struct SharedStorage<T> {
 unsafe impl<T: Sync + Send> Send for SharedStorage<T> {}
 unsafe impl<T: Sync + Send> Sync for SharedStorage<T> {}
 
+impl<T> Default for SharedStorage<T> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 impl<T> SharedStorage<T> {
+    const fn empty() -> Self {
+        assert!(align_of::<T>() <= 1 << 30);
+        static INNER: SharedStorageInner<()> = SharedStorageInner {
+            ref_count: AtomicU64::new(2), // Never used, but 2 so it won't pass exclusivity tests.
+            ptr: core::ptr::without_provenance_mut(1 << 30), // Very overaligned for any T.
+            length_in_bytes: 0,
+            backing: None,
+            phantom: PhantomData,
+        };
+
+        Self {
+            inner: NonNull::new(&raw const INNER as *mut SharedStorageInner<T>).unwrap(),
+            phantom: PhantomData,
+        }
+    }
+
     pub fn from_static(slice: &'static [T]) -> Self {
         #[expect(clippy::manual_slice_size_calculation)]
         let length_in_bytes = slice.len() * size_of::<T>();
