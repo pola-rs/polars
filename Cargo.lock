@@ -3509,6 +3509,7 @@ dependencies = [
 name = "polars-stream"
 version = "0.46.0"
 dependencies = [
+ "async-trait",
  "atomic-waker",
  "crossbeam-channel",
  "crossbeam-deque",

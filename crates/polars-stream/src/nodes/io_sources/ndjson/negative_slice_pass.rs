@@ -11,11 +11,9 @@ use polars_utils::priority::Priority;
 
 use crate::async_executor;
 use crate::async_executor::AbortOnDropHandle;
-use crate::async_primitives::connector;
 use crate::async_primitives::linearizer::Linearizer;
-use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{Morsel, MorselSeq, get_ideal_morsel_size};
-use crate::nodes::io_sources::MorselOutput;
+use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
+use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
 
 /// Outputs a stream of morsels in reverse order from which they were received.
 /// Attaches (properly offsetted) row index if necessary.
@@ -23,7 +21,9 @@ use crate::nodes::io_sources::MorselOutput;
 /// Used for negative slicing in NDJSON, where the morsels of the file are sent from back to front.
 pub struct MorselStreamReverser {
     pub morsel_receiver: Linearizer<Priority<Reverse<MorselSeq>, DataFrame>>,
-    pub phase_tx_receivers: Vec<connector::Receiver<MorselOutput>>,
+    /// We have parallel output as we spawn tasks to perform slicing and adding row_index in
+    /// parallel.
+    pub morsel_senders: Vec<FileReaderOutputSend>,
     /// Slice from right to left.
     pub offset_len_rtl: (usize, usize),
     pub row_index: Option<(RowIndex, tokio::sync::oneshot::Receiver<usize>)>,
@@ -34,7 +34,7 @@ impl MorselStreamReverser {
     pub async fn run(self) -> PolarsResult<()> {
         let MorselStreamReverser {
             mut morsel_receiver,
-            phase_tx_receivers,
+            morsel_senders,
             offset_len_rtl,
             row_index,
             verbose,
@@ -42,7 +42,7 @@ impl MorselStreamReverser {
 
         // Accumulated morsels
         let mut acc_morsels: Vec<(MorselSeq, DataFrame)> =
-            Vec::with_capacity(phase_tx_receivers.len().clamp(16, 64));
+            Vec::with_capacity(morsel_senders.len().clamp(16, 64));
 
         if verbose {
             eprintln!("MorselStreamReverser: start receiving");
@@ -143,7 +143,7 @@ impl MorselStreamReverser {
         let combined_df = Arc::new(combined_df);
         let chunk_size = get_ideal_morsel_size();
         let n_chunks = combined_df.height().div_ceil(chunk_size);
-        let num_pipelines = phase_tx_receivers.len();
+        let num_pipelines = morsel_senders.len();
         let n_tasks = num_pipelines.min(n_chunks);
         let chunk_idx_arc = Arc::new(AtomicUsize::new(0));
 
@@ -167,28 +167,22 @@ impl MorselStreamReverser {
         // Otherwise we will wrap around on fetch_add
         assert!(usize::MAX - n_chunks >= n_tasks);
 
-        let sender_join_handles = phase_tx_receivers
+        let sender_join_handles = morsel_senders
             .into_iter()
             .take(n_tasks)
-            .map(|mut phase_tx_receiver| {
+            .map(|mut morsel_tx| {
                 let chunk_idx_arc = chunk_idx_arc.clone();
                 let combined_df = combined_df.clone();
                 let row_index = row_index.clone();
                 AbortOnDropHandle::new(async_executor::spawn(
                     async_executor::TaskPriority::Low,
                     async move {
-                        let Ok(mut morsel_output) = phase_tx_receiver.recv().await else {
-                            return Ok(());
-                        };
-
-                        let wait_group = WaitGroup::default();
-
-                        'outer: loop {
+                        loop {
                             let chunk_idx =
                                 chunk_idx_arc.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                             if chunk_idx >= n_chunks {
-                                return Ok(());
+                                break;
                             }
 
                             let row_offset = chunk_idx.saturating_mul(chunk_size);
@@ -213,29 +207,14 @@ impl MorselStreamReverser {
                                 df.with_row_index_mut(row_index.name.clone(), Some(offset));
                             }
 
-                            let mut morsel = Morsel::new(
+                            let morsel = Morsel::new(
                                 df,
                                 MorselSeq::new(chunk_idx as u64),
-                                morsel_output.source_token.clone(),
+                                SourceToken::new(),
                             );
 
-                            morsel.set_consume_token(wait_group.token());
-
-                            if morsel_output.port.send(morsel).await.is_err() {
-                                break 'outer;
-                            }
-
-                            wait_group.wait().await;
-
-                            if morsel_output.source_token.stop_requested() {
-                                morsel_output.outcome.stop();
-                                drop(morsel_output);
-
-                                let Ok(next_output) = phase_tx_receiver.recv().await else {
-                                    break;
-                                };
-
-                                morsel_output = next_output;
+                            if morsel_tx.send_morsel(morsel).await.is_err() {
+                                break;
                             }
                         }
 

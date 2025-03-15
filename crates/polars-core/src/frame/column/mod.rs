@@ -75,6 +75,13 @@ impl Column {
         Self::Scalar(ScalarColumn::new(name, scalar, length))
     }
 
+    #[inline]
+    pub fn new_idxsize_range(name: PlSmallStr, range: std::ops::Range<IdxSize>) -> Self {
+        let mut ca = IdxCa::from_vec(name, range.collect());
+        ca.set_sorted_flag(IsSorted::Ascending);
+        ca.into_series().into()
+    }
+
     // # Materialize
     /// Get a reference to a [`Series`] for this [`Column`]
     ///

@@ -30,6 +30,7 @@ pub mod pl_str;
 pub mod priority;
 pub mod select;
 pub mod slice;
+pub mod slice_enum;
 pub mod sort;
 pub mod sparse_init_vec;
 pub mod sync;

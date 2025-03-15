@@ -16,6 +16,8 @@ use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::SourceToken;
 
+pub mod multi_file_reader;
+
 #[cfg(feature = "csv")]
 pub mod csv;
 #[cfg(feature = "ipc")]
