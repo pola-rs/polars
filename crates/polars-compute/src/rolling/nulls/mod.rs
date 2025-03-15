@@ -94,8 +94,10 @@ mod test {
     use arrow::array::{Array, Int32Array};
     use arrow::buffer::Buffer;
     use arrow::datatypes::ArrowDataType;
+    use polars_utils::min_max::MaxIgnoreNan;
 
     use super::*;
+    use crate::rolling::min_max::MinMaxWindow;
 
     fn get_null_arr() -> PrimitiveArray<f64> {
         // 1, None, -1, 4
@@ -245,7 +247,7 @@ mod test {
 
         let arr = Int32Array::new(ArrowDataType::Int32, vals.into(), Some(validity));
 
-        let out = rolling_apply_agg_window::<MaxWindow<_>, _, _>(
+        let out = rolling_apply_agg_window::<MinMaxWindow<i32, MaxIgnoreNan>, _, _>(
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,

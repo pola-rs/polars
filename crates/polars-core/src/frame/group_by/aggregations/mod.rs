@@ -4,7 +4,6 @@ mod dispatch;
 mod string;
 
 use std::borrow::Cow;
-use std::cmp::Ordering;
 
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
@@ -23,7 +22,7 @@ use polars_compute::rolling::{
 };
 use polars_utils::float::IsFloat;
 use polars_utils::idx_vec::IdxVec;
-use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
+use polars_utils::min_max::MinMax;
 use rayon::prelude::*;
 
 use crate::chunked_array::cast::CastOptions;
@@ -224,67 +223,6 @@ where
     let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_inner().into_series()
 }
-
-pub trait TakeExtremum {
-    fn take_min(self, other: Self) -> Self;
-
-    fn take_max(self, other: Self) -> Self;
-}
-
-macro_rules! impl_take_extremum {
-    ($tp:ty) => {
-        impl TakeExtremum for $tp {
-            #[inline(always)]
-            fn take_min(self, other: Self) -> Self {
-                if self < other { self } else { other }
-            }
-
-            #[inline(always)]
-            fn take_max(self, other: Self) -> Self {
-                if self > other { self } else { other }
-            }
-        }
-    };
-
-    (float: $tp:ty) => {
-        impl TakeExtremum for $tp {
-            #[inline(always)]
-            fn take_min(self, other: Self) -> Self {
-                if matches!(compare_fn_nan_max(&self, &other), Ordering::Less) {
-                    self
-                } else {
-                    other
-                }
-            }
-
-            #[inline(always)]
-            fn take_max(self, other: Self) -> Self {
-                if matches!(compare_fn_nan_min(&self, &other), Ordering::Greater) {
-                    self
-                } else {
-                    other
-                }
-            }
-        }
-    };
-}
-
-#[cfg(feature = "dtype-u8")]
-impl_take_extremum!(u8);
-#[cfg(feature = "dtype-u16")]
-impl_take_extremum!(u16);
-impl_take_extremum!(u32);
-impl_take_extremum!(u64);
-#[cfg(feature = "dtype-i8")]
-impl_take_extremum!(i8);
-#[cfg(feature = "dtype-i16")]
-impl_take_extremum!(i16);
-impl_take_extremum!(i32);
-impl_take_extremum!(i64);
-#[cfg(any(feature = "dtype-decimal", feature = "dtype-i128"))]
-impl_take_extremum!(i128);
-impl_take_extremum!(float: f32);
-impl_take_extremum!(float: f64);
 
 /// Intermediate helper trait so we can have a single generic implementation
 /// This trait will ensure the specific dispatch works without complicating
@@ -512,14 +450,7 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: NativeType
-        + PartialOrd
-        + Num
-        + NumCast
-        + Zero
-        + Bounded
-        + std::iter::Sum<T::Native>
-        + TakeExtremum,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Bounded + std::iter::Sum<T::Native>,
     ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native>,
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
@@ -548,10 +479,12 @@ where
                         take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
-                            |a, b| a.take_min(b),
+                            |a, b| a.min_ignore_nan(b),
                         )
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a.take_min(b))
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| {
+                            a.min_ignore_nan(b)
+                        })
                     }
                 })
             },
@@ -622,10 +555,12 @@ where
                         take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
-                            |a, b| a.take_max(b),
+                            |a, b| a.max_ignore_nan(b),
                         )
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a.take_max(b))
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| {
+                            a.max_ignore_nan(b)
+                        })
                     }
                 })
             },
