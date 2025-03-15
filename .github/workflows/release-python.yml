@@ -75,7 +75,7 @@ jobs:
           args: >
             --manifest-path py-polars/Cargo.toml
             --out dist
-          maturin-version: 1.7.4
+          maturin-version: 1.8.3
 
       - name: Test sdist
         run: |
@@ -289,7 +289,7 @@ jobs:
             --manifest-path py-polars/Cargo.toml
             --out dist
           manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
-          maturin-version: 1.7.4
+          maturin-version: 1.8.3
 
       - name: Test wheel
         # Only test on x86-64 for now as this matches the runner architecture
@@ -335,15 +335,8 @@ jobs:
         uses: mymindstorm/setup-emsdk@v14
         with:
           # This should match the exact version of Emscripten used by Pyodide
-          version: 3.1.58
-
-      - name: Install LLVM
-        # This should match the major version of LLVM expected by Emscripten
-        run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 19
-          echo "EM_LLVM_ROOT=/usr/lib/llvm-19/bin" >> $GITHUB_ENV
+          # UPDATE; set to latest due to breaking build
+          version: latest
 
       - name: Set CFLAGS and RUSTFLAGS for wasm32
         run: |
@@ -360,7 +353,7 @@ jobs:
             --manifest-path py-polars/Cargo.toml
             --interpreter python3.10
             --out wasm-dist
-          maturin-version: 1.7.4
+          maturin-version: 1.8.3
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -369,7 +362,7 @@ jobs:
           path: wasm-dist/*.whl
 
   publish-to-pypi:
-    needs: [create-sdist, build-wheels]
+    needs: [create-sdist, build-wheels, build-wheel-pyodide]
     environment:
       name: release-python
       url: https://pypi.org/project/polars
