@@ -1,3 +1,4 @@
+mod min_max;
 pub mod no_nulls;
 pub mod nulls;
 pub mod quantile_filter;
@@ -10,7 +11,6 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
 use num_traits::{Bounded, Float, NumCast, One, Zero};
 use polars_utils::float::IsFloat;
-use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
