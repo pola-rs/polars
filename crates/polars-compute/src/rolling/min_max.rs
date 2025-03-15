@@ -9,10 +9,12 @@ use super::RollingFnParams;
 use super::no_nulls::RollingAggWindowNoNulls;
 use super::nulls::RollingAggWindowNulls;
 
+// Algorithm: https://cs.stackexchange.com/questions/120915/interview-question-with-arrays-and-consecutive-subintervals/120936#120936
 pub struct MinMaxWindow<'a, T, P> {
     values: &'a [T],
     validity: Option<&'a Bitmap>,
-    // values[monotonic_idxs[i]] < values[monotonic_idxs[i+1]] for all i.
+    // values[monotonic_idxs[i]] is better than values[monotonic_idxs[i+1]] for
+    // all i, as per the policy.
     monotonic_idxs: VecDeque<usize>,
     nonnulls_in_window: usize,
     last_end: usize,
@@ -41,6 +43,7 @@ impl<T: NativeType, P: MinMaxPolicy> MinMaxWindow<'_, T, P> {
     }
 
     fn remove_old_values(&mut self, window_start: usize) {
+        // Remove values which have fallen outside the window start.
         while let Some(head_idx) = self.monotonic_idxs.front() {
             if *head_idx >= window_start {
                 break;
