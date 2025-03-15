@@ -99,6 +99,18 @@ JSON
    DataFrame.write_ndjson
    LazyFrame.sink_ndjson
 
+
+Partition
+~~~~~~~~~
+Sink to disk with differing partitioning strategies.
+
+.. autosummary::
+   :toctree: api/
+
+   PartitionByKey
+   PartitionMaxSize
+
+
 Parquet
 ~~~~~~~
 .. autosummary::
