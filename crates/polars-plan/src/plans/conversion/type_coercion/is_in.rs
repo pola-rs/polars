@@ -55,18 +55,38 @@ pub(super) fn resolve_is_in(
             {
                 return Ok(None);
             }
-            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_left, &type_other)
+
+            accept_type(&type_left, &**other_inner)?;
+            return Ok(None);
         },
+        // TYPES TO CAST.
         // types are equal, cast b
         // all-null can represent anything (and/or empty list), so cast to target dtype
         (_, D::Null) => ae_builder.cast(type_left, CastOptions::NonStrict),
         (D::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
             ae_builder.cast(type_left, CastOptions::NonStrict)
         },
+
+        // TYPES THAT ARE OK.
+        // don't attempt to cast between obviously mismatched types, but
+        // allow integer/float comparison (will use their supertypes).
+        (a, b) => {
+            accept_type(a, b)?;
+            // Inner types are ok, only implode and accept on next iteration.
+            ae_builder
+        },
+    };
+
+    Ok(Some(ae_builder.implode().build_ae()))
+}
+
+fn accept_type(type_left: &DataType, type_other: &DataType) -> PolarsResult<()> {
+    use DataType as D;
+    match (type_left, type_other) {
         #[cfg(feature = "dtype-categorical")]
-        (D::Categorical(_, _) | D::Enum(_, _), D::String) => ae_builder,
+        (D::Categorical(_, _) | D::Enum(_, _), D::String) => Ok(()),
         #[cfg(feature = "dtype-categorical")]
-        (D::String, D::Categorical(_, _) | D::Enum(_, _)) => ae_builder,
+        (D::String, D::Categorical(_, _) | D::Enum(_, _)) => Ok(()),
         #[cfg(feature = "dtype-decimal")]
         (D::Decimal(_, _), _) | (_, D::Decimal(_, _)) => {
             polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)
@@ -75,43 +95,41 @@ pub(super) fn resolve_is_in(
         // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
         (D::Datetime(lhs_unit, _), D::Datetime(rhs_unit, _)) => {
             if lhs_unit <= rhs_unit {
-                ae_builder
+                Ok(())
             } else {
                 polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit)
             }
         },
         (D::Duration(lhs_unit), D::Duration(rhs_unit)) => {
             if lhs_unit <= rhs_unit {
-                ae_builder
+                Ok(())
             } else {
                 polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
             }
         },
         #[cfg(feature = "dtype-array")]
         (_, D::Array(other_inner, _)) => {
-            if other_inner.as_ref() == &type_left
-                || (type_left == D::Null)
+            if other_inner.as_ref() == type_left
+                || (type_left == &D::Null)
                 || (other_inner.as_ref() == &D::Null)
                 || (other_inner.as_ref().is_primitive_numeric() && type_left.is_primitive_numeric())
             {
-                ae_builder
+                return Ok(());
             } else {
                 polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_left, &type_other)
             }
         },
         #[cfg(feature = "dtype-struct")]
-        (D::Struct(_), _) | (_, D::Struct(_)) => return Ok(None),
+        (D::Struct(_), _) | (_, D::Struct(_)) => Ok(()),
 
         // don't attempt to cast between obviously mismatched types, but
         // allow integer/float comparison (will use their supertypes).
         (a, b) => {
             if (a.is_primitive_numeric() && b.is_primitive_numeric()) || (a == &D::Null) {
-                ae_builder
+                Ok(())
             } else {
                 polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)
             }
         },
-    };
-
-    Ok(Some(ae_builder.implode().build_ae()))
+    }
 }
