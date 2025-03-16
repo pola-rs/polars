@@ -580,6 +580,8 @@ def test_convert_pandas_timezone_info() -> None:
                 # timezone.
                 assert df_ts.tzinfo == ZoneInfo("UTC")
             else:
+                assert df_ts.tzinfo is not None
+                assert ts.tzinfo is not None
                 assert df_ts.tzinfo.utcoffset(df_ts) == ts.tzinfo.utcoffset(ts), (
                     df_ts,
                     ts,
