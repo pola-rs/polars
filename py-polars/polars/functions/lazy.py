@@ -1643,7 +1643,10 @@ def collect_all(
     """
     Collect multiple LazyFrames at the same time.
 
-    This runs all the computation graphs in parallel on the Polars threadpool.
+    This can run all the computation graphs in parallel or combined.
+
+    Common Subplan Elimination is applied on the combined plan, meaning
+    that diverging queries will run only once.
 
     Parameters
     ----------
@@ -1686,6 +1689,7 @@ def collect_all(
     -------
     list of DataFrames
         The collected DataFrames, returned in the same order as the input LazyFrames.
+
     """
     optflags = OptFlags(
         _type_coercion=type_coercion,

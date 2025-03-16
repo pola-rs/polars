@@ -9,5 +9,5 @@ insight in the streaming capabilities.
 - [Schemas](schemas.md)
 - [Query plan](query-plan.md)
 - [Execution](execution.md)
-- [Streaming](streaming.md)
+- [Sources & Sinks](sources_sinks.md)
 - [GPU Support](gpu.md)
