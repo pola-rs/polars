@@ -161,6 +161,7 @@ from polars.interchange import CompatLevel
 from polars.io import (
     PartitionByKey,
     PartitionMaxSize,
+    PartitionParted,
     defer,
     read_avro,
     read_clipboard,
@@ -265,6 +266,7 @@ __all__ = [
     "defer",
     "PartitionByKey",
     "PartitionMaxSize",
+    "PartitionParted",
     "read_avro",
     "read_clipboard",
     "read_csv",

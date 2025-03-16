@@ -3,11 +3,13 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
-use polars_core::prelude::PlHashMap;
+use polars_core::prelude::{Column, PlHashMap};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
+use polars_io::utils::URL_ENCODE_CHAR_SET;
 use polars_plan::dsl::{FileType, SinkOptions};
+use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
@@ -19,6 +21,7 @@ use crate::nodes::{Morsel, PhaseOutcome, TaskPriority};
 
 pub mod by_key;
 pub mod max_size;
+pub mod parted;
 
 pub type CreateNewSinkFn =
     Arc<dyn Send + Sync + Fn(SchemaRef, PathBuf) -> PolarsResult<Box<dyn SinkNode + Send + Sync>>>;
@@ -174,4 +177,20 @@ async fn open_new_sink(
     }
 
     Ok(Some((join_handles, sender)))
+}
+
+fn insert_key_value_into_format_args(
+    args: &mut PlHashMap<PlSmallStr, PlSmallStr>,
+    keys: &[Column],
+) {
+    for (i, key) in keys.iter().enumerate() {
+        *args
+            .get_mut(&format_pl_smallstr!("key[{i}].value"))
+            .unwrap() = percent_encoding::percent_encode(
+            key.get(0).unwrap().to_string().as_bytes(),
+            URL_ENCODE_CHAR_SET,
+        )
+        .to_string()
+        .into();
+    }
 }

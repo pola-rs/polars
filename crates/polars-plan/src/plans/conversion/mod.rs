@@ -283,6 +283,13 @@ impl IR {
                             PartitionVariantIR::MaxSize(max_size) => {
                                 PartitionVariant::MaxSize(max_size)
                             },
+                            PartitionVariantIR::Parted {
+                                key_exprs,
+                                include_key,
+                            } => PartitionVariant::Parted {
+                                key_exprs: expr_irs_to_exprs(key_exprs, expr_arena),
+                                include_key,
+                            },
                             PartitionVariantIR::ByKey {
                                 key_exprs,
                                 include_key,
