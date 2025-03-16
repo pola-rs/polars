@@ -35,6 +35,7 @@ impl FunctionExpr {
             Business(func) => match func {
                 BusinessFunction::BusinessDayCount { .. } => mapper.with_dtype(DataType::Int32),
                 BusinessFunction::AddBusinessDay { .. } => mapper.with_same_dtype(),
+                BusinessFunction::IsBusinessDay { .. } => mapper.with_dtype(DataType::Boolean),
             },
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),

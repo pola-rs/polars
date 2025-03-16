@@ -885,6 +885,96 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_year())
 
+    def is_business_day(
+        self,
+        *,
+        week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
+        holidays: Iterable[dt.date] = (),
+    ) -> Expr:
+        """
+        Determine whether each day lands on a business day.
+
+        Parameters
+        ----------
+        week_mask
+            Which days of the week to count. The default is Monday to Friday.
+            If you wanted to count only Monday to Thursday, you would pass
+            `(True, True, True, True, False, False, False)`.
+        holidays
+            Holidays to exclude from the count. The Python package
+            `python-holidays <https://github.com/vacanza/python-holidays>`_
+            may come in handy here. You can install it with ``pip install holidays``,
+            and then, to get all Dutch holidays for years 2020-2024:
+
+            .. code-block:: python
+
+                import holidays
+
+                my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
+
+            and pass `holidays=my_holidays` when you call `business_day_count`.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame({"start": [date(2020, 1, 3), date(2020, 1, 5)]})
+        >>> df.with_columns(is_business_day=pl.col("start").dt.is_business_day())
+        shape: (2, 2)
+        ┌────────────┬─────────────────┐
+        │ start      ┆ is_business_day │
+        │ ---        ┆ ---             │
+        │ date       ┆ bool            │
+        ╞════════════╪═════════════════╡
+        │ 2020-01-03 ┆ true            │
+        │ 2020-01-05 ┆ false           │
+        └────────────┴─────────────────┘
+
+        You can pass a custom weekend - for example, if you only take Sunday off:
+
+        >>> week_mask = (True, True, True, True, True, True, False)
+        >>> df.with_columns(
+        ...     is_business_day=pl.col("start").dt.is_business_day(week_mask=week_mask)
+        ... )
+        shape: (2, 2)
+        ┌────────────┬─────────────────┐
+        │ start      ┆ is_business_day │
+        │ ---        ┆ ---             │
+        │ date       ┆ bool            │
+        ╞════════════╪═════════════════╡
+        │ 2020-01-03 ┆ true            │
+        │ 2020-01-05 ┆ false           │
+        └────────────┴─────────────────┘
+
+        You can also pass a list of holidays:
+
+        >>> from datetime import date
+        >>> holidays = [date(2020, 1, 3), date(2020, 1, 6)]
+        >>> df.with_columns(
+        ...     is_business_day=pl.col("start").dt.is_business_day(holidays=holidays)
+        ... )
+        shape: (2, 2)
+        ┌────────────┬─────────────────┐
+        │ start      ┆ is_business_day │
+        │ ---        ┆ ---             │
+        │ date       ┆ bool            │
+        ╞════════════╪═════════════════╡
+        │ 2020-01-03 ┆ false           │
+        │ 2020-01-05 ┆ false           │
+        └────────────┴─────────────────┘
+        """
+        unix_epoch = dt.date(1970, 1, 1)
+        return wrap_expr(
+            self._pyexpr.dt_is_business_day(
+                week_mask,
+                [(holiday - unix_epoch).days for holiday in holidays],
+            )
+        )
+
     def is_leap_year(self) -> Expr:
         """
         Determine whether the year of the underlying date is a leap year.
