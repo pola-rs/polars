@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+import pytz
 from hypothesis import given
 
 import polars as pl
@@ -555,11 +556,34 @@ def test_read_utc_times_parquet() -> None:
 
 
 def test_convert_pandas_timezone_info() -> None:
-    ts = pd.Timestamp("20200101 00:00").tz_localize("America/New_York")
-    df = pl.DataFrame({"date": [ts]})
-    assert df["date"][0] == datetime(
-        2020, 1, 1, 0, 0, tzinfo=ZoneInfo("America/New_York")
-    )
+    # Pandas support all of the following timezone and the pandas parsing behavior is
+    # - timezone name: pytz.timezone on <=2.x and ZoneInfo on 3.x.
+    # - timezone offset: datetime.timedelta.
+    # pytz.timezone.
+    ts1 = pd.Timestamp("20200101 00:00", tz=pytz.timezone("America/New_York"))
+    # ZoneInfo.
+    ts2 = pd.Timestamp("20200101 00:00", tz=ZoneInfo("America/New_York"))
+    # pytz.FixedOffset
+    ts3 = pd.Timestamp("20200101 00:00", tz=pytz.FixedOffset(-300))
+    # datetime.timedelta.
+    ts4 = pd.Timestamp("20200101 00:00", tz=timezone(timedelta(days=-1, seconds=68400)))
+
+    for ts in (ts1, ts2, ts3, ts4):
+        df1 = pl.DataFrame({"date": [ts]})
+        df2 = pl.select(date=pl.lit(ts))
+        for df in (df1, df2):
+            df_ts = df["date"][0]
+            assert df_ts == ts, (df_ts, ts)
+            if ts is ts3 or ts is ts4:
+                # TODO: polars currently doesn't retain FixedOffset timezone. They will
+                # be converted to UTC. Remove this branch once we support FixedOffset
+                # timezone.
+                assert df_ts.tzinfo == ZoneInfo("UTC")
+            else:
+                assert df_ts.tzinfo.utcoffset(df_ts) == ts.tzinfo.utcoffset(ts), (
+                    df_ts,
+                    ts,
+                )
 
 
 def test_asof_join_tolerance_grouper() -> None:

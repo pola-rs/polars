@@ -90,7 +90,11 @@ def lit(
         else:
             # value has time zone, but dtype does not: keep value time zone
             if dtype_tz is None:
-                if isinstance(value_tz, ZoneInfo):
+                if isinstance(value_tz, ZoneInfo) or getattr(
+                    value_tz,
+                    "zone",  # handle pytz named timezone.
+                    None,
+                ):
                     # named timezone
                     tz = str(value_tz)
                 else:
