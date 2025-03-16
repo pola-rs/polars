@@ -319,7 +319,7 @@ fn add_business_days_impl(
 /// - `holidays`: timestamps that are holidays. Must be provided as i32, i.e. the number of
 ///   days since the UNIX epoch.
 pub fn is_business_day(
-    start: &Series,
+    dates: &Series,
     week_mask: [bool; 7],
     holidays: &[i32],
 ) -> PolarsResult<Series> {
@@ -327,28 +327,28 @@ pub fn is_business_day(
         polars_bail!(ComputeError:"`week_mask` must have at least one business day");
     }
 
-    match start.dtype() {
+    match dates.dtype() {
         DataType::Date => {},
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(_, None) => {
-            return is_business_day(&start.cast(&DataType::Date)?, week_mask, holidays);
+            return is_business_day(&dates.cast(&DataType::Date)?, week_mask, holidays);
         },
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => {
-            let start_naive = replace_time_zone(
-                start.datetime().unwrap(),
+            let dates_local = replace_time_zone(
+                dates.datetime().unwrap(),
                 None,
                 &StringChunked::from_iter(std::iter::once("raise")),
                 NonExistent::Raise,
             )?;
-            return is_business_day(&start_naive.cast(&DataType::Date)?, week_mask, holidays);
+            return is_business_day(&dates_local.cast(&DataType::Date)?, week_mask, holidays);
         },
-        _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", start.dtype()),
+        _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", dates.dtype()),
     }
 
     // Sort now so we can use `binary_search` in the hot for-loop.
     let holidays = normalise_holidays(holidays, &week_mask);
-    let dates = start.date()?;
+    let dates = dates.date()?;
     let out: BooleanChunked = dates.apply_nonnull_values_generic(DataType::Boolean, |date| {
         let day_of_week = get_day_of_week(date);
         // SAFETY: week_mask is length 7, day_of_week is between 0 and 6

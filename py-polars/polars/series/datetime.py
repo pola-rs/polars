@@ -68,7 +68,7 @@ class DateTimeNameSpace:
 
                 my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
 
-            and pass `holidays=my_holidays` when you call `business_day_count`.
+            and pass `holidays=my_holidays` when you call `add_business_days`.
         roll
             What to do when the start date lands on a non-business day. Options are:
 
@@ -501,7 +501,7 @@ class DateTimeNameSpace:
 
                 my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
 
-            and pass `holidays=my_holidays` when you call `business_day_count`.
+            and pass `holidays=my_holidays` when you call `is_business_day`.
 
         Returns
         -------
