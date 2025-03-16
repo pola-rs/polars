@@ -153,11 +153,13 @@ fn repeat_by_struct(ca: &StructChunked, by: &IdxCa) -> PolarsResult<ListChunked>
 }
 
 fn repeat_by_generic_inner<T: PolarsDataType>(ca: &ChunkedArray<T>, by: &IdxCa) -> ListChunked {
+    let mut builder = make_builder(&ca.dtype().to_arrow(CompatLevel::newest()));
     arity::binary(ca, by, |arr, by| {
-        let output_length = by.iter().flatten().map(|x| *x as usize).sum();
-        let mut builder = make_builder(arr.dtype());
-        let mut validity = BitmapBuilder::with_capacity(output_length);
-        let mut offsets = Offsets::<i64>::with_capacity(output_length);
+        let arr_length = by.iter().flatten().map(|x| *x as usize).sum();
+        builder.reserve(arr_length);
+
+        let mut validity = BitmapBuilder::with_capacity(by.len());
+        let mut offsets = Offsets::<i64>::with_capacity(by.len());
         for (idx, n_repeat) in by.iter().enumerate() {
             validity.push(n_repeat.is_some());
             if let Some(repeats) = n_repeat {
@@ -173,7 +175,8 @@ fn repeat_by_generic_inner<T: PolarsDataType>(ca: &ChunkedArray<T>, by: &IdxCa) 
                 offsets.push_null();
             }
         }
-        let repeated_values = builder.freeze();
+
+        let repeated_values = builder.freeze_reset();
         LargeListArray::new(
             ListArray::<i64>::default_datatype(arr.dtype().clone()),
             offsets.into(),
