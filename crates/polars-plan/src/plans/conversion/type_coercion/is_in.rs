@@ -11,9 +11,10 @@ pub(super) fn resolve_is_in(
     };
     let input_schema = get_schema(lp_arena, lp_node);
     let other_e = &input[1];
+    let left_node = input[0].node();
     let (_, type_left) = unpack!(get_aexpr_and_type(
         expr_arena,
-        input[0].node(),
+        left_node,
         &input_schema
     ));
     let (_, type_other) = unpack!(get_aexpr_and_type(
@@ -66,6 +67,21 @@ pub(super) fn resolve_is_in(
         (D::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
             ae_builder.cast(type_left, CastOptions::NonStrict)
         },
+        (a, b) if a.is_primitive_numeric() && b.is_primitive_numeric() => {
+            let st = get_supertype(a, b).ok_or_else(|| 
+            polars_err!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left))?;
+            dbg!(&st);
+
+            let other = ae_builder.cast(st.clone(), CastOptions::NonStrict).implode().build_node();
+            let left = AExprBuilder::new(left_node, expr_arena).cast(st, CastOptions::NonStrict).build_node();
+
+            let AExpr::Function { input, .. } = expr_arena.get_mut(node) else {
+                unreachable!()
+            };
+            input[0].set_node(left);
+            input[1].set_node(other);
+            return Ok(None)
+        },
 
         // TYPES THAT ARE OK.
         // don't attempt to cast between obviously mismatched types, but
@@ -80,7 +96,9 @@ pub(super) fn resolve_is_in(
     Ok(Some(ae_builder.implode().build_ae()))
 }
 
+
 fn accept_type(type_left: &DataType, type_other: &DataType) -> PolarsResult<()> {
+
     use DataType as D;
     match (type_left, type_other) {
         #[cfg(feature = "dtype-categorical")]
@@ -124,12 +142,8 @@ fn accept_type(type_left: &DataType, type_other: &DataType) -> PolarsResult<()> 
 
         // don't attempt to cast between obviously mismatched types, but
         // allow integer/float comparison (will use their supertypes).
-        (a, b) => {
-            if (a.is_primitive_numeric() && b.is_primitive_numeric()) || (a == &D::Null) {
-                Ok(())
-            } else {
-                polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)
-            }
+        _ => {
+            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)
         },
     }
 }

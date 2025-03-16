@@ -148,7 +148,7 @@ where
             if &st != ca_in.dtype() || **dt != st {
                 let left = ca_in.cast(&st)?;
                 let right = other.cast(&DataType::List(Box::new(st)))?;
-                return is_in(&left, &right, nulls_equal);
+                return is_in_dispatch(&left, &right, nulls_equal);
             };
             is_in_numeric_list(ca_in, other)
         },
@@ -158,7 +158,7 @@ where
             if &st != ca_in.dtype() || **dt != st {
                 let left = ca_in.cast(&st)?;
                 let right = other.cast(&DataType::Array(Box::new(st), *width))?;
-                return is_in(&left, &right, nulls_equal);
+                return is_in_dispatch(&left, &right, nulls_equal);
             };
             is_in_numeric_array(ca_in, other)
         },
@@ -168,7 +168,7 @@ where
                 let st = try_get_supertype(ca_in.dtype(), other.dtype())?;
                 let left = ca_in.cast(&st)?;
                 let right = other.cast(&st)?;
-                return is_in(&left, &right, nulls_equal);
+                return is_in_dispatch(&left, &right, nulls_equal);
             }
             is_in_helper(ca_in, other, nulls_equal)
         },
@@ -606,7 +606,7 @@ fn is_in_struct(
                     .map(|(name, st)| Field::new(name, st.clone()))
                     .collect();
                 let other_super = other.cast(&DataType::Struct(other_supertype_fields))?;
-                return is_in(&ca_in_super, &other_super, nulls_equal);
+                return is_in_dispatch(&ca_in_super, &other_super, nulls_equal);
             }
 
             if ca_in.null_count() > 0 {
@@ -803,13 +803,7 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
     }
 }
 
-pub fn is_in(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<BooleanChunked> {
-    let other_dtype = other.dtype();
-    debug_assert!(other_dtype.is_list());
-    let other = other.explode().unwrap();
-    let other = &other;
-    dbg!(s, other);
-
+fn is_in_dispatch(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<BooleanChunked> {
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_, _) | DataType::Enum(_, _) => {
@@ -853,4 +847,13 @@ pub fn is_in(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Bool
         },
         dt => polars_bail!(opq = is_in, dt),
     }
+}
+
+pub fn is_in(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<BooleanChunked> {
+    let other_dtype = other.dtype();
+    debug_assert!(other_dtype.is_list());
+    let other = other.explode().unwrap();
+    let other = &other;
+    dbg!(s, other);
+    is_in_dispatch(s, other, nulls_equal)
 }
