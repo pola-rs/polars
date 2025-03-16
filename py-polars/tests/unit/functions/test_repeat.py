@@ -196,8 +196,8 @@ def test_repeat_by_logical_dtype() -> None:
 def test_repeat_by_list() -> None:
     df = pl.DataFrame(
         {
-            "repeat": [1, 2, 3],
-            "value": [None, [1, 2, 3], [4, None]],
+            "repeat": [1, 2, 3, None],
+            "value": [None, [1, 2, 3], [4, None], [1, 2]],
         },
         schema={"repeat": pl.UInt32, "value": pl.List(pl.UInt8)},
     )
@@ -209,6 +209,7 @@ def test_repeat_by_list() -> None:
                 [None],
                 [[1, 2, 3], [1, 2, 3]],
                 [[4, None], [4, None], [4, None]],
+                None,
             ],
         },
         schema={"value": pl.List(pl.List(pl.UInt8))},
