@@ -133,6 +133,7 @@ fn repeat_by_list(ca: &ListChunked, by: &IdxCa) -> PolarsResult<ListChunked> {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
 fn repeat_by_struct(ca: &StructChunked, by: &IdxCa) -> PolarsResult<ListChunked> {
     check_lengths(ca.len(), by.len())?;
 
@@ -200,6 +201,7 @@ pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
             })
         },
         List(_) => repeat_by_list(s_phys.list().unwrap(), by),
+        #[cfg(feature = "dtype-struct")]
         Struct(_) => repeat_by_struct(s_phys.struct_().unwrap(), by),
         _ => polars_bail!(opq = repeat_by, s.dtype()),
     };
