@@ -49,7 +49,6 @@ def assert_index_of(
         value = pl.lit(value, dtype=series.dtype)
 
     # Eager API:
-    print(series.index_of(value), expected_index, value, series)
     assert series.index_of(value) == expected_index
     # Lazy API:
     assert pl.LazyFrame({"series": series}).select(
