@@ -678,15 +678,19 @@ impl PyLazyFrame {
         engine: Wrap<Engine>,
         lambda_post_opt: Option<PyObject>,
     ) -> PyResult<PyDataFrame> {
+        let has_lambda = lambda_post_opt
+            .as_ref()
+            .is_some_and(|lambda| !lambda.is_none(py));
         py.enter_polars_df(|| {
             let ldf = self.ldf.clone();
-            if let Some(lambda) = lambda_post_opt {
-                ldf._collect_post_opt(|root, lp_arena, expr_arena, _| {
-                    post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
-                })
-            } else {
-                ldf.collect_with_engine(engine.0)
+            if has_lambda {
+                if let Some(lambda) = lambda_post_opt {
+                    return ldf._collect_post_opt(|root, lp_arena, expr_arena, _| {
+                        post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
+                    });
+                }
             }
+            ldf.collect_with_engine(engine.0)
         })
     }
 
