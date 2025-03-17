@@ -10,7 +10,6 @@ use polars_core::prelude::{Column, PlHashMap, PlHashSet, PlIndexMap, row_encode}
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::buffer::Buffer;
 use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
 use polars_io::utils::URL_ENCODE_CHAR_SET;
 use polars_plan::dsl::SinkOptions;
 use polars_utils::format_pl_smallstr;
@@ -19,6 +18,7 @@ use polars_utils::priority::Priority;
 
 use super::CreateNewSinkFn;
 use crate::async_executor::{AbortOnDropHandle, spawn};
+use crate::execute::StreamingExecutionState;
 use crate::morsel::SourceToken;
 use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode, parallelize_receive_task};
@@ -117,15 +117,14 @@ impl SinkNode for PartitionByKeySinkNode {
 
     fn spawn_sink(
         &mut self,
-        num_pipelines: usize,
         recv_port_rx: crate::async_primitives::connector::Receiver<(PhaseOutcome, SinkInputPort)>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<polars_error::PolarsResult<()>>>,
     ) {
         let (pass_rxs, mut io_rx) = parallelize_receive_task::<Linearized>(
             join_handles,
             recv_port_rx,
-            num_pipelines,
+            state.num_pipelines,
             self.sink_options.maintain_order,
         );
 
@@ -191,6 +190,7 @@ impl SinkNode for PartitionByKeySinkNode {
             })
         }));
 
+        let state = state.clone();
         let sink_input_schema = self.sink_input_schema.clone();
         let max_open_partitions = self.max_open_partitions;
         let key_cols = self.key_cols.clone();
@@ -246,7 +246,7 @@ impl SinkNode for PartitionByKeySinkNode {
                                     part_idx += 1;
                                     insert_key_value_into_format_args(&mut format_args, &keys);
 
-                                    let result = open_new_sink(path_f_string.as_path(), &create_new_sink, &format_args, sink_input_schema.clone(), num_pipelines, "by-key", verbose).await?;
+                                    let result = open_new_sink(path_f_string.as_path(), &create_new_sink, &format_args, sink_input_schema.clone(), "by-key", verbose, &state).await?;
                                     let Some((join_handles, sender)) = result else {
                                         return Ok(());
                                     };
@@ -293,7 +293,7 @@ impl SinkNode for PartitionByKeySinkNode {
                         part_idx += 1;
                         insert_key_value_into_format_args(&mut format_args, &keys);
 
-                        let result = open_new_sink(path_f_string.as_path(), &create_new_sink, &format_args, sink_input_schema.clone(), num_pipelines, "by-key", verbose).await?;
+                        let result = open_new_sink(path_f_string.as_path(), &create_new_sink, &format_args, sink_input_schema.clone(), "by-key", verbose, &state).await?;
                         let Some((mut join_handles, mut sender)) = result else {
                             return Ok(());
                         };

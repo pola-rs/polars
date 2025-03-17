@@ -136,13 +136,12 @@ impl SourceNode for ParquetSourceNode {
 
     fn spawn_source(
         &mut self,
-        num_pipelines: usize,
         mut output_recv: Receiver<SourceOutput>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
-        let (mut send_to, recv_from) = (0..num_pipelines)
+        let (mut send_to, recv_from) = (0..state.num_pipelines)
             .map(|_| connector())
             .collect::<(Vec<_>, Vec<_>)>();
 
@@ -155,7 +154,7 @@ impl SourceNode for ParquetSourceNode {
                 .unwrap_or(16_777_216);
 
             Config {
-                num_pipelines,
+                num_pipelines: state.num_pipelines,
                 row_group_prefetch_size,
                 min_values_per_thread,
             }

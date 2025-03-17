@@ -90,20 +90,19 @@ impl SourceNode for CsvSourceNode {
 
     fn spawn_source(
         &mut self,
-        num_pipelines: usize,
         mut output_recv: Receiver<SourceOutput>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
-        let (mut send_to, recv_from) = (0..num_pipelines)
+        let (mut send_to, recv_from) = (0..state.num_pipelines)
             .map(|_| connector::<MorselOutput>())
             .collect::<(Vec<_>, Vec<_>)>();
 
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_right());
 
         let (line_batch_receivers, chunk_reader, line_batch_source_task_handle) =
-            self.init_line_batch_source(num_pipelines, unrestricted_row_count);
+            self.init_line_batch_source(state.num_pipelines, unrestricted_row_count);
 
         join_handles.extend(line_batch_receivers.into_iter().zip(recv_from).map(
             |(mut line_batch_rx, mut recv_from)| {

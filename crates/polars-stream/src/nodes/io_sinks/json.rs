@@ -2,7 +2,6 @@ use std::cmp::Reverse;
 use std::path::PathBuf;
 
 use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
 use polars_io::json::BatchedWriter;
 use polars_io::utils::file::AsyncWriteable;
@@ -12,6 +11,7 @@ use polars_utils::priority::Priority;
 use super::{SinkInputPort, SinkNode};
 use crate::async_executor::spawn;
 use crate::async_primitives::connector::Receiver;
+use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::parallelize_receive_task;
 use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
 
@@ -48,15 +48,14 @@ impl SinkNode for NDJsonSinkNode {
 
     fn spawn_sink(
         &mut self,
-        num_pipelines: usize,
         recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         let (pass_rxs, mut io_rx) = parallelize_receive_task(
             join_handles,
             recv_port_rx,
-            num_pipelines,
+            state.num_pipelines,
             self.sink_options.maintain_order,
         );
 

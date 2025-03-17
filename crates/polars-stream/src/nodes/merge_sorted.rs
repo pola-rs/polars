@@ -174,7 +174,12 @@ impl ComputeNode for MergeSortedNode {
         "merge_sorted"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert_eq!(send.len(), 1);
         assert_eq!(recv.len(), 2);
 
@@ -226,7 +231,7 @@ impl ComputeNode for MergeSortedNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert_eq!(recv_ports.len(), 2);
