@@ -3538,6 +3538,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-testing"
+version = "0.46.0"
+dependencies = [
+ "polars-core",
+ "polars-ops",
+]
+
+[[package]]
 name = "polars-time"
 version = "0.46.0"
 dependencies = [
