@@ -45,6 +45,7 @@ from polars.functions.lazy import (
     cum_reduce,
     element,
     exclude,
+    explain_all,
     field,
     first,
     fold,
@@ -140,6 +141,7 @@ __all__ = [
     "datetime",  # named datetime_, see import above
     "duration",
     "exclude",
+    "explain_all",
     "field",
     "first",
     "fold",

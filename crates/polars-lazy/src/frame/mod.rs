@@ -823,6 +823,15 @@ impl LazyFrame {
         }
     }
 
+    pub fn explain_all(plans: Vec<DslPlan>, opt_state: OptFlags) -> PolarsResult<String> {
+        let sink_multiple = LazyFrame {
+            logical_plan: DslPlan::SinkMultiple { inputs: plans },
+            opt_state,
+            cached_arena: Default::default(),
+        };
+        sink_multiple.explain(true)
+    }
+
     pub fn collect_all_with_engine(
         plans: Vec<DslPlan>,
         mut engine: Engine,
@@ -844,7 +853,7 @@ impl LazyFrame {
         let mut sink_multiple = LazyFrame {
             logical_plan: DslPlan::SinkMultiple { inputs: plans },
             opt_state,
-            cached_arena: Arc::new(Mutex::new(None)),
+            cached_arena: Default::default(),
         };
 
         #[cfg(feature = "new_streaming")]
@@ -868,7 +877,7 @@ impl LazyFrame {
             ),
             _ => {},
         }
-        let mut alp_plan = sink_multiple.clone().to_alp_optimized()?;
+        let mut alp_plan = sink_multiple.to_alp_optimized()?;
 
         if engine == Engine::Streaming {
             feature_gated!("new_streaming", {
