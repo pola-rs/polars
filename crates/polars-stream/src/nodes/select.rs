@@ -27,7 +27,12 @@ impl ComputeNode for SelectNode {
         "select"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
         recv.swap_with_slice(send);
         Ok(())
@@ -38,7 +43,7 @@ impl ComputeNode for SelectNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);
@@ -52,7 +57,7 @@ impl ComputeNode for SelectNode {
                     let (df, seq, source_token, consume_token) = morsel.into_inner();
                     let mut selected = Vec::new();
                     for selector in slf.selectors.iter() {
-                        let s = selector.evaluate(&df, state).await?;
+                        let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;
                         selected.push(s.into_column());
                     }
 

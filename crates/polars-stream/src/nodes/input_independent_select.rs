@@ -10,20 +10,14 @@ use crate::expression::StreamExpr;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
 pub enum InputIndependentSelectNode {
-    ToSelect {
-        selectors: Vec<StreamExpr>,
-        num_pipelines: usize,
-    },
+    ToSelect { selectors: Vec<StreamExpr> },
     Source(InMemorySourceNode),
     Done,
 }
 
 impl InputIndependentSelectNode {
     pub fn new(selectors: Vec<StreamExpr>) -> Self {
-        Self::ToSelect {
-            selectors,
-            num_pipelines: 0,
-        }
+        Self::ToSelect { selectors }
     }
 }
 
@@ -32,14 +26,12 @@ impl ComputeNode for InputIndependentSelectNode {
         "input_independent_select"
     }
 
-    fn initialize(&mut self, num_pipelines_: usize) {
-        match self {
-            Self::ToSelect { num_pipelines, .. } => *num_pipelines = num_pipelines_,
-            _ => unreachable!(),
-        }
-    }
-
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(recv.is_empty() && send.len() == 1);
         if send[0] == PortState::Done {
             *self = Self::Done;
@@ -47,11 +39,7 @@ impl ComputeNode for InputIndependentSelectNode {
         }
 
         POOL.install(|| {
-            if let Self::ToSelect {
-                selectors,
-                num_pipelines,
-            } = self
-            {
+            if let Self::ToSelect { selectors } = self {
                 let empty_df = DataFrame::empty();
                 let state = ExecutionState::new();
                 let selected: Result<Vec<_>, _> = selectors
@@ -62,8 +50,7 @@ impl ComputeNode for InputIndependentSelectNode {
                     })
                     .collect();
                 let ret = DataFrame::new_with_broadcast(selected?)?;
-                let mut src_node = InMemorySourceNode::new(Arc::new(ret), MorselSeq::default());
-                src_node.initialize(*num_pipelines);
+                let src_node = InMemorySourceNode::new(Arc::new(ret), MorselSeq::default());
                 *self = InputIndependentSelectNode::Source(src_node);
             }
             PolarsResult::Ok(())
@@ -71,7 +58,7 @@ impl ComputeNode for InputIndependentSelectNode {
 
         match self {
             Self::ToSelect { .. } => unreachable!(),
-            Self::Source(src) => src.update_state(recv, send),
+            Self::Source(src) => src.update_state(recv, send, state),
             Self::Done => {
                 send[0] = PortState::Done;
                 Ok(())
@@ -84,7 +71,7 @@ impl ComputeNode for InputIndependentSelectNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.is_empty() && send_ports.len() == 1);

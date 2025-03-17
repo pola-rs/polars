@@ -6,7 +6,6 @@ use std::sync::Mutex;
 use polars_core::prelude::{ArrowSchema, CompatLevel};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::write::BatchedWriter;
 use polars_io::prelude::{ParquetWriteOptions, get_encodings};
@@ -29,6 +28,7 @@ use crate::async_executor::spawn;
 use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
+use crate::execute::StreamingExecutionState;
 use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
 
 pub struct ParquetSinkNode {
@@ -88,17 +88,16 @@ impl SinkNode for ParquetSinkNode {
 
     fn spawn_sink(
         &mut self,
-        num_pipelines: usize,
         recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         // Buffer task -> Encode tasks
         let (dist_tx, dist_rxs) =
-            distributor_channel(num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
+            distributor_channel(state.num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
         // Encode tasks -> Collect task
         let (mut lin_rx, lin_txs) =
-            Linearizer::new(num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
+            Linearizer::new(state.num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
         // Collect task -> IO task
         let (mut io_tx, mut io_rx) = connector::<Vec<Vec<CompressedPage>>>();
 

@@ -141,7 +141,12 @@ impl ComputeNode for ZipNode {
         "zip"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(send.len() == 1);
         assert!(recv.len() == self.input_heads.len());
 
@@ -207,7 +212,7 @@ impl ComputeNode for ZipNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(send_ports.len() == 1);

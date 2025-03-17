@@ -14,7 +14,6 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_bail};
-use polars_expr::state::ExecutionState;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
@@ -31,6 +30,7 @@ use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::execute::StreamingExecutionState;
 use crate::morsel::SourceToken;
 use crate::nodes::io_sources::SourceOutputPort;
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
@@ -471,15 +471,15 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
     fn spawn_source(
         &mut self,
-        num_pipelines: usize,
         mut send_port_recv: Receiver<SourceOutput>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
         assert!(unrestricted_row_count.is_none());
 
-        let max_concurrent_scans = max_concurrent_scans(num_pipelines);
+        let state = state.clone();
+        let max_concurrent_scans = max_concurrent_scans(state.num_pipelines);
         let sources = self.sources.clone();
         let num_concurrent_scans = max_concurrent_scans.min(sources.len());
         let read_options = self.read_options.clone();
@@ -691,6 +691,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
             join_handles.extend(si_send.into_iter().zip(slice_tx).enumerate().map(
                 |(mut i, (mut si_send, mut slice_tx))| {
+                    let state = state.clone();
                     let sources = sources.clone();
                     let hive_parts = hive_parts.clone();
                     let include_file_paths = include_file_paths.clone();
@@ -704,7 +705,6 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                     let skipable_file_mask = skipable_file_mask.clone();
 
                     spawn(TaskPriority::High, async move {
-                        let state = ExecutionState::new();
                         let mut join_handles = Vec::new();
 
                         // Handling of slices
@@ -893,7 +893,6 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                             source.with_projection(Some(&source_projection));
                             source.spawn_source(
-                                num_pipelines,
                                 output_recv,
                                 &state,
                                 &mut join_handles,
@@ -906,7 +905,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             loop {
                                 let (tx, rx) = if source.is_source_output_parallel(true) {
                                     let (tx, rx) =
-                                        (0..num_pipelines)
+                                        (0..state.num_pipelines)
                                             .map(|_| connector())
                                             .collect::<(Vec<_>, Vec<_>)>();
                                     (SourceOutputPort::Parallel(tx), SourceInput::Parallel(rx))
@@ -1050,7 +1049,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     SourceInput::Serial(rx) => rx,
                                     SourceInput::Parallel(rxs) => {
                                         let (mut tx, rx) = connector();
-                                        let (mut lin_rx, lin_txs) = Linearizer::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
+                                        let (mut lin_rx, lin_txs) = Linearizer::new(state.num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
 
                                         linearizer_tasks.extend(rxs.into_iter().zip(lin_txs).map(|(mut rx, mut lin_tx)|
                                             AbortOnDropHandle::new(spawn(TaskPriority::High, async move {

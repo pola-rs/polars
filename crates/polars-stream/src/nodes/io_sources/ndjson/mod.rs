@@ -81,9 +81,8 @@ impl SourceNode for NDJsonSourceNode {
 
     fn spawn_source(
         &mut self,
-        num_pipelines: usize,
         mut output_recv: Receiver<SourceOutput>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
@@ -160,7 +159,7 @@ impl SourceNode for NDJsonSourceNode {
                 global_bytes.len()
             };
 
-            let chunk_size = n_bytes_to_split.div_ceil(16 * num_pipelines);
+            let chunk_size = n_bytes_to_split.div_ceil(16 * state.num_pipelines);
 
             let max_chunk_size = 16 * 1024 * 1024;
             // Use a small min chunk size to catch failures in tests.
@@ -193,21 +192,22 @@ impl SourceNode for NDJsonSourceNode {
             );
         }
 
-        let (mut phase_tx_senders, mut phase_tx_receivers) = (0..num_pipelines)
+        let (mut phase_tx_senders, mut phase_tx_receivers) = (0..state.num_pipelines)
             .map(|_| connector::<MorselOutput>())
             .collect::<(Vec<_>, Vec<_>)>();
 
         // Note: This counts from the end of file for negative slice.
         let n_rows_to_skip = global_slice.as_ref().map_or(0, |x| x.start);
 
-        let (opt_linearizer, mut linearizer_inserters) =
-            if global_slice.is_some() || self.file_options.row_index.is_some() {
-                let (a, b) =
-                    Linearizer::<Priority<Reverse<MorselSeq>, DataFrame>>::new(num_pipelines, 1);
-                (Some(a), b)
-            } else {
-                (None, vec![])
-            };
+        let (opt_linearizer, mut linearizer_inserters) = if global_slice.is_some()
+            || self.file_options.row_index.is_some()
+        {
+            let (a, b) =
+                Linearizer::<Priority<Reverse<MorselSeq>, DataFrame>>::new(state.num_pipelines, 1);
+            (Some(a), b)
+        } else {
+            (None, vec![])
+        };
 
         let output_to_linearizer = opt_linearizer.is_some();
 
@@ -295,7 +295,7 @@ impl SourceNode for NDJsonSourceNode {
         }
 
         let (line_batch_distribute_tx, line_batch_distribute_receivers) =
-            distributor_channel(num_pipelines, 1);
+            distributor_channel(state.num_pipelines, 1);
 
         let source_token = SourceToken::new();
         // Initialize in reverse as we want to manually pop from either the linearizer or the phase receivers depending
@@ -333,7 +333,7 @@ impl SourceNode for NDJsonSourceNode {
                         needs_total_row_count,
 
                         // Only log from the last worker to prevent flooding output.
-                        verbose: verbose && worker_idx == num_pipelines - 1,
+                        verbose: verbose && worker_idx == state.num_pipelines - 1,
                     }
                     .run(),
                 ))
