@@ -173,6 +173,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::explain_all))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all_with_callback))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::cols)).unwrap();

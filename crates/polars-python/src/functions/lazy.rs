@@ -114,6 +114,10 @@ pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
 }
 
+fn lfs_to_plans(lfs: Vec<PyLazyFrame>) -> Vec<DslPlan> {
+    lfs.into_iter().map(|lf| lf.ldf.logical_plan).collect()
+}
+
 #[pyfunction]
 pub fn collect_all(
     lfs: Vec<PyLazyFrame>,
@@ -121,10 +125,17 @@ pub fn collect_all(
     optflags: PyOptFlags,
     py: Python,
 ) -> PyResult<Vec<PyDataFrame>> {
-    let plans = lfs.into_iter().map(|lf| lf.ldf.logical_plan).collect();
+    let plans = lfs_to_plans(lfs);
     let dfs =
         py.enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner))?;
     Ok(dfs.into_iter().map(Into::into).collect())
+}
+
+#[pyfunction]
+pub fn explain_all(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags, py: Python) -> PyResult<String> {
+    let plans = lfs_to_plans(lfs);
+    let explained = py.enter_polars(|| LazyFrame::explain_all(plans, optflags.inner))?;
+    Ok(explained)
 }
 
 #[pyfunction]
