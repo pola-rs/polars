@@ -64,12 +64,14 @@ pub(super) fn resolve_is_in(
         // types are equal, cast b
         // all-null can represent anything (and/or empty list), so cast to target dtype
         (_, D::Null) => ae_builder.cast(type_left, CastOptions::NonStrict),
+        // Implode `other` to list.
+        (D::Null, _) => ae_builder,
         (D::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
             ae_builder.cast(type_left, CastOptions::NonStrict)
         },
         (a, b) if a.is_primitive_numeric() && b.is_primitive_numeric() => {
             let st = get_supertype(a, b).ok_or_else(|| 
-            polars_err!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left))?;
+            polars_err!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_left, &type_other))?;
             dbg!(&st);
 
             let other = ae_builder.cast(st.clone(), CastOptions::NonStrict).implode().build_node();
@@ -107,7 +109,7 @@ fn accept_type(type_left: &DataType, type_other: &DataType) -> PolarsResult<()> 
         (D::String, D::Categorical(_, _) | D::Enum(_, _)) => Ok(()),
         #[cfg(feature = "dtype-decimal")]
         (D::Decimal(_, _), _) | (_, D::Decimal(_, _)) => {
-            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)
+            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_left, &type_other)
         },
         // can't check for more granular time_unit in less-granular time_unit data,
         // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
@@ -143,7 +145,7 @@ fn accept_type(type_left: &DataType, type_other: &DataType) -> PolarsResult<()> 
         // don't attempt to cast between obviously mismatched types, but
         // allow integer/float comparison (will use their supertypes).
         _ => {
-            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)
+            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_left, &type_other)
         },
     }
 }

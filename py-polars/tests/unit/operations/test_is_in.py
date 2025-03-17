@@ -299,9 +299,8 @@ def test_is_in_boolean_list(dtype: PolarsDataType) -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
-def test_is_in_invalid_shape() -> None:
-    with pytest.raises(ComputeError):
-        pl.Series("a", [1, 2, 3]).is_in([[]])
+def test_is_in_empty_list() -> None:
+    assert pl.Series("a", [1, 2, 3]).is_in([[]]).to_list() == [False, False, False]
 
 
 @pytest.mark.may_fail_auto_streaming
@@ -344,12 +343,12 @@ def test_is_in_float(dtype: PolarsDataType) -> None:
         (
             pl.DataFrame({"a": ["1", "2"], "b": [[1, 2], [3, 4]]}),
             None,
-            r"'is_in' cannot check for String values in List\(Int64\) data",
+            r"'is_in' cannot check for String values in Int64 data",
         ),
         (
             pl.DataFrame({"a": [date.today(), None], "b": [[1, 2], [3, 4]]}),
             None,
-            r"'is_in' cannot check for Date values in List\(Int64\) data",
+            r"'is_in' cannot check for Date values in Int64 data",
         ),
     ],
 )
@@ -360,6 +359,7 @@ def test_is_in_expr_list_series(
     if matches:
         assert df.select(expr_is_in).to_series().to_list() == matches
     else:
+        print(df.select(expr_is_in))
         with pytest.raises(InvalidOperationError, match=expected_error):
             df.select(expr_is_in)
 

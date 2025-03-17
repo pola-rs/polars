@@ -849,11 +849,45 @@ fn is_in_dispatch(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult
     }
 }
 
-pub fn is_in(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<BooleanChunked> {
-    let other_dtype = other.dtype();
-    debug_assert!(other_dtype.is_list());
-    let other = other.explode().unwrap();
-    let other = &other;
-    dbg!(s, other);
-    is_in_dispatch(s, other, nulls_equal)
+pub fn is_in(
+    s: &Series,
+    other: &Series,
+    nulls_equal: bool,
+    is_contains: bool,
+) -> PolarsResult<BooleanChunked> {
+    if is_contains {
+        is_in_dispatch(s, other, nulls_equal)
+    } else {
+        dbg!(s, other);
+        let s_dtype = s.dtype();
+        let other_dtype = other.dtype();
+        debug_assert!(other_dtype.is_list());
+
+        dbg!(s_dtype.nested_level_list());
+
+        dbg!(other_dtype.nested_level_list());
+        dbg!(
+            other_dtype
+                .nested_level_list()
+                .saturating_sub(s_dtype.nested_level_list())
+        );
+
+        // Common case.
+        // other: level 1
+        // s: level 0
+        if other_dtype
+            .nested_level_list()
+            .saturating_sub(s_dtype.nested_level_list())
+            == 1
+            && s.len() != other.len()
+        {
+            let other = other.explode().unwrap();
+            let other = &other;
+            dbg!(s, other);
+            is_in_dispatch(s, other, nulls_equal)
+        } else {
+            dbg!(s, other);
+            is_in_dispatch(s, other, nulls_equal)
+        }
+    }
 }

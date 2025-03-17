@@ -216,6 +216,7 @@ fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Option<Column>> {
         left.as_materialized_series(),
         other.as_materialized_series(),
         nulls_equal,
+        false,
     )
     .map(|ca| Some(ca.into_column()))
 }

@@ -272,6 +272,7 @@ pub(super) fn contains(args: &mut [Column]) -> PolarsResult<Option<Column>> {
         item.as_materialized_series(),
         list.as_materialized_series(),
         true,
+        true,
     )
     .map(|mut ca| {
         ca.rename(list.name().clone());
