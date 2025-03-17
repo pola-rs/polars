@@ -79,18 +79,8 @@ pub fn search_sorted(
         DataType::BinaryOffset => {
             let ca = s.binary_offset().unwrap();
 
-            let idx = match search_values.dtype() {
-                DataType::BinaryOffset => {
-                    let search_values = search_values.binary_offset().unwrap();
-                    binary_search_ca(ca, search_values.iter(), side, descending)
-                },
-                DataType::Binary => {
-                    let search_values = search_values.binary().unwrap();
-                    binary_search_ca(ca, search_values.iter(), side, descending)
-                },
-                _ => unreachable!(),
-            };
-
+            let search_values = search_values.binary_offset().unwrap();
+            let idx = binary_search_ca(ca, search_values.iter(), side, descending);
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
 
