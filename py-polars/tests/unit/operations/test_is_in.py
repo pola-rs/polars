@@ -359,7 +359,6 @@ def test_is_in_expr_list_series(
     if matches:
         assert df.select(expr_is_in).to_series().to_list() == matches
     else:
-        print(df.select(expr_is_in))
         with pytest.raises(InvalidOperationError, match=expected_error):
             df.select(expr_is_in)
 

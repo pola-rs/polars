@@ -858,19 +858,9 @@ pub fn is_in(
     if is_contains {
         is_in_dispatch(s, other, nulls_equal)
     } else {
-        dbg!(s, other);
         let s_dtype = s.dtype();
         let other_dtype = other.dtype();
         debug_assert!(other_dtype.is_list());
-
-        dbg!(s_dtype.nested_level_list());
-
-        dbg!(other_dtype.nested_level_list());
-        dbg!(
-            other_dtype
-                .nested_level_list()
-                .saturating_sub(s_dtype.nested_level_list())
-        );
 
         // Common case.
         // other: level 1
@@ -883,10 +873,8 @@ pub fn is_in(
         {
             let other = other.explode().unwrap();
             let other = &other;
-            dbg!(s, other);
             is_in_dispatch(s, other, nulls_equal)
         } else {
-            dbg!(s, other);
             is_in_dispatch(s, other, nulls_equal)
         }
     }

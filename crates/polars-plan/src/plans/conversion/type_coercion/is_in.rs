@@ -45,7 +45,6 @@ pub(super) fn resolve_is_in(
     // If types are equal we implode the rhs to create a scalar list.
     let ae_builder = AExprBuilder::new(other_e.node(), expr_arena);
     use DataType as D;
-    dbg!(&type_left, &type_other);
     let ae_builder = match (&type_left, &type_other) {
         (a, b) if a == b => ae_builder,
         (_, D::List(other_inner)) => {
@@ -72,7 +71,6 @@ pub(super) fn resolve_is_in(
         (a, b) if a.is_primitive_numeric() && b.is_primitive_numeric() => {
             let st = get_supertype(a, b).ok_or_else(|| 
             polars_err!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_left, &type_other))?;
-            dbg!(&st);
 
             let other = ae_builder.cast(st.clone(), CastOptions::NonStrict).implode().build_node();
             let left = AExprBuilder::new(left_node, expr_arena).cast(st, CastOptions::NonStrict).build_node();
