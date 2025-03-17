@@ -50,7 +50,7 @@ impl From<(i64, usize)> for Slice {
     fn from((offset, len): (i64, usize)) -> Self {
         if offset >= 0 {
             Slice::Positive {
-                offset: offset as usize,
+                offset: usize::try_from(offset).unwrap(),
                 len,
             }
         } else {
