@@ -55,7 +55,7 @@ impl From<(i64, usize)> for Slice {
             }
         } else {
             Slice::Negative {
-                offset_from_end: -offset as usize,
+                offset_from_end: usize::try_from(-offset).unwrap(),
                 len,
             }
         }
