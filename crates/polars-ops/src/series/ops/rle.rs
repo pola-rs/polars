@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 
+/// Get the run-Lengths of values.
 pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
     lengths.clear();
     if s.is_empty() {
@@ -44,9 +45,11 @@ pub fn rle(s: &Column) -> PolarsResult<Column> {
     rle_lengths(s, &mut lengths)?;
 
     let mut idxs = Vec::with_capacity(lengths.len());
-    idxs.push(0);
-    for length in &lengths {
-        idxs.push(*idxs.last().unwrap() + length);
+    if !lengths.is_empty() {
+        idxs.push(0);
+        for length in &lengths[..lengths.len() - 1] {
+            idxs.push(*idxs.last().unwrap() + length);
+        }
     }
 
     let vals = s
@@ -65,6 +68,7 @@ pub fn rle_id(s: &Column) -> PolarsResult<Column> {
     if s.is_empty() {
         return Ok(Column::new_empty(s.name().clone(), &IDX_DTYPE));
     }
+
     let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));
     let s_neq = s1
         .as_materialized_series()
