@@ -1,10 +1,10 @@
 use either::Either;
+use polars_io::RowIndex;
 use polars_io::path_utils::is_cloud_url;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
 use polars_io::utils::compression::maybe_decompress_bytes;
-use polars_io::RowIndex;
 
 use super::*;
 
@@ -41,7 +41,7 @@ pub(super) fn parquet_file_info(
             let first_path = &sources.as_paths().unwrap()[0];
             feature_gated!("cloud", {
                 let uri = first_path.to_string_lossy();
-                get_runtime().block_on_potential_spawn(async {
+                get_runtime().block_in_place_on(async {
                     let mut reader =
                         ParquetAsyncReader::from_uri(&uri, cloud_options, None).await?;
 
@@ -195,7 +195,7 @@ pub fn csv_file_info(
     use std::io::{Read, Seek};
 
     use polars_core::error::feature_gated;
-    use polars_core::{config, POOL};
+    use polars_core::{POOL, config};
     use polars_io::csv::read::schema_inference::SchemaInferenceResult;
     use polars_io::utils::get_reader_bytes;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};

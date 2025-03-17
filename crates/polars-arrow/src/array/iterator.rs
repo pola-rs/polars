@@ -1,5 +1,5 @@
-use crate::bitmap::iterator::TrueIdxIter;
 use crate::bitmap::Bitmap;
+use crate::bitmap::iterator::TrueIdxIter;
 use crate::trusted_len::TrustedLen;
 
 mod private {

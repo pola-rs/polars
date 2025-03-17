@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
 
 use super::Splitable;
@@ -240,6 +240,20 @@ impl StaticArrayBuilder for NullArrayBuilder {
         NullArray::new(self.dtype, self.length)
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        let out = NullArray::new(self.dtype.clone(), self.length);
+        self.length = 0;
+        out
+    }
+
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        self.length += length;
+    }
+
     fn subslice_extend(
         &mut self,
         _other: &NullArray,
@@ -267,6 +281,10 @@ impl StaticArrayBuilder for NullArrayBuilder {
         idxs: &[IdxSize],
         _share: ShareStrategy,
     ) {
+        self.length += idxs.len();
+    }
+
+    fn opt_gather_extend(&mut self, _other: &NullArray, idxs: &[IdxSize], _share: ShareStrategy) {
         self.length += idxs.len();
     }
 }

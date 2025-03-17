@@ -9,8 +9,8 @@ use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca_unordered;
 use crate::config::verbose;
 use crate::series::BitRepr;
-use crate::utils::flatten::flatten_par;
 use crate::utils::Container;
+use crate::utils::flatten::flatten_par;
 
 /// Used to create the tuples for a group_by operation.
 pub trait IntoGroupsType {
@@ -91,7 +91,7 @@ where
         };
 
         let n_threads = POOL.current_num_threads();
-        let groups = if multithreaded && n_threads > 1 {
+        if multithreaded && n_threads > 1 {
             let parts =
                 create_clean_partitions(values, n_threads, self.is_sorted_descending_flag());
             let n_parts = parts.len();
@@ -125,8 +125,7 @@ where
             flatten_par(&groups)
         } else {
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
-        };
-        groups
+        }
     }
 }
 

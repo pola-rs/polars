@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::{MutableUtf8Array, StrAsBytes, Utf8Array};
 use crate::array::physical_binary::*;
@@ -110,7 +110,9 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
             .expect("The length of the values must be equal to the last offset value");
 
         if dtype.to_physical_type() != Self::default_dtype().to_physical_type() {
-            panic!("MutableUtf8ValuesArray can only be initialized with DataType::Utf8 or DataType::LargeUtf8")
+            panic!(
+                "MutableUtf8ValuesArray can only be initialized with DataType::Utf8 or DataType::LargeUtf8"
+            )
         }
 
         Self {

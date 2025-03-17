@@ -27,6 +27,24 @@ def test_count_csv(io_files_path: Path, path: str, n_rows: int) -> None:
     assert_frame_equal(lf.collect(), expected)
 
 
+def test_count_csv_comment_char() -> None:
+    q = pl.scan_csv(
+        b"""
+a,b
+1,2
+
+#
+3,4
+""",
+        comment_prefix="#",
+    )
+
+    assert_frame_equal(
+        q.collect(), pl.DataFrame({"a": [1, None, 3], "b": [2, None, 4]})
+    )
+    assert q.select(pl.len()).collect().item() == 3
+
+
 @pytest.mark.write_disk
 def test_commented_csv() -> None:
     with NamedTemporaryFile() as csv_a:

@@ -339,6 +339,10 @@ impl SeriesTrait for NullChunked {
         self
     }
 
+    fn as_phys_any(&self) -> &dyn Any {
+        self
+    }
+
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self as _
     }

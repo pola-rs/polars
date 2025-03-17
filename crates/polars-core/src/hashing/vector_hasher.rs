@@ -5,9 +5,9 @@ use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 use super::*;
+use crate::POOL;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
-use crate::POOL;
 
 // See: https://github.com/tkaitchuck/aHash/blob/f9acd508bd89e7c5b2877a9510098100f9018d64/src/operations.rs#L4
 const MULTIPLE: u64 = 6364136223846793005;
@@ -380,11 +380,7 @@ impl VecHash for BooleanChunked {
                         .zip(arr.values())
                         .for_each(|((valid, h), l)| {
                             let l = if valid {
-                                if l {
-                                    true_h
-                                } else {
-                                    false_h
-                                }
+                                if l { true_h } else { false_h }
                             } else {
                                 null_h
                             };

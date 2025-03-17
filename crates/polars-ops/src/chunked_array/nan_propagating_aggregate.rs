@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::Array;
 use arrow::legacy::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,

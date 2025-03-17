@@ -4,6 +4,7 @@ pyarrow
 graphviz
 hvplot
 matplotlib
+plotnine
 seaborn
 plotly
 numba >= 0.54; python_version < '3.13'  # numba does not support Python 3.13

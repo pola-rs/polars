@@ -4,7 +4,7 @@ use polars_core::schema::Schema;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{aexpr_to_leaf_names_iter, AExpr, LiteralValue};
+use super::{AExpr, LiteralValue, aexpr_to_leaf_names_iter};
 
 pub fn constant_evaluate<'a>(
     e: Node,

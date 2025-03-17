@@ -20,7 +20,7 @@ fn should_block_join_specific(
             function:
                 FunctionExpr::Boolean(BooleanFunction::IsNotNull)
                 | FunctionExpr::Boolean(BooleanFunction::IsNull)
-                | FunctionExpr::FillNull { .. },
+                | FunctionExpr::FillNull,
             ..
         } => join_produces_null(how),
         #[cfg(feature = "is_in")]
@@ -75,7 +75,7 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
         JoinType::Left => LeftRight(false, true),
         JoinType::Right => LeftRight(true, false),
 
-        JoinType::Full { .. } => LeftRight(true, true),
+        JoinType::Full => LeftRight(true, true),
         JoinType::Cross => LeftRight(true, true),
         #[cfg(feature = "asof_join")]
         JoinType::AsOf(_) => LeftRight(true, true),

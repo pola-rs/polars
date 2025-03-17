@@ -1,9 +1,8 @@
-use polars_utils::vec::PushUnchecked;
 use polars_utils::IdxSize;
+use polars_utils::vec::PushUnchecked;
 
 use super::PrimitiveArray;
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
-use crate::array::Array;
 use crate::bitmap::OptBitmapBuilder;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
@@ -43,6 +42,21 @@ impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
         PrimitiveArray::new(self.dtype, values, validity)
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        let values = Buffer::from(core::mem::take(&mut self.values));
+        let validity = core::mem::take(&mut self.validity).into_opt_validity();
+        PrimitiveArray::new(self.dtype.clone(), values, validity)
+    }
+
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        self.values.resize(self.values.len() + length, T::zeroed());
+        self.validity.extend_constant(length, false);
+    }
+
     fn subslice_extend(
         &mut self,
         other: &PrimitiveArray<T>,
@@ -50,7 +64,6 @@ impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
         length: usize,
         _share: ShareStrategy,
     ) {
-        let other: &PrimitiveArray<T> = other.as_any().downcast_ref().unwrap();
         self.values
             .extend_from_slice(&other.values()[start..start + length]);
         self.validity
@@ -63,13 +76,34 @@ impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
         idxs: &[IdxSize],
         _share: ShareStrategy,
     ) {
-        let other: &PrimitiveArray<T> = other.as_any().downcast_ref().unwrap();
-        self.values.reserve(idxs.len());
-        for idx in idxs {
-            self.values
-                .push_unchecked(other.value_unchecked(*idx as usize));
-        }
+        // TODO: SIMD gather kernels?
+        let other_values_slice = other.values().as_slice();
+        self.values.extend(
+            idxs.iter()
+                .map(|idx| *other_values_slice.get_unchecked(*idx as usize)),
+        );
         self.validity
             .gather_extend_from_opt_validity(other.validity(), idxs);
+    }
+
+    fn opt_gather_extend(
+        &mut self,
+        other: &PrimitiveArray<T>,
+        idxs: &[IdxSize],
+        _share: ShareStrategy,
+    ) {
+        self.values.reserve(idxs.len());
+        unsafe {
+            for idx in idxs {
+                let val = if (*idx as usize) < other.len() {
+                    other.value_unchecked(*idx as usize)
+                } else {
+                    T::zeroed()
+                };
+                self.values.push_unchecked(val);
+            }
+        }
+        self.validity
+            .opt_gather_extend_from_opt_validity(other.validity(), idxs, other.len());
     }
 }

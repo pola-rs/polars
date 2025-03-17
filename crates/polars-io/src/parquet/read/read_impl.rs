@@ -9,7 +9,7 @@ use polars_core::chunked_array::builder::NullChunkedBuilder;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
-use polars_core::{config, POOL};
+use polars_core::{POOL, config};
 use polars_parquet::read::{
     self, ColumnChunkMetadata, FileMetadata, Filter, PredicateFilter, RowGroupMetadata,
 };
@@ -17,18 +17,18 @@ use rayon::prelude::*;
 
 #[cfg(feature = "cloud")]
 use super::async_impl::FetchRowGroupsFromObjectStore;
-use super::mmap::{mmap_columns, ColumnStore};
+use super::mmap::{ColumnStore, mmap_columns};
 use super::predicates::read_this_row_group;
 use super::utils::materialize_empty_df;
-use super::{mmap, ParallelStrategy};
+use super::{ParallelStrategy, mmap};
+use crate::RowIndex;
 use crate::hive::{self, materialize_hive_partitions};
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetadataRef;
 use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
-use crate::predicates::{apply_predicate, ColumnPredicateExpr, ScanIOPredicate};
+use crate::predicates::{ColumnPredicateExpr, ScanIOPredicate, apply_predicate};
 use crate::utils::get_reader_bytes;
 use crate::utils::slice::split_slice_at_file;
-use crate::RowIndex;
 
 #[cfg(debug_assertions)]
 // Ensure we get the proper polars types from schema inference
@@ -157,14 +157,14 @@ fn rg_to_dfs(
         if let Some(row_index) = row_index {
             let placeholder =
                 NullChunkedBuilder::new(PlSmallStr::from_static("__PL_TMP"), pre_slice.1).finish();
-            return Ok(vec![DataFrame::new(vec![placeholder
-                .into_series()
-                .into_column()])?
-            .with_row_index(
-                row_index.name.clone(),
-                Some(row_index.offset + IdxSize::try_from(pre_slice.0).unwrap()),
-            )?
-            .select(std::iter::once(row_index.name))?]);
+            return Ok(vec![
+                DataFrame::new(vec![placeholder.into_series().into_column()])?
+                    .with_row_index(
+                        row_index.name.clone(),
+                        Some(row_index.offset + IdxSize::try_from(pre_slice.0).unwrap()),
+                    )?
+                    .select(std::iter::once(row_index.name))?,
+            ]);
         }
     }
 

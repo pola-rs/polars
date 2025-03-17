@@ -7,7 +7,7 @@ use polars_core::prelude::*;
 use polars_io::ipc::IpcWriterOptions;
 use polars_io::prelude::*;
 
-use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
+use crate::executors::sinks::output::file_sink::{FilesSink, SinkWriter, init_writer_thread};
 use crate::pipeline::morsels_per_sink;
 
 pub struct IpcSink {}
@@ -32,7 +32,7 @@ impl IpcSink {
         let io_thread_handle = Arc::new(Some(init_writer_thread(
             receiver,
             writer,
-            options.maintain_order,
+            true,
             morsels_per_sink,
         )));
 

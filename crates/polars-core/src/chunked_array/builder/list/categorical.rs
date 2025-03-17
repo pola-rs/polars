@@ -1,5 +1,5 @@
-use hashbrown::hash_table::Entry;
 use hashbrown::HashTable;
+use hashbrown::hash_table::Entry;
 
 use super::*;
 

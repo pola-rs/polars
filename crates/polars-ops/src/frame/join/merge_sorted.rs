@@ -238,7 +238,7 @@ where
             }
             // b is depleted fill with a indicator
             let remaining = cap - out.len();
-            out.extend(std::iter::repeat(A_INDICATOR).take(remaining));
+            out.extend(std::iter::repeat_n(A_INDICATOR, remaining));
             return out;
         }
     }

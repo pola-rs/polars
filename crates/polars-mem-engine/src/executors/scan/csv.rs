@@ -14,7 +14,7 @@ pub struct CsvExec {
     pub sources: ScanSources,
     pub file_info: FileInfo,
     pub options: CsvReadOptions,
-    pub file_options: FileScanOptions,
+    pub file_options: Box<FileScanOptions>,
     pub predicate: Option<ScanPredicate>,
 }
 
@@ -292,7 +292,7 @@ impl ScanExec for CsvExec {
 
         let bytes = maybe_decompress_bytes(&memslice, owned)?;
 
-        let num_rows = count_rows_from_slice(
+        let num_rows = polars_io::csv::read::count_rows_from_slice_par(
             bytes,
             popt.separator,
             popt.quote_char,

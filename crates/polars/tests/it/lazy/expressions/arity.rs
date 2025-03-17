@@ -146,7 +146,9 @@ fn test_when_then_otherwise_cats() -> PolarsResult<()> {
             .iter_str()
             .flatten()
             .collect::<Vec<_>>(),
-        &["bookA", "bob", "bookB", "tim", "bookA", "bookC", "bookC", "bookC"]
+        &[
+            "bookA", "bob", "bookB", "tim", "bookA", "bookC", "bookC", "bookC"
+        ]
     );
 
     Ok(())

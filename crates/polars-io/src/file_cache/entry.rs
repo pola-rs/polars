@@ -1,12 +1,11 @@
 use std::io::{Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use fs4::fs_std::FileExt;
-use once_cell::sync::Lazy;
 use polars_core::config;
-use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 
 use super::cache_lock::{self, GLOBAL_FILE_CACHE_LOCK};
 use super::file_fetcher::{FileFetcher, RemoteMetadata};
@@ -52,7 +51,7 @@ impl Inner {
         let verbose = config::verbose();
 
         {
-            let cache_guard = GLOBAL_FILE_CACHE_LOCK.lock_any();
+            let cache_guard = GLOBAL_FILE_CACHE_LOCK.lock_shared();
             // We want to use an exclusive lock here to avoid an API call in the case where only the
             // local TTL was updated.
             let metadata_file = &mut self.metadata.acquire_exclusive().unwrap();
@@ -63,7 +62,10 @@ impl Inner {
 
                 if metadata.compare_local_state(data_file_path).is_ok() {
                     if verbose {
-                        eprintln!("[file_cache::entry] try_open_assume_latest: opening already fetched file for uri = {}", self.uri.clone());
+                        eprintln!(
+                            "[file_cache::entry] try_open_assume_latest: opening already fetched file for uri = {}",
+                            self.uri.clone()
+                        );
                     }
                     return Ok(finish_open(data_file_path, metadata_file));
                 }
@@ -83,7 +85,7 @@ impl Inner {
     fn try_open_check_latest(&mut self) -> PolarsResult<std::fs::File> {
         let verbose = config::verbose();
         let remote_metadata = &self.file_fetcher.fetch_metadata()?;
-        let cache_guard = GLOBAL_FILE_CACHE_LOCK.lock_any();
+        let cache_guard = GLOBAL_FILE_CACHE_LOCK.lock_shared();
 
         {
             let metadata_file = &mut self.metadata.acquire_shared().unwrap();
@@ -95,7 +97,10 @@ impl Inner {
 
                     if metadata.compare_local_state(data_file_path).is_ok() {
                         if verbose {
-                            eprintln!("[file_cache::entry] try_open_check_latest: opening already fetched file for uri = {}", self.uri.clone());
+                            eprintln!(
+                                "[file_cache::entry] try_open_check_latest: opening already fetched file for uri = {}",
+                                self.uri.clone()
+                            );
                         }
                         return Ok(finish_open(data_file_path, metadata_file));
                     }
@@ -156,7 +161,7 @@ impl Inner {
             // * Some(true)   => always raise
             // * Some(false)  => never raise
             // * None         => do not raise if fallocate() is not permitted, otherwise raise.
-            static RAISE_ALLOC_ERROR: Lazy<Option<bool>> = Lazy::new(|| {
+            static RAISE_ALLOC_ERROR: LazyLock<Option<bool>> = LazyLock::new(|| {
                 let v = match std::env::var("POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR").as_deref() {
                     Ok("1") => Some(false),
                     Ok("0") => Some(true),

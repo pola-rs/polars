@@ -17,8 +17,6 @@ pub struct ParquetWriteOptions {
     pub row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
     pub data_page_size: Option<usize>,
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
 }
 
 /// The compression strategy to use for writing Parquet files.

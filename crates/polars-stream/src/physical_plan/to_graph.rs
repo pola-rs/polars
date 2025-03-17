@@ -1,20 +1,22 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::POOL;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_expr::groups::new_hash_grouper;
-use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
+use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
-use polars_plan::dsl::JoinOptions;
+use polars_plan::dsl::{JoinOptions, PartitionVariantIR};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
 use polars_plan::prelude::{FileType, FunctionFlags};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
@@ -59,6 +61,7 @@ struct GraphConversionContext<'a> {
     graph: Graph,
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     expr_conversion_state: ExpressionConversionState,
+    num_pipelines: usize,
 }
 
 pub fn physical_plan_to_graph(
@@ -66,6 +69,8 @@ pub fn physical_plan_to_graph(
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
+    // Get the number of threads from the rayon thread-pool as that respects our config.
+    let num_pipelines = POOL.current_num_threads();
     let expr_depth_limit = get_expr_depth_limit()?;
     let mut ctx = GraphConversionContext {
         phys_sm,
@@ -73,6 +78,7 @@ pub fn physical_plan_to_graph(
         graph: Graph::with_capacity(phys_sm.len()),
         phys_to_graph: SecondaryMap::with_capacity(phys_sm.len()),
         expr_conversion_state: ExpressionConversionState::new(false, expr_depth_limit),
+        num_pipelines,
     };
 
     to_graph_rec(root, &mut ctx)?;
@@ -97,6 +103,15 @@ fn to_graph_rec<'a>(
             nodes::in_memory_source::InMemorySourceNode::new(df.clone(), MorselSeq::default()),
             [],
         ),
+        SinkMultiple { sinks } => {
+            // @NOTE: This is always the root node and gets ignored by the physical_plan anyway so
+            // we give one of the inputs back.
+            let node = to_graph_rec(sinks[0], ctx)?;
+            for sink in &sinks[1..] {
+                to_graph_rec(*sink, ctx)?;
+            }
+            return Ok(node);
+        },
 
         StreamingSlice {
             input,
@@ -222,9 +237,12 @@ fn to_graph_rec<'a>(
 
         FileSink {
             path,
+            sink_options,
             file_type,
             input,
+            cloud_options,
         } => {
+            let sink_options = sink_options.clone();
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
 
@@ -234,7 +252,9 @@ fn to_graph_rec<'a>(
                     SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
                         input_schema,
                         path.to_path_buf(),
+                        sink_options,
                         *ipc_writer_options,
+                        cloud_options.clone(),
                     )),
                     [(input_key, input.port)],
                 ),
@@ -242,6 +262,8 @@ fn to_graph_rec<'a>(
                 FileType::Json(_) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
                         path.to_path_buf(),
+                        sink_options,
+                        cloud_options.clone(),
                     )),
                     [(input_key, input.port)],
                 ),
@@ -250,16 +272,20 @@ fn to_graph_rec<'a>(
                     SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
                         input_schema,
                         path,
+                        sink_options,
                         parquet_writer_options,
+                        cloud_options.clone(),
                     )?),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "csv")]
                 FileType::Csv(csv_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
-                        input_schema,
                         path.to_path_buf(),
+                        input_schema,
+                        sink_options,
                         csv_writer_options.clone(),
+                        cloud_options.clone(),
                     )),
                     [(input_key, input.port)],
                 ),
@@ -272,6 +298,56 @@ fn to_graph_rec<'a>(
                 _ => {
                     panic!("activate source feature")
                 },
+            }
+        },
+
+        PartitionSink {
+            path_f_string,
+            sink_options,
+            variant,
+            file_type,
+            input,
+            cloud_options,
+        } => {
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+
+            let path_f_string = path_f_string.clone();
+            let create_new = nodes::io_sinks::partition::get_create_new_fn(
+                file_type.clone(),
+                sink_options.clone(),
+                cloud_options.clone(),
+            );
+
+            match variant {
+                PartitionVariantIR::MaxSize(max_size) => ctx.graph.add_node(
+                    SinkComputeNode::from(
+                        nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
+                            input_schema,
+                            *max_size,
+                            path_f_string.clone(),
+                            create_new,
+                            sink_options.clone(),
+                        ),
+                    ),
+                    [(input_key, input.port)],
+                ),
+                PartitionVariantIR::ByKey {
+                    key_exprs,
+                    include_key,
+                } => ctx.graph.add_node(
+                    SinkComputeNode::from(
+                        nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
+                            input_schema,
+                            key_exprs.iter().map(|e| e.output_name().clone()).collect(),
+                            path_f_string.clone(),
+                            create_new,
+                            sink_options.clone(),
+                            *include_key,
+                        ),
+                    ),
+                    [(input_key, input.port)],
+                ),
             }
         },
 
@@ -392,7 +468,7 @@ fn to_graph_rec<'a>(
                 .as_ref()
                 .map(|p| p.to_io(None, file_schema.clone()));
 
-            match scan_type {
+            match &**scan_type {
                 #[cfg(feature = "parquet")]
                 polars_plan::dsl::FileScan::Parquet {
                     options,
@@ -518,7 +594,7 @@ fn to_graph_rec<'a>(
             #[cfg(feature = "parquet")]
             {
                 create_skip_batch_predicate |= matches!(
-                    scan_type,
+                    *scan_type,
                     polars_plan::prelude::FileScan::Parquet {
                         options: polars_io::prelude::ParquetOptions {
                             use_statistics: true,
@@ -549,7 +625,7 @@ fn to_graph_rec<'a>(
             {
                 use polars_plan::prelude::FileScan;
 
-                match scan_type {
+                match *scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet {
                         options,
@@ -564,7 +640,7 @@ fn to_graph_rec<'a>(
                                 options,
                                 cloud_options,
                                 file_options,
-                                first_metadata,
+                                first_metadata.unwrap(),
                             ),
                         ),
                         [],
@@ -585,7 +661,7 @@ fn to_graph_rec<'a>(
                                     file_info,
                                     options,
                                     cloud_options,
-                                    file_options,
+                                    *file_options,
                                     first_metadata,
                                 )?,
                             ),
@@ -752,14 +828,30 @@ fn to_graph_rec<'a>(
             let right_key_schema =
                 compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?;
 
-            let left_key_selectors = left_on
+            // We use key columns entirely by position, and allow duplicate names in key selectors,
+            // so just assign arbitrary unique names for the selectors.
+            let unique_left_on = left_on
+                .iter()
+                .enumerate()
+                .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{i}")))
+                .collect_vec();
+            let unique_right_on = right_on
+                .iter()
+                .enumerate()
+                .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{i}")))
+                .collect_vec();
+
+            let left_key_selectors = unique_left_on
                 .iter()
                 .map(|e| create_stream_expr(e, ctx, &left_input_schema))
                 .try_collect_vec()?;
-            let right_key_selectors = right_on
+            let right_key_selectors = unique_right_on
                 .iter()
                 .map(|e| create_stream_expr(e, ctx, &right_input_schema))
                 .try_collect_vec()?;
+
+            let unique_key_schema =
+                compute_output_schema(&right_input_schema, &unique_left_on, ctx.expr_arena)?;
 
             ctx.graph.add_node(
                 nodes::joins::equi_join::EquiJoinNode::new(
@@ -767,9 +859,11 @@ fn to_graph_rec<'a>(
                     right_input_schema,
                     left_key_schema,
                     right_key_schema,
+                    unique_key_schema,
                     left_key_selectors,
                     right_key_selectors,
                     args,
+                    ctx.num_pipelines,
                 )?,
                 [
                     (left_input_key, input_left.port),

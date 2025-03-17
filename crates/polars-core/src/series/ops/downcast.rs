@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 

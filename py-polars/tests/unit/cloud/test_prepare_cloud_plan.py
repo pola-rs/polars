@@ -1,7 +1,6 @@
 from io import BytesIO
 from pathlib import Path
 
-import pyarrow.dataset as ds
 import pytest
 
 import polars as pl
@@ -78,21 +77,6 @@ def test_prepare_cloud_plan_optimization_toggle() -> None:
     ],
 )
 def test_prepare_cloud_plan_fail_on_local_data_source(lf: pl.LazyFrame) -> None:
-    with pytest.raises(
-        InvalidOperationError,
-        match="logical plan ineligible for execution on Polars Cloud",
-    ):
-        prepare_cloud_plan(lf)
-
-
-@pytest.mark.write_disk
-def test_prepare_cloud_plan_fail_on_python_scan(tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    data_path = tmp_path / "data.parquet"
-    pl.DataFrame({"a": [1, 2]}).write_parquet(data_path)
-    dataset = ds.dataset(data_path, format="parquet")
-
-    lf = pl.scan_pyarrow_dataset(dataset)
     with pytest.raises(
         InvalidOperationError,
         match="logical plan ineligible for execution on Polars Cloud",

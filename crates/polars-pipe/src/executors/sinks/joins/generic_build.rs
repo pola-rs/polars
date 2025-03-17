@@ -12,10 +12,10 @@ use polars_utils::unitvec;
 use self::row_encode::get_row_encoding_context;
 use super::*;
 use crate::executors::operators::PlaceHolder;
+use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
 use crate::executors::sinks::joins::generic_probe_outer::GenericFullOuterJoinProbe;
 use crate::executors::sinks::utils::{hash_rows, load_vec};
-use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 

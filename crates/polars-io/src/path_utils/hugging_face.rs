@@ -3,11 +3,11 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use polars_error::{polars_bail, to_compute_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, to_compute_err};
 
 use crate::cloud::{
-    extract_prefix_expansion, try_build_http_header_map_from_items_slice, CloudConfig,
-    CloudOptions, Matcher,
+    CloudConfig, CloudOptions, Matcher, extract_prefix_expansion,
+    try_build_http_header_map_from_items_slice,
 };
 use crate::path_utils::HiveIdxTracker;
 use crate::pl_async::with_concurrency_budget;

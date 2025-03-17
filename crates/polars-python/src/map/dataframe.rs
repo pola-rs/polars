@@ -1,11 +1,11 @@
 use polars::prelude::*;
-use polars_core::frame::row::{rows_to_schema_first_non_null, Row};
+use polars_core::frame::row::{Row, rows_to_schema_first_non_null};
 use polars_core::series::SeriesIter;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
-use pyo3::IntoPyObjectExt;
 
 use super::*;
 use crate::PyDataFrame;

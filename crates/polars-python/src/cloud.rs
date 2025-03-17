@@ -1,7 +1,7 @@
-use polars_core::error::{polars_err, PolarsResult};
+use polars_core::error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
-use polars_plan::plans::{AExpr, IRPlan, IR};
+use polars_plan::plans::{AExpr, IR, IRPlan};
 use polars_plan::prelude::{Arena, Node};
 use polars_utils::pl_serialize;
 use pyo3::intern;

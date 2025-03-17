@@ -73,7 +73,9 @@ pub fn resolve_join(
         if turn_off_coalesce {
             let options = Arc::make_mut(&mut options);
             if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
-                polars_warn!("coalescing join requested but not all join keys are column references, turning off key coalescing");
+                polars_warn!(
+                    "coalescing join requested but not all join keys are column references, turning off key coalescing"
+                );
             }
             options.args.coalesce = JoinCoalesce::KeepColumns;
         }

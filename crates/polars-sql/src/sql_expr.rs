@@ -11,11 +11,11 @@ use std::ops::Div;
 
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
-use polars_plan::prelude::typed_lit;
 use polars_plan::prelude::LiteralValue::Null;
+use polars_plan::prelude::typed_lit;
 use polars_time::Duration;
 use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -26,11 +26,11 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
+use crate::SQLContext;
 use crate::functions::SQLFunctionVisitor;
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
 };
-use crate::SQLContext;
 
 #[inline]
 #[cold]
@@ -1290,7 +1290,7 @@ pub(crate) fn resolve_compound_identifier(
                 return Ok(fields
                     .iter()
                     .map(|fld| column.clone().struct_().field_by_name(&fld.name))
-                    .collect())
+                    .collect());
             },
             Some(DataType::Struct(fields)) => {
                 dtype = fields

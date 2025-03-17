@@ -3,7 +3,7 @@ use std::ops::Add;
 
 use arrow::array::PrimitiveArray;
 use num_traits::NumCast;
-use polars_compute::sum::{wrapping_sum_arr, WrappingSum};
+use polars_compute::sum::{WrappingSum, wrapping_sum_arr};
 use polars_core::prelude::*;
 
 use super::*;

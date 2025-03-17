@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Mutex, OnceLock, RwLock};
+use std::time::Duration;
 
 use bitflags::bitflags;
-use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;
@@ -100,12 +100,12 @@ impl From<u8> for StateFlags {
     }
 }
 
-type CachedValue = Arc<(AtomicI64, OnceCell<DataFrame>)>;
+type CachedValue = Arc<(AtomicI64, OnceLock<DataFrame>)>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<Mutex<PlHashMap<usize, CachedValue>>>,
+    df_cache: Arc<RwLock<PlHashMap<usize, CachedValue>>>,
     pub schema_cache: RwLock<Option<SchemaRef>>,
     /// Used by Window Expressions to cache intermediate state
     pub window_cache: Arc<WindowCache>,
@@ -136,8 +136,8 @@ impl ExecutionState {
     }
 
     /// Toggle this to measure execution times.
-    pub fn time_nodes(&mut self) {
-        self.node_timer = Some(NodeTimer::new())
+    pub fn time_nodes(&mut self, start: std::time::Instant) {
+        self.node_timer = Some(NodeTimer::new(start))
     }
     pub fn has_node_timer(&self) -> bool {
         self.node_timer.is_some()
@@ -145,6 +145,18 @@ impl ExecutionState {
 
     pub fn finish_timer(self) -> PolarsResult<DataFrame> {
         self.node_timer.unwrap().finish()
+    }
+
+    // Timings should be a list of (start, end, name) where the start
+    // and end are raw durations since the query start as nanoseconds.
+    pub fn record_raw_timings(&self, timings: &[(u64, u64, String)]) {
+        for &(start, end, ref name) in timings {
+            self.node_timer.as_ref().unwrap().store_duration(
+                Duration::from_nanos(start),
+                Duration::from_nanos(end),
+                name.to_string(),
+            );
+        }
     }
 
     // This is wrong when the U64 overflows which will never happen.
@@ -205,15 +217,26 @@ impl ExecutionState {
     }
 
     pub fn get_df_cache(&self, key: usize, cache_hits: u32) -> CachedValue {
-        let mut guard = self.df_cache.lock().unwrap();
-        guard
-            .entry(key)
-            .or_insert_with(|| Arc::new((AtomicI64::new(cache_hits as i64), OnceCell::new())))
-            .clone()
+        let guard = self.df_cache.read().unwrap();
+
+        match guard.get(&key) {
+            Some(v) => v.clone(),
+            None => {
+                drop(guard);
+                let mut guard = self.df_cache.write().unwrap();
+
+                guard
+                    .entry(key)
+                    .or_insert_with(|| {
+                        Arc::new((AtomicI64::new(cache_hits as i64), OnceLock::new()))
+                    })
+                    .clone()
+            },
+        }
     }
 
     pub fn remove_df_cache(&self, key: usize) {
-        let mut guard = self.df_cache.lock().unwrap();
+        let mut guard = self.df_cache.write().unwrap();
         let _ = guard.remove(&key).unwrap();
     }
 

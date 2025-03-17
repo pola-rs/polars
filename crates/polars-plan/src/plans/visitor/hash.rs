@@ -5,8 +5,8 @@ use polars_utils::arena::Arena;
 
 use super::*;
 use crate::plans::{AExpr, IR};
-use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
+use crate::prelude::aexpr::traverse_and_hash_aexpr;
 
 impl IRNode {
     pub(crate) fn hashable_and_cmp<'a>(
@@ -179,8 +179,9 @@ impl Hash for HashableEqLP<'_> {
                 }
             },
             IR::Sink { input: _, payload } => {
-                payload.hash(state);
+                payload.traverse_and_hash(self.expr_arena, state);
             },
+            IR::SinkMultiple { .. } => {},
             IR::Cache {
                 input: _,
                 id,

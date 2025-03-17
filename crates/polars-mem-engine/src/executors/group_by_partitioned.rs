@@ -232,13 +232,17 @@ fn can_run_partitioned(
                 Ok(true)
             } else {
                 if state.verbose() {
-                    eprintln!("PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION");
+                    eprintln!(
+                        "PARTITIONED DS: estimated cardinality: {estimated_cardinality} exceeded the boundary: 0.4, running default HASH AGGREGATION"
+                    );
                 }
                 Ok(false)
             }
         } else if unique_estimate > unique_count_boundary {
             if state.verbose() {
-                eprintln!("estimated unique count: {unique_estimate} exceeded the boundary: {unique_count_boundary}, running default HASH AGGREGATION")
+                eprintln!(
+                    "estimated unique count: {unique_estimate} exceeded the boundary: {unique_count_boundary}, running default HASH AGGREGATION"
+                )
             }
             Ok(false)
         } else {

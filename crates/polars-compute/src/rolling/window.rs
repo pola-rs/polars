@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use polars_utils::total_ord::TotalOrd;
 
 use super::*;

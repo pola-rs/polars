@@ -1,7 +1,7 @@
 use std::fs::File;
 
 use polars_core::error::feature_gated;
-use polars_core::{config, POOL};
+use polars_core::{POOL, config};
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_plan::dsl::ScanSources;
@@ -23,7 +23,7 @@ pub(crate) struct CsvSource {
     n_threads: usize,
     sources: ScanSources,
     options: Option<CsvReadOptions>,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     verbose: bool,
     // state for multi-file reads
     current_path_idx: usize,
@@ -143,7 +143,7 @@ impl CsvSource {
         sources: ScanSources,
         schema: SchemaRef,
         options: CsvReadOptions,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         verbose: bool,
     ) -> PolarsResult<Self> {
         Ok(CsvSource {

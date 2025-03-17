@@ -7,7 +7,7 @@ use arrow::record_batch::RecordBatchT;
 use polars_error::PolarsResult;
 use polars_parquet::read::{Filter, RowGroupMetadata};
 
-use super::row_group::{read_columns_many, RowGroupDeserializer};
+use super::row_group::{RowGroupDeserializer, read_columns_many};
 
 /// An iterator of [`RecordBatchT`]s coming from row groups of a parquet file.
 ///

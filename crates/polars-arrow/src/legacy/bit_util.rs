@@ -1,9 +1,9 @@
+use crate::bitmap::Bitmap;
 /// Forked from Arrow until their API stabilizes.
 ///
 /// Note that the bound checks are optimized away.
 ///
 use crate::bitmap::utils::{BitChunkIterExact, BitChunks, BitChunksExact};
-use crate::bitmap::Bitmap;
 
 fn first_set_bit_impl<I>(mut mask_chunks: I) -> usize
 where

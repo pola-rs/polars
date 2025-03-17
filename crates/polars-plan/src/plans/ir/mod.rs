@@ -59,9 +59,9 @@ pub enum IR {
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
         /// generic options that can be used for all file types.
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -146,7 +146,12 @@ pub enum IR {
     },
     Sink {
         input: Node,
-        payload: SinkType,
+        payload: SinkTypeIR,
+    },
+    /// Node that allows for multiple plans to be executed in parallel with common subplan
+    /// elimination and everything.
+    SinkMultiple {
+        inputs: Vec<Node>,
     },
     #[cfg(feature = "merge_sorted")]
     MergeSorted {

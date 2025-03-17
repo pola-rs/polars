@@ -1,9 +1,9 @@
 use arrow::array::{ArrayRef, FixedSizeListArray, PrimitiveArray};
 use arrow::legacy::prelude::*;
 use arrow::legacy::utils::CustomIterTools;
-use polars_error::{polars_bail, PolarsResult};
-use polars_utils::index::NullCount;
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
+use polars_utils::index::NullCount;
 
 use crate::gather::take_unchecked;
 

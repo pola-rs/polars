@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 use std::sync::{Arc, LazyLock};
 
 use hashbrown::hash_map::Entry;
-use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::IdxSize;
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use crate::array::binview::{DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
@@ -11,6 +11,7 @@ use crate::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use crate::bitmap::OptBitmapBuilder;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
+use crate::pushable::Pushable;
 
 static PLACEHOLDER_BUFFER: LazyLock<Buffer<u8>> = LazyLock::new(|| Buffer::from_static(&[]));
 
@@ -20,7 +21,7 @@ pub struct BinaryViewArrayGenericBuilder<V: ViewType + ?Sized> {
     active_buffer: Vec<u8>,
     active_buffer_idx: u32,
     buffer_set: Vec<Buffer<u8>>,
-    stolen_buffers: PlHashMap<*const u8, u32>,
+    stolen_buffers: PlHashMap<usize, u32>,
 
     // With these we can amortize buffer set translation costs if repeatedly
     // stealing from the same set of buffers.
@@ -93,11 +94,10 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
             let view = if bytes.len() > View::MAX_INLINE_SIZE as usize {
                 self.reserve_active_buffer(bytes.len());
 
-                let buffer_idx = u32::try_from(self.buffer_set.len()).unwrap();
                 let offset = self.active_buffer.len() as u32; // Ensured no overflow by reserve_active_buffer.
                 self.active_buffer.extend_from_slice(bytes);
                 self.total_buffer_len += bytes.len();
-                View::new_noninline_unchecked(bytes, buffer_idx, offset)
+                View::new_noninline_unchecked(bytes, self.active_buffer_idx, offset)
             } else {
                 View::new_inline_unchecked(bytes)
             };
@@ -137,10 +137,10 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
         for mut view in views {
             if view.length > View::MAX_INLINE_SIZE {
                 // Translate from old array-local buffer idx to global stolen buffer idx.
-                let (mut new_buffer_idx, gen) = *self
+                let (mut new_buffer_idx, gen_) = *self
                     .buffer_set_translation_idxs
                     .get_unchecked(view.buffer_idx as usize);
-                if gen != self.buffer_set_translation_generation {
+                if gen_ != self.buffer_set_translation_generation {
                     // This buffer index wasn't seen before for this array, do a dedup lookup.
                     // Since we map by starting pointer and different subslices may have different lengths, we expand
                     // the buffer to the maximum it could be.
@@ -148,7 +148,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
                         .get_unchecked(view.buffer_idx as usize)
                         .clone()
                         .expand_end_to_storage();
-                    let buf_id = buffer.as_slice().as_ptr();
+                    let buf_id = buffer.as_slice().as_ptr().addr();
                     let idx = match self.stolen_buffers.entry(buf_id) {
                         Entry::Occupied(o) => *o.get(),
                         Entry::Vacant(v) => {
@@ -206,6 +206,43 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
                 self.total_buffer_len,
             )
         }
+    }
+
+    fn freeze_reset(&mut self) -> Self::Array {
+        // Flush active buffer and/or remove extra placeholder buffer.
+        if !self.active_buffer.is_empty() {
+            self.buffer_set[self.active_buffer_idx as usize] =
+                Buffer::from(core::mem::take(&mut self.active_buffer));
+        } else if self.buffer_set.last().is_some_and(|b| b.is_empty()) {
+            self.buffer_set.pop();
+        }
+
+        let out = unsafe {
+            BinaryViewArrayGeneric::new_unchecked(
+                self.dtype.clone(),
+                Buffer::from(core::mem::take(&mut self.views)),
+                Arc::from(core::mem::take(&mut self.buffer_set)),
+                core::mem::take(&mut self.validity).into_opt_validity(),
+                self.total_bytes_len,
+                self.total_buffer_len,
+            )
+        };
+
+        self.total_buffer_len = 0;
+        self.total_bytes_len = 0;
+        self.active_buffer_idx = 0;
+        self.stolen_buffers.clear();
+        self.last_buffer_set_stolen_from = None;
+        out
+    }
+
+    fn len(&self) -> usize {
+        self.views.len()
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        self.views.extend_constant(length, View::default());
+        self.validity.extend_constant(length, false);
     }
 
     fn subslice_extend(
@@ -287,5 +324,50 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
 
         self.validity
             .gather_extend_from_opt_validity(other.validity(), idxs);
+    }
+
+    fn opt_gather_extend(&mut self, other: &Self::Array, idxs: &[IdxSize], share: ShareStrategy) {
+        self.views.reserve(idxs.len());
+
+        unsafe {
+            match share {
+                ShareStrategy::Never => {
+                    if let Some(v) = other.validity() {
+                        for idx in idxs {
+                            if (*idx as usize) < v.len() && v.get_bit_unchecked(*idx as usize) {
+                                self.push_value_ignore_validity(
+                                    other.value_unchecked(*idx as usize),
+                                );
+                            } else {
+                                self.views.push(View::default())
+                            }
+                        }
+                    } else {
+                        for idx in idxs {
+                            if (*idx as usize) < other.len() {
+                                self.push_value_ignore_validity(
+                                    other.value_unchecked(*idx as usize),
+                                );
+                            } else {
+                                self.views.push(View::default())
+                            }
+                        }
+                    }
+                },
+                ShareStrategy::Always => {
+                    let other_view_slice = other.views().as_slice();
+                    let other_views = idxs.iter().map(|idx| {
+                        other_view_slice
+                            .get(*idx as usize)
+                            .copied()
+                            .unwrap_or_default()
+                    });
+                    self.extend_views_dedup_ignore_validity(other_views, other.data_buffers());
+                },
+            }
+        }
+
+        self.validity
+            .opt_gather_extend_from_opt_validity(other.validity(), idxs, other.len());
     }
 }

@@ -312,6 +312,10 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         &mut self.0
     }
 
+    fn as_phys_any(&self) -> &dyn Any {
+        self.0.physical()
+    }
+
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self as _
     }

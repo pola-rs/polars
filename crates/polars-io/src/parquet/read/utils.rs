@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
-use polars_core::prelude::{ArrowSchema, DataFrame, DataType, Series, IDX_DTYPE};
+use polars_core::prelude::{ArrowSchema, DataFrame, DataType, IDX_DTYPE, Series};
 use polars_core::schema::SchemaNamesAndDtypes;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
+use crate::RowIndex;
 use crate::hive::materialize_hive_partitions;
 use crate::utils::apply_projection;
-use crate::RowIndex;
 
 pub fn materialize_empty_df(
     projection: Option<&[usize]>,

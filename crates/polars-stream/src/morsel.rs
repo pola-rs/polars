@@ -46,13 +46,6 @@ impl MorselSeq {
     pub fn to_u64(self) -> u64 {
         self.0
     }
-
-    /// # Safety
-    ///
-    /// One should pay attention that the LSB is properly set
-    pub unsafe fn from_u64(v: u64) -> Self {
-        Self(v)
-    }
 }
 
 /// A token indicating which source this morsel originated from, and a way to

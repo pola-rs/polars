@@ -2,9 +2,9 @@ use std::io::Write;
 use std::sync::Arc;
 
 use arrow_format::ipc::planus::Builder;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
-use super::super::{IpcField, ARROW_MAGIC_V2};
+use super::super::{ARROW_MAGIC_V2, IpcField};
 use super::common::{DictionaryTracker, EncodedData, WriteOptions};
 use super::common_sync::{write_continuation, write_message};
 use super::{default_ipc_fields, schema, schema_to_bytes};
@@ -143,7 +143,7 @@ impl<W: Write> FileWriter<W> {
     ) -> PolarsResult<()> {
         if self.state != State::Started {
             polars_bail!(
-                oos ="The IPC file must be started before it can be written to. Call `start` before `write`"
+                oos = "The IPC file must be started before it can be written to. Call `start` before `write`"
             );
         }
 
@@ -174,7 +174,7 @@ impl<W: Write> FileWriter<W> {
     ) -> PolarsResult<()> {
         if self.state != State::Started {
             polars_bail!(
-                oos ="The IPC file must be started before it can be written to. Call `start` before `write`"
+                oos = "The IPC file must be started before it can be written to. Call `start` before `write`"
             );
         }
 

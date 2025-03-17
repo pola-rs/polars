@@ -2,9 +2,9 @@ use std::any::Any;
 use std::path::Path;
 
 use polars_core::prelude::*;
+use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
-use polars_utils::IdxSize;
 
 use crate::hash_keys::HashKeys;
 

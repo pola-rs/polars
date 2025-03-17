@@ -210,5 +210,5 @@ unsafe fn merge_adjacent_non_empty_slices<'a>(left: &'a [u8], right: &'a [u8]) -
     assert!(!left.is_empty());
     assert!(!right.is_empty());
     assert_eq!(left.as_ptr() as usize + left.len(), right.as_ptr() as usize);
-    std::slice::from_raw_parts(left.as_ptr(), left.len() + right.len())
+    unsafe { std::slice::from_raw_parts(left.as_ptr(), left.len() + right.len()) }
 }

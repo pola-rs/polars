@@ -11,7 +11,7 @@ use polars_ops::frame::{IEJoinOptions, InequalityOperator};
 use polars_ops::frame::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_utils::arena::{Arena, Node};
 
-use super::{aexpr_to_leaf_names_iter, AExpr, ExprOrigin, JoinOptions, IR};
+use super::{AExpr, ExprOrigin, IR, JoinOptions, aexpr_to_leaf_names_iter};
 use crate::dsl::{JoinTypeOptionsIR, Operator};
 use crate::plans::optimizer::join_utils::remove_suffix;
 use crate::plans::{ExprIR, MintermIter};

@@ -4,7 +4,7 @@ use std::simd::{LaneCount, Mask, MaskElement, SupportedLaneCount};
 use polars_utils::slice::load_padded_le_u64;
 
 use super::iterator::FastU56BitmapIter;
-use super::utils::{count_zeros, fmt, BitmapIter};
+use super::utils::{BitmapIter, count_zeros, fmt};
 use crate::bitmap::Bitmap;
 
 /// Returns the nth set bit in w, if n+1 bits are set. The indexing is

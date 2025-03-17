@@ -1,8 +1,8 @@
 use std::io::Read;
 #[cfg(target_os = "emscripten")]
 use std::io::{Seek, SeekFrom};
+use std::sync::LazyLock;
 
-use once_cell::sync::Lazy;
 use polars_core::prelude::*;
 use polars_utils::mmap::{MMapSemaphore, MemSlice};
 use regex::{Regex, RegexBuilder};
@@ -153,17 +153,17 @@ pub fn overwrite_schema(schema: &mut Schema, overwriting_schema: &Schema) -> Pol
     Ok(())
 }
 
-pub static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
+pub static FLOAT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$").unwrap()
 });
 
-pub static FLOAT_RE_DECIMAL: Lazy<Regex> = Lazy::new(|| {
+pub static FLOAT_RE_DECIMAL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[-+]?((\d*,\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+,)$").unwrap()
 });
 
-pub static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^-?(\d+)$").unwrap());
+pub static INTEGER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^-?(\d+)$").unwrap());
 
-pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
+pub static BOOLEAN_RE: LazyLock<Regex> = LazyLock::new(|| {
     RegexBuilder::new(r"^(true|false)$")
         .case_insensitive(true)
         .build()

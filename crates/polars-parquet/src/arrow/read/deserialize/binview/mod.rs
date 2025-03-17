@@ -6,10 +6,10 @@ use super::dictionary_encoded::{append_validity, constrain_page_validity};
 use super::utils::{
     dict_indices_decoder, filter_from_range, freeze_validity, unspecialized_decode,
 };
-use super::{dictionary_encoded, Filter, PredicateFilter};
-use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array, hybrid_rle, Encoding};
+use super::{Filter, PredicateFilter, dictionary_encoded};
+use crate::parquet::encoding::{Encoding, delta_byte_array, delta_length_byte_array, hybrid_rle};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::read::deserialize::utils::{self};
 
 mod optional;
@@ -253,9 +253,9 @@ pub fn decode_plain_generic(
     let buffer_idx = target.completed_buffers().len() as u32;
     let mut buffer = Vec::with_capacity(values.len() + 1);
     let mut none_starting_with_continuation_byte = true; // Whether the transition from between strings is valid
-                                                         // UTF-8
+    // UTF-8
     let mut all_len_below_128 = true; // Whether all the lengths of the values are below 128, this
-                                      // allows us to make UTF-8 verification a lot faster.
+    // allows us to make UTF-8 verification a lot faster.
 
     let mut total_bytes_len = 0;
     let mut num_seen = 0;

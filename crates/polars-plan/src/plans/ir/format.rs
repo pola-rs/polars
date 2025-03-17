@@ -251,7 +251,7 @@ impl<'a> IRDisplay<'a> {
 
                 write_scan(
                     f,
-                    scan_type.into(),
+                    (&**scan_type).into(),
                     sources,
                     indent,
                     n_columns,
@@ -390,11 +390,25 @@ impl<'a> IRDisplay<'a> {
             },
             Sink { input, payload, .. } => {
                 let name = match payload {
-                    SinkType::Memory => "SINK (memory)",
-                    SinkType::File { .. } => "SINK (file)",
+                    SinkTypeIR::Memory => "SINK (memory)",
+                    SinkTypeIR::File { .. } => "SINK (file)",
+                    SinkTypeIR::Partition { .. } => "SINK (partition)",
                 };
                 write!(f, "{:indent$}{name}", "")?;
                 self.with_root(*input)._format(f, sub_indent)
+            },
+            SinkMultiple { inputs } => {
+                // 3 levels of indentation
+                // - 0 => SINK_MULTIPLE ... END SINK_MULTIPLE
+                // - 1 => PLAN 0, PLAN 1, ... PLAN N
+                // - 2 => actual formatting of plans
+                let sub_sub_indent = sub_indent + 2;
+                write!(f, "{:indent$}SINK_MULTIPLE", "")?;
+                for (i, plan) in inputs.iter().enumerate() {
+                    write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
+                    self.with_root(*plan)._format(f, sub_sub_indent)?;
+                }
+                write!(f, "\n{:indent$}END SINK_MULTIPLE", "")
             },
             SimpleProjection { input, columns } => {
                 let num_columns = columns.as_ref().len();
@@ -522,7 +536,10 @@ impl Display for ExprIRDisplay<'_> {
                     _ => {
                         if let Some((order_by, _)) = order_by {
                             let order_by = self.with_root(order_by);
-                            write!(f, "{function}.over(partition_by: {partition_by}, order_by: {order_by})")
+                            write!(
+                                f,
+                                "{function}.over(partition_by: {partition_by}, order_by: {order_by})"
+                            )
                         } else {
                             write!(f, "{function}.over({partition_by})")
                         }

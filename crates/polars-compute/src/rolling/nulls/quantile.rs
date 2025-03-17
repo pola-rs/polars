@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::MutablePrimitiveArray;
 
 use super::*;
@@ -10,21 +11,21 @@ pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
 }
 
 impl<
-        'a,
-        T: NativeType
-            + IsFloat
-            + Float
-            + std::iter::Sum
-            + AddAssign
-            + SubAssign
-            + Div<Output = T>
-            + NumCast
-            + One
-            + Zero
-            + SealedRolling
-            + PartialOrd
-            + Sub<Output = T>,
-    > RollingAggWindowNulls<'a, T> for QuantileWindow<'a, T>
+    'a,
+    T: NativeType
+        + IsFloat
+        + Float
+        + std::iter::Sum
+        + AddAssign
+        + SubAssign
+        + Div<Output = T>
+        + NumCast
+        + One
+        + Zero
+        + SealedRolling
+        + PartialOrd
+        + Sub<Output = T>,
+> RollingAggWindowNulls<'a, T> for QuantileWindow<'a, T>
 {
     unsafe fn new(
         slice: &'a [T],

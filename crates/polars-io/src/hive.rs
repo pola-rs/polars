@@ -1,5 +1,5 @@
-use polars_core::frame::column::ScalarColumn;
 use polars_core::frame::DataFrame;
+use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::Column;
 use polars_core::series::Series;
 

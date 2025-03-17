@@ -12,8 +12,8 @@ use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
 
 use crate::prelude::*;
-use crate::series::implementations::null::NullChunked;
 use crate::series::IsSorted;
+use crate::series::implementations::null::NullChunked;
 use crate::utils::align_chunks_binary;
 
 impl<T> ChunkCompareEq<&ChunkedArray<T>> for ChunkedArray<T>
@@ -1160,6 +1160,7 @@ impl ChunkEqualElement for ListChunked {}
 impl ChunkEqualElement for ArrayChunked {}
 
 #[cfg(test)]
+#[cfg_attr(feature = "nightly", allow(clippy::manual_repeat_n))] // remove once stable
 mod test {
     use std::iter::repeat;
 

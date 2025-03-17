@@ -10,7 +10,7 @@ use crate::ScanPredicate;
 pub struct JsonExec {
     sources: ScanSources,
     options: NDJsonReadOptions,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     file_info: FileInfo,
     predicate: Option<ScanPredicate>,
 }
@@ -19,7 +19,7 @@ impl JsonExec {
     pub fn new(
         sources: ScanSources,
         options: NDJsonReadOptions,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         file_info: FileInfo,
         predicate: Option<ScanPredicate>,
     ) -> Self {

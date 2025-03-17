@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 #[cfg(feature = "array_to_struct")]
 use polars_ops::chunked_array::array::{
-    arr_default_struct_name_gen, ArrToStructNameGenerator, ToStruct,
+    ArrToStructNameGenerator, ToStruct, arr_default_struct_name_gen,
 };
 
 use crate::dsl::function_expr::ArrayFunction;
@@ -11,6 +11,10 @@ use crate::prelude::*;
 pub struct ArrayNameSpace(pub Expr);
 
 impl ArrayNameSpace {
+    pub fn len(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Length))
+    }
     /// Compute the maximum of the items in every subarray.
     pub fn max(self) -> Expr {
         self.0

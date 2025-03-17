@@ -1,40 +1,40 @@
 use std::sync::Arc;
 
+#[cfg(feature = "dtype-categorical")]
+use polars_core::StringCacheHolder;
 use polars_core::config;
 use polars_core::prelude::Field;
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
-#[cfg(feature = "dtype-categorical")]
-use polars_core::StringCacheHolder;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::_csv_read_internal::{
-    cast_columns, find_starting_point, prepare_csv_schema, read_chunk, CountLines,
-    NullValuesCompiled,
+    CountLines, NullValuesCompiled, cast_columns, find_starting_point, prepare_csv_schema,
+    read_chunk,
 };
 use polars_io::prelude::buffer::validate_utf8;
 use polars_io::prelude::{CsvEncoding, CsvParseOptions, CsvReadOptions};
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::slice::SplitSlicePosition;
-use polars_io::RowIndex;
 use polars_plan::dsl::ScanSource;
-use polars_plan::plans::{isolated_csv_file_info, FileInfo};
+use polars_plan::plans::{FileInfo, isolated_csv_file_info};
 use polars_plan::prelude::FileScanOptions;
+use polars_utils::IdxSize;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::IdxSize;
 
 use super::multi_scan::MultiScanable;
 use super::{RowRestriction, SourceNode, SourceOutput};
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{self, spawn};
-use crate::async_primitives::connector::{connector, Receiver};
+use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::MorselOutput;
 use crate::nodes::{MorselSeq, TaskPriority};
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
 struct LineBatch {
     bytes: MemSlice,
@@ -53,7 +53,7 @@ type AsyncTaskData = (
 pub struct CsvSourceNode {
     scan_source: ScanSource,
     file_info: FileInfo,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     options: CsvReadOptions,
     schema: Option<SchemaRef>,
     verbose: bool,
@@ -63,7 +63,7 @@ impl CsvSourceNode {
     pub fn new(
         scan_source: ScanSource,
         file_info: FileInfo,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         options: CsvReadOptions,
     ) -> Self {
         let verbose = config::verbose();
@@ -90,26 +90,23 @@ impl SourceNode for CsvSourceNode {
 
     fn spawn_source(
         &mut self,
-        num_pipelines: usize,
         mut output_recv: Receiver<SourceOutput>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
-        let (mut send_to, recv_from) = (0..num_pipelines)
+        let (mut send_to, recv_from) = (0..state.num_pipelines)
             .map(|_| connector::<MorselOutput>())
             .collect::<(Vec<_>, Vec<_>)>();
 
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_right());
 
-        let source_token = SourceToken::new();
         let (line_batch_receivers, chunk_reader, line_batch_source_task_handle) =
-            self.init_line_batch_source(num_pipelines, unrestricted_row_count);
+            self.init_line_batch_source(state.num_pipelines, unrestricted_row_count);
 
         join_handles.extend(line_batch_receivers.into_iter().zip(recv_from).map(
             |(mut line_batch_rx, mut recv_from)| {
                 let chunk_reader = chunk_reader.clone();
-                let source_token = source_token.clone();
                 let wait_group = WaitGroup::default();
 
                 spawn(TaskPriority::Low, async move {
@@ -129,15 +126,17 @@ impl SourceNode for CsvSourceNode {
                                 row_offset,
                             )?;
 
-                            let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
+                            let mut morsel =
+                                Morsel::new(df, morsel_seq, morsel_output.source_token.clone());
                             morsel.set_consume_token(wait_group.token());
 
                             if morsel_output.port.send(morsel).await.is_err() {
                                 break;
                             }
+
                             wait_group.wait().await;
 
-                            if source_token.stop_requested() {
+                            if morsel_output.source_token.stop_requested() {
                                 morsel_output.outcome.stop();
                                 break;
                             }
@@ -152,11 +151,13 @@ impl SourceNode for CsvSourceNode {
         join_handles.push(spawn(TaskPriority::Low, async move {
             // Every phase we are given a new send port.
             while let Ok(phase_output) = output_recv.recv().await {
+                let source_token = SourceToken::new();
                 let morsel_senders = phase_output.port.parallel();
                 let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
 
                 for (send_to, port) in send_to.iter_mut().zip(morsel_senders) {
-                    let (outcome, wait_group, morsel_output) = MorselOutput::from_port(port);
+                    let (outcome, wait_group, morsel_output) =
+                        MorselOutput::from_port(port, source_token.clone());
                     _ = send_to.send(morsel_output).await;
                     morsel_outcomes.push((outcome, wait_group));
                 }
@@ -236,11 +237,9 @@ impl CsvSourceNode {
             async_executor::spawn(TaskPriority::Low, async move {
                 let global_slice = if let Some((offset, len)) = global_slice {
                     if offset < 0 {
-                        polars_bail!(
-                            ComputeError:
-                            "not implemented: negative slice offset {} for CSV source",
-                            offset
-                        );
+                        // IR lowering puts negative slice in separate node.
+                        // TODO: Native line buffering for negative slice
+                        unreachable!()
                     }
                     Some(offset as usize..offset as usize + len)
                 } else {
@@ -560,10 +559,10 @@ impl MultiScanable for CsvSourceNode {
     ) -> PolarsResult<Self> {
         let has_row_index = row_index.is_some();
 
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
             ..Default::default()
-        };
+        });
 
         let mut csv_options = options.clone();
         let mut file_info = isolated_csv_file_info(
@@ -618,9 +617,9 @@ impl MultiScanable for CsvSourceNode {
             }
         };
 
+        // TODO: Parallelize this over the async executor
         let num_rows = polars_io::csv::read::count_rows_from_slice(
             &mem_slice[..],
-            parse_options.separator,
             parse_options.quote_char,
             parse_options.comment_prefix.as_ref(),
             parse_options.eol_char,

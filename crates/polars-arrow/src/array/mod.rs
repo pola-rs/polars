@@ -17,6 +17,7 @@
 //!
 //! Most arrays contain a [`MutableArray`] counterpart that is neither cloneable nor sliceable, but
 //! can be operated in-place.
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::any::Any;
 use std::sync::Arc;
 
@@ -681,8 +682,8 @@ mod values;
 
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
 pub use binview::{
-    validate_utf8_view, BinaryViewArray, BinaryViewArrayGeneric, BinaryViewArrayGenericBuilder,
-    MutableBinaryViewArray, MutablePlBinary, MutablePlString, Utf8ViewArray, View, ViewType,
+    BinaryViewArray, BinaryViewArrayGeneric, BinaryViewArrayGenericBuilder, MutableBinaryViewArray,
+    MutablePlBinary, MutablePlString, Utf8ViewArray, View, ViewType, validate_utf8_view,
 };
 pub use boolean::{BooleanArray, BooleanArrayBuilder, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
@@ -708,7 +709,7 @@ pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
 pub use values::ValueSize;
 
-pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
+pub(crate) use self::ffi::{FromFfi, ToFfi, offset_buffers_children_dictionary};
 use crate::{match_integer_type, with_match_primitive_type_full};
 
 /// A trait describing the ability of a struct to create itself from a iterator.

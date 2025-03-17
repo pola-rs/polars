@@ -10,7 +10,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::get_binary_expr_col_and_lv;
 use crate::dsl::Operator;
-use crate::plans::{aexpr_to_leaf_names_iter, AExpr, MintermIter};
+use crate::plans::{AExpr, MintermIter, aexpr_to_leaf_names_iter};
 
 pub struct ColumnPredicates {
     pub predicates: PlHashMap<PlSmallStr, (Node, Option<SpecializedColumnPredicateExpr>)>,

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use super::*;
 
 fn sum_kahan<
@@ -19,9 +20,7 @@ fn sum_kahan<
             if val.is_finite() {
                 let y = val - err;
                 let new_sum = sum + y;
-
-                // Algebraically, err should always be zero, so compiler should not optimize.
-                err = std::hint::black_box((new_sum - sum) - y);
+                err = (new_sum - sum) - y;
                 sum = new_sum;
             } else {
                 sum += val
@@ -49,9 +48,7 @@ impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Out
         if T::is_float() && val.is_finite() {
             let y = val - self.err;
             let new_sum = self.sum + y;
-
-            // Algebraically, err should always be zero, so compiler should not optimize.
-            self.err = std::hint::black_box((new_sum - self.sum) - y);
+            self.err = (new_sum - self.sum) - y;
             self.sum = new_sum;
         } else {
             self.sum += val;
@@ -68,15 +65,15 @@ impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Out
 }
 
 impl<
-        'a,
-        T: NativeType
-            + IsFloat
-            + std::iter::Sum
-            + AddAssign
-            + SubAssign
-            + Sub<Output = T>
-            + Add<Output = T>,
-    > RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T>
+    'a,
+    T: NativeType
+        + IsFloat
+        + std::iter::Sum
+        + AddAssign
+        + SubAssign
+        + Sub<Output = T>
+        + Add<Output = T>,
+> RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
         let (sum, err) = sum_kahan(&slice[start..end]);

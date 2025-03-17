@@ -61,7 +61,7 @@ impl FunctionExpr {
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
             Sign => mapper.with_dtype(DataType::Int64),
-            FillNull { .. } => mapper.map_to_supertype(),
+            FillNull  => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr(rolling_func, ..) => {
                 use RollingFunction::*;
@@ -570,6 +570,26 @@ impl<'a> FieldsMapper<'a> {
             UInt8 | Int8 | Int16 | UInt16 => first.coerce(Int64),
             _ => first.coerce(dt),
         }
+        Ok(first)
+    }
+
+    pub fn nested_mean_median_type(&self) -> PolarsResult<Field> {
+        let mut first = self.fields[0].clone();
+        use DataType::*;
+        let dt = first
+            .dtype()
+            .inner_dtype()
+            .cloned()
+            .unwrap_or_else(|| Unknown(Default::default()));
+
+        let new_dt = match dt {
+            #[cfg(feature = "dtype-datetime")]
+            Date => Datetime(TimeUnit::Milliseconds, None),
+            dt if dt.is_temporal() => dt,
+            Float32 => Float32,
+            _ => Float64,
+        };
+        first.coerce(new_dt);
         Ok(first)
     }
 

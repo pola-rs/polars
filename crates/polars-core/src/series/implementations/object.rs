@@ -168,7 +168,7 @@ where
     }
 
     fn cast(&self, dtype: &DataType, _cast_options: CastOptions) -> PolarsResult<Series> {
-        if matches!(dtype, DataType::Object(_, None)) {
+        if matches!(dtype, DataType::Object(_)) {
             Ok(self.0.clone().into_series())
         } else {
             Err(PolarsError::ComputeError(
@@ -241,6 +241,10 @@ where
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_phys_any(&self) -> &dyn Any {
+        self
     }
 
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

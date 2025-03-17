@@ -46,6 +46,12 @@ fn visualize_plan_rec(
             ),
             &[][..],
         ),
+        PhysNodeKind::SinkMultiple { sinks } => {
+            for sink in sinks {
+                visualize_plan_rec(*sink, phys_sm, expr_arena, visited, out);
+            }
+            return;
+        },
         PhysNodeKind::Select {
             input,
             selectors,
@@ -119,6 +125,20 @@ fn visualize_plan_rec(
             #[allow(unreachable_patterns)]
             _ => todo!(),
         },
+        PhysNodeKind::PartitionSink {
+            input, file_type, ..
+        } => match file_type {
+            #[cfg(feature = "parquet")]
+            FileType::Parquet(_) => ("parquet-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "ipc")]
+            FileType::Ipc(_) => ("ipc-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "csv")]
+            FileType::Csv(_) => ("csv-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "json")]
+            FileType::Json(_) => ("json-partition-sink".to_string(), from_ref(input)),
+            #[allow(unreachable_patterns)]
+            _ => todo!(),
+        },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
             ("in-memory-map".to_string(), from_ref(input))
         },
@@ -163,7 +183,7 @@ fn visualize_plan_rec(
             predicate,
             file_options,
         } => {
-            let name = match scan_type {
+            let name = match &**scan_type {
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet { .. } => "parquet-source",
                 #[cfg(feature = "csv")]

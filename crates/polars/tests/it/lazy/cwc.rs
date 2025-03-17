@@ -27,7 +27,7 @@ fn fuzz_cluster_with_columns() {
         use rand::Rng;
 
         fn leaf(rng: &mut rand::rngs::ThreadRng, used_cols: &[u8]) -> Expr {
-            if rng.gen() {
+            if rng.r#gen() {
                 lit(rnd_prime(rng))
             } else {
                 col(to_str!(sample(rng, used_cols)))
@@ -37,7 +37,7 @@ fn fuzz_cluster_with_columns() {
         let mut e = leaf(rng, used_cols);
 
         loop {
-            if depth >= 10 || rng.gen() {
+            if depth >= 10 || rng.r#gen() {
                 return e;
             } else {
                 e = e * col(to_str!(sample(rng, used_cols)));
@@ -89,7 +89,7 @@ fn fuzz_cluster_with_columns() {
 
             for _ in 0..num_exprs {
                 let col = loop {
-                    let col = if unused_cols.is_empty() || rng.gen() {
+                    let col = if unused_cols.is_empty() || rng.r#gen() {
                         sample(rng, &used_cols)
                     } else {
                         sample(rng, &unused_cols)

@@ -12,7 +12,7 @@ mod struct_;
 mod union;
 mod utf8;
 
-use arrow::array::{clone, new_empty_array, new_null_array, Array, PrimitiveArray};
+use arrow::array::{Array, PrimitiveArray, clone, new_empty_array, new_null_array};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{ArrowDataType, ExtensionType, Field, UnionMode};
 use union::union_type;

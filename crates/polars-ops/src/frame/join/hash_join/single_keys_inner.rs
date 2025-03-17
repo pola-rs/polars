@@ -1,5 +1,5 @@
 use polars_core::utils::flatten;
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::itertools::Itertools;
 use polars_utils::nulls::IsNull;

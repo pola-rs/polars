@@ -1,6 +1,6 @@
 // used only if feature="is_in", feature="dtype-categorical"
 #[cfg(all(feature = "is_in", feature = "dtype-categorical"))]
-use polars_core::{disable_string_cache, StringCacheHolder, SINGLE_LOCK};
+use polars_core::{SINGLE_LOCK, StringCacheHolder, disable_string_cache};
 
 use super::*;
 

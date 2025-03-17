@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(not(feature = "simd"))]
 mod inner {
     /// An adapted version of std::iter::Split.

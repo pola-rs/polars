@@ -1,14 +1,13 @@
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Duration;
 
 use fs4::fs_std::FileExt;
-use once_cell::sync::Lazy;
 
 use super::utils::FILE_CACHE_PREFIX;
 use crate::pl_async;
 
-pub(super) static GLOBAL_FILE_CACHE_LOCK: Lazy<GlobalLock> = Lazy::new(|| {
+pub(super) static GLOBAL_FILE_CACHE_LOCK: LazyLock<GlobalLock> = LazyLock::new(|| {
     let path = FILE_CACHE_PREFIX.join(".process-lock");
 
     let file = std::fs::OpenOptions::new()
@@ -68,9 +67,11 @@ pub(super) static GLOBAL_FILE_CACHE_LOCK: Lazy<GlobalLock> = Lazy::new(|| {
 });
 
 pub(super) enum LockedState {
+    /// Shared between threads and other processes.
     Shared,
     #[allow(dead_code)]
-    Exclusive,
+    /// Locked exclusively by the eviction task of this process.
+    Eviction,
 }
 
 #[allow(dead_code)]
@@ -135,25 +136,26 @@ impl GlobalLock {
         None
     }
 
-    /// Acquire either a shared or exclusive lock. This always returns a read-guard
-    /// to allow for better parallelism within the current process. The tradeoff
-    /// is that we may hold an exclusive lock on the global lockfile for longer
-    /// than we need to (since we don't transition to a shared lock state),
-    /// which blocks other processes.
-    pub(super) fn lock_any(&self) -> GlobalFileCacheGuardAny {
+    /// Acquire a shared lock.
+    pub(super) fn lock_shared(&self) -> GlobalFileCacheGuardAny {
         let access_tracker = self.get_access_tracker();
         let _notify_on_drop = NotifyOnDrop(self.notify_lock_acquired.clone());
 
         {
             let this = self.inner.read().unwrap();
 
-            if this.state.is_some() {
+            if let Some(LockedState::Shared) = this.state {
                 return this;
             }
         }
 
         {
             let mut this = self.inner.write().unwrap();
+
+            if let Some(LockedState::Eviction) = this.state {
+                FileExt::unlock(&this.file).unwrap();
+                this.state = None;
+            }
 
             if this.state.is_none() {
                 FileExt::lock_shared(&this.file).unwrap();
@@ -167,6 +169,13 @@ impl GlobalLock {
 
         {
             let this = self.inner.read().unwrap();
+
+            if let Some(LockedState::Eviction) = this.state {
+                // Try again
+                drop(this);
+                return self.lock_shared();
+            }
+
             assert!(
                 this.state.is_some(),
                 "impl error: global file cache lock was unlocked"
@@ -178,7 +187,7 @@ impl GlobalLock {
     /// Acquire an exclusive lock on the cache directory. Holding this lock freezes
     /// all cache operations except for reading from already-opened data files.
     #[allow(dead_code)]
-    pub(super) fn try_lock_exclusive(&self) -> Option<GlobalFileCacheGuardExclusive> {
+    pub(super) fn try_lock_eviction(&self) -> Option<GlobalFileCacheGuardExclusive> {
         let access_tracker = self.get_access_tracker();
 
         if let Ok(mut this) = self.inner.try_write() {
@@ -194,7 +203,7 @@ impl GlobalLock {
             let _notify_on_drop = NotifyOnDrop(self.notify_lock_acquired.clone());
 
             if let Some(ref state) = this.state {
-                if matches!(state, LockedState::Exclusive) {
+                if matches!(state, LockedState::Eviction) {
                     return Some(this);
                 }
             }
@@ -204,7 +213,7 @@ impl GlobalLock {
             }
 
             if this.file.try_lock_exclusive().is_ok() {
-                this.state = Some(LockedState::Exclusive);
+                this.state = Some(LockedState::Eviction);
                 return Some(this);
             }
         }

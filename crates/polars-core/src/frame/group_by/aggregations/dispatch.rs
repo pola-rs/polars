@@ -66,11 +66,7 @@ impl Series {
                     .iter()
                     .map(
                         |(first, idx)| {
-                            if idx.is_empty() {
-                                None
-                            } else {
-                                Some(first)
-                            }
+                            if idx.is_empty() { None } else { Some(first) }
                         },
                     )
                     .collect_ca(PlSmallStr::EMPTY);

@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
-use crate::series::amortized_iter::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
+use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
 
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,

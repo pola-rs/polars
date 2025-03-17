@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::{Array, PrimitiveArray};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;

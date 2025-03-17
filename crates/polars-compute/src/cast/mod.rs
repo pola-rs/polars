@@ -25,7 +25,7 @@ use binview_to::{
     utf8view_to_naive_timestamp_dyn, view_to_binary,
 };
 use dictionary_to::*;
-use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;
 pub use primitive_to::*;
 use temporal::utf8view_to_timestamp;

@@ -1,5 +1,5 @@
 use either::Either;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;

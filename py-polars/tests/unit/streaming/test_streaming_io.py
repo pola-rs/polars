@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import io
 from typing import TYPE_CHECKING, Any
-from unittest.mock import patch
 
 import pytest
 
@@ -22,18 +20,20 @@ def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:
     df.write_parquet(file_path)
 
     path_glob = tmp_path / "small*.parquet"
-    result = pl.scan_parquet(path_glob).select(pl.all().first()).collect(streaming=True)
+    result = (
+        pl.scan_parquet(path_glob).select(pl.all().first()).collect(engine="streaming")
+    )
     assert result.shape == (1, df.width)
 
 
 def test_scan_slice_streaming(io_files_path: Path) -> None:
     foods_file_path = io_files_path / "foods1.csv"
-    df = pl.scan_csv(foods_file_path).head(5).collect(streaming=True)
+    df = pl.scan_csv(foods_file_path).head(5).collect(engine="streaming")
     assert df.shape == (5, 4)
 
     # globbing
     foods_file_path = io_files_path / "foods*.csv"
-    df = pl.scan_csv(foods_file_path).head(5).collect(streaming=True)
+    df = pl.scan_csv(foods_file_path).head(5).collect(engine="streaming")
     assert df.shape == (5, 4)
 
 
@@ -43,7 +43,7 @@ def test_scan_csv_overwrite_small_dtypes(
 ) -> None:
     file_path = io_files_path / "foods1.csv"
     df = pl.scan_csv(file_path, schema_overrides={"sugars_g": dtype}).collect(
-        streaming=True
+        engine="streaming"
     )
     assert df.dtypes == [pl.String, pl.Int64, pl.Float64, dtype]
 
@@ -128,59 +128,6 @@ def test_sink_csv_14494(tmp_path: Path) -> None:
     assert pl.read_csv(tmp_path / "sink.csv").columns == ["c"]
 
 
-def test_sink_csv_with_options() -> None:
-    """
-    Test with all possible options.
-
-    As we already tested the main read/write functionality of the `sink_csv` method in
-     the `test_sink_csv` method above, we only need to verify that all the options are
-     passed into the rust-polars correctly.
-    """
-    df = pl.LazyFrame({"dummy": ["abc"]})
-    with patch.object(df, "_ldf") as ldf:
-        df.sink_csv(
-            "path",
-            include_bom=True,
-            include_header=False,
-            separator=";",
-            line_terminator="|",
-            quote_char="$",
-            batch_size=42,
-            datetime_format="%Y",
-            date_format="%d",
-            time_format="%H",
-            float_scientific=True,
-            float_precision=42,
-            null_value="BOOM",
-            quote_style="always",
-            maintain_order=False,
-            storage_options=None,
-            credential_provider="auto",
-            retries=2,
-        )
-
-        ldf.optimization_toggle().sink_csv.assert_called_with(
-            path="path",
-            include_bom=True,
-            include_header=False,
-            separator=ord(";"),
-            line_terminator="|",
-            quote_char=ord("$"),
-            batch_size=42,
-            datetime_format="%Y",
-            date_format="%d",
-            time_format="%H",
-            float_scientific=True,
-            float_precision=42,
-            null_value="BOOM",
-            quote_style="always",
-            maintain_order=False,
-            cloud_options=None,
-            credential_provider=None,
-            retries=2,
-        )
-
-
 @pytest.mark.parametrize(("value"), ["abc", ""])
 def test_sink_csv_exception_for_separator(value: str) -> None:
     df = pl.LazyFrame({"dummy": ["abc"]})
@@ -215,13 +162,13 @@ def test_sink_csv_nested_data(tmp_path: Path) -> None:
 
 def test_scan_csv_only_header_10792(io_files_path: Path) -> None:
     foods_file_path = io_files_path / "only_header.csv"
-    df = pl.scan_csv(foods_file_path).collect(streaming=True)
+    df = pl.scan_csv(foods_file_path).collect(engine="streaming")
     assert df.to_dict(as_series=False) == {"Name": [], "Address": []}
 
 
 def test_scan_empty_csv_10818(io_files_path: Path) -> None:
     empty_file_path = io_files_path / "empty.csv"
-    df = pl.scan_csv(empty_file_path, raise_if_empty=False).collect(streaming=True)
+    df = pl.scan_csv(empty_file_path, raise_if_empty=False).collect(engine="streaming")
     assert df.is_empty()
 
 
@@ -276,18 +223,30 @@ def test_parquet_eq_statistics(
         pl.col("idx") == 150,
         pl.col("idx") == 210,
     ]:
-        result = pl.scan_parquet(file_path).filter(pred).collect(streaming=streaming)
+        result = (
+            pl.scan_parquet(file_path)
+            .filter(pred)
+            .collect(engine="streaming" if streaming else "in-memory")
+        )
         assert_frame_equal(result, df.filter(pred))
 
     captured = capfd.readouterr().err
-    assert (
-        "parquet row group must be read, statistics not sufficient for predicate."
-        in captured
-    )
-    assert (
-        "parquet row group can be skipped, the statistics were sufficient"
-        " to apply the predicate." in captured
-    )
+    if streaming:
+        assert (
+            "[ParquetSource]: Predicate pushdown: reading 1 / 1 row groups" in captured
+        )
+        assert (
+            "[ParquetSource]: Predicate pushdown: reading 0 / 1 row groups" in captured
+        )
+    else:
+        assert (
+            "parquet row group must be read, statistics not sufficient for predicate."
+            in captured
+        )
+        assert (
+            "parquet row group can be skipped, the statistics were sufficient"
+            " to apply the predicate." in captured
+        )
 
 
 @pytest.mark.write_disk
@@ -297,31 +256,48 @@ def test_streaming_empty_parquet_16523(tmp_path: Path) -> None:
     df.write_parquet(file_path)
     q = pl.scan_parquet(file_path)
     q2 = pl.LazyFrame({"a": [1]}, schema={"a": pl.Int32})
-    assert q.join(q2, on="a").collect(streaming=True).shape == (0, 1)
+    assert q.join(q2, on="a").collect(engine="streaming").shape == (0, 1)
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize(
     "method",
-    ["parquet", "csv"],
+    ["parquet", "csv", "ipc", "ndjson"],
 )
-def test_nyi_scan_in_memory(method: str) -> None:
-    f = io.BytesIO()
+@pytest.mark.write_disk
+def test_sink_phases(tmp_path: Path, method: str) -> None:
     df = pl.DataFrame(
         {
-            "a": [1, 2, 3],
-            "b": ["x", "y", "z"],
+            "a": [1, 2, 3, 4, 5, 6, 7],
+            "b": [
+                "some",
+                "text",
+                "over-here-is-very-long",
+                "and",
+                "some",
+                "more",
+                "text",
+            ],
         }
     )
 
-    (getattr(df, f"write_{method}"))(f)
+    # Ordered Unions lead to many phase transitions.
+    ref_df = pl.concat([df] * 100)
+    lf = pl.concat([df.lazy()] * 100)
 
-    f.seek(0)
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match="not yet implemented: Streaming scanning of in-memory buffers",
-    ):
-        (getattr(pl, f"scan_{method}"))(f).collect(streaming=True)
+    (getattr(lf, f"sink_{method}"))(tmp_path / f"t.{method}", engine="streaming")
+    df = (getattr(pl, f"scan_{method}"))(tmp_path / f"t.{method}").collect()
+
+    assert_frame_equal(df, ref_df)
+
+    (getattr(lf, f"sink_{method}"))(
+        tmp_path / f"t.{method}", maintain_order=False, engine="streaming"
+    )
+    height = (
+        (getattr(pl, f"scan_{method}"))(tmp_path / f"t.{method}")
+        .select(pl.len())
+        .collect()[0, 0]
+    )
+    assert height == ref_df.height
 
 
 def test_empty_sink_parquet_join_14863(tmp_path: Path) -> None:
@@ -332,3 +308,14 @@ def test_empty_sink_parquet_join_14863(tmp_path: Path) -> None:
         pl.LazyFrame({"a": ["uno"]}).join(pl.scan_parquet(file_path), on="a").collect(),
         lf.collect(),
     )
+
+
+@pytest.mark.write_disk
+def test_scan_non_existent_file_21527() -> None:
+    with pytest.raises(
+        FileNotFoundError,
+        match=r"a-file-that-does-not-exist",
+    ):
+        pl.scan_parquet("a-file-that-does-not-exist").sink_ipc(
+            "x.ipc", engine="streaming"
+        )

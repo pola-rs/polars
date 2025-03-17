@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! DataFrame module.
 use std::sync::OnceLock;
 use std::{mem, ops};
@@ -14,11 +15,12 @@ use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
 #[cfg(feature = "row_hash")]
 use crate::utils::split_df;
-use crate::utils::{slice_offsets, try_get_supertype, Container, NoNull};
+use crate::utils::{Container, NoNull, slice_offsets, try_get_supertype};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
+pub mod builder;
 mod chunks;
 pub use chunks::chunk_df_for_writing;
 pub mod column;
@@ -39,11 +41,11 @@ use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
+use crate::POOL;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
 use crate::series::IsSorted;
-use crate::POOL;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -180,6 +182,11 @@ pub struct DataFrame {
 impl DataFrame {
     pub fn clear_schema(&mut self) {
         self.cached_schema = OnceLock::new();
+    }
+
+    #[inline]
+    pub fn column_iter(&self) -> impl ExactSizeIterator<Item = &Column> {
+        self.columns.iter()
     }
 
     #[inline]
@@ -2129,19 +2136,12 @@ impl DataFrame {
             }
         }
 
-        #[cfg(feature = "dtype-struct")]
-        let has_struct = by_column
-            .iter()
-            .any(|s| matches!(s.dtype(), DataType::Struct(_)));
-
-        #[cfg(not(feature = "dtype-struct"))]
-        #[allow(non_upper_case_globals)]
-        const has_struct: bool = false;
+        let has_nested = by_column.iter().any(|s| s.dtype().is_nested());
 
         // a lot of indirection in both sorting and take
         let mut df = self.clone();
         let df = df.as_single_chunk_par();
-        let mut take = match (by_column.len(), has_struct) {
+        let mut take = match (by_column.len(), has_nested) {
             (1, false) => {
                 let s = &by_column[0];
                 let options = SortOptions {
@@ -2165,7 +2165,7 @@ impl DataFrame {
             },
             _ => {
                 if sort_options.nulls_last.iter().all(|&x| x)
-                    || has_struct
+                    || has_nested
                     || std::env::var("POLARS_ROW_FMT_SORT").is_ok()
                 {
                     argsort_multiple_row_fmt(
@@ -3163,12 +3163,11 @@ impl DataFrame {
         cols: &[PlSmallStr],
         stable: bool,
         include_key: bool,
+        parallel: bool,
     ) -> PolarsResult<Vec<DataFrame>> {
-        let groups = if stable {
-            self.group_by_stable(cols.iter().cloned())?.take_groups()
-        } else {
-            self.group_by(cols.iter().cloned())?.take_groups()
-        };
+        let selected_keys = self.select_columns(cols.iter().cloned())?;
+        let groups = self.group_by_with_series(selected_keys, parallel, stable)?;
+        let groups = groups.take_groups();
 
         // drop key columns prior to calculation if requested
         let df = if include_key {
@@ -3177,16 +3176,43 @@ impl DataFrame {
             self.drop_many(cols.iter().cloned())
         };
 
-        // don't parallelize this
-        // there is a lot of parallelization in take and this may easily SO
-        POOL.install(|| {
+        if parallel {
+            // don't parallelize this
+            // there is a lot of parallelization in take and this may easily SO
+            POOL.install(|| {
+                match groups.as_ref() {
+                    GroupsType::Idx(idx) => {
+                        // Rechunk as the gather may rechunk for every group #17562.
+                        let mut df = df.clone();
+                        df.as_single_chunk_par();
+                        Ok(idx
+                            .into_par_iter()
+                            .map(|(_, group)| {
+                                // groups are in bounds
+                                unsafe {
+                                    df._take_unchecked_slice_sorted(
+                                        group,
+                                        false,
+                                        IsSorted::Ascending,
+                                    )
+                                }
+                            })
+                            .collect())
+                    },
+                    GroupsType::Slice { groups, .. } => Ok(groups
+                        .into_par_iter()
+                        .map(|[first, len]| df.slice(*first as i64, *len as usize))
+                        .collect()),
+                }
+            })
+        } else {
             match groups.as_ref() {
                 GroupsType::Idx(idx) => {
                     // Rechunk as the gather may rechunk for every group #17562.
                     let mut df = df.clone();
-                    df.as_single_chunk_par();
+                    df.as_single_chunk();
                     Ok(idx
-                        .into_par_iter()
+                        .into_iter()
                         .map(|(_, group)| {
                             // groups are in bounds
                             unsafe {
@@ -3196,11 +3222,11 @@ impl DataFrame {
                         .collect())
                 },
                 GroupsType::Slice { groups, .. } => Ok(groups
-                    .into_par_iter()
+                    .iter()
                     .map(|[first, len]| df.slice(*first as i64, *len as usize))
                     .collect()),
             }
-        })
+        }
     }
 
     /// Split into multiple DataFrames partitioned by groups
@@ -3214,7 +3240,7 @@ impl DataFrame {
             .into_iter()
             .map(Into::into)
             .collect::<Vec<PlSmallStr>>();
-        self._partition_by_impl(cols.as_slice(), false, include_key)
+        self._partition_by_impl(cols.as_slice(), false, include_key, true)
     }
 
     /// Split into multiple DataFrames partitioned by groups
@@ -3233,7 +3259,7 @@ impl DataFrame {
             .into_iter()
             .map(Into::into)
             .collect::<Vec<PlSmallStr>>();
-        self._partition_by_impl(cols.as_slice(), true, include_key)
+        self._partition_by_impl(cols.as_slice(), true, include_key, true)
     }
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
@@ -3275,28 +3301,14 @@ impl DataFrame {
     }
 
     pub fn append_record_batch(&mut self, rb: RecordBatchT<ArrayRef>) -> PolarsResult<()> {
+        // @Optimize: this does a lot of unnecessary allocations. We should probably have a
+        // append_chunk or something like this. It is just quite difficult to make that safe.
+        let df = DataFrame::from(rb);
         polars_ensure!(
-            rb.arrays().len() == self.width(),
-            InvalidOperation: "attempt to extend dataframe of width {} with record batch of width {}",
-            self.width(),
-            rb.arrays().len(),
+            self.schema() == df.schema(),
+            SchemaMismatch: "cannot append record batch with different schema",
         );
-
-        if rb.height() == 0 {
-            return Ok(());
-        }
-
-        // SAFETY:
-        // - we don't adjust the names of the columns
-        // - each column gets appended the same number of rows, which is an invariant of
-        //   record_batch.
-        self.height += rb.height();
-        let columns = unsafe { self.get_columns_mut() };
-        for (col, arr) in columns.iter_mut().zip(rb.into_arrays()) {
-            let arr_series = Series::from_arrow_chunks(PlSmallStr::EMPTY, vec![arr])?.into_column();
-            col.append(&arr_series)?;
-        }
-
+        self.vstack_mut_owned_unchecked(df);
         Ok(())
     }
 }
@@ -3512,12 +3524,14 @@ mod test {
         }
         .unwrap();
         // check if column is replaced
-        assert!(df
-            .with_column(Series::new("foo".into(), &[1, 2, 3]))
-            .is_ok());
-        assert!(df
-            .with_column(Series::new("bar".into(), &[1, 2, 3]))
-            .is_ok());
+        assert!(
+            df.with_column(Series::new("foo".into(), &[1, 2, 3]))
+                .is_ok()
+        );
+        assert!(
+            df.with_column(Series::new("bar".into(), &[1, 2, 3]))
+                .is_ok()
+        );
         assert!(df.column("bar").is_ok())
     }
 

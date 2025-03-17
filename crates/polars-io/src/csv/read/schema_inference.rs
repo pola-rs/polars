@@ -8,7 +8,7 @@ use polars_time::chunkedarray::string::infer as date_infer;
 use polars_time::prelude::string::Pattern;
 use polars_utils::format_pl_smallstr;
 
-use super::parser::{is_comment_line, skip_bom, skip_line_ending, SplitLines};
+use super::parser::{SplitLines, is_comment_line, skip_bom, skip_line_ending};
 use super::splitfields::SplitFields;
 use super::{CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
 use crate::csv::read::parser::skip_lines_naive;
@@ -458,7 +458,9 @@ fn infer_file_schema_inner(
                                 > 8
                             {
                                 if verbose() {
-                                    eprintln!("falling back to single core reading because of many escaped new line chars.")
+                                    eprintln!(
+                                        "falling back to single core reading because of many escaped new line chars."
+                                    )
                                 }
                                 *n_threads = Some(1);
                             }

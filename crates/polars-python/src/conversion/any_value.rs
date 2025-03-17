@@ -19,12 +19,12 @@ use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{
     PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySequence, PyString, PyTuple, PyType,
 };
-use pyo3::{intern, IntoPyObjectExt};
+use pyo3::{IntoPyObjectExt, intern};
 
 use super::datetime::{
     datetime_to_py_object, elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime,
 };
-use super::{decimal_to_digits, struct_dict, ObjectValue, Wrap};
+use super::{ObjectValue, Wrap, decimal_to_digits, struct_dict};
 use crate::error::PyPolarsErr;
 use crate::py_modules::{pl_series, pl_utils};
 use crate::series::PySeries;

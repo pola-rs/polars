@@ -1,5 +1,5 @@
 use arrow::array::StructArray;
-use arrow::datatypes::{IntegerType, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES};
+use arrow::datatypes::{DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, IntegerType};
 use polars_compute::cast::CastOptionsImpl;
 
 use self::categorical::CategoricalDecoder;

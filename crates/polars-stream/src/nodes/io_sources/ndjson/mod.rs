@@ -8,25 +8,25 @@ use negative_slice_pass::MorselStreamReverser;
 use polars_core::config;
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::bitmap::Bitmap;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::estimate_n_lines_in_file;
 use polars_io::utils::compression::maybe_decompress_bytes;
-use polars_io::{ndjson, RowIndex};
+use polars_io::{RowIndex, ndjson};
 use polars_plan::dsl::{NDJsonReadOptions, ScanSource};
-use polars_plan::plans::{ndjson_file_info, FileInfo};
+use polars_plan::plans::{FileInfo, ndjson_file_info};
 use polars_plan::prelude::FileScanOptions;
+use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
-use polars_utils::IdxSize;
 use row_index_limit_pass::ApplyRowIndexOrLimit;
 
 use super::multi_scan::MultiScanable;
 use super::{RowRestriction, SourceNode, SourceOutput};
-use crate::async_executor::{spawn, AbortOnDropHandle};
-use crate::async_primitives::connector::{connector, Receiver};
+use crate::async_executor::{AbortOnDropHandle, spawn};
+use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
@@ -44,7 +44,7 @@ mod row_index_limit_pass;
 pub struct NDJsonSourceNode {
     scan_source: ScanSource,
     file_info: FileInfo,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     options: NDJsonReadOptions,
     schema: Option<SchemaRef>,
     verbose: bool,
@@ -54,7 +54,7 @@ impl NDJsonSourceNode {
     pub fn new(
         scan_source: ScanSource,
         file_info: FileInfo,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         options: NDJsonReadOptions,
     ) -> Self {
         let verbose = config::verbose();
@@ -81,9 +81,8 @@ impl SourceNode for NDJsonSourceNode {
 
     fn spawn_source(
         &mut self,
-        num_pipelines: usize,
         mut output_recv: Receiver<SourceOutput>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
@@ -160,7 +159,7 @@ impl SourceNode for NDJsonSourceNode {
                 global_bytes.len()
             };
 
-            let chunk_size = n_bytes_to_split.div_ceil(16 * num_pipelines);
+            let chunk_size = n_bytes_to_split.div_ceil(16 * state.num_pipelines);
 
             let max_chunk_size = 16 * 1024 * 1024;
             // Use a small min chunk size to catch failures in tests.
@@ -193,21 +192,22 @@ impl SourceNode for NDJsonSourceNode {
             );
         }
 
-        let (mut phase_tx_senders, mut phase_tx_receivers) = (0..num_pipelines)
+        let (mut phase_tx_senders, mut phase_tx_receivers) = (0..state.num_pipelines)
             .map(|_| connector::<MorselOutput>())
             .collect::<(Vec<_>, Vec<_>)>();
 
         // Note: This counts from the end of file for negative slice.
         let n_rows_to_skip = global_slice.as_ref().map_or(0, |x| x.start);
 
-        let (opt_linearizer, mut linearizer_inserters) =
-            if global_slice.is_some() || self.file_options.row_index.is_some() {
-                let (a, b) =
-                    Linearizer::<Priority<Reverse<MorselSeq>, DataFrame>>::new(num_pipelines, 1);
-                (Some(a), b)
-            } else {
-                (None, vec![])
-            };
+        let (opt_linearizer, mut linearizer_inserters) = if global_slice.is_some()
+            || self.file_options.row_index.is_some()
+        {
+            let (a, b) =
+                Linearizer::<Priority<Reverse<MorselSeq>, DataFrame>>::new(state.num_pipelines, 1);
+            (Some(a), b)
+        } else {
+            (None, vec![])
+        };
 
         let output_to_linearizer = opt_linearizer.is_some();
 
@@ -295,7 +295,7 @@ impl SourceNode for NDJsonSourceNode {
         }
 
         let (line_batch_distribute_tx, line_batch_distribute_receivers) =
-            distributor_channel(num_pipelines, 1);
+            distributor_channel(state.num_pipelines, 1);
 
         let source_token = SourceToken::new();
         // Initialize in reverse as we want to manually pop from either the linearizer or the phase receivers depending
@@ -333,7 +333,7 @@ impl SourceNode for NDJsonSourceNode {
                         needs_total_row_count,
 
                         // Only log from the last worker to prevent flooding output.
-                        verbose: verbose && worker_idx == num_pipelines - 1,
+                        verbose: verbose && worker_idx == state.num_pipelines - 1,
                     }
                     .run(),
                 ))
@@ -413,12 +413,14 @@ impl SourceNode for NDJsonSourceNode {
         join_handles.push(spawn(TaskPriority::Low, async move {
             // Every phase we are given a new send port.
             while let Ok(phase_output) = output_recv.recv().await {
+                let source_token = SourceToken::new();
                 let morsel_senders = phase_output.port.parallel();
 
                 let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
 
                 for (phase_tx_senders, port) in phase_tx_senders.iter_mut().zip(morsel_senders) {
-                    let (outcome, wait_group, morsel_output) = MorselOutput::from_port(port);
+                    let (outcome, wait_group, morsel_output) =
+                        MorselOutput::from_port(port, source_token.clone());
                     _ = phase_tx_senders.send(morsel_output).await;
                     morsel_outcomes.push((outcome, wait_group));
                 }
@@ -487,10 +489,10 @@ impl MultiScanable for NDJsonSourceNode {
     ) -> PolarsResult<Self> {
         let has_row_index = row_index.as_ref().is_some();
 
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
             ..Default::default()
-        };
+        });
 
         let ndjson_options = options.clone();
         let mut file_info = ndjson_file_info(

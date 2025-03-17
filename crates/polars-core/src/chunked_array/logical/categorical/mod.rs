@@ -479,7 +479,7 @@ impl ExactSizeIterator for CatIter<'_> {}
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
+    use crate::{SINGLE_LOCK, disable_string_cache, enable_string_cache};
 
     #[test]
     fn test_categorical_round_trip() -> PolarsResult<()> {

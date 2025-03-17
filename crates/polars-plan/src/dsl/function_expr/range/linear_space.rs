@@ -1,6 +1,6 @@
 use arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 use polars_core::prelude::*;
-use polars_ops::series::{new_linear_space_f32, new_linear_space_f64, ClosedInterval};
+use polars_ops::series::{ClosedInterval, new_linear_space_f32, new_linear_space_f64};
 
 use super::utils::{build_nulls, ensure_range_bounds_contain_exactly_one_value};
 

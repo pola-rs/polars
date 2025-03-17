@@ -175,8 +175,16 @@ def read_parquet(
 
     See Also
     --------
-    scan_parquet
+    scan_parquet: Lazily read from a parquet file or multiple files via glob patterns.
     scan_pyarrow_dataset
+
+    Warnings
+    --------
+    Calling `read_parquet().lazy()` is an antipattern as this forces Polars to
+    materialize a full parquet file and therefore cannot push any optimizations
+    into the reader. Therefore always prefer `scan_parquet` if you want to work
+    with `LazyFrame` s.
+
     """
     if schema is not None:
         msg = "The `schema` parameter of `read_parquet` is considered unstable."

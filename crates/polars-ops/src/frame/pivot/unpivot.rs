@@ -1,11 +1,11 @@
 use arrow::array::{MutableArray, MutablePlString};
 use arrow::compute::concatenate::concatenate_unchecked;
 use polars_core::datatypes::{DataType, PlSmallStr};
-use polars_core::frame::column::Column;
 use polars_core::frame::DataFrame;
+use polars_core::frame::column::Column;
 use polars_core::prelude::{IntoVec, Series, UnpivotArgsIR};
 use polars_core::utils::merge_dtypes_many;
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
 use polars_utils::aliases::PlHashSet;
 
 use crate::frame::IntoDf;
@@ -252,7 +252,9 @@ mod test {
         let value = value.into_no_null_iter().collect::<Vec<_>>();
         assert_eq!(
             value,
-            &["a", "b", "a", "1", "3", "5", "10", "11", "12", "2", "4", "6"]
+            &[
+                "a", "b", "a", "1", "3", "5", "10", "11", "12", "2", "4", "6"
+            ]
         );
 
         // Specify index but not on

@@ -6,9 +6,9 @@ use polars_utils::idx_vec::IdxVec;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 
-use crate::prelude::*;
-use crate::utils::{flatten, slice_slice, NoNull};
 use crate::POOL;
+use crate::prelude::*;
+use crate::utils::{NoNull, flatten, slice_slice};
 
 /// Indexes of the groups, the first index is stored separately.
 /// this make sorting fast.
@@ -261,7 +261,9 @@ impl GroupsType {
         match self {
             GroupsType::Idx(groups) => groups,
             GroupsType::Slice { groups, .. } => {
-                polars_warn!("Had to reallocate groups, missed an optimization opportunity. Please open an issue.");
+                polars_warn!(
+                    "Had to reallocate groups, missed an optimization opportunity. Please open an issue."
+                );
                 groups
                     .iter()
                     .map(|&[first, len]| (first, (first..first + len).collect::<IdxVec>()))

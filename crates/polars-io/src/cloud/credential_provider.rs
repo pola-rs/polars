@@ -13,7 +13,7 @@ pub use object_store::azure::AzureCredential;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GcpCredential;
 use polars_core::config;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 #[cfg(feature = "python")]
 use polars_utils::python_function::PythonObject;
 #[cfg(feature = "python")]
@@ -35,10 +35,10 @@ impl PlCredentialProvider {
         // Internal notes
         // * This function is exposed as the Rust API for `PlCredentialProvider`
         func: impl Fn() -> Pin<
-                Box<dyn Future<Output = PolarsResult<(ObjectStoreCredential, u64)>> + Send + Sync>,
-            > + Send
-            + Sync
-            + 'static,
+            Box<dyn Future<Output = PolarsResult<(ObjectStoreCredential, u64)>> + Send + Sync>,
+        > + Send
+        + Sync
+        + 'static,
     ) -> Self {
         Self::Function(CredentialProviderFunction(Arc::new(func)))
     }
@@ -221,7 +221,7 @@ impl IntoCredentialProvider for CredentialProviderFunction {
             async fn get_credential(&self) -> object_store::Result<Arc<Self::Credential>> {
                 self.1
                     .get_maybe_update(async {
-                        let (creds, expiry) = self.0 .0().await?;
+                        let (creds, expiry) = self.0.0().await?;
                         PolarsResult::Ok((creds.unwrap_aws(), expiry))
                     })
                     .await
@@ -254,7 +254,7 @@ impl IntoCredentialProvider for CredentialProviderFunction {
             async fn get_credential(&self) -> object_store::Result<Arc<Self::Credential>> {
                 self.1
                     .get_maybe_update(async {
-                        let (creds, expiry) = self.0 .0().await?;
+                        let (creds, expiry) = self.0.0().await?;
                         PolarsResult::Ok((creds.unwrap_azure(), expiry))
                     })
                     .await
@@ -283,7 +283,7 @@ impl IntoCredentialProvider for CredentialProviderFunction {
             async fn get_credential(&self) -> object_store::Result<Arc<Self::Credential>> {
                 self.1
                     .get_maybe_update(async {
-                        let (creds, expiry) = self.0 .0().await?;
+                        let (creds, expiry) = self.0.0().await?;
                         PolarsResult::Ok((creds.unwrap_gcp(), expiry))
                     })
                     .await
@@ -326,14 +326,14 @@ impl Hash for CredentialProviderFunction {
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for PlCredentialProvider {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         #[cfg(feature = "python")]
         {
             Ok(Self::Python(PythonCredentialProvider::deserialize(
-                deserializer,
+                _deserializer,
             )?))
         }
         #[cfg(not(feature = "python"))]
@@ -346,7 +346,7 @@ impl<'de> serde::Deserialize<'de> for PlCredentialProvider {
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for PlCredentialProvider {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -354,7 +354,7 @@ impl serde::Serialize for PlCredentialProvider {
 
         #[cfg(feature = "python")]
         if let PlCredentialProvider::Python(v) = self {
-            return v.serialize(serializer);
+            return v.serialize(_serializer);
         }
 
         Err(S::Error::custom(format!("cannot serialize {:?}", self)))
@@ -461,12 +461,12 @@ mod python_impl {
     use std::hash::Hash;
     use std::sync::Arc;
 
-    use polars_error::{to_compute_err, PolarsError, PolarsResult};
+    use polars_error::{PolarsError, PolarsResult, to_compute_err};
     use polars_utils::python_function::PythonObject;
+    use pyo3::Python;
     use pyo3::exceptions::PyValueError;
     use pyo3::pybacked::PyBackedStr;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
-    use pyo3::Python;
 
     use super::IntoCredentialProvider;
 
@@ -542,7 +542,7 @@ mod python_impl {
     impl IntoCredentialProvider for PythonCredentialProvider {
         #[cfg(feature = "aws")]
         fn into_aws_provider(self) -> object_store::aws::AwsCredentialProvider {
-            use polars_error::{to_compute_err, PolarsResult};
+            use polars_error::{PolarsResult, to_compute_err};
 
             use crate::cloud::credential_provider::{
                 CredentialProviderFunction, ObjectStoreCredential,
@@ -589,7 +589,7 @@ mod python_impl {
                                         "aws_access_key_id",
                                         "aws_secret_access_key",
                                         "aws_session_token"
-                                    )))
+                                    )));
                                 },
                             }
                         }
@@ -619,7 +619,7 @@ mod python_impl {
         #[cfg(feature = "azure")]
         fn into_azure_provider(self) -> object_store::azure::AzureCredentialProvider {
             use object_store::azure::AzureAccessKey;
-            use polars_error::{to_compute_err, PolarsResult};
+            use polars_error::{PolarsResult, to_compute_err};
 
             use crate::cloud::credential_provider::{
                 CredentialProviderFunction, ObjectStoreCredential,
@@ -661,7 +661,7 @@ mod python_impl {
                                     return pyo3::PyResult::Err(PyValueError::new_err(format!(
                                         "unknown configuration key for azure: {}, {}",
                                         v, VALID_KEYS_MSG
-                                    )))
+                                    )));
                                 },
                             }
                         }
@@ -688,7 +688,7 @@ mod python_impl {
 
         #[cfg(feature = "gcp")]
         fn into_gcp_provider(self) -> object_store::gcp::GcpCredentialProvider {
-            use polars_error::{to_compute_err, PolarsResult};
+            use polars_error::{PolarsResult, to_compute_err};
 
             use crate::cloud::credential_provider::{
                 CredentialProviderFunction, ObjectStoreCredential,
@@ -719,7 +719,7 @@ mod python_impl {
                                         "unknown configuration key for gcp: {}, \
                                     valid configuration keys are: {}",
                                         v, "bearer_token",
-                                    )))
+                                    )));
                                 },
                             }
                         }

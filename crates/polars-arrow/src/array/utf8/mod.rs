@@ -2,10 +2,10 @@ use either::Either;
 
 use super::specification::try_check_utf8;
 use super::{Array, GenericBinaryArray, Splitable};
-use crate::array::iterator::NonNullValuesIter;
 use crate::array::BinaryArray;
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};

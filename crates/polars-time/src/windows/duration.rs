@@ -6,14 +6,14 @@ use std::ops::{Mul, Neg};
 use arrow::legacy::kernels::{Ambiguous, NonExistent};
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MICROSECONDS,
-    MILLISECONDS, NANOSECONDS,
+    MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_us_to_datetime,
 };
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{
-    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
-    PolarsResult,
+    PolarsResult, datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
+    polars_bail,
 };
 use polars_error::polars_ensure;
 #[cfg(feature = "serde")]
@@ -24,7 +24,7 @@ use super::calendar::{
 };
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime_opt, try_localize_datetime, unlocalize_datetime};
-use crate::windows::calendar::{is_leap_year, DAYS_PER_MONTH};
+use crate::windows::calendar::{DAYS_PER_MONTH, is_leap_year};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -299,11 +299,7 @@ impl Duration {
     }
 
     fn to_positive(v: i64) -> (bool, i64) {
-        if v < 0 {
-            (true, -v)
-        } else {
-            (false, v)
-        }
+        if v < 0 { (true, -v) } else { (false, v) }
     }
 
     /// Normalize the duration within the interval.

@@ -7,8 +7,11 @@ use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
+use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
-use polars_plan::dsl::{FileScan, JoinTypeOptionsIR, ScanSource, ScanSources};
+use polars_plan::dsl::{
+    FileScan, JoinTypeOptionsIR, PartitionVariantIR, ScanSource, ScanSources, SinkOptions,
+};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
@@ -50,6 +53,10 @@ impl PhysNode {
             output_schema,
             kind,
         }
+    }
+
+    pub fn kind(&self) -> &PhysNodeKind {
+        &self.kind
     }
 }
 
@@ -129,8 +136,23 @@ pub enum PhysNodeKind {
 
     FileSink {
         path: Arc<PathBuf>,
+        sink_options: SinkOptions,
         file_type: FileType,
         input: PhysStream,
+        cloud_options: Option<CloudOptions>,
+    },
+
+    PartitionSink {
+        path_f_string: Arc<PathBuf>,
+        sink_options: SinkOptions,
+        variant: PartitionVariantIR,
+        file_type: FileType,
+        input: PhysStream,
+        cloud_options: Option<CloudOptions>,
+    },
+
+    SinkMultiple {
+        sinks: Vec<PhysNodeKey>,
     },
 
     /// Generic fallback for (as-of-yet) unsupported streaming mappings.
@@ -173,7 +195,7 @@ pub enum PhysNodeKind {
     MultiScan {
         scan_sources: ScanSources,
         hive_parts: Option<HivePartitionsDf>,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
         allow_missing_columns: bool,
         include_file_paths: Option<PlSmallStr>,
 
@@ -201,8 +223,8 @@ pub enum PhysNodeKind {
         file_info: FileInfo,
         predicate: Option<ExprIR>,
         output_schema: Option<SchemaRef>,
-        scan_type: FileScan,
-        file_options: FileScanOptions,
+        scan_type: Box<FileScan>,
+        file_options: Box<FileScanOptions>,
     },
 
     GroupBy {
@@ -271,6 +293,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::SimpleProjection { input, .. }
             | PhysNodeKind::InMemorySink { input }
             | PhysNodeKind::FileSink { input, .. }
+            | PhysNodeKind::PartitionSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }
@@ -312,6 +335,13 @@ fn visit_node_inputs_mut(
                 for input in inputs {
                     rec!(input.node);
                     visit(input);
+                }
+            },
+
+            PhysNodeKind::SinkMultiple { sinks } => {
+                for sink in sinks {
+                    rec!(*sink);
+                    visit(&mut PhysStream::first(*sink));
                 }
             },
         }

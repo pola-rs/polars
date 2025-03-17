@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
-use polars_core::{downcast_as_macro_arg_physical, POOL};
+use polars_core::{POOL, downcast_as_macro_arg_physical};
 use polars_utils::format_pl_smallstr;
 use rayon::prelude::*;
 pub use unpivot::UnpivotDF;
@@ -308,7 +308,7 @@ fn pivot_impl_single_column(
                         Mean => value_col.agg_mean(&groups),
                         Median => value_col.agg_median(&groups),
                         Count => groups.group_count().into_column(),
-                        Expr(ref expr) => {
+                        Expr(expr) => {
                             let name = expr.root_name()?.clone();
                             let mut value_col = value_col.clone();
                             value_col.rename(name);

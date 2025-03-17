@@ -6,44 +6,51 @@ use std::sync::Mutex;
 use polars_core::prelude::{ArrowSchema, CompatLevel};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
+use polars_io::cloud::CloudOptions;
 use polars_io::parquet::write::BatchedWriter;
-use polars_io::prelude::{get_encodings, ParquetWriteOptions};
+use polars_io::prelude::{ParquetWriteOptions, get_encodings};
 use polars_io::schema_to_arrow_checked;
+use polars_io::utils::file::Writeable;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
-    array_to_columns, to_parquet_schema, CompressedPage, Compressor, Encoding, FileWriter,
-    SchemaDescriptor, Version, WriteOptions,
+    CompressedPage, Compressor, Encoding, FileWriter, SchemaDescriptor, Version, WriteOptions,
+    array_to_columns, to_parquet_schema,
 };
+use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
 
 use super::{
-    buffer_and_distribute_columns_task, SinkNode, SinkRecvPort,
-    DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
+    DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE, SinkInputPort,
+    SinkNode, buffer_and_distribute_columns_task,
 };
 use crate::async_executor::spawn;
-use crate::async_primitives::connector::connector;
+use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
-use crate::nodes::{JoinHandle, TaskPriority};
+use crate::execute::StreamingExecutionState;
+use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
 
 pub struct ParquetSinkNode {
     path: PathBuf,
 
     input_schema: SchemaRef,
+    sink_options: SinkOptions,
     write_options: ParquetWriteOptions,
 
     parquet_schema: SchemaDescriptor,
     arrow_schema: ArrowSchema,
     encodings: Vec<Vec<Encoding>>,
+    cloud_options: Option<CloudOptions>,
 }
 
 impl ParquetSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         path: &Path,
+        sink_options: SinkOptions,
         write_options: &ParquetWriteOptions,
+        cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
         let schema = schema_to_arrow_checked(&input_schema, CompatLevel::newest(), "parquet")?;
         let parquet_schema = to_parquet_schema(&schema)?;
@@ -53,11 +60,13 @@ impl ParquetSinkNode {
             path: path.to_path_buf(),
 
             input_schema,
+            sink_options,
             write_options: *write_options,
 
             parquet_schema,
             arrow_schema: schema,
             encodings,
+            cloud_options,
         })
     }
 }
@@ -73,22 +82,22 @@ impl SinkNode for ParquetSinkNode {
     fn is_sink_input_parallel(&self) -> bool {
         false
     }
+    fn do_maintain_order(&self) -> bool {
+        self.sink_options.maintain_order
+    }
 
     fn spawn_sink(
         &mut self,
-        num_pipelines: usize,
-        recv_ports_recv: SinkRecvPort,
-        _state: &ExecutionState,
+        recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        // .. -> Buffer task
-        let buffer_rx = recv_ports_recv.serial(join_handles);
         // Buffer task -> Encode tasks
         let (dist_tx, dist_rxs) =
-            distributor_channel(num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
+            distributor_channel(state.num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
         // Encode tasks -> Collect task
         let (mut lin_rx, lin_txs) =
-            Linearizer::new(num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
+            Linearizer::new(state.num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
         // Collect task -> IO task
         let (mut io_tx, mut io_rx) = connector::<Vec<Vec<CompressedPage>>>();
 
@@ -103,7 +112,7 @@ impl SinkNode for ParquetSinkNode {
 
         // Buffer task.
         join_handles.push(buffer_and_distribute_columns_task(
-            buffer_rx,
+            recv_port_rx,
             dist_tx,
             write_options
                 .row_group_size
@@ -226,23 +235,24 @@ impl SinkNode for ParquetSinkNode {
         // Task that will actually do write to the target file. It is important that this is only
         // spawned once.
         let path = self.path.clone();
+        let sink_options = self.sink_options.clone();
+        let cloud_options = self.cloud_options.clone();
         let write_options = self.write_options;
         let arrow_schema = self.arrow_schema.clone();
         let parquet_schema = self.parquet_schema.clone();
         let encodings = self.encodings.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
-            use tokio::fs::OpenOptions;
+            if sink_options.mkdir {
+                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
+            }
 
-            let file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(path.as_path())
-                .await
-                .map_err(|err| polars_utils::_limit_path_len_io_err(path.as_path(), err))?;
-            let file = file.into_std().await;
-            let writer = BufWriter::new(file);
-            let options = WriteOptions {
+            let mut file = polars_io::utils::file::Writeable::try_new(
+                path.to_str().unwrap(),
+                cloud_options.as_ref(),
+            )?;
+
+            let writer = BufWriter::new(&mut *file);
+            let write_options = WriteOptions {
                 statistics: write_options.statistics,
                 compression: write_options.compression.into(),
                 version: Version::V1,
@@ -252,9 +262,9 @@ impl SinkNode for ParquetSinkNode {
                 writer,
                 arrow_schema,
                 parquet_schema,
-                options,
+                write_options,
             ));
-            let mut writer = BatchedWriter::new(file_writer, encodings, options, false);
+            let mut writer = BatchedWriter::new(file_writer, encodings, write_options, false);
 
             let num_parquet_columns = writer.parquet_schema().leaves().len();
             while let Ok(current_row_group) = io_rx.recv().await {
@@ -265,6 +275,13 @@ impl SinkNode for ParquetSinkNode {
             }
 
             writer.finish()?;
+            drop(writer);
+
+            if let Writeable::Local(file) = &mut file {
+                polars_io::utils::sync_on_close::sync_on_close(sink_options.sync_on_close, file)?;
+            }
+
+            file.close()?;
 
             PolarsResult::Ok(())
         });

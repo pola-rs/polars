@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use super::super::Repetition;
 use super::{
-    spec, FieldInfo, GroupConvertedType, GroupLogicalType, PhysicalType, PrimitiveConvertedType,
-    PrimitiveLogicalType,
+    FieldInfo, GroupConvertedType, GroupLogicalType, PhysicalType, PrimitiveConvertedType,
+    PrimitiveLogicalType, spec,
 };
 use crate::parquet::error::ParquetResult;
 

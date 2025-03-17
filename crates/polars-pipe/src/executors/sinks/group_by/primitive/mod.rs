@@ -7,15 +7,16 @@ use arrow::legacy::is_valid::IsValid;
 use arrow::legacy::kernels::sort_partition::partition_to_groups_amortized;
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
+use polars_core::POOL;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_set_partition_size;
-use polars_core::POOL;
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
+use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::group_by::aggregates::AggregateFunction;
 use crate::executors::sinks::group_by::ooc_state::OocState;
 use crate::executors::sinks::group_by::physical_agg_to_logical;
@@ -23,7 +24,6 @@ use crate::executors::sinks::group_by::string::{apply_aggregate, write_agg_idx};
 use crate::executors::sinks::group_by::utils::{compute_slices, finalize_group_by, prepare_key};
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::load_vec;
-use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 

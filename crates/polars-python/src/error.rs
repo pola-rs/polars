@@ -4,20 +4,20 @@ use std::io::{Error as IoError, ErrorKind};
 
 use polars::prelude::PolarsError;
 use polars_error::PolarsWarning;
+use pyo3::PyTypeInfo;
 use pyo3::exceptions::{
     PyDeprecationWarning, PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError,
     PyRuntimeError, PyUserWarning,
 };
 use pyo3::prelude::*;
-use pyo3::PyTypeInfo;
 
+use crate::Wrap;
 use crate::exceptions::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
     InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
     SQLInterfaceError, SQLSyntaxError, SchemaError, SchemaFieldNotFoundError, ShapeError,
     StringCacheMismatchError, StructFieldNotFoundError,
 };
-use crate::Wrap;
 
 pub enum PyPolarsErr {
     Polars(PolarsError),

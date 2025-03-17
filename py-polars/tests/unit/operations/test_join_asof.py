@@ -1,3 +1,4 @@
+import warnings
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -1284,10 +1285,21 @@ def test_join_asof_no_exact_matches() -> None:
 
 def test_join_asof_not_sorted() -> None:
     df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [2, 1, 3, 1, 2, 3]})
-    with pytest.warns(UserWarning, match="is not sorted"):
-        df.join_asof(df, on="b", by="a")
     with pytest.raises(InvalidOperationError, match="is not sorted"):
         df.join_asof(df, on="b")
+
+    # When 'by' is provided, we do not check sortedness, but a warning is received
+    with pytest.warns(
+        UserWarning,
+        match="Sortedness of columns cannot be checked when 'by' groups provided",
+    ):
+        df.join_asof(df, on="b", by="a")
+
+    # When sortedness is False, we should get no warning
+    with warnings.catch_warnings(record=True) as w:
+        df.join_asof(df, on="b", check_sortedness=False)
+        df.join_asof(df, on="b", by="a", check_sortedness=False)
+        assert len(w) == 0  # no warnings caught
 
 
 @pytest.mark.parametrize("left_dtype", [pl.Int64, pl.UInt64])

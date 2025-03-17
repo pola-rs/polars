@@ -572,6 +572,10 @@ pub trait SeriesTrait:
     /// reference.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
+    /// Get a hold of the [`ChunkedArray`] or `NullChunked` as an `Any` trait reference. This
+    /// pierces through `Logical` types to get the underlying physical array.
+    fn as_phys_any(&self) -> &dyn Any;
+
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 
     #[cfg(feature = "checked_arithmetic")]

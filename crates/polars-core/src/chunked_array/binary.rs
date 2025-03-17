@@ -2,10 +2,10 @@ use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::hashing::get_null_hash_value;
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, _split_offsets};
-use crate::POOL;
 
 #[inline]
 fn fill_bytes_hashes<'a, T>(

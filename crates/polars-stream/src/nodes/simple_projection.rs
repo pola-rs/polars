@@ -24,7 +24,12 @@ impl ComputeNode for SimpleProjectionNode {
         "simple_projection"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
         recv.swap_with_slice(send);
         Ok(())
@@ -35,7 +40,7 @@ impl ComputeNode for SimpleProjectionNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);

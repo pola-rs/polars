@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! See thread: https://lists.apache.org/thread/w88tpz76ox8h3rxkjl4so6rg3f1rv7wt
 
 mod builder;
@@ -11,8 +12,8 @@ mod view;
 use std::any::Any;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use polars_error::*;
 
@@ -37,7 +38,7 @@ use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
-pub use view::{validate_utf8_view, View};
+pub use view::{View, validate_utf8_view};
 
 use super::Splitable;
 

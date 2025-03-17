@@ -2,8 +2,8 @@ use arrow::legacy::time_zone::Tz;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
-    SECONDS_IN_DAY,
+    MILLISECONDS, SECONDS_IN_DAY, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_us_to_datetime,
 };
 
 #[cfg(feature = "timezones")]

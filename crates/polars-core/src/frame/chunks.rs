@@ -1,23 +1,36 @@
 use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::prelude::*;
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
-use crate::POOL;
 
-impl TryFrom<(RecordBatch, &ArrowSchema)> for DataFrame {
-    type Error = PolarsError;
+impl From<RecordBatch> for DataFrame {
+    fn from(rb: RecordBatch) -> DataFrame {
+        let height = rb.height();
+        let (schema, arrays) = rb.into_schema_and_arrays();
 
-    fn try_from(arg: (RecordBatch, &ArrowSchema)) -> PolarsResult<DataFrame> {
-        let columns: PolarsResult<Vec<Column>> = arg
-            .0
-            .columns()
-            .iter()
-            .zip(arg.1.iter_values())
-            .map(|(arr, field)| Series::try_from((field, arr.clone())).map(Column::from))
+        let columns: Vec<Column> = arrays
+            .into_iter()
+            .zip(schema.iter())
+            .map(|(arr, (name, field))| {
+                // SAFETY: Record Batch has the invariant that the schema datatype matches the
+                // columns.
+                unsafe {
+                    Series::_try_from_arrow_unchecked_with_md(
+                        name.clone(),
+                        vec![arr],
+                        field.dtype(),
+                        field.metadata.as_deref(),
+                    )
+                }
+                .unwrap()
+                .into_column()
+            })
             .collect();
 
-        DataFrame::new(columns?)
+        // SAFETY: RecordBatch has the same invariants for names and heights as DataFrame.
+        unsafe { DataFrame::new_no_checks(height, columns) }
     }
 }
 
@@ -25,16 +38,32 @@ impl DataFrame {
     pub fn split_chunks(&mut self) -> impl Iterator<Item = DataFrame> + '_ {
         self.align_chunks_par();
 
+        let first_series_col_idx = self
+            .columns
+            .iter()
+            .position(|col| col.as_series().is_some());
+        let df_height = self.height();
+        let mut prev_height = 0;
         (0..self.first_col_n_chunks()).map(move |i| unsafe {
+            // There might still be scalar/partitioned columns after aligning,
+            // so we follow the size of the chunked column, if any.
+            let chunk_size = first_series_col_idx
+                .map(|c| self.get_columns()[c].as_series().unwrap().chunks()[i].len())
+                .unwrap_or(df_height);
             let columns = self
                 .get_columns()
                 .iter()
-                .map(|column| column.as_materialized_series().select_chunk(i))
-                .map(Column::from)
+                .map(|col| match col {
+                    Column::Series(s) => Column::from(s.select_chunk(i)),
+                    Column::Partitioned(_) | Column::Scalar(_) => {
+                        col.slice(prev_height as i64, chunk_size)
+                    },
+                })
                 .collect::<Vec<_>>();
 
-            let height = Self::infer_height(&columns);
-            DataFrame::new_no_checks(height, columns)
+            prev_height += chunk_size;
+
+            DataFrame::new_no_checks(chunk_size, columns)
         })
     }
 

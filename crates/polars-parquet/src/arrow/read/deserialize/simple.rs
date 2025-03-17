@@ -1,25 +1,25 @@
 use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{
-    ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES,
+    ArrowDataType, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, Field, IntegerType, IntervalUnit, TimeUnit,
 };
-use arrow::types::{days_ms, i256, NativeType};
+use arrow::types::{NativeType, days_ms, i256};
 use ethnum::I256;
 use polars_compute::cast::CastOptionsImpl;
 
 use super::utils::filter::Filter;
 use super::{
-    boolean, fixed_size_binary, null, primitive, BasicDecompressor, InitNested, NestedState,
+    BasicDecompressor, InitNested, NestedState, boolean, fixed_size_binary, null, primitive,
 };
 use crate::parquet::error::ParquetResult;
 use crate::parquet::schema::types::{
     PhysicalType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
 };
 use crate::parquet::types::int96_to_i64_ns;
+use crate::read::ParquetError;
 use crate::read::deserialize::binview;
 use crate::read::deserialize::categorical::CategoricalDecoder;
 use crate::read::deserialize::utils::PageDecoder;
-use crate::read::ParquetError;
 
 /// An iterator adapter that maps an iterator of Pages a boxed [`Array`] of [`ArrowDataType`]
 /// `dtype` with a maximum of `num_rows` elements.

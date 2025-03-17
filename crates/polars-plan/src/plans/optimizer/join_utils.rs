@@ -1,9 +1,9 @@
-use polars_core::error::{polars_bail, PolarsResult};
+use polars_core::error::{PolarsResult, polars_bail};
 use polars_core::schema::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{aexpr_to_leaf_names_iter, AExpr};
+use super::{AExpr, aexpr_to_leaf_names_iter};
 use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
 use crate::plans::{ExprIR, OutputName};
 

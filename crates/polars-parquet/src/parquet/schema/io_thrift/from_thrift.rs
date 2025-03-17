@@ -78,7 +78,7 @@ fn from_thrift_helper(
                         _ => {
                             return Err(ParquetError::oos(
                                 "When precision or scale are defined, both must be defined",
-                            ))
+                            ));
                         },
                     };
                     (converted_type, maybe_decimal).try_into()

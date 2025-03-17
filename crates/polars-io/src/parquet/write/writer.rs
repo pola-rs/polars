@@ -5,13 +5,13 @@ use arrow::datatypes::PhysicalType;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::write::{
-    to_parquet_schema, transverse, CompressionOptions, Encoding, FileWriter, StatisticsOptions,
-    Version, WriteOptions,
+    CompressionOptions, Encoding, FileWriter, StatisticsOptions, Version, WriteOptions,
+    to_parquet_schema, transverse,
 };
 
+use super::ParquetWriteOptions;
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
-use super::ParquetWriteOptions;
 use crate::shared::schema_to_arrow_checked;
 
 impl ParquetWriteOptions {

@@ -47,6 +47,30 @@ impl StaticArrayBuilder for StructArrayBuilder {
         StructArray::new(self.dtype, self.length, values, validity)
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        let values = self
+            .inner_builders
+            .iter_mut()
+            .map(|b| b.freeze_reset())
+            .collect();
+        let validity = core::mem::take(&mut self.validity).into_opt_validity();
+        let out = StructArray::new(self.dtype.clone(), self.length, values, validity);
+        self.length = 0;
+        out
+    }
+
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        for builder in &mut self.inner_builders {
+            builder.extend_nulls(length);
+        }
+        self.validity.extend_constant(length, false);
+        self.length += length;
+    }
+
     fn subslice_extend(
         &mut self,
         other: &StructArray,
@@ -59,7 +83,7 @@ impl StaticArrayBuilder for StructArrayBuilder {
         }
         self.validity
             .subslice_extend_from_opt_validity(other.validity(), start, length);
-        self.length += length;
+        self.length += length.min(other.len().saturating_sub(start));
     }
 
     unsafe fn gather_extend(
@@ -73,6 +97,15 @@ impl StaticArrayBuilder for StructArrayBuilder {
         }
         self.validity
             .gather_extend_from_opt_validity(other.validity(), idxs);
+        self.length += idxs.len();
+    }
+
+    fn opt_gather_extend(&mut self, other: &StructArray, idxs: &[IdxSize], share: ShareStrategy) {
+        for (builder, other_values) in self.inner_builders.iter_mut().zip(other.values()) {
+            builder.opt_gather_extend(&**other_values, idxs, share);
+        }
+        self.validity
+            .opt_gather_extend_from_opt_validity(other.validity(), idxs, other.len());
         self.length += idxs.len();
     }
 }

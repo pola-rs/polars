@@ -1,6 +1,6 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::temporal;
-use polars_compute::cast::{cast, CastOptionsImpl};
+use polars_compute::cast::{CastOptionsImpl, cast};
 use polars_core::prelude::*;
 #[cfg(feature = "timezones")]
 use polars_ops::chunked_array::datetime::replace_time_zone;

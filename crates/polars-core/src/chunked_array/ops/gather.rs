@@ -1,5 +1,6 @@
-use arrow::bitmap::bitmask::BitMask;
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::bitmask::BitMask;
 use polars_compute::gather::take_unchecked;
 use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;

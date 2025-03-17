@@ -5,25 +5,28 @@ use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::bitmap::MutableBitmap;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_io::RowIndex;
 use polars_mem_engine::create_physical_plan;
-use polars_plan::dsl::{FileScan, ScanFlags, ScanSource};
+use polars_plan::dsl::{
+    FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, ScanFlags, ScanSource,
+    SinkTypeIR,
+};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FunctionIR, IRAggExpr, LiteralValue, IR};
-use polars_plan::prelude::{FileType, GroupbyOptions, SinkType};
+use polars_plan::plans::{AExpr, Context, FunctionIR, IR, IRAggExpr, LiteralValue};
+use polars_plan::prelude::{FileType, GroupbyOptions};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::unique_column_name;
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
-use crate::nodes::io_sources::multi_scan::MultiscanRowRestriction;
 use crate::nodes::io_sources::RowRestriction;
+use crate::nodes::io_sources::multi_scan::MultiscanRowRestriction;
 use crate::physical_plan::lower_expr::{
-    build_length_preserving_select_stream, build_select_stream, is_elementwise_rec_cached,
-    lower_exprs, ExprCache,
+    ExprCache, build_length_preserving_select_stream, build_select_stream,
+    is_elementwise_rec_cached, lower_exprs,
 };
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -221,17 +224,20 @@ pub fn lower_ir(
         },
 
         IR::Sink { input, payload } => match payload {
-            SinkType::Memory => {
+            SinkTypeIR::Memory => {
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::InMemorySink { input: phys_input }
             },
-            SinkType::File {
+            SinkTypeIR::File(FileSinkType {
                 path,
+                sink_options,
                 file_type,
-                cloud_options: _,
-            } => {
+                cloud_options,
+            }) => {
                 let path = path.clone();
+                let sink_options = sink_options.clone();
                 let file_type = file_type.clone();
+                let cloud_options = cloud_options.clone();
 
                 match file_type {
                     #[cfg(feature = "ipc")]
@@ -239,8 +245,10 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "parquet")]
@@ -248,8 +256,10 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "csv")]
@@ -257,8 +267,10 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "json")]
@@ -266,12 +278,86 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                 }
             },
+            SinkTypeIR::Partition(PartitionSinkTypeIR {
+                path_f_string,
+                sink_options,
+                variant,
+                file_type,
+                cloud_options,
+            }) => {
+                let path_f_string = path_f_string.clone();
+                let sink_options = sink_options.clone();
+                let variant = variant.clone();
+                let file_type = file_type.clone();
+                let cloud_options = cloud_options.clone();
+
+                let mut input = lower_ir!(*input)?;
+                match &variant {
+                    PartitionVariantIR::MaxSize(_) => {},
+                    PartitionVariantIR::ByKey {
+                        key_exprs,
+                        include_key: _,
+                    } => {
+                        if key_exprs.is_empty() {
+                            polars_bail!(InvalidOperation: "cannot partition by-key without key expressions");
+                        }
+
+                        let input_schema = &phys_sm[input.node].output_schema;
+                        let mut select_output_schema = input_schema.as_ref().clone();
+                        for key_expr in key_exprs.iter() {
+                            select_output_schema.insert(
+                                key_expr.output_name().clone(),
+                                key_expr
+                                    .dtype(input_schema.as_ref(), Context::Default, expr_arena)?
+                                    .clone(),
+                            );
+                        }
+
+                        let select_output_schema = Arc::new(select_output_schema);
+                        let node = phys_sm.insert(PhysNode {
+                            output_schema: select_output_schema.clone(),
+                            kind: PhysNodeKind::Select {
+                                input,
+                                selectors: key_exprs.clone(),
+                                extend_original: true,
+                            },
+                        });
+                        input = PhysStream::first(node);
+                    },
+                };
+
+                PhysNodeKind::PartitionSink {
+                    path_f_string,
+                    sink_options,
+                    variant,
+                    file_type,
+                    input,
+                    cloud_options,
+                }
+            },
+        },
+
+        IR::SinkMultiple { inputs } => {
+            let mut sinks = Vec::with_capacity(inputs.len());
+            for input in inputs.clone() {
+                let phys_node_stream = match ir_arena.get(input) {
+                    IR::Sink { .. } => lower_ir!(input)?,
+                    _ => lower_ir!(ir_arena.add(IR::Sink {
+                        input,
+                        payload: SinkTypeIR::Memory
+                    }))?,
+                };
+                sinks.push(phys_node_stream.node);
+            }
+            PhysNodeKind::SinkMultiple { sinks }
         },
 
         #[cfg(feature = "merge_sorted")]
@@ -404,15 +490,6 @@ pub fn lower_ir(
                     match ScanSource::from_sources(scan_sources) {
                         Err(s) => scan_sources = s,
                         Ok(scan_source) => {
-                            #[cfg(feature = "ipc")]
-                            if matches!(scan_type, FileScan::Ipc { .. }) {
-                                // @TODO: All the things the IPC source does not support yet.
-                                if matches!(&scan_source, ScanSource::Path(p) if polars_io::is_cloud_url(p))
-                                {
-                                    todo!();
-                                }
-                            }
-
                             // Operation ordering:
                             // * with_row_index() -> slice() -> filter()
 
@@ -421,14 +498,19 @@ pub fn lower_ir(
                                 Option<RowIndex>,
                                 Option<(i64, usize)>,
                                 Option<ExprIR>,
-                            ) = match &scan_type {
+                            ) = match &*scan_type {
                                 #[cfg(feature = "parquet")]
                                 FileScan::Parquet { .. } => (None, None, None),
                                 #[cfg(feature = "ipc")]
                                 FileScan::Ipc { .. } => (None, None, predicate.take()),
                                 #[cfg(feature = "csv")]
                                 FileScan::Csv { options, .. } => {
+                                    // Note: We dispatch negative slice to separate node.
+                                    #[allow(clippy::nonminimal_bool)]
                                     if options.parse_options.comment_prefix.is_none()
+                                        && !file_options
+                                            .pre_slice
+                                            .is_some_and(|(offset, _)| offset < 0)
                                         && std::env::var("POLARS_DISABLE_EXPERIMENTAL_CSV_SLICE")
                                             .as_deref()
                                             != Ok("1")

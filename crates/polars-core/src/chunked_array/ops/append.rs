@@ -9,7 +9,7 @@ pub(crate) fn new_chunks(chunks: &mut Vec<ArrayRef>, other: &[ArrayRef], len: us
         other.clone_into(chunks);
     } else {
         for chunk in other {
-            if chunk.len() > 0 {
+            if !chunk.is_empty() {
                 chunks.push(chunk.clone());
             }
         }
@@ -22,7 +22,7 @@ pub(crate) fn new_chunks_owned(chunks: &mut Vec<ArrayRef>, other: Vec<ArrayRef>,
         *chunks = other;
     } else {
         chunks.reserve(other.len());
-        chunks.extend(other.into_iter().filter(|c| c.len() > 0));
+        chunks.extend(other.into_iter().filter(|c| !c.is_empty()));
     }
 }
 

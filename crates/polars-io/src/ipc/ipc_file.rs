@@ -42,12 +42,12 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::RowIndex;
 use crate::hive::materialize_hive_partitions;
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::shared::{finish_reader, ArrowReader};
-use crate::RowIndex;
+use crate::shared::{ArrowReader, finish_reader};
 
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

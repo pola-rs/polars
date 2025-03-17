@@ -1,3 +1,5 @@
+use polars_utils::unique_column_name;
+
 use super::*;
 
 #[cfg_attr(not(feature = "dynamic_group_by"), allow(dead_code))]
@@ -12,6 +14,50 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) apply: Option<Arc<dyn DataFrameUdf>>,
 }
 
+pub(super) fn sort_and_groups(
+    df: &mut DataFrame,
+    keys: &mut Vec<Column>,
+) -> PolarsResult<Vec<[IdxSize; 2]>> {
+    let encoded = row_encode::encode_rows_vertical_par_unordered(keys)?;
+    let encoded = encoded.rechunk().into_owned();
+    let encoded = encoded.with_name(unique_column_name());
+    let idx = encoded.arg_sort(SortOptions {
+        maintain_order: true,
+        ..Default::default()
+    });
+
+    let encoded = unsafe {
+        df.with_column_unchecked(encoded.into_series().into());
+
+        // If not sorted on keys, sort.
+        let idx_s = idx.clone().into_series();
+        if !idx_s.is_sorted(Default::default()).unwrap() {
+            let (df_ordered, keys_ordered) = POOL.join(
+                || df.take_unchecked(&idx),
+                || {
+                    keys.iter()
+                        .map(|c| c.take_unchecked(&idx))
+                        .collect::<Vec<_>>()
+                },
+            );
+            *df = df_ordered;
+            *keys = keys_ordered;
+        }
+
+        df.get_columns_mut().pop().unwrap()
+    };
+    let encoded = encoded.as_series().unwrap();
+    let encoded = encoded.binary_offset().unwrap();
+    let encoded = encoded.with_sorted_flag(polars_core::series::IsSorted::Ascending);
+    let groups = encoded.group_tuples(true, false).unwrap();
+
+    let GroupsType::Slice { groups, .. } = groups else {
+        // memory would explode
+        unreachable!();
+    };
+    Ok(groups)
+}
+
 impl GroupByRollingExec {
     #[cfg(feature = "dynamic_group_by")]
     fn execute_impl(
@@ -19,9 +65,6 @@ impl GroupByRollingExec {
         state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        use polars_utils::itertools::Itertools;
-        use polars_utils::unique_column_name;
-
         df.as_single_chunk_par();
 
         let mut keys = self
@@ -31,43 +74,7 @@ impl GroupByRollingExec {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let group_by = if !self.keys.is_empty() {
-            // 1. Sort
-            // 1. Compute offsets on sorted groups (this will ensure the amount)
-
-            let encoded = row_encode::encode_rows_vertical_par_unordered(&keys)?;
-            let encoded = encoded.rechunk().into_owned();
-            let encoded = encoded.with_name(unique_column_name());
-            let idx = encoded.arg_sort(SortOptions {
-                maintain_order: true,
-                ..Default::default()
-            });
-
-            let encoded = unsafe {
-                df.with_column_unchecked(encoded.into_series().into());
-
-                // If not sorted on keys, sort.
-                let idx_s = idx.clone().into_series();
-                if !idx_s.is_sorted(Default::default()).unwrap() {
-                    let (df_ordered, keys_ordered) = POOL.join(
-                        || df.take_unchecked(&idx),
-                        || keys.iter().map(|c| c.take_unchecked(&idx)).collect_vec(),
-                    );
-                    df = df_ordered;
-                    keys = keys_ordered;
-                }
-
-                df.get_columns_mut().pop().unwrap()
-            };
-            let encoded = encoded.as_series().unwrap();
-            let encoded = encoded.binary_offset().unwrap();
-            let encoded = encoded.with_sorted_flag(polars_core::series::IsSorted::Ascending);
-            let groups = encoded.group_tuples(true, false).unwrap();
-
-            let GroupsType::Slice { groups, .. } = groups else {
-                // memory would explode
-                unreachable!();
-            };
-            Some(groups)
+            Some(sort_and_groups(&mut df, &mut keys)?)
         } else {
             None
         };

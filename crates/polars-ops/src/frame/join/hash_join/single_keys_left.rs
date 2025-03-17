@@ -1,5 +1,5 @@
 use polars_core::utils::flatten::flatten_par;
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
@@ -171,7 +171,7 @@ where
                     match value {
                         // left and right matches
                         Some(indexes_b) => {
-                            result_idx_left.extend(std::iter::repeat(idx_a).take(indexes_b.len()));
+                            result_idx_left.extend(std::iter::repeat_n(idx_a, indexes_b.len()));
                             result_idx_right.extend_from_slice(bytemuck::cast_slice(indexes_b));
                         },
                         // only left values, right = null

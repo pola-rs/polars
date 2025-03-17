@@ -12,17 +12,17 @@ use super::async_impl::FetchRowGroupsFromObjectStore;
 #[cfg(feature = "cloud")]
 use super::async_impl::ParquetObjectStore;
 pub use super::read_impl::BatchedParquetReader;
-use super::read_impl::{compute_row_group_range, read_parquet, FetchRowGroupsFromMmapReader};
+use super::read_impl::{FetchRowGroupsFromMmapReader, compute_row_group_range, read_parquet};
 #[cfg(feature = "cloud")]
 use super::utils::materialize_empty_df;
 use super::utils::{ensure_matching_dtypes_if_found, projected_arrow_schema_to_projection_indices};
+use crate::RowIndex;
 #[cfg(feature = "cloud")]
 use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
 use crate::parquet::metadata::FileMetadataRef;
 use crate::predicates::ScanIOPredicate;
 use crate::prelude::*;
-use crate::RowIndex;
 
 /// Read Apache parquet format into a DataFrame.
 #[must_use]

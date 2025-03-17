@@ -42,6 +42,24 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         FixedSizeListArray::new(self.dtype, self.length, values, validity)
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        let values = self.inner_builder.freeze_reset();
+        let validity = core::mem::take(&mut self.validity).into_opt_validity();
+        let out = FixedSizeListArray::new(self.dtype.clone(), self.length, values, validity);
+        self.length = 0;
+        out
+    }
+
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        self.inner_builder.extend_nulls(length * self.size);
+        self.validity.extend_constant(length, false);
+        self.length += length;
+    }
+
     fn subslice_extend(
         &mut self,
         other: &FixedSizeListArray,
@@ -57,7 +75,7 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         );
         self.validity
             .subslice_extend_from_opt_validity(other.validity(), start, length);
-        self.length += length;
+        self.length += length.min(other.len().saturating_sub(start));
     }
 
     unsafe fn gather_extend(
@@ -90,6 +108,53 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
 
         self.validity
             .gather_extend_from_opt_validity(other.validity(), idxs);
+        self.length += idxs.len();
+    }
+
+    fn opt_gather_extend(
+        &mut self,
+        other: &FixedSizeListArray,
+        idxs: &[IdxSize],
+        share: ShareStrategy,
+    ) {
+        let other_values = &**other.values();
+        self.inner_builder.reserve(idxs.len() * self.size);
+
+        // Group consecutive indices into larger copies.
+        let mut group_start = 0;
+        while group_start < idxs.len() {
+            let start_idx = idxs[group_start] as usize;
+            let mut group_len = 1;
+            let in_bounds = start_idx < other.len();
+
+            if in_bounds {
+                while group_start + group_len < idxs.len()
+                    && idxs[group_start + group_len] as usize == start_idx + group_len
+                    && start_idx + group_len < other.len()
+                {
+                    group_len += 1;
+                }
+
+                self.inner_builder.subslice_extend(
+                    other_values,
+                    start_idx * self.size,
+                    group_len * self.size,
+                    share,
+                );
+            } else {
+                while group_start + group_len < idxs.len()
+                    && idxs[group_start + group_len] as usize >= other.len()
+                {
+                    group_len += 1;
+                }
+
+                self.inner_builder.extend_nulls(group_len * self.size);
+            }
+            group_start += group_len;
+        }
+
+        self.validity
+            .opt_gather_extend_from_opt_validity(other.validity(), idxs, other.len());
         self.length += idxs.len();
     }
 }

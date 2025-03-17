@@ -256,7 +256,7 @@ def test_sorted_flag_after_streaming_join() -> None:
     assert (
         df1.lazy()
         .join(df2.lazy(), on="x", how="left")
-        .collect(streaming=True)["x"]
+        .collect(engine="old-streaming")["x"]  # type: ignore[call-overload]
         .flags["SORTED_ASC"]
     )
 

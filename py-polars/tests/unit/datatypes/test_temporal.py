@@ -1753,12 +1753,6 @@ def test_to_string_invalid_format() -> None:
         ComputeError, match="cannot format timezone-naive Datetime with format '%z'"
     ):
         tz_naive.dt.to_string("%z")
-    with pytest.raises(
-        ComputeError, match="cannot format timezone-aware Datetime with format '%q'"
-    ):
-        tz_naive.dt.replace_time_zone("UTC").dt.to_string("%q")
-    with pytest.raises(ComputeError, match="cannot format Date with format '%q'"):
-        tz_naive.dt.date().dt.to_string("%q")
 
 
 def test_tz_aware_to_string() -> None:

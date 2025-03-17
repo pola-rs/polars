@@ -1,4 +1,4 @@
-use arrow::datatypes::{Metadata, DTYPE_ENUM_VALUES};
+use arrow::datatypes::{DTYPE_ENUM_VALUES, Metadata};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
@@ -224,7 +224,7 @@ impl DataType {
             ArrowDataType::Extension(ext) if ext.name.as_str() == EXTENSION_NAME => {
                 #[cfg(feature = "object")]
                 {
-                    DataType::Object("object", None)
+                    DataType::Object("object")
                 }
                 #[cfg(not(feature = "object"))]
                 {

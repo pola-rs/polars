@@ -359,13 +359,11 @@ mod tests {
         let data = &[0b10001000u8, 0b11000110, 0b00011010];
         let num_bits = 3;
         let copies = 99; // 8 * 99 % 32 != 0
-        let expected = std::iter::repeat(&[0u32, 1, 2, 3, 4, 5, 6, 0])
-            .take(copies)
+        let expected = std::iter::repeat_n(&[0u32, 1, 2, 3, 4, 5, 6, 0], copies)
             .flatten()
             .copied()
             .collect::<Vec<_>>();
-        let data = std::iter::repeat(data)
-            .take(copies)
+        let data = std::iter::repeat_n(data, copies)
             .flatten()
             .copied()
             .collect::<Vec<_>>();
@@ -383,14 +381,12 @@ mod tests {
         let data = &[0b10001000u8, 0b11000110, 0b00011010];
         let num_bits = 3;
         let copies = 4;
-        let expected = std::iter::repeat(&[0u32, 1, 2, 3, 4, 5, 6, 0])
-            .take(copies)
+        let expected = std::iter::repeat_n(&[0u32, 1, 2, 3, 4, 5, 6, 0], copies)
             .flatten()
             .copied()
             .chain(std::iter::once(2))
             .collect::<Vec<_>>();
-        let data = std::iter::repeat(data)
-            .take(copies)
+        let data = std::iter::repeat_n(data, copies)
             .flatten()
             .copied()
             .chain(std::iter::once(0b00000010u8))

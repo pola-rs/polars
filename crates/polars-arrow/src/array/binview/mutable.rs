@@ -10,7 +10,7 @@ use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
 use crate::array::binview::view::validate_utf8_only;
 use crate::array::binview::{
-    BinaryViewArrayGeneric, ViewType, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE,
+    BinaryViewArrayGeneric, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE, ViewType,
 };
 use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
@@ -340,7 +340,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             self.init_validity(false);
         }
         self.views
-            .extend(std::iter::repeat(View::default()).take(additional));
+            .extend(std::iter::repeat_n(View::default(), additional));
         if let Some(validity) = &mut self.validity {
             validity.extend_constant(additional, false);
         }
@@ -365,7 +365,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             })
             .unwrap_or_default();
         self.views
-            .extend(std::iter::repeat(view_value).take(additional));
+            .extend(std::iter::repeat_n(view_value, additional));
     }
 
     impl_mutable_array_mut_validity!();

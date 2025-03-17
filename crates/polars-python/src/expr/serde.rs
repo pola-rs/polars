@@ -6,10 +6,10 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 
+use crate::PyExpr;
 use crate::error::PyPolarsErr;
 use crate::exceptions::ComputeError;
 use crate::file::get_file_like;
-use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {

@@ -670,6 +670,8 @@ def test_cse_manual_cache_15688() -> None:
     df2 = df.filter(id=1).join(df1, on=["a", "b"], how="semi")
     df2 = df2.cache()
     res = df2.group_by("b").agg(pl.all().sum())
+
+    print(res.cache().with_columns(foo=1).explain(comm_subplan_elim=True))
     assert res.cache().with_columns(foo=1).collect().to_dict(as_series=False) == {
         "b": [1],
         "a": [6],

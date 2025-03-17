@@ -1,8 +1,8 @@
-use arrow::array::builder::{make_builder, ShareStrategy, StaticArrayBuilder};
+use arrow::array::builder::{ShareStrategy, StaticArrayBuilder, make_builder};
 use arrow::array::{Array, ArrayCollectIterExt, FixedSizeListArray, FixedSizeListArrayBuilder};
 use arrow::bitmap::Bitmap;
 
-use super::{if_then_else_extend, IfThenElseKernel};
+use super::{IfThenElseKernel, if_then_else_extend};
 
 impl IfThenElseKernel for FixedSizeListArray {
     type Scalar<'a> = Box<dyn Array>;

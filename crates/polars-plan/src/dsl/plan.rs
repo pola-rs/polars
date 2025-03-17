@@ -13,7 +13,7 @@ use super::*;
 // (Major, Minor)
 // Add a field -> increment minor
 // Remove or modify a field -> increment major and reset minor
-pub static DSL_VERSION: (u16, u16) = (0, 0);
+pub static DSL_VERSION: (u16, u16) = (0, 1);
 static DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -28,13 +28,16 @@ pub enum DslPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache { input: Arc<DslPlan>, id: usize },
+    Cache {
+        input: Arc<DslPlan>,
+        id: usize,
+    },
     Scan {
         sources: ScanSources,
         /// Materialized at IR except for AnonymousScan.
         file_info: Option<FileInfo>,
-        file_options: FileScanOptions,
-        scan_type: FileScan,
+        file_options: Box<FileScanOptions>,
+        scan_type: Box<FileScan>,
         /// Local use cases often repeatedly collect the same `LazyFrame` (e.g. in interactive notebook use-cases),
         /// so we cache the IR conversion here, as the path expansion can be quite slow (especially for cloud paths).
         #[cfg_attr(feature = "serde", serde(skip))]
@@ -121,6 +124,9 @@ pub enum DslPlan {
         input: Arc<DslPlan>,
         payload: SinkType,
     },
+    SinkMultiple {
+        inputs: Vec<DslPlan>,
+    },
     #[cfg(feature = "merge_sorted")]
     MergeSorted {
         input_left: Arc<DslPlan>,
@@ -162,6 +168,7 @@ impl Clone for DslPlan {
             Self::HConcat { inputs, options } => Self::HConcat { inputs: inputs.clone(), options: options.clone() },
             Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
+            Self::SinkMultiple { inputs } => Self::SinkMultiple { inputs: inputs.clone() },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone() },
             Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},

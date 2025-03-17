@@ -1,5 +1,6 @@
 // Combine dancing links with sort merge.
 // https://arxiv.org/abs/1406.1717
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
@@ -542,15 +543,15 @@ impl SealedRolling for f32 {}
 impl SealedRolling for f64 {}
 
 impl<
-        T: NativeType
-            + NumCast
-            + Add<Output = T>
-            + Sub<Output = T>
-            + Div<Output = T>
-            + Mul<Output = T>
-            + SealedRolling
-            + Debug,
-    > FinishLinear for T
+    T: NativeType
+        + NumCast
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Mul<Output = T>
+        + SealedRolling
+        + Debug,
+> FinishLinear for T
 {
     fn finish(proportion: f64, lower: Self, upper: Self) -> Self {
         debug_assert!(proportion >= 0.0);

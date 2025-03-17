@@ -18,7 +18,7 @@ use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::ReshapeDimension;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
-use crate::utils::{slice_offsets, Container};
+use crate::utils::{Container, slice_offsets};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 mod arithmetic;

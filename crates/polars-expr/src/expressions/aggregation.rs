@@ -5,10 +5,10 @@ use arrow::compute::concatenate::concatenate;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::Offsets;
 use polars_compute::rolling::QuantileMethod;
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::{NoNull, _split_offsets};
-use polars_core::POOL;
+use polars_core::utils::{_split_offsets, NoNull};
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
 use rayon::prelude::*;
@@ -602,7 +602,7 @@ impl PartitionedAggregation for AggregationExpr {
                     offsets.push(length_so_far);
                     values.push(s.chunks()[0].clone());
 
-                    if s.len() == 0 {
+                    if s.is_empty() {
                         can_fast_explode = false;
                     }
                     Ok(())
@@ -761,10 +761,17 @@ where
     #[cfg(not(debug_assertions))]
     let thread_boundary = 100_000;
 
+    // Temporary until categorical min/max multithreading implementation is corrected.
+    #[cfg(feature = "dtype-categorical")]
+    let is_categorical = matches!(s.dtype(), &DataType::Categorical(_, _));
+    #[cfg(not(feature = "dtype-categorical"))]
+    let is_categorical = false;
     // threading overhead/ splitting work stealing is costly..
-    if allow_threading
+
+    if !allow_threading
         || s.len() < thread_boundary
         || POOL.current_thread_has_pending_tasks().unwrap_or(false)
+        || is_categorical
     {
         return f(s);
     }

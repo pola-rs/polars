@@ -3,7 +3,7 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::{downcast_as_macro_arg_physical, POOL};
+use polars_core::{POOL, downcast_as_macro_arg_physical};
 use polars_utils::total_ord::TotalOrd;
 
 fn first_n_valid_mask(num_valid: usize, out_len: usize) -> Option<Bitmap> {
@@ -208,9 +208,7 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
         DataType::Null => Ok(src.slice(0, k)),
         dt if dt.is_primitive_numeric() => {
             macro_rules! dispatch {
-                ($ca:expr) => {{
-                    top_k_num_impl($ca, k, descending).into_column()
-                }};
+                ($ca:expr) => {{ top_k_num_impl($ca, k, descending).into_column() }};
             }
             unsafe {
                 downcast_as_macro_arg_physical!(&s, dispatch).from_physical_unchecked(origin_dtype)

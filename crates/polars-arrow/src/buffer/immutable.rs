@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
 
 use either::Either;
@@ -55,6 +56,15 @@ impl<T: PartialEq> PartialEq for Buffer<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.deref() == other.deref()
+    }
+}
+
+impl<T: Eq> Eq for Buffer<T> {}
+
+impl<T: std::hash::Hash> std::hash::Hash for Buffer<T> {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_slice().hash(state);
     }
 }
 

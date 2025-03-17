@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 use bytemuck::TransparentWrapper;
 
@@ -86,6 +86,21 @@ pub trait TotalHash {
         }
     }
 }
+
+pub trait BuildHasherTotalExt: BuildHasher {
+    fn tot_hash_one<T>(&self, x: T) -> u64
+    where
+        T: TotalHash,
+        Self: Sized,
+        <Self as BuildHasher>::Hasher: Hasher,
+    {
+        let mut hasher = self.build_hasher();
+        x.tot_hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl<T: BuildHasher> BuildHasherTotalExt for T {}
 
 #[repr(transparent)]
 pub struct TotalOrdWrap<T>(pub T);

@@ -73,7 +73,7 @@ fn null_serializer(
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + Send + Sync> {
     let f = |_x: (), buf: &mut Vec<u8>| buf.extend_from_slice(b"null");
-    materialize_serializer(f, std::iter::repeat(()).take(len), offset, take)
+    materialize_serializer(f, std::iter::repeat_n((), len), offset, take)
 }
 
 fn primitive_serializer<'a, T: NativeType + itoa::Integer>(

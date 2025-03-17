@@ -11,6 +11,7 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     SchemaError,
+    ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -56,7 +57,7 @@ def test_str_slice_expr() -> None:
 
 def test_str_slice_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.slice(pl.Series([1, 2])))
 
 
@@ -123,7 +124,7 @@ def test_str_head_expr() -> None:
 
 def test_str_head_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.head(pl.Series([1, 2])))
 
 
@@ -190,7 +191,7 @@ def test_str_tail_expr() -> None:
 
 def test_str_tail_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.tail(pl.Series([1, 2])))
 
 
@@ -232,7 +233,7 @@ def test_str_contains() -> None:
 
 def test_str_contains_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.contains(pl.Series(["a", "b"])))  # type: ignore [arg-type]
 
 
@@ -362,9 +363,10 @@ def test_str_find_escaped_chars() -> None:
     )
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_str_find_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.find(pl.Series(["a", "b"])))  # type: ignore [arg-type]
 
 
@@ -547,7 +549,7 @@ def test_str_strip_chars() -> None:
 
 def test_str_strip_chars_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.strip_chars(pl.Series(["a", "b"])))
 
 
@@ -565,7 +567,7 @@ def test_str_strip_chars_start() -> None:
 
 def test_str_strip_chars_start_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.strip_chars_start(pl.Series(["a", "b"])))
 
 
@@ -583,7 +585,7 @@ def test_str_strip_chars_end() -> None:
 
 def test_str_strip_chars_end_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.strip_chars_end(pl.Series(["a", "b"])))
 
 
@@ -629,7 +631,7 @@ def test_str_strip_prefix_suffix_expr() -> None:
 
 def test_str_strip_prefix_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.strip_prefix(pl.Series(["a", "b"])))
 
 
@@ -644,7 +646,7 @@ def test_str_strip_suffix() -> None:
 
 def test_str_strip_suffix_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises(ShapeError):
         df.select(pl.col("num").str.strip_suffix(pl.Series(["a", "b"])))
 
 
@@ -792,7 +794,7 @@ def test_json_path_match() -> None:
 
 def test_str_json_path_match_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
+    with pytest.raises((ShapeError, ComputeError)):
         df.select(pl.col("num").str.json_path_match(pl.Series(["a", "b"])))
 
 
@@ -1192,6 +1194,23 @@ def test_replace_many(
             )
         ).item()
     )
+
+
+def test_replace_many_groupby() -> None:
+    df = pl.DataFrame(
+        {
+            "x": ["a", "b", "c", "d", "e", "f", "g", "h", "i"],
+            "g": [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        }
+    )
+    out = df.group_by("g").agg(pl.col.x.str.replace_many(pl.col.x.head(2), ""))
+    expected = pl.DataFrame(
+        {
+            "g": [0, 1, 2],
+            "x": [["", "", "c"], ["", "", "f"], ["", "", "i"]],
+        }
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 @pytest.mark.parametrize(

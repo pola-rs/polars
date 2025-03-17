@@ -122,7 +122,7 @@ impl LazyJsonLineReader {
 
 impl LazyFileListReader for LazyJsonLineReader {
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             pre_slice: self.n_rows.map(|x| (0, x)),
             with_columns: None,
             cache: false,
@@ -138,7 +138,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             glob: true,
             include_file_paths: self.include_file_paths,
             allow_missing_columns: false,
-        };
+        });
 
         let options = NDJsonReadOptions {
             n_threads: None,
@@ -150,10 +150,10 @@ impl LazyFileListReader for LazyJsonLineReader {
             schema_overwrite: self.schema_overwrite,
         };
 
-        let scan_type = FileScan::NDJson {
+        let scan_type = Box::new(FileScan::NDJson {
             options,
             cloud_options: self.cloud_options,
-        };
+        });
 
         Ok(LazyFrame::from(DslPlan::Scan {
             sources: self.sources,
@@ -192,7 +192,6 @@ impl LazyFileListReader for LazyJsonLineReader {
     }
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
-    #[must_use]
     fn with_rechunk(mut self, toggle: bool) -> Self {
         self.rechunk = toggle;
         self

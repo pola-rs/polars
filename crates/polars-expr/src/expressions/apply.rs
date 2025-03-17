@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::sync::OnceLock;
 
+use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::chunked_array::from_iterator_par::try_list_from_par_iter;
 use polars_core::prelude::*;
-use polars_core::POOL;
 #[cfg(feature = "parquet")]
 use polars_io::predicates::{BatchStats, StatsEvaluator};
 #[cfg(feature = "is_between")]
@@ -50,7 +50,10 @@ impl ApplyExpr {
         if matches!(options.collect_groups, ApplyOptions::ElementWise)
             && options.flags.contains(FunctionFlags::RETURNS_SCALAR)
         {
-            panic!("expr {:?} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive", expr)
+            panic!(
+                "expr {:?} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive",
+                expr
+            )
         }
 
         Self {

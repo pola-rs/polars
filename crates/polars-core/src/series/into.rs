@@ -165,7 +165,7 @@ impl Series {
                 .to(self.dtype().to_arrow(CompatLevel::newest()))
                 .to_boxed(),
             #[cfg(feature = "object")]
-            DataType::Object(_, None) => {
+            DataType::Object(_) => {
                 use crate::chunked_array::object::builder::object_series_to_arrow_array;
                 if self.chunks().len() == 1 && chunk_idx == 0 {
                     object_series_to_arrow_array(self)

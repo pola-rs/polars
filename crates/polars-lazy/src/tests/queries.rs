@@ -484,10 +484,11 @@ fn test_lazy_query_10() {
         .select(&[(col("x") - col("y")).alias("z")])
         .collect()
         .unwrap();
-    assert!(out
-        .column("z")
-        .unwrap()
-        .equals(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap()));
+    assert!(
+        out.column("z")
+            .unwrap()
+            .equals(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap())
+    );
 }
 
 #[test]
@@ -611,13 +612,14 @@ fn test_lazy_wildcard() {
 #[test]
 fn test_lazy_reverse() {
     let df = load_df();
-    assert!(df
-        .clone()
-        .lazy()
-        .reverse()
-        .collect()
-        .unwrap()
-        .equals_missing(&df.reverse()))
+    assert!(
+        df.clone()
+            .lazy()
+            .reverse()
+            .collect()
+            .unwrap()
+            .equals_missing(&df.reverse())
+    )
 }
 
 #[test]

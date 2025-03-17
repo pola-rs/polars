@@ -31,11 +31,11 @@ impl LateMaterializedDataFrame {
             hive_parts: None,
             predicate: None,
             output_schema: None,
-            scan_type: FileScan::Anonymous {
+            scan_type: Box::new(FileScan::Anonymous {
                 options,
                 function: self,
-            },
-            file_options: FileScanOptions::default(),
+            }),
+            file_options: Box::new(FileScanOptions::default()),
         }
     }
 }

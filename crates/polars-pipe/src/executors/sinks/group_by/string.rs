@@ -12,6 +12,7 @@ use polars_utils::hashing::hash_to_partition;
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
+use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::group_by::aggregates::AggregateFunction;
 use crate::executors::sinks::group_by::ooc_state::OocState;
 use crate::executors::sinks::group_by::physical_agg_to_logical;
@@ -19,7 +20,6 @@ use crate::executors::sinks::group_by::primitive::apply_aggregation;
 use crate::executors::sinks::group_by::utils::{compute_slices, finalize_group_by, prepare_key};
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::load_vec;
-use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
@@ -240,9 +240,7 @@ impl StringGroupbySink {
     #[inline]
     fn get_partitions(&mut self, h: u64) -> &mut PlIdHashMap<Key, IdxSize> {
         let partition = hash_to_partition(h, self.pre_agg_partitions.len());
-        let current_partition = unsafe { self.pre_agg_partitions.get_unchecked_mut(partition) };
-
-        current_partition
+        unsafe { self.pre_agg_partitions.get_unchecked_mut(partition) }
     }
 
     fn sink_ooc(

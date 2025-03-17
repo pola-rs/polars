@@ -3,11 +3,11 @@ pub mod join;
 pub mod pivot;
 
 pub use join::*;
+#[cfg(feature = "to_dummies")]
+use polars_core::POOL;
 use polars_core::prelude::*;
 #[cfg(feature = "to_dummies")]
 use polars_core::utils::accumulate_dataframes_horizontal;
-#[cfg(feature = "to_dummies")]
-use polars_core::POOL;
 #[cfg(feature = "to_dummies")]
 use rayon::prelude::*;
 

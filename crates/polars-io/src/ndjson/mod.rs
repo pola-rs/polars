@@ -2,8 +2,8 @@ use core::{get_file_chunks_json, json_lines};
 use std::num::NonZeroUsize;
 
 use arrow::array::StructArray;
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub(crate) mod buffer;

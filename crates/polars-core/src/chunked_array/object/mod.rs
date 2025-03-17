@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::any::Any;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::buffer::Buffer;
 use polars_utils::total_ord::TotalHash;
 

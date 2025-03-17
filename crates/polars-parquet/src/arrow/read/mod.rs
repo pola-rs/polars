@@ -8,34 +8,34 @@ pub mod statistics;
 
 use std::io::{Read, Seek};
 
-use arrow::types::{i256, NativeType};
+use arrow::types::{NativeType, i256};
 pub use deserialize::{
-    column_iter_to_arrays, create_list, create_map, get_page_iterator, init_nested, n_columns,
-    Filter, InitNested, NestedState, PredicateFilter,
+    Filter, InitNested, NestedState, PredicateFilter, column_iter_to_arrays, create_list,
+    create_map, get_page_iterator, init_nested, n_columns,
 };
 #[cfg(feature = "async")]
 use futures::{AsyncRead, AsyncSeek};
 use polars_error::PolarsResult;
-pub use schema::{infer_schema, FileMetadata};
+pub use schema::{FileMetadata, infer_schema};
 
 #[cfg(feature = "async")]
 pub use crate::parquet::read::{get_page_stream, read_metadata_async as _read_metadata_async};
 // re-exports of crate::parquet's relevant APIs
 pub use crate::parquet::{
+    FallibleStreamingIterator,
     error::ParquetError,
     fallible_streaming_iterator,
     metadata::{ColumnChunkMetadata, ColumnDescriptor, RowGroupMetadata},
     page::{CompressedDataPage, DataPageHeader, Page},
     read::{
-        decompress, get_column_iterator, read_metadata as _read_metadata, BasicDecompressor,
-        MutStreamingIterator, PageReader, ReadColumnIterator, State,
+        BasicDecompressor, MutStreamingIterator, PageReader, ReadColumnIterator, State, decompress,
+        get_column_iterator, read_metadata as _read_metadata,
     },
     schema::types::{
         GroupLogicalType, ParquetType, PhysicalType, PrimitiveConvertedType, PrimitiveLogicalType,
         TimeUnit as ParquetTimeUnit,
     },
     types::int96_to_i64_ns,
-    FallibleStreamingIterator,
 };
 
 /// Returns all [`ColumnChunkMetadata`] associated to `field_name`.

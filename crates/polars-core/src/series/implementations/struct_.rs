@@ -266,6 +266,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         &mut self.0
     }
 
+    fn as_phys_any(&self) -> &dyn Any {
+        &self.0
+    }
+
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self as _
     }
