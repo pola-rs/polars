@@ -474,28 +474,31 @@ impl DataFrame {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
         let offset = offset.unwrap_or(0);
 
-        let mut ca = IdxCa::from_vec(
-            name,
-            (offset..(self.height() as IdxSize) + offset).collect(),
-        );
-        ca.set_sorted_flag(IsSorted::Ascending);
-        columns.push(ca.into_series().into());
+        if self.height() as IdxSize > (IdxSize::MAX - offset) {
+            panic!("row index offset overflow");
+        }
 
+        let col = Column::new_idxsize_range(name, offset..(self.height() as IdxSize) + offset);
+        columns.push(col);
         columns.extend_from_slice(&self.columns);
         DataFrame::new(columns)
     }
 
     /// Add a row index column in place.
+    ///
+    /// # Panics
+    /// Panics if the resulting column would overflow IdxSize::MAX.
     pub fn with_row_index_mut(&mut self, name: PlSmallStr, offset: Option<IdxSize>) -> &mut Self {
         let offset = offset.unwrap_or(0);
-        let mut ca = IdxCa::from_vec(
-            name,
-            (offset..(self.height() as IdxSize) + offset).collect(),
-        );
-        ca.set_sorted_flag(IsSorted::Ascending);
+
+        if self.height() as IdxSize > (IdxSize::MAX - offset) {
+            panic!("row index offset overflow");
+        }
+
+        let col = Column::new_idxsize_range(name, offset..(self.height() as IdxSize) + offset);
 
         self.clear_schema();
-        self.columns.insert(0, ca.into_series().into());
+        self.columns.insert(0, col);
         self
     }
 
