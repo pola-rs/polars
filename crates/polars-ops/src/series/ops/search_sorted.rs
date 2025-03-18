@@ -88,18 +88,17 @@ pub fn search_sorted(
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         dt if dt.is_nested() => {
-            // We need to know if nulls are last, and nesting introduces the
-            // problem that nulls may be inside arbitrarily nested values, so we
-            // can just look at the first value to see if it's null. Instead, we
-            // figure out which presumptive nulls location preserves the sorting
-            // invariant.
-            //
-            // In particular, a row-encoded first value should always be >= or
-            // <= depending on whether this is ascending or descending sort,
-            // respectively. So if we get the wrong order for nulls_last = true,
-            // that means nulls_last should be false.
+            // Once encoded, nulls aren't visible as nulls, so we want to pass that in.
+            let original_null_count = s.null_count();
+
+            // We want to preserve the sort order after row encoding, so we need to
+            // pick a nulls_last value that will ensure that.
             let nulls_last = if s.len() < 2 {
                 true // doesn't matter, really
+            } else if s.first().is_null() {
+                false
+            } else if s.last().is_null() {
+                true
             } else {
                 let mut first_and_last = s.slice(0, 1);
                 first_and_last.append(&s.slice(-1, 1))?;
@@ -112,13 +111,16 @@ pub fn search_sorted(
                 )?;
                 let first = first_and_last.first().unwrap();
                 let last = first_and_last.last().unwrap();
+                println!("first_and_last encoded {first:?} {last:?}");
                 if descending {
-                    // if nulls_last really is true, encoding should have preserved the descending invariant:
+                    // if nulls_last is really true, encoding should have
+                    // preserved the descending invariant:
                     first.tot_ge(&last)
                 } else {
                     first.tot_le(&last)
                 }
             };
+            println!("nulls_last: {nulls_last}  descending {descending}");
 
             // This is O(N), whereas typically search_sorted would be O(logN).
             // Ideally the implementation would only row-encode values that are
@@ -129,6 +131,7 @@ pub fn search_sorted(
                 &[descending],
                 &[nulls_last],
             )?;
+            println!("ENCODED series {:?}", ca.clone().into_series());
 
             let search_values = _get_rows_encoded_ca(
                 "".into(),
@@ -136,13 +139,17 @@ pub fn search_sorted(
                 &[descending],
                 &[nulls_last],
             )?;
+            println!("ENCODED needle {:?}", search_values.clone().into_series());
+
             let idx = binary_search_ca_with_overrides(
                 &ca,
                 search_values.iter(),
                 side,
                 false,
+                original_null_count,
                 nulls_last,
             );
+            println!("FOund at index {idx:?}");
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         _ => polars_bail!(opq = search_sorted, original_dtype),
