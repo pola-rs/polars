@@ -109,3 +109,17 @@ def test_search_sorted_struct() -> None:
     assert series.search_sorted(v0) == 0
     assert series.search_sorted(v1) == 1
     assert series.search_sorted([v1, v0]).to_list() == [1, 0]
+
+
+def test_search_sorted_list_with_nulls() -> None:
+    values = [[1], [-2], None, [None, 3], [3, None]]
+    series = pl.Series(values)
+    for descending in [True, False]:
+        for nulls_last in [True, False]:
+            sorted_series = series.sort(descending=descending, nulls_last=nulls_last)
+            for value in values:
+                idx = sorted_series.search_sorted(value, "left")
+                lookup = sorted_series[idx]
+                if isinstance(lookup, pl.Series):
+                    lookup = lookup.to_list()
+                assert lookup == value
