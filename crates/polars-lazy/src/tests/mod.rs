@@ -105,7 +105,7 @@ fn init_files() {
                         {
                             ParquetWriter::new(f)
                                 .with_statistics(StatisticsOptions::full())
-                                .finish(&mut df)
+                                .finish(&mut df, None)
                                 .unwrap();
                         }
                     },
