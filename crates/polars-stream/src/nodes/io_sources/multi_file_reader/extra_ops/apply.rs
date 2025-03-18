@@ -235,6 +235,8 @@ impl ApplyExtraOps {
 
         reorder.reorder_columns(df);
 
+        df.clear_schema();
+
         Ok(())
     }
 }
