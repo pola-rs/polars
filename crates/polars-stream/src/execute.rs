@@ -1,5 +1,5 @@
-use polars_core::POOL;
 use polars_core::frame::DataFrame;
+use polars_core::{POOL, config};
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;
@@ -16,6 +16,8 @@ pub struct StreamingExecutionState {
 
     // The ExecutionState passed to any non-streaming operations.
     pub in_memory_exec_state: ExecutionState,
+
+    pub verbose: bool,
 }
 
 /// Finds all runnable pipeline blockers in the graph, that is, nodes which:
@@ -258,6 +260,7 @@ pub fn execute_graph(
     let state = StreamingExecutionState {
         num_pipelines,
         in_memory_exec_state: ExecutionState::default(),
+        verbose: config::verbose(),
     };
 
     // Ensure everything is properly connected.
