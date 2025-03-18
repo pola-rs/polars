@@ -474,8 +474,11 @@ impl DataFrame {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
         let offset = offset.unwrap_or(0);
 
-        if self.height() as IdxSize > (IdxSize::MAX - offset) {
-            panic!("row index offset overflow");
+        if (self.height() as IdxSize).checked_add(offset).is_none() {
+            polars_bail!(
+                ComputeError: "row index overflow with offset {}, df height {}",
+                offset, self.height()
+            );
         }
 
         let col = Column::new_idxsize_range(name, offset..(self.height() as IdxSize) + offset);
@@ -491,8 +494,12 @@ impl DataFrame {
     pub fn with_row_index_mut(&mut self, name: PlSmallStr, offset: Option<IdxSize>) -> &mut Self {
         let offset = offset.unwrap_or(0);
 
-        if self.height() as IdxSize > (IdxSize::MAX - offset) {
-            panic!("row index offset overflow");
+        if (self.height() as IdxSize).checked_add(offset).is_none() {
+            panic!(
+                "row index overflow with offset {}, df height {}",
+                offset,
+                self.height()
+            );
         }
 
         let col = Column::new_idxsize_range(name, offset..(self.height() as IdxSize) + offset);
