@@ -121,6 +121,10 @@ def test_search_sorted_struct() -> None:
 @example([[1], [-2], None, [None, 3], [3, None]])
 @example([[None], [0]])
 def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) -> None:
+    """
+    Check that for all combinations of descending and nulls_last, values can be
+    found.
+    """
     series = pl.Series(values, dtype=pl.List(pl.Int64()))
     for descending in [True, False]:
         for nulls_last in [True, False]:

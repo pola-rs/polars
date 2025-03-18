@@ -90,8 +90,9 @@ pub fn search_sorted(
             // Once encoded, nulls aren't visible as nulls, so we want to pass that in.
             let original_null_count = s.null_count();
 
-            // We want to preserve the sort order after row encoding, so we need to
-            // pick a nulls_last value that will ensure that.
+            // We want to preserve the sort order after row encoding, so we need
+            // to pick a nulls_last value that will ensure that. Nesting means
+            // the naive algorithm of checking first item isn't sufficient.
             let nulls_last = if s.len() < 2 {
                 true // doesn't matter, really
             } else if s.first().is_null() {
@@ -99,24 +100,17 @@ pub fn search_sorted(
             } else if s.last().is_null() {
                 true
             } else {
+                // If nulls_last is true, sorting again using that flag should
+                // result in same order:
                 let mut first_and_last = s.slice(0, 1);
                 first_and_last.append(&s.slice(-1, 1))?;
-                // Assume nulls_last is true:
-                let first_and_last = _get_rows_encoded_ca(
-                    "".into(),
-                    &[first_and_last.into_column()],
-                    &[descending],
-                    &[true],
+                let sorted = first_and_last.sort(
+                    SortOptions::new()
+                        .with_order_descending(descending)
+                        .with_nulls_last(true)
+                        .with_maintain_order(true),
                 )?;
-                let first = first_and_last.first().unwrap();
-                let last = first_and_last.last().unwrap();
-                if descending {
-                    // if nulls_last is really true, encoding should have
-                    // preserved the descending invariant:
-                    first.tot_ge(&last)
-                } else {
-                    first.tot_le(&last)
-                }
+                sorted.equals(&first_and_last)
             };
 
             // This is O(N), whereas typically search_sorted would be O(logN).
@@ -136,6 +130,13 @@ pub fn search_sorted(
                 &[nulls_last],
             )?;
 
+            let _ = dbg!((
+                ca.clone().into_series(),
+                search_values.clone().into_series(),
+                original_null_count,
+                nulls_last,
+                descending
+            ));
             let idx = binary_search_ca_with_overrides(
                 &ca,
                 search_values.iter(),
