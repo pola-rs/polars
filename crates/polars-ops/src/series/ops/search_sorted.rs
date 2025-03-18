@@ -1,8 +1,10 @@
+use arrow::compute::utils::combine_validities_and_many;
 use polars_core::chunked_array::ops::search_sorted::{SearchSortedSide, binary_search_ca};
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 use row_encode::encode_rows_unordered;
+use search_sorted::binary_search_ca_with_overrides;
 
 pub fn search_sorted(
     s: &Series,
@@ -17,12 +19,28 @@ pub fn search_sorted(
         polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
     }
 
-    let (s, search_values) = if s.dtype().is_array() || s.dtype().is_list() {
-        let s = encode_rows_unordered(&[s.clone().into_column()])?;
-        let search_values = encode_rows_unordered(&[search_values.clone().into_column()])?;
-        (&s.into_series(), &search_values.into_series())
-    } else {
-        (s, search_values)
+    print!("Original series {} needle {}", s, search_values);
+
+    // We need to preserve null count so that the the binary search algorithm
+    // knows to skip them in that case where we use row encoding.
+    let original_null_count = s.null_count();
+
+    // Figuring out if nulls are last is complicated by cases like row-encoded
+    // lists, where the null may be part of a list that has been encoded into
+    // bytes. So we detect it using sorting invariants, early on.
+    let first = s.first();
+    let last = s.last();
+    let nulls_last = match (first.is_null(), last.is_null()) {
+        (true, _) => false,
+        (_, true) => true,
+        _ => {
+            // TODO what about nan
+            if descending {
+                first.value().tot_le(last.value())
+            } else  {
+                last.value() <= first.value()
+            }
+        }
     };
 
     let s = s.to_physical_repr();
@@ -78,7 +96,6 @@ pub fn search_sorted(
         },
         DataType::BinaryOffset => {
             let ca = s.binary_offset().unwrap();
-
             let search_values = search_values.binary_offset().unwrap();
             let idx = binary_search_ca(ca, search_values.iter(), side, descending);
             Ok(IdxCa::new_vec(s.name().clone(), idx))
@@ -107,7 +124,7 @@ pub fn search_sorted(
                 &[descending],
                 &[false],
             )?;
-            let idx = binary_search_ca(&ca, search_values.iter(), side, false);
+            let idx = binary_search_ca_with_overrides(&ca, search_values.iter(), side, false, original_null_count, nulls_last);
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         _ => polars_bail!(opq = search_sorted, original_dtype),

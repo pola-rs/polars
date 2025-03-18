@@ -28,6 +28,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         // If the Series is sorted, we can use an optimized binary search to
         // find the value.
         IsSorted::Ascending | IsSorted::Descending if !needle.is_null() => {
+            println!("using search_sorted {is_sorted_flag:?}");
             search_sorted(
                 series,
                 needle_s.as_materialized_series(),
@@ -41,6 +42,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
                 if series.get(idx as usize).ok()? == needle.as_any_value() {
                     Some(idx as usize)
                 } else {
+                    println!("result of search_sorted {:?} != {:?}", series.get(idx as usize).ok(), needle.as_any_value());
                     None
                 }
             })

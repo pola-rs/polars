@@ -119,7 +119,6 @@ where
         .collect()
 }
 
-#[allow(clippy::collapsible_else_if)]
 pub fn binary_search_ca<'a, T>(
     ca: &'a ChunkedArray<T>,
     search_values: impl Iterator<Item = Option<T::Physical<'a>>>,
@@ -130,18 +129,47 @@ where
     T: PolarsDataType,
     T::Physical<'a>: TotalOrd + Debug + Copy,
 {
+    let null_count = ca.null_count();
+    let first = ca.first();
+    let last = ca.last();
+    let nulls_last = match (first, last) {
+        (None, _) => false,
+        (_, None) => true,
+        (Some(ref first), Some(ref last)) => {
+            if descending {
+                first.tot_le(last)
+            } else  {
+                last.tot_le(first)
+            }
+        }
+    };
+    binary_search_ca_with_overrides(ca, search_values, side, descending, null_count, nulls_last)
+}
+
+#[allow(clippy::collapsible_else_if)]
+pub fn binary_search_ca_with_overrides<'a, T>(
+    ca: &'a ChunkedArray<T>,
+    search_values: impl Iterator<Item = Option<T::Physical<'a>>>,
+    side: SearchSortedSide,
+    descending: bool,
+    null_count: usize,
+    nulls_last: bool,
+) -> Vec<IdxSize>
+where
+    T: PolarsDataType,
+    T::Physical<'a>: TotalOrd + Debug + Copy,
+{
     let chunks: Vec<_> = ca.downcast_iter().filter(|c| c.len() > 0).collect();
-    let has_nulls = ca.null_count() > 0;
-    let nulls_last = has_nulls && chunks[0].get(0).is_some();
+    let has_nulls = null_count > 0;
     let null_idx = if nulls_last {
         if side == SearchSortedSide::Right {
             ca.len()
         } else {
-            ca.len() - ca.null_count()
+            ca.len() - null_count
         }
     } else {
         if side == SearchSortedSide::Right {
-            ca.null_count()
+            null_count
         } else {
             0
         }
