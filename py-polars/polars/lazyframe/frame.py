@@ -21,7 +21,6 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._typing import ParquetMetadata
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
@@ -124,6 +123,7 @@ if TYPE_CHECKING:
         Label,
         MaintainOrderJoin,
         Orientation,
+        ParquetMetadata,
         PolarsDataType,
         PythonDataType,
         RollingInterpolationMethod,

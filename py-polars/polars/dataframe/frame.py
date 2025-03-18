@@ -3989,7 +3989,7 @@ class DataFrame:
 
             # do not remove this import!
             # needed below
-            import pyarrow.parquet
+            import pyarrow.parquet  # noqa: F401
 
             if pyarrow_options is None:
                 pyarrow_options = {}
