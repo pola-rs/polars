@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock};
 
 use arrow::array::builder::ShareStrategy;
@@ -639,6 +639,7 @@ impl BuildState {
             table_per_partition: probe_tables.try_assume_init().ok().unwrap(),
             max_seq_sent: MorselSeq::default(),
             sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
+            unordered_morsel_seq: AtomicU64::new(0),
         }
     }
 
@@ -765,6 +766,7 @@ impl BuildState {
             table_per_partition: probe_tables.try_assume_init().ok().unwrap(),
             max_seq_sent: MorselSeq::default(),
             sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
+            unordered_morsel_seq: AtomicU64::new(0),
         }
     }
 }
@@ -779,6 +781,9 @@ struct ProbeState {
     table_per_partition: Vec<ProbeTable>,
     max_seq_sent: MorselSeq,
     sampled_probe_morsels: BufferedStream,
+    
+    // For unordered joins we relabel output morsels to speed up the linearizer.
+    unordered_morsel_seq: AtomicU64,
 }
 
 impl ProbeState {
@@ -787,6 +792,7 @@ impl ProbeState {
         mut recv: Receiver<Morsel>,
         mut send: Sender<Morsel>,
         partitions: &[ProbeTable],
+        unordered_morsel_seq: &AtomicU64,
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
         state: &StreamingExecutionState,
@@ -821,11 +827,11 @@ impl ProbeState {
 
         // A simple estimate used to size reserves.
         let mut selectivity_estimate = 1.0;
+        let mut selectivity_estimate_confidence = 0.0;
 
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload.
-            let (df, seq, src_token, wait_token) = morsel.into_inner();
-            max_seq = seq;
+            let (df, in_seq, src_token, wait_token) = morsel.into_inner();
 
             let df_height = df.height();
             if df_height == 0 {
@@ -839,13 +845,13 @@ impl ProbeState {
             let mut total_matches = 0;
 
             // Use selectivity estimate to reserve for morsel builders.
-            let max_match_per_key_est = selectivity_estimate as usize + 16;
+            let max_match_per_key_est = (selectivity_estimate * 1.2) as usize + 16;
             let out_est_size = ((selectivity_estimate * 1.2 * df_height as f64) as usize)
                 .min(probe_limit as usize);
             build_out.reserve(out_est_size + max_match_per_key_est);
 
             unsafe {
-                let new_morsel = |build: &mut DataFrameBuilder, probe: &mut DataFrameBuilder| {
+                let mut new_morsel = |build: &mut DataFrameBuilder, probe: &mut DataFrameBuilder| {
                     let mut build_df = build.freeze_reset();
                     let mut probe_df = probe.freeze_reset();
                     let out_df = if params.left_is_build.unwrap() {
@@ -856,7 +862,13 @@ impl ProbeState {
                         probe_df
                     };
                     let out_df = postprocess_join(out_df, params);
-                    Morsel::new(out_df, seq, src_token.clone())
+                    let out_seq = if params.preserve_order_probe {
+                        in_seq
+                    } else {
+                        MorselSeq::new(unordered_morsel_seq.fetch_add(1, Ordering::Relaxed))
+                    };
+                    max_seq = out_seq;
+                    Morsel::new(out_df, out_seq, src_token.clone())
                 };
 
                 if params.preserve_order_probe {
@@ -920,6 +932,7 @@ impl ProbeState {
                                     &probe_match,
                                     ShareStrategy::Always,
                                 );
+                                let out_len = probe_match.len();
                                 probe_match.clear();
                                 let out_morsel = new_morsel(&mut build_out, &mut probe_out);
                                 if send.send(out_morsel).await.is_err() {
@@ -928,7 +941,8 @@ impl ProbeState {
                                 if probe_group_end != probe_partitions.len() {
                                     // We had enough matches to need a mid-partition flush, let's assume there are a lot of
                                     // matches and just do a large reserve.
-                                    build_out.reserve(probe_limit as usize + max_match_per_key_est);
+                                    let old_est = probe_limit as usize + max_match_per_key_est;
+                                    build_out.reserve(old_est.max(out_len + 16));
                                 }
                             }
                         }
@@ -989,6 +1003,7 @@ impl ProbeState {
                                     &probe_match,
                                     ShareStrategy::Always,
                                 );
+                                let out_len = probe_match.len();
                                 probe_match.clear();
                                 let out_morsel = new_morsel(&mut build_out, &mut probe_out);
                                 if send.send(out_morsel).await.is_err() {
@@ -996,7 +1011,8 @@ impl ProbeState {
                                 }
                                 // We had enough matches to need a mid-partition flush, let's assume there are a lot of
                                 // matches and just do a large reserve.
-                                build_out.reserve(probe_limit as usize + max_match_per_key_est);
+                                let old_est = probe_limit as usize + max_match_per_key_est;
+                                build_out.reserve(old_est.max(out_len + 16));
                             }
                         }
                     }
@@ -1017,9 +1033,11 @@ impl ProbeState {
 
             drop(wait_token);
 
-            // Move selectivity estimate a bit towards latest value.
+            // Move selectivity estimate a bit towards latest value. Allows rapid changes at first.
+            // TODO: implement something more re-usable and robust.
             selectivity_estimate =
-                0.8 * selectivity_estimate + 0.2 * (total_matches as f64 / df_height as f64);
+                selectivity_estimate_confidence * selectivity_estimate + (1.0 - selectivity_estimate_confidence) * (total_matches as f64 / df_height as f64);
+            selectivity_estimate_confidence = (selectivity_estimate_confidence + 0.1).min(0.8);
         }
 
         Ok(max_seq)
@@ -1560,6 +1578,7 @@ impl ComputeNode for EquiJoinNode {
                                 recv,
                                 send,
                                 &probe_state.table_per_partition,
+                                &probe_state.unordered_morsel_seq,
                                 partitioner.clone(),
                                 &self.params,
                                 state,
