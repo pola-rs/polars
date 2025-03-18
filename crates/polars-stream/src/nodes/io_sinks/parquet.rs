@@ -94,10 +94,10 @@ impl SinkNode for ParquetSinkNode {
     ) {
         // Buffer task -> Encode tasks
         let (dist_tx, dist_rxs) =
-            distributor_channel(state.num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
+            distributor_channel(state.num_pipelines, *DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
         // Encode tasks -> Collect task
         let (mut lin_rx, lin_txs) =
-            Linearizer::new(state.num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
+            Linearizer::new(state.num_pipelines, *DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
         // Collect task -> IO task
         let (mut io_tx, mut io_rx) = connector::<Vec<Vec<CompressedPage>>>();
 

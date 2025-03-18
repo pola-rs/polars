@@ -126,7 +126,7 @@ impl PhysicalPipe {
                 let (mut linearizer, inserters) =
                     Linearizer::<Priority<Reverse<MorselSeq>, Morsel>>::new_with_maintain_order(
                         num_pipelines,
-                        DEFAULT_LINEARIZER_BUFFER_SIZE,
+                        *DEFAULT_LINEARIZER_BUFFER_SIZE,
                         maintain_order,
                     );
 
@@ -164,7 +164,7 @@ impl PhysicalPipe {
             Self::NeedsDistributor(mut receiver, senders) => {
                 let num_pipelines = senders.len();
                 let (mut distributor, distr_receivers) =
-                    distributor_channel(num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+                    distributor_channel(num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
                 handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = receiver.recv().await {
