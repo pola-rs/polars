@@ -3881,6 +3881,7 @@ class DataFrame:
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
         retries: int = 2,
+        metadata: dict[str, str] | None = None,
     ) -> None:
         """
         Write to Apache Parquet file.
@@ -3966,6 +3967,8 @@ class DataFrame:
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+        metadata
+            File-level metadata to add to the Parquet file.
 
         Examples
         --------
@@ -4064,6 +4067,12 @@ class DataFrame:
             # Handle empty dict input
             storage_options = None
 
+        if metadata:
+            metadata = list(metadata.items())  # type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            metadata = None
+
         if isinstance(statistics, bool) and statistics:
             statistics = {
                 "min": True,
@@ -4100,6 +4109,7 @@ class DataFrame:
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,
+            metadata=metadata,
         )
 
     def write_database(

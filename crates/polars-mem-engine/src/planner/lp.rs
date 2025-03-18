@@ -298,7 +298,7 @@ fn create_physical_plan_impl(
                                     IpcWriter::new(BufWriter::new(writer))
                                         .with_compression(options.compression)
                                         .with_compat_level(options.compat_level)
-                                        .finish(&mut df)?;
+                                        .finish(&mut df, None)?;
                                 },
                                 #[cfg(feature = "csv")]
                                 FileType::Csv(options) => {

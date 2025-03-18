@@ -31,7 +31,7 @@ from polars import api, exceptions, plugins, selectors
 from polars._utils.polars_version import get_polars_version as _get_polars_version
 
 # TODO: remove need for importing wrap utils at top level
-from polars._utils.wrap import wrap_df, wrap_s  # noqa: F401
+from polars._utils.wrap import wrap_df, wrap_s
 from polars.catalog.unity import Catalog
 from polars.config import Config
 from polars.convert import (
@@ -191,6 +191,7 @@ from polars.io import (
     read_ndjson,
     read_ods,
     read_parquet,
+    read_parquet_metadata,
     read_parquet_schema,
     scan_csv,
     scan_delta,
@@ -298,6 +299,7 @@ __all__ = [
     "read_ndjson",
     "read_ods",
     "read_parquet",
+    "read_parquet_metadata",
     "read_parquet_schema",
     "scan_csv",
     "scan_delta",

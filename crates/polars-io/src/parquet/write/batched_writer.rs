@@ -7,7 +7,7 @@ use polars_core::prelude::*;
 use polars_parquet::read::{ParquetError, fallible_streaming_iterator};
 use polars_parquet::write::{
     CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding, FallibleStreamingIterator,
-    FileWriter, Page, ParquetType, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
+    FileWriter, KeyValue, Page, ParquetType, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
     array_to_columns,
 };
 use rayon::prelude::*;
@@ -114,9 +114,9 @@ impl<W: Write> BatchedWriter<W> {
     }
 
     /// Writes the footer of the parquet file. Returns the total size of the file.
-    pub fn finish(&self) -> PolarsResult<u64> {
+    pub fn finish(&self, key_value_metadata: Option<Vec<KeyValue>>) -> PolarsResult<u64> {
         let mut writer = self.writer.lock().unwrap();
-        let size = writer.end(None)?;
+        let size = writer.end(key_value_metadata)?;
         Ok(size)
     }
 }

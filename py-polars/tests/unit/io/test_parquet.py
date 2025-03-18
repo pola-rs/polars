@@ -789,11 +789,11 @@ def test_utc_timezone_normalization_13670(tmp_path: Path) -> None:
         )
 
     df = pl.scan_parquet([utc_path, zero_path]).head(5).collect()
-    assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
+    assert cast("pl.Datetime", df.schema["c1"]).time_zone == "UTC"
     df = pl.scan_parquet([zero_path, utc_path]).head(5).collect()
-    assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
+    assert cast("pl.Datetime", df.schema["c1"]).time_zone == "UTC"
     df = pl.scan_parquet([zero_path, utc_lowercase_path]).head(5).collect()
-    assert cast(pl.Datetime, df.schema["c1"]).time_zone == "UTC"
+    assert cast("pl.Datetime", df.schema["c1"]).time_zone == "UTC"
 
 
 def test_parquet_rle_14333() -> None:
@@ -1156,7 +1156,7 @@ def test_read_byte_stream_split(nullable: bool) -> None:
     )
     arrays = [pa.array(values, type=field.type, mask=validity_mask) for field in schema]
     table = pa.Table.from_arrays(arrays, schema=schema)
-    df = cast(pl.DataFrame, pl.from_arrow(table))
+    df = cast("pl.DataFrame", pl.from_arrow(table))
 
     f = io.BytesIO()
     pq.write_table(
@@ -1219,7 +1219,7 @@ def test_read_byte_stream_split_arrays(
         for field in schema
     ]
     table = pa.Table.from_arrays(arrays, schema=schema)
-    df = cast(pl.DataFrame, pl.from_arrow(table))
+    df = cast("pl.DataFrame", pl.from_arrow(table))
 
     f = io.BytesIO()
     pq.write_table(
@@ -3246,3 +3246,13 @@ def test_parquet_read_timezone_22506() -> None:
             },
         ),
     )
+
+
+
+def test_read_write_metadata(tmp_path: Path) -> None:
+    metadata = {"hello": "world", "something": "else"}
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    df.write_parquet(tmp_path / "df.parquet", metadata=metadata)
+    actual = pl.read_parquet_metadata(tmp_path / "df.parquet")
+    assert metadata == actual

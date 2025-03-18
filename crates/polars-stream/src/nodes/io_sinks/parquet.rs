@@ -268,7 +268,7 @@ impl SinkNode for ParquetSinkNode {
                 writer.write_row_group(&current_row_group)?;
             }
 
-            writer.finish()?;
+            writer.finish(None)?;
             drop(writer);
 
             file.sync_on_close(sink_options.sync_on_close)?;
