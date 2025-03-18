@@ -85,7 +85,7 @@ impl Column {
     pub fn new_row_index(name: PlSmallStr, offset: IdxSize, length: usize) -> PolarsResult<Column> {
         let length = IdxSize::try_from(length).unwrap_or(IdxSize::MAX);
 
-        if offset.checked_add(IdxSize::MAX).is_none() {
+        if length.checked_add(offset).is_none() {
             polars_bail!(
                 ComputeError:
                 "row index with offset {} overflows on dataframe with height {}",
