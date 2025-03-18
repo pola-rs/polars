@@ -88,11 +88,12 @@ impl ApplyExtraOps {
                     None
                 };
 
-                let mut extra_columns: Vec<ScalarColumn> = Vec::with_capacity(
-                    final_output_schema.len()
-                        - incoming_schema.len()
-                        - row_index.is_some() as usize,
-                );
+                let n_expected_extra_columns = final_output_schema.len()
+                    - incoming_schema.len()
+                    - row_index.is_some() as usize;
+
+                let mut extra_columns: Vec<ScalarColumn> =
+                    Vec::with_capacity(n_expected_extra_columns);
 
                 if let Some(policy) = missing_columns {
                     policy.initialize_policy(
@@ -127,6 +128,8 @@ impl ApplyExtraOps {
                         1,
                     ))
                 }
+
+                debug_assert_eq!(extra_columns.len(), n_expected_extra_columns);
 
                 let mut slf = Self::Initialized {
                     row_index,
