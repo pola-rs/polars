@@ -1,13 +1,15 @@
 pub mod in_memory_linearize;
 pub mod late_materialized_df;
 pub mod task_handles_ext;
-
 use std::future::Future;
 use std::panic::Location;
+use std::pin::Pin;
 use std::sync::{Arc, LazyLock};
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
+use pin_project_lite::pin_project;
 use polars_core::prelude::PlHashMap;
 
 static ENABLE: LazyLock<bool> =
@@ -25,77 +27,106 @@ thread_local!(
 );
 
 #[derive(Default)]
+struct Stats {
+    awaits: usize,
+    await_time: Duration,
+    polls: usize,
+    poll_time: Duration,
+}
+
+#[derive(Default)]
 struct TraceStats {
-    calls: PlHashMap<&'static Location<'static>, (usize, Duration)>,
+    stats: PlHashMap<&'static Location<'static>, Stats>,
 }
 
 impl TraceStats {
-    fn add(&mut self, loc: &'static Location<'static>, calls: usize, dur: Duration) {
-        let c = self.calls.entry(loc).or_default();
-        c.0 += calls;
-        c.1 += dur;
+    fn add(&mut self, loc: &'static Location<'static>, stats: &Stats) {
+        let c = self.stats.entry(loc).or_default();
+        c.awaits += stats.awaits;
+        c.await_time += stats.await_time;
+        c.polls += stats.polls;
+        c.await_time += stats.await_time;
     }
 
     fn combine(&mut self, other: &Self) {
-        for (loc, (calls, total_dur)) in &other.calls {
-            self.add(*loc, *calls, *total_dur);
+        for (loc, stats) in &other.stats {
+            self.add(loc, stats);
         }
     }
 }
 
 pub fn print_trace_stats() {
-    let mut stats = TraceStats::default();
+    let mut trace_stats = TraceStats::default();
     for local_tracer in LOCAL_TRACERS.lock().iter() {
-        stats.combine(&*local_tracer.lock());
+        trace_stats.combine(&*local_tracer.lock());
     }
 
-    for (loc, (calls, total_dur)) in stats.calls {
+    for (loc, stats) in trace_stats.stats {
         eprintln!(
-            "{}:{}: {:>10} {}",
+            "{}:{}: {:>10} {:>10} {:>10} {:>10}",
             loc.file(),
             loc.line(),
-            calls,
-            total_dur.as_millis()
+            stats.awaits,
+            stats.await_time.as_millis(),
+            stats.polls,
+            stats.poll_time.as_millis(),
         );
     }
+
+    eprintln!("print finish");
 }
 
 pub trait TraceAwait: Sized + Future + Send {
     #[track_caller]
     fn trace_await(self) -> impl Future<Output = Self::Output> + Send {
         let caller_location = Location::caller();
-
-        async move {
-            if !*ENABLE {
-                return self.await;
-            }
-
-            // static ID: AtomicUsize = AtomicUsize::new(0);
-            // let local_id = ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            // eprintln!(
-            //     "begin_await {} {}:{}",
-            //     local_id,
-            //     caller_location.file(),
-            //     caller_location.line()
-            // );
-
-            let start = Instant::now();
-            let out = self.await;
-            let elapsed = start.elapsed();
-            LOCAL_TRACER.with(|tracer| {
-                tracer.lock().add(caller_location, 1, elapsed);
-            });
-
-            // eprintln!(
-            //     "finish_await {} {}:{}",
-            //     local_id,
-            //     caller_location.file(),
-            //     caller_location.line()
-            // );
-
-            out
+        TracedFuture {
+            inner: self,
+            caller_location,
+            start: None,
         }
     }
 }
 
 impl<F: Sized + Future + Send> TraceAwait for F {}
+
+pin_project! {
+    struct TracedFuture<F> {
+        #[pin]
+        inner: F,
+        caller_location: &'static Location<'static>,
+        start: Option<Instant>
+    }
+}
+
+impl<F: Future> Future for TracedFuture<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let slf = self.project();
+        if !*ENABLE {
+            return slf.inner.poll(cx);
+        }
+
+        let start = Instant::now();
+        let poll_ret = slf.inner.poll(cx);
+        let stop = Instant::now();
+
+        if slf.start.is_none() {
+            *slf.start = Some(start);
+        }
+
+        LOCAL_TRACER.with(|tracer| {
+            let mut stats = Stats::default();
+            stats.polls = 1;
+            stats.poll_time += stop - start;
+            if matches!(poll_ret, Poll::Ready(_)) {
+                stats.awaits = 1;
+                stats.await_time = stop - slf.start.unwrap();
+            }
+            tracer.lock().add(slf.caller_location, &stats);
+        });
+
+        poll_ret
+    }
+}
