@@ -1,10 +1,12 @@
 import numpy as np
 import pytest
 
-from hypothesis import strategies as st, given, example, assume
+from hypothesis import strategies as st, given, example
 
 import polars as pl
 from polars.testing import assert_series_equal
+from polars.exceptions import InvalidOperationError
+from polars._typing import PolarsDataType
 
 
 def test_search_sorted() -> None:
@@ -113,6 +115,26 @@ def test_search_sorted_struct() -> None:
     assert series.search_sorted([v1, v0]).to_list() == [1, 0]
 
 
+def assert_find_existing_values(series: pl.Series, values: list[object]) -> None:
+    as_list = series.to_list()
+    for value in values:
+        idx = series.search_sorted(value, "left")
+        assert as_list.index(value) == idx
+        lookup = series[idx]
+        if isinstance(lookup, pl.Series):
+            lookup = lookup.to_list()
+        assert lookup == value
+
+
+@given(values=st.lists(st.integers(min_value=-10, max_value=10) | st.none()))
+def test_nulls_and_ascending(values: list[int | None]) -> None:
+    series = pl.Series(values, dtype=pl.Int64())
+    for descending in [True, False]:
+        for nulls_last in [True, False]:
+            sorted_series = series.sort(descending=descending, nulls_last=nulls_last)
+            assert_find_existing_values(sorted_series, values)
+
+
 @given(
     values=st.lists(
         st.none() | st.lists(st.integers(min_value=-10, max_value=10) | st.none())
@@ -120,18 +142,36 @@ def test_search_sorted_struct() -> None:
 )
 @example([[1], [-2], None, [None, 3], [3, None]])
 @example([[None], [0]])
+@example([[], [None], [0]])
 def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) -> None:
     """
     Check that for all combinations of descending and nulls_last, values can be
     found.
     """
     series = pl.Series(values, dtype=pl.List(pl.Int64()))
-    for descending in [True, False]:
-        for nulls_last in [True, False]:
-            sorted_series = series.sort(descending=descending, nulls_last=nulls_last)
-            for value in values:
-                idx = sorted_series.search_sorted(value, "left")
-                lookup = sorted_series[idx]
-                if isinstance(lookup, pl.Series):
-                    lookup = lookup.to_list()
-                assert lookup == value
+    for nulls_last in [True, False]:
+        sorted_series = series.sort(descending=False, nulls_last=nulls_last)
+        assert_find_existing_values(sorted_series, values)
+
+
+@pytest.mark.parametrize(
+    "values,dtype",
+    [
+        ([[1, 2], [3, 4]], pl.List(pl.Int64())),
+        ([[1, 2], [3, 4]], pl.Array(pl.Int64(), 2)),
+        ([{"a": 2, "b": 3}, {"a": 7, "b": 9}], None),
+    ],
+)
+def test_nested_dtypes_dont_support_ascending(
+    values: list[object], dtype: PolarsDataType
+) -> None:
+    """
+    Due to issues with row encoding implementation details, search an
+    descending list/array/struct Series is unsupported, for now at least.
+    """
+    series = pl.Series(values, dtype=dtype).sort(descending=True)
+    with pytest.raises(
+        InvalidOperationError,
+        match="descending sort is not supported in nested dtypes",
+    ):
+        series.search_sorted(values[0])

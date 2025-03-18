@@ -2,8 +2,9 @@ use polars_core::chunked_array::ops::search_sorted::{SearchSortedSide, binary_se
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_utils::total_ord::TotalOrd;
 use search_sorted::binary_search_ca_with_overrides;
+
+use crate::series::SeriesMethods;
 
 pub fn search_sorted(
     s: &Series,
@@ -87,41 +88,62 @@ pub fn search_sorted(
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         dt if dt.is_nested() => {
-            // Once encoded, nulls aren't visible as nulls, so we want to pass that in.
-            let original_null_count = s.null_count();
+            // Unfortunately in some combinations of ascending sort and
+            // nulls_last, the row encoding does not preserve sort order. So for
+            // now we don't support it.
+            polars_ensure!(
+                descending == false,
+                InvalidOperation: "descending sort is not supported in nested dtypes"
+            );
 
             // We want to preserve the sort order after row encoding, so we need
             // to pick a nulls_last value that will ensure that. Nesting means
             // the naive algorithm of checking first item isn't sufficient.
-            let nulls_last = if s.len() < 2 {
-                true // doesn't matter, really
+            let maybe_nulls_last = if s.len() < 2 {
+                Some(true) // doesn't matter, really
             } else if s.first().is_null() {
-                false
+                Some(false)
             } else if s.last().is_null() {
-                true
+                Some(true)
             } else {
-                // If nulls_last is true, sorting again using that flag should
-                // result in same order:
-                let mut first_and_last = s.slice(0, 1);
-                first_and_last.append(&s.slice(-1, 1))?;
-                let sorted = first_and_last.sort(
-                    SortOptions::new()
-                        .with_order_descending(descending)
-                        .with_nulls_last(true)
-                        .with_maintain_order(true),
-                )?;
-                sorted.equals(&first_and_last)
+                // We'll just guess the likely value, and we'll validate (expensively) later.
+                None
             };
 
             // This is O(N), whereas typically search_sorted would be O(logN).
             // Ideally the implementation would only row-encode values that are
             // actively being looked up, instead of all of them...
-            let ca = _get_rows_encoded_ca(
+            let mut ca = _get_rows_encoded_ca(
                 "".into(),
                 &[s.as_ref().clone().into_column()],
                 &[descending],
-                &[nulls_last],
+                &[maybe_nulls_last.unwrap_or(false)],
             )?;
+            let nulls_last = match maybe_nulls_last {
+                Some(nulls_last) => nulls_last,
+                None => {
+                    // Validate nulls_last value:
+                    let mut nulls_last = false;
+                    let sort_options = SortOptions::new()
+                        .with_order_descending(descending)
+                        .with_nulls_last(nulls_last);
+                    if !ca
+                        .arg_sort(sort_options)
+                        .into_series()
+                        .is_sorted(sort_options)?
+                    {
+                        nulls_last = true;
+                        // Reencode the series. This is a mutating side-effect:
+                        ca = _get_rows_encoded_ca(
+                            "".into(),
+                            &[s.as_ref().clone().into_column()],
+                            &[descending],
+                            &[nulls_last],
+                        )?;
+                    }
+                    nulls_last
+                },
+            };
 
             let search_values = _get_rows_encoded_ca(
                 "".into(),
@@ -131,9 +153,9 @@ pub fn search_sorted(
             )?;
 
             let _ = dbg!((
+                s.clone(),
                 ca.clone().into_series(),
                 search_values.clone().into_series(),
-                original_null_count,
                 nulls_last,
                 descending
             ));
@@ -142,7 +164,7 @@ pub fn search_sorted(
                 search_values.iter(),
                 side,
                 false,
-                original_null_count,
+                0,
                 nulls_last,
             );
             Ok(IdxCa::new_vec(s.name().clone(), idx))
