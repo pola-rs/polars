@@ -22,9 +22,13 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+<<<<<<< HEAD
 from polars._typing import (
     PartitioningScheme,
 )
+=======
+from polars._typing import ParquetMetadata
+>>>>>>> 908d249233 (Update)
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
@@ -2483,6 +2487,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
+        metadata: ParquetMetadata | None = None,
     ) -> None: ...
 
     @overload
@@ -2513,6 +2518,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[True],
         engine: EngineType = "auto",
+        metadata: ParquetMetadata | None = None,
     ) -> LazyFrame: ...
 
     @unstable()
@@ -2543,6 +2549,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
+        metadata: ParquetMetadata | None = None,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -2715,6 +2722,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "mkdir": mkdir,
         }
 
+        if isinstance(metadata, dict):
+            if metadata:
+                metadata = list(metadata.items())  # type: ignore[assignment]
+            else:
+                # Handle empty dict input
+                metadata = None
+
         lf = lf.sink_parquet(
             target=target,
             compression=compression,
@@ -2726,6 +2740,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
+            metadata=metadata,
         )
         lf = LazyFrame._from_pyldf(lf)
 

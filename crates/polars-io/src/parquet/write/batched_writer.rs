@@ -7,10 +7,12 @@ use polars_core::prelude::*;
 use polars_parquet::read::{ParquetError, fallible_streaming_iterator};
 use polars_parquet::write::{
     CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding, FallibleStreamingIterator,
-    FileWriter, KeyValue, Page, ParquetType, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
+    FileWriter, Page, ParquetType, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
     array_to_columns,
 };
 use rayon::prelude::*;
+
+use super::{KeyValueMetadata, MetadataContext};
 
 pub struct BatchedWriter<W: Write> {
     // A mutex so that streaming engine can get concurrent read access to
@@ -23,7 +25,7 @@ pub struct BatchedWriter<W: Write> {
     pub(super) encodings: Vec<Vec<Encoding>>,
     pub(super) options: WriteOptions,
     pub(super) parallel: bool,
-    pub(super) key_value_metadata: Option<Vec<KeyValue>>,
+    pub(super) key_value_metadata: Option<KeyValueMetadata>,
 }
 
 impl<W: Write> BatchedWriter<W> {
@@ -32,7 +34,7 @@ impl<W: Write> BatchedWriter<W> {
         encodings: Vec<Vec<Encoding>>,
         options: WriteOptions,
         parallel: bool,
-        key_value_metadata: Option<Vec<KeyValue>>,
+        key_value_metadata: Option<KeyValueMetadata>,
     ) -> Self {
         Self {
             writer,
@@ -119,7 +121,17 @@ impl<W: Write> BatchedWriter<W> {
     /// Writes the footer of the parquet file. Returns the total size of the file.
     pub fn finish(&self) -> PolarsResult<u64> {
         let mut writer = self.writer.lock().unwrap();
-        let size = writer.end(self.key_value_metadata.clone())?;
+
+        let key_value_metadata = self
+            .key_value_metadata
+            .as_ref()
+            .map(|meta| {
+                let ctx = MetadataContext {};
+                meta.collect(ctx)
+            })
+            .transpose()?;
+
+        let size = writer.end(key_value_metadata)?;
         Ok(size)
     }
 }

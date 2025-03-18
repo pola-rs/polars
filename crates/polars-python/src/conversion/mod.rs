@@ -1344,3 +1344,21 @@ impl<'py> FromPyObject<'py> for Wrap<UnicodeForm> {
         Ok(Wrap(parsed))
     }
 }
+
+#[cfg(feature = "parquet")]
+impl<'py> FromPyObject<'py> for Wrap<Option<KeyValueMetadata>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Metadata {
+            Static(Vec<(String, String)>),
+            Dynamic(PyObject),
+        }
+
+        let metadata = Option::<Metadata>::extract_bound(ob)?;
+        let key_value_metadata = metadata.map(|x| match x {
+            Metadata::Static(kv) => KeyValueMetadata::from_static(kv),
+            Metadata::Dynamic(func) => KeyValueMetadata::from_py_function(func),
+        });
+        Ok(Wrap(key_value_metadata))
+    }
+}
