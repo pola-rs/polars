@@ -150,6 +150,7 @@ if TYPE_CHECKING:
         OneOrMoreDataTypes,
         Orientation,
         ParquetCompression,
+        ParquetMetadata,
         PivotAgg,
         PolarsDataType,
         PythonDataType,
@@ -3844,7 +3845,7 @@ class DataFrame:
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
         retries: int = 2,
-        metadata: dict[str, str] | None = None,
+        metadata: ParquetMetadata | None = None,
     ) -> None:
         """
         Write to Apache Parquet file.
@@ -3988,7 +3989,7 @@ class DataFrame:
 
             # do not remove this import!
             # needed below
-            import pyarrow.parquet  # noqa: F401
+            import pyarrow.parquet
 
             if pyarrow_options is None:
                 pyarrow_options = {}
@@ -4030,11 +4031,12 @@ class DataFrame:
             # Handle empty dict input
             storage_options = None
 
-        if metadata:
-            metadata = list(metadata.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            metadata = None
+        if isinstance(metadata, dict):
+            if metadata:
+                metadata = list(metadata.items())  # type: ignore[assignment]
+            else:
+                # Handle empty dict input
+                metadata = None
 
         if isinstance(statistics, bool) and statistics:
             statistics = {

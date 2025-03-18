@@ -6,7 +6,9 @@ use polars_parquet::write::{
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
+use super::KeyValueMetadata;
+
+#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetWriteOptions {
     /// Data page compression
@@ -17,6 +19,8 @@ pub struct ParquetWriteOptions {
     pub row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
     pub data_page_size: Option<usize>,
+    /// Custom file-level key value metadata
+    pub key_value_metadata: Option<KeyValueMetadata>,
 }
 
 /// The compression strategy to use for writing Parquet files.

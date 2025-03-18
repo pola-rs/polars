@@ -5,13 +5,13 @@ use arrow::datatypes::PhysicalType;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::write::{
-    CompressionOptions, Encoding, FileWriter, KeyValue, StatisticsOptions, Version, WriteOptions,
+    CompressionOptions, Encoding, FileWriter, StatisticsOptions, Version, WriteOptions,
     to_parquet_schema, transverse,
 };
 
-use super::ParquetWriteOptions;
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
+use super::{KeyValueMetadata, ParquetWriteOptions};
 use crate::shared::schema_to_arrow_checked;
 
 impl ParquetWriteOptions {
@@ -24,6 +24,7 @@ impl ParquetWriteOptions {
             .with_statistics(self.statistics)
             .with_row_group_size(self.row_group_size)
             .with_data_page_size(self.data_page_size)
+            .with_key_value_metadata(self.key_value_metadata.clone())
     }
 }
 
@@ -41,8 +42,8 @@ pub struct ParquetWriter<W> {
     data_page_size: Option<usize>,
     /// Serialize columns in parallel
     parallel: bool,
-    /// Custom file-level key value metadata to set
-    key_value_metadata: Option<Vec<KeyValue>>,
+    /// Custom file-level key value metadata
+    key_value_metadata: Option<KeyValueMetadata>,
 }
 
 impl<W> ParquetWriter<W>
@@ -100,7 +101,7 @@ where
     }
 
     /// Set custom file-level key value metadata for the Parquet file
-    pub fn with_key_value_metadata(mut self, key_value_metadata: Option<Vec<KeyValue>>) -> Self {
+    pub fn with_key_value_metadata(mut self, key_value_metadata: Option<KeyValueMetadata>) -> Self {
         self.key_value_metadata = key_value_metadata;
         self
     }

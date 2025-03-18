@@ -320,3 +320,9 @@ FileSource: TypeAlias = Union[
 ]
 
 JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
+
+ParquetMetadataContext: TypeAlias = dict[str, str]
+ParquetMetadata: TypeAlias = Union[
+    dict[str, str],
+    Callable[[ParquetMetadataContext], dict[str, str]],
+]
