@@ -781,7 +781,7 @@ struct ProbeState {
     table_per_partition: Vec<ProbeTable>,
     max_seq_sent: MorselSeq,
     sampled_probe_morsels: BufferedStream,
-    
+
     // For unordered joins we relabel output morsels to speed up the linearizer.
     unordered_morsel_seq: AtomicU64,
 }
@@ -851,25 +851,26 @@ impl ProbeState {
             build_out.reserve(out_est_size + max_match_per_key_est);
 
             unsafe {
-                let mut new_morsel = |build: &mut DataFrameBuilder, probe: &mut DataFrameBuilder| {
-                    let mut build_df = build.freeze_reset();
-                    let mut probe_df = probe.freeze_reset();
-                    let out_df = if params.left_is_build.unwrap() {
-                        build_df.hstack_mut_unchecked(probe_df.get_columns());
-                        build_df
-                    } else {
-                        probe_df.hstack_mut_unchecked(build_df.get_columns());
-                        probe_df
+                let mut new_morsel =
+                    |build: &mut DataFrameBuilder, probe: &mut DataFrameBuilder| {
+                        let mut build_df = build.freeze_reset();
+                        let mut probe_df = probe.freeze_reset();
+                        let out_df = if params.left_is_build.unwrap() {
+                            build_df.hstack_mut_unchecked(probe_df.get_columns());
+                            build_df
+                        } else {
+                            probe_df.hstack_mut_unchecked(build_df.get_columns());
+                            probe_df
+                        };
+                        let out_df = postprocess_join(out_df, params);
+                        let out_seq = if params.preserve_order_probe {
+                            in_seq
+                        } else {
+                            MorselSeq::new(unordered_morsel_seq.fetch_add(1, Ordering::Relaxed))
+                        };
+                        max_seq = out_seq;
+                        Morsel::new(out_df, out_seq, src_token.clone())
                     };
-                    let out_df = postprocess_join(out_df, params);
-                    let out_seq = if params.preserve_order_probe {
-                        in_seq
-                    } else {
-                        MorselSeq::new(unordered_morsel_seq.fetch_add(1, Ordering::Relaxed))
-                    };
-                    max_seq = out_seq;
-                    Morsel::new(out_df, out_seq, src_token.clone())
-                };
 
                 if params.preserve_order_probe {
                     // To preserve the order we can't do bulk probes per partition and must follow
@@ -1035,8 +1036,9 @@ impl ProbeState {
 
             // Move selectivity estimate a bit towards latest value. Allows rapid changes at first.
             // TODO: implement something more re-usable and robust.
-            selectivity_estimate =
-                selectivity_estimate_confidence * selectivity_estimate + (1.0 - selectivity_estimate_confidence) * (total_matches as f64 / df_height as f64);
+            selectivity_estimate = selectivity_estimate_confidence * selectivity_estimate
+                + (1.0 - selectivity_estimate_confidence)
+                    * (total_matches as f64 / df_height as f64);
             selectivity_estimate_confidence = (selectivity_estimate_confidence + 0.1).min(0.8);
         }
 
