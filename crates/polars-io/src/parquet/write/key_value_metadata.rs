@@ -37,7 +37,7 @@ pub enum KeyValueMetadata {
 }
 
 #[cfg(feature = "serde")]
-fn serialize_vec_key_value<S>(kv: &Vec<KeyValue>, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_vec_key_value<S>(kv: &[KeyValue], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: ser::Serializer,
 {
