@@ -3554,9 +3554,10 @@ class Series:
         if isinstance(element, (Series, pl.Expr)):
             return df.to_series()
 
-        if isinstance(element, (list, np.ndarray)) and not isinstance(
-            self.dtype, (List, Array)
-        ):
+        if (
+            isinstance(element, list)
+            or (_check_for_numpy(element) and isinstance(element, np.ndarray))
+        ) and not isinstance(self.dtype, (List, Array)):
             return df.to_series()
         else:
             return df.item()
