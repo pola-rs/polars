@@ -474,28 +474,22 @@ impl DataFrame {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
         let offset = offset.unwrap_or(0);
 
-        let mut ca = IdxCa::from_vec(
-            name,
-            (offset..(self.height() as IdxSize) + offset).collect(),
-        );
-        ca.set_sorted_flag(IsSorted::Ascending);
-        columns.push(ca.into_series().into());
-
+        let col = Column::new_row_index(name, offset, self.height())?;
+        columns.push(col);
         columns.extend_from_slice(&self.columns);
         DataFrame::new(columns)
     }
 
     /// Add a row index column in place.
+    ///
+    /// # Panics
+    /// Panics if the resulting column would reach or overflow IdxSize::MAX.
     pub fn with_row_index_mut(&mut self, name: PlSmallStr, offset: Option<IdxSize>) -> &mut Self {
         let offset = offset.unwrap_or(0);
-        let mut ca = IdxCa::from_vec(
-            name,
-            (offset..(self.height() as IdxSize) + offset).collect(),
-        );
-        ca.set_sorted_flag(IsSorted::Ascending);
+        let col = Column::new_row_index(name, offset, self.height()).unwrap();
 
         self.clear_schema();
-        self.columns.insert(0, ca.into_series().into());
+        self.columns.insert(0, col);
         self
     }
 
