@@ -274,7 +274,7 @@ impl SinkNode for ParquetSinkNode {
                 writer.write_row_group(&current_row_group)?;
             }
 
-            writer.finish()?;
+            writer.finish(None)?;
             drop(writer);
 
             if let Writeable::Local(file) = &mut file {

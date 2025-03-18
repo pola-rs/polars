@@ -23,7 +23,7 @@ impl WriteDataFrameToFile for ParquetWriteOptions {
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
         let f = try_get_writeable(path, cloud_options)?;
-        self.to_writer(f).finish(df)?;
+        self.to_writer(f).finish(df, None)?;
         Ok(())
     }
 }

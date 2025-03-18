@@ -398,7 +398,8 @@ impl PyDataFrame {
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (
         py_f, compression, compression_level, statistics, row_group_size, data_page_size,
-        partition_by, partition_chunk_size_bytes, cloud_options, credential_provider, retries
+        partition_by, partition_chunk_size_bytes, cloud_options, credential_provider, retries,
+        metadata
     ))]
     pub fn write_parquet(
         &mut self,
@@ -414,8 +415,10 @@ impl PyDataFrame {
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
+        metadata: Option<Vec<(String, String)>>,
     ) -> PyResult<()> {
         use polars_io::partition::write_partitioned_dataset;
+        use polars_parquet::write::KeyValue;
 
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -458,6 +461,16 @@ impl PyDataFrame {
         };
 
         let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
+        let key_value_metadata = metadata.map(|meta| {
+            meta.into_iter()
+                .map(|(key, value)| KeyValue {
+                    key,
+                    value: Some(value),
+                })
+                .collect::<Vec<_>>()
+        });
+
+        println!("{:?}", key_value_metadata);
 
         py.enter_polars(|| {
             ParquetWriter::new(BufWriter::new(&mut f))
@@ -465,7 +478,7 @@ impl PyDataFrame {
                 .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)
                 .with_data_page_size(data_page_size)
-                .finish(&mut self.df)?;
+                .finish(&mut self.df, key_value_metadata)?;
 
             crate::file::close_file(f)
         })

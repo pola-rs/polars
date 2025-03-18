@@ -5,7 +5,7 @@ use arrow::datatypes::PhysicalType;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::write::{
-    CompressionOptions, Encoding, FileWriter, StatisticsOptions, Version, WriteOptions,
+    CompressionOptions, Encoding, FileWriter, KeyValue, StatisticsOptions, Version, WriteOptions,
     to_parquet_schema, transverse,
 };
 
@@ -121,12 +121,17 @@ where
         }
     }
 
-    /// Write the given DataFrame in the writer `W`. Returns the total size of the file.
-    pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
+    /// Write the given DataFrame along with optional key value metadata in the writer `W`.
+    /// Returns the total size of the file.
+    pub fn finish(
+        self,
+        df: &mut DataFrame,
+        key_value_metadata: Option<Vec<KeyValue>>,
+    ) -> PolarsResult<u64> {
         let chunked_df = chunk_df_for_writing(df, self.row_group_size.unwrap_or(512 * 512))?;
         let mut batched = self.batched(chunked_df.schema())?;
         batched.write_batch(&chunked_df)?;
-        batched.finish()
+        batched.finish(key_value_metadata)
     }
 }
 
