@@ -75,13 +75,6 @@ impl Column {
         Self::Scalar(ScalarColumn::new(name, scalar, length))
     }
 
-    #[inline]
-    pub fn new_idxsize_range(name: PlSmallStr, range: std::ops::Range<IdxSize>) -> Self {
-        let mut ca = IdxCa::from_vec(name, range.collect());
-        ca.set_sorted_flag(IsSorted::Ascending);
-        ca.into_series().into()
-    }
-
     pub fn new_row_index(name: PlSmallStr, offset: IdxSize, length: usize) -> PolarsResult<Column> {
         let length = IdxSize::try_from(length).unwrap_or(IdxSize::MAX);
 
@@ -93,7 +86,13 @@ impl Column {
             )
         }
 
-        Ok(Column::new_idxsize_range(name, offset..offset + length))
+        let range = offset..offset + length;
+
+        let mut ca = IdxCa::from_vec(name, range.collect());
+        ca.set_sorted_flag(IsSorted::Ascending);
+        let col = ca.into_series().into();
+
+        Ok(col)
     }
 
     // # Materialize
