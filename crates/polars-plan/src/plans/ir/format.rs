@@ -151,18 +151,18 @@ impl<'a> IRDisplay<'a> {
 
     #[recursive]
     fn _format(&self, f: &mut Formatter, indent: usize) -> fmt::Result {
+        let indent_increment = 2;
         let indent = if self.is_streaming {
             writeln!(f, "{:indent$}STREAMING:", "")?;
-            indent + 2
+            indent + indent_increment
         } else {
             if indent != 0 {
                 writeln!(f)?;
             }
-
             indent
         };
 
-        let sub_indent = indent + 2;
+        let sub_indent = indent + indent_increment;
         use IR::*;
 
         match self.root() {
@@ -204,7 +204,7 @@ impl<'a> IRDisplay<'a> {
                 // - 0 => UNION ... END UNION
                 // - 1 => PLAN 0, PLAN 1, ... PLAN N
                 // - 2 => actual formatting of plans
-                let sub_sub_indent = sub_indent + 2;
+                let sub_sub_indent = sub_indent + indent_increment;
                 write!(f, "{:indent$}{name}", "")?;
                 for (i, plan) in inputs.iter().enumerate() {
                     write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
@@ -213,7 +213,7 @@ impl<'a> IRDisplay<'a> {
                 write!(f, "\n{:indent$}END {name}", "")
             },
             HConcat { inputs, .. } => {
-                let sub_sub_indent = sub_indent + 2;
+                let sub_sub_indent = sub_indent + indent_increment;
                 write!(f, "{:indent$}HCONCAT", "")?;
                 for (i, plan) in inputs.iter().enumerate() {
                     write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
@@ -264,7 +264,8 @@ impl<'a> IRDisplay<'a> {
             Filter { predicate, input } => {
                 let predicate = self.display_expr(predicate);
                 // this one is writeln because we don't increase indent (which inserts a line)
-                write!(f, "{:indent$}FILTER {predicate} FROM", "")?;
+                write!(f, "{:indent$}FILTER {predicate}", "")?;
+                write!(f, "\n{:indent$}FROM", "")?;
                 self.with_root(*input)._format(f, sub_indent)
             },
             DataFrameScan {
@@ -294,8 +295,8 @@ impl<'a> IRDisplay<'a> {
             Select { expr, input, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
                 let exprs = self.display_expr_slice(expr);
-
-                write!(f, "{:indent$} SELECT {exprs} FROM", "")?;
+                write!(f, "{:indent$}SELECT {exprs}", "")?;
+                write!(f, "\n{:indent$}FROM", "")?;
                 self.with_root(*input)._format(f, sub_indent)
             },
             Sort {
@@ -313,13 +314,14 @@ impl<'a> IRDisplay<'a> {
                 ..
             } => {
                 let keys = self.display_expr_slice(keys);
-
                 write!(f, "{:indent$}AGGREGATE", "")?;
                 if apply.is_some() {
-                    write!(f, "\n{:indent$}\tMAP_GROUPS BY {keys} FROM", "")?;
+                    write!(f, "\n{:sub_indent$}MAP_GROUPS BY {keys}", "")?;
+                    write!(f, "\n{:sub_indent$}FROM", "")?;
                 } else {
                     let aggs = self.display_expr_slice(aggs);
-                    write!(f, "\n{:indent$}\t{aggs} BY {keys} FROM", "")?;
+                    write!(f, "\n{:sub_indent$}{aggs} BY {keys}", "")?;
+                    write!(f, "\n{:sub_indent$}FROM", "")?;
                 }
                 self.with_root(*input)._format(f, sub_indent)
             },
