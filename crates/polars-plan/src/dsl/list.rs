@@ -302,11 +302,11 @@ impl ListNameSpace {
     pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
         let other = other.into();
 
-        self.0.map_many_private(
+        self.0.map_many_private_cast(
             FunctionExpr::ListExpr(ListFunction::Contains),
             &[other],
             false,
-            None,
+            Some(CastingRules::ArgToListSelfLossless),
         )
     }
 

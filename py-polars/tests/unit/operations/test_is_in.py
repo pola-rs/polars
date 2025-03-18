@@ -172,7 +172,11 @@ def test_is_in_null_prop() -> None:
 
 
 def test_is_in_9070() -> None:
-    assert not pl.Series([1]).is_in(pl.Series([1.99])).item()
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="cannot cast lossless from `f64` to `i64`",
+    ):
+        pl.Series([1]).is_in(pl.Series([1.99]))
 
 
 def test_is_in_float_list_10764() -> None:
@@ -215,7 +219,7 @@ def test_is_in_series() -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match=r"'is_in' cannot check for String values in Int64 data",
+        match=r"cannot cast lossless from `str` to `i64`",
     ):
         df.select(pl.col("b").is_in(["x", "x"]))
 
@@ -233,7 +237,7 @@ def test_is_in_series() -> None:
 def test_is_in_null(nulls_equal: bool) -> None:
     # No nulls in right
     s = pl.Series([None, None], dtype=pl.Null)
-    result = s.is_in([1, 2], nulls_equal=nulls_equal)
+    result = s.is_in([[]], nulls_equal=nulls_equal)
     missing_value = False if nulls_equal else None
     expected = pl.Series([missing_value, missing_value], dtype=pl.Boolean)
     assert_series_equal(result, expected)
@@ -276,7 +280,8 @@ def test_is_in_boolean(nulls_equal: bool) -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.List(pl.Boolean), pl.Array(pl.Boolean, 2)])
-def test_is_in_boolean_list(dtype: PolarsDataType) -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_boolean_list(dtype: PolarsDataType, nulls_equal: bool) -> None:
     # Note list is_in does not propagate nulls.
     df = pl.DataFrame(
         {
@@ -293,13 +298,16 @@ def test_is_in_boolean_list(dtype: PolarsDataType) -> None:
             ),
         }
     )
-    result = df.select(pl.col("a").is_in("b"))["a"]
-    expected = pl.Series("a", [True, False, True, False, False])
+    result = df.select(pl.col("a").is_in("b", nulls_equal=nulls_equal))["a"]
+    if nulls_equal:
+        expected = pl.Series("a", [True, False, True, False, False])
+    else:
+        expected = pl.Series("a", [True, False, None, None, None])
     assert_series_equal(result, expected)
 
 
 @pytest.mark.may_fail_auto_streaming
-def test_is_in_empty_list() -> None:
+def test_is_in_empty_list(nulls_equal: bool) -> None:
     assert pl.Series("a", [1, 2, 3]).is_in([[]]).to_list() == [False, False, False]
 
 
@@ -307,7 +315,7 @@ def test_is_in_empty_list() -> None:
 def test_is_in_list_rhs() -> None:
     assert_series_equal(
         pl.Series([1, 2, 3, 4, 5]).is_in([[1], [2, 9], [None], None, None]),
-        pl.Series([True, True, False, False, False]),
+        pl.Series([True, True, False, None, None]),
     )
 
 
@@ -343,12 +351,12 @@ def test_is_in_float(dtype: PolarsDataType) -> None:
         (
             pl.DataFrame({"a": ["1", "2"], "b": [[1, 2], [3, 4]]}),
             None,
-            r"'is_in' cannot check for String values in Int64 data",
+            r"cannot create `list\[str\]` from `list\[i64\]`",
         ),
         (
             pl.DataFrame({"a": [date.today(), None], "b": [[1, 2], [3, 4]]}),
             None,
-            r"'is_in' cannot check for Date values in Int64 data",
+            r"cannot create `list\[date\]` from `list\[i64\]`",
         ),
     ],
 )
@@ -359,7 +367,6 @@ def test_is_in_expr_list_series(
     if matches:
         assert df.select(expr_is_in).to_series().to_list() == matches
     else:
-        print(df.select(expr_is_in))
         with pytest.raises(InvalidOperationError, match=expected_error):
             df.select(expr_is_in)
 
@@ -368,11 +375,11 @@ def test_is_in_expr_list_series(
     ("df", "matches"),
     [
         (
-            pl.DataFrame({"a": [1, None], "b": [[1.0, 2.5, 4.0], [3.0, 4.0, 5.0]]}),
+            pl.DataFrame({"a": [1, None], "b": [[1, 2, 4], [3, 4, 5]]}),
             [True, False],
         ),
         (
-            pl.DataFrame({"a": [1, None], "b": [[0.0, 2.5, None], [3.0, 4.0, None]]}),
+            pl.DataFrame({"a": [1, None], "b": [[0, 2, None], [3, 4, None]]}),
             [False, True],
         ),
         (

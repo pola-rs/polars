@@ -69,6 +69,11 @@ impl CategoricalChunked {
         &mut self.physical
     }
 
+    /// Take the physical array (the categories).
+    pub fn into_physical(self) -> UInt32Chunked {
+        self.physical.0
+    }
+
     pub fn is_enum(&self) -> bool {
         matches!(self.dtype(), DataType::Enum(_, _))
     }
