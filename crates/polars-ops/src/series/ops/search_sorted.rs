@@ -18,7 +18,6 @@ pub fn search_sorted(
         polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
     }
 
-    print!("Original series {} needle {}", s, search_values);
     let s = s.to_physical_repr();
     let phys_dtype = s.dtype();
 
@@ -111,7 +110,6 @@ pub fn search_sorted(
                 )?;
                 let first = first_and_last.first().unwrap();
                 let last = first_and_last.last().unwrap();
-                println!("first_and_last encoded {first:?} {last:?}");
                 if descending {
                     // if nulls_last is really true, encoding should have
                     // preserved the descending invariant:
@@ -120,7 +118,6 @@ pub fn search_sorted(
                     first.tot_le(&last)
                 }
             };
-            println!("nulls_last: {nulls_last}  descending {descending}");
 
             // This is O(N), whereas typically search_sorted would be O(logN).
             // Ideally the implementation would only row-encode values that are
@@ -131,7 +128,6 @@ pub fn search_sorted(
                 &[descending],
                 &[nulls_last],
             )?;
-            println!("ENCODED series {:?}", ca.clone().into_series());
 
             let search_values = _get_rows_encoded_ca(
                 "".into(),
@@ -139,7 +135,6 @@ pub fn search_sorted(
                 &[descending],
                 &[nulls_last],
             )?;
-            println!("ENCODED needle {:?}", search_values.clone().into_series());
 
             let idx = binary_search_ca_with_overrides(
                 &ca,
@@ -149,7 +144,6 @@ pub fn search_sorted(
                 original_null_count,
                 nulls_last,
             );
-            println!("FOund at index {idx:?}");
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         _ => polars_bail!(opq = search_sorted, original_dtype),

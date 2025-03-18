@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+from hypothesis import strategies as st, given, example
+
 import polars as pl
 from polars.testing import assert_series_equal
 
@@ -111,8 +113,14 @@ def test_search_sorted_struct() -> None:
     assert series.search_sorted([v1, v0]).to_list() == [1, 0]
 
 
-def test_search_sorted_list_with_nulls() -> None:
-    values = [[1], [-2], None, [None, 3], [3, None]]
+@given(
+    values=st.lists(
+        st.none() | st.lists(st.integers(min_value=-10, max_value=10) | st.none())
+    )
+)
+@example([[1], [-2], None, [None, 3], [3, None]])
+def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) -> None:
+    print(values)
     series = pl.Series(values)
     for descending in [True, False]:
         for nulls_last in [True, False]:
