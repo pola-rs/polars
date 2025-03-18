@@ -243,7 +243,7 @@ fn create_physical_plan_impl(
                                 .with_statistics(options.statistics)
                                 .with_row_group_size(options.row_group_size)
                                 .with_data_page_size(options.data_page_size)
-                                .finish(&mut df, None)?;
+                                .finish(&mut df)?;
 
                             if let Writeable::Local(file) = &mut file {
                                 polars_io::utils::sync_on_close::sync_on_close(

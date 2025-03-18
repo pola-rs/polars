@@ -470,15 +470,14 @@ impl PyDataFrame {
                 .collect::<Vec<_>>()
         });
 
-        println!("{:?}", key_value_metadata);
-
         py.enter_polars(|| {
             ParquetWriter::new(BufWriter::new(&mut f))
                 .with_compression(compression)
                 .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)
                 .with_data_page_size(data_page_size)
-                .finish(&mut self.df, key_value_metadata)?;
+                .with_key_value_metadata(key_value_metadata)
+                .finish(&mut self.df)?;
 
             crate::file::close_file(f)
         })

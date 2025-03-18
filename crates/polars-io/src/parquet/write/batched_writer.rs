@@ -23,6 +23,7 @@ pub struct BatchedWriter<W: Write> {
     pub(super) encodings: Vec<Vec<Encoding>>,
     pub(super) options: WriteOptions,
     pub(super) parallel: bool,
+    pub(super) key_value_metadata: Option<Vec<KeyValue>>,
 }
 
 impl<W: Write> BatchedWriter<W> {
@@ -31,6 +32,7 @@ impl<W: Write> BatchedWriter<W> {
         encodings: Vec<Vec<Encoding>>,
         options: WriteOptions,
         parallel: bool,
+        key_value_metadata: Option<Vec<KeyValue>>,
     ) -> Self {
         Self {
             writer,
@@ -38,6 +40,7 @@ impl<W: Write> BatchedWriter<W> {
             encodings,
             options,
             parallel,
+            key_value_metadata,
         }
     }
 
@@ -114,9 +117,9 @@ impl<W: Write> BatchedWriter<W> {
     }
 
     /// Writes the footer of the parquet file. Returns the total size of the file.
-    pub fn finish(&self, key_value_metadata: Option<Vec<KeyValue>>) -> PolarsResult<u64> {
+    pub fn finish(&self) -> PolarsResult<u64> {
         let mut writer = self.writer.lock().unwrap();
-        let size = writer.end(key_value_metadata)?;
+        let size = writer.end(self.key_value_metadata.clone())?;
         Ok(size)
     }
 }

@@ -50,7 +50,7 @@ where
                 }
             }
             if last_write {
-                writer.finish(None).unwrap();
+                writer.finish().unwrap();
                 return;
             }
         }
@@ -155,7 +155,7 @@ impl<W: std::io::Write> SinkWriter for polars_io::parquet::write::BatchedWriter<
     }
 
     fn _finish(&mut self) -> PolarsResult<()> {
-        self.finish(None)?;
+        self.finish()?;
         Ok(())
     }
 }

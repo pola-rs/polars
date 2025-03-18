@@ -264,7 +264,7 @@ impl SinkNode for ParquetSinkNode {
                 parquet_schema,
                 write_options,
             ));
-            let mut writer = BatchedWriter::new(file_writer, encodings, write_options, false);
+            let mut writer = BatchedWriter::new(file_writer, encodings, write_options, false, None);
 
             let num_parquet_columns = writer.parquet_schema().leaves().len();
             while let Ok(current_row_group) = io_rx.recv().await {
@@ -274,7 +274,7 @@ impl SinkNode for ParquetSinkNode {
                 writer.write_row_group(&current_row_group)?;
             }
 
-            writer.finish(None)?;
+            writer.finish()?;
             drop(writer);
 
             if let Writeable::Local(file) = &mut file {
