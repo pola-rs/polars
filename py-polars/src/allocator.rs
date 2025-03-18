@@ -1,13 +1,35 @@
-#[global_allocator]
 #[cfg(all(
     not(allocator = "mimalloc"),
     not(allocator = "default"),
     target_family = "unix",
     not(target_os = "emscripten"),
 ))]
-static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+mod jemalloc {
+    #[global_allocator]
+    static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-#[global_allocator]
+    use std::ffi::{CStr, c_char, c_void};
+
+    #[unsafe(export_name = "_rjem_malloc_message")]
+    pub static mut MALLOC_MESSAGE: unsafe extern "C" fn(cbopaque: *mut c_void, s: *const c_char) =
+        suppress_jemalloc_warnings;
+
+    extern "C" fn suppress_jemalloc_warnings(_cbopaque: *mut c_void, s: *const c_char) {
+        unsafe {
+            let bytes = CStr::from_ptr(s).to_bytes();
+            if let Ok(rs) = core::str::from_utf8(&bytes) {
+                if rs.contains("option background_thread currently supports pthread only")
+                    || rs.contains("No THP support")
+                {
+                    return;
+                }
+            }
+            libc::write(libc::STDERR_FILENO, bytes.as_ptr().cast(), bytes.len());
+        }
+    }
+}
+
+
 #[cfg(all(
     not(allocator = "default"),
     any(
@@ -16,6 +38,7 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
         allocator = "mimalloc"
     ),
 ))]
+#[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::alloc::Layout;
