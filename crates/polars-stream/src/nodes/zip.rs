@@ -224,7 +224,7 @@ impl ComputeNode for ZipNode {
             .map(|recv_port| {
                 // Add buffering to each receiver to reduce contention between input heads.
                 let mut serial_recv = recv_port.take()?.serial();
-                let (buf_send, buf_recv) = tokio::sync::mpsc::channel(DEFAULT_ZIP_HEAD_BUFFER_SIZE);
+                let (buf_send, buf_recv) = tokio::sync::mpsc::channel(*DEFAULT_ZIP_HEAD_BUFFER_SIZE);
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = serial_recv.recv().await {
                         if buf_send.send(morsel).await.is_err() {

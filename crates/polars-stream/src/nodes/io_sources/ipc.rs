@@ -221,12 +221,12 @@ impl SourceNode for IpcSourceNode {
 
         // Walker task -> Decoder tasks.
         let (mut batch_tx, batch_rxs) =
-            distributor_channel::<BatchMessage>(num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+            distributor_channel::<BatchMessage>(num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
         // Decoder tasks -> Distributor task.
         let (mut decoded_rx, decoded_tx) =
             Linearizer::<Priority<Reverse<MorselSeq>, DataFrame>>::new(
                 num_pipelines,
-                DEFAULT_LINEARIZER_BUFFER_SIZE,
+                *DEFAULT_LINEARIZER_BUFFER_SIZE,
             );
 
         // Distributor task.

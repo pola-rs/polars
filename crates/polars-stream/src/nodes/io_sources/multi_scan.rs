@@ -1049,7 +1049,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     SourceInput::Serial(rx) => rx,
                                     SourceInput::Parallel(rxs) => {
                                         let (mut tx, rx) = connector();
-                                        let (mut lin_rx, lin_txs) = Linearizer::new(state.num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
+                                        let (mut lin_rx, lin_txs) = Linearizer::new(state.num_pipelines, *DEFAULT_LINEARIZER_BUFFER_SIZE);
 
                                         linearizer_tasks.extend(rxs.into_iter().zip(lin_txs).map(|(mut rx, mut lin_tx)|
                                             AbortOnDropHandle::new(spawn(TaskPriority::High, async move {

@@ -194,7 +194,7 @@ impl CsvSourceNode {
         let verbose = self.verbose;
 
         let (mut line_batch_sender, line_batch_receivers) =
-            distributor_channel(num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+            distributor_channel(num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
         let scan_source = self.scan_source.clone();
         let run_async = matches!(&scan_source, ScanSource::Path(p) if polars_io::is_cloud_url(p) || config::force_async());

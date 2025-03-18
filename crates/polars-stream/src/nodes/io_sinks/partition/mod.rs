@@ -135,7 +135,7 @@ async fn open_new_sink(
     let (sink_input, sender) = if node.is_sink_input_parallel() {
         let (tx, dist_rxs) = distributor_channel::distributor_channel(
             state.num_pipelines,
-            DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
+            *DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
         );
         let (txs, rxs) = (0..state.num_pipelines)
             .map(|_| connector::connector())
