@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .unwrap();
 
     let mut file = std::fs::File::create("docs/assets/data/path.parquet").unwrap();
-    ParquetWriter::new(&mut file).finish(&mut df, None).unwrap();
+    ParquetWriter::new(&mut file).finish(&mut df).unwrap();
     // --8<-- [end:write]
 
     // --8<-- [start:read]

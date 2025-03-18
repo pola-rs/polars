@@ -41,6 +41,8 @@ pub struct ParquetWriter<W> {
     data_page_size: Option<usize>,
     /// Serialize columns in parallel
     parallel: bool,
+    /// Custom file-level key value metadata to set
+    key_value_metadata: Option<Vec<KeyValue>>,
 }
 
 impl<W> ParquetWriter<W>
@@ -59,6 +61,7 @@ where
             row_group_size: None,
             data_page_size: None,
             parallel: true,
+            key_value_metadata: None,
         }
     }
 
@@ -96,6 +99,12 @@ where
         self
     }
 
+    /// Set custom file-level key value metadata for the Parquet file
+    pub fn with_key_value_metadata(mut self, key_value_metadata: Option<Vec<KeyValue>>) -> Self {
+        self.key_value_metadata = key_value_metadata;
+        self
+    }
+
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
         let parquet_schema = to_parquet_schema(&schema)?;
@@ -109,6 +118,7 @@ where
             encodings,
             options,
             parallel: self.parallel,
+            key_value_metadata: self.key_value_metadata,
         })
     }
 
@@ -123,15 +133,11 @@ where
 
     /// Write the given DataFrame along with optional key value metadata in the writer `W`.
     /// Returns the total size of the file.
-    pub fn finish(
-        self,
-        df: &mut DataFrame,
-        key_value_metadata: Option<Vec<KeyValue>>,
-    ) -> PolarsResult<u64> {
+    pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
         let chunked_df = chunk_df_for_writing(df, self.row_group_size.unwrap_or(512 * 512))?;
         let mut batched = self.batched(chunked_df.schema())?;
         batched.write_batch(&chunked_df)?;
-        batched.finish(key_value_metadata)
+        batched.finish()
     }
 }
 
