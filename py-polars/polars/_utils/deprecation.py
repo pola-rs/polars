@@ -77,13 +77,18 @@ def deprecate_streaming_parameter() -> Callable[[Callable[P, T]], Callable[P, T]
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            if kwargs.get("streaming"):
+            if "streaming" in kwargs:
                 issue_deprecation_warning(
-                    "The argument `streaming=True` is deprecated and is being replaced by the `engine` argument.",
+                    "The argument `streaming` is deprecated and is being replaced by the `engine` argument.",
                     version="1.25.0",
                 )
+
+                if kwargs["streaming"]:
+                    kwargs["engine"] = "old-streaming"
+                elif "engine" not in kwargs:
+                    kwargs["engine"] = "in-memory"
+
                 del kwargs["streaming"]
-                kwargs["engine"] = "old-streaming"
 
             return function(*args, **kwargs)
 
