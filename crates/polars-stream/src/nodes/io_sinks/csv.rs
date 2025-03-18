@@ -123,8 +123,7 @@ impl SinkNode for CsvSinkNode {
         let path = self.path.clone();
         let sink_options = self.sink_options.clone();
         let schema = self.schema.clone();
-        let include_header = self.write_options.include_header;
-        let include_bom = self.write_options.include_bom;
+        let options = self.write_options.clone();
         let cloud_options = self.cloud_options.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             use tokio::io::AsyncWriteExt;
@@ -139,10 +138,20 @@ impl SinkNode for CsvSinkNode {
             )?;
 
             // Write the header
-            if include_header || include_bom {
+            if options.include_header || options.include_bom {
                 let mut writer = CsvWriter::new(&mut *file)
-                    .include_bom(include_bom)
-                    .include_header(include_header)
+                    .include_bom(options.include_bom)
+                    .include_header(options.include_header)
+                    .with_separator(options.serialize_options.separator)
+                    .with_line_terminator(options.serialize_options.line_terminator.clone())
+                    .with_quote_char(options.serialize_options.quote_char)
+                    .with_datetime_format(options.serialize_options.datetime_format.clone())
+                    .with_date_format(options.serialize_options.date_format.clone())
+                    .with_time_format(options.serialize_options.time_format.clone())
+                    .with_float_scientific(options.serialize_options.float_scientific)
+                    .with_float_precision(options.serialize_options.float_precision)
+                    .with_null_value(options.serialize_options.null.clone())
+                    .with_quote_style(options.serialize_options.quote_style)
                     .n_threads(1) // Disable rayon parallelism
                     .batched(&schema)?;
                 writer.write_batch(&DataFrame::empty_with_schema(&schema))?;
