@@ -17,6 +17,7 @@ pub struct StreamingExecutionState {
     // The ExecutionState passed to any non-streaming operations.
     pub in_memory_exec_state: ExecutionState,
 
+    #[expect(unused)]
     pub verbose: bool,
 }
 
