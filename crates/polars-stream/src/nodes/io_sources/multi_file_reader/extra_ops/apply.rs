@@ -160,7 +160,8 @@ impl ApplyExtraOps {
 
                 *reorder = initialized_reorder;
 
-                // Return a `Noop` if our initialized state does not have any operations.
+                // Return a `Noop` if our initialized state does not have any operations. Downstream
+                // can see the `Noop` and avoid running through an extra distributor pipeline.
                 let slf = match slf {
                     Initialized {
                         row_index: None,
