@@ -1,2 +1,2 @@
-#[allow(unused)]
+#[expect(unused)]
 pub mod extra_ops;
