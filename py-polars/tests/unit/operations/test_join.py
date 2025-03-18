@@ -1614,7 +1614,8 @@ def test_join_where_predicate_type_coercion_21009() -> None:
 
     plan = q1.explain().splitlines()
     assert plan[0].strip().startswith("FILTER")
-    assert plan[1].strip().startswith("INNER JOIN")
+    assert plan[1] == "FROM"
+    assert plan[2].strip().startswith("INNER JOIN")
 
     q2 = left_frame.join_where(
         right_frame,
@@ -1624,7 +1625,8 @@ def test_join_where_predicate_type_coercion_21009() -> None:
 
     plan = q2.explain().splitlines()
     assert plan[0].strip().startswith("FILTER")
-    assert plan[1].strip().startswith("INNER JOIN")
+    assert plan[1] == "FROM"
+    assert plan[2].strip().startswith("INNER JOIN")
 
     assert_frame_equal(q1.collect(), q2.collect())
 

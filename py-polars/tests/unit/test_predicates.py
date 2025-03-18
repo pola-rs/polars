@@ -280,7 +280,7 @@ def test_literal_series_expr_predicate_pushdown() -> None:
         lf.filter(pl.col("x") > 0).filter(pl.col("x").is_in([0, 1])),
         lf.remove(pl.col("x") <= 0).remove(~pl.col("x").is_in([0, 1])),
     ):
-        assert re.search(r"FILTER .* FROM\n\s*DF", res.explain()) is not None
+        assert re.search(r"FILTER .*\nFROM\n\s*DF", res.explain(), re.DOTALL)
         assert res.collect().to_series().to_list() == [1]
 
 
@@ -292,7 +292,7 @@ def test_multi_alias_pushdown() -> None:
 
     print(plan)
     assert plan.count("FILTER") == 1
-    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is not None
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan, re.DOTALL) is not None
 
     with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
         # confirm we aren't using `eq_missing` in the query plan (denoted as " ==v ")
@@ -319,7 +319,9 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     plan = actual.explain()
 
     assert (
-        re.search(r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan)
+        re.search(
+            r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan, re.DOTALL
+        )
         is not None
     )
     assert plan.count("FILTER") == 1
@@ -335,7 +337,7 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
 
     plan = actual.explain()
     assert plan.count("FILTER") == 1
-    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is not None
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan, re.DOTALL) is not None
     actual = (
         lf.with_columns(
             (pl.col("value") * 2).over("key", "key_2").alias("value_2"),
@@ -348,7 +350,9 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     plan = actual.explain()
     assert plan.count("FILTER") == 2
     assert (
-        re.search(r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan)
+        re.search(
+            r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan, re.DOTALL
+        )
         is not None
     )
 
@@ -363,7 +367,9 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     plan = actual.explain()
     assert plan.count("FILTER") == 2
     assert (
-        re.search(r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan)
+        re.search(
+            r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan, re.DOTALL
+        )
         is not None
     )
 
@@ -380,7 +386,7 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     plan = actual.explain()
     assert plan.count("FILTER") == 1
     assert "FILTER" in plan
-    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is None
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan, re.DOTALL) is None
     # Ensure the implementation doesn't accidentally push a window expression
     # that only refers to the common window keys.
     actual = lf.with_columns(
@@ -388,7 +394,7 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     ).filter(pl.len().over("key") == 1)
 
     plan = actual.explain()
-    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is None
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan, re.DOTALL) is None
     assert plan.count("FILTER") == 1
 
     # Test window in filter
@@ -403,7 +409,9 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
         is not None
     )
     assert (
-        re.search(r'FILTER \[\(col\("key"\)\) == \(1\)\]\s*FROM\n\s*DF', plan)
+        re.search(
+            r'FILTER \[\(col\("key"\)\) == \(1\)\]\s*FROM\n\s*DF', plan, re.DOTALL
+        )
         is not None
     )
 
@@ -546,7 +554,7 @@ def test_predicate_slice_pushdown_list_gather_17492() -> None:
         .explain()
     )
 
-    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is not None
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan, re.DOTALL) is not None
 
     # Also check slice pushdown
     q = lf.with_columns(pl.col("val").list.get(1).alias("b")).slice(1, 1)
