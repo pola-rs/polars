@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -127,7 +128,7 @@ async fn select_keys(
 ) -> PolarsResult<HashKeys> {
     let mut key_columns = Vec::new();
     for selector in key_selectors {
-        key_columns.push(selector.evaluate(df, state).await?.into_column());
+        key_columns.push(selector.evaluate(df, state).trace_await().await?.into_column());
     }
     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
     Ok(HashKeys::from_df(
@@ -255,10 +256,10 @@ impl BufferedStream {
                     };
                     morsel.replace_source_token(source_token.clone());
                     morsel.set_consume_token(wait_group.token());
-                    if new_send.send(morsel).await.is_err() {
+                    if new_send.send(morsel).trace_await().await.is_err() {
                         return Ok(());
                     }
-                    wait_group.wait().await;
+                    wait_group.wait().trace_await().await;
                     // TODO: Unfortunately we can't actually stop here without
                     // re-buffering morsels from the stream that comes after.
                     // if source_token.stop_requested() {
@@ -267,12 +268,12 @@ impl BufferedStream {
                 }
 
                 if let Some(mut recv) = orig_recv {
-                    while let Ok(mut morsel) = recv.recv().await {
+                    while let Ok(mut morsel) = recv.recv().trace_await().await {
                         if source_token.stop_requested() {
                             morsel.source_token().stop();
                         }
                         morsel.set_seq(morsel.seq().offset_by(self.post_buffer_offset));
-                        if new_send.send(morsel).await.is_err() {
+                        if new_send.send(morsel).trace_await().await.is_err() {
                             break;
                         }
                     }
@@ -320,7 +321,7 @@ impl SampleState {
         this_final_len: Arc<AtomicUsize>,
         other_final_len: Arc<AtomicUsize>,
     ) -> PolarsResult<()> {
-        while let Ok(mut morsel) = recv.recv().await {
+        while let Ok(mut morsel) = recv.recv().trace_await().await {
             *len += morsel.df().height();
             if *len >= *SAMPLE_LIMIT
                 || *len
@@ -448,7 +449,7 @@ impl SampleState {
 
                 polars_io::pl_async::get_runtime().block_on(async move {
                     for handle in join_handles {
-                        handle.await?;
+                        handle.trace_await().await?;
                     }
                     PolarsResult::Ok(())
                 })
@@ -517,7 +518,7 @@ impl BuildState {
             key_selectors = &params.right_key_selectors;
         };
 
-        while let Ok(morsel) = recv.recv().await {
+        while let Ok(morsel) = recv.recv().trace_await().await {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later gathers.
             let hash_keys = select_keys(
@@ -526,7 +527,7 @@ impl BuildState {
                 params,
                 &state.in_memory_exec_state,
             )
-            .await?;
+            .trace_await().await?;
             let mut payload = select_payload(morsel.df().clone(), payload_selector);
             payload.rechunk_mut();
 
@@ -822,7 +823,7 @@ impl ProbeState {
         // A simple estimate used to size reserves.
         let mut selectivity_estimate = 1.0;
 
-        while let Ok(morsel) = recv.recv().await {
+        while let Ok(morsel) = recv.recv().trace_await().await {
             // Compute hashed keys and payload.
             let (df, seq, src_token, wait_token) = morsel.into_inner();
             max_seq = seq;
@@ -833,7 +834,7 @@ impl ProbeState {
             }
 
             let hash_keys =
-                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
+                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).trace_await().await?;
             let mut payload = select_payload(df, payload_selector);
             let mut payload_rechunked = false; // We don't eagerly rechunk because there might be no matches.
             let mut total_matches = 0;
@@ -922,7 +923,7 @@ impl ProbeState {
                                 );
                                 probe_match.clear();
                                 let out_morsel = new_morsel(&mut build_out, &mut probe_out);
-                                if send.send(out_morsel).await.is_err() {
+                                if send.send(out_morsel).trace_await().await.is_err() {
                                     return Ok(max_seq);
                                 }
                                 if probe_group_end != probe_partitions.len() {
@@ -991,7 +992,7 @@ impl ProbeState {
                                 );
                                 probe_match.clear();
                                 let out_morsel = new_morsel(&mut build_out, &mut probe_out);
-                                if send.send(out_morsel).await.is_err() {
+                                if send.send(out_morsel).trace_await().await.is_err() {
                                     return Ok(max_seq);
                                 }
                                 // We had enough matches to need a mid-partition flush, let's assume there are a lot of
@@ -1008,7 +1009,7 @@ impl ProbeState {
                         probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
                         probe_match.clear();
                         let out_morsel = new_morsel(&mut build_out, &mut probe_out);
-                        if send.send(out_morsel).await.is_err() {
+                        if send.send(out_morsel).trace_await().await.is_err() {
                             return Ok(max_seq);
                         }
                     }
@@ -1160,11 +1161,11 @@ impl EmitUnmatchedState {
                 let mut morsel = Morsel::new(out_df, self.morsel_seq, source_token.clone());
                 self.morsel_seq = self.morsel_seq.successor();
                 morsel.set_consume_token(wait_group.token());
-                if send.send(morsel).await.is_err() {
+                if send.send(morsel).trace_await().await.is_err() {
                     return Ok(());
                 }
 
-                wait_group.wait().await;
+                wait_group.wait().trace_await().await;
                 if source_token.stop_requested() {
                     return Ok(());
                 }
@@ -1571,7 +1572,7 @@ impl ComputeNode for EquiJoinNode {
                 let max_seq_sent = &mut probe_state.max_seq_sent;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     for probe_task in probe_tasks {
-                        *max_seq_sent = (*max_seq_sent).max(probe_task.await?);
+                        *max_seq_sent = (*max_seq_sent).max(probe_task.trace_await().await?);
                     }
                     Ok(())
                 }));

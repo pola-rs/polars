@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::cmp::Reverse;
 
 use polars_core::frame::DataFrame;
@@ -48,7 +49,7 @@ impl ApplyRowIndexOrLimit {
 
         let mut n_rows_received: usize = 0;
 
-        while let Some(Priority(Reverse(morsel_seq), mut df)) = morsel_receiver.get().await {
+        while let Some(Priority(Reverse(morsel_seq), mut df)) = morsel_receiver.get().trace_await().await {
             if let Some(limit) = &limit {
                 let remaining = *limit - n_rows_received;
                 if remaining < df.height() {
@@ -74,7 +75,7 @@ impl ApplyRowIndexOrLimit {
 
             n_rows_received = n_rows_received.saturating_add(df.height());
 
-            if morsel_distributor.send((morsel_seq, df)).await.is_err() {
+            if morsel_distributor.send((morsel_seq, df)).trace_await().await.is_err() {
                 break;
             }
 
@@ -92,7 +93,7 @@ impl ApplyRowIndexOrLimit {
         }
 
         for handle in phase_sender_handles {
-            handle.await?;
+            handle.trace_await().await?;
         }
 
         if verbose {
@@ -120,14 +121,14 @@ fn init_morsel_distributor(
         .zip(dist_receivers)
         .map(|(mut phase_tx_receiver, mut morsel_rx)| {
             AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
-                let Ok(mut morsel_output) = phase_tx_receiver.recv().await else {
+                let Ok(mut morsel_output) = phase_tx_receiver.recv().trace_await().await else {
                     return Ok(());
                 };
 
                 let wait_group = WaitGroup::default();
 
                 'outer: loop {
-                    let Ok((morsel_seq, df)) = morsel_rx.recv().await else {
+                    let Ok((morsel_seq, df)) = morsel_rx.recv().trace_await().await else {
                         return Ok(());
                     };
 
@@ -135,17 +136,17 @@ fn init_morsel_distributor(
                         Morsel::new(df, morsel_seq, morsel_output.source_token.clone());
                     morsel.set_consume_token(wait_group.token());
 
-                    if morsel_output.port.send(morsel).await.is_err() {
+                    if morsel_output.port.send(morsel).trace_await().await.is_err() {
                         break 'outer;
                     }
 
-                    wait_group.wait().await;
+                    wait_group.wait().trace_await().await;
 
                     if morsel_output.source_token.stop_requested() {
                         morsel_output.outcome.stop();
                         drop(morsel_output);
 
-                        let Ok(next_output) = phase_tx_receiver.recv().await else {
+                        let Ok(next_output) = phase_tx_receiver.recv().trace_await().await else {
                             break 'outer;
                         };
 

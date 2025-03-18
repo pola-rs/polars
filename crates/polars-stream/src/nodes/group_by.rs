@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::sync::Arc;
 
 use polars_core::POOL;
@@ -68,13 +69,13 @@ impl GroupBySinkState {
             let random_state = &self.random_state;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut group_idxs = Vec::new();
-                while let Ok(morsel) = recv.recv().await {
+                while let Ok(morsel) = recv.recv().trace_await().await {
                     // Compute group indices from key.
                     let seq = morsel.seq().to_u64();
                     let df = morsel.into_df();
                     let mut key_columns = Vec::new();
                     for selector in key_selectors {
-                        let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;
+                        let s = selector.evaluate(&df, &state.in_memory_exec_state).trace_await().await?;
                         key_columns.push(s.into_column());
                     }
                     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
@@ -92,7 +93,7 @@ impl GroupBySinkState {
                             reduction.update_groups(
                                 selector
                                     .evaluate(&df, &state.in_memory_exec_state)
-                                    .await?
+                                    .trace_await().await?
                                     .as_materialized_series(),
                                 &group_idxs,
                                 seq,

@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -101,8 +102,8 @@ enum SinkSender {
 impl SinkSender {
     pub async fn send(&mut self, morsel: Morsel) -> Result<(), Morsel> {
         match self {
-            SinkSender::Connector(sender) => sender.send(morsel).await,
-            SinkSender::Distributor(sender) => sender.send(morsel).await,
+            SinkSender::Connector(sender) => sender.send(morsel).trace_await().await,
+            SinkSender::Distributor(sender) => sender.send(morsel).trace_await().await,
         }
     }
 }
@@ -142,8 +143,8 @@ async fn open_new_sink(
             .collect::<(Vec<_>, Vec<_>)>();
         join_handles.extend(dist_rxs.into_iter().zip(txs).map(|(mut dist_rx, mut tx)| {
             spawn(TaskPriority::High, async move {
-                while let Ok(morsel) = dist_rx.recv().await {
-                    if tx.send(morsel).await.is_err() {
+                while let Ok(morsel) = dist_rx.recv().trace_await().await {
+                    if tx.send(morsel).trace_await().await.is_err() {
                         break;
                     }
                 }
@@ -163,10 +164,10 @@ async fn open_new_sink(
         FuturesUnordered::from_iter(join_handles.into_iter().map(AbortOnDropHandle::new));
 
     let (_, outcome) = PhaseOutcome::new_shared_wait(WaitGroup::default().token());
-    if sink_input_tx.send((outcome, sink_input)).await.is_err() {
+    if sink_input_tx.send((outcome, sink_input)).trace_await().await.is_err() {
         // If this sending failed, probably some error occurred.
         drop(sender);
-        while let Some(res) = join_handles.next().await {
+        while let Some(res) = join_handles.next().trace_await().await {
             res?;
         }
 

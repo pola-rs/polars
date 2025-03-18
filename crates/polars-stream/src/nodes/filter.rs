@@ -2,6 +2,7 @@ use polars_error::polars_err;
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
+use crate::utils::TraceAwait;
 
 pub struct FilterNode {
     predicate: StreamExpr,
@@ -44,10 +45,10 @@ impl ComputeNode for FilterNode {
         for (mut recv, mut send) in receivers.into_iter().zip(senders) {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Ok(morsel) = recv.recv().await {
+                while let Ok(morsel) = recv.recv().trace_await().await {
 
                     let morsel = morsel.async_try_map(|df| async move {
-                        let mask = slf.predicate.evaluate(&df, &state.in_memory_exec_state).await?;
+                        let mask = slf.predicate.evaluate(&df, &state.in_memory_exec_state).trace_await().await?;
                         let mask = mask.bool().map_err(|_| {
                             polars_err!(
                                 ComputeError: "filter predicate must be of type `Boolean`, got `{}`", mask.dtype()
@@ -56,13 +57,13 @@ impl ComputeNode for FilterNode {
 
                         // We already parallelize, call the sequential filter.
                         df._filter_seq(mask)
-                    }).await?;
+                    }).trace_await().await?;
 
                     if morsel.df().is_empty() {
                         continue;
                     }
 
-                    if send.send(morsel).await.is_err() {
+                    if send.send(morsel).trace_await().await.is_err() {
                         break;
                     }
                 }

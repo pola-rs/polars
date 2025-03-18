@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -121,7 +122,7 @@ impl ComputeNode for NegativeSliceNode {
                 assert!(send_ports[0].is_none());
                 let max_buffer_needed = self.slice_offset.unsigned_abs() as usize;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                    while let Ok(morsel) = recv.recv().await {
+                    while let Ok(morsel) = recv.recv().trace_await().await {
                         buffer.total_len += morsel.df().height();
                         buffer.frames.push_back(morsel.into_df());
 

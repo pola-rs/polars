@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::sync::Arc;
 
 use polars_core::frame::column::ScalarColumn;
@@ -61,11 +62,11 @@ impl ReduceNode {
                     .collect();
 
                 scope.spawn_task(TaskPriority::High, async move {
-                    while let Ok(morsel) = recv.recv().await {
+                    while let Ok(morsel) = recv.recv().trace_await().await {
                         for (reducer, selector) in local_reducers.iter_mut().zip(selectors) {
                             let input = selector
                                 .evaluate(morsel.df(), &state.in_memory_exec_state)
-                                .await?;
+                                .trace_await().await?;
                             reducer.update_group(
                                 input.as_materialized_series(),
                                 0,
@@ -81,7 +82,7 @@ impl ReduceNode {
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             for task in parallel_tasks {
-                let local_reducers = task.await?;
+                let local_reducers = task.trace_await().await?;
                 for (r1, r2) in reductions.iter_mut().zip(local_reducers) {
                     r1.resize(1);
                     unsafe {
@@ -103,7 +104,7 @@ impl ReduceNode {
         let mut send = send.serial();
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let morsel = Morsel::new(df.take().unwrap(), MorselSeq::new(0), SourceToken::new());
-            let _ = send.send(morsel).await;
+            let _ = send.send(morsel).trace_await().await;
             Ok(())
         }));
     }

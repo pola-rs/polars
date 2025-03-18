@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use super::compute_node_prelude::*;
 
 /// A node that will pass-through up to length rows, starting at start_offset.
@@ -53,7 +54,7 @@ impl ComputeNode for StreamingSliceNode {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let stop_offset = self.start_offset + self.length;
 
-            while let Ok(morsel) = recv.recv().await {
+            while let Ok(morsel) = recv.recv().trace_await().await {
                 let morsel = morsel.map(|df| {
                     let height = df.height();
 
@@ -81,7 +82,7 @@ impl ComputeNode for StreamingSliceNode {
                     morsel.source_token().stop();
                 }
 
-                if !morsel.df().is_empty() && send.send(morsel).await.is_err() {
+                if !morsel.df().is_empty() && send.send(morsel).trace_await().await.is_err() {
                     break;
                 }
 

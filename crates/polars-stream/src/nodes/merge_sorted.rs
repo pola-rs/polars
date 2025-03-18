@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -259,13 +260,13 @@ impl ComputeNode for MergeSortedNode {
                         let morsel_offset = *seq;
                         scope.spawn_task(TaskPriority::High, async move {
                             let mut max_seq = morsel_offset;
-                            while let Ok(mut morsel) = recv.recv().await {
+                            while let Ok(mut morsel) = recv.recv().trace_await().await {
                                 // Ensure the morsel sequence id stream is monotone non-decreasing.
                                 let seq = morsel.seq().offset_by(morsel_offset);
                                 max_seq = max_seq.max(seq);
 
                                 morsel.set_seq(seq);
-                                if send.send(morsel).await.is_err() {
+                                if send.send(morsel).trace_await().await.is_err() {
                                     break;
                                 }
                             }
@@ -277,7 +278,7 @@ impl ComputeNode for MergeSortedNode {
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     // Update our global maximum.
                     for handle in inner_handles {
-                        *seq = (*seq).max(handle.await);
+                        *seq = (*seq).max(handle.trace_await().await);
                     }
                     Ok(())
                 }));
@@ -294,7 +295,7 @@ impl ComputeNode for MergeSortedNode {
                 ) {
                     // If a stop was requested, we need to buffer the remaining
                     // morsels and trigger a phase transition.
-                    let Ok(morsel) = port.recv().await else {
+                    let Ok(morsel) = port.recv().trace_await().await else {
                         return;
                     };
 
@@ -303,7 +304,7 @@ impl ComputeNode for MergeSortedNode {
 
                     // Buffer all the morsels that were already produced.
                     unmerged.push_back(morsel.into_df());
-                    while let Ok(morsel) = port.recv().await {
+                    while let Ok(morsel) = port.recv().trace_await().await {
                         unmerged.push_back(morsel.into_df());
                     }
                 }
@@ -337,7 +338,7 @@ impl ComputeNode for MergeSortedNode {
 
                             if distributor
                                 .send((left_mergeable, right_mergeable))
-                                .await
+                                .trace_await().await
                                 .is_err()
                             {
                                 return Ok(());
@@ -348,10 +349,10 @@ impl ComputeNode for MergeSortedNode {
                             // Request that a port stops producing morsels and buffers all the
                             // remaining morsels.
                             if let Some(p) = &mut left {
-                                buffer_unmerged(p, left_unmerged).await;
+                                buffer_unmerged(p, left_unmerged).trace_await().await;
                             }
                             if let Some(p) = &mut right {
-                                buffer_unmerged(p, right_unmerged).await;
+                                buffer_unmerged(p, right_unmerged).trace_await().await;
                             }
                             break;
                         }
@@ -371,12 +372,12 @@ impl ComputeNode for MergeSortedNode {
                         };
 
                         // Try to get a new morsel from the empty side.
-                        let Ok(m) = empty_port.recv().await else {
+                        let Ok(m) = empty_port.recv().trace_await().await else {
                             if let Some(p) = &mut left {
-                                buffer_unmerged(p, left_unmerged).await;
+                                buffer_unmerged(p, left_unmerged).trace_await().await;
                             }
                             if let Some(p) = &mut right {
-                                buffer_unmerged(p, right_unmerged).await;
+                                buffer_unmerged(p, right_unmerged).trace_await().await;
                             }
                             break;
                         };
@@ -398,7 +399,7 @@ impl ComputeNode for MergeSortedNode {
 
                         if distributor
                             .send((left_mergeable, right_mergeable))
-                            .await
+                            .trace_await().await
                             .is_err()
                         {
                             return Ok(());
@@ -419,14 +420,14 @@ impl ComputeNode for MergeSortedNode {
                         for df in std::mem::take(pass_unmerged) {
                             let m = Morsel::new(df, *seq, source_token.clone());
                             *seq = seq.successor();
-                            if distributor.send((m, DataFrame::empty())).await.is_err() {
+                            if distributor.send((m, DataFrame::empty())).trace_await().await.is_err() {
                                 return Ok(());
                             }
                         }
 
                         // Start passing on the port that is port that is still open.
                         if let Some(pass_port) = pass_port {
-                            let Ok(mut m) = pass_port.recv().await else {
+                            let Ok(mut m) = pass_port.recv().trace_await().await else {
                                 return Ok(());
                             };
                             if source_token.stop_requested() {
@@ -434,14 +435,14 @@ impl ComputeNode for MergeSortedNode {
                             }
                             m.set_seq(*seq);
                             *seq = seq.successor();
-                            if distributor.send((m, DataFrame::empty())).await.is_err() {
+                            if distributor.send((m, DataFrame::empty())).trace_await().await.is_err() {
                                 return Ok(());
                             }
 
-                            while let Ok(mut m) = pass_port.recv().await {
+                            while let Ok(mut m) = pass_port.recv().trace_await().await {
                                 m.set_seq(*seq);
                                 *seq = seq.successor();
-                                if distributor.send((m, DataFrame::empty())).await.is_err() {
+                                if distributor.send((m, DataFrame::empty())).trace_await().await.is_err() {
                                     return Ok(());
                                 }
                             }
@@ -456,12 +457,12 @@ impl ComputeNode for MergeSortedNode {
                 join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
                     let ideal_morsel_size = get_ideal_morsel_size();
                     scope.spawn_task(TaskPriority::High, async move {
-                        while let Ok((left, right)) = recv.recv().await {
+                        while let Ok((left, right)) = recv.recv().trace_await().await {
                             // When we are flushing the buffer, we will just send one morsel from
                             // the input. We don't want to mess with the source token or wait group
                             // and just pass it on.
                             if right.is_empty() {
-                                if send.send(left).await.is_err() {
+                                if send.send(left).trace_await().await.is_err() {
                                     return Ok(());
                                 }
                                 continue;
@@ -483,16 +484,16 @@ impl ComputeNode for MergeSortedNode {
                                 // MorselSeq have to be monotonely non-decreasing so we can
                                 // pass the same sequence token twice.
                                 let morsel = Morsel::new(m1, seq, source_token.clone());
-                                if send.send(morsel).await.is_err() {
+                                if send.send(morsel).trace_await().await.is_err() {
                                     break;
                                 }
                                 let morsel = Morsel::new(m2, seq, source_token.clone());
-                                if send.send(morsel).await.is_err() {
+                                if send.send(morsel).trace_await().await.is_err() {
                                     break;
                                 }
                             } else {
                                 let morsel = Morsel::new(merged, seq, source_token.clone());
-                                if send.send(morsel).await.is_err() {
+                                if send.send(morsel).trace_await().await.is_err() {
                                     break;
                                 }
                             }

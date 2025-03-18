@@ -308,5 +308,7 @@ pub fn execute_graph(
         }
     }
 
+    crate::utils::print_trace_stats();
+
     Ok(out)
 }

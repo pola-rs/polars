@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::cmp::Reverse;
 use std::path::PathBuf;
 
@@ -81,8 +82,8 @@ impl SinkNode for CsvSinkNode {
                 let mut allocation_size = DEFAULT_ALLOCATION_SIZE;
                 let options = options.clone();
 
-                while let Ok((mut rx, mut lin_tx)) = pass_rx.recv().await {
-                    while let Ok(morsel) = rx.recv().await {
+                while let Ok((mut rx, mut lin_tx)) = pass_rx.recv().trace_await().await {
+                    while let Ok(morsel) = rx.recv().trace_await().await {
                         let (df, seq, _, consume_token) = morsel.into_inner();
 
                         let mut buffer = Vec::with_capacity(allocation_size);
@@ -105,7 +106,7 @@ impl SinkNode for CsvSinkNode {
                         writer.write_batch(&df)?;
 
                         allocation_size = allocation_size.max(buffer.len());
-                        if lin_tx.insert(Priority(Reverse(seq), buffer)).await.is_err() {
+                        if lin_tx.insert(Priority(Reverse(seq), buffer)).trace_await().await.is_err() {
                             return Ok(());
                         }
                         drop(consume_token); // Keep the consume_token until here to increase the
@@ -130,7 +131,7 @@ impl SinkNode for CsvSinkNode {
             use tokio::io::AsyncWriteExt;
 
             if sink_options.mkdir {
-                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
+                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).trace_await().await?;
             }
 
             let mut file = polars_io::utils::file::Writeable::try_new(
@@ -150,9 +151,9 @@ impl SinkNode for CsvSinkNode {
 
             let mut file = file.try_into_async_writeable()?;
 
-            while let Ok(mut lin_rx) = io_rx.recv().await {
-                while let Some(Priority(_, buffer)) = lin_rx.get().await {
-                    file.write_all(&buffer).await?;
+            while let Ok(mut lin_rx) = io_rx.recv().trace_await().await {
+                while let Some(Priority(_, buffer)) = lin_rx.get().trace_await().await {
+                    file.write_all(&buffer).trace_await().await?;
                 }
             }
 
@@ -161,16 +162,16 @@ impl SinkNode for CsvSinkNode {
                     sink_options.sync_on_close,
                     file,
                 )
-                .await?;
+                .trace_await().await?;
             }
 
-            file.close().await?;
+            file.close().trace_await().await?;
 
             PolarsResult::Ok(())
         });
         join_handles.push(spawn(TaskPriority::Low, async move {
             io_task
-                .await
+                .trace_await().await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
         }));
     }

@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::cmp::Reverse;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
@@ -132,7 +133,7 @@ impl SinkNode for ParquetSinkNode {
                     let encodings = self.encodings.clone();
 
                     spawn(TaskPriority::High, async move {
-                        while let Ok((rg_idx, col_idx, column)) = dist_rx.recv().await {
+                        while let Ok((rg_idx, col_idx, column)) = dist_rx.recv().trace_await().await {
                             let type_ = &parquet_schema.fields()[col_idx];
                             let encodings = &encodings[col_idx];
 
@@ -170,7 +171,7 @@ impl SinkNode for ParquetSinkNode {
 
                             if lin_tx
                                 .insert(Priority(Reverse(rg_idx), (col_idx, compressed_pages)))
-                                .await
+                                .trace_await().await
                                 .is_err()
                             {
                                 return Ok(());
@@ -201,7 +202,7 @@ impl SinkNode for ParquetSinkNode {
             };
 
             // Linearize from all the Encoder tasks.
-            while let Some(Priority(Reverse(seq), (i, compressed_pages))) = lin_rx.get().await {
+            while let Some(Priority(Reverse(seq), (i, compressed_pages))) = lin_rx.get().trace_await().await {
                 if current.num_columns_seen == 0 {
                     current.seq = seq;
                 }
@@ -220,7 +221,7 @@ impl SinkNode for ParquetSinkNode {
                         current_row_group.extend(column.take().unwrap());
                     }
 
-                    if io_tx.send(current_row_group).await.is_err() {
+                    if io_tx.send(current_row_group).trace_await().await.is_err() {
                         return Ok(());
                     }
                     current.num_columns_seen = 0;
@@ -243,7 +244,7 @@ impl SinkNode for ParquetSinkNode {
         let encodings = self.encodings.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             if sink_options.mkdir {
-                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
+                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).trace_await().await?;
             }
 
             let mut file = polars_io::utils::file::Writeable::try_new(
@@ -267,7 +268,7 @@ impl SinkNode for ParquetSinkNode {
             let mut writer = BatchedWriter::new(file_writer, encodings, write_options, false);
 
             let num_parquet_columns = writer.parquet_schema().leaves().len();
-            while let Ok(current_row_group) = io_rx.recv().await {
+            while let Ok(current_row_group) = io_rx.recv().trace_await().await {
                 // @TODO: At the moment this is a sync write, this is not ideal because we can only
                 // have so many blocking threads in the tokio threadpool.
                 assert_eq!(current_row_group.len(), num_parquet_columns);
@@ -287,7 +288,7 @@ impl SinkNode for ParquetSinkNode {
         });
         join_handles.push(spawn(TaskPriority::Low, async move {
             io_task
-                .await
+                .trace_await().await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
         }));
     }

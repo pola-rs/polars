@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use polars_error::PolarsResult;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_utils::mmap::MemSlice;
@@ -13,7 +14,7 @@ pub(super) async fn read_parquet_metadata_bytes(
 
     const FOOTER_HEADER_SIZE: usize = polars_parquet::parquet::FOOTER_SIZE as usize;
 
-    let file_size = byte_source.get_size().await?;
+    let file_size = byte_source.get_size().trace_await().await?;
 
     if file_size < FOOTER_HEADER_SIZE {
         return Err(ParquetError::OutOfSpec(format!(
@@ -32,7 +33,7 @@ pub(super) async fn read_parquet_metadata_bytes(
 
     let bytes = byte_source
         .get_range((file_size - estimated_metadata_size)..file_size)
-        .await?;
+        .trace_await().await?;
 
     let footer_header_bytes = bytes.slice((bytes.len() - FOOTER_HEADER_SIZE)..bytes.len());
 
@@ -81,7 +82,7 @@ pub(super) async fn read_parquet_metadata_bytes(
         let mut out = Vec::with_capacity(footer_size);
         let offset = file_size - footer_size;
         let len = footer_size - bytes.len();
-        let delta_bytes = byte_source.get_range(offset..(offset + len)).await?;
+        let delta_bytes = byte_source.get_range(offset..(offset + len)).trace_await().await?;
 
         debug_assert!(out.capacity() >= delta_bytes.len() + bytes.len());
 

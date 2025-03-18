@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::cmp::Reverse;
 use std::ops::Range;
 use std::sync::Arc;
@@ -353,14 +354,14 @@ impl SourceNode for NDJsonSourceNode {
         ));
 
         join_handles.push(spawn(TaskPriority::Low, async move {
-            let mut row_count = line_batch_distributor_task_handle.await?;
+            let mut row_count = line_batch_distributor_task_handle.trace_await().await?;
 
             if verbose {
                 eprintln!("[NDJSON source]: line batch distributor handle returned");
             }
 
             for handle in line_batch_processor_handles {
-                let n_rows_processed = handle.await?;
+                let n_rows_processed = handle.trace_await().await?;
                 if needs_total_row_count {
                     row_count = row_count.checked_add(n_rows_processed).unwrap();
                 }
@@ -400,7 +401,7 @@ impl SourceNode for NDJsonSourceNode {
             }
 
             if let Some(handle) = opt_post_process_handle {
-                handle.await?;
+                handle.trace_await().await?;
             }
 
             if verbose {
@@ -412,7 +413,7 @@ impl SourceNode for NDJsonSourceNode {
 
         join_handles.push(spawn(TaskPriority::Low, async move {
             // Every phase we are given a new send port.
-            while let Ok(phase_output) = output_recv.recv().await {
+            while let Ok(phase_output) = output_recv.recv().trace_await().await {
                 let source_token = SourceToken::new();
                 let morsel_senders = phase_output.port.parallel();
 
@@ -421,14 +422,14 @@ impl SourceNode for NDJsonSourceNode {
                 for (phase_tx_senders, port) in phase_tx_senders.iter_mut().zip(morsel_senders) {
                     let (outcome, wait_group, morsel_output) =
                         MorselOutput::from_port(port, source_token.clone());
-                    _ = phase_tx_senders.send(morsel_output).await;
+                    _ = phase_tx_senders.send(morsel_output).trace_await().await;
                     morsel_outcomes.push((outcome, wait_group));
                 }
 
                 let mut is_finished = true;
 
                 for (outcome, wait_group) in morsel_outcomes.into_iter() {
-                    wait_group.wait().await;
+                    wait_group.wait().trace_await().await;
                     is_finished &= outcome.did_finish();
                 }
 

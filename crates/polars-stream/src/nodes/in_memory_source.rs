@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -97,11 +98,11 @@ impl ComputeNode for InMemorySourceNode {
                     let morsel_seq = MorselSeq::new(seq).offset_by(slf.seq_offset);
                     let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
-                    if send.send(morsel).await.is_err() {
+                    if send.send(morsel).trace_await().await.is_err() {
                         break;
                     }
 
-                    wait_group.wait().await;
+                    wait_group.wait().trace_await().await;
                     if source_token.stop_requested() {
                         break;
                     }

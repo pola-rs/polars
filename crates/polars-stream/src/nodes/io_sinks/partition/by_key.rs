@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::cmp::Reverse;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -134,8 +135,8 @@ impl SinkNode for PartitionByKeySinkNode {
             let include_key = self.include_key;
 
             spawn(TaskPriority::High, async move {
-                while let Ok((mut rx, mut lin_tx)) = pass_rx.recv().await {
-                    while let Ok(morsel) = rx.recv().await {
+                while let Ok((mut rx, mut lin_tx)) = pass_rx.recv().trace_await().await {
+                    while let Ok(morsel) = rx.recv().trace_await().await {
                         let (df, seq, source_token, consume_token) = morsel.into_inner();
 
                         let partition_include_key = true; // We need the keys to send to the
@@ -174,7 +175,7 @@ impl SinkNode for PartitionByKeySinkNode {
 
                         if lin_tx
                             .insert(Priority(Reverse(seq), (source_token, partitions)))
-                            .await
+                            .trace_await().await
                             .is_err()
                         {
                             return Ok(());
@@ -220,9 +221,9 @@ impl SinkNode for PartitionByKeySinkNode {
             // Wrap this in a closure so that a failure to send (which signifies a failure) can be
             // caught while waiting for tasks.
             let mut receive_and_pass = async || {
-                while let Ok(mut lin_rx) = io_rx.recv().await {
+                while let Ok(mut lin_rx) = io_rx.recv().trace_await().await {
                     while let Some(Priority(Reverse(seq), (source_token, partitions))) =
-                        lin_rx.get().await
+                        lin_rx.get().trace_await().await
                     {
                         for (row_encoded, keys, partition) in partitions {
                             let num_open_partitions = open_partitions.len();
@@ -246,7 +247,7 @@ impl SinkNode for PartitionByKeySinkNode {
                                     part_idx += 1;
                                     insert_key_value_into_format_args(&mut format_args, &keys);
 
-                                    let result = open_new_sink(path_f_string.as_path(), &create_new_sink, &format_args, sink_input_schema.clone(), "by-key", verbose, &state).await?;
+                                    let result = open_new_sink(path_f_string.as_path(), &create_new_sink, &format_args, sink_input_schema.clone(), "by-key", verbose, &state).trace_await().await?;
                                     let Some((join_handles, sender)) = result else {
                                         return Ok(());
                                     };
@@ -264,7 +265,7 @@ impl SinkNode for PartitionByKeySinkNode {
                             match open_partition {
                                 OpenPartition::Sink(input, _) => {
                                     let morsel = Morsel::new(partition, seq, source_token.clone());
-                                    if input.send(morsel).await.is_err() {
+                                    if input.send(morsel).trace_await().await.is_err() {
                                         return Ok(());
                                     }
                                 },
@@ -276,7 +277,7 @@ impl SinkNode for PartitionByKeySinkNode {
 
                 PolarsResult::Ok(())
             };
-            receive_and_pass().await?;
+            receive_and_pass().trace_await().await?;
 
             // At this point, we need to wait for all sinks to finish writing and close them. Also,
             // sinks that ended up buffering need to output their data.
@@ -284,7 +285,7 @@ impl SinkNode for PartitionByKeySinkNode {
                 match open_partition {
                     OpenPartition::Sink(sink_sender, mut join_handles) => {
                         drop(sink_sender); // Signal to the sink that nothing more is coming.
-                        while let Some(res) = join_handles.next().await {
+                        while let Some(res) = join_handles.next().trace_await().await {
                             res?;
                         }
                     },
@@ -293,7 +294,7 @@ impl SinkNode for PartitionByKeySinkNode {
                         part_idx += 1;
                         insert_key_value_into_format_args(&mut format_args, &keys);
 
-                        let result = open_new_sink(path_f_string.as_path(), &create_new_sink, &format_args, sink_input_schema.clone(), "by-key", verbose, &state).await?;
+                        let result = open_new_sink(path_f_string.as_path(), &create_new_sink, &format_args, sink_input_schema.clone(), "by-key", verbose, &state).trace_await().await?;
                         let Some((mut join_handles, mut sender)) = result else {
                             return Ok(());
                         };
@@ -302,14 +303,14 @@ impl SinkNode for PartitionByKeySinkNode {
                         let mut seq = MorselSeq::default();
                         for df in buffered {
                             let morsel = Morsel::new(df, seq, source_token.clone());
-                            if sender.send(morsel).await.is_err() {
+                            if sender.send(morsel).trace_await().await.is_err() {
                                 return Ok(());
                             }
                             seq = seq.successor();
                         }
 
                         drop(sender); // Signal to the sink that nothing more is coming.
-                        while let Some(res) = join_handles.next().await {
+                        while let Some(res) = join_handles.next().trace_await().await {
                             res?;
                         }
                     },

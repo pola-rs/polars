@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -121,9 +122,9 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let (outcome, wait_group, source_output) = SourceOutput::from_port(source_output);
 
-            if started.output_send.send(source_output).await.is_ok() {
+            if started.output_send.send(source_output).trace_await().await.is_ok() {
                 // Wait for the phase to finish.
-                wait_group.wait().await;
+                wait_group.wait().trace_await().await;
                 if !outcome.did_finish() {
                     return Ok(());
                 }
@@ -134,7 +135,7 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
             };
 
             // Either the task finished or some error occurred.
-            while let Some(ret) = started.join_handles.next().await {
+            while let Some(ret) = started.join_handles.next().trace_await().await {
                 ret?;
             }
 

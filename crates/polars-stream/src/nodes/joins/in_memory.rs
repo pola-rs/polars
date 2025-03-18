@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::sync::Arc;
 
 use polars_core::schema::Schema;

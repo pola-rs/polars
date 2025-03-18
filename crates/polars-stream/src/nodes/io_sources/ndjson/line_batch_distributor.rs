@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_io::prelude::json_lines;
@@ -109,7 +110,7 @@ impl LineBatchDistributor {
                             bytes: full_chunk,
                             chunk_idx,
                         })
-                        .await
+                        .trace_await().await
                         .is_err()
                 {
                     break;

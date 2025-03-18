@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -40,9 +41,9 @@ impl RowGroupDecoder {
         row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
         if self.use_prefiltered.is_some() {
-            self.row_group_data_to_df_prefiltered(row_group_data).await
+            self.row_group_data_to_df_prefiltered(row_group_data).trace_await().await
         } else {
-            self.row_group_data_to_df_impl(row_group_data).await
+            self.row_group_data_to_df_impl(row_group_data).trace_await().await
         }
     }
 
@@ -73,7 +74,7 @@ impl RowGroupDecoder {
             &row_group_data,
             Some(polars_parquet::read::Filter::Range(slice_range.clone())),
         )
-        .await?;
+        .trace_await().await?;
 
         let projection_height = slice_range.len();
 
@@ -86,7 +87,7 @@ impl RowGroupDecoder {
             let mask = mask.bool().unwrap();
 
             let filtered =
-                unsafe { filter_cols(df.take_columns(), mask, self.min_values_per_thread) }.await?;
+                unsafe { filter_cols(df.take_columns(), mask, self.min_values_per_thread) }.trace_await().await?;
 
             let height = if let Some(fst) = filtered.first() {
                 fst.len()
@@ -234,7 +235,7 @@ impl RowGroupDecoder {
         }
 
         for handle in task_handles {
-            out_vec.extend(handle.await?.into_iter().map(|(c, _)| c));
+            out_vec.extend(handle.trace_await().await?.into_iter().map(|(c, _)| c));
         }
 
         Ok(())
@@ -356,7 +357,7 @@ async unsafe fn filter_cols(
     }
 
     for handle in task_handles {
-        out_vec.extend(handle.await?)
+        out_vec.extend(handle.trace_await().await?)
     }
 
     Ok(out_vec)
@@ -529,7 +530,7 @@ impl RowGroupDecoder {
 
             let filtered =
                 unsafe { filter_cols(live_df.take_columns(), mask, self.min_values_per_thread) }
-                    .await?;
+                    .trace_await().await?;
 
             let filtered_height = if let Some(fst) = filtered.first() {
                 fst.len()

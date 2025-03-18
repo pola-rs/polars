@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::cmp::Reverse;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -541,9 +542,9 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             cloud_options.as_ref().as_ref(),
                             None,
                         )
-                        .await?;
+                        .trace_await().await?;
 
-                        let num_rows = source.unrestricted_row_count().await?;
+                        let num_rows = source.unrestricted_row_count().trace_await().await?;
                         let num_rows = num_rows as usize;
                         source_length_sum += offset.min(num_rows);
 
@@ -624,7 +625,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                             // Flush all remaining workers waiting for their slice.
                             for mut rx in slice_rx {
-                                let Ok((_, slice_range, wait_token)) = rx.recv().await else {
+                                let Ok((_, slice_range, wait_token)) = rx.recv().trace_await().await else {
                                     continue;
                                 };
 
@@ -639,7 +640,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                         }
 
                         let handler = i % max_concurrent_scans;
-                        let Ok((num_rows, slice_range, wait_token)) = slice_rx[handler].recv().await
+                        let Ok((num_rows, slice_range, wait_token)) = slice_rx[handler].recv().trace_await().await
                         else {
                             break;
                         };
@@ -742,10 +743,10 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 cloud_options.as_ref().as_ref(),
                                 row_index_name.clone(),
                             )
-                            .await?;
+                            .trace_await().await?;
 
                             if is_selected {
-                                let row_count = source.unrestricted_row_count().await?;
+                                let row_count = source.unrestricted_row_count().trace_await().await?;
                                 let unrestricted_row_count_rx = {
                                     let (tx, rx) = tokio::sync::oneshot::channel();
                                     tx.send(row_count).unwrap();
@@ -759,14 +760,14 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 };
                                 // Wait for the orchestrator task to actually be interested in the output
                                 // of this file.
-                                if si_send.send(phase).await.is_err() {
+                                if si_send.send(phase).trace_await().await.is_err() {
                                     break;
                                 };
                                 i += max_concurrent_scans;
                                 continue;
                             }
 
-                            let source_schema = source.physical_schema().await?;
+                            let source_schema = source.physical_schema().trace_await().await?;
                             let (source_projection, missing_columns) = resolve_source_projection(
                                 file_schema.as_ref(),
                                 source_schema.as_ref(),
@@ -778,15 +779,15 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             )?;
 
                             if let Some(slice_tx) = &mut slice_tx {
-                                let row_count = source.unrestricted_row_count().await?;
+                                let row_count = source.unrestricted_row_count().trace_await().await?;
                                 if slice_tx
                                     .send((row_count, slice_range.clone(), slice_wg.token()))
-                                    .await
+                                    .trace_await().await
                                     .is_err()
                                 {
                                     break;
                                 };
-                                slice_wg.wait().await;
+                                slice_wg.wait().trace_await().await;
 
                                 let (start, length) = slice_range.as_ref();
                                 let start = start.load(Ordering::Relaxed);
@@ -815,7 +816,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                                     // Wait for the orchestrator task to actually be interested in the output
                                     // of this file.
-                                    if si_send.send(phase).await.is_err() {
+                                    if si_send.send(phase).trace_await().await.is_err() {
                                         break;
                                     };
                                     i += max_concurrent_scans;
@@ -925,17 +926,17 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                                 // Wait for the orchestrator task to actually be interested in the output
                                 // of this file.
-                                if si_send.send(phase).await.is_err() {
+                                if si_send.send(phase).trace_await().await.is_err() {
                                     break;
                                 };
 
                                 // Start draining the source into the created channels.
-                                if output_send.send(tx).await.is_err() {
+                                if output_send.send(tx).trace_await().await.is_err() {
                                     break;
                                 };
 
                                 // Wait for the phase to end.
-                                wait_group.wait().await;
+                                wait_group.wait().trace_await().await;
                                 let did_finish = outcome.did_finish();
                                 if source_finished_tx.send(did_finish).is_err() {
                                     return Ok(());
@@ -952,7 +953,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                             // One of the tasks might throw an error. In which case, we need to cancel all
                             // handles and find the error.
-                            while let Some(ret) = join_handles.next().await {
+                            while let Some(ret) = join_handles.next().trace_await().await {
                                 ret?;
                             }
 
@@ -972,7 +973,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                 let mut unrestricted_row_count_rx = None;
 
                 // Every phase we are given a new send channel.
-                'phase_loop: while let Ok(phase_output) = send_port_recv.recv().await {
+                'phase_loop: while let Ok(phase_output) = send_port_recv.recv().trace_await().await {
                     let source_token = SourceToken::new();
                     let wait_group = WaitGroup::default();
 
@@ -993,7 +994,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                         let source_name = source_name(sources.at(current_scan), current_scan);
                         let si_recv = &mut si_recv[current_scan % max_concurrent_scans];
-                        let Ok(phase) = si_recv.recv().await else {
+                        let Ok(phase) = si_recv.recv().trace_await().await else {
                             return Ok(());
                         };
 
@@ -1030,11 +1031,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     seq = seq.successor();
                                     morsel.set_consume_token(wait_group.token());
 
-                                    if send.send(morsel).await.is_err() {
+                                    if send.send(morsel).trace_await().await.is_err() {
                                         return Ok(());
                                     }
 
-                                    wait_group.wait().await;
+                                    wait_group.wait().trace_await().await;
                                     if source_token.stop_requested() {
                                         phase_output.outcome.stop();
                                         continue 'phase_loop;
@@ -1053,9 +1054,9 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                                         linearizer_tasks.extend(rxs.into_iter().zip(lin_txs).map(|(mut rx, mut lin_tx)|
                                             AbortOnDropHandle::new(spawn(TaskPriority::High, async move {
-                                                while let Ok(mut m) = rx.recv().await {
+                                                while let Ok(mut m) = rx.recv().trace_await().await {
                                                     let consume_token = m.take_consume_token();
-                                                    if lin_tx.insert(Priority(Reverse(m.seq()), m)).await.is_err() {
+                                                    if lin_tx.insert(Priority(Reverse(m.seq()), m)).trace_await().await.is_err() {
                                                         return Ok(());
                                                     }
                                                     drop(consume_token);
@@ -1064,8 +1065,8 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                             }
                                         ))));
                                         linearizer_tasks.push(AbortOnDropHandle::new(spawn(TaskPriority::High, async move {
-                                            while let Some(Priority(_, m)) = lin_rx.get().await {
-                                                if tx.send(m).await.is_err() {
+                                            while let Some(Priority(_, m)) = lin_rx.get().trace_await().await {
+                                                if tx.send(m).trace_await().await.is_err() {
                                                     return Ok(());
                                                 }
                                             }
@@ -1076,7 +1077,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     },
                                 };
 
-                                while let Ok(morsel) = rx.recv().await {
+                                while let Ok(morsel) = rx.recv().trace_await().await {
                                     let (df, _, original_source_token, consume_token) = morsel.into_inner();
                                     drop(consume_token);
                                     let df = process_dataframe(
@@ -1095,11 +1096,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     seq = seq.successor();
                                     morsel.set_consume_token(wait_group.token());
 
-                                    if send.send(morsel).await.is_err() {
+                                    if send.send(morsel).trace_await().await.is_err() {
                                         return Ok(());
                                     }
 
-                                    wait_group.wait().await;
+                                    wait_group.wait().trace_await().await;
                                     if source_token.stop_requested() {
                                         original_source_token.stop();
                                         stopped = true;
@@ -1107,10 +1108,10 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 }
 
                                 drop(rx);
-                                let Ok(is_finished) = source_finished_rx.await else {
+                                let Ok(is_finished) = source_finished_rx.trace_await().await else {
                                     return Ok(());
                                 };
-                                while let Some(res) = linearizer_tasks.next().await {
+                                while let Some(res) = linearizer_tasks.next().trace_await().await {
                                     res?
                                 }
 
@@ -1126,7 +1127,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             let source_num_rows = unrestricted_row_count_rx
                                 .take()
                                 .unwrap()
-                                .await
+                                .trace_await().await
                                 .unwrap();
                             ri.offset += source_num_rows;
                         }
@@ -1147,7 +1148,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                 .drain(..)
                 .map(AbortOnDropHandle::new)
                 .collect();
-            while let Some(ret) = join_handles.next().await {
+            while let Some(ret) = join_handles.next().trace_await().await {
                 ret?;
             }
 

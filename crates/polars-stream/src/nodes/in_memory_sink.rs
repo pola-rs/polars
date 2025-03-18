@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -62,7 +63,7 @@ impl ComputeNode for InMemorySinkNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut morsels = Vec::new();
-                while let Ok(mut morsel) = recv.recv().await {
+                while let Ok(mut morsel) = recv.recv().trace_await().await {
                     morsel.take_consume_token();
                     morsels.push(morsel);
                 }

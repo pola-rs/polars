@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
@@ -64,9 +65,9 @@ fn buffer_and_distribute_columns_task(
         let mut seq = 0usize;
         let mut buffer = DataFrame::empty_with_schema(schema.as_ref());
 
-        while let Ok((outcome, rx)) = recv_port_rx.recv().await {
+        while let Ok((outcome, rx)) = recv_port_rx.recv().trace_await().await {
             let mut rx = rx.serial();
-            while let Ok(morsel) = rx.recv().await {
+            while let Ok(morsel) = rx.recv().trace_await().await {
                 let (df, _, _, consume_token) = morsel.into_inner();
                 // @NOTE: This also performs schema validation.
                 buffer.vstack_mut(&df)?;
@@ -76,7 +77,7 @@ fn buffer_and_distribute_columns_task(
                     (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
 
                     for (i, column) in df.take_columns().into_iter().enumerate() {
-                        if dist_tx.send((seq, i, column)).await.is_err() {
+                        if dist_tx.send((seq, i, column)).trace_await().await.is_err() {
                             return Ok(());
                         }
                     }
@@ -94,7 +95,7 @@ fn buffer_and_distribute_columns_task(
         // Flush the remaining rows.
         assert!(buffer.height() <= chunk_size);
         for (i, column) in buffer.take_columns().into_iter().enumerate() {
-            if dist_tx.send((seq, i, column)).await.is_err() {
+            if dist_tx.send((seq, i, column)).trace_await().await.is_err() {
                 return Ok(());
             }
         }
@@ -120,7 +121,7 @@ pub fn parallelize_receive_task<T: Ord + Send + Sync + 'static>(
     let (mut io_tx, io_rx) = connector();
 
     join_handles.push(spawn(TaskPriority::High, async move {
-        while let Ok((outcome, port_rxs)) = recv_port_rx.recv().await {
+        while let Ok((outcome, port_rxs)) = recv_port_rx.recv().trace_await().await {
             let port_rxs = port_rxs.parallel();
             let (lin_rx, lin_txs) = Linearizer::<T>::new_with_maintain_order(
                 num_pipelines,
@@ -129,11 +130,11 @@ pub fn parallelize_receive_task<T: Ord + Send + Sync + 'static>(
             );
 
             for ((pass_tx, port_rx), lin_tx) in pass_txs.iter_mut().zip(port_rxs).zip(lin_txs) {
-                if pass_tx.send((port_rx, lin_tx)).await.is_err() {
+                if pass_tx.send((port_rx, lin_tx)).trace_await().await.is_err() {
                     return Ok(());
                 }
             }
-            if io_tx.send(lin_rx).await.is_err() {
+            if io_tx.send(lin_rx).trace_await().await.is_err() {
                 return Ok(());
             }
 
@@ -210,7 +211,7 @@ impl ComputeNode for SinkComputeNode {
                 drop(started.input_send);
                 polars_io::pl_async::get_runtime().block_on(async move {
                     // Either the task finished or some error occurred.
-                    while let Some(ret) = started.join_handles.next().await {
+                    while let Some(ret) = started.join_handles.next().trace_await().await {
                         ret?;
                     }
                     PolarsResult::Ok(())
@@ -258,9 +259,9 @@ impl ComputeNode for SinkComputeNode {
         };
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let (token, outcome) = PhaseOutcome::new_shared_wait(wait_group.token());
-            if started.input_send.send((outcome, sink_input)).await.is_ok() {
+            if started.input_send.send((outcome, sink_input)).trace_await().await.is_ok() {
                 // Wait for the phase to finish.
-                wait_group.wait().await;
+                wait_group.wait().trace_await().await;
                 if !token.did_finish() {
                     return Ok(());
                 }
@@ -271,7 +272,7 @@ impl ComputeNode for SinkComputeNode {
             }
 
             // Either the task finished or some error occurred.
-            while let Some(ret) = started.join_handles.next().await {
+            while let Some(ret) = started.join_handles.next().trace_await().await {
                 ret?;
             }
 

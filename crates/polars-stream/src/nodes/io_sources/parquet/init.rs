@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -109,7 +110,7 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
         let statistics_df = DataFrame::new_with_height(num_row_groups, columns)?;
         sbp.evaluate_with_stat_df(&statistics_df)
     })
-    .await?;
+    .trace_await().await?;
 
     if verbose {
         eprintln!(
@@ -179,7 +180,7 @@ impl ParquetSourceNode {
                     .get(0)
                     .unwrap()
                     .to_dyn_byte_source(&byte_source_builder, cloud_options.as_ref())
-                    .await?,
+                    .trace_await().await?,
             );
 
             // Calculate the row groups that need to be read and the slice range relative to those
@@ -237,7 +238,7 @@ impl ParquetSourceNode {
                 &reader_schema,
                 verbose,
             )
-            .await?;
+            .trace_await().await?;
 
             let mut row_group_data_fetcher = RowGroupDataFetcher {
                 projection,
@@ -251,8 +252,8 @@ impl ParquetSourceNode {
                 row_offset,
             };
 
-            while let Some(prefetch) = row_group_data_fetcher.next().await {
-                if prefetch_send.send(prefetch?).await.is_err() {
+            while let Some(prefetch) = row_group_data_fetcher.next().trace_await().await {
+                if prefetch_send.send(prefetch?).trace_await().await.is_err() {
                     break;
                 }
             }
@@ -262,13 +263,13 @@ impl ParquetSourceNode {
         // Decode loop (spawns decodes on the computational executor).
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
         let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
-            while let Some(prefetch) = prefetch_recv.recv().await {
-                let row_group_data = prefetch.await.unwrap()?;
+            while let Some(prefetch) = prefetch_recv.recv().trace_await().await {
+                let row_group_data = prefetch.trace_await().await.unwrap()?;
                 let row_group_decoder = row_group_decoder.clone();
                 let decode_fut = async_executor::spawn(TaskPriority::High, async move {
-                    row_group_decoder.row_group_data_to_df(row_group_data).await
+                    row_group_decoder.row_group_data_to_df(row_group_data).trace_await().await
                 });
-                if decode_send.send(decode_fut).await.is_err() {
+                if decode_send.send(decode_fut).trace_await().await.is_err() {
                     break;
                 }
             }
@@ -284,10 +285,10 @@ impl ParquetSourceNode {
             // Decode first non-empty morsel.
             let mut next = None;
             loop {
-                let Some(decode_fut) = decode_recv.recv().await else {
+                let Some(decode_fut) = decode_recv.recv().trace_await().await else {
                     break;
                 };
-                let df = decode_fut.await?;
+                let df = decode_fut.trace_await().await?;
                 if df.height() == 0 {
                     continue;
                 }
@@ -299,10 +300,10 @@ impl ParquetSourceNode {
                 // Try to decode the next non-empty morsel first, so we know
                 // whether the df is the last morsel.
                 loop {
-                    let Some(decode_fut) = decode_recv.recv().await else {
+                    let Some(decode_fut) = decode_recv.recv().trace_await().await else {
                         break;
                     };
-                    let next_df = decode_fut.await?;
+                    let next_df = decode_fut.trace_await().await?;
                     if next_df.height() == 0 {
                         continue;
                     }
@@ -316,7 +317,7 @@ impl ParquetSourceNode {
                     next.is_none(),
                     last_morsel_min_split,
                 ) {
-                    if raw_morsel_sender.send((df, morsel_seq)).await.is_err() {
+                    if raw_morsel_sender.send((df, morsel_seq)).trace_await().await.is_err() {
                         return Ok(());
                     }
                     morsel_seq = morsel_seq.successor();
@@ -326,9 +327,9 @@ impl ParquetSourceNode {
         });
 
         let join_task = io_runtime.spawn(async move {
-            prefetch_task.await.unwrap()?;
-            decode_task.await.unwrap()?;
-            distribute_task.await?;
+            prefetch_task.trace_await().await.unwrap()?;
+            decode_task.trace_await().await.unwrap()?;
+            distribute_task.trace_await().await?;
             Ok(())
         });
 

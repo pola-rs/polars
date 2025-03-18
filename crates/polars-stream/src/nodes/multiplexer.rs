@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::collections::VecDeque;
 
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -138,7 +139,7 @@ impl ComputeNode for MultiplexerNode {
             let buffered_source_token = buffered_source_token.clone();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 loop {
-                    let Ok(morsel) = receiver.recv().await else {
+                    let Ok(morsel) = receiver.recv().trace_await().await else {
                         break;
                     };
 
@@ -190,7 +191,7 @@ impl ComputeNode for MultiplexerNode {
                     // First we try to flush all the old buffered data.
                     while let Some(mut morsel) = buf.pop_back() {
                         morsel.replace_source_token(buffered_source_token.clone());
-                        if sender.send(morsel).await.is_err()
+                        if sender.send(morsel).trace_await().await.is_err()
                             || buffered_source_token.stop_requested()
                         {
                             break;
@@ -198,8 +199,8 @@ impl ComputeNode for MultiplexerNode {
                     }
 
                     // Then send along data from the multiplexer.
-                    while let Some(morsel) = rx.recv().await {
-                        if sender.send(morsel).await.is_err() {
+                    while let Some(morsel) = rx.recv().trace_await().await {
+                        if sender.send(morsel).trace_await().await.is_err() {
                             break;
                         }
                     }

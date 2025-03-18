@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -116,9 +117,9 @@ impl SinkNode for MaxSizePartitionSinkNode {
             let mut part = 0;
             let mut current_sink_opt = None;
 
-            while let Ok((outcome, recv_port)) = recv_port_recv.recv().await {
+            while let Ok((outcome, recv_port)) = recv_port_recv.recv().trace_await().await {
                 let mut recv_port = recv_port.serial();
-                'morsel_loop: while let Ok(mut morsel) = recv_port.recv().await {
+                'morsel_loop: while let Ok(mut morsel) = recv_port.recv().trace_await().await {
                     while morsel.df().height() > 0 {
                         if retire_error.load(Ordering::Relaxed) {
                             return Ok(());
@@ -140,7 +141,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                     verbose,
                                     &state,
                                 )
-                                .await?;
+                                .trace_await().await?;
                                 let Some((join_handles, sender)) = result else {
                                     return Ok(());
                                 };
@@ -161,8 +162,8 @@ impl SinkNode for MaxSizePartitionSinkNode {
                             // too much. The sinks are very specific about how they handle consume
                             // tokens and we want to keep that behavior.
                             let result = match &mut current_sink.sender {
-                                SinkSender::Connector(s) => s.send(morsel).await.ok(),
-                                SinkSender::Distributor(s) => s.send(morsel).await.ok(),
+                                SinkSender::Connector(s) => s.send(morsel).trace_await().await.ok(),
+                                SinkSender::Distributor(s) => s.send(morsel).trace_await().await.ok(),
                             };
 
                             if result.is_none() {
@@ -179,13 +180,13 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         let final_sink_morsel =
                             Morsel::new(final_sink_df, seq, source_token.clone());
 
-                        if current_sink.sender.send(final_sink_morsel).await.is_err() {
+                        if current_sink.sender.send(final_sink_morsel).trace_await().await.is_err() {
                             return Ok(());
                         };
 
                         let join_handles = std::mem::take(&mut current_sink.join_handles);
                         drop(current_sink_opt.take());
-                        if retire_tx.send(join_handles).await.is_err() {
+                        if retire_tx.send(join_handles).trace_await().await.is_err() {
                             return Ok(());
                         };
 
@@ -201,7 +202,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
 
             if let Some(mut current_sink) = current_sink_opt.take() {
                 drop(current_sink.sender);
-                while let Some(res) = current_sink.join_handles.next().await {
+                while let Some(res) = current_sink.join_handles.next().trace_await().await {
                     res?;
                 }
             }
@@ -218,8 +219,8 @@ impl SinkNode for MaxSizePartitionSinkNode {
         join_handles.extend(retire_rxs.into_iter().map(|mut retire_rx| {
             let has_error_occurred = has_error_occurred.clone();
             spawn(TaskPriority::High, async move {
-                while let Ok(mut join_handles) = retire_rx.recv().await {
-                    while let Some(ret) = join_handles.next().await {
+                while let Ok(mut join_handles) = retire_rx.recv().trace_await().await {
+                    while let Some(ret) = join_handles.next().trace_await().await {
                         ret.inspect_err(|_| {
                             has_error_occurred.store(true, Ordering::Relaxed);
                         })?;

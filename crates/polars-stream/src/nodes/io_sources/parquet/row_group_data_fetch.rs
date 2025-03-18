@@ -1,3 +1,4 @@
+use crate::utils::TraceAwait;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -123,7 +124,7 @@ impl RowGroupDataFetcher {
 
                         let n_ranges = ranges.len();
 
-                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
+                        let bytes_map = current_byte_source.get_ranges(&mut ranges).trace_await().await?;
 
                         assert_eq!(bytes_map.len(), n_ranges);
 
@@ -141,7 +142,7 @@ impl RowGroupDataFetcher {
 
                         let n_ranges = ranges.len();
 
-                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
+                        let bytes_map = current_byte_source.get_ranges(&mut ranges).trace_await().await?;
 
                         assert_eq!(bytes_map.len(), n_ranges);
 
