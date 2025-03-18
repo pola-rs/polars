@@ -22,13 +22,10 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
-<<<<<<< HEAD
 from polars._typing import (
     PartitioningScheme,
 )
-=======
 from polars._typing import ParquetMetadata
->>>>>>> 908d249233 (Update)
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
@@ -131,7 +128,11 @@ if TYPE_CHECKING:
         Label,
         MaintainOrderJoin,
         Orientation,
+<<<<<<< HEAD
         PlanStage,
+=======
+        ParquetMetadata,
+>>>>>>> 7a0e3ce2e7 (Fix lint)
         PolarsDataType,
         PythonDataType,
         QuantileMethod,
