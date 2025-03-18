@@ -219,6 +219,12 @@ impl StringCache {
         PlRandomState::with_seed(0)
     }
 
+    pub(crate) fn active_cache_id() -> u32 {
+        STRING_CACHE_UUID_CTR
+            .load(Ordering::Relaxed)
+            .wrapping_sub(1)
+    }
+
     /// Lock the string cache
     pub(crate) fn lock_map(&self) -> RwLockWriteGuard<SCacheInner> {
         self.0.write().unwrap()

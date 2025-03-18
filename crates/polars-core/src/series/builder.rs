@@ -6,10 +6,27 @@ use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 use crate::utils::Container;
 
+#[inline(always)]
+fn fill_rev_map(dtype: &DataType, rev_map_merger: &mut Option<Box<GlobalRevMapMerger>>) {
+    if let DataType::Categorical(Some(rev_map), _) = dtype {
+        assert!(
+            rev_map.is_active_global(),
+            "{}",
+            polars_err!(string_cache_mismatch)
+        );
+        if let Some(merger) = rev_map_merger {
+            merger.merge_map(rev_map).unwrap();
+        } else {
+            *rev_map_merger = Some(Box::new(GlobalRevMapMerger::new(rev_map.clone())));
+        }
+    }
+}
+
 /// A type-erased wrapper around ArrayBuilder.
 pub struct SeriesBuilder {
     dtype: DataType,
     builder: Box<dyn ArrayBuilder>,
+    rev_map_merger: Option<Box<GlobalRevMapMerger>>,
 }
 
 impl SeriesBuilder {
@@ -18,11 +35,19 @@ impl SeriesBuilder {
         #[cfg(feature = "object")]
         if matches!(dtype, DataType::Object(_)) {
             let builder = get_object_builder(PlSmallStr::EMPTY, 0).as_array_builder();
-            return Self { dtype, builder };
+            return Self {
+                dtype,
+                builder,
+                rev_map_merger: None,
+            };
         }
 
         let builder = make_builder(&dtype.to_physical().to_arrow(CompatLevel::newest()));
-        Self { dtype, builder }
+        Self {
+            dtype,
+            builder,
+            rev_map_merger: None,
+        }
     }
 
     #[inline(always)]
@@ -30,9 +55,21 @@ impl SeriesBuilder {
         self.builder.reserve(additional);
     }
 
-    pub fn freeze(self, name: PlSmallStr) -> Series {
+    fn freeze_dtype(&mut self) -> DataType {
+        if let Some(rev_map_merger) = self.rev_map_merger.take() {
+            let DataType::Categorical(_, order) = self.dtype else {
+                unreachable!()
+            };
+            DataType::Categorical(Some(rev_map_merger.finish()), order)
+        } else {
+            self.dtype.clone()
+        }
+    }
+
+    pub fn freeze(mut self, name: PlSmallStr) -> Series {
         unsafe {
-            Series::from_chunks_and_dtype_unchecked(name, vec![self.builder.freeze()], &self.dtype)
+            let dtype = self.freeze_dtype();
+            Series::from_chunks_and_dtype_unchecked(name, vec![self.builder.freeze()], &dtype)
         }
     }
 
@@ -41,7 +78,7 @@ impl SeriesBuilder {
             Series::from_chunks_and_dtype_unchecked(
                 name,
                 vec![self.builder.freeze_reset()],
-                &self.dtype,
+                &self.freeze_dtype(),
             )
         }
     }
@@ -58,6 +95,7 @@ impl SeriesBuilder {
     /// other does not match the dtype of this builder.
     #[inline(always)]
     pub fn extend(&mut self, other: &Series, share: ShareStrategy) {
+        fill_rev_map(other.dtype(), &mut self.rev_map_merger);
         self.subslice_extend(other, 0, other.len(), share);
     }
 
@@ -70,6 +108,7 @@ impl SeriesBuilder {
         mut length: usize,
         share: ShareStrategy,
     ) {
+        fill_rev_map(other.dtype(), &mut self.rev_map_merger);
         if length == 0 || other.is_empty() {
             return;
         }
@@ -99,6 +138,7 @@ impl SeriesBuilder {
         repeats: usize,
         share: ShareStrategy,
     ) {
+        fill_rev_map(other.dtype(), &mut self.rev_map_merger);
         if length == 0 || other.is_empty() {
             return;
         }
@@ -122,12 +162,14 @@ impl SeriesBuilder {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_extend(&mut self, other: &Series, idxs: &[IdxSize], share: ShareStrategy) {
+        fill_rev_map(other.dtype(), &mut self.rev_map_merger);
         let chunks = other.chunks();
         assert!(chunks.len() == 1);
         self.builder.gather_extend(&*chunks[0], idxs, share);
     }
 
     pub fn opt_gather_extend(&mut self, other: &Series, idxs: &[IdxSize], share: ShareStrategy) {
+        fill_rev_map(other.dtype(), &mut self.rev_map_merger);
         let chunks = other.chunks();
         assert!(chunks.len() == 1);
         self.builder.opt_gather_extend(&*chunks[0], idxs, share);
