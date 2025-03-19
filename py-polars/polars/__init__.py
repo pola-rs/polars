@@ -11,11 +11,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # See https://github.com/pola-rs/polars/issues/18088,
     # https://github.com/pola-rs/polars/pull/21829.
     import os
-    import sys
 
     jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:-1"
-    if sys.platform == "linux" and os.environ.get("POLARS_THP") == "1":
-        # We only enable this on Linux, otherwise jemalloc gives warnings.
+    if os.environ.get("POLARS_THP") == "1":
         jemalloc_conf += ",thp:always,metadata_thp:always"
     if override := os.environ.get("_RJEM_MALLOC_CONF"):
         jemalloc_conf += "," + override
