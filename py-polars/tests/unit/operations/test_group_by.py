@@ -1229,3 +1229,12 @@ def test_enum_perfect_group_by_21360() -> None:
             ]
         ),
     )
+
+
+def test_partitioned_group_by_21634(partition_limit: int) -> None:
+    n = partition_limit
+    df = pl.DataFrame({"grp": [1] * n, "x": [1] * n})
+    assert df.group_by("grp", True).agg().to_dict(as_series=False) == {
+        "grp": [1],
+        "literal": [True],
+    }
