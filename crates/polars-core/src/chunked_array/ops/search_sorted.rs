@@ -153,17 +153,16 @@ where
     T::Physical<'a>: TotalOrd + Debug + Copy,
 {
     let chunks: Vec<_> = ca.downcast_iter().filter(|c| c.len() > 0).collect();
-    let null_count = ca.null_count();
-    let has_nulls = null_count > 0;
+    let has_nulls = ca.null_count() > 0;
     let null_idx = if nulls_last {
         if side == SearchSortedSide::Right {
             ca.len()
         } else {
-            ca.len() - null_count
+            ca.len() - ca.null_count()
         }
     } else {
         if side == SearchSortedSide::Right {
-            null_count
+            ca.null_count()
         } else {
             0
         }
