@@ -1,0 +1,46 @@
+use polars_core::frame::DataFrame;
+use polars_core::schema::SchemaRef;
+use polars_error::{PolarsResult, polars_bail};
+
+/// TODO: Eventually move this enum to polars-plan
+#[derive(Debug, Clone)]
+pub enum CastColumnsPolicy {
+    /// Raise an error if the datatypes do not match
+    ErrorOnMismatch,
+}
+
+#[derive(Debug)]
+pub struct CastColumns {}
+
+impl CastColumns {
+    pub fn try_init_from_policy(
+        policy: CastColumnsPolicy,
+        target_schema: &SchemaRef,
+        incoming_schema: &SchemaRef,
+    ) -> PolarsResult<Option<Self>> {
+        match policy {
+            CastColumnsPolicy::ErrorOnMismatch => {
+                for (name, dtype) in incoming_schema.iter() {
+                    if let Some(target_dtype) = target_schema.get(name) {
+                        if dtype != target_dtype {
+                            polars_bail!(
+                                SchemaMismatch:
+                                "data type mismatch for column {}: expected: {}, found: {}",
+                                name, target_dtype, dtype
+                            )
+                        }
+                    } else if cfg!(debug_assertions) {
+                        panic!("impl error: column should exist in casting map")
+                    }
+                }
+
+                Ok(None)
+            },
+        }
+    }
+
+    pub fn apply_cast(&self, _df: &mut DataFrame) -> PolarsResult<()> {
+        unimplemented!()
+        // df.clear_schema(); // remember to do this if cast was applied
+    }
+}

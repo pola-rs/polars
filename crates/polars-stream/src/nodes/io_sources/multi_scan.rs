@@ -311,7 +311,7 @@ fn resolve_source_projection(
     Ok((source_projection.freeze(), missing_columns))
 }
 
-fn scan_predicate_to_mask(
+pub fn scan_predicate_to_mask(
     scan_predicate: &ScanIOPredicate,
     file_schema: &Schema,
     hive_schema: &Schema,
@@ -436,7 +436,7 @@ enum SourceInput {
 }
 
 const DEFAULT_MAX_CONCURRENT_SCANS: usize = 8;
-fn max_concurrent_scans(num_pipelines: usize) -> usize {
+pub fn max_concurrent_scans(num_pipelines: usize) -> usize {
     let max_num_concurrent_scans =
         std::env::var("POLARS_MAX_CONCURRENT_SCANS").map_or(DEFAULT_MAX_CONCURRENT_SCANS, |v| {
             v.parse::<usize>()
