@@ -482,9 +482,17 @@ impl DataFrame {
 
     /// Add a row index column in place.
     ///
+    /// The caller should ensure the DataFrame does not already contain a column with the given name.
+    ///
     /// # Panics
     /// Panics if the resulting column would reach or overflow IdxSize::MAX.
     pub fn with_row_index_mut(&mut self, name: PlSmallStr, offset: Option<IdxSize>) -> &mut Self {
+        debug_assert!(
+            self.columns.iter().all(|c| c.name() != &name),
+            "with_row_index_mut(): column with name {} already exists",
+            &name
+        );
+
         let offset = offset.unwrap_or(0);
         let col = Column::new_row_index(name, offset, self.height()).unwrap();
 

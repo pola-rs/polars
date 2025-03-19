@@ -222,7 +222,6 @@ impl ApplyExtraOps {
                     df.height(),
                 )?)
             };
-            df.clear_schema();
         }
 
         if let Some(cast_columns) = cast_columns {
