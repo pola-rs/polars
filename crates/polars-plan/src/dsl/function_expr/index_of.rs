@@ -28,10 +28,9 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         // If the Series is sorted, we can use an optimized binary search to
         // find the value.
         IsSorted::Ascending | IsSorted::Descending
-            // Nested dtypes currently don't support descending search_sorted():
-            if !(is_sorted_flag == IsSorted::Descending && series.dtype().is_nested()) &&
-            // null dtype isn't supported by search_sorted()
-            !series.dtype().is_null() =>
+        // Nested dtypes currently don't support descending search_sorted(), and
+        // null dtype isn't supported by search_sorted():
+            if !(series.dtype().is_null() || is_sorted_flag == IsSorted::Descending && series.dtype().is_nested()) =>
         {
             search_sorted(
                 series,

@@ -85,7 +85,7 @@ pub fn search_sorted(
             // nulls_last, the row encoding does not preserve sort order. So for
             // now we don't support it.
             polars_ensure!(
-                descending == false,
+                !descending,
                 InvalidOperation: "descending sort is not supported in nested dtypes"
             );
 

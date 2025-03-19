@@ -132,8 +132,7 @@ where
     let nulls_last = ca.null_count() > 0
         && ca
             .downcast_iter()
-            .filter(|c| c.len() > 0)
-            .next()
+            .find(|c| c.len() > 0)
             .unwrap()
             .get(0)
             .is_some();
