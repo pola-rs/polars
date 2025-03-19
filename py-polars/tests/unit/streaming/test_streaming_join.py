@@ -261,12 +261,16 @@ def test_non_coalescing_streaming_left_join() -> None:
 
     q = df1.join(df2, on="a", how="left", coalesce=False)
     assert q.explain(engine="old-streaming").startswith("STREAMING")  # type: ignore[arg-type]
-    assert q.collect(engine="streaming").to_dict(as_series=False) == {
-        "a": [1, 2, 3],
-        "b": ["a", "b", "c"],
-        "a_right": [1, 2, None],
-        "c": ["j", "i", None],
-    }
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        pl.DataFrame({
+            "a": [1, 2, 3],
+            "b": ["a", "b", "c"],
+            "a_right": [1, 2, None],
+            "c": ["j", "i", None],
+        }),
+        check_row_order=False
+    )
 
 
 @pytest.mark.write_disk

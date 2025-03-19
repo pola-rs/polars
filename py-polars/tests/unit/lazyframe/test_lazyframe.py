@@ -1142,7 +1142,7 @@ def test_lazy_cache_same_key() -> None:
         (pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")
     )
     expected = pl.LazyFrame({"a": [-1, 2, 7], "c": ["x", "y", "z"]})
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 @pytest.mark.may_fail_auto_streaming

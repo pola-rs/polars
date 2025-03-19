@@ -8,7 +8,7 @@ def test_right_join_schemas() -> None:
     b = pl.DataFrame({"a": [1, 3], "b": [1, 3], "c": [1, 3]})
 
     # coalesces the join key, so the key of the right table remains
-    assert a.join(b, on="a", how="right", coalesce=True).to_dict(as_series=False) == {
+    assert a.join(b, on="a", how="right", coalesce=True, maintain_order="right").to_dict(as_series=False) == {
         "b": [1, 3],
         "a": [1, 3],
         "b_right": [1, 3],
@@ -100,7 +100,7 @@ def test_join_right_different_key() -> None:
             "ham2": ["a", "b", "d"],
         }
     )
-    assert df.join(other_df, left_on="ham1", right_on="ham2", how="right").to_dict(
+    assert df.join(other_df, left_on="ham1", right_on="ham2", how="right", maintain_order="right").to_dict(
         as_series=False
     ) == {
         "foo": [1, 2, None],
