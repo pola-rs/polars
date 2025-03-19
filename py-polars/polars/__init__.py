@@ -14,7 +14,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import sys
 
     jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:-1"
-    if sys.platform == "linux" and os.environment.get("POLARS_THP") == "1":
+    if sys.platform == "linux" and os.environ.get("POLARS_THP") == "1":
         # We only enable this on Linux, otherwise jemalloc gives warnings.
         jemalloc_conf += ",thp:always,metadata_thp:always"
     if override := os.environ.get("_RJEM_MALLOC_CONF"):
