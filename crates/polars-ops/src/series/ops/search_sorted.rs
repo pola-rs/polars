@@ -152,19 +152,11 @@ pub fn search_sorted(
                 &[nulls_last],
             )?;
 
-            let _ = dbg!((
-                s.clone(),
-                ca.clone().into_series(),
-                search_values.clone().into_series(),
-                nulls_last,
-                descending
-            ));
             let idx = binary_search_ca_with_overrides(
                 &ca,
                 search_values.iter(),
                 side,
-                false,
-                0,
+                descending,
                 nulls_last,
             );
             Ok(IdxCa::new_vec(s.name().clone(), idx))
