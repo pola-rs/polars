@@ -454,7 +454,7 @@ impl<'a> CoreReader<'a> {
                                         None
                                     };
 
-                                    df.with_row_index_mut(rc.name.clone(), offset);
+                    unsafe   {             df.with_row_index_mut(rc.name.clone(), offset)};
                                 };
 
                                 if let Some(predicate) = slf.predicate.as_ref() {

@@ -210,7 +210,9 @@ impl MorselStreamReverser {
                                     )
                                 };
 
-                                df.with_row_index_mut(row_index.name.clone(), Some(offset));
+                                unsafe {
+                                    df.with_row_index_mut(row_index.name.clone(), Some(offset))
+                                };
                             }
 
                             let mut morsel = Morsel::new(

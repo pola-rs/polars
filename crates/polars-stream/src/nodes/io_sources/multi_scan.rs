@@ -797,7 +797,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 if length == 0 {
                                     let mut df = DataFrame::empty_with_schema(&source_schema);
                                     if let Some(name) = &row_index_name {
-                                        df.with_row_index_mut(name.clone(), None);
+                                        unsafe            {        df.with_row_index_mut(name.clone(), None)};
                                     }
 
                                     let unrestricted_row_count_rx = {
