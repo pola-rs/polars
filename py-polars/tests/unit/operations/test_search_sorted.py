@@ -1,12 +1,18 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
-
-from hypothesis import strategies as st, given, example
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 import polars as pl
-from polars.testing import assert_series_equal
 from polars.exceptions import InvalidOperationError
-from polars._typing import PolarsDataType
+from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_search_sorted() -> None:
@@ -144,10 +150,7 @@ def test_nulls_and_ascending(values: list[int | None]) -> None:
 @example([[None], [0]])
 @example([[], [None], [0]])
 def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) -> None:
-    """
-    Check that for all combinations of descending and nulls_last, values can be
-    found.
-    """
+    """For all nulls_last options, values can be found in arbitrary lists."""
     series = pl.Series(values, dtype=pl.List(pl.Int64()))
     for nulls_last in [True, False]:
         sorted_series = series.sort(descending=False, nulls_last=nulls_last)
@@ -155,7 +158,7 @@ def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) ->
 
 
 @pytest.mark.parametrize(
-    "values,dtype",
+    ("values", "dtype"),
     [
         ([[1, 2], [3, 4]], pl.List(pl.Int64())),
         ([[1, 2], [3, 4]], pl.Array(pl.Int64(), 2)),
@@ -165,10 +168,8 @@ def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) ->
 def test_nested_dtypes_dont_support_ascending(
     values: list[object], dtype: PolarsDataType
 ) -> None:
-    """
-    Due to issues with row encoding implementation details, search an
-    descending list/array/struct Series is unsupported, for now at least.
-    """
+    # Due to issues with row encoding implementation details, search an
+    # descending list/array/struct Series is unsupported, for now at least.
     series = pl.Series(values, dtype=dtype).sort(descending=True)
     with pytest.raises(
         InvalidOperationError,
