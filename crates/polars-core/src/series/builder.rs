@@ -60,14 +60,15 @@ impl SeriesBuilder {
     }
 
     fn freeze_dtype(&mut self) -> DataType {
+        #[cfg(feature = "dtype-categorical")]
         if let Some(rev_map_merger) = self.rev_map_merger.take() {
             let DataType::Categorical(_, order) = self.dtype else {
                 unreachable!()
             };
-            DataType::Categorical(Some(rev_map_merger.finish()), order)
-        } else {
-            self.dtype.clone()
+            return DataType::Categorical(Some(rev_map_merger.finish()), order);
         }
+
+        self.dtype.clone()
     }
 
     pub fn freeze(mut self, name: PlSmallStr) -> Series {
