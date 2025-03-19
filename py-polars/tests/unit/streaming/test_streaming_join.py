@@ -263,13 +263,15 @@ def test_non_coalescing_streaming_left_join() -> None:
     assert q.explain(engine="old-streaming").startswith("STREAMING")  # type: ignore[arg-type]
     assert_frame_equal(
         q.collect(engine="streaming"),
-        pl.DataFrame({
-            "a": [1, 2, 3],
-            "b": ["a", "b", "c"],
-            "a_right": [1, 2, None],
-            "c": ["j", "i", None],
-        }),
-        check_row_order=False
+        pl.DataFrame(
+            {
+                "a": [1, 2, 3],
+                "b": ["a", "b", "c"],
+                "a_right": [1, 2, None],
+                "c": ["j", "i", None],
+            }
+        ),
+        check_row_order=False,
     )
 
 

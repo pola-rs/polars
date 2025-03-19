@@ -157,9 +157,15 @@ def test_deprecated() -> None:
     other = pl.DataFrame({"a": [1, 2], "c": [3, 4]})
     result = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [3, 4]})
 
-    np.testing.assert_equal(df.join(other=other, on="a", maintain_order="left").to_numpy(), result.to_numpy())
     np.testing.assert_equal(
-        df.lazy().join(other=other.lazy(), on="a", maintain_order="left").collect().to_numpy(),
+        df.join(other=other, on="a", maintain_order="left").to_numpy(),
+        result.to_numpy(),
+    )
+    np.testing.assert_equal(
+        df.lazy()
+        .join(other=other.lazy(), on="a", maintain_order="left")
+        .collect()
+        .to_numpy(),
         result.to_numpy(),
     )
 
@@ -348,13 +354,15 @@ def test_join_chunks_alignment_4720() -> None:
             on=["index1", "index2", "index3"],
             how="left",
         ),
-        pl.DataFrame({
-            "index1": [0, 0, 1, 1],
-            "index2": [10, 10, 11, 11],
-            "index3": [100, 101, 100, 101],
-        }),
-        check_row_order=False
-        )
+        pl.DataFrame(
+            {
+                "index1": [0, 0, 1, 1],
+                "index2": [10, 10, 11, 11],
+                "index3": [100, 101, 100, 101],
+            }
+        ),
+        check_row_order=False,
+    )
 
     assert_frame_equal(
         df1.join(df2, how="cross").join(
@@ -362,12 +370,14 @@ def test_join_chunks_alignment_4720() -> None:
             on=["index3", "index1", "index2"],
             how="left",
         ),
-        pl.DataFrame({
-            "index1": [0, 0, 1, 1],
-            "index2": [10, 10, 11, 11],
-            "index3": [100, 101, 100, 101],
-        }),
-        check_row_order=False
+        pl.DataFrame(
+            {
+                "index1": [0, 0, 1, 1],
+                "index2": [10, 10, 11, 11],
+                "index3": [100, 101, 100, 101],
+            }
+        ),
+        check_row_order=False,
     )
 
 
@@ -823,7 +833,9 @@ def test_join_validation_many_keys() -> None:
 def test_full_outer_join_bool() -> None:
     df1 = pl.DataFrame({"id": [True, False], "val": [1, 2]})
     df2 = pl.DataFrame({"id": [True, False], "val": [0, -1]})
-    assert df1.join(df2, on="id", how="full", maintain_order="right").to_dict(as_series=False) == {
+    assert df1.join(df2, on="id", how="full", maintain_order="right").to_dict(
+        as_series=False
+    ) == {
         "id": [True, False],
         "val": [1, 2],
         "id_right": [True, False],
@@ -1231,15 +1243,13 @@ def test_array_explode_join_19763() -> None:
 
 
 def test_join_full_19814() -> None:
-    schema={"a": pl.Int64, "c": pl.Categorical}
-    a = pl.LazyFrame(
-        {"a": [1], "c": [None]}, schema=schema
-    )
+    schema = {"a": pl.Int64, "c": pl.Categorical}
+    a = pl.LazyFrame({"a": [1], "c": [None]}, schema=schema)
     b = pl.LazyFrame({"a": [1, 3, 4]})
     assert_frame_equal(
         a.join(b, on="a", how="full", coalesce=True).collect(),
         pl.DataFrame({"a": [1, 3, 4], "c": [None, None, None]}, schema=schema),
-        check_row_order=False
+        check_row_order=False,
     )
 
 

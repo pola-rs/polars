@@ -220,7 +220,11 @@ def test_collapse_joins() -> None:
     e = inner_join.explain()
     assert "INNER JOIN" in e
     assert "FILTER" not in e
-    assert_frame_equal(inner_join.collect(collapse_joins=False), inner_join.collect(), check_row_order=False)
+    assert_frame_equal(
+        inner_join.collect(collapse_joins=False),
+        inner_join.collect(),
+        check_row_order=False,
+    )
 
     inner_join = cross.filter(pl.col.x == pl.col.a)
     e = inner_join.explain()
