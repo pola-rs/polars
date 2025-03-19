@@ -5,7 +5,7 @@ pub mod quantile_filter;
 mod window;
 
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
-
+use std::hash::{Hash, Hasher};
 use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
@@ -33,6 +33,22 @@ pub enum QuantileMethod {
     Midpoint,
     Linear,
     Equiprobable,
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct QuantileOptions {
+    pub prob: f64,
+    pub method: QuantileMethod,
+}
+
+impl Eq for QuantileOptions {}
+
+impl Hash for QuantileOptions {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.prob.to_bits().hash(state);
+        self.method.hash(state);
+    }
 }
 
 #[deprecated(note = "use QuantileMethod instead")]

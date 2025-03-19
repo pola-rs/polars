@@ -4,7 +4,6 @@ mod quantile;
 mod sum;
 mod variance;
 use std::fmt::Debug;
-use std::hash::{Hash, Hasher};
 
 use arrow::array::PrimitiveArray;
 use arrow::datatypes::ArrowDataType;
@@ -68,38 +67,6 @@ where
     let arr = PrimitiveArray::from_trusted_len_iter(out);
     Ok(Box::new(arr))
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[strum(serialize_all = "snake_case")]
-pub enum QuantileMethod {
-    #[default]
-    Nearest,
-    Lower,
-    Higher,
-    Midpoint,
-    Linear,
-    Equiprobable,
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct QuantileOptions {
-    pub prob: f64,
-    pub method: QuantileMethod,
-}
-
-impl Eq for QuantileOptions {}
-
-impl Hash for QuantileOptions {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.prob.to_bits().hash(state);
-        self.method.hash(state);
-    }
-}
-
-#[deprecated(note = "use QuantileMethod instead")]
-pub type QuantileInterpolOptions = QuantileMethod;
 
 pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     values: &[T],
