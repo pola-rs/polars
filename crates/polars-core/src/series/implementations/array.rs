@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use self::compare_inner::{TotalEqInner, TotalOrdInner};
 use self::sort::arg_sort_row_fmt;
-use super::{private, IsSorted, StatisticsFlags};
+use super::{IsSorted, StatisticsFlags, private};
 use crate::chunked_array::AsSinglePtr;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
