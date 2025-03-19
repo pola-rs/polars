@@ -5,6 +5,7 @@ use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::compute::utils::{combine_validities_and, combine_validities_or};
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::trusted_len::TrustedLen;
 
@@ -345,6 +346,20 @@ impl BooleanArray {
         I: TrustedLen<Item = Result<Option<P>, E>>,
     {
         Ok(MutableBooleanArray::try_from_trusted_len_iter(iterator)?.into())
+    }
+
+    pub fn true_and_valid(&self) -> Bitmap {
+        match &self.validity {
+            None => self.values.clone(),
+            Some(validity) => combine_validities_and(Some(&self.values), Some(validity)).unwrap(),
+        }
+    }
+
+    pub fn true_or_valid(&self) -> Bitmap {
+        match &self.validity {
+            None => self.values.clone(),
+            Some(validity) => combine_validities_or(Some(&self.values), Some(validity)).unwrap(),
+        }
     }
 
     /// Returns its internal representation
