@@ -64,17 +64,15 @@ impl SchemaNamesMatchPolicy {
                             incoming_schema.iter_names().collect::<Vec<_>>(), target_schema.iter_names().collect::<Vec<_>>()
                         )
                     }
-                } else {
-                    if let Some(extra_col) = incoming_schema
-                        .iter_names()
-                        .find(|x| !target_schema.contains(x))
-                    {
-                        polars_bail!(
-                            SchemaMismatch:
-                            "extra column in file outside of expected schema: {}",
-                            extra_col,
-                        )
-                    }
+                } else if let Some(extra_col) = incoming_schema
+                    .iter_names()
+                    .find(|x| !target_schema.contains(x))
+                {
+                    polars_bail!(
+                        SchemaMismatch:
+                        "extra column in file outside of expected schema: {}",
+                        extra_col,
+                    )
                 }
 
                 Ok(())
