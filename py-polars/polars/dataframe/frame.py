@@ -11685,6 +11685,7 @@ class DataFrame:
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
         include_nulls: bool = False,
+        maintain_order: MaintainOrderJoin | None = "left",
     ) -> DataFrame:
         """
         Update the values in this `DataFrame` with the values in `other`.
@@ -11713,6 +11714,10 @@ class DataFrame:
         include_nulls
             Overwrite values in the left frame with null values from the right frame.
             If set to `False` (default), null values in the right frame are ignored.
+        maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
+            Which order of rows from the inputs to preserve. See :func:`~DataFrame.join`
+            for details. Unlike `join` this function preserves the left order by
+            default.
 
         Notes
         -----
@@ -11819,6 +11824,7 @@ class DataFrame:
                 left_on=left_on,
                 right_on=right_on,
                 include_nulls=include_nulls,
+                maintain_order=maintain_order,
             )
             .collect(_eager=True)
         )
