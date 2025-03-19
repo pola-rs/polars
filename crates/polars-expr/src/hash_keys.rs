@@ -101,6 +101,7 @@ impl HashKeys {
             || hash_keys_variant_for_dtype(df[0].dtype()) == HashKeysVariant::RowEncoded;
         if use_row_encoding {
             let keys = df.get_columns();
+            #[cfg(feature = "dtype-categorical")]
             for key in keys {
                 if let DataType::Categorical(Some(rev_map), _) = key.dtype() {
                     assert!(
