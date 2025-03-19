@@ -4,6 +4,7 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_bail};
 
+/// TODO: Eventually move this enum to polars-plan
 #[derive(Debug, Clone)]
 pub enum MissingColumnsPolicy {
     Raise,

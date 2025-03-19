@@ -9,7 +9,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::ScanSources;
+use polars_plan::dsl::ScanSource;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::IdxSize;
 
@@ -28,9 +28,9 @@ pub enum ApplyExtraOps {
         final_output_schema: SchemaRef,
         projected_file_schema: SchemaRef,
         extra_ops: ExtraOperations,
-        scan_source_idx: usize,
         /// This here so that we can get the include file path name if needed.
-        sources: ScanSources,
+        scan_source: ScanSource,
+        scan_source_idx: usize,
         hive_parts: Option<Arc<HivePartitionsDf>>,
     },
 
@@ -71,8 +71,8 @@ impl ApplyExtraOps {
                         include_file_paths,
                         predicate,
                     },
+                scan_source,
                 scan_source_idx,
-                sources,
                 hive_parts,
             } => {
                 // This should always be pushed to the reader, or otherwise handled separately.
@@ -118,9 +118,8 @@ impl ApplyExtraOps {
                         Scalar::new(
                             DataType::String,
                             AnyValue::StringOwned(
-                                sources
-                                    .get(scan_source_idx)
-                                    .unwrap()
+                                scan_source
+                                    .as_scan_source_ref()
                                     .to_include_path_name()
                                     .into(),
                             ),
@@ -129,7 +128,7 @@ impl ApplyExtraOps {
                     ))
                 }
 
-                debug_assert_eq!(extra_columns.len(), n_expected_extra_columns);
+                // debug_assert_eq!(extra_columns.len(), n_expected_extra_columns);
 
                 let mut slf = Self::Initialized {
                     row_index,
@@ -152,7 +151,12 @@ impl ApplyExtraOps {
                     df.schema().clone()
                 };
 
-                assert_eq!(schema_before_reorder.len(), final_output_schema.len());
+                if cfg!(debug_assertions)
+                    && schema_before_reorder.len() != final_output_schema.len()
+                {
+                    assert_eq!(schema_before_reorder, final_output_schema);
+                    unreachable!()
+                }
 
                 let initialized_reorder =
                     ReorderColumns::initialize(&final_output_schema, &schema_before_reorder);

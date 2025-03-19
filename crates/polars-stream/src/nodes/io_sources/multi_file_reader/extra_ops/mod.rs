@@ -6,6 +6,8 @@ pub mod reorder_columns;
 
 use cast_columns::CastColumnsPolicy;
 use missing_columns::MissingColumnsPolicy;
+use polars_core::schema::SchemaRef;
+use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
 use polars_utils::pl_str::PlSmallStr;
@@ -30,5 +32,53 @@ pub struct ExtraOperations {
 impl ExtraOperations {
     pub fn has_row_index_or_slice(&self) -> bool {
         self.row_index.is_some() || self.pre_slice.is_some()
+    }
+}
+
+/// TODO: Eventually move this enum to polars-plan
+#[derive(Clone)]
+pub enum SchemaNamesMatchPolicy {
+    /// `ForbidExtra` with the additional requirement that the columns are in
+    /// the same order.
+    RequireOrderedExact,
+}
+
+impl SchemaNamesMatchPolicy {
+    pub fn apply_policy(
+        &self,
+        target_schema: SchemaRef,
+        incoming_schema: SchemaRef,
+    ) -> PolarsResult<()> {
+        use SchemaNamesMatchPolicy::*;
+        match self {
+            RequireOrderedExact => {
+                if incoming_schema.len() == target_schema.len() {
+                    if incoming_schema
+                        .iter_names()
+                        .zip(target_schema.iter_names())
+                        .any(|(l, r)| l != r)
+                    {
+                        polars_bail!(
+                            SchemaMismatch:
+                            "column name ordering of file differs: {:?} != {:?}",
+                            incoming_schema.iter_names().collect::<Vec<_>>(), target_schema.iter_names().collect::<Vec<_>>()
+                        )
+                    }
+                } else {
+                    if let Some(extra_col) = incoming_schema
+                        .iter_names()
+                        .find(|x| !target_schema.contains(x))
+                    {
+                        polars_bail!(
+                            SchemaMismatch:
+                            "extra column in file outside of expected schema: {}",
+                            extra_col,
+                        )
+                    }
+                }
+
+                Ok(())
+            },
+        }
     }
 }

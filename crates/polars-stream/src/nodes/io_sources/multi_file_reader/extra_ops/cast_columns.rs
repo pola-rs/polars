@@ -2,6 +2,7 @@ use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_bail};
 
+/// TODO: Eventually move this enum to polars-plan
 #[derive(Debug, Clone)]
 pub enum CastColumnsPolicy {
     /// Raise an error if the datatypes do not match
@@ -24,8 +25,8 @@ impl CastColumns {
                         if dtype != target_dtype {
                             polars_bail!(
                                 SchemaMismatch:
-                                "dtype mismatch for column {}: got: {}, expected: {}",
-                                name, dtype, target_dtype
+                                "data type mismatch for column {}: expected: {}, found: {}",
+                                name, target_dtype, dtype
                             )
                         }
                     } else if cfg!(debug_assertions) {
