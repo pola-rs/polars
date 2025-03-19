@@ -38,8 +38,8 @@ impl ExtraOperations {
 /// TODO: Eventually move this enum to polars-plan
 #[derive(Clone)]
 pub enum SchemaNamesMatchPolicy {
-    /// `ForbidExtra` with the additional requirement that the columns are in
-    /// the same order.
+    /// Errors if there are extra columns, or the columns are not in order.
+    /// Ignores missing columns, that is handled by a different module.
     RequireOrderedExact,
 }
 
