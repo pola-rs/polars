@@ -3102,7 +3102,7 @@ impl DataFrame {
     #[cfg(feature = "row_hash")]
     pub fn hash_rows(
         &mut self,
-        hasher_builder: Option<PlRandomState>,
+        hasher_builder: Option<PlSeedableRandomStateQuality>,
     ) -> PolarsResult<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads(), false);
         let (cas, _) = _df_rows_to_hashes_threaded_vertical(&dfs, hasher_builder)?;

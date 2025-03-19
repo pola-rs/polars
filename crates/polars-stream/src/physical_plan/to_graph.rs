@@ -760,7 +760,7 @@ fn to_graph_rec<'a>(
                     grouped_reductions,
                     grouper,
                     node.output_schema.clone(),
-                    PlRandomState::new(),
+                    PlRandomState::default(),
                 ),
                 [(input_key, input.port)],
             )

@@ -5,6 +5,7 @@ use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
 use polars_compute::rolling::QuantileMethod;
 use polars_error::PolarsResult;
+use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
 pub use scalar::ScalarColumn;
@@ -912,14 +913,18 @@ impl Column {
         }
     }
 
-    pub fn vec_hash(&self, build_hasher: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    pub fn vec_hash(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         // @scalar-opt?
         self.as_materialized_series().vec_hash(build_hasher, buf)
     }
 
     pub fn vec_hash_combine(
         &self,
-        build_hasher: PlRandomState,
+        build_hasher: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
         // @scalar-opt?

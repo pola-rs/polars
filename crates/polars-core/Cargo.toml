@@ -15,7 +15,6 @@ polars-row = { workspace = true }
 polars-schema = { workspace = true }
 polars-utils = { workspace = true }
 
-ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
