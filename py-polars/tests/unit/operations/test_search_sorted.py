@@ -12,6 +12,8 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from polars._typing import PolarsDataType
 
 
@@ -121,7 +123,7 @@ def test_search_sorted_struct() -> None:
     assert series.search_sorted([v1, v0]).to_list() == [1, 0]
 
 
-def assert_find_existing_values(series: pl.Series, values: list[object]) -> None:
+def assert_find_existing_values(series: pl.Series, values: list[Any]) -> None:
     as_list = series.to_list()
     for value in values:
         idx = series.search_sorted(value, "left")
@@ -166,7 +168,7 @@ def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) ->
     ],
 )
 def test_nested_dtypes_dont_support_ascending(
-    values: list[object], dtype: PolarsDataType
+    values: list[Any], dtype: PolarsDataType
 ) -> None:
     # Due to issues with row encoding implementation details, search an
     # descending list/array/struct Series is unsupported, for now at least.
