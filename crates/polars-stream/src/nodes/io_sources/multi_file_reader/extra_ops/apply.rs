@@ -128,7 +128,7 @@ impl ApplyExtraOps {
                     ))
                 }
 
-                // debug_assert_eq!(extra_columns.len(), n_expected_extra_columns);
+                debug_assert_eq!(extra_columns.len(), n_expected_extra_columns);
 
                 let mut slf = Self::Initialized {
                     row_index,
