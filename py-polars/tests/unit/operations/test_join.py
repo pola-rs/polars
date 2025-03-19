@@ -19,6 +19,7 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import with_string_cache_if_auto_streaming
 
 if TYPE_CHECKING:
     from polars._typing import JoinStrategy, PolarsDataType
@@ -176,7 +177,7 @@ def test_deprecated_parameter_join_nulls() -> None:
         match=r"The argument `join_nulls` for `DataFrame.join` is deprecated. It has been renamed to `nulls_equal`"
     ):
         result = df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
-    assert_frame_equal(result, df)
+    assert_frame_equal(result, df, check_row_order=False)
 
 
 def test_join_on_expressions() -> None:
@@ -1242,6 +1243,7 @@ def test_array_explode_join_19763() -> None:
     assert_frame_equal(q.collect().sort("k"), pl.DataFrame({"k": [1, 2]}))
 
 
+@with_string_cache_if_auto_streaming
 def test_join_full_19814() -> None:
     schema = {"a": pl.Int64, "c": pl.Categorical}
     a = pl.LazyFrame({"a": [1], "c": [None]}, schema=schema)
