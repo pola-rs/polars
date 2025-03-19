@@ -174,8 +174,11 @@ impl DatetimeArgs {
         };
 
         Some(
-            Expr::Literal(LiteralValue::DateTime(ts, self.time_unit, None))
-                .alias(PlSmallStr::from_static("datetime")),
+            Expr::Literal(LiteralValue::Scalar(Scalar::new(
+                DataType::Datetime(self.time_unit, None),
+                AnyValue::Datetime(ts, self.time_unit, None),
+            )))
+            .alias(PlSmallStr::from_static("datetime")),
         )
     }
 }
@@ -400,8 +403,11 @@ impl DurationArgs {
         };
 
         Some(
-            Expr::Literal(LiteralValue::Duration(d, self.time_unit))
-                .alias(PlSmallStr::from_static("duration")),
+            Expr::Literal(LiteralValue::Scalar(Scalar::new(
+                DataType::Duration(self.time_unit),
+                AnyValue::Duration(d, self.time_unit),
+            )))
+            .alias(PlSmallStr::from_static("duration")),
         )
     }
 }

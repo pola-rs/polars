@@ -43,15 +43,9 @@ impl fmt::Debug for Expr {
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => {
-                match v {
-                    LiteralValue::String(v) => {
-                        // dot breaks with debug fmt due to \"
-                        write!(f, "String({v})")
-                    },
-                    _ => {
-                        write!(f, "{v:?}")
-                    },
-                }
+                use std::fmt::Write;
+                let mut f = EscapeLabel(f);
+                write!(f, "{v:?}")
             },
             BinaryExpr { left, op, right } => write!(f, "[({left:?}) {op:?} ({right:?})]"),
             Sort { expr, options } => {

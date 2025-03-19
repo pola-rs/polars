@@ -340,7 +340,7 @@ impl Eq for Expr {}
 
 impl Default for Expr {
     fn default() -> Self {
-        Expr::Literal(LiteralValue::Null)
+        Expr::Literal(LiteralValue::Scalar(Scalar::default()))
     }
 }
 
@@ -373,34 +373,8 @@ impl Expr {
 
     /// Extract a constant usize from an expression.
     pub fn extract_usize(&self) -> PolarsResult<usize> {
-        macro_rules! cast_usize {
-            ($v:ident) => {
-                usize::try_from(*$v).map_err(
-                    |_| polars_err!(InvalidOperation: "cannot convert value {} to usize", $v)
-                )
-            }
-        }
         match self {
-            Expr::Literal(n) => Ok(match n {
-                LiteralValue::Int(v) => cast_usize!(v)?,
-                #[cfg(feature = "dtype-u8")]
-                LiteralValue::UInt8(v) => *v as usize,
-                #[cfg(feature = "dtype-u16")]
-                LiteralValue::UInt16(v) => *v as usize,
-                LiteralValue::UInt32(v) => cast_usize!(v)?,
-                LiteralValue::UInt64(v) => cast_usize!(v)?,
-                #[cfg(feature = "dtype-i8")]
-                LiteralValue::Int8(v) => cast_usize!(v)?,
-                #[cfg(feature = "dtype-i16")]
-                LiteralValue::Int16(v) => cast_usize!(v)?,
-                LiteralValue::Int32(v) => cast_usize!(v)?,
-                LiteralValue::Int64(v) => cast_usize!(v)?,
-                #[cfg(feature = "dtype-i128")]
-                LiteralValue::Int128(v) => cast_usize!(v)?,
-                _ => {
-                    polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
-                },
-            }),
+            Expr::Literal(n) => n.extract_usize(),
             Expr::Cast { expr, dtype, .. } => {
                 // lit(x, dtype=...) are Cast expressions. We verify the inner expression is literal.
                 if dtype.is_integer() {

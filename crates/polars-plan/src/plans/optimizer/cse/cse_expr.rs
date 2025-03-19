@@ -304,7 +304,7 @@ impl ExprIdentifierVisitor<'_> {
             AExpr::Window { .. } => REFUSE_SKIP,
             // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
             // TODO! Add a typed null
-            AExpr::Literal(LiteralValue::Null) => REFUSE_NO_MEMBER,
+            AExpr::Literal(LiteralValue::Scalar(sc)) if sc.is_null() => REFUSE_NO_MEMBER,
             AExpr::Literal(s) => {
                 match s {
                     LiteralValue::Series(s) => {

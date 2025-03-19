@@ -565,7 +565,9 @@ fn expand_function_inputs(
             *input = rewrite_projections(core::mem::take(input), schema, &[], opt_flags)?;
             if input.is_empty() && !options.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS) {
                 // Needed to visualize the error
-                *input = vec![Expr::Literal(LiteralValue::Null)];
+                *input = vec![Expr::Literal(LiteralValue::Scalar(Scalar::null(
+                    DataType::Null,
+                )))];
                 polars_bail!(InvalidOperation: "expected at least 1 input in {}", e)
             }
             Ok(e)
