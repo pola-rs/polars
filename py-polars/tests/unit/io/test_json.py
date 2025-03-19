@@ -59,6 +59,24 @@ def test_write_json_duration() -> None:
     assert value == expected
 
 
+def test_write_json_time() -> None:
+    ns = 1_000_000_000
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [7291 * ns + 54321, 54321 * ns + 12345, 86399 * ns],
+                dtype=pl.Time,
+            ),
+        }
+    )
+
+    value = df.write_json()
+    expected = (
+        '[{"a":"02:01:31.000054321"},{"a":"15:05:21.000012345"},{"a":"23:59:59"}]'
+    )
+    assert value == expected
+
+
 def test_write_json_decimal() -> None:
     df = pl.DataFrame({"a": pl.Series([D("1.00"), D("2.00"), None])})
 

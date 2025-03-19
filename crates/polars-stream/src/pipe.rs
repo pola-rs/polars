@@ -4,7 +4,7 @@ use polars_error::PolarsResult;
 use polars_utils::priority::Priority;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
@@ -13,9 +13,11 @@ use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
 pub enum PhysicalPipe {
     Uninit(usize),
-    SerialReceiver(usize, Sender<Morsel>),
+    /// (_, _, maintain_order)
+    SerialReceiver(usize, Sender<Morsel>, bool),
     ParallelReceiver(Vec<Sender<Morsel>>),
-    NeedsLinearizer(Vec<Receiver<Morsel>>, Sender<Morsel>),
+    /// (_, _, maintain_order)
+    NeedsLinearizer(Vec<Receiver<Morsel>>, Sender<Morsel>, bool),
     NeedsDistributor(Receiver<Morsel>, Vec<Sender<Morsel>>),
     Initialized,
 }
@@ -25,11 +27,15 @@ pub struct RecvPort<'a>(&'a mut PhysicalPipe);
 
 impl RecvPort<'_> {
     pub fn serial(self) -> Receiver<Morsel> {
+        self.serial_with_maintain_order(true)
+    }
+
+    pub fn serial_with_maintain_order(self, maintain_order: bool) -> Receiver<Morsel> {
         let PhysicalPipe::Uninit(num_pipelines) = self.0 else {
             unreachable!()
         };
         let (send, recv) = connector();
-        *self.0 = PhysicalPipe::SerialReceiver(*num_pipelines, send);
+        *self.0 = PhysicalPipe::SerialReceiver(*num_pipelines, send, maintain_order);
         recv
     }
 
@@ -52,7 +58,7 @@ impl SendPort<'_> {
 
     pub fn serial(self) -> Sender<Morsel> {
         match core::mem::replace(self.0, PhysicalPipe::Uninit(0)) {
-            PhysicalPipe::SerialReceiver(_, send) => {
+            PhysicalPipe::SerialReceiver(_, send, _) => {
                 *self.0 = PhysicalPipe::Initialized;
                 send
             },
@@ -67,10 +73,10 @@ impl SendPort<'_> {
 
     pub fn parallel(self) -> Vec<Sender<Morsel>> {
         match core::mem::replace(self.0, PhysicalPipe::Uninit(0)) {
-            PhysicalPipe::SerialReceiver(num_pipelines, send) => {
+            PhysicalPipe::SerialReceiver(num_pipelines, send, maintain_order) => {
                 let (senders, receivers): (Vec<Sender<Morsel>>, Vec<Receiver<Morsel>>) =
                     (0..num_pipelines).map(|_| connector()).unzip();
-                *self.0 = PhysicalPipe::NeedsLinearizer(receivers, send);
+                *self.0 = PhysicalPipe::NeedsLinearizer(receivers, send, maintain_order);
                 senders
             },
             PhysicalPipe::ParallelReceiver(senders) => {
@@ -109,18 +115,19 @@ impl PhysicalPipe {
         handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         match core::mem::replace(self, Self::Initialized) {
-            Self::Uninit(_) | Self::SerialReceiver(_, _) | Self::ParallelReceiver(_) => {
+            Self::Uninit(_) | Self::SerialReceiver(_, _, _) | Self::ParallelReceiver(_) => {
                 panic!("PhysicalPipe::spawn called on (partially) initialized pipe");
             },
 
             Self::Initialized => {},
 
-            Self::NeedsLinearizer(receivers, mut sender) => {
+            Self::NeedsLinearizer(receivers, mut sender, maintain_order) => {
                 let num_pipelines = receivers.len();
                 let (mut linearizer, inserters) =
-                    Linearizer::<Priority<Reverse<MorselSeq>, Morsel>>::new(
+                    Linearizer::<Priority<Reverse<MorselSeq>, Morsel>>::new_with_maintain_order(
                         num_pipelines,
-                        DEFAULT_LINEARIZER_BUFFER_SIZE,
+                        *DEFAULT_LINEARIZER_BUFFER_SIZE,
+                        maintain_order,
                     );
 
                 handles.push(scope.spawn_task(TaskPriority::High, async move {
@@ -157,7 +164,7 @@ impl PhysicalPipe {
             Self::NeedsDistributor(mut receiver, senders) => {
                 let num_pipelines = senders.len();
                 let (mut distributor, distr_receivers) =
-                    distributor_channel(num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+                    distributor_channel(num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
                 handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = receiver.recv().await {

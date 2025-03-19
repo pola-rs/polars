@@ -79,26 +79,26 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "dtype-array")]
-pub(crate) use array::ArrayFunction;
+pub use array::ArrayFunction;
 #[cfg(feature = "cov")]
-pub(crate) use correlation::CorrelationMethod;
+pub use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
-pub(crate) use fused::FusedOperator;
-pub(crate) use list::ListFunction;
-use polars_core::datatypes::ReshapeDimension;
+pub use fused::FusedOperator;
+pub use list::ListFunction;
+pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 #[cfg(feature = "random")]
-pub(crate) use random::RandomMethod;
+pub use random::RandomMethod;
 use schema::FieldsMapper;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-pub(crate) use self::binary::BinaryFunction;
+pub use self::binary::BinaryFunction;
 #[cfg(feature = "bitwise")]
 pub use self::bitwise::BitwiseFunction;
 pub use self::boolean::BooleanFunction;
 #[cfg(feature = "business")]
-pub(super) use self::business::BusinessFunction;
+pub use self::business::BusinessFunction;
 #[cfg(feature = "dtype-categorical")]
 pub use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
@@ -115,7 +115,7 @@ pub use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
 pub use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
-pub(super) use self::trigonometry::TrigonometricFunction;
+pub use self::trigonometry::TrigonometricFunction;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -658,7 +658,7 @@ impl Display for FunctionExpr {
             Atan2 => return write!(f, "arctan2"),
             #[cfg(feature = "sign")]
             Sign => "sign",
-            FillNull { .. } => "fill_null",
+            FillNull => "fill_null",
             #[cfg(feature = "rolling_window")]
             RollingExpr(func, ..) => return write!(f, "{func}"),
             #[cfg(feature = "rolling_window_by")]

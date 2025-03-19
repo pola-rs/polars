@@ -10,188 +10,216 @@ docs_dir: docs/source
 
 # Documentation layout
 nav:
-  - User guide:
-    - index.md
-    - user-guide/getting-started.md
-    - user-guide/installation.md
-    - Concepts:
-      - user-guide/concepts/index.md
-      - user-guide/concepts/data-types-and-structures.md
-      - user-guide/concepts/expressions-and-contexts.md
-      - user-guide/concepts/lazy-api.md
-    - Expressions:
-      - user-guide/expressions/index.md
-      - user-guide/expressions/basic-operations.md
-      - user-guide/expressions/expression-expansion.md
-      - user-guide/expressions/casting.md
-      - user-guide/expressions/strings.md
-      - user-guide/expressions/lists-and-arrays.md
-      - user-guide/expressions/categorical-data-and-enums.md
-      - user-guide/expressions/structs.md
-      - user-guide/expressions/missing-data.md
-      - user-guide/expressions/aggregation.md
-      - user-guide/expressions/window-functions.md
-      - user-guide/expressions/folds.md
-      - user-guide/expressions/user-defined-python-functions.md
-      - user-guide/expressions/numpy-functions.md
-    - Transformations:
-      - user-guide/transformations/index.md
-      - user-guide/transformations/joins.md
-      - user-guide/transformations/concatenation.md
-      - user-guide/transformations/pivot.md
-      - user-guide/transformations/unpivot.md
-      - Time series:
-        - user-guide/transformations/time-series/parsing.md
-        - user-guide/transformations/time-series/filter.md
-        - user-guide/transformations/time-series/rolling.md
-        - user-guide/transformations/time-series/resampling.md
-        - user-guide/transformations/time-series/timezones.md
-    - Lazy API:
-      - user-guide/lazy/index.md
-      - user-guide/lazy/using.md
-      - user-guide/lazy/optimizations.md
-      - user-guide/lazy/schemas.md
-      - user-guide/lazy/query-plan.md
-      - user-guide/lazy/execution.md
-      - user-guide/lazy/streaming.md
-      - user-guide/lazy/gpu.md
-    - IO:
-      - user-guide/io/index.md
-      - user-guide/io/csv.md
-      - user-guide/io/excel.md
-      - user-guide/io/parquet.md
-      - user-guide/io/json.md
-      - user-guide/io/multiple.md
-      - user-guide/io/hive.md
-      - user-guide/io/database.md
-      - user-guide/io/cloud-storage.md
-      - user-guide/io/bigquery.md
-      - user-guide/io/hugging-face.md
-    - Plugins:
-      - user-guide/plugins/index.md
-      - user-guide/plugins/expr_plugins.md
-      - user-guide/plugins/io_plugins.md
-    - SQL:
-      - user-guide/sql/intro.md
-      - user-guide/sql/show.md
-      - user-guide/sql/select.md
-      - user-guide/sql/create.md
-      - user-guide/sql/cte.md
-    - Migrating:
-      - user-guide/migration/pandas.md
-      - user-guide/migration/spark.md
-    - user-guide/ecosystem.md
-    - Misc:
-      - user-guide/misc/multiprocessing.md
-      - user-guide/misc/visualization.md
-      - user-guide/misc/styling.md
-      - user-guide/misc/comparison.md
-      - user-guide/misc/arrow.md
-    - user-guide/gpu-support.md
-
-  - API reference: api/index.md
-
-  - Development:
-    - Contributing:
-      - development/contributing/index.md
-      - development/contributing/ide.md
-      - development/contributing/test.md
-      - development/contributing/ci.md
-      - development/contributing/code-style.md
-    - development/versioning.md
-
-  - Releases:
-    - releases/changelog.md
-    - Upgrade guides:
-      - releases/upgrade/index.md
-      - releases/upgrade/1.md
-      - releases/upgrade/0.20.md
-      - releases/upgrade/0.19.md
-
+    - Polars:
+          - User guide:
+                - index.md
+                - user-guide/getting-started.md
+                - user-guide/installation.md
+                - Concepts:
+                      - user-guide/concepts/index.md
+                      - user-guide/concepts/data-types-and-structures.md
+                      - user-guide/concepts/expressions-and-contexts.md
+                      - user-guide/concepts/lazy-api.md
+                - Expressions:
+                      - user-guide/expressions/index.md
+                      - user-guide/expressions/basic-operations.md
+                      - user-guide/expressions/expression-expansion.md
+                      - user-guide/expressions/casting.md
+                      - user-guide/expressions/strings.md
+                      - user-guide/expressions/lists-and-arrays.md
+                      - user-guide/expressions/categorical-data-and-enums.md
+                      - user-guide/expressions/structs.md
+                      - user-guide/expressions/missing-data.md
+                      - user-guide/expressions/aggregation.md
+                      - user-guide/expressions/window-functions.md
+                      - user-guide/expressions/folds.md
+                      - user-guide/expressions/user-defined-python-functions.md
+                      - user-guide/expressions/numpy-functions.md
+                - Transformations:
+                      - user-guide/transformations/index.md
+                      - user-guide/transformations/joins.md
+                      - user-guide/transformations/concatenation.md
+                      - user-guide/transformations/pivot.md
+                      - user-guide/transformations/unpivot.md
+                      - Time series:
+                            - user-guide/transformations/time-series/parsing.md
+                            - user-guide/transformations/time-series/filter.md
+                            - user-guide/transformations/time-series/rolling.md
+                            - user-guide/transformations/time-series/resampling.md
+                            - user-guide/transformations/time-series/timezones.md
+                - Lazy API:
+                      - user-guide/lazy/index.md
+                      - user-guide/lazy/using.md
+                      - user-guide/lazy/optimizations.md
+                      - user-guide/lazy/schemas.md
+                      - user-guide/lazy/query-plan.md
+                      - user-guide/lazy/execution.md
+                      - user-guide/lazy/sources_sinks.md
+                      - user-guide/lazy/gpu.md
+                - IO:
+                      - user-guide/io/index.md
+                      - user-guide/io/csv.md
+                      - user-guide/io/excel.md
+                      - user-guide/io/parquet.md
+                      - user-guide/io/json.md
+                      - user-guide/io/multiple.md
+                      - user-guide/io/hive.md
+                      - user-guide/io/database.md
+                      - user-guide/io/cloud-storage.md
+                      - user-guide/io/bigquery.md
+                      - user-guide/io/hugging-face.md
+                - Plugins:
+                      - user-guide/plugins/index.md
+                      - user-guide/plugins/expr_plugins.md
+                      - user-guide/plugins/io_plugins.md
+                - SQL:
+                      - user-guide/sql/intro.md
+                      - user-guide/sql/show.md
+                      - user-guide/sql/select.md
+                      - user-guide/sql/create.md
+                      - user-guide/sql/cte.md
+                - Migrating:
+                      - user-guide/migration/pandas.md
+                      - user-guide/migration/spark.md
+                - user-guide/ecosystem.md
+                - Misc:
+                      - user-guide/misc/multiprocessing.md
+                      - user-guide/misc/visualization.md
+                      - user-guide/misc/styling.md
+                      - user-guide/misc/comparison.md
+                      - user-guide/misc/arrow.md
+                      - user-guide/misc/polars_llms.md
+                - user-guide/gpu-support.md
+          - API:
+                - api/reference.md
+          - Development:
+                - Contributing:
+                      - development/contributing/index.md
+                      - development/contributing/ide.md
+                      - development/contributing/test.md
+                      - development/contributing/ci.md
+                      - development/contributing/code-style.md
+                - development/versioning.md
+          - Releases:
+                - releases/changelog.md
+                - Upgrade guides:
+                      - releases/upgrade/index.md
+                      - releases/upgrade/1.md
+                      - releases/upgrade/0.20.md
+                      - releases/upgrade/0.19.md
+    - Polars Cloud:
+          - polars-cloud/index.md
+          - polars-cloud/quickstart.md
+          - polars-cloud/connect-cloud.md
+          - User guide:
+                - polars-cloud/run/compute-context.md
+                - polars-cloud/run/workflow.md
+                - polars-cloud/run/interactive-batch.md
+                - polars-cloud/run/distributed-engine.md
+                - polars-cloud/run/service-accounts.md
+          - Manage workspace:
+                - polars-cloud/workspace/settings.md
+                - polars-cloud/workspace/team.md
+          - Authentication:
+                - polars-cloud/explain/authentication.md
+          - Providers:
+                - AWS:
+                      - polars-cloud/providers/aws/infra.md
+                      - polars-cloud/providers/aws/permissions.md
+          # - Integrations:
+          # - polars-cloud/integrations/airflow.md
+          - Misc:
+                - polars-cloud/cli.md
+                - polars-cloud/faq.md
+                - API Reference: https://docs.cloud.pola.rs
 not_in_nav: |
-  /_build/
+    /_build/
 validation:
-  links:
-    # Allow an absolute link to the features page for our code snippets
-    absolute_links: ignore
+    links:
+        # Allow an absolute link to the features page for our code snippets
+        absolute_links: ignore
 
 # Build directories
 theme:
-  name: material
-  locale: en
-  custom_dir: docs/source/_build/overrides
-  palette:
-  # Palette toggle for light mode
-  - media: "(prefers-color-scheme: light)"
-    scheme: default
-    toggle:
-      icon: material/brightness-7
-      name: Switch to dark mode
-  # Palette toggle for dark mode
-  - media: "(prefers-color-scheme: dark)"
-    scheme: slate
-    toggle:
-      icon: material/brightness-4
-      name: Switch to light mode
-  logo: _build/assets/logo.png
-  features:
-    - navigation.tracking
-    - navigation.instant
-    - navigation.tabs
-    - navigation.tabs.sticky
-    - navigation.footer
-    - navigation.indexes
-    - content.tabs.link
-    - content.code.copy
-  icon:
-    repo: fontawesome/brands/github
+    name: material
+    locale: en
+    custom_dir: docs/source/_build/overrides
+    palette:
+        # Palette toggle for light mode
+        - media: "(prefers-color-scheme: light)"
+          scheme: default
+          primary: custom
+          toggle:
+              icon: material/brightness-7
+              name: Switch to dark mode
+        # Palette toggle for dark mode
+        - media: "(prefers-color-scheme: dark)"
+          scheme: slate
+          primary: custom
+          toggle:
+              icon: material/brightness-4
+              name: Switch to light mode
+    logo: _build/assets/logo.png
+    features:
+        - navigation.tracking
+        - navigation.sections
+        - navigation.instant
+        - navigation.tabs
+        - navigation.tabs.sticky
+        - navigation.footer
+        - navigation.indexes
+        - content.tabs.link
+        - content.code.copy
+    icon:
+        repo: fontawesome/brands/github
 
 extra_javascript:
-  - _build/js/mathjax.js
-  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+    - _build/js/mathjax.js
+    - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 extra_css:
-  - _build/css/extra.css
+    - _build/css/extra.css
 extra:
-  analytics:
-    provider: plausible
-    domain: guide.pola.rs,combined.pola.rs
+    analytics:
+        provider: plausible
+        domain: guide.pola.rs,combined.pola.rs
 
 # Preview controls
 strict: true
 
 # Formatting options
 markdown_extensions:
-  - admonition
-  - pymdownx.details
-  - attr_list
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
-  - pymdownx.superfences
-  - pymdownx.tabbed:
-      alternate_style: true
-  - pymdownx.snippets:
-      base_path: ['.','docs/source/src/']
-      check_paths: true
-      dedent_subsections: true
-  - footnotes
-  - pymdownx.arithmatex:
-      generic: true
+    - admonition
+    - md_in_html
+    - pymdownx.details
+    - attr_list
+    - pymdownx.emoji:
+          emoji_index: !!python/name:material.extensions.emoji.twemoji
+          emoji_generator: !!python/name:material.extensions.emoji.to_svg
+    - pymdownx.superfences
+    - pymdownx.tabbed:
+          alternate_style: true
+    - pymdownx.snippets:
+          base_path: [".", "docs/source/src/"]
+          check_paths: true
+          dedent_subsections: true
+    - footnotes
+    - pymdownx.arithmatex:
+          generic: true
 
 hooks:
-  - docs/source/_build/scripts/people.py
+    - docs/source/_build/scripts/people.py
 
 plugins:
-  - search:
-      lang: en
-  - markdown-exec
-  - material-plausible
-  - macros:
-      module_name: docs/source/_build/scripts/macro
-  - redirects:
-      redirect_maps:
-        'user-guide/index.md': 'index.md'
-        'user-guide/basics/index.md': 'user-guide/getting-started.md'
-        'user-guide/basics/reading-writing.md': 'user-guide/getting-started.md'
-        'user-guide/basics/expressions.md': 'user-guide/getting-started.md'
-        'user-guide/basics/joins.md': 'user-guide/getting-started.md'
+    - search:
+          lang: en
+    - markdown-exec
+    - material-plausible
+    - macros:
+          module_name: docs/source/_build/scripts/macro
+    - redirects:
+          redirect_maps:
+              "user-guide/index.md": "index.md"
+              "user-guide/basics/index.md": "user-guide/getting-started.md"
+              "user-guide/basics/reading-writing.md": "user-guide/getting-started.md"
+              "user-guide/basics/expressions.md": "user-guide/getting-started.md"
+              "user-guide/basics/joins.md": "user-guide/getting-started.md"

@@ -4,7 +4,8 @@ use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
-use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, FileInfo, FileScan, ScanSources, IR};
+use polars_plan::dsl::{FileScan, ScanSources};
+use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, FileInfo, IR};
 use polars_plan::prelude::{AnonymousScanOptions, FileScanOptions};
 
 /// Used to insert a dataframe into in-memory-engine query plan after the query
@@ -30,11 +31,11 @@ impl LateMaterializedDataFrame {
             hive_parts: None,
             predicate: None,
             output_schema: None,
-            scan_type: FileScan::Anonymous {
+            scan_type: Box::new(FileScan::Anonymous {
                 options,
                 function: self,
-            },
-            file_options: FileScanOptions::default(),
+            }),
+            file_options: Box::new(FileScanOptions::default()),
         }
     }
 }

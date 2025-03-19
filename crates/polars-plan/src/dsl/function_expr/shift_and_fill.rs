@@ -42,20 +42,14 @@ fn shift_and_fill_with_mask(s: &Column, n: i64, fill_value: &Column) -> PolarsRe
 
 pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
-    let n_s = &args[1];
-
-    polars_ensure!(
-    n_s.len() == 1,
-    ComputeError: "n must be a single value."
-    );
-    let n_s = n_s.cast(&DataType::Int64)?;
+    let n_s = &args[1].cast(&DataType::Int64)?;
     let n = n_s.i64()?;
 
     if let Some(n) = n.get(0) {
         let logical = s.dtype();
         let physical = s.to_physical_repr();
         let fill_value_s = &args[2];
-        let fill_value = fill_value_s.get(0)?;
+        let fill_value = fill_value_s.get(0).unwrap();
 
         use DataType::*;
         match logical {
@@ -92,16 +86,14 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
                 }
             },
             #[cfg(feature = "object")]
-            Object(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
+            Object(_) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
             dt if dt.is_primitive_numeric() || dt.is_logical() => {
                 macro_rules! dispatch {
-                    ($ca:expr, $n:expr, $fill_value:expr) => {{
-                        shift_and_fill_numeric($ca, $n, $fill_value).into_column()
-                    }};
+                    ($ca:expr, $n:expr, $fill_value:expr) => {{ shift_and_fill_numeric($ca, $n, $fill_value).into_column() }};
                 }
                 let out = downcast_as_macro_arg_physical!(physical, dispatch, n, fill_value);
                 unsafe { out.from_physical_unchecked(logical) }

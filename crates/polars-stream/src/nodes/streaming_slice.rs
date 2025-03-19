@@ -7,7 +7,6 @@ pub struct StreamingSliceNode {
     start_offset: usize,
     length: usize,
     stream_offset: usize,
-    num_pipelines: usize,
 }
 
 impl StreamingSliceNode {
@@ -16,7 +15,6 @@ impl StreamingSliceNode {
             start_offset,
             length,
             stream_offset: 0,
-            num_pipelines: 0,
         }
     }
 }
@@ -26,11 +24,12 @@ impl ComputeNode for StreamingSliceNode {
         "streaming_slice"
     }
 
-    fn initialize(&mut self, num_pipelines: usize) {
-        self.num_pipelines = num_pipelines;
-    }
-
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         if self.stream_offset >= self.start_offset + self.length || self.length == 0 {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
@@ -45,7 +44,7 @@ impl ComputeNode for StreamingSliceNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);

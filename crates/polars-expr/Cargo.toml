@@ -9,12 +9,10 @@ repository.workspace = true
 description = "Physical expression implementation of the Polars project."
 
 [dependencies]
-ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
-once_cell = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-io = { workspace = true, features = ["lazy"] }

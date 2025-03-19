@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! kernels that combine take and aggregations.
 mod boolean;
 mod var;

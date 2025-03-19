@@ -11,11 +11,11 @@ use std::ops::Div;
 
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
-use polars_plan::prelude::typed_lit;
 use polars_plan::prelude::LiteralValue::Null;
+use polars_plan::prelude::typed_lit;
 use polars_time::Duration;
 use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -26,11 +26,11 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
+use crate::SQLContext;
 use crate::functions::SQLFunctionVisitor;
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
 };
-use crate::SQLContext;
 
 #[inline]
 #[cold]
@@ -124,7 +124,7 @@ impl SQLExprVisitor<'_> {
             } => {
                 let expr = self.visit_expr(expr)?;
                 let elems = self.visit_array_expr(list, false, Some(&expr))?;
-                let is_in = expr.is_in(elems);
+                let is_in = expr.is_in(elems, false);
                 Ok(if *negated { is_in.not() } else { is_in })
             },
             SQLExpr::InSubquery {
@@ -692,8 +692,8 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::Lt => Ok(left.lt(right.max())),
             SQLBinaryOperator::GtEq => Ok(left.gt_eq(right.min())),
             SQLBinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
-            SQLBinaryOperator::Eq => Ok(left.is_in(right)),
-            SQLBinaryOperator::NotEq => Ok(left.is_in(right).not()),
+            SQLBinaryOperator::Eq => Ok(left.is_in(right, false)),
+            SQLBinaryOperator::NotEq => Ok(left.is_in(right, false).not()),
             _ => polars_bail!(SQLInterface: "invalid comparison operator"),
         }
     }
@@ -917,9 +917,9 @@ impl SQLExprVisitor<'_> {
         let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
         let expr = self.visit_expr(expr)?;
         Ok(if negated {
-            expr.is_in(subquery_result).not()
+            expr.is_in(subquery_result, false).not()
         } else {
-            expr.is_in(subquery_result)
+            expr.is_in(subquery_result, false)
         })
     }
 
@@ -1290,7 +1290,7 @@ pub(crate) fn resolve_compound_identifier(
                 return Ok(fields
                     .iter()
                     .map(|fld| column.clone().struct_().field_by_name(&fld.name))
-                    .collect())
+                    .collect());
             },
             Some(DataType::Struct(fields)) => {
                 dtype = fields

@@ -2,8 +2,8 @@ use std::panic::AssertUnwindSafe;
 
 use polars::frame::DataFrame;
 use polars::series::IntoSeries;
-use polars_error::signals::{catch_keyboard_interrupt, KeyboardInterrupt};
 use polars_error::PolarsResult;
+use polars_error::signals::{KeyboardInterrupt, catch_keyboard_interrupt};
 use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::marker::Ungil;
 use pyo3::{PyErr, PyResult, Python};

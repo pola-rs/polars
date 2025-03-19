@@ -1,14 +1,14 @@
 use arrow::compute::utils::combine_validities_and_many;
 use polars_row::{
-    convert_columns, RowEncodingCategoricalContext, RowEncodingContext, RowEncodingOptions,
-    RowsEncoded,
+    RowEncodingCategoricalContext, RowEncodingContext, RowEncodingOptions, RowsEncoded,
+    convert_columns,
 };
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::prelude::*;
 use crate::utils::_split_offsets;
-use crate::POOL;
 
 pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked> {
     let n_threads = POOL.current_num_threads();
@@ -100,7 +100,7 @@ pub fn get_row_encoding_context(dtype: &DataType, ordered: bool) -> Option<RowEn
         DataType::Unknown(_) => panic!("Unsupported in row encoding"),
 
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => panic!("Unsupported in row encoding"),
+        DataType::Object(_) => panic!("Unsupported in row encoding"),
 
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, _) => {

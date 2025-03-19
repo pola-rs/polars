@@ -7,9 +7,9 @@ use arrow::types::NativeType;
 use chrono::Datelike;
 use polars_error::PolarsResult;
 
+use super::CastOptionsImpl;
 use super::binary_to::Parse;
 use super::temporal::EPOCH_DAYS_FROM_CE;
-use super::CastOptionsImpl;
 
 pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 

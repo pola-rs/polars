@@ -12,7 +12,10 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import NoDataError, ParameterCollisionError
+from polars.exceptions import (
+    NoDataError,
+    ParameterCollisionError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
@@ -1199,6 +1202,17 @@ def test_excel_write_worksheet_object() -> None:
     ):
         with Workbook(BytesIO()) as wb:
             df.write_excel(None, worksheet=ws)
+
+
+def test_excel_write_beyond_max_rows_cols(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "test_max_dimensions.xlsx"
+    sheet = "mysheet"
+
+    df = pl.DataFrame({"col1": range(10), "col2": range(10, 20)})
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.write_excel(workbook=path, worksheet=sheet, position="A1048570")
 
 
 def test_excel_freeze_panes() -> None:

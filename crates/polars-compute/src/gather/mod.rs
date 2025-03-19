@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
@@ -18,8 +19,8 @@
 //! Defines take kernel for [`Array`]
 
 use arrow::array::{
-    self, new_empty_array, Array, ArrayCollectIterExt, ArrayFromIterDtype, BinaryViewArray,
-    NullArray, StaticArray, Utf8ViewArray,
+    self, Array, ArrayCollectIterExt, ArrayFromIterDtype, BinaryViewArray, NullArray, StaticArray,
+    Utf8ViewArray, new_empty_array,
 };
 use arrow::datatypes::{ArrowDataType, IdxArr};
 use arrow::types::Index;

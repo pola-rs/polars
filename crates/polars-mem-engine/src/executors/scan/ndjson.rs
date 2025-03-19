@@ -10,7 +10,7 @@ use crate::ScanPredicate;
 pub struct JsonExec {
     sources: ScanSources,
     options: NDJsonReadOptions,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     file_info: FileInfo,
     predicate: Option<ScanPredicate>,
 }
@@ -19,7 +19,7 @@ impl JsonExec {
     pub fn new(
         sources: ScanSources,
         options: NDJsonReadOptions,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         file_info: FileInfo,
         predicate: Option<ScanPredicate>,
     ) -> Self {
@@ -49,7 +49,7 @@ impl JsonExec {
             eprintln!("ASYNC READING FORCED");
         }
 
-        let mut n_rows = self.file_options.slice.map(|x| {
+        let mut n_rows = self.file_options.pre_slice.map(|x| {
             assert_eq!(x.0, 0);
             x.1
         });
@@ -63,7 +63,7 @@ impl JsonExec {
                 };
             }
             if let Some(row_index) = &self.file_options.row_index {
-                df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset));
+                unsafe { df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset)) };
             }
             return Ok(df);
         }
@@ -144,7 +144,7 @@ impl ScanExec for JsonExec {
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;
-        self.file_options.slice = slice.map(|(s, l)| (s as i64, l));
+        self.file_options.pre_slice = slice.map(|(s, l)| (s as i64, l));
         self.predicate = predicate;
         self.file_options.row_index = row_index;
 

@@ -15,6 +15,7 @@ pip
 # DEPENDENCIES
 # ------------
 
+polars-cloud
 # Interop
 numpy
 numba >= 0.54; python_version < '3.13'  # Numba can lag Python releases

@@ -1,6 +1,6 @@
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 #[cfg(feature = "dtype-categorical")]
-use polars_core::{disable_string_cache, SINGLE_LOCK};
+use polars_core::{SINGLE_LOCK, disable_string_cache};
 
 use super::*;
 
@@ -57,7 +57,7 @@ fn test_inner_join() {
     let (temp, rain) = create_frames();
 
     for i in 1..8 {
-        std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+        unsafe { std::env::set_var("POLARS_MAX_THREADS", format!("{}", i)) };
         let joined = temp.inner_join(&rain, ["days"], ["days"]).unwrap();
 
         let join_col_days = Column::new("days".into(), &[1, 2, 1]);
@@ -81,7 +81,7 @@ fn test_inner_join() {
 #[cfg_attr(miri, ignore)]
 fn test_left_join() {
     for i in 1..8 {
-        std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
+        unsafe { std::env::set_var("POLARS_MAX_THREADS", format!("{}", i)) };
         let s0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
         let s1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
         let temp = DataFrame::new(vec![s0, s1]).unwrap();
@@ -284,10 +284,12 @@ fn test_join_multiple_columns() {
         )
         .unwrap();
 
-    assert!(joined_inner_hack
-        .column("ham")
-        .unwrap()
-        .equals_missing(joined_inner.column("ham").unwrap()));
+    assert!(
+        joined_inner_hack
+            .column("ham")
+            .unwrap()
+            .equals_missing(joined_inner.column("ham").unwrap())
+    );
 
     let joined_full_outer_hack = df_a.full_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_full_outer = df_a
@@ -299,10 +301,12 @@ fn test_join_multiple_columns() {
             None,
         )
         .unwrap();
-    assert!(joined_full_outer_hack
-        .column("ham")
-        .unwrap()
-        .equals_missing(joined_full_outer.column("ham").unwrap()));
+    assert!(
+        joined_full_outer_hack
+            .column("ham")
+            .unwrap()
+            .equals_missing(joined_full_outer.column("ham").unwrap())
+    );
 }
 
 #[test]
@@ -459,15 +463,16 @@ fn test_join_err() -> PolarsResult<()> {
     ]?;
 
     // dtypes don't match, error
-    assert!(df1
-        .join(
+    assert!(
+        df1.join(
             &df2,
             vec!["a", "b"],
             vec!["a", "b"],
             JoinType::Left.into(),
             None
         )
-        .is_err());
+        .is_err()
+    );
     Ok(())
 }
 

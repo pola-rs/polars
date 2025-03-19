@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -7,25 +6,19 @@ use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::planner::get_expr_depth_limit;
 use polars_expr::state::ExecutionState;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
-use polars_plan::plans::expr_ir::{ExprIR, OutputName};
+use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_plan::plans::AExpr;
+use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{format_pl_smallstr, unitvec};
+use polars_utils::{unique_column_name, unitvec};
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 
 type ExprNodeKey = Node;
-
-pub fn unique_column_name() -> PlSmallStr {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let idx = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format_pl_smallstr!("__POLARS_STMP_{idx}")
-}
 
 pub(crate) struct ExprCache {
     is_elementwise: PlHashMap<Node, bool>,
@@ -49,6 +42,34 @@ struct LowerExprContext<'a> {
     cache: &'a mut ExprCache,
 }
 
+pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
+    // The in-memory engine treats ApplyList as elementwise but this is not actually
+    // the case. It doesn't cause any problems for the in-memory engine because of
+    // how it does the execution but it causes errors for new-streaming.
+
+    // Some other functions are also marked as elementwise for filter pushdown
+    // but aren't actually elementwise (e.g. arguments aren't same length).
+    match expr {
+        AExpr::AnonymousFunction { options, .. } => {
+            options.collect_groups == ApplyOptions::ApplyList
+        },
+        AExpr::Function {
+            function, options, ..
+        } => {
+            if options.collect_groups == ApplyOptions::ApplyList {
+                return true;
+            }
+
+            use FunctionExpr as F;
+            matches!(
+                function,
+                F::Boolean(BooleanFunction::IsIn { .. }) | F::Replace | F::ReplaceStrict { .. }
+            )
+        },
+        _ => false,
+    }
+}
+
 pub(crate) fn is_elementwise_rec_cached(
     expr_key: ExprNodeKey,
     arena: &Arena<AExpr>,
@@ -64,18 +85,7 @@ pub(crate) fn is_elementwise_rec_cached(
                 loop {
                     let ae = arena.get(expr_key);
 
-                    // The in-memory engine treats ApplyList as elementwise but this is not actually
-                    // the case. It doesn't cause any problems for the in-memory engine because of
-                    // how it does the execution but it causes errors for new-streaming.
-                    if let AExpr::AnonymousFunction {
-                        options:
-                            FunctionOptions {
-                                collect_groups: ApplyOptions::ApplyList,
-                                ..
-                            },
-                        ..
-                    } = ae
-                    {
+                    if is_fake_elementwise_function(ae) {
                         return false;
                     }
 
@@ -527,6 +537,39 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
+
+            ref node @ AExpr::Function {
+                input: ref inner_exprs,
+                options,
+                ..
+            }
+            | ref node @ AExpr::AnonymousFunction {
+                input: ref inner_exprs,
+                options,
+                ..
+            } if options.is_elementwise() && !is_fake_elementwise_function(node) => {
+                let inner_nodes = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_nodes, ctx)?;
+
+                // The function may be sensitive to names (e.g. pl.struct), so we restore them.
+                let new_input = trans_exprs
+                    .into_iter()
+                    .zip(inner_exprs)
+                    .map(|(trans, orig)| {
+                        ExprIR::new(trans, OutputName::Alias(orig.output_name().clone()))
+                    })
+                    .collect_vec();
+                let mut new_node = node.clone();
+                match &mut new_node {
+                    AExpr::Function { input, .. } | AExpr::AnonymousFunction { input, .. } => {
+                        *input = new_input;
+                    },
+                    _ => unreachable!(),
+                }
+                input_streams.insert(trans_input);
+                transformed_exprs.push(ctx.expr_arena.add(new_node));
+            },
+
             AExpr::BinaryExpr { left, op, right } => {
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[left, right], ctx)?;
                 let bin_expr = AExpr::BinaryExpr {

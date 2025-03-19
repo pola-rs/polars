@@ -96,7 +96,7 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
 
             let out = match tz {
                 #[cfg(feature = "timezones")]
-                Some(ref tz) => {
+                Some(tz) => {
                     apply_offsets_to_datetime(datetime, offsets, tz.parse::<Tz>().ok().as_ref())?
                 },
                 _ => apply_offsets_to_datetime(datetime, offsets, None)?,

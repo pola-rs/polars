@@ -27,6 +27,10 @@ is set to `True`:
 --8<-- "python/user-guide/transformations/time-series/parsing.py:df"
 ```
 
+This flag will trigger schema inference on a number of rows, as configured by the
+`infer_schema_length` setting (100 rows by default). Schema inference is computationally expensive
+and can slow down file loading if a high number of rows is used.
+
 On the other hand binary formats such as parquet have a schema that is respected by Polars.
 
 ## Casting strings to dates

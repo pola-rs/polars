@@ -105,7 +105,7 @@ fn is_first_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
 
 pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
-    if s.len() == 0 {
+    if s.is_empty() {
         return Ok(BooleanChunked::full_null(s.name().clone(), 0));
     } else if s.len() == 1 {
         return Ok(BooleanChunked::new(s.name().clone(), &[true]));

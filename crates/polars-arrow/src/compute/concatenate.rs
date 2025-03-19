@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use hashbrown::hash_map::Entry;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
@@ -204,6 +204,9 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
 ) -> BinaryViewArrayGeneric<V> {
     let dtype = arrays[0].as_ref().dtype().clone();
     let (total_len, null_count) = len_null_count(arrays);
+    if total_len == 0 {
+        return BinaryViewArrayGeneric::new_empty(dtype);
+    }
     let validity = concatenate_validities_with_len_null_count(arrays, total_len, null_count);
 
     let first_arr: &BinaryViewArrayGeneric<V> = arrays[0].as_ref().as_any().downcast_ref().unwrap();

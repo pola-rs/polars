@@ -6,10 +6,16 @@ pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::trusted_len::TrustedLen;
+pub use polars_compute::rolling::{QuantileMethod, RollingFnParams, RollingVarParams};
+pub use polars_utils::aliases::*;
 pub use polars_utils::index::{ChunkId, IdxSize, NullableIdxSize};
 pub use polars_utils::pl_str::PlSmallStr;
 pub(crate) use polars_utils::total_ord::{TotalEq, TotalOrd};
 
+pub(crate) use crate::chunked_array::ChunkLenIter;
+pub use crate::chunked_array::ChunkedArray;
+#[cfg(feature = "dtype-struct")]
+pub use crate::chunked_array::StructChunked;
 pub use crate::chunked_array::arithmetic::ArithmeticChunked;
 pub use crate::chunked_array::builder::{
     BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,
@@ -30,16 +36,12 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
-pub(crate) use crate::chunked_array::ChunkLenIter;
-pub use crate::chunked_array::ChunkedArray;
-#[cfg(feature = "dtype-struct")]
-pub use crate::chunked_array::StructChunked;
 #[cfg(feature = "dtype-categorical")]
 pub use crate::datatypes::string_cache::StringCacheHolder;
 pub use crate::datatypes::{ArrayCollectIterExt, *};
 pub use crate::error::signals::try_raise_keyboard_interrupt;
 pub use crate::error::{
-    polars_bail, polars_ensure, polars_err, polars_warn, PolarsError, PolarsResult,
+    PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn,
 };
 pub use crate::frame::column::{Column, IntoColumn};
 pub use crate::frame::explode::UnpivotArgsIR;

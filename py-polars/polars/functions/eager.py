@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Sequence
+from collections.abc import Generator, Iterator, Sequence
 from functools import reduce
 from itertools import chain
 from typing import TYPE_CHECKING, get_args
@@ -311,7 +311,7 @@ def _alignment_join(
     descending: bool | Sequence[bool] = False,
 ) -> LazyFrame:
     """Create a single master frame with all rows aligned on the common key values."""
-    # note: can stackoverflow if the join becomes too large, so we
+    # note: can stack overflow if the join becomes too large, so we
     # collect eagerly when hitting a large enough number of frames
     post_align_collect = len(idx_frames) >= 250
 
@@ -325,7 +325,7 @@ def _alignment_join(
             how=how,
             on=align_on,
             suffix=f":{y_idx}",
-            join_nulls=True,
+            nulls_equal=True,
             coalesce=True,
             maintain_order="right_left",
         )
@@ -337,7 +337,7 @@ def _alignment_join(
 
 
 def align_frames(
-    *frames: FrameType,
+    *frames: FrameType | Iterable[FrameType],
     on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
     how: JoinStrategy = "full",
     select: str | Expr | Sequence[str | Expr] | None = None,
@@ -479,6 +479,11 @@ def align_frames(
     if not frames:
         return []
 
+    if len(frames) == 1 and not isinstance(frames[0], (pl.DataFrame, pl.LazyFrame)):
+        frames = frames[0]  # type: ignore[assignment]
+    if isinstance(frames, (Generator, Iterator)):
+        frames = tuple(frames)
+
     if len({type(f) for f in frames}) != 1:
         msg = (
             "input frames must be of a consistent type (all LazyFrame or all DataFrame)"
@@ -489,9 +494,9 @@ def align_frames(
     on = [on] if (isinstance(on, str) or not isinstance(on, Sequence)) else on
     align_on = [(c.meta.output_name() if isinstance(c, pl.Expr) else c) for c in on]
 
-    # create aligned master frame (this is the most expensive part; afterwards
-    # we just subselect out the columns representing the component frames)
-    idx_frames = [(idx, frame.lazy()) for idx, frame in enumerate(frames)]
+    # create aligned master frame (this is the most expensive part; after
+    # we just select out the columns representing the component frames)
+    idx_frames = [(idx, frame.lazy()) for idx, frame in enumerate(frames)]  # type: ignore[union-attr]
     alignment_frame = _alignment_join(
         *idx_frames, align_on=align_on, how=how, descending=descending
     )

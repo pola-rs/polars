@@ -14,6 +14,7 @@ Miscellaneous
     LazyFrame.map_batches
     LazyFrame.pipe
     LazyFrame.profile
+    LazyFrame.remote
 
 Serialization
 -------------

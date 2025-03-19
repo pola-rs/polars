@@ -14,9 +14,9 @@ use arrow::array::BinaryArray;
 use eval::Eval;
 use hash_table::AggHashTable;
 use hashbrown::hash_map::{RawEntryMut, RawVacantEntryMut};
+use polars_core::IdBuildHasher;
 use polars_core::frame::row::AnyValueBufferTrusted;
 use polars_core::series::SeriesPhysIter;
-use polars_core::IdBuildHasher;
 pub(crate) use sink::GenericGroupby2;
 use thread_local::ThreadLocalTable;
 

@@ -6,7 +6,8 @@ use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
-use polars_compute::sum::{wrapping_sum_arr, WrappingSum};
+use polars_compute::rolling::QuantileMethod;
+use polars_compute::sum::{WrappingSum, wrapping_sum_arr};
 use polars_utils::min_max::MinMax;
 use polars_utils::sync::SyncPtr;
 pub use quantile::*;
@@ -94,7 +95,7 @@ where
 
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let idx = self.first_non_null().unwrap();
                 unsafe { self.get_unchecked(idx) }
@@ -107,9 +108,7 @@ where
                 .downcast_iter()
                 .filter_map(MinMaxKernel::min_ignore_nan_kernel)
                 .reduce(MinMax::min_ignore_nan),
-        };
-
-        result
+        }
     }
 
     fn max(&self) -> Option<T::Native> {
@@ -118,7 +117,7 @@ where
         }
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let idx = if T::get_dtype().is_float() {
                     float_arg_max_sorted_ascending(self)
@@ -141,9 +140,7 @@ where
                 .downcast_iter()
                 .filter_map(MinMaxKernel::max_ignore_nan_kernel)
                 .reduce(MinMax::max_ignore_nan),
-        };
-
-        result
+        }
     }
 
     fn min_max(&self) -> Option<(T::Native, T::Native)> {
@@ -152,7 +149,7 @@ where
         }
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
                 let max = {
@@ -189,9 +186,7 @@ where
                         MinMax::max_ignore_nan(max1, max2),
                     )
                 }),
-        };
-
-        result
+        }
     }
 
     fn mean(&self) -> Option<f64> {
@@ -227,11 +222,7 @@ impl BooleanChunked {
             return None;
         }
         if nc == 0 {
-            if self.all() {
-                Some(true)
-            } else {
-                Some(false)
-            }
+            if self.all() { Some(true) } else { Some(false) }
         } else {
             // we can unwrap as we already checked empty and all null above
             if (self.sum().unwrap() + nc as IdxSize) == len as IdxSize {
@@ -246,11 +237,7 @@ impl BooleanChunked {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
-        if self.any() {
-            Some(true)
-        } else {
-            Some(false)
-        }
+        if self.any() { Some(true) } else { Some(false) }
     }
     pub fn mean(&self) -> Option<f64> {
         if self.is_empty() || self.null_count() == self.len() {
@@ -453,16 +440,16 @@ impl ChunkAggSeries for StringChunked {
 
 #[cfg(feature = "dtype-categorical")]
 impl CategoricalChunked {
-    fn min_categorical(&self) -> Option<&str> {
+    fn min_categorical(&self) -> Option<u32> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
         if self.uses_lexical_ordering() {
+            let rev_map = self.get_rev_map();
             // Fast path where all categories are used
-            if self._can_fast_unique() {
-                self.get_rev_map().get_categories().min_ignore_nan_kernel()
+            let c = if self._can_fast_unique() {
+                rev_map.get_categories().min_ignore_nan_kernel()
             } else {
-                let rev_map = self.get_rev_map();
                 // SAFETY:
                 // Indices are in bounds
                 self.physical()
@@ -471,26 +458,23 @@ impl CategoricalChunked {
                         opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
                     })
                     .min()
-            }
+            };
+            rev_map.find(c.unwrap())
         } else {
-            // SAFETY:
-            // Indices are in bounds
-            self.physical()
-                .min()
-                .map(|el| unsafe { self.get_rev_map().get_unchecked(el) })
+            self.physical().min()
         }
     }
 
-    fn max_categorical(&self) -> Option<&str> {
+    fn max_categorical(&self) -> Option<u32> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
         if self.uses_lexical_ordering() {
+            let rev_map = self.get_rev_map();
             // Fast path where all categories are used
-            if self._can_fast_unique() {
-                self.get_rev_map().get_categories().max_ignore_nan_kernel()
+            let c = if self._can_fast_unique() {
+                rev_map.get_categories().max_ignore_nan_kernel()
             } else {
-                let rev_map = self.get_rev_map();
                 // SAFETY:
                 // Indices are in bounds
                 self.physical()
@@ -499,13 +483,10 @@ impl CategoricalChunked {
                         opt_el.map(|el| unsafe { rev_map.get_unchecked(el) })
                     })
                     .max()
-            }
+            };
+            rev_map.find(c.unwrap())
         } else {
-            // SAFETY:
-            // Indices are in bounds
-            self.physical()
-                .max()
-                .map(|el| unsafe { self.get_rev_map().get_unchecked(el) })
+            self.physical().max()
         }
     }
 }
@@ -530,9 +511,23 @@ impl ChunkAggSeries for CategoricalChunked {
                     )
                 },
             },
-            DataType::Categorical(_, _) => {
-                let av: AnyValue = self.min_categorical().into();
-                Scalar::new(DataType::String, av.into_static())
+            DataType::Categorical(r, _) => match self.min_categorical() {
+                None => Scalar::new(self.dtype().clone(), AnyValue::Null),
+                Some(v) => {
+                    let r = r.as_ref().unwrap();
+                    let arr = match &**r {
+                        RevMapping::Local(arr, _) => arr,
+                        RevMapping::Global(_, arr, _) => arr,
+                    };
+                    Scalar::new(
+                        self.dtype().clone(),
+                        AnyValue::CategoricalOwned(
+                            v,
+                            r.clone(),
+                            SyncPtr::from_const(arr as *const _),
+                        ),
+                    )
+                },
             },
             _ => unreachable!(),
         }
@@ -555,9 +550,23 @@ impl ChunkAggSeries for CategoricalChunked {
                     )
                 },
             },
-            DataType::Categorical(_, _) => {
-                let av: AnyValue = self.max_categorical().into();
-                Scalar::new(DataType::String, av.into_static())
+            DataType::Categorical(r, _) => match self.max_categorical() {
+                None => Scalar::new(self.dtype().clone(), AnyValue::Null),
+                Some(v) => {
+                    let r = r.as_ref().unwrap();
+                    let arr = match &**r {
+                        RevMapping::Local(arr, _) => arr,
+                        RevMapping::Global(_, arr, _) => arr,
+                    };
+                    Scalar::new(
+                        self.dtype().clone(),
+                        AnyValue::CategoricalOwned(
+                            v,
+                            r.clone(),
+                            SyncPtr::from_const(arr as *const _),
+                        ),
+                    )
+                },
             },
             _ => unreachable!(),
         }
@@ -633,9 +642,12 @@ impl<T: PolarsObject> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
+    use polars_compute::rolling::QuantileMethod;
+
     use crate::prelude::*;
 
     #[test]
+    #[cfg(not(miri))]
     fn test_var() {
         // Validated with numpy. Note that numpy uses ddof as an argument which
         // influences results. The default ddof=0, we chose ddof=1, which is

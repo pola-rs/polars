@@ -8,6 +8,7 @@ pub mod io_sinks;
 pub mod io_sources;
 pub mod joins;
 pub mod map;
+#[cfg(feature = "merge_sorted")]
 pub mod merge_sorted;
 pub mod multiplexer;
 pub mod negative_slice;
@@ -27,6 +28,7 @@ mod compute_node_prelude {
 
     pub use super::ComputeNode;
     pub use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
+    pub use crate::execute::StreamingExecutionState;
     pub use crate::graph::PortState;
     pub use crate::morsel::{Morsel, MorselSeq};
     pub use crate::pipe::{RecvPort, SendPort};
@@ -34,13 +36,13 @@ mod compute_node_prelude {
 
 use compute_node_prelude::*;
 
+use self::io_sources::PhaseOutcomeToken;
+use crate::async_primitives::wait_group::WaitToken;
+use crate::execute::StreamingExecutionState;
+
 pub trait ComputeNode: Send {
     /// The name of this node.
     fn name(&self) -> &str;
-
-    /// Called once before the first execution phase to indicate with how many
-    /// pipelines we will execute the graph.
-    fn initialize(&mut self, _num_pipelines: usize) {}
 
     /// Update the state of this node given the state of our input and output
     /// ports. May be called multiple times until fully resolved for each
@@ -53,7 +55,12 @@ pub trait ComputeNode: Send {
     /// Similarly, for each output pipe `send` will contain the respective
     /// state of the input port that pipe is connected to when called, and you
     /// must update it to contain the desired state of your output port.
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()>;
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()>;
 
     /// If this node (in its current state) is a pipeline blocker, and whether
     /// this is memory intensive or not.
@@ -68,7 +75,7 @@ pub trait ComputeNode: Send {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
 
@@ -76,5 +83,36 @@ pub trait ComputeNode: Send {
     /// in-memory nodes.
     fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
         Ok(None)
+    }
+}
+
+/// The outcome of a phase in a task.
+///
+/// This indicates whether a task finished (and does not need to be started again) or has stopped
+/// prematurely. When this is dropped without calling `stop`, it is assumed that the task is
+/// finished (most likely because it errored).
+pub struct PhaseOutcome {
+    // This is used to see when phase is finished.
+    #[expect(unused)]
+    consume_token: WaitToken,
+
+    outcome_token: PhaseOutcomeToken,
+}
+
+impl PhaseOutcome {
+    pub fn new_shared_wait(consume_token: WaitToken) -> (PhaseOutcomeToken, Self) {
+        let outcome_token = PhaseOutcomeToken::new();
+        (
+            outcome_token.clone(),
+            Self {
+                consume_token,
+                outcome_token,
+            },
+        )
+    }
+
+    /// Phase ended before the task finished and needs to be called again.
+    pub fn stopped(self) {
+        self.outcome_token.stop();
     }
 }

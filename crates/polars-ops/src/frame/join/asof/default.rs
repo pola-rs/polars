@@ -24,7 +24,7 @@ where
     }
 
     let mut out = vec![0; left.len()];
-    let mut mask = vec![0; (left.len() + 7) / 8];
+    let mut mask = vec![0; left.len().div_ceil(8)];
     let mut state = S::new(allow_eq);
 
     if left.null_count() == 0 && right.null_count() == 0 {

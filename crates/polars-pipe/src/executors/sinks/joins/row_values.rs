@@ -42,7 +42,7 @@ impl RowValues {
         &mut self,
         context: &PExecutionContext,
         chunk: &DataChunk,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> PolarsResult<BinaryArray<i64>> {
         // Memory should already be cleared on previous iteration.
         debug_assert!(self.join_columns_material.is_empty());
@@ -85,7 +85,7 @@ impl RowValues {
 
         // SAFETY: we keep rows-encode alive
         let array = unsafe { self.current_rows.borrow_array() };
-        Ok(if join_nulls {
+        Ok(if nulls_equal {
             array
         } else {
             let validities = self

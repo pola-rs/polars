@@ -544,3 +544,25 @@ def test_nested_window_keys() -> None:
     df = pl.DataFrame({"x": 1, "y": "two"})
     assert df.select(pl.col("y").first().over(pl.struct("x").implode())).item() == "two"
     assert df.select(pl.col("y").first().over(pl.struct("x"))).item() == "two"
+
+
+def test_window_21692() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 1, 2, 3],
+            "b": [4, 3, 0, 1, 2, 0],
+            "c": ["first", "first", "first", "second", "second", "second"],
+        }
+    )
+    gt0 = pl.col("b") > 0
+    assert df.with_columns(
+        corr=pl.corr(
+            pl.col("a").filter(gt0),
+            pl.col("b").filter(gt0),
+        ).over("c"),
+    ).to_dict(as_series=False) == {
+        "a": [1, 2, 3, 1, 2, 3],
+        "b": [4, 3, 0, 1, 2, 0],
+        "c": ["first", "first", "first", "second", "second", "second"],
+        "corr": [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0],
+    }

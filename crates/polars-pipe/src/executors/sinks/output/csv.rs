@@ -2,12 +2,12 @@ use std::path::Path;
 
 use crossbeam_channel::bounded;
 use polars_core::prelude::*;
+use polars_io::SerWriter;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::write::{CsvWriter, CsvWriterOptions};
 use polars_io::utils::file::try_get_writeable;
-use polars_io::SerWriter;
 
-use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
+use crate::executors::sinks::output::file_sink::{FilesSink, SinkWriter, init_writer_thread};
 use crate::pipeline::morsels_per_sink;
 
 pub struct CsvSink {}
@@ -45,7 +45,7 @@ impl CsvSink {
         let io_thread_handle = Arc::new(Some(init_writer_thread(
             receiver,
             writer,
-            options.maintain_order,
+            true,
             morsels_per_sink,
         )));
 

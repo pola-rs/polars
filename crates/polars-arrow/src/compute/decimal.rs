@@ -140,7 +140,7 @@ impl DecimalFmtBuffer {
         self.len += 1;
 
         let rem_fmt = itoa_buf.format(rem + factor); // + factor adds leading 1 where period would be.
-        self.data[self.len..self.len + rem_fmt.len() - 1].copy_from_slice(rem_fmt[1..].as_bytes());
+        self.data[self.len..self.len + rem_fmt.len() - 1].copy_from_slice(&rem_fmt.as_bytes()[1..]);
         self.len += rem_fmt.len() - 1;
 
         if trim_zeros {

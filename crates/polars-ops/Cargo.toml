@@ -16,7 +16,6 @@ polars-json = { workspace = true, optional = true }
 polars-schema = { workspace = true }
 polars-utils = { workspace = true }
 
-ahash = { workspace = true }
 aho-corasick = { workspace = true, optional = true }
 argminmax = { version = "0.6.2", default-features = false, features = ["float"] }
 arrow = { workspace = true }
@@ -30,7 +29,6 @@ hex = { workspace = true, optional = true }
 indexmap = { workspace = true }
 memchr = { workspace = true }
 num-traits = { workspace = true }
-once_cell = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }

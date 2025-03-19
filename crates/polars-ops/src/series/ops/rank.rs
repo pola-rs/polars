@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::BooleanArray;
 use arrow::compute::concatenate::concatenate_validities;
 use polars_core::prelude::*;

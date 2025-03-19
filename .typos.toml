@@ -5,6 +5,7 @@ extend-exclude = [
   "*.gz",
   "dists.dss",
   "**/images/*",
+  "**/py-polars/polars/_utils/nest_asyncio.py",
 ]
 ignore-hidden = false
 
@@ -32,4 +33,5 @@ nd = "nd"
 NDJson = "NDJson"
 NDJsonSinkNode = "NDJsonSinkNode"
 NDJsonReadOptions = "NDJsonReadOptions"
+NDJsonSourceNode = "NDJsonSourceNode"
 opt_nd = "opt_nd"

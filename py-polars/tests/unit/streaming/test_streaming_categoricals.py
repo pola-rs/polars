@@ -12,7 +12,7 @@ def test_streaming_nested_categorical() -> None:
         .group_by("numbers")
         .agg(pl.col("cat").first())
         .sort("numbers")
-    ).collect(streaming=True).to_dict(as_series=False) == {
+    ).collect(engine="streaming").to_dict(as_series=False) == {
         "numbers": [1, 2],
         "cat": [["str"], ["bar"]],
     }
@@ -30,4 +30,4 @@ def test_streaming_cat_14933() -> None:
     )
     result = df1.join(df2, on="a", how="left")
     expected = {"a": [0], "l": [None]}
-    assert result.collect(streaming=True).to_dict(as_series=False) == expected
+    assert result.collect(engine="streaming").to_dict(as_series=False) == expected

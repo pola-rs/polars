@@ -1,7 +1,7 @@
 use arrow::array::*;
 use arrow::buffer::Buffer;
 use arrow::datatypes::*;
-use arrow::scalar::{new_scalar, PrimitiveScalar, Scalar, UnionScalar, Utf8Scalar};
+use arrow::scalar::{PrimitiveScalar, Scalar, UnionScalar, Utf8Scalar, new_scalar};
 use polars_error::PolarsResult;
 
 pub fn union_type(fields: Vec<Field>, ids: Option<Vec<i32>>, mode: UnionMode) -> ArrowDataType {

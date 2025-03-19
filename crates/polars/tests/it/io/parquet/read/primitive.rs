@@ -5,7 +5,7 @@ use polars_parquet::read::ParquetError;
 
 use super::dictionary::PrimitivePageDict;
 use super::hybrid_rle_iter;
-use super::utils::{deserialize_optional, NativePageState};
+use super::utils::{NativePageState, deserialize_optional};
 use crate::io::parquet::read::hybrid_rle_fn_collect;
 
 /// The deserialization state of a `DataPage` of `Primitive` parquet primitive type

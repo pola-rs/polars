@@ -4,7 +4,7 @@ mod functions;
 mod is_in;
 
 use binary::process_binary;
-use polars_compute::cast::temporal::{time_unit_multiple, SECONDS_IN_DAY};
+use polars_compute::cast::temporal::{SECONDS_IN_DAY, time_unit_multiple};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
@@ -159,7 +159,7 @@ impl OptimizationRule for TypeCoercionRule {
             } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
             #[cfg(feature = "is_in")]
             AExpr::Function {
-                function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+                function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
                 ref input,
                 options,
             } => {
@@ -173,7 +173,7 @@ impl OptimizationRule for TypeCoercionRule {
                 input[1].set_node(other_input);
 
                 Some(AExpr::Function {
-                    function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+                    function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
                     input,
                     options,
                 })
@@ -456,7 +456,7 @@ fn try_inline_literal_cast(
                 (AnyValue::Duration(_, _), _) => return Ok(None),
                 #[cfg(feature = "dtype-categorical")]
                 (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
-                    return Ok(None)
+                    return Ok(None);
                 },
                 #[cfg(feature = "dtype-categorical")]
                 (AnyValue::Enum(_, _, _), _) | (_, DataType::Enum(_, _)) => return Ok(None),

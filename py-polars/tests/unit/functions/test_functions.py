@@ -310,16 +310,24 @@ def test_align_frames() -> None:
 
 
 def test_align_frames_misc() -> None:
-    # descending result
     df1 = pl.DataFrame([[3, 5, 6], [5, 8, 9]], orient="row")
     df2 = pl.DataFrame([[2, 5, 6], [3, 8, 9], [4, 2, 0]], orient="row")
 
-    pf1, pf2 = pl.align_frames(df1, df2, on="column_0", descending=True)
+    # descending result
+    pf1, pf2 = pl.align_frames(
+        [df1, df2],  # list input
+        on="column_0",
+        descending=True,
+    )
     assert pf1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
     assert pf2.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
 
     # handle identical frames
-    pf1, pf2, pf3 = pl.align_frames(df1, df2, df2, on="column_0", descending=True)
+    pf1, pf2, pf3 = pl.align_frames(
+        (df for df in (df1, df2, df2)),  # generator input
+        on="column_0",
+        descending=True,
+    )
     assert pf1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
     for pf in (pf2, pf3):
         assert pf.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]

@@ -41,9 +41,9 @@ pub use crate::frame::{AllowedOptimizations, OptFlags};
 pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
-use crate::plans::optimizer::cse::prune_unused_caches;
-#[cfg(feature = "cse")]
 use crate::plans::optimizer::cse::CommonSubExprOptimizer;
+#[cfg(feature = "cse")]
+use crate::plans::optimizer::cse::prune_unused_caches;
 use crate::plans::optimizer::predicate_pushdown::ExprEval;
 #[cfg(feature = "cse")]
 use crate::plans::visitor::*;
@@ -108,25 +108,30 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     #[cfg(not(feature = "cse"))]
     let comm_subexpr_elim = false;
 
-    #[allow(unused_variables)]
-    let agg_scan_projection =
-        opt_flags.contains(OptFlags::FILE_CACHING) && !opt_flags.streaming() && !opt_flags.eager();
-
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
     let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();
 
-    // Collect members for optimizations that need it.
-    let mut members = MemberCollector::new();
-    if !opt_flags.eager() && (comm_subexpr_elim || opt_flags.projection_pushdown()) {
-        members.collect(lp_top, lp_arena, expr_arena)
+    let mut _opt_members = &mut None;
+
+    macro_rules! get_or_init_members {
+        () => {
+            _get_or_init_members(_opt_members, lp_top, lp_arena, expr_arena)
+        };
+    }
+
+    macro_rules! get_members_opt {
+        () => {
+            _opt_members.as_mut()
+        };
     }
 
     // Run before slice pushdown
-    if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE)
-        && members.has_group_by | members.has_sort | members.has_distinct
-    {
-        set_order_flags(lp_top, lp_arena, expr_arena, scratch);
+    if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
+        let members = get_or_init_members!();
+        if members.has_group_by | members.has_sort | members.has_distinct {
+            set_order_flags(lp_top, lp_arena, expr_arena, scratch);
+        }
     }
 
     if opt_flags.simplify_expr() {
@@ -135,21 +140,26 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     }
 
     #[cfg(feature = "cse")]
-    let _cse_plan_changed = if comm_subplan_elim
-        && members.has_joins_or_unions
-        && members.has_duplicate_scans()
-        && !members.has_cache
-    {
-        if verbose {
-            eprintln!("found multiple sources; run comm_subplan_elim")
+    let _cse_plan_changed = if comm_subplan_elim {
+        let members = get_or_init_members!();
+        if (members.has_sink_multiple || members.has_joins_or_unions)
+            && members.has_duplicate_scans()
+            && !members.has_cache
+        {
+            if verbose {
+                eprintln!("found multiple sources; run comm_subplan_elim")
+            }
+
+            let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
+
+            prune_unused_caches(lp_arena, cid2c);
+
+            lp_top = lp;
+            members.has_cache |= changed;
+            changed
+        } else {
+            false
         }
-        let (lp, changed, cid2c) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
-
-        prune_unused_caches(lp_arena, cid2c);
-
-        lp_top = lp;
-        members.has_cache |= changed;
-        changed
     } else {
         false
     };
@@ -170,7 +180,8 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     }
 
     if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt = PredicatePushDown::new(expr_eval);
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(expr_eval, opt_flags.new_streaming());
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
@@ -181,7 +192,7 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     }
 
     // Make sure it is after predicate pushdown
-    if opt_flags.collapse_joins() && members.has_filter_with_join_input {
+    if opt_flags.collapse_joins() && get_or_init_members!().has_filter_with_join_input {
         collapse_joins::optimize(lp_top, lp_arena, expr_arena);
     }
 
@@ -219,7 +230,10 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
-    if members.has_joins_or_unions && members.has_cache && _cse_plan_changed {
+    if _cse_plan_changed
+        && get_members_opt!()
+            .is_some_and(|members| members.has_joins_or_unions && members.has_cache)
+    {
         // We only want to run this on cse inserted caches
         cache_states::set_cache_states(
             lp_top,
@@ -234,9 +248,9 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
 
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
-    if comm_subexpr_elim && !members.has_ext_context {
+    if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
         let mut optimizer = CommonSubExprOptimizer::new();
-        let alp_node = IRNode::new(lp_top);
+        let alp_node = IRNode::new_mutate(lp_top);
 
         lp_top = try_with_ir_arena(lp_arena, expr_arena, |arena| {
             let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
@@ -259,4 +273,18 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     };
 
     Ok(lp_top)
+}
+
+fn _get_or_init_members<'a>(
+    opt_members: &'a mut Option<MemberCollector>,
+    lp_top: Node,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> &'a mut MemberCollector {
+    opt_members.get_or_insert_with(|| {
+        let mut members = MemberCollector::new();
+        members.collect(lp_top, lp_arena, expr_arena);
+
+        members
+    })
 }

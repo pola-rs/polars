@@ -10,7 +10,6 @@ pub struct CsvWriterOptions {
     pub include_bom: bool,
     pub include_header: bool,
     pub batch_size: NonZeroUsize,
-    pub maintain_order: bool,
     pub serialize_options: SerializeOptions,
 }
 
@@ -20,7 +19,6 @@ impl Default for CsvWriterOptions {
             include_bom: false,
             include_header: true,
             batch_size: NonZeroUsize::new(1024).unwrap(),
-            maintain_order: false,
             serialize_options: SerializeOptions::default(),
         }
     }

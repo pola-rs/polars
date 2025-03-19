@@ -1,33 +1,33 @@
 pub(super) mod batched;
 
 use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
-use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
 use rayon::prelude::*;
 
+use super::CsvParseOptions;
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValuesCompiled};
 use super::parser::{
-    is_comment_line, parse_lines, skip_bom, skip_line_ending, skip_lines_naive, skip_this_line,
-    CountLines, SplitLines,
+    CountLines, SplitLines, is_comment_line, parse_lines, skip_bom, skip_line_ending,
+    skip_lines_naive, skip_this_line,
 };
 use super::reader::prepare_csv_schema;
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(feature = "decompress")]
 use super::utils::decompress;
-use super::CsvParseOptions;
+use crate::RowIndex;
 use crate::csv::read::parser::skip_this_line_naive;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::compression::SupportedCompression;
 use crate::utils::update_row_counts2;
-use crate::RowIndex;
 
 pub fn cast_columns(
     df: &mut DataFrame,
@@ -454,7 +454,7 @@ impl<'a> CoreReader<'a> {
                                         None
                                     };
 
-                                    df.with_row_index_mut(rc.name.clone(), offset);
+                                    unsafe { df.with_row_index_mut(rc.name.clone(), offset) };
                                 };
 
                                 if let Some(predicate) = slf.predicate.as_ref() {

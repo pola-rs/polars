@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Row Encoding for Enum's
 //!
 //! This is a fixed-size encoding that takes a number of maximum bits that each value can take and

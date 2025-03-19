@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use super::column_descriptor::{BaseType, ColumnDescriptor, Descriptor};
 use crate::parquet::error::{ParquetError, ParquetResult};
+use crate::parquet::schema::Repetition;
 use crate::parquet::schema::io_message::from_message;
 use crate::parquet::schema::types::{FieldInfo, ParquetType};
-use crate::parquet::schema::Repetition;
 
 /// A schema descriptor. This encapsulates the top-level schemas for all the columns,
 /// as well as all descriptors for all the primitive columns.
@@ -130,7 +130,7 @@ fn build_tree<'a>(
                 base_tp,
             ));
         },
-        ParquetType::GroupType { ref fields, .. } => {
+        ParquetType::GroupType { fields, .. } => {
             let base_tp = base_tp.into_arc();
             for f in fields {
                 build_tree(

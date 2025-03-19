@@ -23,7 +23,6 @@ polars-parquet = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
-ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
@@ -35,7 +34,6 @@ futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
-once_cell = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
@@ -51,7 +49,7 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
-python = ["dep:pyo3", "polars-utils/python"]
+python = ["dep:pyo3", "polars-utils/python", "polars-ffi"]
 serde = [
   "ir_serde",
   "dep:serde",
@@ -60,6 +58,7 @@ serde = [
   "polars-io/serde",
   "polars-ops/serde",
   "polars-utils/serde",
+  "polars-compute/serde",
   "either/serde",
 ]
 streaming = []

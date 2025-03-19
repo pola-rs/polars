@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::mem::MaybeUninit;
 
 use arrow::array::{
@@ -12,7 +13,7 @@ use crate::fixed::{boolean, decimal, numeric, packed_u32};
 use crate::row::{RowEncodingOptions, RowsEncoded};
 use crate::variable::{binary, no_order, utf8};
 use crate::widths::RowWidths;
-use crate::{with_match_arrow_primitive_type, ArrayRef, RowEncodingContext};
+use crate::{ArrayRef, RowEncodingContext, with_match_arrow_primitive_type};
 
 pub fn convert_columns(
     num_rows: usize,
@@ -855,8 +856,8 @@ unsafe fn encode_validity(
 }
 
 pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingContext>) -> Option<usize> {
-    use numeric::FixedLengthEncoding;
     use ArrowDataType as D;
+    use numeric::FixedLengthEncoding;
     Some(match dtype {
         D::Null => 0,
         D::Boolean => 1,

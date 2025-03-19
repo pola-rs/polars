@@ -6,9 +6,9 @@ use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::utils::flatten::flatten_nullable;
 use polars_core::utils::split_and_flatten;
-use polars_core::{with_match_physical_float_polars_type, POOL};
+use polars_core::{POOL, with_match_physical_float_polars_type};
 use polars_utils::abs_diff::AbsDiff;
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use rayon::prelude::*;
@@ -513,8 +513,8 @@ pub trait AsofJoinBy: IntoDf {
             &left_asof,
             &right_asof,
             tolerance.is_some(),
-            left_by.is_empty() && right_by.is_empty(),
             check_sortedness,
+            !(left_by.is_empty() && right_by.is_empty()),
         )?;
 
         let mut left_by = self_df.select(left_by)?;

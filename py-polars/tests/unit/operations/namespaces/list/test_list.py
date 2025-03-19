@@ -1001,3 +1001,29 @@ def test_list_agg_all_null(
 ) -> None:
     s = pl.Series([None, None], dtype=pl.List(inner_dtype))
     assert getattr(s.list, agg)().dtype == expected_dtype
+
+
+@pytest.mark.parametrize(
+    ("inner_dtype", "expected_inner_dtype"),
+    [
+        (pl.Datetime("us"), pl.Duration("us")),
+        (pl.Date(), pl.Duration("ms")),
+        (pl.Time(), pl.Duration("ns")),
+        (pl.UInt64(), pl.Int64()),
+        (pl.UInt32(), pl.Int64()),
+        (pl.UInt8(), pl.Int16()),
+        (pl.Int8(), pl.Int8()),
+        (pl.Float32(), pl.Float32()),
+    ],
+)
+def test_list_diff_schema(
+    inner_dtype: PolarsDataType, expected_inner_dtype: PolarsDataType
+) -> None:
+    lf = (
+        pl.LazyFrame({"a": [[1, 2]]})
+        .cast(pl.List(inner_dtype))
+        .select(pl.col("a").list.diff(1))
+    )
+    expected = {"a": pl.List(expected_inner_dtype)}
+    assert lf.collect_schema() == expected
+    assert lf.collect().schema == expected

@@ -1,4 +1,4 @@
-use polars_error::{feature_gated, PolarsResult};
+use polars_error::{PolarsResult, feature_gated};
 
 use super::list_utils::NumericOp;
 use super::{ArrayChunked, FixedSizeListType, IntoSeries, NumOpsDispatchInner, Series};

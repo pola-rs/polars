@@ -255,8 +255,8 @@ def test_sorted_flag_after_streaming_join() -> None:
     df2 = pl.DataFrame({"x": [4, 2, 3, 1], "z": [1, 4, 9, 1]})
     assert (
         df1.lazy()
-        .join(df2.lazy(), on="x", how="left")
-        .collect(streaming=True)["x"]
+        .join(df2.lazy(), on="x", how="left", maintain_order="left")
+        .collect(engine="old-streaming")["x"]  # type: ignore[call-overload]
         .flags["SORTED_ASC"]
     )
 
@@ -427,3 +427,13 @@ def test_is_sorted_chunked_select() -> None:
 def test_is_sorted_arithmetic_overflow_14106() -> None:
     s = pl.Series([0, 200], dtype=pl.UInt8).sort()
     assert not (s + 200).is_sorted()
+
+
+def test_is_sorted_struct() -> None:
+    s = pl.Series("a", [{"x": 3}, {"x": 1}, {"x": 2}]).sort()
+    assert s.flags["SORTED_ASC"]
+    assert not s.flags["SORTED_DESC"]
+
+    s = s.sort(descending=True)
+    assert s.flags["SORTED_DESC"]
+    assert not s.flags["SORTED_ASC"]

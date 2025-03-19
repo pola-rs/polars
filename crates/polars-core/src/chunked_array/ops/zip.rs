@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
-use polars_compute::if_then_else::{if_then_else_validity, IfThenElseKernel};
+use polars_compute::if_then_else::{IfThenElseKernel, if_then_else_validity};
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
@@ -369,10 +369,12 @@ impl ChunkZip<StructType> for StructChunked {
                     }
                 },
                 (1, _) if length != 1 => {
-                    debug_assert!(if_false
-                        .chunk_lengths()
-                        .zip(mask.chunk_lengths())
-                        .all(|(r, m)| r == m));
+                    debug_assert!(
+                        if_false
+                            .chunk_lengths()
+                            .zip(mask.chunk_lengths())
+                            .all(|(r, m)| r == m)
+                    );
 
                     let combine = if if_true.null_count() == 0 {
                         |if_false: Option<&Bitmap>, m: &Bitmap| {
@@ -406,10 +408,12 @@ impl ChunkZip<StructType> for StructChunked {
                     }
                 },
                 (_, 1) if length != 1 => {
-                    debug_assert!(if_true
-                        .chunk_lengths()
-                        .zip(mask.chunk_lengths())
-                        .all(|(l, m)| l == m));
+                    debug_assert!(
+                        if_true
+                            .chunk_lengths()
+                            .zip(mask.chunk_lengths())
+                            .all(|(l, m)| l == m)
+                    );
 
                     let combine = if if_false.null_count() == 0 {
                         |if_true: Option<&Bitmap>, m: &Bitmap| {
@@ -443,14 +447,18 @@ impl ChunkZip<StructType> for StructChunked {
                     }
                 },
                 (_, _) => {
-                    debug_assert!(if_true
-                        .chunk_lengths()
-                        .zip(if_false.chunk_lengths())
-                        .all(|(l, r)| l == r));
-                    debug_assert!(if_true
-                        .chunk_lengths()
-                        .zip(mask.chunk_lengths())
-                        .all(|(l, r)| l == r));
+                    debug_assert!(
+                        if_true
+                            .chunk_lengths()
+                            .zip(if_false.chunk_lengths())
+                            .all(|(l, r)| l == r)
+                    );
+                    debug_assert!(
+                        if_true
+                            .chunk_lengths()
+                            .zip(mask.chunk_lengths())
+                            .all(|(l, r)| l == r)
+                    );
 
                     let validities = if_true
                         .chunks()

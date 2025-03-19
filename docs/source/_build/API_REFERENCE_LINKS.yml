@@ -181,6 +181,13 @@ python:
   write_json: https://docs.pola.rs/api/python/stable/reference/api/polars.DataFrame.write_json.html
   write_ndjson: https://docs.pola.rs/api/python/stable/reference/api/polars.DataFrame.write_ndjson.html
   write_parquet: https://docs.pola.rs/api/python/stable/reference/api/polars.DataFrame.write_parquet.html
+  Workspace: https://docs.cloud.pola.rs/reference/workspace/workspace.html
+  ComputeContext: https://docs.cloud.pola.rs/reference/compute/compute.html
+  LazyFrameExt : https://docs.cloud.pola.rs/reference/query/lazyframeext.html
+  QueryResult : https://docs.cloud.pola.rs/reference/query/query_result.html
+  InteractiveQuery : https://docs.cloud.pola.rs/reference/query/interactive_query.html
+  BatchQuery: https://docs.cloud.pola.rs/reference/query/batch_query.html
+  login: https://docs.cloud.pola.rs/reference/auth/api/polars_cloud.login.html
 
 rust:
   agg: https://docs.rs/polars/latest/polars/prelude/struct.LazyGroupBy.html#method.agg

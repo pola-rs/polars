@@ -1,6 +1,6 @@
 use polars_core::schema::SchemaRef;
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

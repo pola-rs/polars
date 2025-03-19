@@ -663,7 +663,7 @@ def test_join_where_literal_20061() -> None:
         df_right,
         pl.col("value_left") > pl.col("value_right"),
         pl.col("flag_right") == pl.lit(1, dtype=pl.Int8),
-    ).sort("id").to_dict(as_series=False) == {
+    ).sort(pl.all()).to_dict(as_series=False) == {
         "id": [1, 2, 3, 3],
         "value_left": [10, 20, 30, 30],
         "flag": [1, 0, 1, 1],

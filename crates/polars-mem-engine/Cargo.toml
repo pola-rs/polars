@@ -23,6 +23,7 @@ polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
+recursive = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [features]

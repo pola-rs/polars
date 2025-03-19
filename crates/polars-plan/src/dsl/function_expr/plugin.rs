@@ -1,14 +1,15 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ffi::CStr;
-use std::sync::RwLock;
+use std::sync::{LazyLock, RwLock};
 
-use arrow::ffi::{import_field_from_c, ArrowSchema};
+use arrow::ffi::{ArrowSchema, import_field_from_c};
 use libloading::Library;
-use once_cell::sync::Lazy;
 
 use super::*;
 
 type PluginAndVersion = (Library, u16, u16);
-static LOADED: Lazy<RwLock<PlHashMap<String, PluginAndVersion>>> = Lazy::new(Default::default);
+static LOADED: LazyLock<RwLock<PlHashMap<String, PluginAndVersion>>> =
+    LazyLock::new(Default::default);
 
 fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
     let lib_map = LOADED.read().unwrap();

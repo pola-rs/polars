@@ -1,4 +1,4 @@
-use polars_core::prelude::{polars_ensure, polars_err, Column, PolarsResult};
+use polars_core::prelude::{Column, PolarsResult, polars_ensure, polars_err};
 
 pub fn repeat(args: &[Column]) -> PolarsResult<Column> {
     let c = &args[0];

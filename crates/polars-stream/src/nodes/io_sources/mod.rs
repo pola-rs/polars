@@ -1,32 +1,47 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::ops::Range;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
+use polars_core::config;
 use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
-use polars_utils::index::AtomicIdxSize;
+use polars_io::predicates::ScanIOPredicate;
+use polars_utils::IdxSize;
 
-use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskPriority};
-use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_executor::AbortOnDropHandle;
+use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::morsel::SourceToken;
+use crate::nodes::compute_node_prelude::*;
+
+pub mod multi_file_reader;
 
 #[cfg(feature = "csv")]
 pub mod csv;
 #[cfg(feature = "ipc")]
 pub mod ipc;
 pub mod multi_scan;
+#[cfg(feature = "json")]
+pub mod ndjson;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+
+#[derive(Clone, Debug)]
+pub enum RowRestriction {
+    Slice(Range<usize>),
+    Predicate(ScanIOPredicate),
+}
 
 /// The state needed to manage a spawned [`SourceNode`].
 struct StartedSourceComputeNode {
     output_send: Sender<SourceOutput>,
-    join_handles: Vec<JoinHandle<PolarsResult<()>>>,
+    join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
 }
 
 /// A [`ComputeNode`] to wrap a [`SourceNode`].
 pub struct SourceComputeNode<T: SourceNode + Send + Sync> {
     source: T,
-    num_pipelines: usize,
     started: Option<StartedSourceComputeNode>,
 }
 
@@ -34,7 +49,6 @@ impl<T: SourceNode + Send + Sync> SourceComputeNode<T> {
     pub fn new(source: T) -> Self {
         Self {
             source,
-            num_pipelines: 0,
             started: None,
         }
     }
@@ -45,14 +59,11 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         self.source.name()
     }
 
-    fn initialize(&mut self, num_pipelines: usize) {
-        self.num_pipelines = num_pipelines;
-    }
-
     fn update_state(
         &mut self,
         recv: &mut [PortState],
         send: &mut [PortState],
+        _state: &StreamingExecutionState,
     ) -> polars_error::PolarsResult<()> {
         assert!(recv.is_empty());
         assert_eq!(send.len(), 1);
@@ -77,18 +88,22 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         scope: &'s super::TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.is_empty());
         assert_eq!(send_ports.len(), 1);
 
+        let name = self.name().to_string();
         let started = self.started.get_or_insert_with(|| {
             let (tx, rx) = connector();
             let mut join_handles = Vec::new();
 
-            self.source
-                .spawn_source(self.num_pipelines, rx, state, &mut join_handles, None);
+            self.source.spawn_source(rx, state, &mut join_handles, None);
+            // One of the tasks might throw an error. In which case, we need to cancel all
+            // handles and find the error.
+            let join_handles: FuturesUnordered<_> =
+                join_handles.drain(..).map(AbortOnDropHandle::new).collect();
 
             StartedSourceComputeNode {
                 output_send: tx,
@@ -107,16 +122,22 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         };
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let (outcome, wait_group, source_output) = SourceOutput::from_port(source_output);
-            if started.output_send.send(source_output).await.is_err() {
-                return Ok(());
+
+            if started.output_send.send(source_output).await.is_ok() {
+                // Wait for the phase to finish.
+                wait_group.wait().await;
+                if !outcome.did_finish() {
+                    return Ok(());
+                }
+
+                if config::verbose() {
+                    eprintln!("[{name}]: Last data received.");
+                }
             };
 
-            // Wait for the phase to finish.
-            wait_group.wait().await;
-            if outcome.did_finish() {
-                for handle in std::mem::take(&mut started.join_handles) {
-                    handle.await?;
-                }
+            // Either the task finished or some error occurred.
+            while let Some(ret) = started.join_handles.next().await {
+                ret?;
             }
 
             Ok(())
@@ -143,16 +164,17 @@ impl PhaseOutcomeToken {
     }
 
     /// Indicate that the phase was stopped before finishing.
-    fn stop(&self) {
+    pub fn stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
     }
 
     /// Returns whether the phase was stopped before finishing.
-    fn was_stopped(&self) -> bool {
+    pub fn was_stopped(&self) -> bool {
         self.stop.load(Ordering::Relaxed)
     }
+
     /// Returns whether the phase was finished completely.
-    fn did_finish(&self) -> bool {
+    pub fn did_finish(&self) -> bool {
         !self.was_stopped()
     }
 }
@@ -171,6 +193,7 @@ pub struct SourceOutput {
 pub struct MorselOutput {
     pub outcome: PhaseOutcomeToken,
     pub port: Sender<Morsel>,
+    pub source_token: SourceToken,
 
     #[allow(unused)]
     /// Dropping this indicates that the morsel sender is done.
@@ -192,7 +215,10 @@ impl SourceOutput {
 }
 
 impl MorselOutput {
-    pub fn from_port(port: Sender<Morsel>) -> (PhaseOutcomeToken, WaitGroup, Self) {
+    pub fn from_port(
+        port: Sender<Morsel>,
+        source_token: SourceToken,
+    ) -> (PhaseOutcomeToken, WaitGroup, Self) {
         let outcome = PhaseOutcomeToken::new();
         let wait_group = WaitGroup::default();
 
@@ -200,6 +226,7 @@ impl MorselOutput {
             outcome: outcome.clone(),
             wait_token: wait_group.token(),
             port,
+            source_token,
         };
         (outcome, wait_group, output)
     }
@@ -253,10 +280,9 @@ pub trait SourceNode: Sized + Send + Sync {
     /// count before slicing and predicate filtering).
     fn spawn_source(
         &mut self,
-        num_pipelines: usize,
         output_recv: Receiver<SourceOutput>,
-        state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     );
 }

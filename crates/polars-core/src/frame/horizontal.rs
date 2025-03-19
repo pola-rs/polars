@@ -1,28 +1,8 @@
-use polars_error::{polars_ensure, polars_err, PolarsResult};
-use polars_utils::aliases::PlHashSet;
+use polars_error::{PolarsResult, polars_err};
 
 use super::Column;
 use crate::datatypes::AnyValue;
 use crate::frame::DataFrame;
-use crate::prelude::PlSmallStr;
-
-fn check_hstack(
-    col: &Column,
-    names: &mut PlHashSet<PlSmallStr>,
-    height: usize,
-    is_empty: bool,
-) -> PolarsResult<()> {
-    polars_ensure!(
-        col.len() == height || is_empty,
-        ShapeMismatch: "unable to hstack Series of length {} and DataFrame of height {}",
-        col.len(), height,
-    );
-    polars_ensure!(
-        names.insert(col.name().clone()),
-        Duplicate: "unable to hstack, column with name {:?} already exists", col.name().as_str(),
-    );
-    Ok(())
-}
 
 impl DataFrame {
     /// Add columns horizontally.
@@ -31,23 +11,35 @@ impl DataFrame {
     /// The caller must ensure:
     /// - the length of all [`Column`] is equal to the height of this [`DataFrame`]
     /// - the columns names are unique
+    ///
+    /// Note: If `self` is empty, `self.height` will always be overridden by the height of the first
+    /// column in `columns`.
+    ///
+    /// Note that on a debug build this will panic on duplicates / height mismatch.
     pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Column]) -> &mut Self {
-        // If we don't have any columns yet, copy the height from the given columns.
-        if let Some(fst) = columns.first() {
-            if self.width() == 0 {
-                // SAFETY: The functions invariants asks for all columns to be the same length so
-                // that makes that a valid height.
-                unsafe { self.set_height(fst.len()) };
+        self.clear_schema();
+        self.columns.extend_from_slice(columns);
+
+        if cfg!(debug_assertions) {
+            if let err @ Err(_) = DataFrame::validate_columns_slice(&self.columns) {
+                // Reset DataFrame state to before extend.
+                self.columns.truncate(self.columns.len() - columns.len());
+                err.unwrap();
             }
         }
 
-        self.clear_schema();
-        self.columns.extend_from_slice(columns);
+        if let Some(c) = self.columns.first() {
+            unsafe { self.set_height(c.len()) };
+        }
+
         self
     }
 
     /// Add multiple [`Column`] to a [`DataFrame`].
-    /// The added `Series` are required to have the same length.
+    /// Errors if the resulting DataFrame columns have duplicate names or unequal heights.
+    ///
+    /// Note: If `self` is empty, `self.height` will always be overridden by the height of the first
+    /// column in `columns`.
     ///
     /// # Example
     ///
@@ -58,23 +50,23 @@ impl DataFrame {
     /// }
     /// ```
     pub fn hstack_mut(&mut self, columns: &[Column]) -> PolarsResult<&mut Self> {
-        let mut names = self
-            .columns
-            .iter()
-            .map(|c| c.name().clone())
-            .collect::<PlHashSet<_>>();
+        self.clear_schema();
+        self.columns.extend_from_slice(columns);
 
-        let height = self.height();
-        let is_empty = self.is_empty();
-        // first loop check validity. We don't do this in a single pass otherwise
-        // this DataFrame is already modified when an error occurs.
-        for col in columns {
-            check_hstack(col, &mut names, height, is_empty)?;
+        if let err @ Err(_) = DataFrame::validate_columns_slice(&self.columns) {
+            // Reset DataFrame state to before extend.
+            self.columns.truncate(self.columns.len() - columns.len());
+            err?;
         }
-        drop(names);
-        Ok(unsafe { self.hstack_mut_unchecked(columns) })
+
+        if let Some(c) = self.columns.first() {
+            unsafe { self.set_height(c.len()) };
+        }
+
+        Ok(self)
     }
 }
+
 /// Concat [`DataFrame`]s horizontally.
 /// Concat horizontally and extend with null values if lengths don't match
 pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> PolarsResult<DataFrame> {
@@ -86,12 +78,23 @@ pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> Polars
 
     let owned_df;
 
+    let mut out_width = 0;
+
+    let all_equal_height = dfs.iter().all(|df| {
+        out_width += df.width();
+        df.height() == output_height
+    });
+
     // if not all equal length, extend the DataFrame with nulls
-    let dfs = if !dfs.iter().all(|df| df.height() == output_height) {
+    let dfs = if !all_equal_height {
+        out_width = 0;
+
         owned_df = dfs
             .iter()
             .cloned()
             .map(|mut df| {
+                out_width += df.width();
+
                 if df.height() != output_height {
                     let diff = output_height - df.height();
 
@@ -113,30 +116,41 @@ pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> Polars
         dfs
     };
 
-    let mut first_df = dfs[0].clone();
-    let height = first_df.height();
-    let is_empty = first_df.is_empty();
+    let mut acc_cols = Vec::with_capacity(out_width);
 
-    let mut names = if check_duplicates {
-        first_df
-            .columns
-            .iter()
-            .map(|s| s.name().clone())
-            .collect::<PlHashSet<_>>()
-    } else {
-        Default::default()
-    };
-
-    for df in &dfs[1..] {
-        let cols = df.get_columns();
-
-        if check_duplicates {
-            for col in cols {
-                check_hstack(col, &mut names, height, is_empty)?;
-            }
-        }
-
-        unsafe { first_df.hstack_mut_unchecked(cols) };
+    for df in dfs {
+        acc_cols.extend(df.get_columns().iter().cloned());
     }
-    Ok(first_df)
+
+    if check_duplicates {
+        DataFrame::validate_columns_slice(&acc_cols)?;
+    }
+
+    let df = unsafe { DataFrame::new_no_checks_height_from_first(acc_cols) };
+
+    Ok(df)
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_error::PolarsError;
+
+    #[test]
+    fn test_hstack_mut_empty_frame_height_validation() {
+        use crate::frame::DataFrame;
+        use crate::prelude::{Column, DataType};
+        let mut df = DataFrame::empty();
+        let result = df.hstack_mut(&[
+            Column::full_null("a".into(), 1, &DataType::Null),
+            Column::full_null("b".into(), 3, &DataType::Null),
+        ]);
+
+        assert!(
+            matches!(result, Err(PolarsError::ShapeMismatch(_))),
+            "expected shape mismatch error"
+        );
+
+        // Ensure the DataFrame is not mutated in the error case.
+        assert_eq!(df.width(), 0);
+    }
 }

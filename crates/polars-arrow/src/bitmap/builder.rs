@@ -1,3 +1,5 @@
+#![allow(unsafe_op_in_unsafe_fn)]
+use polars_utils::IdxSize;
 use polars_utils::slice::load_padded_le_u64;
 
 use super::bitmask::BitMask;
@@ -243,6 +245,119 @@ impl BitmapBuilder {
         self.extend_from_slice(slice, offset, length);
     }
 
+    /// Extends this BitmapBuilder with a subslice of a bitmap.
+    pub fn subslice_extend_from_bitmap(&mut self, bitmap: &Bitmap, start: usize, length: usize) {
+        let (slice, bm_offset, bm_length) = bitmap.as_slice();
+        assert!(start + length <= bm_length);
+        self.extend_from_slice(slice, bm_offset + start, length);
+    }
+
+    pub fn subslice_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        start: usize,
+        length: usize,
+    ) {
+        match bitmap {
+            Some(bm) => self.subslice_extend_from_bitmap(bm, start, length),
+            None => self.extend_constant(length, true),
+        }
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_extend_from_slice(
+        &mut self,
+        slice: &[u8],
+        offset: usize,
+        length: usize,
+        idxs: &[IdxSize],
+    ) {
+        assert!(8 * slice.len() >= offset + length);
+
+        self.reserve(idxs.len());
+        unsafe {
+            for idx in idxs {
+                debug_assert!((*idx as usize) < length);
+                let idx_in_slice = offset + *idx as usize;
+                let bit = (*slice.get_unchecked(idx_in_slice / 8) >> (idx_in_slice % 8)) & 1;
+                self.push_unchecked(bit != 0);
+            }
+        }
+    }
+
+    pub fn opt_gather_extend_from_slice(
+        &mut self,
+        slice: &[u8],
+        offset: usize,
+        length: usize,
+        idxs: &[IdxSize],
+    ) {
+        assert!(8 * slice.len() >= offset + length);
+
+        self.reserve(idxs.len());
+        unsafe {
+            for idx in idxs {
+                if (*idx as usize) < length {
+                    let idx_in_slice = offset + *idx as usize;
+                    let bit = (*slice.get_unchecked(idx_in_slice / 8) >> (idx_in_slice % 8)) & 1;
+                    self.push_unchecked(bit != 0);
+                } else {
+                    self.push_unchecked(false);
+                }
+            }
+        }
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_extend_from_bitmap(&mut self, bitmap: &Bitmap, idxs: &[IdxSize]) {
+        let (slice, offset, length) = bitmap.as_slice();
+        self.gather_extend_from_slice(slice, offset, length, idxs);
+    }
+
+    pub fn opt_gather_extend_from_bitmap(&mut self, bitmap: &Bitmap, idxs: &[IdxSize]) {
+        let (slice, offset, length) = bitmap.as_slice();
+        self.opt_gather_extend_from_slice(slice, offset, length, idxs);
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        idxs: &[IdxSize],
+        length: usize,
+    ) {
+        if let Some(bm) = bitmap {
+            let (slice, offset, sl_length) = bm.as_slice();
+            debug_assert_eq!(sl_length, length);
+            self.gather_extend_from_slice(slice, offset, length, idxs);
+        } else {
+            self.extend_constant(length, true);
+        }
+    }
+
+    pub fn opt_gather_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        idxs: &[IdxSize],
+        length: usize,
+    ) {
+        if let Some(bm) = bitmap {
+            let (slice, offset, sl_length) = bm.as_slice();
+            debug_assert_eq!(sl_length, length);
+            self.opt_gather_extend_from_slice(slice, offset, sl_length, idxs);
+        } else {
+            unsafe {
+                self.reserve(idxs.len());
+                for idx in idxs {
+                    self.push_unchecked((*idx as usize) < length);
+                }
+            }
+        }
+    }
+
     /// # Safety
     /// May only be called once at the end.
     unsafe fn finish(&mut self) {
@@ -325,5 +440,127 @@ impl BitmapBuilder {
         let mut builder = Self::new();
         builder.extend_trusted_len_iter(iterator);
         builder
+    }
+}
+
+/// A wrapper for BitmapBuilder that does not allocate until the first false is
+/// pushed. Less efficient if you know there are false values because it must
+/// check if it has allocated for each push.
+pub enum OptBitmapBuilder {
+    AllTrue { bit_len: usize, bit_cap: usize },
+    MayHaveFalse(BitmapBuilder),
+}
+
+impl Default for OptBitmapBuilder {
+    fn default() -> Self {
+        Self::AllTrue {
+            bit_len: 0,
+            bit_cap: 0,
+        }
+    }
+}
+
+impl OptBitmapBuilder {
+    pub fn reserve(&mut self, additional: usize) {
+        match self {
+            Self::AllTrue { bit_len, bit_cap } => {
+                *bit_cap = usize::max(*bit_cap, *bit_len + additional);
+            },
+            Self::MayHaveFalse(inner) => inner.reserve(additional),
+        }
+    }
+
+    pub fn extend_constant(&mut self, length: usize, value: bool) {
+        match self {
+            Self::AllTrue { bit_len, bit_cap } => {
+                if value {
+                    *bit_cap = usize::max(*bit_cap, *bit_len + length);
+                    *bit_len += length;
+                } else {
+                    self.get_builder().extend_constant(length, value);
+                }
+            },
+            Self::MayHaveFalse(inner) => inner.extend_constant(length, value),
+        }
+    }
+
+    pub fn into_opt_validity(self) -> Option<Bitmap> {
+        match self {
+            Self::AllTrue { .. } => None,
+            Self::MayHaveFalse(inner) => inner.into_opt_validity(),
+        }
+    }
+
+    pub fn subslice_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        start: usize,
+        length: usize,
+    ) {
+        match bitmap {
+            Some(bm) => {
+                self.get_builder()
+                    .subslice_extend_from_bitmap(bm, start, length);
+            },
+            None => {
+                self.extend_constant(length, true);
+            },
+        }
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        idxs: &[IdxSize],
+    ) {
+        match bitmap {
+            Some(bm) => {
+                self.get_builder().gather_extend_from_bitmap(bm, idxs);
+            },
+            None => {
+                self.extend_constant(idxs.len(), true);
+            },
+        }
+    }
+
+    pub fn opt_gather_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        idxs: &[IdxSize],
+        length: usize,
+    ) {
+        match bitmap {
+            Some(bm) => {
+                self.get_builder().opt_gather_extend_from_bitmap(bm, idxs);
+            },
+            None => {
+                if let Some(first_oob) = idxs.iter().position(|idx| *idx as usize >= length) {
+                    let builder = self.get_builder();
+                    builder.extend_constant(first_oob, true);
+                    for idx in idxs.iter().skip(first_oob) {
+                        builder.push((*idx as usize) < length);
+                    }
+                } else {
+                    self.extend_constant(idxs.len(), true);
+                }
+            },
+        }
+    }
+
+    fn get_builder(&mut self) -> &mut BitmapBuilder {
+        match self {
+            Self::AllTrue { bit_len, bit_cap } => {
+                let mut builder = BitmapBuilder::with_capacity(*bit_cap);
+                builder.extend_constant(*bit_len, true);
+                *self = Self::MayHaveFalse(builder);
+                let Self::MayHaveFalse(inner) = self else {
+                    unreachable!()
+                };
+                inner
+            },
+            Self::MayHaveFalse(inner) => inner,
+        }
     }
 }

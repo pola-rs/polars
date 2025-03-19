@@ -34,7 +34,7 @@ fn fuzz_exprs() {
         use rand::Rng;
 
         fn leaf(rng: &mut rand::rngs::ThreadRng) -> Expr {
-            match rng.gen::<u32>() % 4 {
+            match rng.r#gen::<u32>() % 4 {
                 0 => col("A"),
                 1 => col("B"),
                 2 => col("C"),
@@ -45,12 +45,12 @@ fn fuzz_exprs() {
         let mut e = leaf(rng);
 
         loop {
-            if depth >= 10 || rng.gen::<u32>() % 4 == 0 {
+            if depth >= 10 || rng.r#gen::<u32>() % 4 == 0 {
                 return e;
             } else {
                 let rhs = leaf(rng);
 
-                e = match rng.gen::<u32>() % 19 {
+                e = match rng.r#gen::<u32>() % 19 {
                     0 => e.eq(rhs),
                     1 => e.eq_missing(rhs),
                     2 => e.neq(rhs),
@@ -97,7 +97,7 @@ fn fuzz_exprs() {
             gen_expr(rng).alias("J"),
         ];
 
-        let wc = match rng.gen::<u32>() % 2 {
+        let wc = match rng.r#gen::<u32>() % 2 {
             0 => lf.clone(),
             _ => empty.clone(),
         };

@@ -296,24 +296,30 @@ def scan_delta(
 
     from deltalake import DeltaTable
 
-    from polars.io.cloud.credential_provider import (
+    from polars.io.cloud.credential_provider._builder import (
+        _init_credential_provider_builder,
+    )
+    from polars.io.cloud.credential_provider._providers import (
         _get_credentials_from_provider_expiry_aware,
-        _maybe_init_credential_provider,
     )
 
     if not isinstance(source, DeltaTable):
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, source, storage_options, "scan_delta"
         )
     elif credential_provider is not None and credential_provider != "auto":
         msg = "cannot use credential_provider when passing a DeltaTable object"
         raise ValueError(msg)
     else:
-        credential_provider = None
+        credential_provider_builder = None
 
-    if credential_provider is not None:
+    del credential_provider
+
+    if credential_provider_builder and (
+        provider := credential_provider_builder.build_credential_provider()
+    ):
         credential_provider_creds = _get_credentials_from_provider_expiry_aware(
-            credential_provider
+            provider
         )
 
     dl_tbl = _get_delta_lake_table(
@@ -321,7 +327,7 @@ def scan_delta(
         version=version,
         storage_options=(
             {**(storage_options or {}), **credential_provider_creds}
-            if storage_options is not None or credential_provider is not None
+            if storage_options is not None or credential_provider_builder is not None
             else None
         ),
         delta_table_options=delta_table_options,
@@ -404,7 +410,7 @@ def scan_delta(
         allow_missing_columns=True,
         hive_partitioning=len(partition_columns) > 0,
         storage_options=storage_options,
-        credential_provider=credential_provider,
+        credential_provider=credential_provider_builder,  # type: ignore[arg-type]
         rechunk=rechunk or False,
     )
 

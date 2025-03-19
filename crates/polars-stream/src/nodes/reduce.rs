@@ -44,7 +44,7 @@ impl ReduceNode {
         reductions: &'env mut [Box<dyn GroupedReduction>],
         scope: &'s TaskScope<'s, 'env>,
         recv: RecvPort<'_>,
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         let parallel_tasks: Vec<_> = recv
@@ -63,7 +63,9 @@ impl ReduceNode {
                 scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
                         for (reducer, selector) in local_reducers.iter_mut().zip(selectors) {
-                            let input = selector.evaluate(morsel.df(), state).await?;
+                            let input = selector
+                                .evaluate(morsel.df(), &state.in_memory_exec_state)
+                                .await?;
                             reducer.update_group(
                                 input.as_materialized_series(),
                                 0,
@@ -112,7 +114,12 @@ impl ComputeNode for ReduceNode {
         "reduce"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
         // State transitions.
@@ -168,7 +175,7 @@ impl ComputeNode for ReduceNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(send_ports.len() == 1 && recv_ports.len() == 1);

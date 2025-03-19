@@ -1,6 +1,6 @@
 use arrow::legacy::is_valid::IsValid;
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 

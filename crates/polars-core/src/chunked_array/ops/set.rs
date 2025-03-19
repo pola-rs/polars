@@ -1,4 +1,4 @@
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::legacy::kernels::set::{scatter_single_non_null, set_with_mask};
 
 use crate::prelude::*;
@@ -61,7 +61,10 @@ where
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy.
                 else {
-                    let mut av = self.into_no_null_iter().collect::<Vec<_>>();
+                    let mut av = Vec::with_capacity(self.len());
+                    for chunk in self.downcast_iter() {
+                        av.extend_from_slice(chunk.values())
+                    }
                     let data = av.as_mut_slice();
 
                     idx.into_iter().try_for_each::<_, PolarsResult<_>>(|idx| {
@@ -111,17 +114,11 @@ where
                 });
             Ok(ChunkedArray::from_chunk_iter(self.name().clone(), chunks))
         } else {
-            // slow path, could be optimized.
-            let ca = mask
-                .into_iter()
-                .zip(self)
-                .map(|(mask_val, opt_val)| match mask_val {
-                    Some(true) => value,
-                    _ => opt_val,
-                })
-                .collect_trusted::<Self>()
-                .with_name(self.name().clone());
-            Ok(ca)
+            let mask = mask.rechunk();
+            let mask = mask.downcast_as_array();
+            let mask = mask.true_and_valid();
+            let iter = mask.true_idx_iter();
+            self.scatter_single(iter.map(|v| v as IdxSize), value)
         }
     }
 }
@@ -157,24 +154,34 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
 
         for i in idx.into_iter().map(|i| i as usize) {
             let input = validity.get(i).then(|| values.get(i));
-            validity.set(i, f(input).unwrap_or(false));
+
+            match f(input) {
+                Some(v) => {
+                    values.set(i, v);
+                    validity.set(i, true);
+                },
+                None => {
+                    validity.set(i, false);
+                },
+            }
         }
-        let arr = BooleanArray::from_data_default(values.into(), Some(validity.into()));
+        let validity: Bitmap = validity.into();
+        let validity = if validity.unset_bits() > 0 {
+            Some(validity)
+        } else {
+            None
+        };
+
+        let arr = BooleanArray::from_data_default(values.into(), validity);
         Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> PolarsResult<Self> {
-        check_bounds!(self, mask);
-        let ca = mask
-            .into_iter()
-            .zip(self)
-            .map(|(mask_val, opt_val)| match mask_val {
-                Some(true) => value,
-                _ => opt_val,
-            })
-            .collect_trusted::<Self>()
-            .with_name(self.name().clone());
-        Ok(ca)
+        let mask = mask.rechunk();
+        let mask = mask.downcast_as_array();
+        let mask = mask.true_and_valid();
+        let iter = mask.true_idx_iter();
+        self.scatter_single(iter.map(|v| v as IdxSize), value)
     }
 }
 

@@ -533,3 +533,14 @@ def test_top_k_list_dtype() -> None:
 
     s = pl.Series([[[1, 2], [3]], [[4], []], [[0]]], dtype=pl.List(pl.List(pl.Int64)))
     assert s.top_k(2).to_list() == [[[4], []], [[1, 2], [3]]]
+
+
+def test_top_k_sorted_21260() -> None:
+    s = pl.Series([1, 2, 3, 4, 5])
+    assert s.top_k(3).sort().to_list() == [3, 4, 5]
+    assert s.sort(descending=False).top_k(3).sort().to_list() == [3, 4, 5]
+    assert s.sort(descending=True).top_k(3).sort().to_list() == [3, 4, 5]
+
+    assert s.bottom_k(3).sort().to_list() == [1, 2, 3]
+    assert s.sort(descending=False).bottom_k(3).sort().to_list() == [1, 2, 3]
+    assert s.sort(descending=True).bottom_k(3).sort().to_list() == [1, 2, 3]

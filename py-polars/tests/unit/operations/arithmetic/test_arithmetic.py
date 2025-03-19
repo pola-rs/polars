@@ -705,8 +705,8 @@ def test_arithmetic_duration_div_multiply() -> None:
             ("a", pl.Duration(time_unit="us")),
             ("b", pl.Duration(time_unit="us")),
             ("c", pl.Duration(time_unit="us")),
-            ("d", pl.Unknown()),
-            ("e", pl.Unknown()),
+            ("d", pl.Duration(time_unit="us")),
+            ("e", pl.Duration(time_unit="us")),
             ("f", pl.Float64()),
         ]
     )
@@ -824,3 +824,25 @@ def test_raise_invalid_shape() -> None:
 def test_integer_divide_scalar_zero_lhs_19142() -> None:
     assert_series_equal(pl.Series([0]) // pl.Series([1, 0]), pl.Series([0, None]))
     assert_series_equal(pl.Series([0]) % pl.Series([1, 0]), pl.Series([0, None]))
+
+
+def test_compound_duration_21389() -> None:
+    # test add
+    lf = pl.LazyFrame(
+        {
+            "ts": datetime(2024, 1, 1, 1, 2, 3),
+            "duration": timedelta(days=1),
+        }
+    )
+    result = lf.select(pl.col("ts") + pl.col("duration") * 2)
+    expected_schema = pl.Schema({"ts": pl.Datetime(time_unit="us", time_zone=None)})
+    expected = pl.DataFrame({"ts": datetime(2024, 1, 3, 1, 2, 3)})
+    assert result.collect_schema() == expected_schema
+    assert_frame_equal(result.collect(), expected)
+
+    # test subtract
+    result = lf.select(pl.col("ts") - pl.col("duration") * 2)
+    expected_schema = pl.Schema({"ts": pl.Datetime(time_unit="us", time_zone=None)})
+    expected = pl.DataFrame({"ts": datetime(2023, 12, 30, 1, 2, 3)})
+    assert result.collect_schema() == expected_schema
+    assert_frame_equal(result.collect(), expected)

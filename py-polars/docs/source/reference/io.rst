@@ -85,6 +85,7 @@ Iceberg
    :toctree: api/
 
    scan_iceberg
+   DataFrame.write_iceberg
 
 JSON
 ~~~~
@@ -97,6 +98,19 @@ JSON
    DataFrame.write_json
    DataFrame.write_ndjson
    LazyFrame.sink_ndjson
+
+
+Partition
+~~~~~~~~~
+Sink to disk with differing partitioning strategies.
+
+.. autosummary::
+   :toctree: api/
+
+   PartitionByKey
+   PartitionMaxSize
+   PartitionParted
+
 
 Parquet
 ~~~~~~~

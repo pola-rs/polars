@@ -21,10 +21,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:example2]
     let q2 = LazyCsvReader::new("docs/assets/data/iris.csv")
         .finish()?
-        .with_columns(vec![col("sepal_length")
-            .mean()
-            .over(vec![col("species")])
-            .alias("sepal_length_mean")]);
+        .with_columns(vec![
+            col("sepal_length")
+                .mean()
+                .over(vec![col("species")])
+                .alias("sepal_length_mean"),
+        ]);
 
     let query_plan = q2.with_streaming(true).explain(true)?;
     println!("{}", query_plan);

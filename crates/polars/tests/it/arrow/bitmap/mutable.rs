@@ -394,7 +394,7 @@ fn extend_constant1() {
                 MutableBitmap::from_iter(
                     std::iter::repeat(false)
                         .take(i)
-                        .chain(std::iter::repeat(true).take(j))
+                        .chain(std::iter::repeat_n(true, j))
                 )
             );
 
@@ -406,7 +406,7 @@ fn extend_constant1() {
                 MutableBitmap::from_iter(
                     std::iter::repeat(true)
                         .take(i)
-                        .chain(std::iter::repeat(false).take(j))
+                        .chain(std::iter::repeat_n(false, j))
                 )
             );
         }

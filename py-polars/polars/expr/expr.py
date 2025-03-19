@@ -80,6 +80,7 @@ if TYPE_CHECKING:
         PolarsDataType,
         RankMethod,
         RollingInterpolationMethod,
+        SchemaDict,
         SearchSortedSide,
         SerializationFormat,
         TemporalLiteral,
@@ -1289,7 +1290,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
 
-        Create a Series with 3 nulls, append column a then rechunk
+        Create a Series with 3 nulls, append column `a`, then rechunk.
 
         >>> df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk())
         shape: (6, 1)
@@ -1494,7 +1495,6 @@ class Expr:
         │ 1   ┆ 1       ┆ 1               │
         │ 2   ┆ 1       ┆ 2               │
         └─────┴─────────┴─────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cum_min(reverse))
 
@@ -2638,7 +2638,7 @@ class Expr:
             Number of indices to shift forward. If a negative value is passed, values
             are shifted in the opposite direction instead.
         fill_value
-            Fill the resulting null values with this value.
+            Fill the resulting null values with this scalar value.
 
         Notes
         -----
@@ -4216,7 +4216,7 @@ class Expr:
         constraints
             Column filters; use `name = value` to filter columns by the supplied value.
             Each constraint will behave the same as `pl.col(name).eq(value)`, and
-            will be implicitly joined with the other filter conditions using `&`.
+            be implicitly joined with the other filter conditions using `&`.
 
         Examples
         --------
@@ -4484,7 +4484,6 @@ class Expr:
         │ 0   ┆ 3   ┆ 0         │
         │ 3   ┆ 4   ┆ 12        │
         └─────┴─────┴───────────┘
-
         """
         if return_dtype is not None:
             return_dtype = parse_into_dtype(return_dtype)
@@ -5783,7 +5782,12 @@ class Expr:
         """
         return self.__xor__(other)
 
-    def is_in(self, other: Expr | Collection[Any] | Series) -> Expr:
+    def is_in(
+        self,
+        other: Expr | Collection[Any] | Series,
+        *,
+        nulls_equal: bool = False,
+    ) -> Expr:
         """
         Check if elements of this expression are present in the other Series.
 
@@ -5791,6 +5795,8 @@ class Expr:
         ----------
         other
             Series or sequence of primitive type.
+        nulls_equal : bool, default False
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -5820,7 +5826,7 @@ class Expr:
             other = F.lit(pl.Series(other))._pyexpr
         else:
             other = parse_into_expression(other)
-        return self._from_pyexpr(self._pyexpr.is_in(other))
+        return self._from_pyexpr(self._pyexpr.is_in(other, nulls_equal))
 
     def repeat_by(self, by: pl.Series | Expr | str | int) -> Expr:
         """
@@ -8506,6 +8512,28 @@ class Expr:
         │ 2   ┆ 14  ┆ 3.0  │
         │ 2   ┆ 11  ┆ 2.0  │
         └─────┴─────┴──────┘
+
+        Divide by the length or number of non-null values
+        to compute the percentile rank.
+
+        >>> df = pl.DataFrame({"a": [6, 7, None, 14, 11]})
+        >>> df.with_columns(
+        ...     pct=pl.col("a").rank() / pl.len(),
+        ...     pct_valid=pl.col("a").rank() / pl.count("a"),
+        ... )
+        shape: (5, 3)
+        ┌──────┬──────┬───────────┐
+        │ a    ┆ pct  ┆ pct_valid │
+        │ ---  ┆ ---  ┆ ---       │
+        │ i64  ┆ f64  ┆ f64       │
+        ╞══════╪══════╪═══════════╡
+        │ 6    ┆ 0.2  ┆ 0.25      │
+        │ 7    ┆ 0.4  ┆ 0.5       │
+        │ null ┆ null ┆ null      │
+        │ 14   ┆ 0.8  ┆ 1.0       │
+        │ 11   ┆ 0.6  ┆ 0.75      │
+        └──────┴──────┴───────────┘
+
         """
         return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
 
@@ -10897,6 +10925,12 @@ class Expr:
         └─────┘
         """
         return ExprStructNameSpace(self)
+
+    def _skip_batch_predicate(self, schema: SchemaDict) -> Expr | None:
+        result = self._pyexpr.skip_batch_predicate(schema)
+        if result is None:
+            return None
+        return self._from_pyexpr(result)
 
 
 def _prepare_alpha(

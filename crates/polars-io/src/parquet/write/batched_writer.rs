@@ -2,13 +2,13 @@ use std::io::Write;
 use std::sync::Mutex;
 
 use arrow::record_batch::RecordBatch;
-use polars_core::prelude::*;
 use polars_core::POOL;
-use polars_parquet::read::{fallible_streaming_iterator, ParquetError};
+use polars_core::prelude::*;
+use polars_parquet::read::{ParquetError, fallible_streaming_iterator};
 use polars_parquet::write::{
-    array_to_columns, CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding,
-    FallibleStreamingIterator, FileWriter, Page, ParquetType, RowGroupIterColumns,
-    SchemaDescriptor, WriteOptions,
+    CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding, FallibleStreamingIterator,
+    FileWriter, Page, ParquetType, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
+    array_to_columns,
 };
 use rayon::prelude::*;
 

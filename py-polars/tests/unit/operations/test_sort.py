@@ -1126,3 +1126,14 @@ def test_sort_into_function_into_dynamic_groupby_20715() -> None:
         .collect()
         .shape
     ) == (90, 3)
+
+
+def test_sort_multicolum_null() -> None:
+    df = pl.DataFrame({"a": [1], "b": [None]})
+    assert df.sort(["a", "b"]).shape == (1, 2)
+
+
+def test_sort_nested_multi_column() -> None:
+    assert pl.DataFrame({"a": [0, 0], "b": [[2], [1]]}).sort(["a", "b"]).to_dict(
+        as_series=False
+    ) == {"a": [0, 0], "b": [[1], [2]]}

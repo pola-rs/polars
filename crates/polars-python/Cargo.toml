@@ -13,6 +13,7 @@ polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
+polars-ffi = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-mem-engine = { workspace = true }
@@ -26,7 +27,6 @@ polars-utils = { workspace = true }
 # TODO! remove this once truly activated. This is required to make sdist building work
 # polars-stream = { workspace = true }
 
-ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
 arrow = { workspace = true }
 bincode = { workspace = true }
@@ -41,7 +41,6 @@ libc = { workspace = true }
 ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
-once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "chrono-tz", "multiple-pymethods"] }
 rayon = { workspace = true }
 recursive = { workspace = true }

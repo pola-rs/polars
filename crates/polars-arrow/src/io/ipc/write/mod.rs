@@ -6,8 +6,9 @@ mod stream;
 pub(crate) mod writer;
 
 pub use common::{
-    dictionaries_to_encode, encode_dictionary, encode_new_dictionaries, encode_record_batch,
-    Compression, DictionaryTracker, EncodedData, Record, WriteOptions,
+    Compression, DictionaryTracker, EncodedData, Record, WriteOptions, commit_encoded_arrays,
+    dictionaries_to_encode, encode_array, encode_dictionary, encode_new_dictionaries,
+    encode_record_batch,
 };
 pub use schema::schema_to_bytes;
 pub use serialize::write;

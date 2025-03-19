@@ -8,7 +8,7 @@ use polars_time::chunkedarray::string::infer as date_infer;
 use polars_time::prelude::string::Pattern;
 use polars_utils::format_pl_smallstr;
 
-use super::parser::{is_comment_line, skip_bom, skip_line_ending, SplitLines};
+use super::parser::{SplitLines, is_comment_line, skip_bom, skip_line_ending};
 use super::splitfields::SplitFields;
 use super::{CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
 use crate::csv::read::parser::skip_lines_naive;
@@ -108,7 +108,8 @@ pub fn finish_infer_field_schema(possibilities: &PlHashSet<DataType>) -> DataTyp
 pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bool) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
     // String for them
-    if string.starts_with('"') {
+    let bytes = string.as_bytes();
+    if bytes.len() >= 2 && *bytes.first().unwrap() == b'"' && *bytes.last().unwrap() == b'"' {
         if try_parse_dates {
             #[cfg(feature = "polars-time")]
             {
@@ -458,7 +459,9 @@ fn infer_file_schema_inner(
                                 > 8
                             {
                                 if verbose() {
-                                    eprintln!("falling back to single core reading because of many escaped new line chars.")
+                                    eprintln!(
+                                        "falling back to single core reading because of many escaped new line chars."
+                                    )
                                 }
                                 *n_threads = Some(1);
                             }

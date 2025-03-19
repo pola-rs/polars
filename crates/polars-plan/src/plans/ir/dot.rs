@@ -247,7 +247,7 @@ impl<'a> IRDotDisplay<'a> {
                 file_options: options,
                 output_schema: _,
             } => {
-                let name: &str = scan_type.into();
+                let name: &str = (&**scan_type).into();
                 let path = ScanSourcesDisplay(sources);
                 let with_columns = options.with_columns.as_ref().map(|cols| cols.as_ref());
                 let with_columns = NumColumns(with_columns);
@@ -309,10 +309,18 @@ impl<'a> IRDotDisplay<'a> {
 
                 write_label(f, id, |f| {
                     f.write_str(match payload {
-                        SinkType::Memory => "SINK (MEMORY)",
-                        SinkType::File { .. } => "SINK (FILE)",
+                        SinkTypeIR::Memory => "SINK (MEMORY)",
+                        SinkTypeIR::File { .. } => "SINK (FILE)",
+                        SinkTypeIR::Partition { .. } => "SINK (PARTITION)",
                     })
                 })?;
+            },
+            SinkMultiple { inputs } => {
+                for input in inputs {
+                    self.with_root(*input)._format(f, Some(id), last)?;
+                }
+
+                write_label(f, id, |f| f.write_str("SINK MULTIPLE"))?;
             },
             SimpleProjection { input, columns } => {
                 let num_columns = columns.as_ref().len();

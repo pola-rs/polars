@@ -33,7 +33,7 @@ impl PhysicalExpr for RollingExpr {
         let groups = match groups {
             Some(groups) => groups,
             None => {
-                let (_time_key, _keys, groups) = df.rolling(vec![], &self.options)?;
+                let (_time_key, groups) = df.rolling(None, &self.options)?;
                 state.window_cache.insert_groups(groups_key, groups.clone());
                 groups
             },

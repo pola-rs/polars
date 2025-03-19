@@ -1,6 +1,6 @@
 // used only if feature="is_in", feature="dtype-categorical"
 #[cfg(all(feature = "is_in", feature = "dtype-categorical"))]
-use polars_core::{disable_string_cache, StringCacheHolder, SINGLE_LOCK};
+use polars_core::{SINGLE_LOCK, StringCacheHolder, disable_string_cache};
 
 use super::*;
 
@@ -140,7 +140,7 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
     let out = df
         .lazy()
         .with_column(col("a").strict_cast(DataType::Categorical(None, Default::default())))
-        .filter(col("a").is_in(lit(s).alias("x")))
+        .filter(col("a").is_in(lit(s).alias("x"), false))
         .collect()?;
 
     let mut expected = df![

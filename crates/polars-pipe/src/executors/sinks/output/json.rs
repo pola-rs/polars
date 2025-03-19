@@ -6,7 +6,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::json::{BatchedWriter, JsonWriterOptions};
 use polars_io::utils::file::try_get_writeable;
 
-use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
+use crate::executors::sinks::output::file_sink::{FilesSink, SinkWriter, init_writer_thread};
 use crate::pipeline::morsels_per_sink;
 
 impl<W: std::io::Write> SinkWriter for BatchedWriter<W> {
@@ -24,7 +24,7 @@ impl JsonSink {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
         path: &Path,
-        options: JsonWriterOptions,
+        _options: JsonWriterOptions,
         _schema: &Schema,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<FilesSink> {
@@ -38,7 +38,7 @@ impl JsonSink {
         let io_thread_handle = Arc::new(Some(init_writer_thread(
             receiver,
             writer,
-            options.maintain_order,
+            true,
             morsels_per_sink,
         )));
 

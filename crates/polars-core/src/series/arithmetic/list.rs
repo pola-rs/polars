@@ -1,7 +1,7 @@
 //! Allow arithmetic operations for ListChunked.
 //! use polars_error::{feature_gated, PolarsResult};
 
-use polars_error::{feature_gated, PolarsResult};
+use polars_error::{PolarsResult, feature_gated};
 
 use super::list_utils::NumericOp;
 use super::{IntoSeries, ListChunked, ListType, NumOpsDispatchInner, Series};

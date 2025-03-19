@@ -53,12 +53,21 @@ def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
         ("ordinal_day", pl.Series(values=[139, 278, 51], dtype=pl.Int16)),
     ],
 )
+@pytest.mark.parametrize("time_zone", ["Asia/Kathmandu", None])
 def test_dt_extract_datetime_component(
     unit_attr: str,
     expected: pl.Series,
     series_of_int_dates: pl.Series,
+    time_zone: str | None,
 ) -> None:
     assert_series_equal(getattr(series_of_int_dates.dt, unit_attr)(), expected)
+    assert_series_equal(
+        getattr(
+            series_of_int_dates.cast(pl.Datetime).dt.replace_time_zone(time_zone).dt,
+            unit_attr,
+        )(),
+        expected,
+    )
 
 
 @pytest.mark.parametrize(

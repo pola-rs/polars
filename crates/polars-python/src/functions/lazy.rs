@@ -6,13 +6,14 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::{get_lf, Wrap};
+use crate::conversion::{Wrap, get_lf};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
+use crate::lazyframe::PyOptFlags;
 use crate::map::lazy::binary_lambda;
 use crate::prelude::vec_extract_wrapped;
 use crate::utils::EnterPolarsExt;
-use crate::{map, PyDataFrame, PyExpr, PyLazyFrame, PySeries};
+use crate::{PyDataFrame, PyExpr, PyLazyFrame, PySeries, map};
 
 macro_rules! set_unwrapped_or_0 {
     ($($var:ident),+ $(,)?) => {
@@ -113,47 +114,57 @@ pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
 }
 
-#[pyfunction]
-pub fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> {
-    use polars_core::utils::rayon::prelude::*;
-
-    py.enter_polars(|| {
-        polars_core::POOL.install(|| {
-            lfs.par_iter()
-                .map(|lf| {
-                    let df = lf.ldf.clone().collect()?;
-                    Ok(PyDataFrame::new(df))
-                })
-                .collect::<PolarsResult<Vec<_>>>()
-        })
-    })
+fn lfs_to_plans(lfs: Vec<PyLazyFrame>) -> Vec<DslPlan> {
+    lfs.into_iter().map(|lf| lf.ldf.logical_plan).collect()
 }
 
 #[pyfunction]
-pub fn collect_all_with_callback(lfs: Vec<PyLazyFrame>, lambda: PyObject) {
-    use polars_core::utils::rayon::prelude::*;
+pub fn collect_all(
+    lfs: Vec<PyLazyFrame>,
+    engine: Wrap<Engine>,
+    optflags: PyOptFlags,
+    py: Python,
+) -> PyResult<Vec<PyDataFrame>> {
+    let plans = lfs_to_plans(lfs);
+    let dfs =
+        py.enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner))?;
+    Ok(dfs.into_iter().map(Into::into).collect())
+}
 
-    polars_core::POOL.spawn(move || {
-        let result = lfs
-            .par_iter()
-            .map(|lf| {
-                let df = lf.ldf.clone().collect()?;
-                Ok(PyDataFrame::new(df))
-            })
-            .collect::<polars_core::error::PolarsResult<Vec<_>>>()
-            .map_err(PyPolarsErr::from);
+#[pyfunction]
+pub fn explain_all(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags, py: Python) -> PyResult<String> {
+    let plans = lfs_to_plans(lfs);
+    let explained = py.enter_polars(|| LazyFrame::explain_all(plans, optflags.inner))?;
+    Ok(explained)
+}
 
-        Python::with_gil(|py| match result {
-            Ok(dfs) => {
-                lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
-            },
-            Err(err) => {
-                lambda
-                    .call1(py, (PyErr::from(err),))
-                    .map_err(|err| err.restore(py))
-                    .ok();
-            },
-        })
+#[pyfunction]
+pub fn collect_all_with_callback(
+    lfs: Vec<PyLazyFrame>,
+    engine: Wrap<Engine>,
+    optflags: PyOptFlags,
+    lambda: PyObject,
+    py: Python,
+) {
+    let plans = lfs.into_iter().map(|lf| lf.ldf.logical_plan).collect();
+    let result = py
+        .enter_polars(|| LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner))
+        .map(|dfs| {
+            dfs.into_iter()
+                .map(Into::into)
+                .collect::<Vec<PyDataFrame>>()
+        });
+
+    Python::with_gil(|py| match result {
+        Ok(dfs) => {
+            lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
+        },
+        Err(err) => {
+            lambda
+                .call1(py, (PyErr::from(err),))
+                .map_err(|err| err.restore(py))
+                .ok();
+        },
     })
 }
 

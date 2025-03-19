@@ -7,7 +7,7 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unitvec;
 
-use super::column_chunk_metadata::{column_metadata_byte_range, ColumnChunkMetadata};
+use super::column_chunk_metadata::{ColumnChunkMetadata, column_metadata_byte_range};
 use super::schema_descriptor::SchemaDescriptor;
 use crate::parquet::error::{ParquetError, ParquetResult};
 
@@ -68,6 +68,10 @@ impl RowGroupMetadata {
         self.column_lookup.get(root_name).map(|x| x.as_slice())
     }
 
+    pub fn parquet_columns(&self) -> &[ColumnChunkMetadata] {
+        self.columns.as_ref().as_slice()
+    }
+
     /// Number of rows in this row group.
     pub fn num_rows(&self) -> usize {
         self.num_rows
@@ -104,7 +108,11 @@ impl RowGroupMetadata {
         rg: RowGroup,
     ) -> ParquetResult<RowGroupMetadata> {
         if schema_descr.columns().len() != rg.columns.len() {
-            return Err(ParquetError::oos(format!("The number of columns in the row group ({}) must be equal to the number of columns in the schema ({})", rg.columns.len(), schema_descr.columns().len())));
+            return Err(ParquetError::oos(format!(
+                "The number of columns in the row group ({}) must be equal to the number of columns in the schema ({})",
+                rg.columns.len(),
+                schema_descr.columns().len()
+            )));
         }
         let total_byte_size = rg.total_byte_size.try_into()?;
         let num_rows = rg.num_rows.try_into()?;

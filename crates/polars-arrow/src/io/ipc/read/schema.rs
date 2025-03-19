@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{FieldRef, FixedSizeListRef, MapRef, TimeRef, TimestampRef, UnionRef};
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::super::{IpcField, IpcSchema};
 use super::{OutOfSpecKind, StreamMetadata};
 use crate::datatypes::{
-    get_extension, ArrowDataType, ArrowSchema, Extension, ExtensionType, Field, IntegerType,
-    IntervalUnit, Metadata, TimeUnit, UnionMode, UnionType,
+    ArrowDataType, ArrowSchema, Extension, ExtensionType, Field, IntegerType, IntervalUnit,
+    Metadata, TimeUnit, UnionMode, UnionType, get_extension,
 };
 
 fn try_unzip_vec<A, B, I: Iterator<Item = PolarsResult<(A, B)>>>(

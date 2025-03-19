@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use polars_error::PolarsResult;
 
-use super::{polars_bail, BooleanChunked, ChunkedArray, DataType, IntoSeries, Series};
+use super::{BooleanChunked, ChunkedArray, DataType, IntoSeries, Series, polars_bail};
 
 macro_rules! impl_bitop {
     ($(($trait:ident, $f:ident))+) => {

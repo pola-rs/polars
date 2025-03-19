@@ -164,7 +164,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     pub fn rechunk(&self) -> Cow<'_, Self> {
         match self.dtype() {
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 panic!("implementation error")
             },
             _ => {
@@ -216,6 +216,16 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         bm.into_opt_validity()
     }
 
+    pub fn with_validities(&mut self, validities: &[Option<Bitmap>]) {
+        assert_eq!(validities.len(), self.chunks.len());
+
+        // SAFETY:
+        // We don't change the data type of the chunks, nor the length.
+        for (arr, validity) in unsafe { self.chunks_mut().iter_mut() }.zip(validities.iter()) {
+            *arr = arr.with_validity(validity.clone())
+        }
+    }
+
     /// Split the array. The chunks are reallocated the underlying data slices are zero copy.
     ///
     /// When offset is negative it will be counted from the end of the array.
@@ -256,7 +266,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         match length {
             0 => match self.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => exec(),
+                DataType::Object(_) => exec(),
                 _ => self.clear(),
             },
             _ => exec(),
@@ -308,7 +318,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     true
                 } else {
                     // Remove the empty chunks
-                    arr.len() > 0
+                    !arr.is_empty()
                 }
             })
         }

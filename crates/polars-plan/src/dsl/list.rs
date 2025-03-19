@@ -168,11 +168,11 @@ impl ListNameSpace {
     ///   This behavior is more expensive than defaulting to returning an `Error`.
     #[cfg(feature = "list_gather")]
     pub fn gather(self, index: Expr, null_on_oob: bool) -> Expr {
-        self.0.map_many_private(
+        self.0.apply_many_private(
             FunctionExpr::ListExpr(ListFunction::Gather(null_on_oob)),
             &[index],
             false,
-            None,
+            false,
         )
     }
 
@@ -309,6 +309,7 @@ impl ListNameSpace {
             None,
         )
     }
+
     #[cfg(feature = "list_count")]
     /// Count how often the value produced by ``element`` occurs.
     pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {

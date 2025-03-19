@@ -23,7 +23,7 @@ use polars_io::csv::write::{CsvWriterOptions, QuoteStyle, SerializeOptions};
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
-use polars_plan::plans::ScanSources;
+use polars_plan::dsl::ScanSources;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
@@ -35,7 +35,7 @@ use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
-use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
+use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
@@ -274,7 +274,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 duration_class.call1((tu.to_ascii(),))
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 let class = pl.getattr(intern!(py, "Object"))?;
                 class.call0()
             },
@@ -375,12 +375,12 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "Struct" => DataType::Struct(vec![]),
                     "Null" => DataType::Null,
                     #[cfg(feature = "object")]
-                    "Object" => DataType::Object(OBJECT_NAME, None),
+                    "Object" => DataType::Object(OBJECT_NAME),
                     "Unknown" => DataType::Unknown(Default::default()),
                     dt => {
                         return Err(PyTypeError::new_err(format!(
                             "'{dt}' is not a Polars data type",
-                        )))
+                        )));
                     },
                 }
             },
@@ -452,12 +452,12 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             },
             "Null" => DataType::Null,
             #[cfg(feature = "object")]
-            "Object" => DataType::Object(OBJECT_NAME, None),
+            "Object" => DataType::Object(OBJECT_NAME),
             "Unknown" => DataType::Unknown(Default::default()),
             dt => {
                 return Err(PyTypeError::new_err(format!(
                     "'{dt}' is not a Polars data type",
-                )))
+                )));
             },
         };
         Ok(Wrap(dtype))
@@ -559,7 +559,7 @@ impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
                 _ => {
                     return Err(PyTypeError::new_err(format!(
                         "'{key}' is not a valid statistic option",
-                    )))
+                    )));
                 },
             }
         }
@@ -624,7 +624,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
             },
             PythonScanSourceInput::File(file) => {
                 let mut sources = Vec::with_capacity(num_items);
-                sources.push(file);
+                sources.push(file.into());
                 MutableSources::Files(sources)
             },
             PythonScanSourceInput::Buffer(buffer) => {
@@ -637,12 +637,12 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         for source in iter {
             match (&mut sources, source?) {
                 (MutableSources::Paths(v), PythonScanSourceInput::Path(p)) => v.push(p),
-                (MutableSources::Files(v), PythonScanSourceInput::File(f)) => v.push(f),
+                (MutableSources::Files(v), PythonScanSourceInput::File(f)) => v.push(f.into()),
                 (MutableSources::Buffers(v), PythonScanSourceInput::Buffer(f)) => v.push(f),
                 _ => {
                     return Err(PyTypeError::new_err(
                         "Cannot combine in-memory bytes, paths and files for scan sources",
-                    ))
+                    ));
                 },
             }
         }
@@ -796,7 +796,7 @@ impl<'py> FromPyObject<'py> for Wrap<AsofStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "asof `strategy` must be one of {{'backward', 'forward', 'nearest'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -811,7 +811,7 @@ impl<'py> FromPyObject<'py> for Wrap<InterpolationMethod> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "interpolation `method` must be one of {{'linear', 'nearest'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -827,8 +827,8 @@ impl<'py> FromPyObject<'py> for Wrap<Option<AvroCompression>> {
             "deflate" => Some(AvroCompression::Deflate),
             v => {
                 return Err(PyValueError::new_err(format!(
-                "avro `compression` must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {v}",
-            )))
+                    "avro `compression` must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {v}",
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -843,7 +843,7 @@ impl<'py> FromPyObject<'py> for Wrap<CategoricalOrdering> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "categorical `ordering` must be one of {{'physical', 'lexical'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -865,8 +865,8 @@ impl<'py> FromPyObject<'py> for Wrap<StartBy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`start_by` must be one of {{'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}}, got {v}",
-                )))
-            }
+                )));
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -882,7 +882,7 @@ impl<'py> FromPyObject<'py> for Wrap<ClosedWindow> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`closed` must be one of {{'left', 'right', 'both', 'none'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -898,7 +898,7 @@ impl<'py> FromPyObject<'py> for Wrap<CsvEncoding> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "csv `encoding` must be one of {{'utf8', 'utf8-lossy'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -915,7 +915,7 @@ impl<'py> FromPyObject<'py> for Wrap<Option<IpcCompression>> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "ipc `compression` must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -935,8 +935,8 @@ impl<'py> FromPyObject<'py> for Wrap<JoinType> {
             "cross" => JoinType::Cross,
             v => {
                 return Err(PyValueError::new_err(format!(
-                "`how` must be one of {{'inner', 'left', 'full', 'semi', 'anti', 'cross'}}, got {v}",
-            )))
+                    "`how` must be one of {{'inner', 'left', 'full', 'semi', 'anti', 'cross'}}, got {v}",
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -952,7 +952,7 @@ impl<'py> FromPyObject<'py> for Wrap<Label> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`label` must be one of {{'left', 'right', 'datapoint'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -967,7 +967,7 @@ impl<'py> FromPyObject<'py> for Wrap<ListToStructWidthStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`n_field_strategy` must be one of {{'first_non_null', 'max_width'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -982,7 +982,7 @@ impl<'py> FromPyObject<'py> for Wrap<NonExistent> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`non_existent` must be one of {{'null', 'raise'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -997,7 +997,7 @@ impl<'py> FromPyObject<'py> for Wrap<NullBehavior> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`null_behavior` must be one of {{'drop', 'ignore'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1012,7 +1012,7 @@ impl<'py> FromPyObject<'py> for Wrap<NullStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`null_strategy` must be one of {{'ignore', 'propagate'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1030,8 +1030,8 @@ impl<'py> FromPyObject<'py> for Wrap<ParallelStrategy> {
             "none" => ParallelStrategy::None,
             v => {
                 return Err(PyValueError::new_err(format!(
-                "`parallel` must be one of {{'auto', 'columns', 'row_groups', 'prefiltered', 'none'}}, got {v}",
-            )))
+                    "`parallel` must be one of {{'auto', 'columns', 'row_groups', 'prefiltered', 'none'}}, got {v}",
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1046,7 +1046,7 @@ impl<'py> FromPyObject<'py> for Wrap<IndexOrder> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`order` must be one of {{'fortran', 'c'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1065,8 +1065,8 @@ impl<'py> FromPyObject<'py> for Wrap<QuantileMethod> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`interpolation` must be one of {{'lower', 'higher', 'nearest', 'linear', 'midpoint', 'equiprobable'}}, got {v}",
-                )))
-            }
+                )));
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1084,8 +1084,8 @@ impl<'py> FromPyObject<'py> for Wrap<RankMethod> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "rank `method` must be one of {{'min', 'max', 'average', 'dense', 'ordinal', 'random'}}, got {v}",
-                )))
-            }
+                )));
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1100,7 +1100,7 @@ impl<'py> FromPyObject<'py> for Wrap<Roll> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`roll` must be one of {{'raise', 'forward', 'backward'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1116,7 +1116,7 @@ impl<'py> FromPyObject<'py> for Wrap<TimeUnit> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1133,23 +1133,7 @@ impl<'py> FromPyObject<'py> for Wrap<UniqueKeepStrategy> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`keep` must be one of {{'first', 'last', 'any', 'none'}}, got {v}",
-                )))
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
-#[cfg(feature = "ipc")]
-impl<'py> FromPyObject<'py> for Wrap<IpcCompression> {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "zstd" => IpcCompression::ZSTD,
-            "lz4" => IpcCompression::LZ4,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "ipc `compression` must be one of {{'zstd', 'lz4'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1166,7 +1150,7 @@ impl<'py> FromPyObject<'py> for Wrap<SearchSortedSide> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "sorted `side` must be one of {{'any', 'left', 'right'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1183,7 +1167,7 @@ impl<'py> FromPyObject<'py> for Wrap<ClosedInterval> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`closed` must be one of {{'both', 'left', 'right', 'none'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1198,8 +1182,8 @@ impl<'py> FromPyObject<'py> for Wrap<WindowMapping> {
             "explode" => WindowMapping::Explode,
             v => {
                 return Err(PyValueError::new_err(format!(
-                "`mapping_strategy` must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
-            )))
+                    "`mapping_strategy` must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1216,7 +1200,7 @@ impl<'py> FromPyObject<'py> for Wrap<JoinValidation> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`validate` must be one of {{'m:m', 'm:1', '1:m', '1:1'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1234,7 +1218,7 @@ impl<'py> FromPyObject<'py> for Wrap<MaintainOrderJoin> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`maintain_order` must be one of {{'none', 'left', 'right', 'left_right', 'right_left'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1252,7 +1236,7 @@ impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`quote_style` must be one of {{'always', 'necessary', 'non_numeric', 'never'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))
@@ -1276,8 +1260,8 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "set operation must be one of {{'union', 'difference', 'intersection', 'symmetric_difference'}}, got {v}",
-                )))
-            }
+                )));
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1298,8 +1282,8 @@ pub(crate) fn parse_fill_null_strategy(
         e => {
             return Err(PyValueError::new_err(format!(
                 "`strategy` must be one of {{'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}}, got {e}",
-            )))
-        }
+            )));
+        },
     };
     Ok(parsed)
 }
@@ -1333,16 +1317,15 @@ pub(crate) fn parse_parquet_compression(
         "zstd" => ParquetCompression::Zstd(
             compression_level
                 .map(|lvl| {
-                    ZstdLevel::try_new(lvl)
-                        .map_err(|e| PyValueError::new_err(format!("{e:?}")))
+                    ZstdLevel::try_new(lvl).map_err(|e| PyValueError::new_err(format!("{e:?}")))
                 })
                 .transpose()?,
         ),
         e => {
             return Err(PyValueError::new_err(format!(
                 "parquet `compression` must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {e}",
-            )))
-        }
+            )));
+        },
     };
     Ok(parsed)
 }
@@ -1394,7 +1377,7 @@ impl<'py> FromPyObject<'py> for Wrap<UnicodeForm> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`form` must be one of {{'NFC', 'NFKC', 'NFD', 'NFKD'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))

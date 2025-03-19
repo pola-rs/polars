@@ -5,13 +5,13 @@ use arrow::bitmap::Bitmap;
 use arrow::compute::arity::unary;
 use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::{Offset, Offsets};
-use arrow::types::{f16, NativeType};
+use arrow::types::{NativeType, f16};
 use num_traits::{AsPrimitive, Float, ToPrimitive};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::temporal::*;
 use super::CastOptionsImpl;
+use super::temporal::*;
 
 pub trait SerPrimitive {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
@@ -39,6 +39,7 @@ impl_ser_primitive!(i8);
 impl_ser_primitive!(i16);
 impl_ser_primitive!(i32);
 impl_ser_primitive!(i64);
+impl_ser_primitive!(i128);
 impl_ser_primitive!(u8);
 impl_ser_primitive!(u16);
 impl_ser_primitive!(u32);

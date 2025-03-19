@@ -27,7 +27,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_separator(b',')
         .finish(&mut df)?;
     let df_csv = CsvReadOptions::default()
-        .with_infer_schema_length(None)
         .with_has_header(true)
         .with_parse_options(CsvParseOptions::default().with_try_parse_dates(true))
         .try_into_reader_with_file_path(Some("docs/assets/data/output.csv".into()))?

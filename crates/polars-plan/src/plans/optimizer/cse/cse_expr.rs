@@ -1,4 +1,7 @@
+use std::hash::BuildHasher;
+
 use hashbrown::hash_map::RawEntryMut;
+use polars_utils::aliases::PlFixedStateQuality;
 use polars_utils::format_pl_smallstr;
 use polars_utils::vec::CapacityByFactor;
 
@@ -45,7 +48,7 @@ impl ProjectionExprs {
 pub(super) struct Identifier {
     inner: Option<u64>,
     last_node: Option<AexprNode>,
-    hb: PlRandomState,
+    hb: PlFixedStateQuality,
 }
 
 impl Identifier {
@@ -53,7 +56,7 @@ impl Identifier {
         Self {
             inner: None,
             last_node: None,
-            hb: PlRandomState::with_seed(0),
+            hb: PlFixedStateQuality::with_seed(0),
         }
     }
 
@@ -102,7 +105,7 @@ impl Identifier {
         Self {
             inner,
             last_node: Some(*ae),
-            hb: self.hb.clone(),
+            hb: self.hb,
         }
     }
 }
@@ -697,7 +700,9 @@ impl CommonSubExprOptimizer {
 
             if !valid {
                 if verbose() {
-                    eprintln!("materialized names collided in common subexpression elimination.\n backtrace and run without CSE")
+                    eprintln!(
+                        "materialized names collided in common subexpression elimination.\n backtrace and run without CSE"
+                    )
                 }
                 return Ok(None);
             }
@@ -751,22 +756,28 @@ impl CommonSubExprOptimizer {
                         }
 
                         match expr_arena.get_many_mut([original, new]) {
-                            [AExpr::Function {
-                                input: input_original,
-                                ..
-                            }, AExpr::Function {
-                                input: input_new, ..
-                            }] => {
+                            [
+                                AExpr::Function {
+                                    input: input_original,
+                                    ..
+                                },
+                                AExpr::Function {
+                                    input: input_new, ..
+                                },
+                            ] => {
                                 for (new, original) in input_new.iter_mut().zip(input_original) {
                                     new.set_alias(original.output_name().clone());
                                 }
                             },
-                            [AExpr::AnonymousFunction {
-                                input: input_original,
-                                ..
-                            }, AExpr::AnonymousFunction {
-                                input: input_new, ..
-                            }] => {
+                            [
+                                AExpr::AnonymousFunction {
+                                    input: input_original,
+                                    ..
+                                },
+                                AExpr::AnonymousFunction {
+                                    input: input_new, ..
+                                },
+                            ] => {
                                 for (new, original) in input_new.iter_mut().zip(input_original) {
                                     new.set_alias(original.output_name().clone());
                                 }

@@ -17,8 +17,8 @@ use polars_time::{ClosedWindow, Duration};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::dsl::function_expr::FieldsMapper;
 use crate::dsl::SpecialEq;
+use crate::dsl::function_expr::FieldsMapper;
 use crate::map_as_slice;
 use crate::prelude::ColumnsUdf;
 

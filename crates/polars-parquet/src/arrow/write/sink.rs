@@ -6,7 +6,7 @@ use arrow::datatypes::ArrowSchema;
 use arrow::record_batch::RecordBatchT;
 use futures::future::BoxFuture;
 use futures::{AsyncWrite, AsyncWriteExt, FutureExt, Sink, TryFutureExt};
-use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::aliases::PlHashMap;
 
 use super::file::add_arrow_schema;

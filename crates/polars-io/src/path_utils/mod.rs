@@ -1,10 +1,9 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use once_cell::sync::Lazy;
 use polars_core::config;
-use polars_core::error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_core::error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::pl_str::PlSmallStr;
 use regex::Regex;
 
@@ -13,7 +12,7 @@ mod hugging_face;
 
 use crate::cloud::CloudOptions;
 
-pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
+pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
     (|| {
         let verbose = config::verbose();
 
@@ -51,8 +50,7 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
             if let Ok(v) = id {
                 std::env::temp_dir().join(format!("polars-{}/", v))
             } else {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(std::io::Error::other(
                     "could not load $USER or $HOME environment variables",
                 ));
             }
@@ -85,10 +83,10 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
                 let perms = std::fs::metadata(path.as_ref())?.permissions();
 
                 if (perms.mode() % 0o1000) != 0o700 {
-                    std::io::Result::Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("permission mismatch: {:?}", perms),
-                    ))
+                    std::io::Result::Err(std::io::Error::other(format!(
+                        "permission mismatch: {:?}",
+                        perms
+                    )))
                 } else {
                     std::io::Result::Ok(())
                 }
@@ -139,8 +137,8 @@ pub fn resolve_homedir(path: &dyn AsRef<Path>) -> PathBuf {
     path.into()
 }
 
-static CLOUD_URL: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?|hf)://").unwrap());
+static CLOUD_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?|hf)://").unwrap());
 
 /// Check if the path is a cloud url.
 pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
@@ -300,13 +298,14 @@ pub fn expand_paths_hive(
             use crate::cloud::object_path_from_str;
 
             if first_path.starts_with("hf://") {
-                let (expand_start_idx, paths) = crate::pl_async::get_runtime()
-                    .block_on_potential_spawn(hugging_face::expand_paths_hf(
+                let (expand_start_idx, paths) = crate::pl_async::get_runtime().block_in_place_on(
+                    hugging_face::expand_paths_hf(
                         paths,
                         check_directory_level,
                         cloud_options,
                         glob,
-                    ))?;
+                    ),
+                )?;
 
                 return Ok((Arc::from(paths), expand_start_idx));
             }
@@ -322,7 +321,7 @@ pub fn expand_paths_hive(
             let expand_path_cloud = |path: &str,
                                      cloud_options: Option<&CloudOptions>|
              -> PolarsResult<(usize, Vec<PathBuf>)> {
-                crate::pl_async::get_runtime().block_on_potential_spawn(async {
+                crate::pl_async::get_runtime().block_in_place_on(async {
                     let (cloud_location, store) =
                         crate::cloud::build_object_store(path, cloud_options, glob).await?;
                     let prefix = object_path_from_str(&cloud_location.prefix)?;
@@ -425,9 +424,8 @@ pub fn expand_paths_hive(
 
                 hive_idx_tracker.update(0, path_idx)?;
 
-                let iter = crate::pl_async::get_runtime().block_on_potential_spawn(
-                    crate::async_glob(path.to_str().unwrap(), cloud_options),
-                )?;
+                let iter = crate::pl_async::get_runtime()
+                    .block_in_place_on(crate::async_glob(path.to_str().unwrap(), cloud_options))?;
 
                 if is_cloud {
                     out_paths.extend(iter.into_iter().map(PathBuf::from));
@@ -516,11 +514,7 @@ pub fn expand_paths_hive(
 pub(crate) fn ensure_directory_init(path: &Path) -> std::io::Result<()> {
     let result = std::fs::create_dir_all(path);
 
-    if path.is_dir() {
-        Ok(())
-    } else {
-        result
-    }
+    if path.is_dir() { Ok(()) } else { result }
 }
 
 #[cfg(test)]

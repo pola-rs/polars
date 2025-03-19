@@ -1,11 +1,12 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::fmt::{Debug, Formatter};
 use std::hash::{BuildHasher, Hash, Hasher};
 
 use arrow::array::*;
-use polars_utils::aliases::PlRandomState;
+use polars_utils::aliases::PlFixedStateQuality;
 
 use crate::datatypes::PlHashMap;
-use crate::using_string_cache;
+use crate::{StringCache, using_string_cache};
 
 #[derive(Clone)]
 pub enum RevMapping {
@@ -45,6 +46,13 @@ impl Default for RevMapping {
 
 #[allow(clippy::len_without_is_empty)]
 impl RevMapping {
+    pub fn is_active_global(&self) -> bool {
+        match self {
+            Self::Global(_, _, id) => *id == StringCache::active_cache_id(),
+            _ => false,
+        }
+    }
+
     pub fn is_global(&self) -> bool {
         matches!(self, Self::Global(_, _, _))
     }
@@ -63,7 +71,7 @@ impl RevMapping {
 
     fn build_hash(categories: &Utf8ViewArray) -> u128 {
         // TODO! we must also validate the cases of duplicates!
-        let mut hb = PlRandomState::with_seed(0).build_hasher();
+        let mut hb = PlFixedStateQuality::with_seed(0).build_hasher();
         categories.values_iter().for_each(|val| {
             val.hash(&mut hb);
         });
@@ -148,7 +156,7 @@ impl RevMapping {
                     .iter()
                     // SAFETY:
                     // value is always within bounds
-                    .find(|(_k, &v)| (unsafe { a.value_unchecked(v as usize) } == value))
+                    .find(|&(_k, &v)| (unsafe { a.value_unchecked(v as usize) } == value))
                     .map(|(k, _v)| *k)
             },
 

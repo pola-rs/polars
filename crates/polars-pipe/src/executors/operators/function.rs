@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 
+use polars_core::POOL;
 use polars_core::error::PolarsResult;
 use polars_core::utils::_split_offsets;
-use polars_core::POOL;
 use polars_plan::prelude::*;
 
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
@@ -90,7 +90,9 @@ impl Operator for FunctionOperator {
                     let new_chunk_size = self.chunk_size / 2;
 
                     if context.verbose && new_chunk_size < 5 {
-                        eprintln!("chunk size in 'function operation' shrank to {new_chunk_size} and has been set to 5 as lower limit")
+                        eprintln!(
+                            "chunk size in 'function operation' shrank to {new_chunk_size} and has been set to 5 as lower limit"
+                        )
                     }
                     // ensure it is never 0
                     self.chunk_size = std::cmp::max(new_chunk_size, 5);

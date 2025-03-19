@@ -73,7 +73,9 @@ pub fn resolve_join(
         if turn_off_coalesce {
             let options = Arc::make_mut(&mut options);
             if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
-                polars_warn!("coalescing join requested but not all join keys are column references, turning off key coalescing");
+                polars_warn!(
+                    "coalescing join requested but not all join keys are column references, turning off key coalescing"
+                );
             }
             options.args.coalesce = JoinCoalesce::KeepColumns;
         }
@@ -243,9 +245,6 @@ pub fn resolve_join(
     let mut as_with_columns_l = vec![];
     let mut as_with_columns_r = vec![];
     for (lnode, rnode) in left_on.iter_mut().zip(right_on.iter_mut()) {
-        //polars_ensure!(!lnode.is_scalar(&ctxt.expr_arena), InvalidOperation: "joining on scalars is not allowed, consider using 'join_where'");
-        //polars_ensure!(!rnode.is_scalar(&ctxt.expr_arena), InvalidOperation: "joining on scalars is not allowed, consider using 'join_where'");
-
         let ltype = get_dtype!(lnode, &schema_left)?;
         let rtype = get_dtype!(rnode, &schema_right)?;
 

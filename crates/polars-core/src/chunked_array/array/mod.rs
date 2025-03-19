@@ -4,6 +4,8 @@ mod iterator;
 
 use std::borrow::Cow;
 
+use either::Either;
+
 use crate::prelude::*;
 
 impl ArrayChunked {
@@ -37,13 +39,24 @@ impl ArrayChunked {
             return Cow::Borrowed(self);
         };
 
-        assert_eq!(self.chunks().len(), physical_repr.chunks().len());
+        let chunk_len_validity_iter =
+            if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
+                // Physical repr got rechunked, rechunk our validity as well.
+                Either::Left(std::iter::once((self.len(), self.rechunk_validity())))
+            } else {
+                // No rechunking, expect the same number of chunks.
+                assert_eq!(self.chunks().len(), physical_repr.chunks().len());
+                Either::Right(
+                    self.chunks()
+                        .iter()
+                        .map(|c| (c.len(), c.validity().cloned())),
+                )
+            };
 
         let width = self.width();
-        let chunks: Vec<_> = self
-            .downcast_iter()
+        let chunks: Vec<_> = chunk_len_validity_iter
             .zip(physical_repr.into_chunks())
-            .map(|(chunk, values)| {
+            .map(|((len, validity), values)| {
                 FixedSizeListArray::new(
                     ArrowDataType::FixedSizeList(
                         Box::new(ArrowField::new(
@@ -53,9 +66,9 @@ impl ArrayChunked {
                         )),
                         width,
                     ),
-                    chunk.len(),
+                    len,
                     values,
-                    chunk.validity().cloned(),
+                    validity,
                 )
                 .to_boxed()
             })

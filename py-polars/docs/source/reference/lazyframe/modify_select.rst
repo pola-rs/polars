@@ -32,6 +32,7 @@ Manipulation/selection
     LazyFrame.limit
     LazyFrame.melt
     LazyFrame.merge_sorted
+    LazyFrame.remove
     LazyFrame.rename
     LazyFrame.reverse
     LazyFrame.rolling

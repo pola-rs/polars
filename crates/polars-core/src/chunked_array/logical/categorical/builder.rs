@@ -1,3 +1,6 @@
+#![allow(unsafe_op_in_unsafe_fn)]
+use std::hash::BuildHasher;
+
 use arrow::array::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
@@ -6,7 +9,7 @@ use polars_utils::itertools::Itertools;
 
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
-use crate::{using_string_cache, StringCache, POOL};
+use crate::{POOL, StringCache, using_string_cache};
 
 pub struct CategoricalChunkedBuilder {
     cat_builder: UInt32Vec,
@@ -14,7 +17,7 @@ pub struct CategoricalChunkedBuilder {
     ordering: CategoricalOrdering,
     categories: MutablePlString,
     local_mapping: HashTable<u32>,
-    local_hasher: PlRandomState,
+    local_hasher: PlFixedStateQuality,
 }
 
 impl CategoricalChunkedBuilder {
@@ -52,6 +55,48 @@ impl CategoricalChunkedBuilder {
                 },
             }
         }
+    }
+
+    fn try_get_cat_idx(&mut self, s: &str, h: u64) -> Option<u32> {
+        // SAFETY: index in hashmap are within bounds of categories
+        unsafe {
+            let r = self.local_mapping.entry(
+                h,
+                |k| self.categories.value_unchecked(*k as usize) == s,
+                |k| {
+                    self.local_hasher
+                        .hash_one(self.categories.value_unchecked(*k as usize))
+                },
+            );
+
+            match r {
+                HTEntry::Occupied(v) => Some(*v.get()),
+                HTEntry::Vacant(_) => None,
+            }
+        }
+    }
+
+    /// Append a new category, but fail if it didn't exist yet in the category state.
+    /// You can register categories up front with `register_value`, or via `append`.
+    #[inline]
+    pub fn try_append_value(&mut self, s: &str) -> PolarsResult<()> {
+        let h = self.local_hasher.hash_one(s);
+        let idx = self.try_get_cat_idx(s, h).ok_or_else(
+            || polars_err!(ComputeError: "category {} doesn't exist in Enum dtype", s),
+        )?;
+        self.cat_builder.push(Some(idx));
+        Ok(())
+    }
+
+    /// Append a new category, but fail if it didn't exist yet in the category state.
+    /// You can register categories up front with `register_value`, or via `append`.
+    #[inline]
+    pub fn try_append(&mut self, opt_s: Option<&str>) -> PolarsResult<()> {
+        match opt_s {
+            None => self.append_null(),
+            Some(s) => self.try_append_value(s)?,
+        }
+        Ok(())
     }
 
     /// Registers a value to a categorical index without pushing it.
@@ -378,7 +423,7 @@ impl CategoricalChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
+    use crate::{SINGLE_LOCK, disable_string_cache, enable_string_cache};
 
     #[test]
     fn test_categorical_rev() -> PolarsResult<()> {

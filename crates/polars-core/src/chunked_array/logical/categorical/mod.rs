@@ -474,12 +474,24 @@ impl<'a> Iterator for CatIter<'a> {
     }
 }
 
+impl DoubleEndedIterator for CatIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back().map(|item| {
+            item.map(|idx| {
+                // SAFETY:
+                // all categories are in bound
+                unsafe { self.rev.get_unchecked(idx) }
+            })
+        })
+    }
+}
+
 impl ExactSizeIterator for CatIter<'_> {}
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
+    use crate::{SINGLE_LOCK, disable_string_cache, enable_string_cache};
 
     #[test]
     fn test_categorical_round_trip() -> PolarsResult<()> {

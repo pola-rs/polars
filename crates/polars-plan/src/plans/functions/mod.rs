@@ -39,7 +39,7 @@ pub enum FunctionIR {
 
     FastCount {
         sources: ScanSources,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
         alias: Option<PlSmallStr>,
     },
 
@@ -325,7 +325,7 @@ impl Display for FunctionIR {
                 scan_type,
                 alias,
             } => {
-                let scan_type: &str = scan_type.into();
+                let scan_type: &str = (&(**scan_type)).into();
                 let default_column_name = PlSmallStr::from_static(crate::constants::LEN);
                 let alias = alias.as_ref().unwrap_or(&default_column_name);
 
