@@ -1,16 +1,27 @@
 import contextlib
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    # ensure the object constructor is known by polars
-    # we set this once on import
-
-    # This must be done before importing the Polars Rust bindings.
+    # This must be done before importing the Polars Rust bindings, otherwise we
+    # might execute illegal instructions.
     import polars._cpu_check
 
     polars._cpu_check.check_cpu_flags()
 
-    # we also set other function pointers needed
-    # on the rust side. This function is highly
+    # We also configure the allocator before importing the Polars Rust bindings.
+    # See https://github.com/pola-rs/polars/issues/18088,
+    # https://github.com/pola-rs/polars/pull/21829.
+    import os
+    import sys
+
+    jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:-1"
+    if sys.platform == "linux":
+        # We only enable this on Linux, otherwise jemalloc gives warnings.
+        jemalloc_conf += ",thp:always,metadata_thp:always"
+    if override := os.environ.get("_RJEM_MALLOC_CONF"):
+        jemalloc_conf += "," + override
+    os.environ["_RJEM_MALLOC_CONF"] = jemalloc_conf
+
+    # Initialize polars on the rust side. This function is highly
     # unsafe and should only be called once.
     from polars.polars import __register_startup_deps
 
