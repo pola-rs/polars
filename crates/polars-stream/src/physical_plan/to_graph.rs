@@ -332,6 +332,22 @@ fn to_graph_rec<'a>(
                     ),
                     [(input_key, input.port)],
                 ),
+                PartitionVariantIR::Parted {
+                    key_exprs,
+                    include_key,
+                } => ctx.graph.add_node(
+                    SinkComputeNode::from(
+                        nodes::io_sinks::partition::parted::PartedPartitionSinkNode::new(
+                            input_schema,
+                            key_exprs.iter().map(|e| e.output_name().clone()).collect(),
+                            path_f_string.clone(),
+                            create_new,
+                            sink_options.clone(),
+                            *include_key,
+                        ),
+                    ),
+                    [(input_key, input.port)],
+                ),
                 PartitionVariantIR::ByKey {
                     key_exprs,
                     include_key,

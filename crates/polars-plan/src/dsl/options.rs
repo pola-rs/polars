@@ -406,6 +406,10 @@ pub enum SinkType {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PartitionVariant {
     MaxSize(IdxSize),
+    Parted {
+        key_exprs: Vec<Expr>,
+        include_key: bool,
+    },
     ByKey {
         key_exprs: Vec<Expr>,
         include_key: bool,
@@ -416,6 +420,10 @@ pub enum PartitionVariant {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PartitionVariantIR {
     MaxSize(IdxSize),
+    Parted {
+        key_exprs: Vec<ExprIR>,
+        include_key: bool,
+    },
     ByKey {
         key_exprs: Vec<ExprIR>,
         include_key: bool,
@@ -446,7 +454,11 @@ impl PartitionVariantIR {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::MaxSize(size) => size.hash(state),
-            Self::ByKey {
+            Self::Parted {
+                key_exprs,
+                include_key,
+            }
+            | Self::ByKey {
                 key_exprs,
                 include_key,
             } => {
