@@ -83,8 +83,6 @@ impl FunctionIR {
                     panic!("activate feature 'dtype-struct'")
                 }
             },
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename {
                 existing,
                 new,

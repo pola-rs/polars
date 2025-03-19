@@ -22,7 +22,9 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
-from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PyLazyFrame
@@ -92,8 +94,16 @@ def read_ipc(
     -------
     DataFrame
 
+    See Also
+    --------
+    scan_ipc : Lazily read from an IPC file or multiple files via glob patterns.
+
     Warnings
     --------
+    Calling `read_ipc().lazy()` is an antipattern as this forces Polars to materialize
+    a full csv file and therefore cannot push any optimizations into the reader.
+    Therefore always prefer `scan_ipc` if you want to work with `LazyFrame` s.
+
     If `memory_map` is set, the bytes on disk are mapped 1:1 to memory.
     That means that you cannot write to the same filename.
     E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")` will fail.
@@ -460,9 +470,10 @@ def scan_ipc(
     # Memory Mapping is now a no-op
     _ = memory_map
 
-    credential_provider = _maybe_init_credential_provider(
+    credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_parquet"
     )
+    del credential_provider
 
     if storage_options:
         storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -478,7 +489,7 @@ def scan_ipc(
         rechunk,
         parse_row_index_args(row_index_name, row_index_offset),
         cloud_options=storage_options,
-        credential_provider=credential_provider,
+        credential_provider=credential_provider_builder,
         retries=retries,
         file_cache_ttl=file_cache_ttl,
         hive_partitioning=hive_partitioning,

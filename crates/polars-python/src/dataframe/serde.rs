@@ -6,9 +6,9 @@ use polars_io::mmap::ReaderBytes;
 use pyo3::prelude::*;
 
 use super::PyDataFrame;
-use crate::error::PyPolarsErr;
 use crate::exceptions::ComputeError;
 use crate::file::{get_file_like, get_mmap_bytes_reader};
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PyDataFrame {
@@ -17,11 +17,7 @@ impl PyDataFrame {
         let file = get_file_like(py_f, true)?;
         let mut writer = BufWriter::new(file);
 
-        py.allow_threads(|| {
-            self.df
-                .serialize_into_writer(&mut writer)
-                .map_err(|e| PyPolarsErr::from(e).into())
-        })
+        py.enter_polars(|| self.df.serialize_into_writer(&mut writer))
     }
 
     /// Deserialize a file-like object containing binary data into a DataFrame.
@@ -30,11 +26,7 @@ impl PyDataFrame {
         let file = get_file_like(py_f, false)?;
         let mut file = BufReader::new(file);
 
-        py.allow_threads(|| {
-            DataFrame::deserialize_from_reader(&mut file)
-                .map_err(|e| PyPolarsErr::from(e).into())
-                .map(|x| x.into())
-        })
+        py.enter_polars_df(|| DataFrame::deserialize_from_reader(&mut file))
     }
 
     /// Serialize into a JSON string.
@@ -42,7 +34,7 @@ impl PyDataFrame {
     pub fn serialize_json(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             serde_json::to_writer(writer, &self.df)
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })
@@ -54,12 +46,12 @@ impl PyDataFrame {
     pub fn deserialize_json(py: Python, py_f: Bound<PyAny>) -> PyResult<Self> {
         let mut mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
-        py.allow_threads(move || {
+        py.enter_polars(move || {
             let mmap_read: ReaderBytes = (&mut mmap_bytes_r).into();
             let bytes = mmap_read.deref();
             let df = serde_json::from_slice::<DataFrame>(bytes)
                 .map_err(|err| ComputeError::new_err(err.to_string()))?;
-            Ok(df.into())
+            PyResult::Ok(df.into())
         })
     }
 }

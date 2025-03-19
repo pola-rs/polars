@@ -1,5 +1,5 @@
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_plan::prelude::*;
 
 use super::*;
@@ -219,7 +219,9 @@ impl PhysicalExpr for TernaryExpr {
                 // list of the same length as the corresponding AggregatedList
                 // row.
                 if state.verbose() {
-                    eprintln!("ternary agg: finish as iters due to mix of AggregatedScalar and AggregatedList")
+                    eprintln!(
+                        "ternary agg: finish as iters due to mix of AggregatedScalar and AggregatedList"
+                    )
                 }
                 return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
             }
@@ -326,12 +328,6 @@ impl PhysicalExpr for TernaryExpr {
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
-    }
-
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.predicate.collect_live_columns(lv);
-        self.truthy.collect_live_columns(lv);
-        self.falsy.collect_live_columns(lv);
     }
 
     fn is_scalar(&self) -> bool {

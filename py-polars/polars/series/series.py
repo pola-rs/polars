@@ -168,7 +168,7 @@ ArrayLike = Union[
 @expr_dispatch
 class Series:
     """
-    A Series represents a single column in a polars DataFrame.
+    A Series represents a single column in a Polars DataFrame.
 
     Parameters
     ----------
@@ -329,7 +329,7 @@ class Series:
         ):
             self._s = pandas_to_pyseries(name, values, dtype=dtype, strict=strict)
 
-        elif _is_generator(values):
+        elif not hasattr(values, "__arrow_c_stream__") and _is_generator(values):
             self._s = iterable_to_pyseries(name, values, dtype=dtype, strict=strict)
 
         elif isinstance(values, Series):
@@ -1084,10 +1084,12 @@ class Series:
     def __truediv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) / other
-        if self.dtype.is_temporal():
+        if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
-        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+        if isinstance(other, (int, float)) and (
+            self.dtype.is_decimal() or isinstance(self.dtype, Duration)
+        ):
             return self.to_frame().select(F.col(self.name) / other).to_series()
 
         self = (
@@ -1095,7 +1097,7 @@ class Series:
             if (
                 self.dtype.is_float()
                 or self.dtype.is_decimal()
-                or isinstance(self.dtype, (List, Array))
+                or isinstance(self.dtype, (List, Array, Duration))
                 or (
                     isinstance(other, Series) and isinstance(other.dtype, (List, Array))
                 )
@@ -1139,10 +1141,12 @@ class Series:
     def __mul__(self, other: Any) -> Series | DataFrame | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) * other
-        if self.dtype.is_temporal():
+        if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
             msg = "first cast to integer before multiplying datelike dtypes"
             raise TypeError(msg)
-        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+        if isinstance(other, (int, float)) and (
+            self.dtype.is_decimal() or isinstance(self.dtype, Duration)
+        ):
             return self.to_frame().select(F.col(self.name) * other).to_series()
         elif isinstance(other, pl.DataFrame):
             return other * self
@@ -1203,10 +1207,12 @@ class Series:
         return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> Series:
-        if self.dtype.is_temporal():
+        if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
             msg = "first cast to integer before multiplying datelike dtypes"
             raise TypeError(msg)
-        if isinstance(other, (int, float)) and self.dtype.is_decimal():
+        if isinstance(other, (int, float)) and (
+            self.dtype.is_decimal() or isinstance(self.dtype, Duration)
+        ):
             return self.to_frame().select(other * F.col(self.name)).to_series()
         return self._arithmetic(other, "mul", "mul_<>")
 
@@ -1421,7 +1427,7 @@ class Series:
 
             # Get minimum dtype needed to be able to cast all input arguments to the
             # same dtype.
-            dtype_char_minimum = np.result_type(*args).char
+            dtype_char_minimum: str = np.result_type(*args).char
 
             # Get all possible output dtypes for ufunc.
             # Input dtypes and output dtypes seem to always match for ufunc.types,
@@ -1564,6 +1570,11 @@ class Series:
         this function returns the visible size of the buffer, not its total capacity.
 
         FFI buffers are included in this estimation.
+
+        Notes
+        -----
+        For data with Object dtype, the estimated size only reports the pointer
+        size, which is a huge underestimation.
 
         Parameters
         ----------
@@ -2641,8 +2652,9 @@ class Series:
         )
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def cumulative_eval(
-        self, expr: Expr, *, min_periods: int = 1, parallel: bool = False
+        self, expr: Expr, *, min_samples: int = 1, parallel: bool = False
     ) -> Series:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -2655,7 +2667,7 @@ class Series:
         ----------
         expr
             Expression to evaluate
-        min_periods
+        min_samples
             Number of valid values there should be in the window before the expression
             is evaluated. valid values = `length - null_count`
         parallel
@@ -3771,9 +3783,19 @@ class Series:
         ]
         """
 
-    def is_in(self, other: Series | Collection[Any]) -> Series:
+    def is_in(
+        self,
+        other: Series | Collection[Any],
+        *,
+        nulls_equal: bool = False,
+    ) -> Series:
         """
         Check if elements of this Series are in the other Series.
+
+        Parameters
+        ----------
+        nulls_equal : bool, default False
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -3783,12 +3805,22 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s2 = pl.Series("b", [2, 4])
+        >>> s2 = pl.Series("b", [2, 4, None])
         >>> s2.is_in(s)
-        shape: (2,)
+        shape: (3,)
         Series: 'b' [bool]
         [
                 true
+                false
+                null
+        ]
+        >>> # when nulls_equal=True, None is treated as a distinct value
+        >>> s2.is_in(s, nulls_equal=True)
+        shape: (3,)
+        Series: 'b' [bool]
+        [
+                true
+                false
                 false
         ]
 
@@ -4756,7 +4788,8 @@ class Series:
         └─────────┘
         """
         if not isinstance(indices, Iterable):
-            indices = [indices]  # type: ignore[list-item]
+            index: Any = indices  # Workaround for older NumPy versions
+            indices = [index]
         indices = Series(values=indices)
         if indices.is_empty():
             return self
@@ -5429,8 +5462,8 @@ class Series:
             Number of indices to shift forward. If a negative value is passed, values
             are shifted in the opposite direction instead.
         fill_value
-            Fill the resulting null values with this value. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Fill the resulting null values with this value. Accepts scalar expression
+            input. Non-expression inputs are parsed as literals.
 
         Notes
         -----
@@ -5523,21 +5556,17 @@ class Series:
         """
         return self._from_pyseries(self._s.zip_with(mask._s, other._s))
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_min(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
         Apply a rolling min (moving min) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5553,7 +5582,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5574,21 +5603,17 @@ class Series:
         ]
         """
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_max(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
         Apply a rolling max (moving max) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5604,7 +5629,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5625,21 +5650,17 @@ class Series:
         ]
         """
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_mean(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
         Apply a rolling mean (moving mean) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5655,7 +5676,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5676,21 +5697,17 @@ class Series:
         ]
         """
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_sum(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
         Apply a rolling sum (moving sum) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5706,7 +5723,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5727,22 +5744,18 @@ class Series:
         ]
         """
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_std(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> Series:
         """
         Compute a rolling std dev.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5758,7 +5771,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5782,22 +5795,18 @@ class Series:
         ]
         """
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_var(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> Series:
         """
         Compute a rolling variance.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5813,7 +5822,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5838,13 +5847,14 @@ class Series:
         """
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_map(
         self,
         function: Callable[[Series], Any],
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5863,7 +5873,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5891,12 +5901,13 @@ class Series:
         """
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_median(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5916,7 +5927,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5939,6 +5950,7 @@ class Series:
         """
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_quantile(
         self,
         quantile: float,
@@ -5946,7 +5958,7 @@ class Series:
         window_size: int = 2,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5970,7 +5982,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -6951,6 +6963,7 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_mean(
         self,
         *,
@@ -6959,7 +6972,7 @@ class Series:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
@@ -6997,7 +7010,7 @@ class Series:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls
@@ -7115,6 +7128,7 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_std(
         self,
         *,
@@ -7124,7 +7138,7 @@ class Series:
         alpha: float | None = None,
         adjust: bool = True,
         bias: bool = False,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
@@ -7165,7 +7179,7 @@ class Series:
         bias
             When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls
@@ -7199,6 +7213,7 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_var(
         self,
         *,
@@ -7208,7 +7223,7 @@ class Series:
         alpha: float | None = None,
         adjust: bool = True,
         bias: bool = False,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
@@ -7249,7 +7264,7 @@ class Series:
         bias
             When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls

@@ -12,7 +12,7 @@ pub trait SliceAble {
 
 impl<T> SliceAble for &[T] {
     unsafe fn slice_unchecked(&self, range: Range<usize>) -> Self {
-        self.get_unchecked(range)
+        unsafe { self.get_unchecked(range) }
     }
 
     fn slice(&self, range: Range<usize>) -> Self {

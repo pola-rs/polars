@@ -2,6 +2,8 @@ mod async_executor;
 mod async_primitives;
 mod skeleton;
 
+use std::sync::LazyLock;
+
 pub use skeleton::run_query;
 
 mod execute;
@@ -13,9 +15,23 @@ mod physical_plan;
 mod pipe;
 mod utils;
 
-// TODO: experiment with these, and make them configurable through environment variables.
-const DEFAULT_LINEARIZER_BUFFER_SIZE: usize = 4;
-const DEFAULT_DISTRIBUTOR_BUFFER_SIZE: usize = 4;
-const DEFAULT_ZIP_HEAD_BUFFER_SIZE: usize = 4;
+// TODO: experiment with these.
+static DEFAULT_LINEARIZER_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("POLARS_DEFAULT_LINEARIZER_BUFFER_SIZE")
+        .map(|x| x.parse().unwrap())
+        .unwrap_or(4)
+});
+
+static DEFAULT_DISTRIBUTOR_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("POLARS_DEFAULT_DISTRIBUTOR_BUFFER_SIZE")
+        .map(|x| x.parse().unwrap())
+        .unwrap_or(4)
+});
+
+static DEFAULT_ZIP_HEAD_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("POLARS_DEFAULT_ZIP_HEAD_BUFFER_SIZE")
+        .map(|x| x.parse().unwrap())
+        .unwrap_or(4)
+});
 
 const GROUP_BY_MIN_ROWS_PER_PARTITION: usize = 128;

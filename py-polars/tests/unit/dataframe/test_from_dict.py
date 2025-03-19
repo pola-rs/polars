@@ -186,7 +186,7 @@ def test_from_dict_with_values_mixed() -> None:
     )
     dfx = df.select(pl.exclude("idx"))
 
-    assert len(df) == n_range
+    assert df.height == n_range
     assert dfx[:5].rows() == dfx[5:10].rows()
     assert dfx[-10:-5].rows() == dfx[-5:].rows()
     assert dfx.row(n_range // 2, named=True) == mixed_dtype_data

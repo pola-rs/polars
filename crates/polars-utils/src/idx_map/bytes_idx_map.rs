@@ -15,8 +15,8 @@ struct Key {
 
 impl Key {
     unsafe fn get<'k>(&self, key_data: &'k [Vec<u8>]) -> &'k [u8] {
-        let buf = key_data.get_unchecked(self.key_buffer as usize);
-        buf.get_unchecked(self.key_offset..self.key_offset + self.key_length as usize)
+        let buf = unsafe { key_data.get_unchecked(self.key_buffer as usize) };
+        unsafe { buf.get_unchecked(self.key_offset..self.key_offset + self.key_length as usize) }
     }
 }
 
@@ -112,8 +112,8 @@ impl<V> BytesIndexMap<V> {
     /// The index must be less than len().
     #[inline(always)]
     pub unsafe fn get_index_unchecked(&self, idx: IdxSize) -> (u64, &[u8], &V) {
-        let t = self.tuples.get_unchecked(idx as usize);
-        (t.0.key_hash, t.0.get(&self.key_data), &t.1)
+        let t = unsafe { self.tuples.get_unchecked(idx as usize) };
+        unsafe { (t.0.key_hash, t.0.get(&self.key_data), &t.1) }
     }
 
     /// Iterates over the (hash, key) pairs in insertion order.

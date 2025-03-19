@@ -1,21 +1,23 @@
 use std::any::Any;
 use std::fmt::Debug;
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::Mutex;
 
 use arrow::legacy::is_valid::IsValid;
 use arrow::legacy::kernels::sort_partition::partition_to_groups_amortized;
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
+use polars_core::POOL;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_set_partition_size;
-use polars_core::POOL;
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::aliases::PlSeedableRandomStateQuality;
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
+use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::group_by::aggregates::AggregateFunction;
 use crate::executors::sinks::group_by::ooc_state::OocState;
 use crate::executors::sinks::group_by::physical_agg_to_logical;
@@ -23,7 +25,6 @@ use crate::executors::sinks::group_by::string::{apply_aggregate, write_agg_idx};
 use crate::executors::sinks::group_by::utils::{compute_slices, finalize_group_by, prepare_key};
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::load_vec;
-use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
@@ -59,7 +60,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     key: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: PlRandomState,
+    hb: PlSeedableRandomStateQuality,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
     // to populate the buffer where the hashmap points to
@@ -113,7 +114,7 @@ where
         io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
         ooc: bool,
     ) -> Self {
-        let hb = PlRandomState::default();
+        let hb = PlSeedableRandomStateQuality::default();
         let partitions = _set_partition_size();
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
@@ -291,7 +292,7 @@ where
         let ca: &ChunkedArray<K> = s.as_ref().as_ref();
 
         // ensure the hashes are set
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        s.vec_hash(self.hb, &mut self.hashes).unwrap();
 
         let arr = ca.downcast_iter().next().unwrap();
         let pre_agg_len = self.pre_agg_partitions.len();
@@ -301,7 +302,7 @@ where
 
         // this reuses the hashes buffer as [u64] as idx buffer as [idxsize]
         // write the hashes to self.hashes buffer
-        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // s.vec_hash(self.hb, &mut self.hashes).unwrap();
         // now we have written hashes, we take the pointer to this buffer
         // we will write the aggregation_function indexes in the same buffer
         // this is unsafe and we must check that we only write the hashes that
@@ -366,11 +367,11 @@ where
             return self.sink_sorted(ca, chunk);
         }
 
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        s.vec_hash(self.hb, &mut self.hashes).unwrap();
 
         // this reuses the hashes buffer as [u64] as idx buffer as [idxsize]
         // write the hashes to self.hashes buffer
-        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // s.vec_hash(self.hb, &mut self.hashes).unwrap();
         // now we have written hashes, we take the pointer to this buffer
         // we will write the aggregation_function indexes in the same buffer
         // this is unsafe and we must check that we only write the hashes that
@@ -478,7 +479,7 @@ where
             Some(self.ooc_state.io_thread.clone()),
             self.ooc_state.ooc,
         );
-        new.hb = self.hb.clone();
+        new.hb = self.hb;
         new.thread_no = thread_no;
         Box::new(new)
     }

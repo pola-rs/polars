@@ -8,8 +8,8 @@ use polars_error::polars_ensure;
 use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
-use crate::morsel::SourceToken;
 use crate::DEFAULT_ZIP_HEAD_BUFFER_SIZE;
+use crate::morsel::SourceToken;
 
 /// The head of an input stream.
 #[derive(Debug)]
@@ -141,11 +141,16 @@ impl ComputeNode for ZipNode {
         "zip"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(send.len() == 1);
         assert!(recv.len() == self.input_heads.len());
 
-        let any_input_blocked = recv.iter().any(|s| *s == PortState::Blocked);
+        let any_input_blocked = recv.contains(&PortState::Blocked);
 
         let mut all_broadcast = true;
         let mut all_done_or_broadcast = true;
@@ -207,7 +212,7 @@ impl ComputeNode for ZipNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(send_ports.len() == 1);
@@ -219,7 +224,8 @@ impl ComputeNode for ZipNode {
             .map(|recv_port| {
                 // Add buffering to each receiver to reduce contention between input heads.
                 let mut serial_recv = recv_port.take()?.serial();
-                let (buf_send, buf_recv) = tokio::sync::mpsc::channel(DEFAULT_ZIP_HEAD_BUFFER_SIZE);
+                let (buf_send, buf_recv) =
+                    tokio::sync::mpsc::channel(*DEFAULT_ZIP_HEAD_BUFFER_SIZE);
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = serial_recv.recv().await {
                         if buf_send.send(morsel).await.is_err() {

@@ -1,30 +1,31 @@
 use std::collections::VecDeque;
 use std::ops::Range;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 use arrow::datatypes::ArrowSchema;
 use futures::{StreamExt, TryStreamExt};
+use polars_core::POOL;
 use polars_core::config::{self, get_file_prefetch_size};
 use polars_core::error::*;
 use polars_core::prelude::Series;
-use polars_core::POOL;
+use polars_io::SerReader;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::parquet::read::{BatchedParquetReader, ParquetOptions, ParquetReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_io::pl_async::get_runtime;
-use polars_io::predicates::PhysicalIoExpr;
+use polars_io::predicates::ScanIOPredicate;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::utils::slice::split_slice_at_file;
-use polars_io::SerReader;
-use polars_plan::plans::{FileInfo, ScanSources};
-use polars_plan::prelude::hive::HivePartitions;
+use polars_plan::dsl::ScanSources;
+use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::itertools::Itertools;
+use polars_plan::prelude::hive::HivePartitions;
 use polars_utils::IdxSize;
+use polars_utils::itertools::Itertools;
 
 use crate::executors::sources::get_source_index;
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
@@ -38,7 +39,7 @@ pub struct ParquetSource {
     iter: Range<usize>,
     sources: ScanSources,
     options: ParquetOptions,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     first_metadata: Option<FileMetadataRef>,
@@ -48,7 +49,7 @@ pub struct ParquetSource {
     prefetch_size: usize,
     first_schema: Arc<ArrowSchema>,
     projected_arrow_schema: Option<Arc<ArrowSchema>>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<ScanIOPredicate>,
 }
 
 impl ParquetSource {
@@ -72,7 +73,7 @@ impl ParquetSource {
     ) -> PolarsResult<(
         &PathBuf,
         ParquetOptions,
-        FileScanOptions,
+        Box<FileScanOptions>,
         usize,
         Option<Vec<Series>>,
     )> {
@@ -109,7 +110,7 @@ impl ParquetSource {
         let Some(index) = self.iter.next() else {
             return Ok(());
         };
-        if let Some(slice) = self.file_options.slice {
+        if let Some(slice) = self.file_options.pre_slice {
             if self.processed_rows.load(Ordering::Relaxed) >= slice.0 as usize + slice.1 {
                 return Ok(());
             }
@@ -140,7 +141,7 @@ impl ParquetSource {
                     ri.offset += self.processed_rows.load(Ordering::Relaxed) as IdxSize;
                     ri
                 }))
-                .with_predicate(predicate.clone())
+                .with_predicate(predicate)
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
                 .with_include_file_path(
@@ -155,7 +156,7 @@ impl ParquetSource {
                 .processed_rows
                 .fetch_add(n_rows_this_file, Ordering::Relaxed);
 
-            let slice = file_options.slice.map(|slice| {
+            let slice = file_options.pre_slice.map(|slice| {
                 assert!(slice.0 >= 0);
                 let slice_start = slice.0 as usize;
                 let slice_end = slice_start + slice.1;
@@ -209,7 +210,7 @@ impl ParquetSource {
                         self.file_options.allow_missing_columns,
                     )
                     .await?
-                    .with_predicate(predicate.clone())
+                    .with_predicate(predicate)
                     .use_statistics(options.use_statistics)
                     .with_hive_partition_columns(hive_partitions)
                     .with_include_file_path(
@@ -224,7 +225,7 @@ impl ParquetSource {
                 .processed_rows
                 .fetch_add(n_rows_this_file, Ordering::Relaxed);
 
-            let slice = file_options.slice.map(|slice| {
+            let slice = file_options.pre_slice.map(|slice| {
                 assert!(slice.0 >= 0);
                 let slice_start = slice.0 as usize;
                 let slice_end = slice_start + slice.1;
@@ -248,11 +249,11 @@ impl ParquetSource {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         first_metadata: Option<FileMetadataRef>,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         verbose: bool,
-        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        predicate: Option<ScanIOPredicate>,
     ) -> PolarsResult<Self> {
         let paths = sources
             .as_paths()
@@ -323,19 +324,19 @@ impl ParquetSource {
                         .collect::<Vec<_>>();
                     let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
 
-                    let needs_exact_processed_rows_count =
-                        self.file_options.slice.is_some() || self.file_options.row_index.is_some();
+                    let needs_exact_processed_rows_count = self.file_options.pre_slice.is_some()
+                        || self.file_options.row_index.is_some();
 
                     let batched_readers = if needs_exact_processed_rows_count {
                         // We run serially to ensure we have a correct processed_rows count.
-                        polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
+                        polars_io::pl_async::get_runtime().block_in_place_on(async {
                             futures::stream::iter(init_iter)
                                 .then(|x| x)
                                 .try_collect()
                                 .await
                         })?
                     } else {
-                        polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
+                        polars_io::pl_async::get_runtime().block_in_place_on(async {
                             futures::future::try_join_all(init_iter).await
                         })?
                     };
@@ -363,8 +364,7 @@ impl Source for ParquetSource {
             return Ok(SourceResult::Finished);
         };
 
-        let batches =
-            get_runtime().block_on_potential_spawn(reader.next_batches(self.n_threads))?;
+        let batches = get_runtime().block_in_place_on(reader.next_batches(self.n_threads))?;
 
         Ok(match batches {
             None => {

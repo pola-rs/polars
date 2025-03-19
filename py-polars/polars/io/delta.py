@@ -15,9 +15,12 @@ from polars.io.pyarrow_dataset.functions import scan_pyarrow_dataset
 from polars.schema import Schema
 
 if TYPE_CHECKING:
+    from typing import Literal
+
     from deltalake import DeltaTable
 
     from polars import DataFrame, DataType, LazyFrame
+    from polars.io.cloud import CredentialProviderFunction
 
 
 def read_delta(
@@ -27,6 +30,7 @@ def read_delta(
     columns: list[str] | None = None,
     rechunk: bool | None = None,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
@@ -57,6 +61,14 @@ def read_delta(
 
         More info is available `here
         <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     use_pyarrow
@@ -138,6 +150,7 @@ def read_delta(
         source=source,
         version=version,
         storage_options=storage_options,
+        credential_provider=credential_provider,
         delta_table_options=delta_table_options,
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
@@ -154,6 +167,7 @@ def scan_delta(
     *,
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
+    credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
@@ -180,6 +194,14 @@ def scan_delta(
 
         More info is available `here
         <https://delta-io.github.io/delta-rs/usage/loading-table/>`__.
+    credential_provider
+        Provide a function that can be called to provide cloud storage
+        credentials. The function is expected to return a dictionary of
+        credential keys along with an optional credential expiry time.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     delta_table_options
         Additional keyword arguments while reading a Delta lake Table.
     use_pyarrow
@@ -268,10 +290,46 @@ def scan_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... ).collect()  # doctest: +SKIP
     """
+    _check_if_delta_available()
+
+    credential_provider_creds = {}
+
+    from deltalake import DeltaTable
+
+    from polars.io.cloud.credential_provider._builder import (
+        _init_credential_provider_builder,
+    )
+    from polars.io.cloud.credential_provider._providers import (
+        _get_credentials_from_provider_expiry_aware,
+    )
+
+    if not isinstance(source, DeltaTable):
+        credential_provider_builder = _init_credential_provider_builder(
+            credential_provider, source, storage_options, "scan_delta"
+        )
+    elif credential_provider is not None and credential_provider != "auto":
+        msg = "cannot use credential_provider when passing a DeltaTable object"
+        raise ValueError(msg)
+    else:
+        credential_provider_builder = None
+
+    del credential_provider
+
+    if credential_provider_builder and (
+        provider := credential_provider_builder.build_credential_provider()
+    ):
+        credential_provider_creds = _get_credentials_from_provider_expiry_aware(
+            provider
+        )
+
     dl_tbl = _get_delta_lake_table(
         table_path=source,
         version=version,
-        storage_options=storage_options,
+        storage_options=(
+            {**(storage_options or {}), **credential_provider_creds}
+            if storage_options is not None or credential_provider_builder is not None
+            else None
+        ),
         delta_table_options=delta_table_options,
     )
 
@@ -352,6 +410,7 @@ def scan_delta(
         allow_missing_columns=True,
         hive_partitioning=len(partition_columns) > 0,
         storage_options=storage_options,
+        credential_provider=credential_provider_builder,  # type: ignore[arg-type]
         rechunk=rechunk or False,
     )
 

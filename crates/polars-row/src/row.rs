@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::{BinaryArray, BinaryViewArray};
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
@@ -76,6 +77,10 @@ impl RowEncodingOptions {
 
     pub fn new_unsorted() -> Self {
         Self::NO_ORDER
+    }
+
+    pub fn is_ordered(self) -> bool {
+        !self.contains(Self::NO_ORDER)
     }
 
     pub fn null_sentinel(self) -> u8 {

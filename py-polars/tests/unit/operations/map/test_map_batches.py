@@ -117,3 +117,10 @@ def test_lazy_map_schema() -> None:
     assert df.lazy().map_batches(
         custom2, validate_output_schema=False
     ).collect().to_dict(as_series=False) == {"a": ["1", "2", "3"], "b": ["a", "b", "c"]}
+
+
+def test_map_batches_collect_schema_17327() -> None:
+    df = pl.LazyFrame({"a": [1, 1, 1], "b": [2, 3, 4]})
+    q = df.group_by("a").agg(pl.col("b").map_batches(lambda s: s))
+    expected = pl.Schema({"a": pl.Int64(), "b": pl.List(pl.Unknown)})
+    assert q.collect_schema() == expected

@@ -1,5 +1,5 @@
 use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::{AlignedBytes, Bytes4Alignment4, NativeType};
 use polars_compute::filter::filter_boolean_kernel;
 
@@ -10,6 +10,7 @@ use crate::read::Filter;
 
 mod optional;
 mod optional_masked_dense;
+mod predicate;
 mod required;
 mod required_masked_dense;
 
@@ -55,40 +56,44 @@ impl IndexMapping for usize {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn decode_dict<T: NativeType>(
     values: HybridRleDecoder<'_>,
     dict: &[T],
+    dict_mask: Option<&Bitmap>,
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     target: &mut Vec<T>,
+    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     decode_dict_dispatch(
         values,
         bytemuck::cast_slice(dict),
+        dict_mask,
         is_optional,
         page_validity,
         filter,
         validity,
         <T::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(target),
+        pred_true_mask,
     )
 }
 
 #[inline(never)]
+#[allow(clippy::too_many_arguments)]
 pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
     dict: D,
+    dict_mask: Option<&Bitmap>,
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     target: &mut Vec<B>,
+    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
-    if cfg!(debug_assertions) && is_optional {
-        assert_eq!(target.len(), validity.len());
-    }
-
     if is_optional {
         append_validity(page_validity, filter.as_ref(), validity, values.len());
     }
@@ -111,11 +116,11 @@ pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             optional_masked_dense::decode(values, dict, filter, page_validity, target)
         },
+        (Some(Filter::Predicate(p)), None) => {
+            predicate::decode(values, dict, dict_mask.unwrap(), &p, target, pred_true_mask)
+        },
+        (Some(Filter::Predicate(_)), Some(_)) => todo!(),
     }?;
-
-    if cfg!(debug_assertions) && is_optional {
-        assert_eq!(target.len(), validity.len());
-    }
 
     Ok(())
 }
@@ -123,12 +128,12 @@ pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
 pub(crate) fn append_validity(
     page_validity: Option<&Bitmap>,
     filter: Option<&Filter>,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     values_len: usize,
 ) {
     match (page_validity, filter) {
         (None, None) => validity.extend_constant(values_len, true),
-        (None, Some(f)) => validity.extend_constant(f.num_rows(), true),
+        (None, Some(f)) => validity.extend_constant(f.num_rows(values_len), true),
         (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
         (Some(page_validity), Some(Filter::Range(rng))) => {
             let page_validity = page_validity.clone();
@@ -137,6 +142,7 @@ pub(crate) fn append_validity(
         (Some(page_validity), Some(Filter::Mask(mask))) => {
             validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, mask))
         },
+        (_, Some(Filter::Predicate(_))) => todo!(),
     }
 }
 
@@ -148,15 +154,11 @@ pub(crate) fn constrain_page_validity(
     let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
         (None, None) => values_len,
         (None, Some(pv)) => pv.len(),
-        (Some(f), v) => {
-            if cfg!(debug_assertions) {
-                if let Some(v) = v {
-                    assert!(v.len() >= f.max_offset());
-                }
-            }
-
-            f.max_offset()
+        (Some(f), Some(pv)) => {
+            debug_assert!(pv.len() >= f.max_offset(pv.len()));
+            f.max_offset(pv.len())
         },
+        (Some(f), None) => f.max_offset(values_len),
     };
 
     page_validity.map(|pv| {
@@ -179,52 +181,20 @@ fn no_more_bitpacked_values() -> ParquetError {
 }
 
 #[inline(always)]
-#[cfg(feature = "simd")]
-fn verify_dict_indices(indices: &[u32; 32], dict_size: usize) -> ParquetResult<()> {
-    // You would think that the compiler can do this itself, but it does not always do this
-    // properly. So we help it a bit.
+fn verify_dict_indices(indices: &[u32], dict_size: usize) -> ParquetResult<()> {
+    debug_assert!(dict_size <= u32::MAX as usize);
+    let dict_size = dict_size as u32;
 
-    use std::simd::cmp::SimdPartialOrd;
-    use std::simd::u32x32;
+    let mut is_valid = true;
+    for &idx in indices {
+        is_valid &= idx < dict_size;
+    }
 
-    let dict_size = u32x32::splat(dict_size as u32);
-    let indices = u32x32::from_slice(indices);
-
-    let is_invalid = indices.simd_ge(dict_size);
-    if is_invalid.any() {
-        Err(oob_dict_idx())
-    } else {
+    if is_valid {
         Ok(())
+    } else {
+        Err(oob_dict_idx())
     }
-}
-
-#[inline(always)]
-#[cfg(not(feature = "simd"))]
-fn verify_dict_indices(indices: &[u32; 32], dict_size: usize) -> ParquetResult<()> {
-    let mut is_valid = true;
-    for &idx in indices {
-        is_valid &= (idx as usize) < dict_size;
-    }
-
-    if is_valid {
-        return Ok(());
-    }
-
-    Err(oob_dict_idx())
-}
-
-#[inline(always)]
-fn verify_dict_indices_slice(indices: &[u32], dict_size: usize) -> ParquetResult<()> {
-    let mut is_valid = true;
-    for &idx in indices {
-        is_valid &= (idx as usize) < dict_size;
-    }
-
-    if is_valid {
-        return Ok(());
-    }
-
-    Err(oob_dict_idx())
 }
 
 /// Skip over entire chunks in a [`HybridRleDecoder`] as long as all skipped chunks do not include

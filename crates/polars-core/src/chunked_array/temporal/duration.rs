@@ -1,4 +1,5 @@
-use crate::export::chrono::Duration as ChronoDuration;
+use chrono::Duration as ChronoDuration;
+
 use crate::fmt::{fmt_duration_string, iso_duration_string};
 use crate::prelude::DataType::Duration;
 use crate::prelude::*;

@@ -1,6 +1,7 @@
 use std::fmt;
 
 use polars_core::error::*;
+use polars_utils::{format_list_container_truncated, format_list_truncated};
 #[cfg(feature = "regex")]
 use regex::Regex;
 
@@ -35,14 +36,14 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                     write!(f, "strict cast({})", dtype)
                 } else {
                     write!(f, "cast({})", dtype)
-                }
+                };
             },
             AExpr::Sort { options, .. } => {
                 return write!(
                     f,
                     "sort: {}{}{}",
                     options.descending as u8, options.nulls_last as u8, options.multithreaded as u8
-                )
+                );
             },
             AExpr::Gather { .. } => "gather",
             AExpr::SortBy { sort_options, .. } => {
@@ -63,7 +64,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             },
             AExpr::Ternary { .. } => "ternary",
             AExpr::AnonymousFunction { options, .. } => {
-                return write!(f, "anonymous_function: {}", options.fmt_str)
+                return write!(f, "anonymous_function: {}", options.fmt_str);
             },
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             AExpr::Window { .. } => "window",
@@ -164,7 +165,7 @@ impl<'a> TreeFmtNode<'a> {
     }
 
     fn node_data(&self) -> TreeFmtNodeData<'_> {
-        use {with_header as wh, TreeFmtNodeContent as C, TreeFmtNodeData as ND};
+        use {TreeFmtNodeContent as C, TreeFmtNodeData as ND, with_header as wh};
 
         let lp = &self.lp;
         let h = &self.h;
@@ -190,22 +191,33 @@ impl<'a> TreeFmtNode<'a> {
                         schema,
                         output_schema,
                         ..
-                    } => ND(
-                        wh(
-                            h,
-                            &format!(
-                                "DF {:?}\nPROJECT {}/{} COLUMNS",
-                                schema.iter_names().take(4).collect::<Vec<_>>(),
-                                if let Some(columns) = output_schema {
-                                    format!("{}", columns.len())
-                                } else {
-                                    "*".to_string()
-                                },
-                                schema.len()
+                    } => {
+                        let (n_columns, projected) = if let Some(schema) = output_schema {
+                            (
+                                format!("{}", schema.len()),
+                                format!(
+                                    ": {};",
+                                    format_list_truncated!(schema.iter_names(), 4, '"')
+                                ),
+                            )
+                        } else {
+                            ("*".to_string(), "".to_string())
+                        };
+                        ND(
+                            wh(
+                                h,
+                                &format!(
+                                    "DF {}\nPROJECT{} {}/{} COLUMNS",
+                                    format_list_truncated!(schema.iter_names(), 4, '"'),
+                                    projected,
+                                    n_columns,
+                                    schema.len()
+                                ),
                             ),
-                        ),
-                        vec![],
-                    ),
+                            vec![],
+                        )
+                    },
+
                     Union { inputs, .. } => ND(
                         wh(
                             h,
@@ -341,11 +353,20 @@ impl<'a> TreeFmtNode<'a> {
                         wh(
                             h,
                             match payload {
-                                SinkType::Memory => "SINK (memory)",
-                                SinkType::File { .. } => "SINK (file)",
+                                SinkTypeIR::Memory => "SINK (memory)",
+                                SinkTypeIR::File { .. } => "SINK (file)",
+                                SinkTypeIR::Partition { .. } => "SINK (partition)",
                             },
                         ),
                         vec![self.lp_node(None, *input)],
+                    ),
+                    SinkMultiple { inputs } => ND(
+                        wh(h, "SINK_MULTIPLE"),
+                        inputs
+                            .iter()
+                            .enumerate()
+                            .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
+                            .collect(),
                     ),
                     SimpleProjection { input, columns } => {
                         let num_columns = columns.as_ref().len();
@@ -360,6 +381,18 @@ impl<'a> TreeFmtNode<'a> {
                             vec![self.lp_node(None, *input)],
                         )
                     },
+                    #[cfg(feature = "merge_sorted")]
+                    MergeSorted {
+                        input_left,
+                        input_right,
+                        key,
+                    } => ND(
+                        wh(h, &format!("MERGE SORTED ON '{key}")),
+                        [self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)]
+                            .into_iter()
+                            .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
+                            .collect(),
+                    ),
                     Invalid => ND(wh(h, "INVALID"), vec![]),
                 }
             },
@@ -798,11 +831,7 @@ impl From<TreeView<'_>> for Canvas {
         }
 
         fn even_odd(a: usize, b: usize) -> usize {
-            if a % 2 == 0 && b % 2 == 1 {
-                1
-            } else {
-                0
-            }
+            if a % 2 == 0 && b % 2 == 1 { 1 } else { 0 }
         }
 
         for (i, row) in value.matrix.iter().enumerate() {

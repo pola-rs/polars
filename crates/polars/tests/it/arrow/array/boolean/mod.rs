@@ -56,12 +56,14 @@ fn split_at() {
 #[test]
 fn try_new_invalid() {
     assert!(BooleanArray::try_new(ArrowDataType::Int32, [true].into(), None).is_err());
-    assert!(BooleanArray::try_new(
-        ArrowDataType::Boolean,
-        [true].into(),
-        Some([false, true].into())
-    )
-    .is_err());
+    assert!(
+        BooleanArray::try_new(
+            ArrowDataType::Boolean,
+            [true].into(),
+            Some([false, true].into())
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -113,7 +115,7 @@ fn empty() {
 
 #[test]
 fn from_trusted_len_iter() {
-    let iter = std::iter::repeat(true).take(2).map(Some);
+    let iter = std::iter::repeat_n(true, 2).map(Some);
     let a = BooleanArray::from_trusted_len_iter(iter.clone());
     assert_eq!(a.len(), 2);
     let a = unsafe { BooleanArray::from_trusted_len_iter_unchecked(iter) };
@@ -134,7 +136,7 @@ fn try_from_trusted_len_iter() {
 
 #[test]
 fn from_trusted_len_values_iter() {
-    let iter = std::iter::repeat(true).take(2);
+    let iter = std::iter::repeat_n(true, 2);
     let a = BooleanArray::from_trusted_len_values_iter(iter.clone());
     assert_eq!(a.len(), 2);
     let a = unsafe { BooleanArray::from_trusted_len_values_iter_unchecked(iter) };
@@ -143,7 +145,7 @@ fn from_trusted_len_values_iter() {
 
 #[test]
 fn from_iter() {
-    let iter = std::iter::repeat(true).take(2).map(Some);
+    let iter = std::iter::repeat_n(true, 2).map(Some);
     let a: BooleanArray = iter.collect();
     assert_eq!(a.len(), 2);
 }

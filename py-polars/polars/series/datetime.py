@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_function
-from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -1811,14 +1810,9 @@ class DateTimeNameSpace:
         ]
         """
 
-    @unstable()
     def round(self, every: str | dt.timedelta | IntoExprColumn) -> Series:
         """
         Divide the date/ datetime range into buckets.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         - Each date/datetime in the first half of the interval
           is mapped to the start of its bucket.

@@ -6,9 +6,9 @@ use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::utils::flatten::flatten_nullable;
 use polars_core::utils::split_and_flatten;
-use polars_core::{with_match_physical_float_polars_type, POOL};
+use polars_core::{POOL, with_match_physical_float_polars_type};
 use polars_utils::abs_diff::AbsDiff;
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use rayon::prelude::*;
@@ -89,8 +89,8 @@ where
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
-    let left_val_arr = left_asof.downcast_iter().next().unwrap();
-    let right_val_arr = right_asof.downcast_iter().next().unwrap();
+    let left_val_arr = left_asof.downcast_as_array();
+    let right_val_arr = right_asof.downcast_as_array();
 
     let n_threads = POOL.current_num_threads();
     // `strict` is false so that we always flatten. Even if there are more chunks than threads.
@@ -173,8 +173,8 @@ where
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
-    let left_val_arr = left_asof.downcast_iter().next().unwrap();
-    let right_val_arr = right_asof.downcast_iter().next().unwrap();
+    let left_val_arr = left_asof.downcast_as_array();
+    let right_val_arr = right_asof.downcast_as_array();
 
     let (prep_by_left, prep_by_right, _, _) = prepare_binary::<B>(by_left, by_right, false);
     let offsets = compute_len_offsets(prep_by_left.iter().map(|s| s.len()));
@@ -485,6 +485,7 @@ pub trait AsofJoinBy: IntoDf {
         slice: Option<(i64, usize)>,
         coalesce: bool,
         allow_eq: bool,
+        check_sortedness: bool,
     ) -> PolarsResult<DataFrame> {
         let (self_sliced_slot, other_sliced_slot, left_slice_s, right_slice_s); // Keeps temporaries alive.
         let (self_df, other_df, left_key, right_key);
@@ -512,7 +513,8 @@ pub trait AsofJoinBy: IntoDf {
             &left_asof,
             &right_asof,
             tolerance.is_some(),
-            left_by.is_empty() && right_by.is_empty(),
+            check_sortedness,
+            !(left_by.is_empty() && right_by.is_empty()),
         )?;
 
         let mut left_by = self_df.select(left_by)?;
@@ -579,6 +581,7 @@ pub trait AsofJoinBy: IntoDf {
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
         allow_eq: bool,
+        check_sortedness: bool,
     ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
@@ -590,8 +593,18 @@ pub trait AsofJoinBy: IntoDf {
         let left_key = self_df.column(left_on)?.as_materialized_series();
         let right_key = other.column(right_on)?.as_materialized_series();
         self_df._join_asof_by(
-            other, left_key, right_key, left_by, right_by, strategy, tolerance, None, None, true,
+            other,
+            left_key,
+            right_key,
+            left_by,
+            right_by,
+            strategy,
+            tolerance,
+            None,
+            None,
+            true,
             allow_eq,
+            check_sortedness,
         )
     }
 }
@@ -623,6 +636,7 @@ mod test {
             ["b"],
             AsofStrategy::Backward,
             None,
+            true,
             true,
         )?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
@@ -668,6 +682,7 @@ mod test {
             AsofStrategy::Backward,
             None,
             true,
+            true,
         )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
@@ -683,6 +698,7 @@ mod test {
             ["groups_numeric"],
             AsofStrategy::Backward,
             None,
+            true,
             true,
         )?;
         let a = out.column("bid_right").unwrap();
@@ -715,6 +731,7 @@ mod test {
             AsofStrategy::Forward,
             None,
             true,
+            true,
         )?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
         let out = out.column("right_vals").unwrap();
@@ -732,6 +749,7 @@ mod test {
             ["b"],
             AsofStrategy::Forward,
             Some(AnyValue::Int32(1)),
+            true,
             true,
         )?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
@@ -802,6 +820,7 @@ mod test {
             AsofStrategy::Forward,
             None,
             true,
+            true,
         )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
@@ -823,6 +842,7 @@ mod test {
             ["groups_numeric"],
             AsofStrategy::Forward,
             None,
+            true,
             true,
         )?;
         let a = out.column("bid_right").unwrap();

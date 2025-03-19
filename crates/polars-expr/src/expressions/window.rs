@@ -1,13 +1,13 @@
 use std::fmt::Write;
 
 use arrow::array::PrimitiveArray;
-use polars_core::export::arrow::bitmap::Bitmap;
+use arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
-use polars_core::{downcast_as_macro_arg_physical, POOL};
-use polars_ops::frame::join::{private_left_join_multiple_keys, ChunkJoinOptIds};
+use polars_core::{POOL, downcast_as_macro_arg_physical};
 use polars_ops::frame::SeriesJoin;
+use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::sort::perfect_sort;
@@ -557,7 +557,7 @@ impl PhysicalExpr for WindowExpr {
                 let update_groups = !matches!(&ac.update_groups, UpdateGroups::No);
                 match (
                     &ac.update_groups,
-                    set_by_groups(&out_column, &ac.groups, df.height(), update_groups),
+                    set_by_groups(&out_column, &ac, df.height(), update_groups),
                 ) {
                     // for aggregations that reduce like sum, mean, first and are numeric
                     // we take the group locations to directly map them to the right place
@@ -567,16 +567,38 @@ impl PhysicalExpr for WindowExpr {
 
                         let get_join_tuples = || {
                             if group_by_columns.len() == 1 {
+                                let mut left = group_by_columns[0].clone();
                                 // group key from right column
-                                let right = &keys[0];
-                                PolarsResult::Ok(Arc::new(
-                                    group_by_columns[0]
-                                        .as_materialized_series()
-                                        .hash_join_left(
-                                            right.as_materialized_series(),
-                                            JoinValidation::ManyToMany,
-                                            true,
+                                let mut right = keys[0].clone();
+
+                                let (left, right) = if left.dtype().is_nested() {
+                                    (
+                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
+                                            "".into(),
+                                            row_encode::_get_rows_encoded_unordered(&[
+                                                left.clone()
+                                            ])?
+                                            .into_array(),
                                         )
+                                        .into_series(),
+                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
+                                            "".into(),
+                                            row_encode::_get_rows_encoded_unordered(&[
+                                                right.clone()
+                                            ])?
+                                            .into_array(),
+                                        )
+                                        .into_series(),
+                                    )
+                                } else {
+                                    (
+                                        left.into_materialized_series().clone(),
+                                        right.into_materialized_series().clone(),
+                                    )
+                                };
+
+                                PolarsResult::Ok(Arc::new(
+                                    left.hash_join_left(&right, JoinValidation::ManyToMany, true)
                                         .unwrap()
                                         .1,
                                 ))
@@ -628,16 +650,6 @@ impl PhysicalExpr for WindowExpr {
         false
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        for i in &self.group_by {
-            i.collect_live_columns(lv);
-        }
-        if let Some((i, _)) = &self.order_by {
-            i.collect_live_columns(lv);
-        }
-        self.phys_function.collect_live_columns(lv);
-    }
-
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
@@ -662,7 +674,7 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
             Either::Left(ids) => unsafe {
                 IdxCa::with_nullable_idx(ids, |idx| out_column.take_unchecked(idx))
             },
-            Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids) },
+            Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids, false) },
         }
     }
 }
@@ -670,11 +682,11 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
 /// Simple reducing aggregation can be set by the groups
 fn set_by_groups(
     s: &Column,
-    groups: &GroupsType,
+    ac: &AggregationContext,
     len: usize,
     update_groups: bool,
 ) -> Option<Column> {
-    if update_groups {
+    if update_groups || !ac.original_len {
         return None;
     }
     if s.dtype().to_physical().is_primitive_numeric() {
@@ -682,12 +694,10 @@ fn set_by_groups(
         let s = s.to_physical_repr();
 
         macro_rules! dispatch {
-            ($ca:expr) => {{
-                Some(set_numeric($ca, groups, len))
-            }};
+            ($ca:expr) => {{ Some(set_numeric($ca, &ac.groups, len)) }};
         }
         downcast_as_macro_arg_physical!(&s, dispatch)
-            .map(|s| s.cast(dtype).unwrap())
+            .map(|s| unsafe { s.from_physical_unchecked(dtype) }.unwrap())
             .map(Column::from)
     } else {
         None

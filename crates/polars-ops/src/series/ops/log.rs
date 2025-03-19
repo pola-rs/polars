@@ -18,7 +18,12 @@ fn exp<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Float64Chunked {
 pub trait LogSeries: SeriesSealed {
     /// Compute the logarithm to a given base
     fn log(&self, base: f64) -> Series {
-        let s = self.as_series().to_physical_repr();
+        let s = self.as_series();
+        if s.dtype().is_decimal() {
+            return s.cast(&DataType::Float64).unwrap().log(base);
+        }
+
+        let s = s.to_physical_repr();
         let s = s.as_ref();
 
         use DataType::*;
@@ -41,7 +46,12 @@ pub trait LogSeries: SeriesSealed {
 
     /// Compute the natural logarithm of all elements plus one in the input array
     fn log1p(&self) -> Series {
-        let s = self.as_series().to_physical_repr();
+        let s = self.as_series();
+        if s.dtype().is_decimal() {
+            return s.cast(&DataType::Float64).unwrap().log1p();
+        }
+
+        let s = s.to_physical_repr();
         let s = s.as_ref();
 
         use DataType::*;
@@ -60,7 +70,12 @@ pub trait LogSeries: SeriesSealed {
 
     /// Calculate the exponential of all elements in the input array.
     fn exp(&self) -> Series {
-        let s = self.as_series().to_physical_repr();
+        let s = self.as_series();
+        if s.dtype().is_decimal() {
+            return s.cast(&DataType::Float64).unwrap().exp();
+        }
+
+        let s = s.to_physical_repr();
         let s = s.as_ref();
 
         use DataType::*;

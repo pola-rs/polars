@@ -755,3 +755,8 @@ def test_out_of_ns_range_no_tu_specified_13592() -> None:
         dtype=pl.Datetime("us"),
     )
     assert_series_equal(result, expected)
+
+
+def test_wrong_format_percent() -> None:
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2019-01-01"]).str.strptime(pl.Date, format="d%")

@@ -1,5 +1,5 @@
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_ops::chunked_array::ListNameSpaceImpl;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
@@ -103,10 +103,6 @@ impl PhysicalExpr for SortExpr {
         }
 
         Ok(ac)
-    }
-
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.physical_expr.collect_live_columns(lv);
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

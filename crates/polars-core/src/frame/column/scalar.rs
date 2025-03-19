@@ -194,7 +194,7 @@ impl ScalarColumn {
                 let materialized = s.cast_with_options(dtype, options)?;
                 assert_eq!(self.length, materialized.len());
 
-                let mut casted = if materialized.len() == 0 {
+                let mut casted = if materialized.is_empty() {
                     Self::new_empty(materialized.name().clone(), materialized.dtype().clone())
                 } else {
                     // SAFETY: Just did bounds check
@@ -242,7 +242,7 @@ impl ScalarColumn {
                 let materialized = s.cast_unchecked(dtype)?;
                 assert_eq!(self.length, materialized.len());
 
-                let mut casted = if materialized.len() == 0 {
+                let mut casted = if materialized.is_empty() {
                     Self::new_empty(materialized.name().clone(), materialized.dtype().clone())
                 } else {
                     // SAFETY: Just did bounds check
@@ -298,6 +298,11 @@ impl ScalarColumn {
     pub fn map_scalar(&mut self, map_scalar: impl Fn(Scalar) -> Scalar) {
         self.scalar = map_scalar(std::mem::take(&mut self.scalar));
         self.materialized.take();
+    }
+    pub fn with_value(&mut self, value: AnyValue<'static>) -> &mut Self {
+        self.scalar.update(value);
+        self.materialized.take();
+        self
     }
 }
 

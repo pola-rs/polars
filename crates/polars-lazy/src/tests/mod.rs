@@ -31,14 +31,14 @@ fn load_df() -> DataFrame {
 
 use std::io::Cursor;
 
-use optimization_checks::*;
-use polars_core::chunked_array::builder::get_list_builder;
-use polars_core::df;
 #[cfg(feature = "temporal")]
-use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use polars_core::prelude::*;
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use optimization_checks::*;
 #[cfg(feature = "parquet")]
 pub(crate) use polars_core::SINGLE_LOCK;
+use polars_core::chunked_array::builder::get_list_builder;
+use polars_core::df;
+use polars_core::prelude::*;
 use polars_io::prelude::*;
 
 #[cfg(feature = "cov")]
@@ -73,6 +73,16 @@ fn scan_foods_ipc() -> LazyFrame {
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn init_files() {
+    if std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open("../../examples/datasets/busy")
+        .is_err()
+    {
+        while !std::fs::exists("../../examples/datasets/finished").unwrap() {}
+        return;
+    }
+
     for path in &[
         "../../examples/datasets/foods1.csv",
         "../../examples/datasets/foods2.csv",
@@ -113,6 +123,12 @@ fn init_files() {
             }
         }
     }
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open("../../examples/datasets/finished")
+        .unwrap();
 }
 
 #[cfg(feature = "parquet")]

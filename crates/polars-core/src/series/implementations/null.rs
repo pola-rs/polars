@@ -3,6 +3,7 @@ use std::any::Any;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use self::compare_inner::TotalOrdInner;
+use super::*;
 use crate::prelude::compare_inner::{IntoTotalEqInner, TotalEqInner};
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
@@ -126,14 +127,18 @@ impl PrivateSeries for NullChunked {
         StatisticsFlags::empty()
     }
 
-    fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         VecHash::vec_hash(self, random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(
         &self,
-        build_hasher: PlRandomState,
+        build_hasher: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
         VecHash::vec_hash_combine(self, build_hasher, hashes)?;
@@ -309,8 +314,16 @@ impl SeriesTrait for NullChunked {
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(other.dtype() == &DataType::Null, ComputeError: "expected null dtype");
         // we don't create a new null array to keep probability of aligned chunks higher
-        self.chunks.extend(other.chunks().iter().cloned());
         self.length += other.len() as IdxSize;
+        self.chunks.extend(other.chunks().iter().cloned());
+        Ok(())
+    }
+    fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
+        polars_ensure!(other.dtype() == &DataType::Null, ComputeError: "expected null dtype");
+        // we don't create a new null array to keep probability of aligned chunks higher
+        let other: &mut NullChunked = other._get_inner_mut().as_any_mut().downcast_mut().unwrap();
+        self.length += other.len() as IdxSize;
+        self.chunks.extend(std::mem::take(&mut other.chunks));
         Ok(())
     }
 
@@ -329,6 +342,14 @@ impl SeriesTrait for NullChunked {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+
+    fn as_phys_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }
 

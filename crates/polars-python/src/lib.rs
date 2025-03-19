@@ -7,6 +7,8 @@
 
 #[cfg(feature = "csv")]
 pub mod batched_csv;
+#[cfg(feature = "catalog")]
+pub mod catalog;
 #[cfg(feature = "polars_cloud")]
 pub mod cloud;
 pub mod conversion;

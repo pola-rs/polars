@@ -8,13 +8,12 @@ use crate::array::{
     MutableBinaryArray, MutableBinaryValuesArray, MutableBinaryViewArray, PrimitiveArray,
     StructArray, Utf8Array, Utf8ViewArray,
 };
-use crate::bitmap::Bitmap;
+use crate::bitmap::BitmapBuilder;
 use crate::datatypes::ArrowDataType;
 #[cfg(feature = "dtype-array")]
 use crate::legacy::prelude::fixed_size_list::AnonymousBuilder as AnonymousFixedSizeListArrayBuilder;
 use crate::legacy::prelude::list::AnonymousBuilder as AnonymousListArrayBuilder;
 use crate::legacy::trusted_len::TrustedLenPush;
-use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
@@ -207,129 +206,6 @@ impl<A: StaticArray, I: Iterator> ArrayCollectIterExt<A> for I {}
 // ---------------
 // Implementations
 // ---------------
-macro_rules! impl_collect_vec_validity {
-    ($iter: ident, $x:ident, $unpack:expr) => {{
-        let mut iter = $iter.into_iter();
-        let mut buf: Vec<T> = Vec::new();
-        let mut bitmap: Vec<u8> = Vec::new();
-        let lo = iter.size_hint().0;
-        buf.reserve(8 + lo);
-        bitmap.reserve(8 + 8 * (lo / 64));
-
-        let mut nonnull_count = 0;
-        let mut mask = 0u8;
-        'exhausted: loop {
-            unsafe {
-                // SAFETY: when we enter this loop we always have at least one
-                // capacity in bitmap, and at least 8 in buf.
-                for i in 0..8 {
-                    let Some($x) = iter.next() else {
-                        break 'exhausted;
-                    };
-                    #[allow(clippy::all)]
-                    // #[allow(clippy::redundant_locals)]  Clippy lint too new
-                    let x = $unpack;
-                    let nonnull = x.is_some();
-                    mask |= (nonnull as u8) << i;
-                    nonnull_count += nonnull as usize;
-                    buf.push_unchecked(x.unwrap_or_default());
-                }
-
-                bitmap.push_unchecked(mask);
-                mask = 0;
-            }
-
-            buf.reserve(8);
-            if bitmap.len() == bitmap.capacity() {
-                bitmap.reserve(8); // Waste some space to make branch more predictable.
-            }
-        }
-
-        unsafe {
-            // SAFETY: when we broke to 'exhausted we had capacity by the loop invariant.
-            // It's also no problem if we make the mask bigger than strictly necessary.
-            bitmap.push_unchecked(mask);
-        }
-
-        let null_count = buf.len() - nonnull_count;
-        let arrow_bitmap = if null_count > 0 {
-            unsafe {
-                // SAFETY: we made sure the null_count is correct.
-                Some(Bitmap::from_inner_unchecked(
-                    SharedStorage::from_vec(bitmap),
-                    0,
-                    buf.len(),
-                    Some(null_count),
-                ))
-            }
-        } else {
-            None
-        };
-
-        (buf, arrow_bitmap)
-    }};
-}
-
-macro_rules! impl_trusted_collect_vec_validity {
-    ($iter: ident, $x:ident, $unpack:expr) => {{
-        let mut iter = $iter.into_iter();
-        let mut buf: Vec<T> = Vec::new();
-        let mut bitmap: Vec<u8> = Vec::new();
-        let n = iter.size_hint().1.expect("must have an upper bound");
-        buf.reserve(n);
-        bitmap.reserve(8 + 8 * (n / 64));
-
-        let mut nonnull_count = 0;
-        while buf.len() + 8 <= n {
-            unsafe {
-                let mut mask = 0u8;
-                for i in 0..8 {
-                    let $x = iter.next().unwrap_unchecked();
-                    #[allow(clippy::all)]
-                    // #[allow(clippy::redundant_locals)]  Clippy lint too new
-                    let x = $unpack;
-                    let nonnull = x.is_some();
-                    mask |= (nonnull as u8) << i;
-                    nonnull_count += nonnull as usize;
-                    buf.push_unchecked(x.unwrap_or_default());
-                }
-                bitmap.push_unchecked(mask);
-            }
-        }
-
-        if buf.len() < n {
-            unsafe {
-                let mut mask = 0u8;
-                for i in 0..n - buf.len() {
-                    let $x = iter.next().unwrap_unchecked();
-                    let x = $unpack;
-                    let nonnull = x.is_some();
-                    mask |= (nonnull as u8) << i;
-                    nonnull_count += nonnull as usize;
-                    buf.push_unchecked(x.unwrap_or_default());
-                }
-                bitmap.push_unchecked(mask);
-            }
-        }
-
-        let null_count = buf.len() - nonnull_count;
-        let arrow_bitmap = if null_count > 0 {
-            unsafe {
-                // SAFETY: we made sure the null_count is correct.
-                Some(Bitmap::from_inner_unchecked(
-                    SharedStorage::from_vec(bitmap),
-                    0,
-                    buf.len(),
-                    Some(null_count),
-                ))
-            }
-        } else {
-            None
-        };
-
-        (buf, arrow_bitmap)
-    }};
-}
 
 impl<T: NativeType> ArrayFromIter<T> for PrimitiveArray<T> {
     #[inline]
@@ -365,8 +241,26 @@ impl<T: NativeType> ArrayFromIter<T> for PrimitiveArray<T> {
 
 impl<T: NativeType> ArrayFromIter<Option<T>> for PrimitiveArray<T> {
     fn arr_from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
-        let (buf, validity) = impl_collect_vec_validity!(iter, x, x);
-        PrimitiveArray::new(T::PRIMITIVE.into(), buf.into(), validity)
+        let iter = iter.into_iter();
+        let n = iter.size_hint().0;
+        let mut buf = Vec::with_capacity(n);
+        let mut validity = BitmapBuilder::with_capacity(n);
+        unsafe {
+            for val in iter {
+                // Use one check for both capacities.
+                if buf.len() == buf.capacity() {
+                    buf.reserve(1);
+                    validity.reserve(buf.capacity() - buf.len());
+                }
+                buf.push_unchecked(val.unwrap_or_default());
+                validity.push_unchecked(val.is_some());
+            }
+        }
+        PrimitiveArray::new(
+            T::PRIMITIVE.into(),
+            buf.into(),
+            validity.into_opt_validity(),
+        )
     }
 
     fn arr_from_iter_trusted<I>(iter: I) -> Self
@@ -374,18 +268,46 @@ impl<T: NativeType> ArrayFromIter<Option<T>> for PrimitiveArray<T> {
         I: IntoIterator<Item = Option<T>>,
         I::IntoIter: TrustedLen,
     {
-        let (buf, validity) = impl_trusted_collect_vec_validity!(iter, x, x);
-        PrimitiveArray::new(T::PRIMITIVE.into(), buf.into(), validity)
+        let iter = iter.into_iter();
+        let n = iter.size_hint().1.expect("must have an upper bound");
+        let mut buf = Vec::with_capacity(n);
+        let mut validity = BitmapBuilder::with_capacity(n);
+        unsafe {
+            for val in iter {
+                buf.push_unchecked(val.unwrap_or_default());
+                validity.push_unchecked(val.is_some());
+            }
+        }
+        PrimitiveArray::new(
+            T::PRIMITIVE.into(),
+            buf.into(),
+            validity.into_opt_validity(),
+        )
     }
 
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<T>, E>>>(
         iter: I,
     ) -> Result<Self, E> {
-        let (buf, validity) = impl_collect_vec_validity!(iter, x, x?);
+        let iter = iter.into_iter();
+        let n = iter.size_hint().0;
+        let mut buf = Vec::with_capacity(n);
+        let mut validity = BitmapBuilder::with_capacity(n);
+        unsafe {
+            for val in iter {
+                let val = val?;
+                // Use one check for both capacities.
+                if buf.len() == buf.capacity() {
+                    buf.reserve(1);
+                    validity.reserve(buf.capacity() - buf.len());
+                }
+                buf.push_unchecked(val.unwrap_or_default());
+                validity.push_unchecked(val.is_some());
+            }
+        }
         Ok(PrimitiveArray::new(
             T::PRIMITIVE.into(),
             buf.into(),
-            validity,
+            validity.into_opt_validity(),
         ))
     }
 
@@ -394,11 +316,21 @@ impl<T: NativeType> ArrayFromIter<Option<T>> for PrimitiveArray<T> {
         I: IntoIterator<Item = Result<Option<T>, E>>,
         I::IntoIter: TrustedLen,
     {
-        let (buf, validity) = impl_trusted_collect_vec_validity!(iter, x, x?);
+        let iter = iter.into_iter();
+        let n = iter.size_hint().1.expect("must have an upper bound");
+        let mut buf = Vec::with_capacity(n);
+        let mut validity = BitmapBuilder::with_capacity(n);
+        unsafe {
+            for val in iter {
+                let val = val?;
+                buf.push_unchecked(val.unwrap_or_default());
+                validity.push_unchecked(val.is_some());
+            }
+        }
         Ok(PrimitiveArray::new(
             T::PRIMITIVE.into(),
             buf.into(),
-            validity,
+            validity.into_opt_validity(),
         ))
     }
 }
@@ -703,105 +635,32 @@ impl<T: StrIntoBytes> ArrayFromIter<Option<T>> for Utf8Array<i64> {
     }
 }
 
-macro_rules! impl_collect_bool_validity {
-    ($iter: ident, $x:ident, $unpack:expr, $truth:expr, $nullity:expr, $with_valid:literal) => {{
-        let mut iter = $iter.into_iter();
-        let mut buf: Vec<u8> = Vec::new();
-        let mut validity: Vec<u8> = Vec::new();
-        let lo = iter.size_hint().0;
-        buf.reserve(8 + 8 * (lo / 64));
-        if $with_valid {
-            validity.reserve(8 + 8 * (lo / 64));
-        }
-
-        let mut len = 0;
-        let mut buf_mask = 0u8;
-        let mut true_count = 0;
-        let mut valid_mask = 0u8;
-        let mut nonnull_count = 0;
-        'exhausted: loop {
-            unsafe {
-                for i in 0..8 {
-                    let Some($x) = iter.next() else {
-                        break 'exhausted;
-                    };
-                    #[allow(clippy::all)]
-                    // #[allow(clippy::redundant_locals)]  Clippy lint too new
-                    let $x = $unpack;
-                    let is_true: bool = $truth;
-                    buf_mask |= (is_true as u8) << i;
-                    true_count += is_true as usize;
-                    if $with_valid {
-                        let nonnull: bool = $nullity;
-                        valid_mask |= (nonnull as u8) << i;
-                        nonnull_count += nonnull as usize;
-                    }
-                    len += 1;
-                }
-
-                buf.push_unchecked(buf_mask);
-                buf_mask = 0;
-                if $with_valid {
-                    validity.push_unchecked(valid_mask);
-                    valid_mask = 0;
-                }
-            }
-
-            if buf.len() == buf.capacity() {
-                buf.reserve(8); // Waste some space to make branch more predictable.
-                if $with_valid {
-                    validity.reserve(8);
-                }
-            }
-        }
-
-        unsafe {
-            // SAFETY: when we broke to 'exhausted we had capacity by the loop invariant.
-            // It's also no problem if we make the mask bigger than strictly necessary.
-            buf.push_unchecked(buf_mask);
-            if $with_valid {
-                validity.push_unchecked(valid_mask);
-            }
-        }
-
-        let false_count = len - true_count;
-        let values = unsafe {
-            Bitmap::from_inner_unchecked(SharedStorage::from_vec(buf), 0, len, Some(false_count))
-        };
-
-        let null_count = len - nonnull_count;
-        let validity_bitmap = if $with_valid && null_count > 0 {
-            unsafe {
-                // SAFETY: we made sure the null_count is correct.
-                Some(Bitmap::from_inner_unchecked(
-                    SharedStorage::from_vec(validity),
-                    0,
-                    len,
-                    Some(null_count),
-                ))
-            }
-        } else {
-            None
-        };
-
-        (values, validity_bitmap)
-    }};
-}
-
 impl ArrayFromIter<bool> for BooleanArray {
     fn arr_from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        let dt = ArrowDataType::Boolean;
-        let (values, _valid) = impl_collect_bool_validity!(iter, x, x, x, false, false);
-        BooleanArray::new(dt, values, None)
+        let iter = iter.into_iter();
+        let n = iter.size_hint().0;
+        let mut values = BitmapBuilder::with_capacity(n);
+        for val in iter {
+            values.push(val);
+        }
+        BooleanArray::new(ArrowDataType::Boolean, values.freeze(), None)
     }
 
     // TODO: are efficient trusted collects for booleans worth it?
     // fn arr_from_iter_trusted<I>(iter: I) -> Self
 
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<bool, E>>>(iter: I) -> Result<Self, E> {
-        let dt = ArrowDataType::Boolean;
-        let (values, _valid) = impl_collect_bool_validity!(iter, x, x?, x, false, false);
-        Ok(BooleanArray::new(dt, values, None))
+        let iter = iter.into_iter();
+        let n = iter.size_hint().0;
+        let mut values = BitmapBuilder::with_capacity(n);
+        for val in iter {
+            values.push(val?);
+        }
+        Ok(BooleanArray::new(
+            ArrowDataType::Boolean,
+            values.freeze(),
+            None,
+        ))
     }
 
     // fn try_arr_from_iter_trusted<E, I: IntoIterator<Item = Result<bool, E>>>(
@@ -809,10 +668,19 @@ impl ArrayFromIter<bool> for BooleanArray {
 
 impl ArrayFromIter<Option<bool>> for BooleanArray {
     fn arr_from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
-        let dt = ArrowDataType::Boolean;
-        let (values, valid) =
-            impl_collect_bool_validity!(iter, x, x, x.unwrap_or(false), x.is_some(), true);
-        BooleanArray::new(dt, values, valid)
+        let iter = iter.into_iter();
+        let n = iter.size_hint().0;
+        let mut values = BitmapBuilder::with_capacity(n);
+        let mut validity = BitmapBuilder::with_capacity(n);
+        for val in iter {
+            values.push(val.unwrap_or(false));
+            validity.push(val.is_some());
+        }
+        BooleanArray::new(
+            ArrowDataType::Boolean,
+            values.freeze(),
+            validity.into_opt_validity(),
+        )
     }
 
     // fn arr_from_iter_trusted<I>(iter: I) -> Self
@@ -820,10 +688,20 @@ impl ArrayFromIter<Option<bool>> for BooleanArray {
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<bool>, E>>>(
         iter: I,
     ) -> Result<Self, E> {
-        let dt = ArrowDataType::Boolean;
-        let (values, valid) =
-            impl_collect_bool_validity!(iter, x, x?, x.unwrap_or(false), x.is_some(), true);
-        Ok(BooleanArray::new(dt, values, valid))
+        let iter = iter.into_iter();
+        let n = iter.size_hint().0;
+        let mut values = BitmapBuilder::with_capacity(n);
+        let mut validity = BitmapBuilder::with_capacity(n);
+        for val in iter {
+            let val = val?;
+            values.push(val.unwrap_or(false));
+            validity.push(val.is_some());
+        }
+        Ok(BooleanArray::new(
+            ArrowDataType::Boolean,
+            values.freeze(),
+            validity.into_opt_validity(),
+        ))
     }
 
     // fn try_arr_from_iter_trusted<E, I: IntoIterator<Item = Result<Option<bool>, E>>>(

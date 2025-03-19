@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import pytest
@@ -10,7 +10,7 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import INTEGER_DTYPES
+from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore::polars.exceptions.PolarsInefficientMapWarning"
@@ -140,7 +140,8 @@ def test_map_elements_list_any_value_fallback() -> None:
 
 def test_map_elements_all_types() -> None:
     # test we don't panic
-    for dtype in INTEGER_DTYPES:
+    dtypes = NUMERIC_DTYPES + TEMPORAL_DTYPES + [pl.Decimal(None, 2)]
+    for dtype in dtypes:
         pl.Series([1, 2, 3, 4, 5], dtype=dtype).map_elements(lambda x: x)
 
 
@@ -383,3 +384,18 @@ def test_map_elements_list_return_dtype() -> None:
     )
     expected = pl.Series([[2], [3, 4]], dtype=return_dtype)
     assert_series_equal(result, expected)
+
+
+def test_map_elements_list_of_named_tuple_15425() -> None:
+    class Foo(NamedTuple):
+        x: int
+
+    df = pl.DataFrame({"a": [0, 1, 2]})
+    result = df.select(
+        pl.col("a").map_elements(
+            lambda x: [Foo(i) for i in range(x)],
+            return_dtype=pl.List(pl.Struct({"x": pl.Int64})),
+        )
+    )
+    expected = pl.DataFrame({"a": [[], [{"x": 0}], [{"x": 0}, {"x": 1}]]})
+    assert_frame_equal(result, expected)

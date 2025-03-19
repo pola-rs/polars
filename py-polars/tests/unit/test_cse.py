@@ -34,7 +34,7 @@ def test_cse_rename_cross_join_5405() -> None:
             "D": [5, None, None, 6],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_union_duplicates() -> None:
@@ -106,7 +106,7 @@ def test_cse_schema_6081() -> None:
             "min_value": [1, 1, 2],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_cse_9630() -> None:
@@ -670,6 +670,8 @@ def test_cse_manual_cache_15688() -> None:
     df2 = df.filter(id=1).join(df1, on=["a", "b"], how="semi")
     df2 = df2.cache()
     res = df2.group_by("b").agg(pl.all().sum())
+
+    print(res.cache().with_columns(foo=1).explain(comm_subplan_elim=True))
     assert res.cache().with_columns(foo=1).collect().to_dict(as_series=False) == {
         "b": [1],
         "a": [6],
@@ -791,7 +793,7 @@ def test_eager_cse_during_struct_expansion_18411() -> None:
     )["foo"].all()
 
 
-def test_cse_skip_as_struct_19253() -> None:
+def test_cse_as_struct_19253() -> None:
     df = pl.LazyFrame({"x": [1, 2], "y": [4, 5]})
 
     assert (
@@ -804,6 +806,16 @@ def test_cse_skip_as_struct_19253() -> None:
         "y": [4, 5],
         "q1": [{"x": -3.5}, {"x": -2.5}],
         "q2": [{"x": -3.0}, {"x": -3.0}],
+    }
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_cse_as_struct_value_counts_20927() -> None:
+    assert pl.DataFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
+        pl.struct("x").value_counts().struct.unnest()
+    ).sort("count").to_dict(as_series=False) == {
+        "x": [{"x": 1}, {"x": 2}, {"x": 3}, {"x": 4}, {"x": 5}],
+        "count": [1, 2, 3, 4, 5],
     }
 
 
@@ -820,3 +832,14 @@ def test_cse_union_19227() -> None:
     assert out.collect().schema == pl.Schema(
         [("C", pl.Int64), ("A", pl.Int64), ("B", pl.Int64)]
     )
+
+
+def test_cse_21115() -> None:
+    lf = pl.LazyFrame({"x": 1, "y": 5})
+
+    assert lf.with_columns(
+        pl.all().exp() + pl.min_horizontal(pl.all().exp())
+    ).collect().to_dict(as_series=False) == {
+        "x": [5.43656365691809],
+        "y": [151.13144093103566],
+    }

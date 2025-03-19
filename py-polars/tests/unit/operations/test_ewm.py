@@ -38,18 +38,18 @@ def test_ewm_mean() -> None:
 
     expected = pl.Series([None, 2.666667, 4.0, 5.6, 4.774194])
     assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=True, min_periods=2, ignore_nulls=True), expected
+        s.ewm_mean(alpha=0.5, adjust=True, min_samples=2, ignore_nulls=True), expected
     )
     assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=True, min_periods=2, ignore_nulls=False), expected
+        s.ewm_mean(alpha=0.5, adjust=True, min_samples=2, ignore_nulls=False), expected
     )
 
     expected = pl.Series([None, None, 4.0, 5.6, 4.774194])
     assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=True, min_periods=3, ignore_nulls=True), expected
+        s.ewm_mean(alpha=0.5, adjust=True, min_samples=3, ignore_nulls=True), expected
     )
     assert_series_equal(
-        s.ewm_mean(alpha=0.5, adjust=True, min_periods=3, ignore_nulls=False), expected
+        s.ewm_mean(alpha=0.5, adjust=True, min_samples=3, ignore_nulls=False), expected
     )
 
     s = pl.Series([None, 1.0, 5.0, 7.0, None, 2.0, 5.0, 4])
@@ -95,32 +95,32 @@ def test_ewm_mean() -> None:
 
 
 def test_ewm_mean_leading_nulls() -> None:
-    for min_periods in [1, 2, 3]:
+    for min_samples in [1, 2, 3]:
         assert (
             pl.Series([1, 2, 3, 4])
-            .ewm_mean(com=3, min_periods=min_periods, ignore_nulls=False)
+            .ewm_mean(com=3, min_samples=min_samples, ignore_nulls=False)
             .null_count()
-            == min_periods - 1
+            == min_samples - 1
         )
     assert pl.Series([None, 1.0, 1.0, 1.0]).ewm_mean(
-        alpha=0.5, min_periods=1, ignore_nulls=True
+        alpha=0.5, min_samples=1, ignore_nulls=True
     ).to_list() == [None, 1.0, 1.0, 1.0]
     assert pl.Series([None, 1.0, 1.0, 1.0]).ewm_mean(
-        alpha=0.5, min_periods=2, ignore_nulls=True
+        alpha=0.5, min_samples=2, ignore_nulls=True
     ).to_list() == [None, None, 1.0, 1.0]
 
 
-def test_ewm_mean_min_periods() -> None:
+def test_ewm_mean_min_samples() -> None:
     series = pl.Series([1.0, None, None, None])
 
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1, ignore_nulls=True)
+    ewm_mean = series.ewm_mean(alpha=0.5, min_samples=1, ignore_nulls=True)
     assert ewm_mean.to_list() == [1.0, None, None, None]
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2, ignore_nulls=True)
+    ewm_mean = series.ewm_mean(alpha=0.5, min_samples=2, ignore_nulls=True)
     assert ewm_mean.to_list() == [None, None, None, None]
 
     series = pl.Series([1.0, None, 2.0, None, 3.0])
 
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1, ignore_nulls=True)
+    ewm_mean = series.ewm_mean(alpha=0.5, min_samples=1, ignore_nulls=True)
     assert_series_equal(
         ewm_mean,
         pl.Series(
@@ -133,7 +133,7 @@ def test_ewm_mean_min_periods() -> None:
             ]
         ),
     )
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2, ignore_nulls=True)
+    ewm_mean = series.ewm_mean(alpha=0.5, min_samples=2, ignore_nulls=True)
     assert_series_equal(
         ewm_mean,
         pl.Series(
@@ -269,17 +269,23 @@ def test_ewm_methods(
         # reference implementation for comparison (after normalising NaN/None)
         p = s.to_pandas()
 
-        # note: skip min_periods < 2, due to pandas-side inconsistency:
+        # note: skip min_samples < 2, due to pandas-side inconsistency:
         # https://github.com/pola-rs/polars/issues/5006#issuecomment-1259477178
         for mp in range(2, len(s), len(s) // 3):
             # consolidate ewm parameters
             pl_params: dict[str, Any] = {
-                "min_periods": mp,
+                "min_samples": mp,
                 "adjust": adjust,
                 "ignore_nulls": ignore_nulls,
             }
             pl_params.update(decay_param)
-            pd_params = pl_params.copy()
+            pd_params: dict[str, Any] = {
+                "min_periods": mp,
+                "adjust": adjust,
+                "ignore_nulls": ignore_nulls,
+            }
+            pd_params.update(decay_param)
+
             if "half_life" in pl_params:
                 pd_params["halflife"] = pd_params.pop("half_life")
             if "ignore_nulls" in pl_params:

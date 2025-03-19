@@ -199,13 +199,15 @@ pub struct AsOfOptions {
     pub right_by: Option<Vec<PlSmallStr>>,
     /// Allow equal matches
     pub allow_eq: bool,
+    pub check_sortedness: bool,
 }
 
 fn check_asof_columns(
     a: &Series,
     b: &Series,
     has_tolerance: bool,
-    check_sorted: bool,
+    check_sortedness: bool,
+    by_groups_present: bool,
 ) -> PolarsResult<()> {
     let dtype_a = a.dtype();
     let dtype_b = b.dtype();
@@ -227,9 +229,13 @@ fn check_asof_columns(
         ComputeError: "mismatching key dtypes in asof-join: `{}` and `{}`",
         a.dtype(), b.dtype()
     );
-    if check_sorted {
-        a.ensure_sorted_arg("asof_join")?;
-        b.ensure_sorted_arg("asof_join")?;
+    if check_sortedness {
+        if by_groups_present {
+            polars_warn!("Sortedness of columns cannot be checked when 'by' groups provided");
+        } else {
+            a.ensure_sorted_arg("asof_join")?;
+            b.ensure_sorted_arg("asof_join")?;
+        }
     }
     Ok(())
 }
@@ -260,10 +266,17 @@ pub trait AsofJoin: IntoDf {
         slice: Option<(i64, usize)>,
         coalesce: bool,
         allow_eq: bool,
+        check_sortedness: bool,
     ) -> PolarsResult<DataFrame> {
         let self_df = self.to_df();
 
-        check_asof_columns(left_key, right_key, tolerance.is_some(), true)?;
+        check_asof_columns(
+            left_key,
+            right_key,
+            tolerance.is_some(),
+            check_sortedness,
+            false,
+        )?;
         let left_key = left_key.to_physical_repr();
         let right_key = right_key.to_physical_repr();
 
@@ -274,6 +287,11 @@ pub trait AsofJoin: IntoDf {
             },
             DataType::Int32 => {
                 let ca = left_key.i32().unwrap();
+                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            },
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => {
+                let ca = left_key.i128().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
             DataType::UInt64 => {
@@ -312,6 +330,7 @@ pub trait AsofJoin: IntoDf {
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
         }?;
+        try_raise_keyboard_interrupt();
 
         // Drop right join column.
         let other = if coalesce && left_key.name() == right_key.name() {

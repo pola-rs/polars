@@ -1,5 +1,5 @@
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 #[cfg(feature = "round_series")]
 use polars_ops::prelude::floor_div_series;
 
@@ -266,11 +266,6 @@ impl PhysicalExpr for BinaryExpr {
             },
             _ => self.apply_group_aware(ac_l, ac_r),
         }
-    }
-
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.left.collect_live_columns(lv);
-        self.right.collect_live_columns(lv);
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

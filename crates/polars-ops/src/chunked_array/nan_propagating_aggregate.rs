@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::Array;
-use arrow::legacy::kernels::rolling;
-use arrow::legacy::kernels::rolling::no_nulls::{MaxWindow, MinWindow};
 use arrow::legacy::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
+use polars_compute::rolling;
+use polars_compute::rolling::no_nulls::{MaxWindow, MinWindow};
 use polars_core::frame::group_by::aggregations::{
     _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,

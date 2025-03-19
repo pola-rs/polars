@@ -12,12 +12,11 @@
 //! operations on String Series will convert from/to such buffers. This
 //! conversion requires data to be copied.
 
-use polars::export::arrow;
-use polars::export::arrow::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
-use polars::export::arrow::bitmap::Bitmap;
-use polars::export::arrow::buffer::Buffer;
-use polars::export::arrow::offset::OffsetsBuffer;
-use polars::export::arrow::types::NativeType;
+use arrow::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
+use arrow::bitmap::Bitmap;
+use arrow::buffer::Buffer;
+use arrow::offset::OffsetsBuffer;
+use arrow::types::NativeType;
 use polars::prelude::*;
 use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
 use pyo3::exceptions::PyTypeError;
@@ -28,6 +27,7 @@ use super::{PySeries, ToSeries};
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::raise_err;
+use crate::utils::EnterPolarsExt;
 
 struct BufferInfo {
     pointer: usize,
@@ -82,7 +82,9 @@ impl PySeries {
                 }))
             },
             dt => {
-                let msg = format!("`_get_buffer_info` not implemented for non-physical type {dt}; try to select a buffer first");
+                let msg = format!(
+                    "`_get_buffer_info` not implemented for non-physical type {dt}; try to select a buffer first"
+                );
                 Err(PyTypeError::new_err(msg))
             },
         }
@@ -91,7 +93,7 @@ impl PySeries {
     /// Return the underlying values, validity, and offsets buffers as Series.
     fn _get_buffers(&self, py: Python) -> PyResult<(Self, Option<Self>, Option<Self>)> {
         let s = &self.series;
-        py.allow_threads(|| match s.dtype().to_physical() {
+        py.enter_polars(|| match s.dtype().to_physical() {
             dt if dt.is_primitive_numeric() => get_buffers_from_primitive(s),
             DataType::Boolean => get_buffers_from_primitive(s),
             DataType::String => get_buffers_from_string(s),
@@ -136,7 +138,7 @@ fn get_buffers_from_string(s: &Series) -> PyResult<(PySeries, Option<PySeries>, 
     let arr_binview = ca.downcast_iter().next().unwrap();
 
     // This is not zero-copy
-    let arr_utf8 = polars_core::export::cast::utf8view_to_utf8(arr_binview);
+    let arr_utf8 = polars_compute::cast::utf8view_to_utf8(arr_binview);
 
     let values = get_string_bytes(&arr_utf8)?;
     let validity = get_bitmap(&s);
@@ -246,11 +248,7 @@ fn get_boolean_buffer_length_in_bytes(length: usize, offset: usize) -> usize {
     let n_bits = offset + length;
     let n_bytes = n_bits / 8;
     let rest = n_bits % 8;
-    if rest == 0 {
-        n_bytes
-    } else {
-        n_bytes + 1
-    }
+    if rest == 0 { n_bytes } else { n_bytes + 1 }
 }
 
 #[pymethods]
@@ -322,12 +320,14 @@ impl PySeries {
                         }
                         series_to_offsets(s)
                     },
-                    None => return Err(PyTypeError::new_err(
-                        "`_from_buffers` cannot create a String column without an offsets buffer",
-                    )),
+                    None => {
+                        return Err(PyTypeError::new_err(
+                            "`_from_buffers` cannot create a String column without an offsets buffer",
+                        ));
+                    },
                 };
                 let values = series_to_buffer::<UInt8Type>(values);
-                py.allow_threads(|| from_buffers_string_impl(values, validity, offsets))?
+                py.enter_polars(|| from_buffers_string_impl(values, validity, offsets))?
             },
             dt => {
                 let msg = format!("`_from_buffers` not implemented for `dtype` {dt}");
@@ -346,15 +346,12 @@ where
 {
     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
     let ca = ca.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
-    arr.values().clone()
+    ca.downcast_as_array().values().clone()
 }
 fn series_to_bitmap(s: Series) -> PyResult<Bitmap> {
     let ca_result = s.bool();
     let ca = ca_result.map_err(PyPolarsErr::from)?.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
-    let bitmap = arr.values().clone();
-    Ok(bitmap)
+    Ok(ca.downcast_as_array().values().clone())
 }
 fn series_to_offsets(s: Series) -> OffsetsBuffer<i64> {
     let buffer = series_to_buffer::<Int64Type>(s);

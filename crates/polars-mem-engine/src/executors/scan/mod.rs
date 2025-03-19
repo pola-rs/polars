@@ -28,6 +28,7 @@ use polars_plan::global::_set_n_rows_for_scan;
 #[cfg(feature = "python")]
 pub(crate) use self::python_scan::*;
 use super::*;
+use crate::ScanPredicate;
 use crate::prelude::*;
 
 /// Producer of an in memory DataFrame
@@ -56,9 +57,9 @@ impl Executor for DataFrameExec {
 
 pub(crate) struct AnonymousScanExec {
     pub(crate) function: Arc<dyn AnonymousScan>,
-    pub(crate) file_options: FileScanOptions,
+    pub(crate) file_options: Box<FileScanOptions>,
     pub(crate) file_info: FileInfo,
-    pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub(crate) predicate: Option<ScanPredicate>,
     pub(crate) output_schema: Option<SchemaRef>,
     pub(crate) predicate_has_windows: bool,
 }
@@ -66,7 +67,7 @@ pub(crate) struct AnonymousScanExec {
 impl Executor for AnonymousScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let mut args = AnonymousScanArgs {
-            n_rows: self.file_options.slice.map(|x| {
+            n_rows: self.file_options.pre_slice.map(|x| {
                 assert_eq!(x.0, 0);
                 x.1
             }),
@@ -82,7 +83,7 @@ impl Executor for AnonymousScanExec {
         match (self.function.allows_predicate_pushdown(), &self.predicate) {
             (true, Some(predicate)) => state.record(
                 || {
-                    args.predicate = predicate.as_expression().cloned();
+                    args.predicate = predicate.predicate.as_expression().cloned();
                     self.function.scan(args)
                 },
                 "anonymous_scan".into(),
@@ -90,7 +91,7 @@ impl Executor for AnonymousScanExec {
             (false, Some(predicate)) => state.record(
                 || {
                     let mut df = self.function.scan(args)?;
-                    let s = predicate.evaluate(&df, state)?;
+                    let s = predicate.predicate.evaluate(&df, state)?;
                     if self.predicate_has_windows {
                         state.clear_window_expr_cache()
                     }

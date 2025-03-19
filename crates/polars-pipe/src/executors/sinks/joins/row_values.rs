@@ -42,7 +42,7 @@ impl RowValues {
         &mut self,
         context: &PExecutionContext,
         chunk: &DataChunk,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> PolarsResult<BinaryArray<i64>> {
         // Memory should already be cleared on previous iteration.
         debug_assert!(self.join_columns_material.is_empty());
@@ -60,7 +60,7 @@ impl RowValues {
                 names.push(s.name().to_string());
             }
             self.join_columns_material.push(s.array_ref(0).clone());
-            ctxts.push(get_row_encoding_context(s.dtype()));
+            ctxts.push(get_row_encoding_context(s.dtype(), false));
         }
 
         // We determine the indices of the columns that have to be removed
@@ -85,7 +85,7 @@ impl RowValues {
 
         // SAFETY: we keep rows-encode alive
         let array = unsafe { self.current_rows.borrow_array() };
-        Ok(if join_nulls {
+        Ok(if nulls_equal {
             array
         } else {
             let validities = self

@@ -88,13 +88,13 @@ pub trait RoundSeries: SeriesSealed {
 
                     let mut magnitude = v.abs().ilog10();
                     let magnitude_mult = 10i128.pow(magnitude); // @Q? It might be better to do this with a
-                                                                // LUT.
+                    // LUT.
                     if v.abs() > magnitude_mult {
                         magnitude += 1;
                     }
                     let decimals = magnitude.saturating_sub(digits as u32);
                     let multiplier = 10i128.pow(decimals); // @Q? It might be better to do this with a
-                                                           // LUT.
+                    // LUT.
                     let threshold = multiplier / 2;
 
                     // We use rounding=ROUND_HALF_EVEN

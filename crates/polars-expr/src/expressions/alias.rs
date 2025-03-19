@@ -59,11 +59,6 @@ impl PhysicalExpr for AliasExpr {
         Ok(ac)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.physical_expr.collect_live_columns(lv);
-        lv.insert(self.name.clone());
-    }
-
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         Ok(Field::new(
             self.name.clone(),

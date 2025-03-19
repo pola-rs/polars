@@ -2,7 +2,7 @@ use polars_core::config::verbose;
 
 use super::*;
 use crate::executors::sinks::memory::MemTracker;
-use crate::pipeline::{morsels_per_sink, FORCE_OOC};
+use crate::pipeline::{FORCE_OOC, morsels_per_sink};
 
 #[derive(Clone)]
 pub(super) struct OocState {

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::BooleanArray;
 use arrow::compute::concatenate::concatenate_validities;
 use polars_core::prelude::*;
@@ -105,8 +106,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         })
         .slice(0, len - null_count);
 
-    let chunk_refs: Vec<_> = s.chunks().iter().map(|c| &**c).collect();
-    let validity = concatenate_validities(&chunk_refs);
+    let validity = concatenate_validities(s.chunks());
 
     use RankMethod::*;
     if let Ordinal = method {
@@ -124,9 +124,9 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         let not_consecutive_same = sorted_values
             .slice(1, sorted_values.len() - 1)
             .not_equal(&sorted_values.slice(0, sorted_values.len() - 1))
-            .unwrap()
-            .rechunk();
-        let neq = not_consecutive_same.downcast_iter().next().unwrap();
+            .unwrap();
+        let neq = not_consecutive_same.rechunk();
+        let neq = neq.downcast_as_array();
 
         let mut rank = 1;
         match method {

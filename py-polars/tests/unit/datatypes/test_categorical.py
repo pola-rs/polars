@@ -15,6 +15,7 @@ from polars.exceptions import (
     StringCacheMismatchError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import with_string_cache_if_auto_streaming
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -66,7 +67,7 @@ def test_categorical_full_outer_join() -> None:
         ]
     )
 
-    df = dfa.join(dfb, on="key", how="full")
+    df = dfa.join(dfb, on="key", how="full", maintain_order="right_left")
     # the cast is important to test the rev map
     assert df["key"].cast(pl.String).to_list() == ["bar", None, "foo"]
     assert df["key_right"].cast(pl.String).to_list() == ["bar", "baz", None]
@@ -113,6 +114,7 @@ def test_categorical_is_in_list() -> None:
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+@with_string_cache_if_auto_streaming
 def test_unset_sorted_on_append() -> None:
     df1 = pl.DataFrame(
         [
@@ -625,6 +627,7 @@ def test_categorical_fill_null_existing_category() -> None:
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.may_fail_auto_streaming
 def test_categorical_fill_null_stringcache() -> None:
     df = pl.LazyFrame(
         {"index": [1, 2, 3], "cat": ["a", "b", None]},
@@ -848,9 +851,8 @@ def test_cat_preserve_lexical_ordering_on_concat() -> None:
     assert df2["x"].dtype == dtype
 
 
-# TODO: Bug see: https://github.com/pola-rs/polars/issues/20440
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.may_fail_auto_streaming
 def test_cat_append_lexical_sorted_flag() -> None:
     df = pl.DataFrame({"x": [0, 1, 1], "y": ["B", "B", "A"]}).with_columns(
         pl.col("y").cast(pl.Categorical(ordering="lexical"))
@@ -867,6 +869,16 @@ def test_cat_append_lexical_sorted_flag() -> None:
     s1.append(s3)
 
     assert not (s1.is_sorted())
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_cast_physical_lexical_sorted_flag_20864() -> None:
+    df = pl.DataFrame({"s": ["b", "a"], "v": [1, 2]})
+    sorted_physically = df.cast({"s": pl.Categorical("physical")}).sort("s")
+    sorted_lexically = sorted_physically.cast({"s": pl.Categorical("lexical")}).sort(
+        "s"
+    )
+    assert sorted_lexically["s"].to_list() == ["a", "b"]
 
 
 @pytest.mark.usefixtures("test_global_and_local")
@@ -902,6 +914,7 @@ def test_nested_categorical_concat(
         pl.concat([a, b])
 
 
+@with_string_cache_if_auto_streaming
 @pytest.mark.usefixtures("test_global_and_local")
 def test_perfect_group_by_19452() -> None:
     n = 40
@@ -934,7 +947,6 @@ def test_categorical_unique() -> None:
     assert s.unique().sort().to_list() == [None, "a", "b"]
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_unique_20539() -> None:
     df = pl.DataFrame({"number": [1, 1, 2, 2, 3], "letter": ["a", "b", "b", "c", "c"]})
@@ -955,7 +967,6 @@ def test_categorical_unique_20539() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_prefill() -> None:
     # https://github.com/pola-rs/polars/pull/20547#issuecomment-2569473443
@@ -969,3 +980,35 @@ def test_categorical_prefill() -> None:
     s = pl.Series(["1", "2", "3"], dtype=pl.Categorical)
     s = s.filter([True, False, True])
     assert s.n_unique() == 2
+
+
+@pytest.mark.may_fail_auto_streaming  # not implemented
+@pytest.mark.usefixtures("test_global_and_local")
+def test_categorical_min_max() -> None:
+    schema = pl.Schema(
+        {
+            "a": pl.Categorical("physical"),
+            "b": pl.Categorical("lexical"),
+            "c": pl.Enum(["foo", "bar"]),
+        }
+    )
+    lf = pl.LazyFrame(
+        {
+            "a": ["foo", "bar"],
+            "b": ["foo", "bar"],
+            "c": ["foo", "bar"],
+        },
+        schema=schema,
+    )
+
+    q = lf.select(pl.all().min())
+    result = q.collect()
+    assert q.collect_schema() == schema
+    assert result.schema == schema
+    assert result.to_dict(as_series=False) == {"a": ["foo"], "b": ["bar"], "c": ["foo"]}
+
+    q = lf.select(pl.all().max())
+    result = q.collect()
+    assert q.collect_schema() == schema
+    assert result.schema == schema
+    assert result.to_dict(as_series=False) == {"a": ["bar"], "b": ["foo"], "c": ["bar"]}

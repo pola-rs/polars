@@ -4,7 +4,7 @@ use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use arrow::types::NativeType;
-use polars_core::export::num::{NumCast, ToPrimitive};
+use num_traits::{NumCast, ToPrimitive};
 
 use super::*;
 use crate::chunked_array::sum::sum_slice;
@@ -106,7 +106,7 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
             out.into_series()
         },
         // slowest sum_as_series path
-        _ => ca
+        dt => ca
             .try_apply_amortized(|s| {
                 s.as_ref()
                     .sum_reduce()
@@ -114,7 +114,8 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
             })?
             .explode()
             .unwrap()
-            .into_series(),
+            .into_series()
+            .cast(dt)?,
     };
     out.rename(ca.name().clone());
     Ok(out)
@@ -183,6 +184,23 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as f32)))
                 .with_name(ca.name().clone());
             out.into_series()
+        },
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Date => {
+            const MS_IN_DAY: i64 = 86_400_000;
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| s.as_ref().mean().map(|v| (v * (MS_IN_DAY as f64)) as i64))
+                })
+                .with_name(ca.name().clone());
+            out.into_datetime(TimeUnit::Milliseconds, None)
+                .into_series()
+        },
+        dt if dt.is_temporal() => {
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as i64)))
+                .with_name(ca.name().clone());
+            out.cast(dt).unwrap()
         },
         _ => {
             let out: Float64Chunked = ca

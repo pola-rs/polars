@@ -1,4 +1,4 @@
-use polars::export::chrono::NaiveDate;
+use chrono::NaiveDate;
 
 use super::*;
 

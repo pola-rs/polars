@@ -1,15 +1,14 @@
 use arrow::array::{Array, ValueSize};
 use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
-use base64::engine::general_purpose;
-#[cfg(feature = "string_encoding")]
 use base64::Engine as _;
+#[cfg(feature = "string_encoding")]
+use base64::engine::general_purpose;
 #[cfg(feature = "string_to_integer")]
-use polars_core::export::num::Num;
-use polars_core::export::regex::Regex;
+use num_traits::Num;
 use polars_core::prelude::arity::*;
 use polars_utils::cache::FastFixedCache;
-use regex::escape;
+use regex::{Regex, escape};
 
 use super::*;
 #[cfg(feature = "binary_encoding")]

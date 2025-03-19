@@ -73,7 +73,9 @@ pub fn resolve_join(
         if turn_off_coalesce {
             let options = Arc::make_mut(&mut options);
             if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
-                polars_warn!("coalescing join requested but not all join keys are column references, turning off key coalescing");
+                polars_warn!(
+                    "coalescing join requested but not all join keys are column references, turning off key coalescing"
+                );
             }
             options.args.coalesce = JoinCoalesce::KeepColumns;
         }
@@ -129,26 +131,18 @@ pub fn resolve_join(
     ctxt.conversion_optimizer
         .fill_scratch(&left_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
-        .coerce_types(ctxt.expr_arena, ctxt.lp_arena, input_left)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_left)
         .map_err(|e| e.context("'join' failed".into()))?;
     ctxt.conversion_optimizer
         .fill_scratch(&right_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
-        .coerce_types(ctxt.expr_arena, ctxt.lp_arena, input_right)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_right)
         .map_err(|e| e.context("'join' failed".into()))?;
 
     // Re-evaluate because of mutable borrows earlier.
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
 
-    // Not a closure to avoid borrow issues because we mutate expr_arena as well.
-    macro_rules! get_dtype {
-        ($expr:expr, $schema:expr) => {
-            ctxt.expr_arena
-                .get($expr.node())
-                .get_type($schema, Context::Default, ctxt.expr_arena)
-        };
-    }
     // # Resolve scalars
     //
     // Scalars need to be expanded. We translate them to temporary columns added with
@@ -234,6 +228,15 @@ pub fn resolve_join(
         (schema_left, schema_right)
     };
 
+    // Not a closure to avoid borrow issues because we mutate expr_arena as well.
+    macro_rules! get_dtype {
+        ($expr:expr, $schema:expr) => {
+            ctxt.expr_arena
+                .get($expr.node())
+                .get_type($schema, Context::Default, ctxt.expr_arena)
+        };
+    }
+
     // # Cast lossless
     //
     // If we do a full join and keys are coalesced, the cast keys must be added up front.
@@ -242,22 +245,24 @@ pub fn resolve_join(
     let mut as_with_columns_l = vec![];
     let mut as_with_columns_r = vec![];
     for (lnode, rnode) in left_on.iter_mut().zip(right_on.iter_mut()) {
-        //polars_ensure!(!lnode.is_scalar(&ctxt.expr_arena), InvalidOperation: "joining on scalars is not allowed, consider using 'join_where'");
-        //polars_ensure!(!rnode.is_scalar(&ctxt.expr_arena), InvalidOperation: "joining on scalars is not allowed, consider using 'join_where'");
-
         let ltype = get_dtype!(lnode, &schema_left)?;
         let rtype = get_dtype!(rnode, &schema_right)?;
 
         if let Some(dtype) = get_numeric_upcast_supertype_lossless(&ltype, &rtype) {
+            // We use overflowing cast to allow better optimization as we are casting to a known
+            // lossless supertype.
+            //
+            // We have unique references to these nodes (they are created by this function),
+            // so we can mutate in-place without causing side effects somewhere else.
             let casted_l = ctxt.expr_arena.add(AExpr::Cast {
                 expr: lnode.node(),
                 dtype: dtype.clone(),
-                options: CastOptions::Strict,
+                options: CastOptions::Overflowing,
             });
             let casted_r = ctxt.expr_arena.add(AExpr::Cast {
                 expr: rnode.node(),
                 dtype,
-                options: CastOptions::Strict,
+                options: CastOptions::Overflowing,
             });
 
             if key_cols_coalesced {
@@ -400,36 +405,11 @@ fn resolve_join_where(
     let input_right = to_alp_impl(Arc::unwrap_or_clone(input_right), ctxt)
         .map_err(|e| e.context(failed_here!(join left)))?;
 
-    let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
-    let schema_right = ctxt
+    let schema_left = ctxt
         .lp_arena
-        .get(input_right)
+        .get(input_left)
         .schema(ctxt.lp_arena)
         .into_owned();
-
-    for expr in &predicates {
-        fn all_in_schema(
-            schema: &Schema,
-            other: Option<&Schema>,
-            left: &Expr,
-            right: &Expr,
-        ) -> bool {
-            let mut iter =
-                expr_to_leaf_column_names_iter(left).chain(expr_to_leaf_column_names_iter(right));
-            iter.all(|name| {
-                schema.contains(name.as_str()) && other.is_none_or(|s| !s.contains(name.as_str()))
-            })
-        }
-
-        let valid = expr.into_iter().all(|e| match e {
-            Expr::BinaryExpr { left, op, right } if op.is_comparison() => {
-                !(all_in_schema(&schema_left, None, left, right)
-                    || all_in_schema(&schema_right, Some(&schema_left), left, right))
-            },
-            _ => true,
-        });
-        polars_ensure!( valid, InvalidOperation: "'join_where' predicate only refers to columns from a single table")
-    }
 
     let opts = Arc::make_mut(&mut options);
     opts.args.how = JoinType::Cross;
@@ -444,14 +424,180 @@ fn resolve_join_where(
         ctxt,
     )?;
 
+    let mut ae_nodes_stack = Vec::new();
+
+    let schema_merged = ctxt
+        .lp_arena
+        .get(last_node)
+        .schema(ctxt.lp_arena)
+        .into_owned();
+    let schema_merged = schema_merged.as_ref();
+
     for e in predicates {
         let predicate = to_expr_ir_ignore_alias(e, ctxt.expr_arena)?;
+
+        debug_assert!(ae_nodes_stack.is_empty());
+        ae_nodes_stack.clear();
+        ae_nodes_stack.push(predicate.node());
+
+        process_join_where_predicate(
+            &mut ae_nodes_stack,
+            0,
+            schema_left.as_ref(),
+            schema_merged,
+            ctxt.expr_arena,
+            &mut ExprOrigin::None,
+        )?;
+
+        ctxt.conversion_optimizer
+            .push_scratch(predicate.node(), ctxt.expr_arena);
 
         let ir = IR::Filter {
             input: last_node,
             predicate,
         };
+
         last_node = ctxt.lp_arena.add(ir);
     }
+
+    ctxt.conversion_optimizer
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node)
+        .map_err(|e| e.context("'join_where' failed".into()))?;
+
     Ok((last_node, join_node))
+}
+
+/// Performs validation and type-coercion on join_where predicates.
+///
+/// Validates for all comparison expressions / subexpressions, that:
+/// 1. They reference columns from both sides.
+/// 2. The dtypes of the LHS and RHS are match, or can be casted to a lossless
+///    supertype (and inserts the necessary casting).
+///
+/// We perform (1) by recursing whenever we encounter a comparison expression.
+fn process_join_where_predicate(
+    stack: &mut Vec<Node>,
+    prev_comparison_expr_stack_offset: usize,
+    schema_left: &Schema,
+    schema_merged: &Schema,
+    expr_arena: &mut Arena<AExpr>,
+    column_origins: &mut ExprOrigin,
+) -> PolarsResult<()> {
+    while stack.len() > prev_comparison_expr_stack_offset {
+        let ae_node = stack.pop().unwrap();
+        let ae = expr_arena.get(ae_node).clone();
+
+        match ae {
+            AExpr::Column(ref name) => {
+                let origin = if schema_left.contains(name) {
+                    ExprOrigin::Left
+                } else if schema_merged.contains(name) {
+                    ExprOrigin::Right
+                } else {
+                    polars_bail!(ColumnNotFound: "{}", name);
+                };
+
+                *column_origins |= origin;
+            },
+            // This is not actually Origin::Both, but we set this because the test suite expects
+            // this predicate to pass:
+            // * `pl.col("flag_right") == 1`
+            // Observe that it only has a column from one side because it is comparing to a literal.
+            AExpr::Literal(_) => *column_origins = ExprOrigin::Both,
+            AExpr::BinaryExpr {
+                left: left_node,
+                op,
+                right: right_node,
+            } if op.is_comparison_or_bitwise() => {
+                {
+                    let new_stack_offset = stack.len();
+                    stack.extend([right_node, left_node]);
+
+                    // Reset `column_origins` to a `None` state. We will only have 2 possible return states from
+                    // this point:
+                    // * Ok(()), with column_origins @ ExprOrigin::Both
+                    // * Err(_), in which case the value of column_origins doesn't matter.
+                    *column_origins = ExprOrigin::None;
+
+                    process_join_where_predicate(
+                        stack,
+                        new_stack_offset,
+                        schema_left,
+                        schema_merged,
+                        expr_arena,
+                        column_origins,
+                    )?;
+
+                    if *column_origins != ExprOrigin::Both {
+                        polars_bail!(
+                            InvalidOperation:
+                            "'join_where' predicate only refers to columns from a single table: {}",
+                            node_to_expr(ae_node, expr_arena),
+                        )
+                    }
+                }
+
+                // Fetch them again in case they were rewritten.
+                let left = expr_arena.get(left_node).clone();
+                let right = expr_arena.get(right_node).clone();
+
+                let resolve_dtype = |ae: &AExpr, node: Node| -> PolarsResult<DataType> {
+                    ae.to_dtype(schema_merged, Context::Default, expr_arena)
+                        .map_err(|e| {
+                            e.context(
+                                format!(
+                                    "could not resolve dtype of join_where predicate (expr: {})",
+                                    node_to_expr(node, expr_arena),
+                                )
+                                .into(),
+                            )
+                        })
+                };
+
+                let dtype_left = resolve_dtype(&left, left_node)?;
+                let dtype_right = resolve_dtype(&right, right_node)?;
+
+                // Note: We only upcast the sides if the expr output dtype is Boolean (i.e. `op` is
+                // a comparison), otherwise the output may change.
+
+                if let Some(dtype) =
+                    get_numeric_upcast_supertype_lossless(&dtype_left, &dtype_right)
+                        .filter(|_| op.is_comparison())
+                {
+                    // We have unique references to these nodes (they are created by this function),
+                    // so we can mutate in-place without causing side effects somewhere else.
+                    let expr = expr_arena.add(expr_arena.get(left_node).clone());
+                    expr_arena.replace(
+                        left_node,
+                        AExpr::Cast {
+                            expr,
+                            dtype: dtype.clone(),
+                            options: CastOptions::Overflowing,
+                        },
+                    );
+
+                    let expr = expr_arena.add(expr_arena.get(right_node).clone());
+                    expr_arena.replace(
+                        right_node,
+                        AExpr::Cast {
+                            expr,
+                            dtype,
+                            options: CastOptions::Overflowing,
+                        },
+                    );
+                } else {
+                    polars_ensure!(
+                        dtype_left == dtype_right,
+                        SchemaMismatch:
+                        "datatypes of join_where comparison don't match - {} on left does not match {} on right \
+                        (expr: {})",
+                        dtype_left, dtype_right, node_to_expr(ae_node, expr_arena),
+                    )
+                }
+            },
+            ae => ae.inputs_rev(stack),
+        }
+    }
+
+    Ok(())
 }

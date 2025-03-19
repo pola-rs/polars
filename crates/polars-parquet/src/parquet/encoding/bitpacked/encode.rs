@@ -11,7 +11,7 @@ pub fn encode<T: Unpackable>(unpacked: &[T], num_bits: usize, packed: &mut [u8])
 
     let remainder = chunks.remainder();
 
-    let packed_size = (T::Unpacked::LENGTH * num_bits + 7) / 8;
+    let packed_size = (T::Unpacked::LENGTH * num_bits).div_ceil(8);
     if !remainder.is_empty() {
         let packed_chunks = packed.chunks_mut(packed_size);
         let mut last_chunk = T::Unpacked::zero();

@@ -16,10 +16,15 @@ from polars._utils.construction.dataframe import (
     sequence_to_pydf,
 )
 from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyseries
-from polars._utils.deprecation import deprecate_renamed_parameter
-from polars._utils.various import _cast_repr_strings_with_schema
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
+from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
+from polars._utils.various import _cast_repr_strings_with_schema, issue_warning
 from polars._utils.wrap import wrap_df, wrap_s
-from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, String, Struct
+from polars.datatypes import N_INFER_DEFAULT, Categorical, String
+from polars.dependencies import _check_for_pyarrow
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
@@ -28,7 +33,13 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from polars import DataFrame, Series
-    from polars._typing import Orientation, SchemaDefinition, SchemaDict
+    from polars._typing import (
+        ArrowArrayExportable,
+        ArrowStreamExportable,
+        Orientation,
+        SchemaDefinition,
+        SchemaDict,
+    )
     from polars.dependencies import numpy as np
     from polars.interchange.protocol import SupportsInterchange
 
@@ -364,6 +375,8 @@ def from_arrow(
         | pa.ChunkedArray
         | pa.RecordBatch
         | Iterable[pa.RecordBatch | pa.Table]
+        | ArrowArrayExportable
+        | ArrowStreamExportable
     ),
     schema: SchemaDefinition | None = None,
     *,
@@ -379,7 +392,8 @@ def from_arrow(
     Parameters
     ----------
     data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
-        Data representing an Arrow Table, Array, or sequence of RecordBatches or Tables.
+        Data representing an Arrow Table, Array, sequence of RecordBatches or Tables, or other
+        object that supports the Arrow PyCapsule interface.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -431,7 +445,15 @@ def from_arrow(
         3
     ]
     """  # noqa: W505
-    if isinstance(data, (pa.Table, pa.RecordBatch)):
+    if is_pycapsule(data) and not _check_for_pyarrow(data):
+        return pycapsule_to_frame(
+            data,
+            schema=schema,
+            schema_overrides=schema_overrides,
+            rechunk=rechunk,
+        )
+
+    elif isinstance(data, (pa.Table, pa.RecordBatch)):
         return wrap_df(
             arrow_to_pydf(
                 data=data,
@@ -449,6 +471,7 @@ def from_arrow(
             schema_overrides=schema_overrides,
         ).to_series()
         return s if (name or schema or schema_overrides) else s.alias("")
+
     elif not data:
         return pl.DataFrame(
             schema=schema,
@@ -740,7 +763,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         data.extend((pl.Series(empty_data, dtype=String)) for _ in range(n_extend_cols))
 
     for dtype in set(schema.values()):
-        if dtype in (List, Struct, Object):
+        if dtype is not None and (dtype.is_nested() or dtype.is_object()):
             msg = (
                 f"`from_repr` does not support data type {dtype.base_type().__name__!r}"
             )
@@ -819,35 +842,49 @@ def _from_series_repr(m: re.Match[str]) -> Series:
         ).to_series()
 
 
-def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:
+def from_dataframe(
+    df: SupportsInterchange | ArrowArrayExportable | ArrowStreamExportable,
+    *,
+    allow_copy: bool | None = None,
+    rechunk: bool = True,
+) -> DataFrame:
     """
-    Build a Polars DataFrame from any dataframe supporting the interchange protocol.
+    Build a Polars DataFrame from any dataframe supporting the PyCapsule Interface.
+
+    .. versionchanged:: 1.23.0
+
+       `from_dataframe` uses the PyCapsule Interface instead of the Dataframe
+       Interchange Protocol for conversion, only using the latter as a fallback.
 
     Parameters
     ----------
     df
-        Object supporting the dataframe interchange protocol, i.e. must have implemented
-        the `__dataframe__` method.
+        Object supporting the dataframe PyCapsule Interface.
     allow_copy
-        Allow memory to be copied to perform the conversion. If set to False, causes
+        Allow memory to be copied to perform the conversion. If set to False, may cause
         conversions that are not zero-copy to fail.
+
+        .. deprecated: 1.23.0
+            `allow_copy` is deprecated and will be removed in a future version.
+    rechunk : bool, default True
+        Make sure that all data is in contiguous memory.
 
     Notes
     -----
-    Details on the Python dataframe interchange protocol:
-    https://data-apis.org/dataframe-protocol/latest/index.html
-
-    Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is a more
-    efficient method of conversion.
+    - Details on the PyCapsule Interface:
+      https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html.
+    - Details on the Python dataframe interchange protocol:
+      https://data-apis.org/dataframe-protocol/latest/index.html.
+      Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is
+      a more efficient method of conversion.
 
     Examples
     --------
-    Convert a pandas dataframe to Polars through the interchange protocol.
+    Convert a pandas dataframe to Polars.
 
     >>> import pandas as pd
     >>> df_pd = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
-    >>> dfi = df_pd.__dataframe__()
-    >>> pl.from_dataframe(dfi)
+    >>> pl.from_dataframe(df_pd)
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
@@ -858,6 +895,25 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     │ 2   ┆ 4.0 ┆ y   │
     └─────┴─────┴─────┘
     """
+    if allow_copy is not None:
+        issue_deprecation_warning(
+            "`allow_copy` is deprecated and will be removed in a future version.",
+            version="1.23",
+        )
+    else:
+        allow_copy = True
+    if is_pycapsule(df):
+        try:
+            return pycapsule_to_frame(df, rechunk=rechunk)
+        except Exception as exc:
+            issue_warning(
+                f"Failed to convert dataframe using PyCapsule Interface with exception: {exc!r}.\n"
+                "Falling back to Dataframe Interchange Protocol, which is known to be less robust.",
+                UserWarning,
+            )
     from polars.interchange.from_dataframe import from_dataframe
 
-    return from_dataframe(df, allow_copy=allow_copy)
+    result = from_dataframe(df, allow_copy=allow_copy)  # type: ignore[arg-type]
+    if rechunk:
+        return result.rechunk()
+    return result

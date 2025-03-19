@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use arrow::datatypes::{Metadata, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES};
+use arrow::datatypes::{DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, Metadata};
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
 use polars_utils::itertools::Itertools;
@@ -10,7 +10,7 @@ use strum_macros::IntoStaticStr;
 
 use super::*;
 #[cfg(feature = "object")]
-use crate::chunked_array::object::registry::ObjectRegistry;
+use crate::chunked_array::object::registry::get_object_physical_type;
 use crate::utils::materialize_dyn_int;
 
 pub type TimeZone = PlSmallStr;
@@ -131,7 +131,7 @@ pub enum DataType {
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
     #[cfg(feature = "object")]
-    Object(&'static str, Option<Arc<ObjectRegistry>>),
+    Object(&'static str),
     Null,
     // The RevMapping has the internal state.
     // This is ignored with comparisons, hashing etc.
@@ -190,7 +190,7 @@ impl PartialEq for DataType {
                     is_prec_eq && is_scale_eq
                 },
                 #[cfg(feature = "object")]
-                (Object(lhs, _), Object(rhs, _)) => lhs == rhs,
+                (Object(lhs), Object(rhs)) => lhs == rhs,
                 #[cfg(feature = "dtype-struct")]
                 (Struct(lhs), Struct(rhs)) => Vec::as_ptr(lhs) == Vec::as_ptr(rhs) || lhs == rhs,
                 #[cfg(feature = "dtype-array")]
@@ -210,6 +210,17 @@ impl PartialEq for DataType {
 impl Eq for DataType {}
 
 impl DataType {
+    pub fn new_idxsize() -> Self {
+        #[cfg(feature = "bigidx")]
+        {
+            Self::UInt64
+        }
+        #[cfg(not(feature = "bigidx"))]
+        {
+            Self::UInt32
+        }
+    }
+
     /// Standardize timezones to consistent values.
     pub(crate) fn canonical_timezone(tz: &Option<PlSmallStr>) -> Option<TimeZone> {
         match tz.as_deref() {
@@ -375,9 +386,9 @@ impl DataType {
             | (D::Binary, D::Categorical(_, _) | D::Enum(_, _)) => false,
 
             #[cfg(feature = "object")]
-            (D::Object(_, _), D::Object(_, _)) => true,
+            (D::Object(_), D::Object(_)) => true,
             #[cfg(feature = "object")]
-            (D::Object(_, _), _) | (_, D::Object(_, _)) => false,
+            (D::Object(_), _) | (_, D::Object(_)) => false,
 
             (D::Boolean, dt) | (dt, D::Boolean) => match dt {
                 dt if dt.is_primitive_numeric() => true,
@@ -527,7 +538,7 @@ impl DataType {
     pub fn is_object(&self) -> bool {
         #[cfg(feature = "object")]
         {
-            matches!(self, DataType::Object(_, _))
+            matches!(self, DataType::Object(_))
         }
         #[cfg(not(feature = "object"))]
         {
@@ -574,7 +585,7 @@ impl DataType {
         use DataType::*;
         match self {
             #[cfg(feature = "object")]
-            Object(_, _) => true,
+            Object(_) => true,
             List(inner) => inner.contains_objects(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_objects(),
@@ -730,6 +741,8 @@ impl DataType {
             UInt64 => Scalar::from(u64::MAX),
             Float32 => Scalar::from(f32::INFINITY),
             Float64 => Scalar::from(f64::INFINITY),
+            #[cfg(feature = "dtype-time")]
+            Time => Scalar::new(Time, AnyValue::Time(NS_IN_DAY - 1)),
             dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{}`", dt),
         };
         Ok(v)
@@ -750,6 +763,8 @@ impl DataType {
             UInt64 => Scalar::from(u64::MIN),
             Float32 => Scalar::from(f32::NEG_INFINITY),
             Float64 => Scalar::from(f64::NEG_INFINITY),
+            #[cfg(feature = "dtype-time")]
+            Time => Scalar::new(Time, AnyValue::Time(0)),
             dt => polars_bail!(ComputeError: "cannot determine lower bound for dtype `{}`", dt),
         };
         Ok(v)
@@ -816,14 +831,7 @@ impl DataType {
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
-            Object(_, Some(reg)) => Ok(reg.physical_dtype.clone()),
-            #[cfg(feature = "object")]
-            Object(_, None) => {
-                // FIXME: find out why we have Objects floating around without a
-                // known dtype.
-                // polars_bail!(InvalidOperation: "cannot convert Object dtype without registry to Arrow")
-                Ok(ArrowDataType::Unknown)
-            },
+            Object(_) => Ok(get_object_physical_type()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
                 let values = if compat_level.0 >= 1 {
@@ -852,7 +860,7 @@ impl DataType {
                     UnknownKind::Float => ArrowDataType::Float64,
                     UnknownKind::Str => ArrowDataType::Utf8View,
                     UnknownKind::Int(v) => {
-                        return materialize_dyn_int(*v).dtype().try_to_arrow(compat_level)
+                        return materialize_dyn_int(*v).dtype().try_to_arrow(compat_level);
                     },
                 };
                 Ok(dt)
@@ -873,12 +881,12 @@ impl DataType {
         }
     }
 
-    // Answers if this type matches the given type of a schema.
-    //
-    // Allows (nested) Null types in this type to match any type in the schema,
-    // but not vice versa. In such a case Ok(true) is returned, because a cast
-    // is necessary. If no cast is necessary Ok(false) is returned, and an
-    // error is returned if the types are incompatible.
+    /// Answers if this type matches the given type of a schema.
+    ///
+    /// Allows (nested) Null types in this type to match any type in the schema,
+    /// but not vice versa. In such a case Ok(true) is returned, because a cast
+    /// is necessary. If no cast is necessary Ok(false) is returned, and an
+    /// error is returned if the types are incompatible.
     pub fn matches_schema_type(&self, schema_type: &DataType) -> PolarsResult<bool> {
         match (self, schema_type) {
             (DataType::List(l), DataType::List(r)) => l.matches_schema_type(r),
@@ -960,7 +968,7 @@ impl Display for DataType {
             },
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
-            DataType::Object(s, _) => s,
+            DataType::Object(s) => s,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => "cat",
             #[cfg(feature = "dtype-categorical")]
@@ -1030,13 +1038,54 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
     })
 }
 
+fn collect_nested_types(
+    dtype: &DataType,
+    result: &mut PlHashSet<DataType>,
+    include_compound_types: bool,
+) {
+    match dtype {
+        DataType::List(inner) => {
+            if include_compound_types {
+                result.insert(dtype.clone());
+            }
+            collect_nested_types(inner, result, include_compound_types);
+        },
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(inner, _) => {
+            if include_compound_types {
+                result.insert(dtype.clone());
+            }
+            collect_nested_types(inner, result, include_compound_types);
+        },
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) => {
+            if include_compound_types {
+                result.insert(dtype.clone());
+            }
+            for field in fields {
+                collect_nested_types(field.dtype(), result, include_compound_types);
+            }
+        },
+        _ => {
+            result.insert(dtype.clone());
+        },
+    }
+}
+
+pub fn unpack_dtypes(dtype: &DataType, include_compound_types: bool) -> PlHashSet<DataType> {
+    let mut result = PlHashSet::new();
+    collect_nested_types(dtype, &mut result, include_compound_types);
+    result
+}
+
 #[cfg(feature = "dtype-categorical")]
 pub fn create_enum_dtype(categories: Utf8ViewArray) -> DataType {
     let rev_map = RevMapping::build_local(categories);
     DataType::Enum(Some(Arc::new(rev_map)), Default::default())
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CompatLevel(pub(crate) u16);
 
 impl CompatLevel {
@@ -1061,5 +1110,42 @@ impl CompatLevel {
     #[doc(hidden)]
     pub fn get_level(&self) -> u16 {
         self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "dtype-array")]
+    #[test]
+    fn test_unpack_primitive_dtypes() {
+        let inner_type = DataType::Float64;
+        let array_type = DataType::Array(Box::new(inner_type), 10);
+        let list_type = DataType::List(Box::new(array_type.clone()));
+
+        let result = unpack_dtypes(&list_type, false);
+
+        let mut expected = PlHashSet::new();
+        expected.insert(DataType::Float64);
+
+        assert_eq!(result, expected)
+    }
+
+    #[cfg(feature = "dtype-array")]
+    #[test]
+    fn test_unpack_compound_dtypes() {
+        let inner_type = DataType::Float64;
+        let array_type = DataType::Array(Box::new(inner_type), 10);
+        let list_type = DataType::List(Box::new(array_type.clone()));
+
+        let result = unpack_dtypes(&list_type, true);
+
+        let mut expected = PlHashSet::new();
+        expected.insert(list_type.clone());
+        expected.insert(array_type.clone());
+        expected.insert(DataType::Float64);
+
+        assert_eq!(result, expected)
     }
 }

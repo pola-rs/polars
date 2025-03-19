@@ -36,6 +36,7 @@ mod is_in;
 mod is_last_distinct;
 #[cfg(feature = "is_unique")]
 mod is_unique;
+mod linear_space;
 #[cfg(feature = "log")]
 mod log;
 #[cfg(feature = "moment")]
@@ -105,6 +106,7 @@ pub use is_in::*;
 pub use is_last_distinct::*;
 #[cfg(feature = "is_unique")]
 pub use is_unique::*;
+pub use linear_space::*;
 #[cfg(feature = "log")]
 pub use log::*;
 #[cfg(feature = "moment")]

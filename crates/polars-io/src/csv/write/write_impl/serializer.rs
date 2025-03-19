@@ -38,7 +38,7 @@ use arrow::legacy::time_zone::Tz;
 use arrow::types::NativeType;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
-use memchr::{memchr3, memchr_iter};
+use memchr::{memchr_iter, memchr3};
 use num_traits::NumCast;
 use polars_core::prelude::*;
 
@@ -242,9 +242,9 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
 fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer {
     let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
 
+    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        let value = arrow::compute::decimal::format_decimal(item, scale, trim_zeros);
-        buf.extend_from_slice(value.as_str().as_bytes());
+        buf.extend_from_slice(fmt_buf.format(item, scale, trim_zeros).as_bytes());
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -289,11 +289,11 @@ fn date_and_time_serializer<'a, Underlying: NativeType, T: std::fmt::Display>(
     sample_value: T,
     mut convert: impl FnMut(Underlying) -> T + Send + 'a,
     mut format_fn: impl for<'b> FnMut(
-            &T,
-            ChronoFormatIter<'b, 'a>,
-        ) -> chrono::format::DelayedFormat<ChronoFormatIter<'b, 'a>>
-        + Send
-        + 'a,
+        &T,
+        ChronoFormatIter<'b, 'a>,
+    ) -> chrono::format::DelayedFormat<ChronoFormatIter<'b, 'a>>
+    + Send
+    + 'a,
     options: &SerializeOptions,
 ) -> PolarsResult<Box<dyn Serializer<'a> + Send + 'a>> {
     let array = array.as_any().downcast_ref().unwrap();
@@ -716,7 +716,9 @@ mod test {
             let serialized = std::str::from_utf8(&buf).unwrap();
             // Don't use `assert_eq!()` because it prints debug format and it's hard to read with all the escapes.
             if serialized != expected {
-                panic!("CSV string {s:?} wasn't serialized correctly: expected: `{expected}`, got: `{serialized}`");
+                panic!(
+                    "CSV string {s:?} wasn't serialized correctly: expected: `{expected}`, got: `{serialized}`"
+                );
             }
         }
 

@@ -1,10 +1,10 @@
-use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::bitmask::BitMask;
 use arrow::types::AlignedBytes;
 
 use super::{
-    no_more_bitpacked_values, oob_dict_idx, optional_skip_whole_chunks, verify_dict_indices,
-    IndexMapping,
+    IndexMapping, no_more_bitpacked_values, oob_dict_idx, optional_skip_whole_chunks,
+    verify_dict_indices,
 };
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;

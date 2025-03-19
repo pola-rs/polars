@@ -77,7 +77,7 @@ def test_object_dtype_16905() -> None:
     with pytest.raises(InvalidOperationError):
         s[0] = 5
     # The error doesn't trash the series, as it used to:
-    assert s.dtype == pl.Object
+    assert s.dtype.is_object()
     assert s.name == "s"
     assert s.to_list() == [obj, 27]
 

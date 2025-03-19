@@ -30,13 +30,12 @@ def show_versions() -> None:
     fsspec:               2023.12.2
     gevent:               24.2.1
     matplotlib:           3.8.4
-    nest_asyncio:         1.6.0
     numpy:                1.26.4
     openpyxl:             3.1.2
     pandas:               2.2.2
     pyarrow:              16.0.0
     pydantic:             2.7.1
-    pyiceberg:            0.6.0
+    pyiceberg:            0.7.1
     sqlalchemy:           2.0.29
     torch:                2.2.2
     xlsx2csv:             0.8.2
@@ -85,10 +84,10 @@ def _get_dependency_list() -> list[str]:
         "google.auth",
         "great_tables",
         "matplotlib",
-        "nest_asyncio",
         "numpy",
         "openpyxl",
         "pandas",
+        "polars_cloud",
         "pyarrow",
         "pydantic",
         "pyiceberg",

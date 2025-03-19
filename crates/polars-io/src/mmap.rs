@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
 
 use polars_core::config::verbose;
+use polars_utils::file::ClosableFile;
 use polars_utils::mmap::MemSlice;
 
 /// Trait used to get a hold to file handler or to the underlying bytes
@@ -19,6 +20,12 @@ pub trait MmapBytesReader: Read + Seek + Send + Sync {
 impl MmapBytesReader for File {
     fn to_file(&self) -> Option<&File> {
         Some(self)
+    }
+}
+
+impl MmapBytesReader for ClosableFile {
+    fn to_file(&self) -> Option<&File> {
+        Some(self.as_ref())
     }
 }
 

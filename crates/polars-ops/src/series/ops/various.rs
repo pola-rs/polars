@@ -5,6 +5,7 @@ use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::total_ord::TotalOrd;
 
 use crate::series::ops::SeriesSealed;
@@ -55,7 +56,7 @@ pub trait SeriesMethods: SeriesSealed {
     }
 
     #[cfg(feature = "hash")]
-    fn hash(&self, build_hasher: PlRandomState) -> UInt64Chunked {
+    fn hash(&self, build_hasher: PlSeedableRandomStateQuality) -> UInt64Chunked {
         let s = self.as_series().to_physical_repr();
         match s.dtype() {
             DataType::List(_) => {
@@ -131,8 +132,8 @@ pub trait SeriesMethods: SeriesSealed {
         }
 
         let cmp_len = s_len - null_count - 1; // Number of comparisons we might have to do
-                                              // TODO! Change this, allocation of a full boolean series is too expensive and doesn't fail fast.
-                                              // Compare adjacent elements with no-copy slices that don't include any nulls
+        // TODO! Change this, allocation of a full boolean series is too expensive and doesn't fail fast.
+        // Compare adjacent elements with no-copy slices that don't include any nulls
         let offset = !options.nulls_last as i64 * null_count as i64;
         let (s1, s2) = (s.slice(offset, cmp_len), s.slice(offset + 1, cmp_len));
         let cmp_op = if options.descending {

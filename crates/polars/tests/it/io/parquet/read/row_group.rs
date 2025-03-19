@@ -5,7 +5,7 @@ use arrow::datatypes::{ArrowSchemaRef, Field};
 use arrow::record_batch::RecordBatchT;
 use polars::prelude::ArrowSchema;
 use polars_error::PolarsResult;
-use polars_parquet::arrow::read::{column_iter_to_arrays, Filter};
+use polars_parquet::arrow::read::{Filter, column_iter_to_arrays};
 use polars_parquet::parquet::metadata::ColumnChunkMetadata;
 use polars_parquet::parquet::read::{BasicDecompressor, PageReader};
 use polars_parquet::read::RowGroupMetadata;
@@ -133,7 +133,7 @@ pub fn to_deserializer(
         })
         .unzip();
 
-    column_iter_to_arrays(columns, types, field, filter)
+    column_iter_to_arrays(columns, types, field, filter).map(|v| v.0)
 }
 
 /// Returns a vector of iterators of [`Array`] ([`ArrayIter`]) corresponding to the top

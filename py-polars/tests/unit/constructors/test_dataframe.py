@@ -51,7 +51,7 @@ def test_df_object() -> None:
             return f"{self.__class__.__name__}({self._value})"
 
     df = pl.DataFrame({"a": [Foo(1), Foo(2)]})
-    assert df["a"].dtype == pl.Object
+    assert df["a"].dtype.is_object()
     assert df.rows() == [(Foo(1),), (Foo(2),)]
 
 

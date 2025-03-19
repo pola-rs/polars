@@ -12,6 +12,9 @@ python:
   concat_list: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.concat_list.html
   concat_str: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.concat_str.html
   Config: https://docs.pola.rs/api/python/stable/reference/config.html
+  CredentialProviderAWS: https://docs.pola.rs/api/python/stable/reference/api/polars.CredentialProviderAWS.html
+  CredentialProviderAzure: https://docs.pola.rs/api/python/stable/reference/api/polars.CredentialProviderAzure.html
+  CredentialProviderGCP: https://docs.pola.rs/api/python/stable/reference/api/polars.CredentialProviderGCP.html
   cs.by_name: https://docs.pola.rs/api/python/stable/reference/selectors.html#polars.selectors.by_name
   cs.contains: https://docs.pola.rs/api/python/stable/reference/selectors.html#polars.selectors.contains
   cs.first: https://docs.pola.rs/api/python/stable/reference/selectors.html#polars.selectors.first
@@ -178,6 +181,13 @@ python:
   write_json: https://docs.pola.rs/api/python/stable/reference/api/polars.DataFrame.write_json.html
   write_ndjson: https://docs.pola.rs/api/python/stable/reference/api/polars.DataFrame.write_ndjson.html
   write_parquet: https://docs.pola.rs/api/python/stable/reference/api/polars.DataFrame.write_parquet.html
+  Workspace: https://docs.cloud.pola.rs/reference/workspace/workspace.html
+  ComputeContext: https://docs.cloud.pola.rs/reference/compute/compute.html
+  LazyFrameExt : https://docs.cloud.pola.rs/reference/query/lazyframeext.html
+  QueryResult : https://docs.cloud.pola.rs/reference/query/query_result.html
+  InteractiveQuery : https://docs.cloud.pola.rs/reference/query/interactive_query.html
+  BatchQuery: https://docs.cloud.pola.rs/reference/query/batch_query.html
+  login: https://docs.cloud.pola.rs/reference/auth/api/polars_cloud.login.html
 
 rust:
   agg: https://docs.rs/polars/latest/polars/prelude/struct.LazyGroupBy.html#method.agg

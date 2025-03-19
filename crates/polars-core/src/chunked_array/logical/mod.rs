@@ -40,6 +40,12 @@ pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType>(
     pub Option<DataType>,
 );
 
+impl<K: PolarsDataType, T: PolarsDataType> Default for Logical<K, T> {
+    fn default() -> Self {
+        Self(Default::default(), Default::default(), Default::default())
+    }
+}
+
 impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
     fn clone(&self) -> Self {
         let mut new = Logical::<K, _>::new_logical(self.0.clone());

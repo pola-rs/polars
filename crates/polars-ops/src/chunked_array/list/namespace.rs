@@ -1,12 +1,12 @@
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
+#[cfg(feature = "list_gather")]
+use num_traits::ToPrimitive;
+#[cfg(feature = "list_gather")]
+use num_traits::{NumCast, Signed, Zero};
 use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
-#[cfg(feature = "list_gather")]
-use polars_core::export::num::ToPrimitive;
-#[cfg(feature = "list_gather")]
-use polars_core::export::num::{NumCast, Signed, Zero};
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;

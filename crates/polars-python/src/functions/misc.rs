@@ -1,10 +1,10 @@
 use polars_plan::prelude::*;
 use pyo3::prelude::*;
 
+use crate::PyExpr;
 use crate::conversion::Wrap;
 use crate::expr::ToExprs;
 use crate::prelude::DataType;
-use crate::PyExpr;
 
 #[pyfunction]
 pub fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
@@ -67,5 +67,7 @@ pub fn register_plugin_function(
 #[pyfunction]
 pub fn __register_startup_deps() {
     #[cfg(feature = "object")]
-    crate::on_startup::register_startup_deps()
+    unsafe {
+        crate::on_startup::register_startup_deps(true)
+    }
 }

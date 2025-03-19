@@ -310,3 +310,9 @@ def test_slice_pushdown_panic_20216() -> None:
 
     assert_frame_equal(q.slice(0, 1).collect(), pl.DataFrame({"A": ["1"]}))
     assert_frame_equal(q.collect(), pl.DataFrame({"A": ["1"]}))
+
+
+def test_slice_empty_morsel_input() -> None:
+    q = pl.LazyFrame({"a": []})
+    assert_frame_equal(q.slice(999, 3).slice(999, 3).collect(), q.collect().clear())
+    assert_frame_equal(q.slice(-999, 3).slice(-999, 3).collect(), q.collect().clear())

@@ -19,16 +19,16 @@ mod schema;
 mod stream;
 
 pub(crate) use common::first_dict_field;
-pub use common::{prepare_projection, ProjectionInfo};
+pub use common::{ProjectionInfo, prepare_projection};
 pub use error::OutOfSpecKind;
 pub use file::{
-    deserialize_footer, get_row_count, get_row_count_from_blocks, read_batch,
-    read_file_dictionaries, read_file_metadata, FileMetadata,
+    FileMetadata, deserialize_footer, get_row_count, get_row_count_from_blocks, read_batch,
+    read_file_dictionaries, read_file_metadata,
 };
 use polars_utils::aliases::PlHashMap;
 pub use reader::FileReader;
 pub use schema::deserialize_schema;
-pub use stream::{read_stream_metadata, StreamMetadata, StreamReader, StreamState};
+pub use stream::{StreamMetadata, StreamReader, StreamState, read_stream_metadata};
 
 /// how dictionaries are tracked in this crate
 pub type Dictionaries = PlHashMap<i64, Box<dyn Array>>;

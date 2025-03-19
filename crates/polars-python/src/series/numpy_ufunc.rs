@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ptr;
 
 use ndarray::IntoDimension;
 use numpy::npyffi::types::npy_intp;
 use numpy::npyffi::{self, flags};
-use numpy::{Element, PyArray1, PyArrayDescrMethods, ToNpyDims, PY_ARRAY_API};
+use numpy::{Element, PY_ARRAY_API, PyArray1, PyArrayDescrMethods, ToNpyDims};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::prelude::*;

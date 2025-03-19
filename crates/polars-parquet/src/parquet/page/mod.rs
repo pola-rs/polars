@@ -1,12 +1,13 @@
 use super::CowBuffer;
 use crate::parquet::compression::Compression;
-use crate::parquet::encoding::{get_length, Encoding};
+use crate::parquet::encoding::{Encoding, get_length};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::Descriptor;
 pub use crate::parquet::parquet_bridge::{DataPageHeaderExt, PageType};
 use crate::parquet::statistics::Statistics;
 pub use crate::parquet::thrift_format::{
-    DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, PageHeader as ParquetPageHeader,
+    DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, Encoding as FormatEncoding,
+    PageHeader as ParquetPageHeader,
 };
 
 pub enum PageResult {
@@ -129,6 +130,17 @@ impl DataPageHeader {
             DataPageHeader::V1(_) => None,
             DataPageHeader::V2(d) => Some(d.num_nulls as usize),
         }
+    }
+
+    pub fn encoding(&self) -> FormatEncoding {
+        match self {
+            DataPageHeader::V1(d) => d.encoding,
+            DataPageHeader::V2(d) => d.encoding,
+        }
+    }
+
+    pub fn is_dictionary_encoded(&self) -> bool {
+        matches!(self.encoding(), FormatEncoding::RLE_DICTIONARY)
     }
 }
 

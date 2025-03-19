@@ -46,6 +46,7 @@ def test_set_intersection_st_17129() -> None:
         ),
     ],
 )
+@pytest.mark.may_fail_auto_streaming
 def test_set_operations_cats(set_operation: str, outcome: list[set[str]]) -> None:
     with pytest.warns(CategoricalRemappingWarning):
         df = pl.DataFrame(

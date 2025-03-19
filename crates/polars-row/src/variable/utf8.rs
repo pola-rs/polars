@@ -1,16 +1,17 @@
-/// Row encoding for UTF-8 strings
-///
-/// This encoding is based on the fact that in UTF-8 the bytes 0xFC - 0xFF are never valid bytes.
-/// To make this work with the row encoding, we add 2 to each byte which gives us two bytes which
-/// never occur in UTF-8 before and after the possible byte range. The values 0x00 and 0xFF are
-/// reserved for the null sentinel. The values 0x01 and 0xFE are reserved as a sequence terminator
-/// byte.
-///
-/// This allows the string row encoding to have a constant 1 byte overhead.
+#![allow(unsafe_op_in_unsafe_fn)]
+//! Row encoding for UTF-8 strings
+//!
+//! This encoding is based on the fact that in UTF-8 the bytes 0xFC - 0xFF are never valid bytes.
+//! To make this work with the row encoding, we add 2 to each byte which gives us two bytes which
+//! never occur in UTF-8 before and after the possible byte range. The values 0x00 and 0xFF are
+//! reserved for the null sentinel. The values 0x01 and 0xFE are reserved as a sequence terminator
+//! byte.
+//!
+//! This allows the string row encoding to have a constant 1 byte overhead.
 use std::mem::MaybeUninit;
 
 use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 
 use crate::row::RowEncodingOptions;
 
@@ -98,7 +99,7 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
         return array.into();
     }
 
-    let mut validity = MutableBitmap::with_capacity(num_rows);
+    let mut validity = BitmapBuilder::with_capacity(num_rows);
     validity.extend_constant(array.len(), true);
     validity.push(false);
     array.push_value_ignore_validity("");
@@ -124,5 +125,5 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
     }
 
     let out: Utf8ViewArray = array.into();
-    out.with_validity(Some(validity.freeze()))
+    out.with_validity(validity.into_opt_validity())
 }

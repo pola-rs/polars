@@ -1,6 +1,7 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use crate::array::{
-    new_null_array, Array, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryViewArray,
-    PrimitiveArray, StructArray, ViewType,
+    Array, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryViewArray, PrimitiveArray,
+    StructArray, ViewType, new_null_array,
 };
 use crate::bitmap::BitmapBuilder;
 use crate::datatypes::ArrowDataType;
@@ -219,7 +220,7 @@ pub fn convert_inner_type(array: &dyn Array, dtype: &ArrowDataType) -> Box<dyn A
             let length = if width == array.size() {
                 array.len()
             } else {
-                assert!(array.values().len() > 0 || width != 0);
+                assert!(!array.values().is_empty() || width != 0);
                 if width == 0 {
                     0
                 } else {

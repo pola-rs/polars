@@ -9,16 +9,15 @@ use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
 use crate::array::binview::view::validate_utf8_only;
-use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
+use crate::array::binview::{
+    BinaryViewArrayGeneric, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE, ViewType,
+};
 use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::trusted_len::TrustedLen;
-
-const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
-const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 
 // Invariants:
 //
@@ -341,7 +340,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             self.init_validity(false);
         }
         self.views
-            .extend(std::iter::repeat(View::default()).take(additional));
+            .extend(std::iter::repeat_n(View::default(), additional));
         if let Some(validity) = &mut self.validity {
             validity.extend_constant(additional, false);
         }
@@ -366,7 +365,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             })
             .unwrap_or_default();
         self.views
-            .extend(std::iter::repeat(view_value).take(additional));
+            .extend(std::iter::repeat_n(view_value, additional));
     }
 
     impl_mutable_array_mut_validity!();
@@ -586,6 +585,44 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
     pub fn values_iter(&self) -> MutableBinaryViewValueIter<T> {
         MutableBinaryViewValueIter::new(self)
+    }
+
+    pub fn extend_from_array(&mut self, other: &BinaryViewArrayGeneric<T>) {
+        let slf_len = self.len();
+        match (&mut self.validity, other.validity()) {
+            (None, None) => {},
+            (Some(v), None) => v.extend_constant(other.len(), true),
+            (v @ None, Some(other)) => {
+                let mut bm = MutableBitmap::with_capacity(slf_len + other.len());
+                bm.extend_constant(slf_len, true);
+                bm.extend_from_bitmap(other);
+                *v = Some(bm);
+            },
+            (Some(slf), Some(other)) => slf.extend_from_bitmap(other),
+        }
+
+        if other.total_buffer_len() == 0 {
+            self.views.extend(other.views().iter().copied());
+        } else {
+            self.finish_in_progress();
+
+            let buffer_offset = self.completed_buffers().len() as u32;
+            self.completed_buffers
+                .extend(other.data_buffers().iter().cloned());
+
+            self.views.extend(other.views().iter().map(|view| {
+                let mut view = *view;
+                if view.length > View::MAX_INLINE_SIZE {
+                    view.buffer_idx += buffer_offset;
+                }
+                view
+            }));
+
+            let new_total_buffer_len = self.total_buffer_len() + other.total_buffer_len();
+            self.total_buffer_len = new_total_buffer_len;
+        }
+
+        self.total_bytes_len = self.total_bytes_len() + other.total_bytes_len();
     }
 }
 

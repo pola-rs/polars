@@ -6,9 +6,9 @@ use polars_utils::idx_vec::IdxVec;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 
-use crate::prelude::*;
-use crate::utils::{flatten, slice_slice, NoNull};
 use crate::POOL;
+use crate::prelude::*;
+use crate::utils::{NoNull, flatten, slice_slice};
 
 /// Indexes of the groups, the first index is stored separately.
 /// this make sorting fast.
@@ -261,7 +261,9 @@ impl GroupsType {
         match self {
             GroupsType::Idx(groups) => groups,
             GroupsType::Slice { groups, .. } => {
-                polars_warn!("Had to reallocate groups, missed an optimization opportunity. Please open an issue.");
+                polars_warn!(
+                    "Had to reallocate groups, missed an optimization opportunity. Please open an issue."
+                );
                 groups
                     .iter()
                     .map(|&[first, len]| (first, (first..first + len).collect::<IdxVec>()))
@@ -582,13 +584,26 @@ impl<'a> ParallelIterator for GroupsTypeParIter<'a> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct GroupPositions {
     sliced: ManuallyDrop<GroupsType>,
     // Unsliced buffer
     original: Arc<GroupsType>,
     offset: i64,
     len: usize,
+}
+
+impl Clone for GroupPositions {
+    fn clone(&self) -> Self {
+        let sliced = slice_groups_inner(&self.original, self.offset, self.len);
+
+        Self {
+            sliced,
+            original: self.original.clone(),
+            offset: self.offset,
+            len: self.len,
+        }
+    }
 }
 
 impl PartialEq for GroupPositions {
@@ -620,8 +635,12 @@ impl Default for GroupPositions {
 impl GroupPositions {
     pub fn slice(&self, offset: i64, len: usize) -> Self {
         let offset = self.offset + offset;
-        assert!(len <= self.len);
-        slice_groups(self.original.clone(), offset, len)
+        slice_groups(
+            self.original.clone(),
+            offset,
+            // invariant that len should be in bounds, so truncate if not
+            if len > self.len { self.len } else { len },
+        )
     }
 
     pub fn sort(&mut self) {

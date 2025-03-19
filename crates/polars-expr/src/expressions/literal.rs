@@ -149,8 +149,6 @@ impl PhysicalExpr for LiteralExpr {
         Some(self)
     }
 
-    fn collect_live_columns(&self, _lv: &mut PlIndexSet<PlSmallStr>) {}
-
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         let dtype = self.0.get_datatype();
         Ok(Field::new(PlSmallStr::from_static("literal"), dtype))

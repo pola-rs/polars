@@ -140,9 +140,20 @@ impl IR {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
+            SinkMultiple { .. } => SinkMultiple { inputs },
             SimpleProjection { columns, .. } => SimpleProjection {
                 input: inputs.pop().unwrap(),
                 columns: columns.clone(),
+            },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left: _,
+                input_right: _,
+                key,
+            } => MergeSorted {
+                input_left: inputs[0],
+                input_right: inputs[1],
+                key: key.clone(),
             },
             Invalid => unreachable!(),
         }
@@ -152,7 +163,12 @@ impl IR {
     pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
         use IR::*;
         match self {
-            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
+            Slice { .. }
+            | Cache { .. }
+            | Distinct { .. }
+            | Union { .. }
+            | MapFunction { .. }
+            | SinkMultiple { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
             Select { expr, .. } => container.extend_from_slice(expr),
@@ -177,6 +193,8 @@ impl IR {
             PythonScan { .. } => {},
             HConcat { .. } => {},
             ExtContext { .. } | Sink { .. } | SimpleProjection { .. } => {},
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => {},
             Invalid => unreachable!(),
         }
     }
@@ -197,11 +215,7 @@ impl IR {
     {
         use IR::*;
         let input = match self {
-            Union { inputs, .. } => {
-                container.extend(inputs.iter().cloned());
-                return;
-            },
-            HConcat { inputs, .. } => {
+            Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
                 container.extend(inputs.iter().cloned());
                 return;
             },
@@ -234,6 +248,15 @@ impl IR {
             DataFrameScan { .. } => return,
             #[cfg(feature = "python")]
             PythonScan { .. } => return,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                ..
+            } => {
+                container.extend([*input_left, *input_right]);
+                return;
+            },
             Invalid => unreachable!(),
         };
         container.extend([input])

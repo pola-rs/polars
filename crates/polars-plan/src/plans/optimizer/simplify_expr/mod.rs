@@ -338,7 +338,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_left,
                         function:
-                            ref fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
                                 delimiter: sep_l,
                                 ignore_nulls: ignore_nulls_l,
                             }),
@@ -372,7 +372,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input,
                         function:
-                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
                                 delimiter: sep,
                                 ignore_nulls,
                             }),
@@ -398,7 +398,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_right,
                         function:
-                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
                                 delimiter: sep,
                                 ignore_nulls,
                             }),

@@ -6,6 +6,7 @@ from typing import (
     IO,
     TYPE_CHECKING,
     Any,
+    Callable,
     Literal,
     Protocol,
     TypedDict,
@@ -149,6 +150,7 @@ StartBy: TypeAlias = Literal[
     "saturday",
     "sunday",
 ]
+SyncOnCloseMethod: TypeAlias = Literal["data", "all"]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UnicodeForm: TypeAlias = Literal["NFC", "NFKC", "NFD", "NFKD"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
@@ -183,6 +185,10 @@ ConcatMethod = Literal[
     "diagonal_relaxed",
     "horizontal",
     "align",
+    "align_full",
+    "align_inner",
+    "align_left",
+    "align_right",
 ]
 CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
@@ -306,7 +312,9 @@ SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
 MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]
 
 # LazyFrame engine selection
-EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
+EngineType: TypeAlias = Union[
+    Literal["auto", "in-memory", "streaming", "gpu"], "GPUEngine"
+]
 
 FileSource: TypeAlias = Union[
     str,
@@ -318,3 +326,5 @@ FileSource: TypeAlias = Union[
     list[IO[bytes]],
     list[bytes],
 ]
+
+JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]

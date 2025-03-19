@@ -1,20 +1,20 @@
 use std::collections::VecDeque;
 use std::ops::Deref;
 
+use polars_core::POOL;
 use polars_core::datatypes::Field;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
-use polars_core::POOL;
 use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use super::{cast_columns, read_chunk, CoreReader, CountLines};
-use crate::csv::read::options::NullValuesCompiled;
-use crate::csv::read::CsvReader;
-use crate::mmap::{MmapBytesReader, ReaderBytes};
-use crate::prelude::{update_row_counts2, CsvParseOptions};
+use super::{CoreReader, CountLines, cast_columns, read_chunk};
 use crate::RowIndex;
+use crate::csv::read::CsvReader;
+use crate::csv::read::options::NullValuesCompiled;
+use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::prelude::{CsvParseOptions, update_row_counts2};
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn get_file_chunks_iterator(
@@ -254,7 +254,7 @@ impl BatchedCsvReader<'_> {
                     cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
                     if let Some(rc) = &self.row_index {
-                        df.with_row_index_mut(rc.name.clone(), Some(rc.offset));
+                        unsafe { df.with_row_index_mut(rc.name.clone(), Some(rc.offset)) };
                     }
                     Ok(df)
                 })

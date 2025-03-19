@@ -3,9 +3,9 @@ use polars_core::utils::Container;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
 pub struct WithRowIndexNode {
     name: PlSmallStr,
@@ -26,7 +26,12 @@ impl ComputeNode for WithRowIndexNode {
         "with_row_index"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
         recv.swap_with_slice(send);
         Ok(())
@@ -37,7 +42,7 @@ impl ComputeNode for WithRowIndexNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);
@@ -45,7 +50,7 @@ impl ComputeNode for WithRowIndexNode {
         let senders = send_ports[0].take().unwrap().parallel();
 
         let (mut distributor, distr_receivers) =
-            distributor_channel(senders.len(), DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+            distributor_channel(senders.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
         let name = self.name.clone();
 

@@ -138,6 +138,8 @@ where
 /// Returns a [`Utf8Array`] where every element is the utf8 representation of the decimal.
 #[cfg(feature = "dtype-decimal")]
 pub(super) fn decimal_to_utf8view(from: &PrimitiveArray<i128>) -> Utf8ViewArray {
+    use arrow::compute::decimal::DecimalFmtBuffer;
+
     let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.dtype().to_logical_type() {
         (*p, *s)
     } else {
@@ -145,10 +147,9 @@ pub(super) fn decimal_to_utf8view(from: &PrimitiveArray<i128>) -> Utf8ViewArray 
     };
 
     let mut mutable = MutableBinaryViewArray::with_capacity(from.len());
-
+    let mut fmt_buf = DecimalFmtBuffer::new();
     for &x in from.values().iter() {
-        let buf = arrow::compute::decimal::format_decimal(x, from_scale, false);
-        mutable.push_value_ignore_validity(buf.as_str())
+        mutable.push_value_ignore_validity(fmt_buf.format(x, from_scale, false))
     }
 
     mutable.freeze().with_validity(from.validity().cloned())

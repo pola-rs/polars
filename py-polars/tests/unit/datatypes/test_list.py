@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import NUMERIC_DTYPES
+from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -142,6 +142,15 @@ def test_list_fill_null() -> None:
         .otherwise(pl.col("C"))
         .alias("C")
     ).to_series().to_list() == [["a", "b", "c"], None, None, ["d", "e"]]
+
+
+def test_list_fill_select_null() -> None:
+    assert pl.DataFrame({"a": [None, []]}).select(
+        pl.when(pl.col("a").list.len() == 0)
+        .then(None)
+        .otherwise(pl.col("a"))
+        .alias("a")
+    ).to_series().to_list() == [None, None]
 
 
 def test_list_fill_list() -> None:
@@ -874,6 +883,7 @@ def test_list_list_sum_exception_12935() -> None:
         pl.Series([[1], [2]]).sum()
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_null_list_categorical_16405() -> None:
     df = pl.DataFrame(
         [(None, "foo")],
@@ -906,3 +916,13 @@ def test_sort() -> None:
     tc([[1], []], [[], [1]])
     tc([[2, 1]], [[2, 1]])
     tc([[2, 1], [1, 2]], [[1, 2], [2, 1]])
+
+
+@pytest.mark.parametrize("inner_dtype", TEMPORAL_DTYPES)
+@pytest.mark.parametrize("agg", ["min", "max", "mean", "median"])
+def test_list_agg_temporal(inner_dtype: PolarsDataType, agg: str) -> None:
+    lf = pl.LazyFrame({"a": [[1, 3]]}, schema={"a": pl.List(inner_dtype)})
+    result = lf.select(getattr(pl.col("a").list, agg)())
+    expected = lf.select(getattr(pl.col("a").explode(), agg)())
+    assert result.collect_schema() == expected.collect_schema()
+    assert_frame_equal(result.collect(), expected.collect())

@@ -12,17 +12,17 @@ use super::async_impl::FetchRowGroupsFromObjectStore;
 #[cfg(feature = "cloud")]
 use super::async_impl::ParquetObjectStore;
 pub use super::read_impl::BatchedParquetReader;
-use super::read_impl::{compute_row_group_range, read_parquet, FetchRowGroupsFromMmapReader};
+use super::read_impl::{FetchRowGroupsFromMmapReader, compute_row_group_range, read_parquet};
 #[cfg(feature = "cloud")]
 use super::utils::materialize_empty_df;
 use super::utils::{ensure_matching_dtypes_if_found, projected_arrow_schema_to_projection_indices};
+use crate::RowIndex;
 #[cfg(feature = "cloud")]
 use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
 use crate::parquet::metadata::FileMetadataRef;
-use crate::predicates::PhysicalIoExpr;
+use crate::predicates::ScanIOPredicate;
 use crate::prelude::*;
-use crate::RowIndex;
 
 /// Read Apache parquet format into a DataFrame.
 #[must_use]
@@ -37,7 +37,7 @@ pub struct ParquetReader<R: Read + Seek> {
     row_index: Option<RowIndex>,
     low_memory: bool,
     metadata: Option<FileMetadataRef>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<ScanIOPredicate>,
     hive_partition_columns: Option<Vec<Series>>,
     include_file_path: Option<(PlSmallStr, Arc<str>)>,
     use_statistics: bool,
@@ -89,8 +89,8 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         projected_arrow_schema: Option<&ArrowSchema>,
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
-        // `self.schema` gets overwritten if allow_missing_columns
-        let this_schema_width = self.schema()?.len();
+        let slf_schema = self.schema()?;
+        let slf_schema_width = slf_schema.len();
 
         if allow_missing_columns {
             // Must check the dtypes
@@ -98,7 +98,14 @@ impl<R: MmapBytesReader> ParquetReader<R> {
                 projected_arrow_schema.unwrap_or(first_schema.as_ref()),
                 self.schema()?.as_ref(),
             )?;
-            self.schema.replace(first_schema.clone());
+            self.schema = Some(Arc::new(
+                first_schema
+                    .iter()
+                    .map(|(name, field)| {
+                        (name.clone(), slf_schema.get(name).unwrap_or(field).clone())
+                    })
+                    .collect(),
+            ));
         }
 
         let schema = self.schema()?;
@@ -110,7 +117,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
                     projected_arrow_schema,
                 )?;
             } else {
-                if this_schema_width > first_schema.len() {
+                if slf_schema_width > first_schema.len() {
                     polars_bail!(
                        SchemaMismatch:
                        "parquet file contained extra columns and no selection was given"
@@ -189,7 +196,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         Ok(self.metadata.as_ref().unwrap())
     }
 
-    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
+    pub fn with_predicate(mut self, predicate: Option<ScanIOPredicate>) -> Self {
         self.predicate = predicate;
         self
     }
@@ -249,7 +256,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let schema = self.schema()?;
         let metadata = self.get_metadata()?.clone();
-        let n_rows = metadata.num_rows;
+        let n_rows = metadata.num_rows.min(self.slice.0 + self.slice.1);
 
         if let Some(cols) = &self.columns {
             self.projection = Some(columns_to_projection(cols, schema.as_ref())?);
@@ -261,7 +268,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             self.projection.as_deref(),
             &schema,
             Some(metadata),
-            self.predicate.as_deref(),
+            self.predicate.as_ref(),
             self.parallel,
             self.row_index,
             self.use_statistics,
@@ -297,7 +304,7 @@ pub struct ParquetAsyncReader {
     slice: (usize, usize),
     rechunk: bool,
     projection: Option<Vec<usize>>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<ScanIOPredicate>,
     row_index: Option<RowIndex>,
     use_statistics: bool,
     hive_partition_columns: Option<Vec<Series>>,
@@ -334,8 +341,8 @@ impl ParquetAsyncReader {
         projected_arrow_schema: Option<&ArrowSchema>,
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
-        // `self.schema` gets overwritten if allow_missing_columns
-        let this_schema_width = self.schema().await?.len();
+        let slf_schema = self.schema().await?;
+        let slf_schema_width = slf_schema.len();
 
         if allow_missing_columns {
             // Must check the dtypes
@@ -343,7 +350,14 @@ impl ParquetAsyncReader {
                 projected_arrow_schema.unwrap_or(first_schema.as_ref()),
                 self.schema().await?.as_ref(),
             )?;
-            self.schema.replace(first_schema.clone());
+            self.schema = Some(Arc::new(
+                first_schema
+                    .iter()
+                    .map(|(name, field)| {
+                        (name.clone(), slf_schema.get(name).unwrap_or(field).clone())
+                    })
+                    .collect(),
+            ));
         }
 
         let schema = self.schema().await?;
@@ -355,7 +369,7 @@ impl ParquetAsyncReader {
                     projected_arrow_schema,
                 )?;
             } else {
-                if this_schema_width > first_schema.len() {
+                if slf_schema_width > first_schema.len() {
                     polars_bail!(
                        SchemaMismatch:
                        "parquet file contained extra columns and no selection was given"
@@ -423,7 +437,7 @@ impl ParquetAsyncReader {
         self
     }
 
-    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
+    pub fn with_predicate(mut self, predicate: Option<ScanIOPredicate>) -> Self {
         self.predicate = predicate;
         self
     }

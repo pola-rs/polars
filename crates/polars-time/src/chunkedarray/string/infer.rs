@@ -1,7 +1,8 @@
+use std::sync::LazyLock;
+
 use arrow::array::PrimitiveArray;
 use chrono::format::ParseErrorKind;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
-use once_cell::sync::Lazy;
 use polars_core::prelude::*;
 use regex::Regex;
 
@@ -36,7 +37,8 @@ const DATETIME_DMY_PATTERN: &str = r#"(?x)
         $
         "#;
 
-static DATETIME_DMY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(DATETIME_DMY_PATTERN).unwrap());
+static DATETIME_DMY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(DATETIME_DMY_PATTERN).unwrap());
 const DATETIME_YMD_PATTERN: &str = r#"(?x)
         ^
         ['"]?                      # optional quotes
@@ -61,7 +63,8 @@ const DATETIME_YMD_PATTERN: &str = r#"(?x)
         ['"]?                      # optional quotes
         $
         "#;
-static DATETIME_YMD_RE: Lazy<Regex> = Lazy::new(|| Regex::new(DATETIME_YMD_PATTERN).unwrap());
+static DATETIME_YMD_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(DATETIME_YMD_PATTERN).unwrap());
 const DATETIME_YMDZ_PATTERN: &str = r#"(?x)
         ^
         ['"]?                  # optional quotes
@@ -92,7 +95,8 @@ const DATETIME_YMDZ_PATTERN: &str = r#"(?x)
         ['"]?                  # optional quotes
         $
         "#;
-static DATETIME_YMDZ_RE: Lazy<Regex> = Lazy::new(|| Regex::new(DATETIME_YMDZ_PATTERN).unwrap());
+static DATETIME_YMDZ_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(DATETIME_YMDZ_PATTERN).unwrap());
 
 impl Pattern {
     pub fn is_inferable(&self, val: &str) -> bool {

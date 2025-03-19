@@ -1,11 +1,10 @@
 use polars_error::PolarsResult;
 
-use crate::array::{new_null_array, Array, ArrayRef, ListArray, NullArray};
+use crate::array::{Array, ArrayRef, ListArray, NullArray, new_null_array};
 use crate::bitmap::BitmapBuilder;
 use crate::compute::concatenate;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::array::is_nested_null;
-use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use crate::legacy::prelude::*;
 use crate::offset::Offsets;
 
@@ -149,7 +148,7 @@ impl<'a> AnonymousBuilder<'a> {
                     })
                     .collect::<Vec<_>>();
 
-                let values = concatenate_owned_unchecked(&arrays)?;
+                let values = concatenate::concatenate_unchecked(&arrays)?;
                 (dtype.clone(), values)
             } else {
                 let values = concatenate::concatenate(&self.arrays)?;

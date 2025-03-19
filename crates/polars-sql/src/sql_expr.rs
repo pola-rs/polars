@@ -9,30 +9,28 @@
 use std::fmt::Display;
 use std::ops::Div;
 
-use polars_core::export::regex;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
-use polars_plan::prelude::typed_lit;
 use polars_plan::prelude::LiteralValue::Null;
+use polars_plan::prelude::typed_lit;
 use polars_time::Duration;
 use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat, CastKind,
-    DataType as SQLDataType, DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident,
-    Interval, Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField,
-    UnaryOperator, Value as SQLValue,
+    BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
+    DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident, Interval, Query as Subquery,
+    SelectItem, Subscript, TimezoneInfo, TrimWhereField, UnaryOperator, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
+use crate::SQLContext;
 use crate::functions::SQLFunctionVisitor;
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
 };
-use crate::SQLContext;
 
 #[inline]
 #[cold]
@@ -126,7 +124,7 @@ impl SQLExprVisitor<'_> {
             } => {
                 let expr = self.visit_expr(expr)?;
                 let elems = self.visit_array_expr(list, false, Some(&expr))?;
-                let is_in = expr.is_in(elems);
+                let is_in = expr.is_in(elems, false);
                 Ok(if *negated { is_in.not() } else { is_in })
             },
             SQLExpr::InSubquery {
@@ -134,7 +132,7 @@ impl SQLExprVisitor<'_> {
                 subquery,
                 negated,
             } => self.visit_in_subquery(expr, subquery, *negated),
-            SQLExpr::Interval(interval) => self.visit_interval(interval),
+            SQLExpr::Interval(interval) => Ok(lit(interval_to_duration(interval, true)?)),
             SQLExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
             },
@@ -302,30 +300,6 @@ impl SQLExprVisitor<'_> {
         Ok(resolve_compound_identifier(self.ctx, idents, self.active_schema)?[0].clone())
     }
 
-    fn visit_interval(&self, interval: &Interval) -> PolarsResult<Expr> {
-        if interval.last_field.is_some()
-            || interval.leading_field.is_some()
-            || interval.leading_precision.is_some()
-            || interval.fractional_seconds_precision.is_some()
-        {
-            polars_bail!(SQLSyntax: "unsupported interval syntax ('{}')", interval)
-        }
-        let s = match &*interval.value {
-            SQLExpr::UnaryOp { .. } => {
-                polars_bail!(SQLSyntax: "unary ops are not valid on interval strings; found {}", interval.value)
-            },
-            SQLExpr::Value(SQLValue::SingleQuotedString(s)) => Some(s),
-            _ => None,
-        };
-        match s {
-            Some(s) if s.contains('-') => {
-                polars_bail!(SQLInterface: "minus signs are not yet supported in interval strings; found '{}'", s)
-            },
-            Some(s) => Ok(lit(Duration::parse_interval(s))),
-            None => polars_bail!(SQLSyntax: "invalid interval {:?}", interval),
-        }
-    }
-
     fn visit_like(
         &mut self,
         negated: bool,
@@ -346,9 +320,9 @@ impl SQLExprVisitor<'_> {
         if pat.is_empty() || (!case_insensitive && pat.chars().all(|c| !matches!(c, '%' | '_'))) {
             // empty string or other exact literal match (eg: no wildcard chars)
             let op = if negated {
-                BinaryOperator::NotEq
+                SQLBinaryOperator::NotEq
             } else {
-                BinaryOperator::Eq
+                SQLBinaryOperator::Eq
             };
             self.visit_binary_op(expr, &op, pattern)
         } else {
@@ -481,11 +455,45 @@ impl SQLExprVisitor<'_> {
     fn visit_binary_op(
         &mut self,
         left: &SQLExpr,
-        op: &BinaryOperator,
+        op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
-        let lhs = self.visit_expr(left)?;
-        let mut rhs = self.visit_expr(right)?;
+        // need special handling for interval offsets and comparisons
+        let (lhs, mut rhs) = match (left, op, right) {
+            (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
+                let duration = interval_to_duration(v, false)?;
+                return Ok(self
+                    .visit_expr(left)?
+                    .dt()
+                    .offset_by(lit(format!("-{}", duration))));
+            },
+            (_, SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
+                let duration = interval_to_duration(v, false)?;
+                return Ok(self
+                    .visit_expr(left)?
+                    .dt()
+                    .offset_by(lit(format!("{}", duration))));
+            },
+            (SQLExpr::Interval(v1), _, SQLExpr::Interval(v2)) => {
+                // shortcut interval comparison evaluation (-> bool)
+                let d1 = interval_to_duration(v1, false)?;
+                let d2 = interval_to_duration(v2, false)?;
+                let res = match op {
+                    SQLBinaryOperator::Gt => Ok(lit(d1 > d2)),
+                    SQLBinaryOperator::Lt => Ok(lit(d1 < d2)),
+                    SQLBinaryOperator::GtEq => Ok(lit(d1 >= d2)),
+                    SQLBinaryOperator::LtEq => Ok(lit(d1 <= d2)),
+                    SQLBinaryOperator::NotEq => Ok(lit(d1 != d2)),
+                    SQLBinaryOperator::Eq | SQLBinaryOperator::Spaceship => Ok(lit(d1 == d2)),
+                    _ => polars_bail!(SQLInterface: "invalid interval comparison operator"),
+                };
+                if res.is_ok() {
+                    return res;
+                }
+                (self.visit_expr(left)?, self.visit_expr(right)?)
+            },
+            _ => (self.visit_expr(left)?, self.visit_expr(right)?),
+        };
         rhs = self.convert_temporal_strings(&lhs, &rhs);
 
         Ok(match op {
@@ -650,19 +658,19 @@ impl SQLExprVisitor<'_> {
     fn visit_all(
         &mut self,
         left: &SQLExpr,
-        compare_op: &BinaryOperator,
+        compare_op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
 
         match compare_op {
-            BinaryOperator::Gt => Ok(left.gt(right.max())),
-            BinaryOperator::Lt => Ok(left.lt(right.min())),
-            BinaryOperator::GtEq => Ok(left.gt_eq(right.max())),
-            BinaryOperator::LtEq => Ok(left.lt_eq(right.min())),
-            BinaryOperator::Eq => polars_bail!(SQLSyntax: "ALL cannot be used with ="),
-            BinaryOperator::NotEq => polars_bail!(SQLSyntax: "ALL cannot be used with !="),
+            SQLBinaryOperator::Gt => Ok(left.gt(right.max())),
+            SQLBinaryOperator::Lt => Ok(left.lt(right.min())),
+            SQLBinaryOperator::GtEq => Ok(left.gt_eq(right.max())),
+            SQLBinaryOperator::LtEq => Ok(left.lt_eq(right.min())),
+            SQLBinaryOperator::Eq => polars_bail!(SQLSyntax: "ALL cannot be used with ="),
+            SQLBinaryOperator::NotEq => polars_bail!(SQLSyntax: "ALL cannot be used with !="),
             _ => polars_bail!(SQLInterface: "invalid comparison operator"),
         }
     }
@@ -673,19 +681,19 @@ impl SQLExprVisitor<'_> {
     fn visit_any(
         &mut self,
         left: &SQLExpr,
-        compare_op: &BinaryOperator,
+        compare_op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
 
         match compare_op {
-            BinaryOperator::Gt => Ok(left.gt(right.min())),
-            BinaryOperator::Lt => Ok(left.lt(right.max())),
-            BinaryOperator::GtEq => Ok(left.gt_eq(right.min())),
-            BinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
-            BinaryOperator::Eq => Ok(left.is_in(right)),
-            BinaryOperator::NotEq => Ok(left.is_in(right).not()),
+            SQLBinaryOperator::Gt => Ok(left.gt(right.min())),
+            SQLBinaryOperator::Lt => Ok(left.lt(right.max())),
+            SQLBinaryOperator::GtEq => Ok(left.gt_eq(right.min())),
+            SQLBinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
+            SQLBinaryOperator::Eq => Ok(left.is_in(right, false)),
+            SQLBinaryOperator::NotEq => Ok(left.is_in(right, false).not()),
             _ => polars_bail!(SQLInterface: "invalid comparison operator"),
         }
     }
@@ -909,9 +917,9 @@ impl SQLExprVisitor<'_> {
         let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
         let expr = self.visit_expr(expr)?;
         Ok(if negated {
-            expr.is_in(subquery_result).not()
+            expr.is_in(subquery_result, false).not()
         } else {
-            expr.is_in(subquery_result)
+            expr.is_in(subquery_result, false)
         })
     }
 
@@ -1036,6 +1044,38 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
         _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s.as_ref()),
     })
+}
+
+pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsResult<Duration> {
+    if interval.last_field.is_some()
+        || interval.leading_field.is_some()
+        || interval.leading_precision.is_some()
+        || interval.fractional_seconds_precision.is_some()
+    {
+        polars_bail!(SQLSyntax: "unsupported interval syntax ('{}')", interval)
+    }
+    let s = match &*interval.value {
+        SQLExpr::UnaryOp { .. } => {
+            polars_bail!(SQLSyntax: "unary ops are not valid on interval strings; found {}", interval.value)
+        },
+        SQLExpr::Value(SQLValue::SingleQuotedString(s)) => Some(s),
+        _ => None,
+    };
+    match s {
+        Some(s) if s.contains('-') => {
+            polars_bail!(SQLInterface: "minus signs are not yet supported in interval strings; found '{}'", s)
+        },
+        Some(s) => {
+            // years, quarters, and months do not have a fixed duration; these
+            // interval parts can only be used with respect to a reference point
+            let duration = Duration::parse_interval(s);
+            if fixed && duration.months() != 0 {
+                polars_bail!(SQLSyntax: "fixed-duration interval cannot contain years, quarters, or months; found {}", s)
+            };
+            Ok(duration)
+        },
+        None => polars_bail!(SQLSyntax: "invalid interval {:?}", interval),
+    }
 }
 
 pub(crate) fn parse_sql_expr(
@@ -1250,7 +1290,7 @@ pub(crate) fn resolve_compound_identifier(
                 return Ok(fields
                     .iter()
                     .map(|fld| column.clone().struct_().field_by_name(&fld.name))
-                    .collect())
+                    .collect());
             },
             Some(DataType::Struct(fields)) => {
                 dtype = fields

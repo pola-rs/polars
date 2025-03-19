@@ -1,16 +1,16 @@
 use arrow::array::Array;
 use arrow::datatypes::ArrowSchema;
 use arrow::record_batch::RecordBatchT;
-use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 
 use super::{
-    array_to_columns, to_parquet_schema, DynIter, DynStreamingIterator, Encoding,
-    RowGroupIterColumns, SchemaDescriptor, WriteOptions,
+    DynIter, DynStreamingIterator, Encoding, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
+    array_to_columns, to_parquet_schema,
 };
+use crate::parquet::FallibleStreamingIterator;
 use crate::parquet::error::ParquetError;
 use crate::parquet::schema::types::ParquetType;
 use crate::parquet::write::Compressor;
-use crate::parquet::FallibleStreamingIterator;
 
 /// Maps a [`RecordBatchT`] and parquet-specific options to an [`RowGroupIterColumns`] used to
 /// write to parquet
@@ -103,10 +103,8 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT
     }
 }
 
-impl<
-        A: AsRef<dyn Array> + 'static + Send + Sync,
-        I: Iterator<Item = PolarsResult<RecordBatchT<A>>>,
-    > Iterator for RowGroupIterator<A, I>
+impl<A: AsRef<dyn Array> + 'static + Send + Sync, I: Iterator<Item = PolarsResult<RecordBatchT<A>>>>
+    Iterator for RowGroupIterator<A, I>
 {
     type Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>;
 

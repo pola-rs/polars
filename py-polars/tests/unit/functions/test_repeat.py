@@ -193,6 +193,207 @@ def test_repeat_by_logical_dtype() -> None:
         assert_frame_equal(out, expected_df)
 
 
+def test_repeat_by_list() -> None:
+    df = pl.DataFrame(
+        {
+            "repeat": [1, 2, 3, None],
+            "value": [None, [1, 2, 3], [4, None], [1, 2]],
+        },
+        schema={"repeat": pl.UInt32, "value": pl.List(pl.UInt8)},
+    )
+    out = df.select(pl.col("value").repeat_by("repeat"))
+
+    expected_df = pl.DataFrame(
+        {
+            "value": [
+                [None],
+                [[1, 2, 3], [1, 2, 3]],
+                [[4, None], [4, None], [4, None]],
+                None,
+            ],
+        },
+        schema={"value": pl.List(pl.List(pl.UInt8))},
+    )
+
+    assert_frame_equal(out, expected_df)
+
+
+def test_repeat_by_nested_list() -> None:
+    df = pl.DataFrame(
+        {
+            "repeat": [1, 2, 3],
+            "value": [None, [[1], [2, 2]], [[3, 3], None, [4, None]]],
+        },
+        schema={"repeat": pl.UInt32, "value": pl.List(pl.List(pl.Int16))},
+    )
+    out = df.select(pl.col("value").repeat_by("repeat"))
+
+    expected_df = pl.DataFrame(
+        {
+            "value": [
+                [None],
+                [[[1], [2, 2]], [[1], [2, 2]]],
+                [
+                    [[3, 3], None, [4, None]],
+                    [[3, 3], None, [4, None]],
+                    [[3, 3], None, [4, None]],
+                ],
+            ],
+        },
+        schema={"value": pl.List(pl.List(pl.List(pl.Int16)))},
+    )
+
+    assert_frame_equal(out, expected_df)
+
+
+def test_repeat_by_struct() -> None:
+    df = pl.DataFrame(
+        {
+            "repeat": [1, 2, 3],
+            "value": [None, {"a": 1, "b": 2}, {"a": 3, "b": None}],
+        },
+        schema={"repeat": pl.UInt32, "value": pl.Struct({"a": pl.Int8, "b": pl.Int32})},
+    )
+    out = df.select(pl.col("value").repeat_by("repeat"))
+
+    expected_df = pl.DataFrame(
+        {
+            "value": [
+                [None],
+                [{"a": 1, "b": 2}, {"a": 1, "b": 2}],
+                [{"a": 3, "b": None}, {"a": 3, "b": None}, {"a": 3, "b": None}],
+            ],
+        },
+        schema={"value": pl.List(pl.Struct({"a": pl.Int8, "b": pl.Int32}))},
+    )
+
+    assert_frame_equal(out, expected_df)
+
+
+def test_repeat_by_nested_struct() -> None:
+    df = pl.DataFrame(
+        {
+            "repeat": [1, 2, 3],
+            "value": [
+                None,
+                {"a": {"x": 1, "y": 1}, "b": 2},
+                {"a": {"x": None, "y": 3}, "b": None},
+            ],
+        },
+        schema={
+            "repeat": pl.UInt32,
+            "value": pl.Struct(
+                {"a": pl.Struct({"x": pl.Int64, "y": pl.Int128}), "b": pl.Int32}
+            ),
+        },
+    )
+    out = df.select(pl.col("value").repeat_by("repeat"))
+
+    expected_df = pl.DataFrame(
+        {
+            "value": [
+                [None],
+                [{"a": {"x": 1, "y": 1}, "b": 2}, {"a": {"x": 1, "y": 1}, "b": 2}],
+                [
+                    {"a": {"x": None, "y": 3}, "b": None},
+                    {"a": {"x": None, "y": 3}, "b": None},
+                    {"a": {"x": None, "y": 3}, "b": None},
+                ],
+            ],
+        },
+        schema={
+            "value": pl.List(
+                pl.Struct(
+                    {"a": pl.Struct({"x": pl.Int64, "y": pl.Int128}), "b": pl.Int32}
+                )
+            )
+        },
+    )
+
+    assert_frame_equal(out, expected_df)
+
+
+def test_repeat_by_struct_in_list() -> None:
+    df = pl.DataFrame(
+        {
+            "repeat": [1, 2, 3],
+            "value": [
+                None,
+                [{"a": "foo", "b": "A"}, None],
+                [{"a": None, "b": "B"}, {"a": "test", "b": "B"}],
+            ],
+        },
+        schema={
+            "repeat": pl.UInt32,
+            "value": pl.List(pl.Struct({"a": pl.String, "b": pl.Enum(["A", "B"])})),
+        },
+    )
+    out = df.select(pl.col("value").repeat_by("repeat"))
+
+    expected_df = pl.DataFrame(
+        {
+            "value": [
+                [None],
+                [[{"a": "foo", "b": "A"}, None], [{"a": "foo", "b": "A"}, None]],
+                [
+                    [{"a": None, "b": "B"}, {"a": "test", "b": "B"}],
+                    [{"a": None, "b": "B"}, {"a": "test", "b": "B"}],
+                    [{"a": None, "b": "B"}, {"a": "test", "b": "B"}],
+                ],
+            ],
+        },
+        schema={
+            "value": pl.List(
+                pl.List(pl.Struct({"a": pl.String, "b": pl.Enum(["A", "B"])}))
+            )
+        },
+    )
+
+    assert_frame_equal(out, expected_df)
+
+
+def test_repeat_by_list_in_struct() -> None:
+    df = pl.DataFrame(
+        {
+            "repeat": [1, 2, 3],
+            "value": [
+                None,
+                {"a": [1, 2, 3], "b": ["x", "y", None]},
+                {"a": [None, 5, 6], "b": None},
+            ],
+        },
+        schema={
+            "repeat": pl.UInt32,
+            "value": pl.Struct({"a": pl.List(pl.Int8), "b": pl.List(pl.String)}),
+        },
+    )
+    out = df.select(pl.col("value").repeat_by("repeat"))
+
+    expected_df = pl.DataFrame(
+        {
+            "value": [
+                [None],
+                [
+                    {"a": [1, 2, 3], "b": ["x", "y", None]},
+                    {"a": [1, 2, 3], "b": ["x", "y", None]},
+                ],
+                [
+                    {"a": [None, 5, 6], "b": None},
+                    {"a": [None, 5, 6], "b": None},
+                    {"a": [None, 5, 6], "b": None},
+                ],
+            ],
+        },
+        schema={
+            "value": pl.List(
+                pl.Struct({"a": pl.List(pl.Int8), "b": pl.List(pl.String)})
+            )
+        },
+    )
+
+    assert_frame_equal(out, expected_df)
+
+
 @pytest.mark.parametrize(
     ("data", "expected_data"),
     [
@@ -206,4 +407,15 @@ def test_repeat_by_none_13053(data: list[Any], expected_data: list[list[Any]]) -
     df = pl.DataFrame({"x": data, "by": [2, None, 3]})
     res = df.select(repeat=pl.col("x").repeat_by("by"))
     expected = pl.Series("repeat", expected_data)
+    assert_series_equal(res.to_series(), expected)
+
+
+def test_repeat_by_literal_none_20268() -> None:
+    df = pl.DataFrame({"x": ["a", "b"]})
+    expected = pl.Series("repeat", [None, None], dtype=pl.List(pl.String))
+
+    res = df.select(repeat=pl.col("x").repeat_by(pl.lit(None)))
+    assert_series_equal(res.to_series(), expected)
+
+    res = df.select(repeat=pl.col("x").repeat_by(None))  # type: ignore[arg-type]
     assert_series_equal(res.to_series(), expected)

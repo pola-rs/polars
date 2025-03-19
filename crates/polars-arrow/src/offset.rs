@@ -1,8 +1,9 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Contains the declaration of [`Offset`]
 use std::hint::unreachable_unchecked;
 use std::ops::Deref;
 
-use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
 
 use crate::array::Splitable;
 use crate::buffer::Buffer;
@@ -175,7 +176,7 @@ impl<O: Offset> Offsets<O> {
 
     /// Returns a `length` corresponding to the position `index`
     /// # Panic
-    /// This function panics iff `index >= self.len()`
+    /// This function panics iff `index >= self.len_proxy()`
     #[inline]
     pub fn length_at(&self, index: usize) -> usize {
         let (start, end) = self.start_end(index);

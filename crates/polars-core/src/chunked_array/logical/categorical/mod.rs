@@ -26,7 +26,7 @@ bitflags! {
     }
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct CategoricalChunked {
     physical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical
@@ -415,8 +415,13 @@ impl LogicalType for CategoricalChunked {
                         return Ok(self.to_local().set_ordering(*ordering, true).into_series());
                     }
                 }
-                // Otherwise we do nothing
-                Ok(self.clone().set_ordering(*ordering, true).into_series())
+                // If casting to lexical categorical, set sorted flag as not set
+
+                let mut ca = self.clone().set_ordering(*ordering, true);
+                if ca.uses_lexical_ordering() {
+                    ca.physical.set_sorted_flag(IsSorted::Not);
+                }
+                Ok(ca.into_series())
             },
             dt if dt.is_primitive_numeric() => {
                 // Apply the cast to the categories and then index into the casted series.
@@ -469,12 +474,24 @@ impl<'a> Iterator for CatIter<'a> {
     }
 }
 
+impl DoubleEndedIterator for CatIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back().map(|item| {
+            item.map(|idx| {
+                // SAFETY:
+                // all categories are in bound
+                unsafe { self.rev.get_unchecked(idx) }
+            })
+        })
+    }
+}
+
 impl ExactSizeIterator for CatIter<'_> {}
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
+    use crate::{SINGLE_LOCK, disable_string_cache, enable_string_cache};
 
     #[test]
     fn test_categorical_round_trip() -> PolarsResult<()> {

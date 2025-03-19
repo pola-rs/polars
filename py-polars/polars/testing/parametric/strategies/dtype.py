@@ -329,8 +329,12 @@ def _time_units() -> SearchStrategy[TimeUnit]:
 
 def _time_zones() -> SearchStrategy[str]:
     """Create a strategy for generating valid time zones."""
+    # Not available when building docs, so just import here.
+    from polars.polars import _known_timezones
+
+    chrono_known_tz = set(_known_timezones())
     return st.timezone_keys(allow_prefix=False).filter(
-        lambda tz: tz not in {"Factory", "localtime"}
+        lambda tz: tz not in {"Factory", "localtime"} and tz in chrono_known_tz
     )
 
 

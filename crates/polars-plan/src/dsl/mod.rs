@@ -15,10 +15,13 @@ mod array;
 pub mod binary;
 #[cfg(feature = "bitwise")]
 mod bitwise;
+mod builder_dsl;
+pub use builder_dsl::*;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
 mod expr_dyn_fn;
+mod format;
 mod from;
 pub mod function_expr;
 pub mod functions;
@@ -28,9 +31,10 @@ mod meta;
 mod name;
 mod options;
 #[cfg(feature = "python")]
-pub mod python_udf;
+pub mod python_dsl;
 #[cfg(feature = "random")]
 mod random;
+mod scan_sources;
 mod selector;
 mod statistics;
 #[cfg(feature = "strings")]
@@ -42,10 +46,10 @@ pub mod udf;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
-use arrow::legacy::prelude::QuantileMethod;
 pub use expr::*;
 pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
@@ -55,19 +59,24 @@ pub use list::*;
 pub use meta::*;
 pub use name::*;
 pub use options::*;
+pub use plan::*;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::series::IsSorted;
 #[cfg(any(feature = "search_sorted", feature = "is_between"))]
 use polars_core::utils::SuperTypeFlags;
-use polars_core::utils::{try_get_supertype, SuperTypeOptions};
+use polars_core::utils::{SuperTypeOptions, try_get_supertype};
 pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
+mod file_scan;
+pub use file_scan::*;
+pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 
 use crate::constants::MAP_LIST_NAME;
 pub use crate::plans::lit;
@@ -1187,25 +1196,24 @@ impl Expr {
     /// Check if the values of the left expression are in the lists of the right expr.
     #[allow(clippy::wrong_self_convention)]
     #[cfg(feature = "is_in")]
-    pub fn is_in<E: Into<Expr>>(self, other: E) -> Self {
+    pub fn is_in<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Self {
         let other = other.into();
-        let has_literal = has_leaf_literal(&other);
-
-        // lit(true).is_in() returns a scalar.
+        let other_constant = is_column_independent(&other);
         let returns_scalar = all_return_scalar(&self);
 
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
-        if has_literal {
+        // TODO: this optimization should be done during conversion to IR.
+        if other_constant {
             self.map_many_private(
-                BooleanFunction::IsIn.into(),
+                BooleanFunction::IsIn { nulls_equal }.into(),
                 arguments,
                 returns_scalar,
                 Some(Default::default()),
             )
         } else {
             self.apply_many_private(
-                BooleanFunction::IsIn.into(),
+                BooleanFunction::IsIn { nulls_equal }.into(),
                 arguments,
                 returns_scalar,
                 true,
@@ -1381,6 +1389,7 @@ impl Expr {
         quantile: f64,
         mut options: RollingOptionsDynamicWindow,
     ) -> Expr {
+        use polars_compute::rolling::{RollingFnParams, RollingQuantileParams};
         options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
             method,
@@ -1457,6 +1466,8 @@ impl Expr {
         quantile: f64,
         mut options: RollingOptionsFixedWindow,
     ) -> Expr {
+        use polars_compute::rolling::{RollingFnParams, RollingQuantileParams};
+
         options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
             method,
@@ -1569,13 +1580,11 @@ impl Expr {
     pub fn replace<E: Into<Expr>>(self, old: E, new: E) -> Expr {
         let old = old.into();
         let new = new.into();
-
-        // If we search and replace by literals, we can run on batches.
-        let literal_searchers = matches!(&old, Expr::Literal(_)) & matches!(&new, Expr::Literal(_));
-
+        // If we search and replace by constants, we can run on batches.
+        // TODO: this optimization should be done during conversion to IR.
+        let literal_args = is_column_independent(&old) && is_column_independent(&new);
         let args = [old, new];
-
-        if literal_searchers {
+        if literal_args {
             self.map_many_private(FunctionExpr::Replace, &args, false, None)
         } else {
             self.apply_many_private(FunctionExpr::Replace, &args, false, false)
@@ -1594,15 +1603,16 @@ impl Expr {
         let old = old.into();
         let new = new.into();
 
-        // If we replace by literals, we can run on batches.
-        let literal_searchers = matches!(&old, Expr::Literal(_)) & matches!(&new, Expr::Literal(_));
+        // If we replace by constants, we can run on batches.
+        // TODO: this optimization should be done during conversion to IR.
+        let literal_args = is_column_independent(&old) && is_column_independent(&new);
 
         let mut args = vec![old, new];
         if let Some(default) = default {
             args.push(default.into())
         }
 
-        if literal_searchers {
+        if literal_args {
             self.map_many_private(
                 FunctionExpr::ReplaceStrict { return_dtype },
                 &args,

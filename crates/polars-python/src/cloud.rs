@@ -1,7 +1,7 @@
-use polars_core::error::{polars_err, PolarsResult};
+use polars_core::error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
-use polars_plan::plans::{AExpr, IRPlan, IR};
+use polars_plan::plans::{AExpr, IR, IRPlan};
 use polars_plan::prelude::{Arena, Node};
 use polars_utils::pl_serialize;
 use pyo3::intern;
@@ -10,6 +10,7 @@ use pyo3::types::{IntoPyDict, PyBytes};
 
 use crate::error::PyPolarsErr;
 use crate::lazyframe::visit::NodeTraverser;
+use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PyLazyFrame};
 
 #[pyfunction]
@@ -28,7 +29,8 @@ pub fn prepare_cloud_plan(lf: PyLazyFrame, py: Python<'_>) -> PyResult<Bound<'_,
 pub fn _execute_ir_plan_with_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<PyDataFrame> {
     // Deserialize into IRPlan.
     let mut ir_plan: IRPlan =
-        pl_serialize::deserialize_from_reader(ir_plan_ser.as_slice()).map_err(PyPolarsErr::from)?;
+        pl_serialize::deserialize_from_reader::<_, _, false>(ir_plan_ser.as_slice())
+            .map_err(PyPolarsErr::from)?;
 
     // Edit for use with GPU engine.
     gpu_post_opt(
@@ -40,15 +42,16 @@ pub fn _execute_ir_plan_with_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<P
     .map_err(PyPolarsErr::from)?;
 
     // Convert to physical plan.
-    let mut physical_plan =
-        create_physical_plan(ir_plan.lp_top, &mut ir_plan.lp_arena, &ir_plan.expr_arena)
-            .map_err(PyPolarsErr::from)?;
+    let mut physical_plan = create_physical_plan(
+        ir_plan.lp_top,
+        &mut ir_plan.lp_arena,
+        &mut ir_plan.expr_arena,
+    )
+    .map_err(PyPolarsErr::from)?;
 
     // Execute the plan.
     let mut state = ExecutionState::new();
-    let df = py.allow_threads(|| physical_plan.execute(&mut state).map_err(PyPolarsErr::from))?;
-
-    Ok(df.into())
+    py.enter_polars_df(|| physical_plan.execute(&mut state))
 }
 
 /// Prepare the IR for execution by the Polars GPU engine.

@@ -6,17 +6,11 @@ pub(crate) fn row_index_at_scan(q: LazyFrame) -> bool {
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
     (&lp_arena).iter(lp).any(|(_, lp)| {
-        use IR::*;
-        matches!(
-            lp,
-            Scan {
-                file_options: FileScanOptions {
-                    row_index: Some(_),
-                    ..
-                },
-                ..
-            }
-        )
+        if let IR::Scan { file_options, .. } = lp {
+            file_options.row_index.is_some()
+        } else {
+            false
+        }
     })
 }
 
@@ -85,7 +79,7 @@ fn slice_at_scan(q: LazyFrame) -> bool {
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use IR::*;
         match lp {
-            Scan { file_options, .. } => file_options.slice.is_some(),
+            Scan { file_options, .. } => file_options.pre_slice.is_some(),
             _ => false,
         }
     })

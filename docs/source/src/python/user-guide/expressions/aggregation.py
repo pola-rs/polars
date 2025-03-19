@@ -1,7 +1,7 @@
 # --8<-- [start:dataframe]
 import polars as pl
 
-url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv"
+url = "hf://datasets/nameexhaustion/polars-docs/legislators-historical.csv"
 
 schema_overrides = {
     "first_name": pl.Categorical,
@@ -11,8 +11,10 @@ schema_overrides = {
     "party": pl.Categorical,
 }
 
-dataset = pl.read_csv(url, schema_overrides=schema_overrides).with_columns(
-    pl.col("birthday").str.to_date(strict=False)
+dataset = (
+    pl.read_csv(url, schema_overrides=schema_overrides)
+    .with_columns(pl.col("first", "middle", "last").name.suffix("_name"))
+    .with_columns(pl.col("birthday").str.to_date(strict=False))
 )
 # --8<-- [end:dataframe]
 

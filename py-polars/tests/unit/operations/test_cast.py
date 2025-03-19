@@ -681,3 +681,62 @@ def test_cast_int_to_string_unsets_sorted_flag_19424() -> None:
     s = pl.Series([1, 2]).set_sorted()
     assert s.flags["SORTED_ASC"]
     assert not s.cast(pl.String).flags["SORTED_ASC"]
+
+
+def test_cast_integer_to_decimal() -> None:
+    s = pl.Series([1, 2, 3])
+    result = s.cast(pl.Decimal(10, 2))
+    expected = pl.Series(
+        "", [Decimal("1.00"), Decimal("2.00"), Decimal("3.00")], pl.Decimal(10, 2)
+    )
+    assert_series_equal(result, expected)
+
+
+def test_cast_python_dtypes() -> None:
+    s = pl.Series([0, 1])
+    assert s.cast(int).dtype == pl.Int64
+    assert s.cast(float).dtype == pl.Float64
+    assert s.cast(bool).dtype == pl.Boolean
+    assert s.cast(str).dtype == pl.String
+
+
+def test_overflowing_cast_literals_21023() -> None:
+    for no_optimization in [True, False]:
+        assert_frame_equal(
+            (
+                pl.LazyFrame()
+                .select(
+                    pl.lit(pl.Series([128], dtype=pl.Int64)).cast(
+                        pl.Int8, wrap_numerical=True
+                    )
+                )
+                .collect(no_optimization=no_optimization)
+            ),
+            pl.Series([-128], dtype=pl.Int8).to_frame(),
+        )
+
+
+def test_invalid_empty_cast_to_empty_enum() -> None:
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot cast / initialize Enum without categories present",
+    ):
+        pl.Series([], dtype=pl.Enum)
+
+
+@pytest.mark.parametrize("value", [True, False])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Enum(["a", "b"]),
+        pl.Series(["a", "b"], dtype=pl.Categorical).dtype,
+    ],
+)
+@pytest.mark.usefixtures("test_global_and_local")
+def test_invalid_bool_to_cat(value: bool, dtype: PolarsDataType) -> None:
+    # Enum
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot cast Boolean to Categorical",
+    ):
+        pl.Series([value]).cast(dtype)

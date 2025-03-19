@@ -2,8 +2,8 @@ use std::ops::{Add, Div, Mul, Sub};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
+use num_traits::{NumCast, Zero};
 use polars_core::downcast_as_macro_arg_physical;
-use polars_core::export::num::{NumCast, Zero};
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -122,9 +122,7 @@ fn interpolate_nearest(s: &Series) -> Series {
             let s = s.to_physical_repr();
 
             macro_rules! dispatch {
-                ($ca:expr) => {{
-                    interpolate_impl($ca, near_interp).into_series()
-                }};
+                ($ca:expr) => {{ interpolate_impl($ca, near_interp).into_series() }};
             }
             let out = downcast_as_macro_arg_physical!(s, dispatch);
             out.cast(logical).unwrap()

@@ -110,8 +110,8 @@ mod test {
         // Verify platform-specific clmul to portable.
         let mut rng = StdRng::seed_from_u64(0xdeadbeef);
         for _ in 0..100 {
-            let x = rng.gen();
-            let y = rng.gen();
+            let x = rng.r#gen();
+            let y = rng.r#gen();
             assert_eq!(portable_clmul64(x, y), clmul64(x, y));
         }
 
@@ -143,7 +143,7 @@ mod test {
         // Verify platform-specific prefix_xorsum to portable.
         let mut rng = StdRng::seed_from_u64(0xdeadbeef);
         for _ in 0..100 {
-            let x = rng.gen();
+            let x = rng.r#gen();
             assert_eq!(portable_prefix_xorsum(x), prefix_xorsum(x));
         }
 

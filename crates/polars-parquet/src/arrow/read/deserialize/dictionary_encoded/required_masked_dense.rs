@@ -1,8 +1,8 @@
-use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::bitmask::BitMask;
 use arrow::types::AlignedBytes;
 
-use super::{oob_dict_idx, required_skip_whole_chunks, verify_dict_indices, IndexMapping};
+use super::{IndexMapping, oob_dict_idx, required_skip_whole_chunks, verify_dict_indices};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 
@@ -72,7 +72,7 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
                 }
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
-                let size = decoder.len().min(filter.len());
+                let size = decoder.len();
                 let mut chunked = decoder.chunked();
 
                 let mut buffer_part_idx = 0;
@@ -82,7 +82,7 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
 
                 let current_filter;
 
-                (current_filter, filter) = filter.split_at(size);
+                (current_filter, filter) = filter.split_at(size - num_rows_to_skip);
 
                 let mut iter = |mut f: u64, len: usize| {
                     debug_assert!(len <= 64);
@@ -165,7 +165,6 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
                 }
 
                 let (f, fl) = f_iter.remainder();
-
                 iter(f, fl)?;
             },
         }

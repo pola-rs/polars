@@ -8,8 +8,8 @@ use rayon::prelude::*;
 use super::from_iterator::PolarsAsRef;
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
-use crate::utils::flatten::flatten_par;
 use crate::utils::NoNull;
+use crate::utils::flatten::flatten_par;
 
 /// FromParallelIterator trait
 // Code taken from https://docs.rs/rayon/1.3.1/src/rayon/iter/extend.rs.html#356-366

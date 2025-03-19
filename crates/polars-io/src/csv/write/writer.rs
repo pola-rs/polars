@@ -1,9 +1,9 @@
 use std::io::Write;
 use std::num::NonZeroUsize;
 
+use polars_core::POOL;
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
-use polars_core::POOL;
 use polars_error::PolarsResult;
 
 use super::write_impl::{write, write_bom, write_header};

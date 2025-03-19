@@ -1,4 +1,7 @@
+use std::hash::BuildHasher;
+
 use hashbrown::hash_map::RawEntryMut;
+use polars_utils::aliases::PlFixedStateQuality;
 use polars_utils::format_pl_smallstr;
 use polars_utils::vec::CapacityByFactor;
 
@@ -8,7 +11,7 @@ use crate::prelude::visitor::AexprNode;
 
 const SERIES_LIMIT: usize = 1000;
 
-use polars_core::hashing::_boost_hash_combine;
+use polars_utils::hashing::_boost_hash_combine;
 
 #[derive(Debug, Clone)]
 struct ProjectionExprs {
@@ -45,7 +48,7 @@ impl ProjectionExprs {
 pub(super) struct Identifier {
     inner: Option<u64>,
     last_node: Option<AexprNode>,
-    hb: PlRandomState,
+    hb: PlFixedStateQuality,
 }
 
 impl Identifier {
@@ -53,7 +56,7 @@ impl Identifier {
         Self {
             inner: None,
             last_node: None,
-            hb: PlRandomState::with_seed(0),
+            hb: PlFixedStateQuality::with_seed(0),
         }
     }
 
@@ -102,7 +105,7 @@ impl Identifier {
         Self {
             inner,
             last_node: Some(*ae),
-            hb: self.hb.clone(),
+            hb: self.hb,
         }
     }
 }
@@ -182,10 +185,6 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool) -> bool {
     match ae {
         AExpr::Window { .. } => true,
         #[cfg(feature = "dtype-struct")]
-        AExpr::Function {
-            function: FunctionExpr::AsStruct,
-            ..
-        } => true,
         AExpr::Ternary { .. } => is_groupby,
         _ => false,
     }
@@ -701,7 +700,9 @@ impl CommonSubExprOptimizer {
 
             if !valid {
                 if verbose() {
-                    eprintln!("materialized names collided in common subexpression elimination.\n backtrace and run without CSE")
+                    eprintln!(
+                        "materialized names collided in common subexpression elimination.\n backtrace and run without CSE"
+                    )
                 }
                 return Ok(None);
             }
@@ -723,6 +724,67 @@ impl CommonSubExprOptimizer {
                     out_e
                 } else {
                     out_e.set_node(out_node);
+
+                    // Ensure the function ExprIR's have the proper names.
+                    // This is needed for structs to get the proper field
+                    let mut scratch = vec![];
+                    let mut stack = vec![(e.node(), out_node)];
+                    while let Some((original, new)) = stack.pop() {
+                        // Don't follow identical nodes.
+                        if original == new {
+                            continue;
+                        }
+                        scratch.clear();
+                        let aes = expr_arena.get_many_mut([original, new]);
+
+                        // Only follow paths that are the same.
+                        if std::mem::discriminant(aes[0]) != std::mem::discriminant(aes[1]) {
+                            continue;
+                        }
+
+                        aes[0].inputs_rev(&mut scratch);
+                        let offset = scratch.len();
+                        aes[1].inputs_rev(&mut scratch);
+
+                        // If they have a different number of inputs, we don't follow the nodes.
+                        if scratch.len() != offset * 2 {
+                            continue;
+                        }
+
+                        for i in 0..scratch.len() / 2 {
+                            stack.push((scratch[i], scratch[i + offset]));
+                        }
+
+                        match expr_arena.get_many_mut([original, new]) {
+                            [
+                                AExpr::Function {
+                                    input: input_original,
+                                    ..
+                                },
+                                AExpr::Function {
+                                    input: input_new, ..
+                                },
+                            ] => {
+                                for (new, original) in input_new.iter_mut().zip(input_original) {
+                                    new.set_alias(original.output_name().clone());
+                                }
+                            },
+                            [
+                                AExpr::AnonymousFunction {
+                                    input: input_original,
+                                    ..
+                                },
+                                AExpr::AnonymousFunction {
+                                    input: input_new, ..
+                                },
+                            ] => {
+                                for (new, original) in input_new.iter_mut().zip(input_original) {
+                                    new.set_alias(original.output_name().clone());
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
 
                     // If we don't end with an alias we add an alias. Because the normal left-hand
                     // rule we apply for determining the name will not work we now refer to

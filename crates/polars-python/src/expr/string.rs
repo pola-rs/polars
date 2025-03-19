@@ -1,9 +1,9 @@
 use polars::prelude::*;
 use pyo3::prelude::*;
 
+use crate::PyExpr;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
-use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {

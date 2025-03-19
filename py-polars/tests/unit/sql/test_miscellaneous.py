@@ -385,3 +385,136 @@ def test_invalid_cols(query: str) -> None:
     )
     with pytest.raises(ColumnNotFoundError, match="invalid_column"):
         df.sql(query)
+
+
+@pytest.mark.parametrize("filter_expr", ["", "WHERE 1 = 1", "WHERE a == 1 OR a != 1"])
+@pytest.mark.parametrize("order_expr", ["", "ORDER BY 1", "ORDER BY a"])
+def test_select_output_heights_20058_21084(filter_expr: str, order_expr: str) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    # Queries that maintain original height
+
+    assert_frame_equal(
+        df.sql(f"SELECT 1 as a FROM self {filter_expr} {order_expr}").cast(pl.Int64),
+        pl.select(a=pl.Series([1, 1, 1])),
+    )
+
+    assert_frame_equal(
+        df.sql(f"""\
+    SELECT 1 + 1 as a, 1 as b FROM self {filter_expr} {order_expr}
+    """).cast(pl.Int64),
+        pl.DataFrame({"a": [2, 2, 2], "b": [1, 1, 1]}),
+    )
+
+    # Queries that aggregate to unit height
+
+    assert_frame_equal(
+        df.sql(f"""\
+    SELECT COUNT(*) as a FROM self {filter_expr} {order_expr}
+    """).cast(pl.Int64),
+        pl.DataFrame({"a": 3}),
+    )
+
+    assert_frame_equal(
+        df.sql(f"""\
+    SELECT COUNT(*) as a, 1 as b FROM self {filter_expr} {order_expr}
+    """).cast(pl.Int64),
+        pl.DataFrame({"a": 3, "b": 1}),
+    )
+
+    assert_frame_equal(
+        df.sql(f"""\
+    SELECT FIRST(a) as a, 1 as b FROM self {filter_expr} {order_expr}
+    """).cast(pl.Int64),
+        pl.DataFrame({"a": 1, "b": 1}),
+    )
+
+    assert_frame_equal(
+        df.sql(f"""\
+    SELECT SUM(a) as a, 1 as b FROM self {filter_expr} {order_expr}
+    """).cast(pl.Int64),
+        pl.DataFrame({"a": 6, "b": 1}),
+    )
+
+    assert_frame_equal(
+        df.sql(f"""\
+    SELECT FIRST(1) as a, 1 as b FROM self {filter_expr} {order_expr}
+    """).cast(pl.Int64),
+        pl.DataFrame({"a": 1, "b": 1}),
+    )
+
+    assert_frame_equal(
+        df.sql(f"""\
+    SELECT FIRST(1) + 1 as a, 1 as b FROM self {filter_expr} {order_expr}
+    """).cast(pl.Int64),
+        pl.DataFrame({"a": 2, "b": 1}),
+    )
+
+    assert_frame_equal(
+        df.sql(f"""\
+    SELECT FIRST(1 + 1) as a, 1 as b FROM self {filter_expr} {order_expr}
+    """).cast(pl.Int64),
+        pl.DataFrame({"a": 2, "b": 1}),
+    )
+
+
+def test_select_explode_height_filter_order_by() -> None:
+    # Note: `unnest()` from SQL equates to `Expr.explode()`
+    df = pl.DataFrame(
+        {
+            "list_long": [[1, 2, 3], [4, 5, 6]],
+            "sort_key": [2, 1],
+            "filter_mask": [False, True],
+            "filter_mask_all_true": True,
+        }
+    )
+
+    # Height of unnest is larger than height of sort_key, the sort_key is
+    # extended with NULLs.
+
+    assert_frame_equal(
+        df.sql(
+            """\
+    SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key
+        """
+        ),
+        pl.Series("list", [2, 1, 3, 4, 5, 6]).to_frame(),
+    )
+
+    assert_frame_equal(
+        df.sql(
+            """\
+    SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key NULLS FIRST
+        """
+        ),
+        pl.Series("list", [3, 4, 5, 6, 2, 1]).to_frame(),
+    )
+
+    # Literals are broadcasted to output height of UNNEST:
+    assert_frame_equal(
+        df.sql(
+            """\
+    SELECT UNNEST(list_long) as list, 1 as x FROM self ORDER BY sort_key
+        """
+        ),
+        pl.select(pl.Series("list", [2, 1, 3, 4, 5, 6]), x=1),
+    )
+
+    # Note: Filter applies before projections in SQL
+    assert_frame_equal(
+        df.sql(
+            """\
+    SELECT UNNEST(list_long) as list FROM self WHERE filter_mask ORDER BY sort_key
+        """
+        ),
+        pl.Series("list", [4, 5, 6]).to_frame(),
+    )
+
+    assert_frame_equal(
+        df.sql(
+            """\
+    SELECT UNNEST(list_long) as list FROM self WHERE filter_mask_all_true ORDER BY sort_key
+        """
+        ),
+        pl.Series("list", [2, 1, 3, 4, 5, 6]).to_frame(),
+    )

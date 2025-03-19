@@ -71,7 +71,7 @@ def test_special_char_colname_init() -> None:
     cols = [(c, pl.Int8) for c in punctuation]
     df = pl.DataFrame(schema=cols)
 
-    assert len(cols) == len(df.columns)
+    assert len(cols) == df.width
     assert len(df.rows()) == 0
     assert df.is_empty()
 
@@ -226,7 +226,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         override_schema = expected_schema.copy()
         override_schema["e"] = pl.Int8
         assert df.schema == override_schema
-        assert df.rows() == expected_data[: (len(df))]
+        assert df.rows() == expected_data[: (df.height)]
 
     # init from record batches with overrides
     df = pl.DataFrame(
@@ -994,6 +994,28 @@ def test_is_finite_is_infinite() -> None:
     assert df.select(pl.col("nrs").is_finite())["nrs"].to_list() == [True, True, False]
 
 
+def test_is_finite_is_infinite_null_series() -> None:
+    df = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Null)})
+    result = df.select(
+        pl.col("a").is_finite().alias("finite"),
+        pl.col("a").is_infinite().alias("infinite"),
+    )
+    expected = pl.DataFrame(
+        {
+            "finite": pl.Series([None, None, None], dtype=pl.Boolean),
+            "infinite": pl.Series([None, None, None], dtype=pl.Boolean),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_is_nan_null_series() -> None:
+    df = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Null)})
+    result = df.select(pl.col("a").is_nan())
+    expected = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Boolean)})
+    assert_frame_equal(result, expected)
+
+
 def test_len() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3]})
     assert cast(int, df.select(pl.col("nrs").len()).item()) == 3
@@ -1471,7 +1493,7 @@ def test_join_dates() -> None:
         }
     )
     out = df.join(df, on="datetime")
-    assert len(out) == len(df)
+    assert out.height == df.height
 
 
 def test_asof_cross_join() -> None:
@@ -1554,21 +1576,17 @@ def test_reproducible_hash_with_seeds() -> None:
     """
     df = pl.DataFrame({"s": [1234, None, 5678]})
     seeds = (11, 22, 33, 44)
-    import platform
-
-    # m1 hash different random source seed
-    if platform.mac_ver()[-1] != "arm64":
-        expected = pl.Series(
-            "s",
-            [8661293245726181094, 9565952849861441858, 2921274555702885622],
-            dtype=pl.UInt64,
-        )
-        result = df.hash_rows(*seeds)
-        assert_series_equal(expected, result, check_names=False, check_exact=True)
-        result = df["s"].hash(*seeds)
-        assert_series_equal(expected, result, check_names=False, check_exact=True)
-        result = df.select([pl.col("s").hash(*seeds)])["s"]
-        assert_series_equal(expected, result, check_names=False, check_exact=True)
+    expected = pl.Series(
+        "s",
+        [10832467230526607564, 3044502640115867787, 17228373233104406792],
+        dtype=pl.UInt64,
+    )
+    result = df.hash_rows(*seeds)
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    result = df["s"].hash(*seeds)
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    result = df.select([pl.col("s").hash(*seeds)])["s"]
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
 
 
 @pytest.mark.slow
@@ -1902,6 +1920,7 @@ def test_empty_projection() -> None:
     assert empty_df.shape == (0, 0)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert_frame_equal(df.fill_null(4), pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
@@ -2387,6 +2406,7 @@ def test_selection_regex_and_multicol() -> None:
 
 
 @pytest.mark.parametrize("subset", ["a", cs.starts_with("x", "a")])
+@pytest.mark.may_fail_auto_streaming  # Flaky in CI, see https://github.com/pola-rs/polars/issues/20943
 def test_unique_on_sorted(subset: Any) -> None:
     df = pl.DataFrame(data={"a": [1, 1, 3], "b": [1, 2, 3]})
 
@@ -2985,7 +3005,7 @@ def test_get_column_index() -> None:
 def test_dataframe_creation_with_different_series_lengths_19795() -> None:
     with pytest.raises(
         ShapeError,
-        match='could not create a new DataFrame: series "a" has length 2 while series "b" has length 1',
+        match=r"could not create a new DataFrame: height of column 'b' \(1\) does not match height of column 'a' \(2\)",
     ):
         pl.DataFrame({"a": [1, 2], "b": [1]})
 
@@ -2995,3 +3015,22 @@ def test_get_column_after_drop_20119() -> None:
     df.drop_in_place("a")
     c = df.get_column("c")
     assert_series_equal(c, pl.Series("c", ["C"]))
+
+
+def test_select_oob_row_20775() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    with pytest.raises(
+        IndexError,
+        match="index 99 is out of bounds for DataFrame of height 3",
+    ):
+        df[99]
+
+
+@pytest.mark.parametrize("idx", [3, 99, -4, -99])
+def test_select_oob_element_20775_too_large(idx: int) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    with pytest.raises(
+        IndexError,
+        match=f"index {idx} is out of bounds for sequence of length 3",
+    ):
+        df[idx, "a"]

@@ -2060,9 +2060,9 @@ class StringNameSpace:
         overlapping: bool = False,
     ) -> Series:
         """
-        Use the Aho-Corasick algorithm to find many matches.
+        Use the Aho-Corasick algorithm to find all matches.
 
-        The function will return the bytes offset of the start of each match.
+        The function returns the byte offset of the start of each match.
         The return type will be `List<UInt32>`
 
         Parameters
@@ -2121,7 +2121,6 @@ class StringNameSpace:
         │ [0]       │
         │ [0, 5]    │
         └───────────┘
-
         """
 
     def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Series:

@@ -103,7 +103,7 @@ def test_object_to_pandas(column_type_names: list[Literal["Object", "Int32"]]) -
     """
     column_types = [getattr(pl, name) for name in column_type_names]
     data = {
-        f"col_{i}": [object()] if dtype == pl.Object else [-i]
+        f"col_{i}": [object()] if dtype.is_object() else [-i]
         for i, dtype in enumerate(column_types)
     }
     df = pl.DataFrame(

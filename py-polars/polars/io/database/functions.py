@@ -209,18 +209,19 @@ def read_database(
     ...     connection=async_engine,
     ... )  # doctest: +SKIP
 
-    Load data from an asynchronous SurrealDB client connection object; note that
-    both the WS (`Surreal`) and HTTP (`SurrealHTTP`) clients are supported:
+    Load data from an `AsyncSurrealDB` client connection object; note that both the "ws"
+    and "http" protocols are supported, as is the synchronous `SurrealDB` client. The
+    async loop can be run with standard `asyncio` or with `uvloop`:
 
-    >>> import asyncio
+    >>> import asyncio  # (or uvloop)
     >>> async def surreal_query_to_frame(query: str, url: str):
-    ...     async with Surreal(url) as client:
+    ...     async with AsyncSurrealDB(url) as client:
     ...         await client.use(namespace="test", database="test")
     ...         return pl.read_database(query=query, connection=client)
     >>> df = asyncio.run(
     ...     surreal_query_to_frame(
-    ...         query="SELECT * FROM test_data",
-    ...         url="ws://localhost:8000/rpc",
+    ...         query="SELECT * FROM test",
+    ...         url="http://localhost:8000",
     ...     )
     ... )  # doctest: +SKIP
 
@@ -236,7 +237,7 @@ def read_database(
             connection = ODBCCursorProxy(connection)
         elif "://" in connection:
             # otherwise looks like a mistaken call to read_database_uri
-            msg = "use of string URI is invalid here; call `read_database_uri` instead"
+            msg = "string URI is invalid here; call `read_database_uri` instead"
             raise ValueError(msg)
         else:
             msg = "unable to identify string connection as valid ODBC (no driver)"

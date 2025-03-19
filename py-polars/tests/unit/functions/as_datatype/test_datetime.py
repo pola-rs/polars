@@ -32,6 +32,53 @@ def test_date_datetime() -> None:
     assert_series_equal(out["h2"], df["hour"].rename("h2"))
 
 
+@pytest.mark.parametrize(
+    "components",
+    [
+        [2025, 13, 1],
+        [2025, 1, 32],
+        [2025, 2, 29],
+    ],
+)
+def test_date_invalid_component(components: list[int]) -> None:
+    y, m, d = components
+    msg = rf"Invalid date components \({y}, {m}, {d}\) supplied"
+    with pytest.raises(ComputeError, match=msg):
+        pl.select(pl.date(*components))
+
+
+@pytest.mark.parametrize(
+    "components",
+    [
+        [2025, 13, 1, 0, 0, 0, 0],
+        [2025, 1, 32, 0, 0, 0, 0],
+        [2025, 2, 29, 0, 0, 0, 0],
+    ],
+)
+def test_datetime_invalid_date_component(components: list[int]) -> None:
+    y, m, d = components[0:3]
+    msg = rf"Invalid date components \({y}, {m}, {d}\) supplied"
+    with pytest.raises(ComputeError, match=msg):
+        pl.select(pl.datetime(*components))
+
+
+@pytest.mark.parametrize(
+    "components",
+    [
+        [2025, 1, 1, 25, 0, 0, 0],
+        [2025, 1, 1, 0, 60, 0, 0],
+        [2025, 1, 1, 0, 0, 60, 0],
+        [2025, 1, 1, 0, 0, 0, 2_000_000],
+    ],
+)
+def test_datetime_invalid_time_component(components: list[int]) -> None:
+    h, mnt, s, us = components[3:]
+    ns = us * 1_000
+    msg = rf"Invalid time components \({h}, {mnt}, {s}, {ns}\) supplied"
+    with pytest.raises(ComputeError, match=msg):
+        pl.select(pl.datetime(*components))
+
+
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_datetime_time_unit(time_unit: TimeUnit) -> None:
     result = pl.datetime(2022, 1, 2, time_unit=time_unit)

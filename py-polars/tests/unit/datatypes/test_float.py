@@ -1,3 +1,4 @@
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -296,3 +297,12 @@ def test_first_last_distinct() -> None:
     assert_series_equal(
         pl.Series("x", [False, True, False, True, True, True]), s.is_last_distinct()
     )
+
+
+def test_arrow_float16_read_empty_20946() -> None:
+    schema = pa.schema([("float_column", pa.float16())])
+    table = pa.table([[]], schema=schema)
+
+    df = pl.from_arrow(table)
+    assert df.shape == (0, 1)
+    assert df.schema == pl.Schema([("float_column", pl.Float32)])  # type: ignore[union-attr]

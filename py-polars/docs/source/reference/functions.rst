@@ -25,15 +25,17 @@ Miscellaneous
 
     align_frames
     concat
+    defer
     escape_regex
 
-Parallelization
-~~~~~~~~~~~~~~~
+Multiple queries
+~~~~~~~~~~~~~~~~
 .. autosummary::
    :toctree: api/
 
    collect_all
    collect_all_async
+   explain_all
 
 Random
 ~~~~~~

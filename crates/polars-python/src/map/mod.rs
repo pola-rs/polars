@@ -4,19 +4,20 @@ pub mod series;
 
 use std::collections::BTreeMap;
 
+use arrow::bitmap::BitmapBuilder;
 use polars::chunked_array::builder::get_list_builder;
-use polars::export::arrow::bitmap::BitmapBuilder;
 use polars::prelude::*;
-use polars_core::export::rayon::prelude::*;
-use polars_core::utils::CustomIterTools;
 use polars_core::POOL;
+use polars_core::utils::CustomIterTools;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
+use rayon::prelude::*;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
+use crate::utils::EnterPolarsExt;
 use crate::{PySeries, Wrap};
 
 pub trait PyPolarsNumericType: PolarsNumericType {}
@@ -47,7 +48,7 @@ fn iterator_to_struct<'a>(
         _ => {
             return Err(crate::exceptions::ComputeError::new_err(format!(
                 "expected struct got {first_value:?}",
-            )))
+            )));
         },
     };
 
@@ -124,14 +125,14 @@ fn iterator_to_struct<'a>(
         }
     }
 
-    let fields = py.allow_threads(|| {
+    let fields = py.enter_polars_ok(|| {
         POOL.install(|| {
             field_names_ordered
                 .par_iter()
                 .map(|name| Series::new(name.clone(), struct_fields.get(name).unwrap()))
                 .collect::<Vec<_>>()
         })
-    });
+    })?;
 
     Ok(
         StructChunked::from_series(name, fields[0].len(), fields.iter())
@@ -319,7 +320,7 @@ fn iterator_to_list(
         match opt_val? {
             None => builder.append_null(),
             Some(s) => {
-                if s.len() == 0 && s.dtype() != dt {
+                if s.is_empty() && s.dtype() != dt {
                     builder
                         .append_series(&Series::full_null(PlSmallStr::EMPTY, 0, dt))
                         .unwrap()

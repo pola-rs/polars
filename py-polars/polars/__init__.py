@@ -1,16 +1,25 @@
 import contextlib
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    # ensure the object constructor is known by polars
-    # we set this once on import
-
-    # This must be done before importing the Polars Rust bindings.
+    # This must be done before importing the Polars Rust bindings, otherwise we
+    # might execute illegal instructions.
     import polars._cpu_check
 
     polars._cpu_check.check_cpu_flags()
 
-    # we also set other function pointers needed
-    # on the rust side. This function is highly
+    # We also configure the allocator before importing the Polars Rust bindings.
+    # See https://github.com/pola-rs/polars/issues/18088,
+    # https://github.com/pola-rs/polars/pull/21829.
+    import os
+
+    jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:-1"
+    if os.environ.get("POLARS_THP") == "1":
+        jemalloc_conf += ",thp:always,metadata_thp:always"
+    if override := os.environ.get("_RJEM_MALLOC_CONF"):
+        jemalloc_conf += "," + override
+    os.environ["_RJEM_MALLOC_CONF"] = jemalloc_conf
+
+    # Initialize polars on the rust side. This function is highly
     # unsafe and should only be called once.
     from polars.polars import __register_startup_deps
 
@@ -23,6 +32,7 @@ from polars._utils.polars_version import get_polars_version as _get_polars_versi
 
 # TODO: remove need for importing wrap utils at top level
 from polars._utils.wrap import wrap_df, wrap_s  # noqa: F401
+from polars.catalog.unity import Catalog
 from polars.config import Config
 from polars.convert import (
     from_arrow,
@@ -108,6 +118,7 @@ from polars.functions import (
     element,
     escape_regex,
     exclude,
+    explain_all,
     field,
     first,
     fold,
@@ -120,6 +131,8 @@ from polars.functions import (
     int_ranges,
     last,
     len,
+    linear_space,
+    linear_spaces,
     lit,
     map_batches,
     map_groups,
@@ -155,6 +168,10 @@ from polars.functions import (
 )
 from polars.interchange import CompatLevel
 from polars.io import (
+    PartitionByKey,
+    PartitionMaxSize,
+    PartitionParted,
+    defer,
     read_avro,
     read_clipboard,
     read_csv,
@@ -255,6 +272,10 @@ __all__ = [
     "Unknown",
     "Utf8",
     # polars.io
+    "defer",
+    "PartitionByKey",
+    "PartitionMaxSize",
+    "PartitionParted",
     "read_avro",
     "read_clipboard",
     "read_csv",
@@ -278,6 +299,7 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    "Catalog",
     # polars.io.cloud
     "CredentialProvider",
     "CredentialProviderAWS",
@@ -347,6 +369,7 @@ __all__ = [
     "datetime",
     "duration",
     "exclude",
+    "explain_all",
     "field",
     "first",
     "fold",
@@ -358,6 +381,8 @@ __all__ = [
     "int_range",
     "int_ranges",
     "last",
+    "linear_space",
+    "linear_spaces",
     "lit",
     "map_batches",
     "map_groups",

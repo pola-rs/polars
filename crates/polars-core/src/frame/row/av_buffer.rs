@@ -96,7 +96,10 @@ impl<'a> AnyValueBuffer<'a> {
             #[cfg(feature = "dtype-datetime")]
             (Datetime(builder, _, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-datetime")]
-            (Datetime(builder, tu_l, _), AnyValue::Datetime(v, tu_r, _)) => {
+            (
+                Datetime(builder, tu_l, _),
+                AnyValue::Datetime(v, tu_r, _) | AnyValue::DatetimeOwned(v, tu_r, _),
+            ) => {
                 // we convert right tu to left tu
                 // so we swap.
                 let v = convert_time_units(v, tu_r, *tu_l);

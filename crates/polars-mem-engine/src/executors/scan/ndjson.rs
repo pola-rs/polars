@@ -1,25 +1,27 @@
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
+use polars_io::predicates::SkipBatchPredicate;
 use polars_io::prelude::{JsonLineReader, SerReader};
 use polars_io::utils::compression::maybe_decompress_bytes;
 
 use super::*;
+use crate::ScanPredicate;
 
 pub struct JsonExec {
     sources: ScanSources,
     options: NDJsonReadOptions,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     file_info: FileInfo,
-    predicate: Option<Arc<dyn PhysicalExpr>>,
+    predicate: Option<ScanPredicate>,
 }
 
 impl JsonExec {
     pub fn new(
         sources: ScanSources,
         options: NDJsonReadOptions,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         file_info: FileInfo,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<ScanPredicate>,
     ) -> Self {
         Self {
             sources,
@@ -47,7 +49,7 @@ impl JsonExec {
             eprintln!("ASYNC READING FORCED");
         }
 
-        let mut n_rows = self.file_options.slice.map(|x| {
+        let mut n_rows = self.file_options.pre_slice.map(|x| {
             assert_eq!(x.0, 0);
             x.1
         });
@@ -61,7 +63,7 @@ impl JsonExec {
                 };
             }
             if let Some(row_index) = &self.file_options.row_index {
-                df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset));
+                unsafe { df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset)) };
             }
             return Ok(df);
         }
@@ -93,7 +95,11 @@ impl JsonExec {
                     .with_rechunk(self.file_options.rechunk)
                     .with_chunk_size(Some(self.options.chunk_size))
                     .with_row_index(row_index)
-                    .with_predicate(self.predicate.clone().map(phys_expr_to_io_expr))
+                    .with_predicate(
+                        self.predicate
+                            .as_ref()
+                            .map(|p| phys_expr_to_io_expr(p.predicate.clone())),
+                    )
                     .with_projection(self.file_options.with_columns.clone())
                     .low_memory(self.options.low_memory)
                     .with_n_rows(n_rows)
@@ -133,11 +139,12 @@ impl ScanExec for JsonExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<ScanPredicate>,
+        _skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;
-        self.file_options.slice = slice.map(|(s, l)| (s as i64, l));
+        self.file_options.pre_slice = slice.map(|(s, l)| (s as i64, l));
         self.predicate = predicate;
         self.file_options.row_index = row_index;
 

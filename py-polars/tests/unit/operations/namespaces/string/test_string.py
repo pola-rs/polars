@@ -11,6 +11,7 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     SchemaError,
+    ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -52,6 +53,12 @@ def test_str_slice_expr() -> None:
     # negative length is not allowed
     with pytest.raises(InvalidOperationError):
         df.select(pl.col("a").str.slice(0, -1))
+
+
+def test_str_slice_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.slice(pl.Series([1, 2])))
 
 
 @pytest.mark.parametrize(
@@ -115,6 +122,12 @@ def test_str_head_expr() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_str_head_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.head(pl.Series([1, 2])))
+
+
 @pytest.mark.parametrize(
     ("input", "n", "output"),
     [
@@ -176,6 +189,12 @@ def test_str_tail_expr() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_str_tail_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.tail(pl.Series([1, 2])))
+
+
 def test_str_slice_multibyte() -> None:
     ref = "你好世界"
     s = pl.Series([ref])
@@ -210,6 +229,12 @@ def test_str_contains() -> None:
     s = pl.Series(["messi", "ronaldo", "ibrahimovic"])
     expected = pl.Series([True, False, False])
     assert_series_equal(s.str.contains("mes"), expected)
+
+
+def test_str_contains_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.contains(pl.Series(["a", "b"])))  # type: ignore [arg-type]
 
 
 def test_count_match_literal() -> None:
@@ -336,6 +361,13 @@ def test_str_find_escaped_chars() -> None:
         ).cast({cs.signed_integer(): pl.UInt32}),
         res,
     )
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_str_find_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.find(pl.Series(["a", "b"])))  # type: ignore [arg-type]
 
 
 def test_hex_decode_return_dtype() -> None:
@@ -515,6 +547,12 @@ def test_str_strip_chars() -> None:
     assert_series_equal(s.str.strip_chars(" hwo"), expected)
 
 
+def test_str_strip_chars_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.strip_chars(pl.Series(["a", "b"])))
+
+
 def test_str_strip_chars_start() -> None:
     s = pl.Series([" hello ", "\t world"])
     expected = pl.Series(["hello ", "world"])
@@ -527,6 +565,12 @@ def test_str_strip_chars_start() -> None:
     assert_series_equal(s.str.strip_chars_start("hw "), expected)
 
 
+def test_str_strip_chars_start_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.strip_chars_start(pl.Series(["a", "b"])))
+
+
 def test_str_strip_chars_end() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series([" hello", "world"])
@@ -537,6 +581,12 @@ def test_str_strip_chars_end() -> None:
 
     expected = pl.Series([" he", "wor"])
     assert_series_equal(s.str.strip_chars_end("odl \t"), expected)
+
+
+def test_str_strip_chars_end_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.strip_chars_end(pl.Series(["a", "b"])))
 
 
 def test_str_strip_whitespace() -> None:
@@ -579,6 +629,12 @@ def test_str_strip_prefix_suffix_expr() -> None:
     }
 
 
+def test_str_strip_prefix_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.strip_prefix(pl.Series(["a", "b"])))
+
+
 def test_str_strip_suffix() -> None:
     s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", "", None])
     expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", "", None])
@@ -586,6 +642,12 @@ def test_str_strip_suffix() -> None:
     # test null literal
     expected = pl.Series([None, None, None, None, None, None], dtype=pl.String)
     assert_series_equal(s.str.strip_suffix(pl.lit(None, dtype=pl.String)), expected)
+
+
+def test_str_strip_suffix_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ShapeError):
+        df.select(pl.col("num").str.strip_suffix(pl.Series(["a", "b"])))
 
 
 def test_str_split() -> None:
@@ -728,6 +790,12 @@ def test_json_path_match() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_str_json_path_match_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises((ShapeError, ComputeError)):
+        df.select(pl.col("num").str.json_path_match(pl.Series(["a", "b"])))
 
 
 def test_extract_regex() -> None:
@@ -1126,6 +1194,23 @@ def test_replace_many(
             )
         ).item()
     )
+
+
+def test_replace_many_groupby() -> None:
+    df = pl.DataFrame(
+        {
+            "x": ["a", "b", "c", "d", "e", "f", "g", "h", "i"],
+            "g": [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        }
+    )
+    out = df.group_by("g").agg(pl.col.x.str.replace_many(pl.col.x.head(2), ""))
+    expected = pl.DataFrame(
+        {
+            "g": [0, 1, 2],
+            "x": [["", "", "c"], ["", "", "f"], ["", "", "i"]],
+        }
+    )
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 @pytest.mark.parametrize(
@@ -1758,21 +1843,17 @@ def test_replace_lit_n_char_13385(
 
 
 def test_extract_many() -> None:
-    df = pl.DataFrame({"values": ["discontent"]})
+    df = pl.DataFrame({"values": ["discontent", "foobar"]})
     patterns = ["winter", "disco", "onte", "discontent"]
-    assert (
-        df.with_columns(
-            pl.col("values")
-            .str.extract_many(patterns, overlapping=False)
-            .alias("matches"),
-            pl.col("values")
-            .str.extract_many(patterns, overlapping=True)
-            .alias("matches_overlapping"),
-        )
+    assert df.with_columns(
+        pl.col("values").str.extract_many(patterns, overlapping=False).alias("matches"),
+        pl.col("values")
+        .str.extract_many(patterns, overlapping=True)
+        .alias("matches_overlapping"),
     ).to_dict(as_series=False) == {
-        "values": ["discontent"],
-        "matches": [["disco"]],
-        "matches_overlapping": [["disco", "onte", "discontent"]],
+        "values": ["discontent", "foobar"],
+        "matches": [["disco"], []],
+        "matches_overlapping": [["disco", "onte", "discontent"], []],
     }
 
     # many patterns

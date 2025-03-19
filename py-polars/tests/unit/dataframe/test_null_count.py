@@ -22,7 +22,7 @@ from polars.testing.parametric import dataframes
 @example(df=pl.DataFrame())
 def test_null_count(df: pl.DataFrame) -> None:
     # note: the zero-row and zero-col cases are always passed as explicit examples
-    null_count, ncols = df.null_count(), len(df.columns)
+    null_count, ncols = df.null_count(), df.width
     assert null_count.shape == (1, ncols)
     for idx, count in enumerate(null_count.rows()[0]):
         assert count == sum(v is None for v in df.to_series(idx).to_list())

@@ -66,7 +66,7 @@ impl From<&DataType> for PyDataType {
             DataType::Duration(tu) => Duration(*tu),
             DataType::Time => Time,
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => Object,
+            DataType::Object(_) => Object,
             DataType::Categorical(_, _) => Categorical,
             DataType::Enum(rev_map, _) => Enum(rev_map.as_ref().unwrap().get_categories().clone()),
             DataType::Struct(_) => Struct,
@@ -106,7 +106,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Duration(tu) => Duration(tu),
             PyDataType::Time => Time,
             #[cfg(feature = "object")]
-            PyDataType::Object => Object(OBJECT_NAME, None),
+            PyDataType::Object => Object(OBJECT_NAME),
             PyDataType::Categorical => Categorical(None, Default::default()),
             PyDataType::Enum(categories) => create_enum_dtype(categories),
             PyDataType::Struct => Struct(vec![]),
@@ -134,4 +134,13 @@ pub fn _get_dtype_max(dt: Wrap<DataType>) -> PyResult<PyExpr> {
 pub fn _get_dtype_min(dt: Wrap<DataType>) -> PyResult<PyExpr> {
     let v = dt.0.min().map_err(PyPolarsErr::from)?;
     Ok(dsl::lit(v).into())
+}
+
+#[pyfunction]
+pub fn _known_timezones() -> PyResult<Vec<String>> {
+    use polars_time::prelude::known_timezones;
+    Ok(known_timezones()
+        .iter()
+        .map(|tz| tz.to_string())
+        .collect::<Vec<_>>())
 }

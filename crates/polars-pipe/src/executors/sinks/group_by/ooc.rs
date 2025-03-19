@@ -5,7 +5,7 @@ use polars_core::utils::split_df;
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sources::IpcSourceOneShot;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, Source, SourceResult};
-use crate::pipeline::{morsels_per_sink, PipeLine};
+use crate::pipeline::{PipeLine, morsels_per_sink};
 
 pub(super) struct GroupBySource {
     // Holding this keeps the lockfile in place

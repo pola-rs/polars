@@ -1,6 +1,7 @@
 use std::cell::UnsafeCell;
 
 use polars_row::{RowEncodingOptions, RowsEncoded};
+use polars_utils::aliases::PlSeedableRandomStateQuality;
 
 use self::row_encode::get_row_encoding_context;
 use super::*;
@@ -13,7 +14,7 @@ pub(super) struct Eval {
     key_columns_expr: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
     // the columns that will be aggregated
     aggregation_columns_expr: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: PlRandomState,
+    hb: PlSeedableRandomStateQuality,
     // amortize allocations
     aggregation_series: UnsafeCell<Vec<Series>>,
     keys_columns: UnsafeCell<Vec<ArrayRef>>,
@@ -28,7 +29,7 @@ impl Eval {
         key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
     ) -> Self {
-        let hb = PlRandomState::default();
+        let hb = PlSeedableRandomStateQuality::default();
         Self {
             key_columns_expr: key_columns,
             aggregation_columns_expr: aggregation_columns,
@@ -44,7 +45,7 @@ impl Eval {
         Self {
             key_columns_expr: self.key_columns_expr.clone(),
             aggregation_columns_expr: self.aggregation_columns_expr.clone(),
-            hb: self.hb.clone(),
+            hb: self.hb,
             aggregation_series: Default::default(),
             keys_columns: Default::default(),
             hashes: Default::default(),
@@ -77,7 +78,7 @@ impl Eval {
         let mut dicts = Vec::with_capacity(self.key_columns_expr.len());
         for phys_e in self.key_columns_expr.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
-            dicts.push(get_row_encoding_context(s.dtype()));
+            dicts.push(get_row_encoding_context(s.dtype(), false));
             let s = s.to_physical_repr().into_owned();
             let s = prepare_key(&s, chunk);
             keys_columns.push(s.to_arrow(0, CompatLevel::newest()));

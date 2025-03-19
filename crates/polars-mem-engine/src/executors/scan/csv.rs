@@ -4,16 +4,18 @@ use polars_core::config;
 use polars_core::utils::{
     accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
 };
+use polars_io::predicates::SkipBatchPredicate;
 use polars_io::utils::compression::maybe_decompress_bytes;
 
 use super::*;
+use crate::ScanPredicate;
 
 pub struct CsvExec {
     pub sources: ScanSources,
     pub file_info: FileInfo,
     pub options: CsvReadOptions,
-    pub file_options: FileScanOptions,
-    pub predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub file_options: Box<FileScanOptions>,
+    pub predicate: Option<ScanPredicate>,
 }
 
 impl CsvExec {
@@ -25,11 +27,14 @@ impl CsvExec {
             // Interpret selecting no columns as selecting all columns.
             .filter(|columns| !columns.is_empty());
 
-        let n_rows = _set_n_rows_for_scan(self.file_options.slice.map(|x| {
+        let n_rows = _set_n_rows_for_scan(self.file_options.pre_slice.map(|x| {
             assert_eq!(x.0, 0);
             x.1
         }));
-        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
+        let predicate = self
+            .predicate
+            .as_ref()
+            .map(|p| phys_expr_to_io_expr(p.predicate.clone()));
         let options_base = self
             .options
             .clone()
@@ -195,7 +200,7 @@ impl CsvExec {
                 accumulate_dataframes_vertical(dfs.into_iter().flat_map(|dfs| dfs.into_iter()))?;
 
             if let Some(row_index) = self.file_options.row_index.clone() {
-                df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset));
+                unsafe { df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset)) };
             }
 
             df
@@ -214,11 +219,12 @@ impl ScanExec for CsvExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<ScanPredicate>,
+        _skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;
-        self.file_options.slice = slice.map(|(o, l)| (o as i64, l));
+        self.file_options.pre_slice = slice.map(|(o, l)| (o as i64, l));
         self.predicate = predicate;
         self.file_options.row_index = row_index;
 
@@ -269,7 +275,7 @@ impl ScanExec for CsvExec {
 
     fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
         let (lb, ub) = self.file_info.row_estimation;
-        if lb.is_none_or(|lb| lb != ub) {
+        if lb.is_some_and(|lb| lb == ub) {
             return Ok(ub as IdxSize);
         }
 
@@ -286,7 +292,7 @@ impl ScanExec for CsvExec {
 
         let bytes = maybe_decompress_bytes(&memslice, owned)?;
 
-        let num_rows = count_rows_from_slice(
+        let num_rows = polars_io::csv::read::count_rows_from_slice_par(
             bytes,
             popt.separator,
             popt.quote_char,

@@ -217,13 +217,10 @@ def sequence_to_pyseries(
             s = wrap_s(py_series).dt.cast_time_unit(time_unit)
 
         if (values_dtype == Date) & (dtype == Datetime):
-            result = s.cast(Datetime(time_unit or "us"))
-            if time_zone is not None:
-                result = result.dt.convert_time_zone(time_zone)
-            return result._s
+            s = s.cast(Datetime(time_unit or "us"))
 
-        if (dtype == Datetime) and (value.tzinfo is not None or time_zone is not None):
-            return s.dt.convert_time_zone(time_zone or "UTC")._s
+        if dtype == Datetime and time_zone is not None:
+            return s.dt.convert_time_zone(time_zone)._s
         return s._s
 
     elif (

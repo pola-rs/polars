@@ -88,7 +88,7 @@ impl ChunkReverse for ArrayChunked {
             todo!("reverse for FixedSizeList with non-numeric dtypes not yet supported")
         }
         let ca = self.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
+        let arr = ca.downcast_as_array();
         let values = arr.values().as_ref();
 
         let mut builder =

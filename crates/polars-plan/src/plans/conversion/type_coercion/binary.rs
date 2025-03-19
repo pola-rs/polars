@@ -16,7 +16,7 @@ macro_rules! unpack {
 fn compares_cat_to_string(type_left: &DataType, type_right: &DataType, op: Operator) -> bool {
     #[cfg(feature = "dtype-categorical")]
     {
-        op.is_comparison()
+        op.is_comparison_or_bitwise()
             && matches_any_order!(
                 type_left,
                 type_right,
@@ -167,40 +167,40 @@ pub(super) fn process_binary(
     match (&type_left, &type_right, op) {
         #[cfg(not(feature = "dtype-categorical"))]
         (DataType::String, dt, op) | (dt, DataType::String, op)
-            if op.is_comparison() && dt.is_primitive_numeric() =>
+            if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-categorical")]
         (String | Unknown(UnknownKind::Str) | Categorical(_, _), dt, op)
         | (dt, Unknown(UnknownKind::Str) | String | Categorical(_, _), op)
-            if op.is_comparison() && dt.is_primitive_numeric() =>
+            if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-categorical")]
         (Unknown(UnknownKind::Str) | String | Enum(_, _), dt, op)
         | (dt, Unknown(UnknownKind::Str) | String | Enum(_, _), op)
-            if op.is_comparison() && dt.is_primitive_numeric() =>
+            if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-date")]
         (Date, String | Unknown(UnknownKind::Str), op)
         | (String | Unknown(UnknownKind::Str), Date, op)
-            if op.is_comparison() =>
+            if op.is_comparison_or_bitwise() =>
         {
             err_date_str_compare()?
         },
         #[cfg(feature = "dtype-datetime")]
         (Datetime(_, _), String | Unknown(UnknownKind::Str), op)
         | (String | Unknown(UnknownKind::Str), Datetime(_, _), op)
-            if op.is_comparison() =>
+            if op.is_comparison_or_bitwise() =>
         {
             err_date_str_compare()?
         },
         #[cfg(feature = "dtype-time")]
-        (Time | Unknown(UnknownKind::Str), String, op) if op.is_comparison() => {
+        (Time | Unknown(UnknownKind::Str), String, op) if op.is_comparison_or_bitwise() => {
             err_date_str_compare()?
         },
         // structs can be arbitrarily nested, leave the complexity to the caller for now.
@@ -232,7 +232,7 @@ pub(super) fn process_binary(
             (Struct(_), a) | (a, Struct(_)) if a.is_primitive_numeric() => {
                 return process_struct_numeric_arithmetic(
                     type_left, type_right, node_left, node_right, op, expr_arena,
-                )
+                );
             },
             _ => {},
         }

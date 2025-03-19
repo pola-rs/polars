@@ -172,6 +172,31 @@ def test_group_by_agg_equals_zero_3535() -> None:
     }
 
 
+def test_group_by_followed_by_limit() -> None:
+    lf = pl.LazyFrame(
+        {
+            "key": ["xx", "yy", "zz", "xx", "zz", "zz"],
+            "val1": [15, 25, 10, 20, 20, 20],
+            "val2": [-33, 20, 44, -2, 16, 71],
+        }
+    )
+    grp = lf.group_by("key", maintain_order=True).agg(pl.col("val1", "val2").sum())
+    assert sorted(grp.collect().rows()) == [
+        ("xx", 35, -35),
+        ("yy", 25, 20),
+        ("zz", 50, 131),
+    ]
+    assert sorted(grp.head(2).collect().rows()) == [
+        ("xx", 35, -35),
+        ("yy", 25, 20),
+    ]
+    assert sorted(grp.head(10).collect().rows()) == [
+        ("xx", 35, -35),
+        ("yy", 25, 20),
+        ("zz", 50, 131),
+    ]
+
+
 def test_dtype_concat_3735() -> None:
     for dt in NUMERIC_DTYPES:
         d1 = pl.DataFrame([pl.Series("val", [1, 2], dtype=dt)])

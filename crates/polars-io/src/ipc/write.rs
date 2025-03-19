@@ -9,13 +9,25 @@ use serde::{Deserialize, Serialize};
 use crate::prelude::*;
 use crate::shared::schema_to_arrow_checked;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcWriterOptions {
     /// Data page compression
     pub compression: Option<IpcCompression>,
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
+    /// Compatibility level
+    pub compat_level: CompatLevel,
+    /// Size of each written chunk.
+    pub chunk_size: IdxSize,
+}
+
+impl Default for IpcWriterOptions {
+    fn default() -> Self {
+        Self {
+            compression: None,
+            compat_level: CompatLevel::newest(),
+            chunk_size: 1 << 18,
+        }
+    }
 }
 
 impl IpcWriterOptions {

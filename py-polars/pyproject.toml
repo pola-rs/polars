@@ -29,6 +29,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
 ]
 dynamic = ["version"]
 
@@ -40,6 +41,7 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
+polars_cloud = ["polars_cloud >= 0.0.1a1"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
@@ -57,14 +59,14 @@ excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
 adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
 connectorx = ["connectorx >= 0.3.2"]
 sqlalchemy = ["sqlalchemy", "polars[pandas]"]
-database = ["polars[adbc,connectorx,sqlalchemy]", "nest-asyncio"]
+database = ["polars[adbc,connectorx,sqlalchemy]"]
 
 # Cloud
 fsspec = ["fsspec"]
 
 # Other I/O
 deltalake = ["deltalake >= 0.19.0"]
-iceberg = ["pyiceberg >= 0.5.0"]
+iceberg = ["pyiceberg >= 0.7.1"]
 
 # Other
 async = ["gevent"]
@@ -106,6 +108,7 @@ module = [
   "arrow_odbc",
   "backports",
   "connectorx",
+  "dateutil.*",
   "deltalake.*",
   "fsspec.*",
   "gevent",
@@ -114,9 +117,9 @@ module = [
   "kuzu",
   "matplotlib.*",
   "moto.server",
-  "nest_asyncio",
   "openpyxl",
   "polars.polars",
+  "polars_cloud",
   "pyarrow.*",
   "pydantic",
   "pyiceberg.*",
@@ -261,6 +264,9 @@ filterwarnings = [
   "ignore:Deprecated API features detected.*:DeprecationWarning",
   # numpy import can generate this warning in Python 3.13 on certain runners
   "ignore:.*numpy\\.longdouble.*:UserWarning",
+  # The old streaming engine is deprecated, until the new streaming engine is
+  # done just ignore the deprecation warnings.
+  "ignore:The old streaming engine*:DeprecationWarning",
 ]
 xfail_strict = true
 

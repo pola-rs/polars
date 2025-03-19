@@ -51,7 +51,6 @@ impl ChunkExplode for ListChunked {
         let ca = self.rechunk();
         let listarr: &LargeListArray = ca.downcast_iter().next().unwrap();
         let offsets = listarr.offsets().clone();
-
         Ok(offsets)
     }
 

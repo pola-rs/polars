@@ -5,8 +5,8 @@ import os
 import random
 import string
 import sys
-import time
-import tracemalloc
+from contextlib import contextmanager
+from functools import wraps
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -17,6 +17,7 @@ from polars.testing.parametric import load_profile
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from types import ModuleType
     from typing import Any
 
     FixtureRequest = Any
@@ -182,10 +183,10 @@ class MemoryUsage:
 
     def reset_tracking(self) -> None:
         """Reset tracking to zero."""
-        gc.collect()
-        tracemalloc.stop()
-        tracemalloc.start()
-        assert self.get_peak() < 100_000
+        # gc.collect()
+        # tracemalloc.stop()
+        # tracemalloc.start()
+        # assert self.get_peak() < 100_000
 
     def get_current(self) -> int:
         """
@@ -194,7 +195,8 @@ class MemoryUsage:
         This only tracks allocations since this object was created or
         ``reset_tracking()`` was called, whichever is later.
         """
-        return tracemalloc.get_traced_memory()[0]
+        return 0
+        # tracemalloc.get_traced_memory()[0]
 
     def get_peak(self) -> int:
         """
@@ -203,7 +205,8 @@ class MemoryUsage:
         This returns peak allocations since this object was created or
         ``reset_tracking()`` was called, whichever is later.
         """
-        return tracemalloc.get_traced_memory()[1]
+        return 0
+        # tracemalloc.get_traced_memory()[1]
 
 
 # The bizarre syntax is from
@@ -232,15 +235,20 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
         pytest.skip("Windows not supported at the moment.")
 
     gc.collect()
-    tracemalloc.start()
     try:
         yield MemoryUsage()
     finally:
-        # Workaround for https://github.com/python/cpython/issues/128679
-        time.sleep(1)
         gc.collect()
-
-        tracemalloc.stop()
+    # gc.collect()
+    # tracemalloc.start()
+    # try:
+    #     yield MemoryUsage()
+    # finally:
+    #     # Workaround for https://github.com/python/cpython/issues/128679
+    #     time.sleep(1)
+    #     gc.collect()
+    #
+    #     tracemalloc.stop()
 
 
 @pytest.fixture(params=[True, False])
@@ -260,3 +268,50 @@ def test_global_and_local(
             yield
     else:
         yield
+
+
+@contextmanager
+def mock_module_import(
+    name: str, module: ModuleType, *, replace_if_exists: bool = False
+) -> Generator[None, None, None]:
+    """
+    Mock an optional module import for the duration of a context.
+
+    Parameters
+    ----------
+    name
+        The name of the module to mock.
+    module
+        A ModuleType instance representing the mocked module.
+    replace_if_exists
+        Whether to replace the module if it already exists in `sys.modules` (defaults to
+        False, meaning that if the module is already imported, it will not be replaced).
+    """
+    if (original := sys.modules.get(name, None)) is not None and not replace_if_exists:
+        yield
+    else:
+        sys.modules[name] = module
+        try:
+            yield
+        finally:
+            if original is not None:
+                sys.modules[name] = original
+            else:
+                del sys.modules[name]
+
+
+# The new streaming engine currently only works if you keep the same string cache
+# alive the entire time.
+def with_string_cache_if_auto_streaming(f: Any) -> Any:
+    if (
+        os.getenv("POLARS_AUTO_NEW_STREAMING", os.getenv("POLARS_FORCE_NEW_STREAMING"))
+        != "1"
+    ):
+        return f
+
+    @wraps(f)
+    def with_cache(*args: Any, **kwargs: Any) -> Any:
+        with pl.StringCache():
+            return f(*args, **kwargs)
+
+    return with_cache

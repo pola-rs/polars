@@ -11,6 +11,3 @@ pub use crate::legacy::kernels::{Ambiguous, NonExistent};
 pub type LargeStringArray = Utf8Array<i64>;
 pub type LargeBinaryArray = BinaryArray<i64>;
 pub type LargeListArray = ListArray<i64>;
-
-#[allow(deprecated)]
-pub use crate::legacy::kernels::rolling::no_nulls::QuantileInterpolOptions;

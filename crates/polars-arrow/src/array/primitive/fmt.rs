@@ -2,11 +2,11 @@
 use std::fmt::{Debug, Formatter, Result, Write};
 
 use super::PrimitiveArray;
-use crate::array::fmt::write_vec;
 use crate::array::Array;
+use crate::array::fmt::write_vec;
 use crate::datatypes::{IntervalUnit, TimeUnit};
 use crate::temporal_conversions;
-use crate::types::{days_ms, i256, months_days_ns, NativeType};
+use crate::types::{NativeType, days_ms, i256, months_days_ns};
 
 macro_rules! dyn_primitive {
     ($array:expr, $ty:ty, $expr:expr) => {{

@@ -1,6 +1,6 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::temporal;
-use polars_compute::cast::{cast, CastOptionsImpl};
+use polars_compute::cast::{CastOptionsImpl, cast};
 use polars_core::prelude::*;
 #[cfg(feature = "timezones")]
 use polars_ops::chunked_array::datetime::replace_time_zone;
@@ -129,7 +129,18 @@ pub trait DatetimeMethods: AsDatetime {
             TimeUnit::Microseconds => datetime_to_ordinal_us,
             TimeUnit::Milliseconds => datetime_to_ordinal_ms,
         };
-        ca.apply_kernel_cast::<Int16Type>(&f)
+        let ca_local = match ca.dtype() {
+            #[cfg(feature = "timezones")]
+            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
+                ca,
+                None,
+                &StringChunked::new("".into(), ["raise"]),
+                NonExistent::Raise,
+            )
+            .expect("Removing time zone is infallible"),
+            _ => ca,
+        };
+        ca_local.apply_kernel_cast::<Int16Type>(&f)
     }
 
     fn parse_from_str_slice(
@@ -179,22 +190,36 @@ pub trait DatetimeMethods: AsDatetime {
                 if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ns)) =
                     (y, m, d, h, mnt, s, ns)
                 {
-                    NaiveDate::from_ymd_opt(y, m as u32, d as u32)
-                        .and_then(|nd| {
-                            nd.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32)
-                        })
-                        .map(|ndt| match time_unit {
-                            TimeUnit::Milliseconds => ndt.and_utc().timestamp_millis(),
-                            TimeUnit::Microseconds => ndt.and_utc().timestamp_micros(),
-                            TimeUnit::Nanoseconds => ndt.and_utc().timestamp_nanos_opt().unwrap(),
-                        })
+                    NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
+                        // We have an invalid date.
+                        || Err(polars_err!(ComputeError: format!("Invalid date components ({}, {}, {}) supplied", y, m, d))),
+                        // We have a valid date.
+                        |date| {
+                            date.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32)
+                                .map_or_else(
+                                    // We have invalid time components for the specified date.
+                                    || Err(polars_err!(ComputeError: format!("Invalid time components ({}, {}, {}, {}) supplied", h, mnt, s, ns))),
+                                    // We have a valid time.
+                                    |ndt| {
+                                        let t = ndt.and_utc();
+                                        Ok(Some(match time_unit {
+                                            TimeUnit::Milliseconds => t.timestamp_millis(),
+                                            TimeUnit::Microseconds => t.timestamp_micros(),
+                                            TimeUnit::Nanoseconds => {
+                                                t.timestamp_nanos_opt().unwrap()
+                                            },
+                                        }))
+                                    },
+                                )
+                        },
+                    )
                 } else {
-                    None
+                    Ok(None)
                 }
             })
-            .collect_trusted();
+            .try_collect_ca_with_dtype(name, DataType::Int64)?;
 
-        let mut ca = match time_zone {
+        let ca = match time_zone {
             #[cfg(feature = "timezones")]
             Some(_) => {
                 let mut ca = ca.into_datetime(*time_unit, None);
@@ -209,7 +234,6 @@ pub trait DatetimeMethods: AsDatetime {
                 ca.into_datetime(*time_unit, None)
             },
         };
-        ca.rename(name);
         Ok(ca)
     }
 }

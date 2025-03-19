@@ -14,6 +14,7 @@ import zstandard
 if TYPE_CHECKING:
     from pathlib import Path
 
+import orjson
 import pytest
 
 import polars as pl
@@ -55,6 +56,24 @@ def test_write_json_duration() -> None:
     # we don't guarantee a format, just round-circling
     value = df.write_json()
     expected = '[{"a":"PT91762.939S"},{"a":"PT91762.89S"},{"a":"PT6020.836S"}]'
+    assert value == expected
+
+
+def test_write_json_time() -> None:
+    ns = 1_000_000_000
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [7291 * ns + 54321, 54321 * ns + 12345, 86399 * ns],
+                dtype=pl.Time,
+            ),
+        }
+    )
+
+    value = df.write_json()
+    expected = (
+        '[{"a":"02:01:31.000054321"},{"a":"15:05:21.000012345"},{"a":"23:59:59"}]'
+    )
     assert value == expected
 
 
@@ -364,7 +383,17 @@ def test_json_normalize() -> None:
             "fitness": {"height": 130, "weight": 60},
         },
     ]
-    assert pl.json_normalize(data, max_level=0).to_dict(as_series=False) == {
+    assert pl.json_normalize(data, max_level=1, separator=":").to_dict(
+        as_series=False,
+    ) == {
+        "id": [1, None, 2],
+        "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
+        "fitness:height": [130, 130, 130],
+        "fitness:weight": [60, 60, 60],
+    }
+    assert pl.json_normalize(data, max_level=0).to_dict(
+        as_series=False,
+    ) == {
         "id": [1, None, 2],
         "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
         "fitness": [
@@ -373,11 +402,16 @@ def test_json_normalize() -> None:
             '{"height": 130, "weight": 60}',
         ],
     }
-    assert pl.json_normalize(data, max_level=1).to_dict(as_series=False) == {
+    assert pl.json_normalize(data, max_level=0, encoder=orjson.dumps).to_dict(
+        as_series=False,
+    ) == {
         "id": [1, None, 2],
         "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
-        "fitness.height": [130, 130, 130],
-        "fitness.weight": [60, 60, 60],
+        "fitness": [
+            b'{"height":130,"weight":60}',
+            b'{"height":130,"weight":60}',
+            b'{"height":130,"weight":60}',
+        ],
     }
 
 
@@ -509,3 +543,23 @@ def test_read_json_struct_schema() -> None:
         ),
         pl.DataFrame({"a": [1, 2]}),
     )
+
+
+def test_read_ndjson_inner_list_types_18244() -> None:
+    assert pl.read_ndjson(
+        io.StringIO("""{"a":null,"b":null,"c":null}"""),
+        schema={
+            "a": pl.List(pl.String),
+            "b": pl.List(pl.Int32),
+            "c": pl.List(pl.Float64),
+        },
+    ).schema == (
+        {"a": pl.List(pl.String), "b": pl.List(pl.Int32), "c": pl.List(pl.Float64)}
+    )
+
+
+def test_read_json_utf_8_sig_encoding() -> None:
+    data = [{"a": [1, 2], "b": [1, 2]}]
+    result = pl.read_json(json.dumps(data).encode("utf-8-sig"))
+    expected = pl.DataFrame(data)
+    assert_frame_equal(result, expected)

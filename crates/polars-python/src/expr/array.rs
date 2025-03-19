@@ -10,6 +10,10 @@ use crate::expr::PyExpr;
 
 #[pymethods]
 impl PyExpr {
+    fn arr_len(&self) -> Self {
+        self.inner.clone().arr().len().into()
+    }
+
     fn arr_max(&self) -> Self {
         self.inner.clone().arr().max().into()
     }

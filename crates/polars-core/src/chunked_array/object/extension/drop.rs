@@ -11,7 +11,7 @@ pub(crate) unsafe fn drop_list(ca: &ListChunked) {
         inner = a;
     }
 
-    if matches!(inner, DataType::Object(_, _)) {
+    if matches!(inner, DataType::Object(_)) {
         if nested_count != 0 {
             panic!("multiple nested objects not yet supported")
         }

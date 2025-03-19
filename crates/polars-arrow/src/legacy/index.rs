@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use num_traits::{NumCast, Signed, Zero};
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 
 use crate::array::PrimitiveArray;

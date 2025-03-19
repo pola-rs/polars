@@ -75,7 +75,7 @@ fn insert_file_sink(mut root: Node, lp_arena: &mut Arena<IR>) -> Node {
     if !matches!(lp_arena.get(root), IR::Sink { .. }) {
         root = lp_arena.add(IR::Sink {
             input: root,
-            payload: SinkType::Memory,
+            payload: SinkTypeIR::Memory,
         })
     }
     root
@@ -162,9 +162,7 @@ pub(crate) fn insert_streaming_nodes(
         state.execution_id = execution_id;
         execution_id += 1;
         match lp_arena.get(root) {
-            Filter { input, predicate }
-                if is_elementwise_rec(expr_arena.get(predicate.node()), expr_arena) =>
-            {
+            Filter { input, predicate } if is_elementwise_rec(predicate.node(), expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -231,9 +229,14 @@ pub(crate) fn insert_streaming_nodes(
             },
             Scan {
                 scan_type,
-                file_options: FileScanOptions { slice, .. },
+                file_options,
                 ..
-            } if scan_type.streamable() && slice.map(|slice| slice.0 >= 0).unwrap_or(true) => {
+            } if scan_type.streamable()
+                && file_options
+                    .pre_slice
+                    .map(|slice| slice.0 >= 0)
+                    .unwrap_or(true) =>
+            {
                 if state.streamable {
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)
@@ -344,7 +347,7 @@ pub(crate) fn insert_streaming_nodes(
                 fn allowed_dtype(dt: &DataType, string_cache: bool) -> bool {
                     match dt {
                         #[cfg(feature = "object")]
-                        DataType::Object(_, _) => false,
+                        DataType::Object(_) => false,
                         #[cfg(feature = "dtype-categorical")]
                         DataType::Categorical(_, _) => string_cache,
                         DataType::List(inner) => allowed_dtype(inner, string_cache),

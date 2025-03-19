@@ -1,19 +1,18 @@
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LazyLock, RwLock};
 
-use once_cell::sync::Lazy;
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_utils::aliases::PlHashMap;
 
-use super::entry::{FileCacheEntry, DATA_PREFIX, METADATA_PREFIX};
+use super::entry::{DATA_PREFIX, FileCacheEntry, METADATA_PREFIX};
 use super::eviction::EvictionManager;
 use super::file_fetcher::FileFetcher;
 use super::utils::FILE_CACHE_PREFIX;
 use crate::path_utils::{ensure_directory_init, is_cloud_url};
 
-pub static FILE_CACHE: Lazy<FileCache> = Lazy::new(|| {
+pub static FILE_CACHE: LazyLock<FileCache> = LazyLock::new(|| {
     let prefix = FILE_CACHE_PREFIX.as_ref();
     let prefix = Arc::<Path>::from(prefix);
 
@@ -137,7 +136,10 @@ impl FileCache {
             // May have been raced
             if let Some(entry) = entries.get(uri.as_ref()) {
                 if verbose {
-                    eprintln!("[file_cache] init_entry: return existing entry for uri = {} (lost init race)", uri.clone());
+                    eprintln!(
+                        "[file_cache] init_entry: return existing entry for uri = {} (lost init race)",
+                        uri.clone()
+                    );
                 }
                 entry.update_ttl(ttl);
                 return Ok(entry.clone());

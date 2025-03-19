@@ -142,7 +142,7 @@ impl SortSinkMultiple {
             .iter()
             .map(|i| {
                 let (_, dtype) = schema.get_at_index(*i).unwrap();
-                get_row_encoding_context(dtype)
+                get_row_encoding_context(dtype, true)
             })
             .collect::<Vec<_>>();
 

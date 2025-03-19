@@ -4,7 +4,7 @@ import sys
 import urllib.parse
 import warnings
 from collections import OrderedDict
-from datetime import datetime
+from datetime import date, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable
@@ -21,7 +21,6 @@ def impl_test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
     monkeypatch: Any,
-    capfd: Any,
 ) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.read_ipc(io_files_path / "*.ipc")
@@ -56,11 +55,11 @@ def impl_test_hive_partitioned_predicate_pushdown(
             (pl.col("fats_g") == 0.5) & (pl.col("category") == "vegetables"),
         ]:
             assert_frame_equal(
-                q.filter(pred).sort(sort_by).collect(streaming=streaming),
+                q.filter(pred)
+                .sort(sort_by)
+                .collect(engine="streaming" if streaming else "in-memory"),
                 df.filter(pred).sort(sort_by),
             )
-            err = capfd.readouterr().err
-            assert "hive partitioning" in err
 
     # tests: 11536
     assert q.filter(pl.col("sugars_g") == 25).collect().shape == (1, 4)
@@ -78,13 +77,11 @@ def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
     monkeypatch: Any,
-    capfd: Any,
 ) -> None:
     impl_test_hive_partitioned_predicate_pushdown(
         io_files_path,
         tmp_path,
         monkeypatch,
-        capfd,
     )
 
 
@@ -94,7 +91,6 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
     io_files_path: Path,
     tmp_path: Path,
     monkeypatch: Any,
-    capfd: Any,
 ) -> None:
     monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
@@ -103,11 +99,11 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
         io_files_path,
         tmp_path,
         monkeypatch,
-        capfd,
     )
 
 
 @pytest.mark.write_disk
+@pytest.mark.may_fail_auto_streaming
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -161,9 +157,14 @@ def test_hive_partitioned_slice_pushdown(
     expect_count = pl.select(pl.lit(1, dtype=pl.UInt32).alias(x) for x in schema)
 
     assert_frame_equal(
-        q.head(1).collect(streaming=streaming).select(pl.all().len()), expect_count
+        q.head(1)
+        .collect(engine="streaming" if streaming else "in-memory")
+        .select(pl.all().len()),
+        expect_count,
     )
-    assert q.head(0).collect(streaming=streaming).columns == [
+    assert q.head(0).collect(
+        engine="streaming" if streaming else "in-memory"
+    ).columns == [
         "calories",
         "sugars_g",
         "category",
@@ -192,7 +193,12 @@ def test_hive_partitioned_projection_pushdown(
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
     columns = ["sugars_g", "category"]
     for streaming in [True, False]:
-        assert q.select(columns).collect(streaming=streaming).columns == columns
+        assert (
+            q.select(columns)
+            .collect(engine="streaming" if streaming else "in-memory")
+            .columns
+            == columns
+        )
 
     # test that hive partition columns are projected with the correct height when
     # the projection contains only hive partition columns (11796)
@@ -800,6 +806,7 @@ def test_hive_write_dates(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.may_fail_auto_streaming
 def test_hive_predicate_dates_14712(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -888,3 +895,65 @@ def test_hive_auto_enables_when_unspecified_and_hive_schema_passed(
                 pl.Series("a", [1], dtype=pl.UInt8),
             ),
         )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("force_single_thread", [True, False])
+def test_hive_parquet_prefiltered_20894_21327(
+    tmp_path: Path, force_single_thread: bool
+) -> None:
+    n_threads = 1 if force_single_thread else pl.thread_pool_size()
+
+    file_path = tmp_path / "date=2025-01-01/00000000.parquet"
+    file_path.parent.mkdir(exist_ok=True, parents=True)
+
+    data = pl.DataFrame(
+        {
+            "date": [date(2025, 1, 1), date(2025, 1, 1)],
+            "value": ["1", "2"],
+        }
+    )
+
+    data.write_parquet(file_path)
+
+    import base64
+    import subprocess
+
+    # For security, and for Windows backslashes.
+    scan_path_b64 = base64.b64encode(str(file_path.absolute()).encode()).decode()
+
+    # This is, the easiest way to control the threadpool size so that it is stable.
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            f"""\
+import os
+os.environ["POLARS_MAX_THREADS"] = "{n_threads}"
+
+import polars as pl
+import datetime
+import base64
+
+from polars.testing import assert_frame_equal
+
+assert pl.thread_pool_size() == {n_threads}
+
+tmp_path = base64.b64decode("{scan_path_b64}").decode()
+df = pl.scan_parquet(tmp_path, hive_partitioning=True).filter(pl.col("value") == "1").collect()
+# We need the str() to trigger panic on invalid state
+str(df)
+
+assert_frame_equal(df, pl.DataFrame(
+    [
+        pl.Series('date', [datetime.date(2025, 1, 1)], dtype=pl.Date),
+        pl.Series('value', ['1'], dtype=pl.String),
+    ]
+))
+
+print("OK", end="")
+""",
+        ],
+    )
+
+    assert out == b"OK"

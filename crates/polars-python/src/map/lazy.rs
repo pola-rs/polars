@@ -51,7 +51,7 @@ impl ToSeries for PyObject {
             // Eventually we must use Polars' Series Export as that can deal with
             // multiple chunks
             Err(_) => {
-                use polars::export::arrow::ffi;
+                use arrow::ffi;
                 let kwargs = PyDict::new(py);
                 kwargs.set_item("in_place", true).unwrap();
                 py_pyseries
@@ -171,7 +171,7 @@ pub fn map_single(
     let output_type = output_type.map(|wrap| wrap.0);
 
     let func =
-        python_udf::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
+        python_dsl::PythonUdfExpression::new(lambda, output_type, is_elementwise, returns_scalar);
     pyexpr.inner.clone().map_python(func, agg_list).into()
 }
 
@@ -188,9 +188,7 @@ pub(crate) fn call_lambda_with_columns_slice(
         let ps = PySeries::new(s.as_materialized_series().clone());
 
         // Wrap this PySeries object in the python side Series wrapper
-        let python_series_wrapper = pypolars.getattr("wrap_s").unwrap().call1((ps,)).unwrap();
-
-        python_series_wrapper
+        pypolars.getattr("wrap_s").unwrap().call1((ps,)).unwrap()
     });
     let wrapped_s = PyList::new(py, iter).unwrap();
 

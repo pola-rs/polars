@@ -1,7 +1,8 @@
 use std::fmt::Write;
 
+use polars_plan::dsl::FileScan;
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, EscapeLabel, FileScan, ScanSourcesDisplay};
+use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
@@ -45,6 +46,12 @@ fn visualize_plan_rec(
             ),
             &[][..],
         ),
+        PhysNodeKind::SinkMultiple { sinks } => {
+            for sink in sinks {
+                visualize_plan_rec(*sink, phys_sm, expr_arena, visited, out);
+            }
+            return;
+        },
         PhysNodeKind::Select {
             input,
             selectors,
@@ -87,6 +94,14 @@ fn visualize_plan_rec(
             format!("slice\\noffset: {offset}, length: {length}"),
             from_ref(input),
         ),
+        PhysNodeKind::NegativeSlice {
+            input,
+            offset,
+            length,
+        } => (
+            format!("slice\\noffset: {offset}, length: {length}"),
+            from_ref(input),
+        ),
         PhysNodeKind::Filter { input, predicate } => (
             format!("filter\\n{}", fmt_exprs(from_ref(predicate), expr_arena)),
             from_ref(input),
@@ -107,6 +122,20 @@ fn visualize_plan_rec(
             FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
             #[cfg(feature = "json")]
             FileType::Json(_) => ("json-sink".to_string(), from_ref(input)),
+            #[allow(unreachable_patterns)]
+            _ => todo!(),
+        },
+        PhysNodeKind::PartitionSink {
+            input, file_type, ..
+        } => match file_type {
+            #[cfg(feature = "parquet")]
+            FileType::Parquet(_) => ("parquet-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "ipc")]
+            FileType::Ipc(_) => ("ipc-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "csv")]
+            FileType::Csv(_) => ("csv-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "json")]
+            FileType::Json(_) => ("json-partition-sink".to_string(), from_ref(input)),
             #[allow(unreachable_patterns)]
             _ => todo!(),
         },
@@ -136,16 +165,25 @@ fn visualize_plan_rec(
             (label.to_string(), inputs.as_slice())
         },
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
+        PhysNodeKind::MultiScan { hive_parts, .. } => {
+            let mut out = "multi-scan-source".to_string();
+            let mut f = EscapeLabel(&mut out);
+
+            if let Some(v) = hive_parts.as_ref().map(|h| h.df().width()) {
+                write!(f, "\nhive: {} columns", v).unwrap();
+            }
+
+            (out, &[][..])
+        },
         PhysNodeKind::FileScan {
-            scan_sources,
+            scan_source,
             file_info,
-            hive_parts,
             output_schema: _,
             scan_type,
             predicate,
             file_options,
         } => {
-            let name = match scan_type {
+            let name = match &**scan_type {
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet { .. } => "parquet-source",
                 #[cfg(feature = "csv")]
@@ -161,9 +199,7 @@ fn visualize_plan_rec(
             let mut f = EscapeLabel(&mut out);
 
             {
-                let disp = ScanSourcesDisplay(scan_sources);
-
-                write!(f, "\npaths: {}", disp).unwrap();
+                write!(f, "\npath: {}", scan_source.as_scan_source_ref()).unwrap();
             }
 
             {
@@ -185,19 +221,12 @@ fn visualize_plan_rec(
                 write!(f, r#"\nrow index: name: "{}", offset: {}"#, name, offset).unwrap();
             }
 
-            if let Some((offset, len)) = file_options.slice {
+            if let Some((offset, len)) = file_options.pre_slice {
                 write!(f, "\nslice: offset: {}, len: {}", offset, len).unwrap();
             }
 
             if let Some(predicate) = predicate.as_ref() {
                 write!(f, "\nfilter: {}", predicate.display(expr_arena)).unwrap();
-            }
-
-            if let Some(v) = hive_parts
-                .as_deref()
-                .map(|x| x[0].get_statistics().column_stats().len())
-            {
-                write!(f, "\nhive: {} columns", v).unwrap();
             }
 
             (out, &[][..])
@@ -238,11 +267,20 @@ fn visualize_plan_rec(
                 escape_graphviz(&format!("{:?}", args.how))
             )
             .unwrap();
-            if args.join_nulls {
+            if args.nulls_equal {
                 write!(label, r"\njoin-nulls").unwrap();
             }
             (label, &[*input_left, *input_right][..])
         },
+        #[cfg(feature = "merge_sorted")]
+        PhysNodeKind::MergeSorted {
+            input_left,
+            input_right,
+            key,
+        } => (
+            format!("merge sorted on '{key}'"),
+            &[*input_left, *input_right][..],
+        ),
     };
 
     out.push(format!(

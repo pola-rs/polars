@@ -4,13 +4,13 @@ use std::borrow::{Borrow, Cow};
 #[cfg(feature = "object")]
 use arrow::bitmap::BitmapBuilder;
 
-use crate::chunked_array::builder::{get_list_builder, AnonymousOwnedListBuilder};
-#[cfg(feature = "object")]
-use crate::chunked_array::object::builder::get_object_type;
+use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::builder::get_object_type;
 use crate::prelude::*;
-use crate::utils::{get_iter_capacity, NoNull};
+use crate::utils::{NoNull, get_iter_capacity};
 
 /// FromIterator trait
 impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>

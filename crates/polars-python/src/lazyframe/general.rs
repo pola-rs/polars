@@ -1,35 +1,68 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use either::Either;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
-use polars_plan::plans::ScanSources;
+use polars_plan::dsl::ScanSources;
+use polars_plan::plans::{AExpr, IR};
+use polars_utils::arena::{Arena, Node};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
 
-use super::PyLazyFrame;
+use super::{PyLazyFrame, SinkTarget};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
+use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
 
 fn pyobject_to_first_path_and_scan_sources(
     obj: PyObject,
 ) -> PyResult<(Option<PathBuf>, ScanSources)> {
-    use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
+    use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
     Ok(match get_python_scan_source_input(obj, false)? {
         PythonScanSourceInput::Path(path) => {
             (Some(path.clone()), ScanSources::Paths([path].into()))
         },
-        PythonScanSourceInput::File(file) => (None, ScanSources::Files([file].into())),
+        PythonScanSourceInput::File(file) => (None, ScanSources::Files([file.into()].into())),
         PythonScanSourceInput::Buffer(buff) => (None, ScanSources::Buffers([buff].into())),
+    })
+}
+
+fn post_opt_callback(
+    lambda: &PyObject,
+    root: Node,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    duration_since_start: Option<std::time::Duration>,
+) -> PolarsResult<()> {
+    Python::with_gil(|py| {
+        let nt = NodeTraverser::new(root, std::mem::take(lp_arena), std::mem::take(expr_arena));
+
+        // Get a copy of the arenas.
+        let arenas = nt.get_arenas();
+
+        // Pass the node visitor which allows the python callback to replace parts of the query plan.
+        // Remove "cuda" or specify better once we have multiple post-opt callbacks.
+        lambda
+            .call1(py, (nt, duration_since_start.map(|t| t.as_nanos() as u64)))
+            .map_err(|e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e))?;
+
+        // Unpack the arenas.
+        // At this point the `nt` is useless.
+
+        std::mem::swap(lp_arena, &mut *arenas.0.lock().unwrap());
+        std::mem::swap(expr_arena, &mut *arenas.1.lock().unwrap());
+
+        Ok(())
     })
 }
 
@@ -84,7 +117,7 @@ impl PyLazyFrame {
             cloud_options = cloud_options
                 .with_max_retries(retries)
                 .with_credential_provider(
-                    credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    credential_provider.map(PlCredentialProvider::from_python_builder),
                 );
 
             if let Some(file_cache_ttl) = file_cache_ttl {
@@ -204,7 +237,7 @@ impl PyLazyFrame {
             cloud_options = cloud_options
                 .with_max_retries(retries)
                 .with_credential_provider(
-                    credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    credential_provider.map(PlCredentialProvider::from_python_builder),
                 );
             r = r.with_cloud_options(Some(cloud_options));
         }
@@ -339,7 +372,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             );
         }
@@ -415,7 +448,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             );
         }
@@ -429,9 +462,17 @@ impl PyLazyFrame {
         schema: &Bound<'_, PyList>,
         scan_fn: PyObject,
         pyarrow: bool,
+        validate_schema: bool,
     ) -> PyResult<Self> {
-        let schema = pyarrow_schema_to_rust(schema)?;
-        Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
+        let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
+
+        Ok(LazyFrame::scan_from_python_function(
+            Either::Right(schema),
+            scan_fn,
+            pyarrow,
+            validate_schema,
+        )
+        .into())
     }
 
     #[staticmethod]
@@ -439,46 +480,55 @@ impl PyLazyFrame {
         schema: Vec<(PyBackedStr, Wrap<DataType>)>,
         scan_fn: PyObject,
         pyarrow: bool,
+        validate_schema: bool,
     ) -> PyResult<Self> {
-        let schema = Schema::from_iter(
+        let schema = Arc::new(Schema::from_iter(
             schema
                 .into_iter()
                 .map(|(name, dt)| Field::new((&*name).into(), dt.0)),
-        );
-        Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
+        ));
+        Ok(LazyFrame::scan_from_python_function(
+            Either::Right(schema),
+            scan_fn,
+            pyarrow,
+            validate_schema,
+        )
+        .into())
     }
 
-    fn describe_plan(&self) -> PyResult<String> {
-        self.ldf
-            .describe_plan()
-            .map_err(PyPolarsErr::from)
-            .map_err(Into::into)
+    #[staticmethod]
+    fn scan_from_python_function_schema_function(
+        schema_fn: PyObject,
+        scan_fn: PyObject,
+        validate_schema: bool,
+    ) -> PyResult<Self> {
+        Ok(LazyFrame::scan_from_python_function(
+            Either::Left(schema_fn),
+            scan_fn,
+            false,
+            validate_schema,
+        )
+        .into())
     }
 
-    fn describe_optimized_plan(&self) -> PyResult<String> {
-        self.ldf
-            .describe_optimized_plan()
-            .map_err(PyPolarsErr::from)
-            .map_err(Into::into)
+    fn describe_plan(&self, py: Python) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.describe_plan())
     }
 
-    fn describe_plan_tree(&self) -> PyResult<String> {
-        self.ldf
-            .describe_plan_tree()
-            .map_err(PyPolarsErr::from)
-            .map_err(Into::into)
+    fn describe_optimized_plan(&self, py: Python) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.describe_optimized_plan())
     }
 
-    fn describe_optimized_plan_tree(&self) -> PyResult<String> {
-        self.ldf
-            .describe_optimized_plan_tree()
-            .map_err(PyPolarsErr::from)
-            .map_err(Into::into)
+    fn describe_plan_tree(&self, py: Python) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.describe_plan_tree())
     }
 
-    fn to_dot(&self, optimized: bool) -> PyResult<String> {
-        let result = self.ldf.to_dot(optimized).map_err(PyPolarsErr::from)?;
-        Ok(result)
+    fn describe_optimized_plan_tree(&self, py: Python) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.describe_optimized_plan_tree())
+    }
+
+    fn to_dot(&self, py: Python, optimized: bool) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.to_dot(optimized))
     }
 
     fn optimization_toggle(
@@ -602,64 +652,51 @@ impl PyLazyFrame {
         ldf.cache().into()
     }
 
-    fn profile(&self, py: Python) -> PyResult<(PyDataFrame, PyDataFrame)> {
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        let (df, time_df) = py.allow_threads(|| {
+    #[pyo3(signature = (lambda_post_opt=None))]
+    fn profile(
+        &self,
+        py: Python,
+        lambda_post_opt: Option<PyObject>,
+    ) -> PyResult<(PyDataFrame, PyDataFrame)> {
+        let (df, time_df) = py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            ldf.profile().map_err(PyPolarsErr::from)
+            if let Some(lambda) = lambda_post_opt {
+                ldf._profile_post_opt(|root, lp_arena, expr_arena, duration_since_start| {
+                    post_opt_callback(&lambda, root, lp_arena, expr_arena, duration_since_start)
+                })
+            } else {
+                ldf.profile()
+            }
         })?;
         Ok((df.into(), time_df.into()))
     }
 
-    #[pyo3(signature = (lambda_post_opt=None))]
-    fn collect(&self, py: Python, lambda_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        let df = py.allow_threads(|| {
+    #[pyo3(signature = (engine, lambda_post_opt=None))]
+    fn collect(
+        &self,
+        py: Python,
+        engine: Wrap<Engine>,
+        lambda_post_opt: Option<PyObject>,
+    ) -> PyResult<PyDataFrame> {
+        py.enter_polars_df(|| {
             let ldf = self.ldf.clone();
             if let Some(lambda) = lambda_post_opt {
-                ldf._collect_post_opt(|root, lp_arena, expr_arena| {
-                    Python::with_gil(|py| {
-                        let nt = NodeTraverser::new(
-                            root,
-                            std::mem::take(lp_arena),
-                            std::mem::take(expr_arena),
-                        );
-
-                        // Get a copy of the arena's.
-                        let arenas = nt.get_arenas();
-
-                        // Pass the node visitor which allows the python callback to replace parts of the query plan.
-                        // Remove "cuda" or specify better once we have multiple post-opt callbacks.
-                        lambda.call1(py, (nt,)).map_err(
-                            |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
-                        )?;
-
-                        // Unpack the arena's.
-                        // At this point the `nt` is useless.
-
-                        std::mem::swap(lp_arena, &mut *arenas.0.lock().unwrap());
-                        std::mem::swap(expr_arena, &mut *arenas.1.lock().unwrap());
-
-                        Ok(())
-                    })
+                ldf._collect_post_opt(|root, lp_arena, expr_arena, _| {
+                    post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
                 })
             } else {
-                ldf.collect()
+                ldf.collect_with_engine(engine.0)
             }
-            .map_err(PyPolarsErr::from)
-        })?;
-        Ok(df.into())
+        })
     }
 
-    #[pyo3(signature = (lambda,))]
-    fn collect_with_callback(&self, lambda: PyObject) {
+    #[pyo3(signature = (engine, lambda))]
+    fn collect_with_callback(&self, engine: Wrap<Engine>, lambda: PyObject) {
         let ldf = self.ldf.clone();
 
         polars_core::POOL.spawn(move || {
             let result = ldf
-                .collect()
+                .collect_with_engine(engine.0)
                 .map(PyDataFrame::new)
                 .map_err(PyPolarsErr::from);
 
@@ -679,23 +716,23 @@ impl PyLazyFrame {
 
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (
-        path, compression, compression_level, statistics, row_group_size, data_page_size,
-        maintain_order, cloud_options, credential_provider, retries
+        target, compression, compression_level, statistics, row_group_size, data_page_size,
+        cloud_options, credential_provider, retries, sink_options
     ))]
     fn sink_parquet(
         &self,
         py: Python,
-        path: PathBuf,
+        target: SinkTarget,
         compression: &str,
         compression_level: Option<i32>,
         statistics: Wrap<StatisticsOptions>,
         row_group_size: Option<usize>,
         data_page_size: Option<usize>,
-        maintain_order: bool,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
-    ) -> PyResult<()> {
+        sink_options: Wrap<SinkOptions>,
+    ) -> PyResult<PyLazyFrame> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
         let options = ParquetWriteOptions {
@@ -703,57 +740,78 @@ impl PyLazyFrame {
             statistics: statistics.0,
             row_group_size,
             data_page_size,
-            maintain_order,
         };
 
         let cloud_options = {
-            let cloud_options =
-                parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
+            let cloud_options = parse_cloud_options(
+                target.unformatted_path().to_str().unwrap(),
+                cloud_options.unwrap_or_default(),
+            )?;
             Some(
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_parquet(&path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+            match target {
+                SinkTarget::Path(path) => ldf.sink_parquet(
+                    &path as &dyn AsRef<Path>,
+                    options,
+                    cloud_options,
+                    sink_options.0,
+                ),
+                SinkTarget::Partition(partition) => ldf.sink_parquet_partitioned(
+                    partition.path.as_ref(),
+                    partition.variant,
+                    options,
+                    cloud_options,
+                    sink_options.0,
+                ),
+            }
+            .into()
+        })
+        .map(Into::into)
+        .map_err(Into::into)
     }
 
     #[cfg(all(feature = "streaming", feature = "ipc"))]
-    #[pyo3(signature = (path, compression, maintain_order, cloud_options, credential_provider, retries))]
+    #[pyo3(signature = (
+        target, compression, compat_level, cloud_options, credential_provider, retries,
+        sink_options
+    ))]
     fn sink_ipc(
         &self,
         py: Python,
-        path: PathBuf,
-        compression: Option<Wrap<IpcCompression>>,
-        maintain_order: bool,
+        target: SinkTarget,
+        compression: Wrap<Option<IpcCompression>>,
+        compat_level: PyCompatLevel,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
-    ) -> PyResult<()> {
+        sink_options: Wrap<SinkOptions>,
+    ) -> PyResult<PyLazyFrame> {
         let options = IpcWriterOptions {
-            compression: compression.map(|c| c.0),
-            maintain_order,
+            compression: compression.0,
+            compat_level: compat_level.0,
+            ..Default::default()
         };
 
         #[cfg(feature = "cloud")]
         let cloud_options = {
-            let cloud_options =
-                parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
+            let cloud_options = parse_cloud_options(
+                target.unformatted_path().to_str().unwrap(),
+                cloud_options.unwrap_or_default(),
+            )?;
             Some(
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };
@@ -761,26 +819,35 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_ipc(path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+            match target {
+                SinkTarget::Path(path) => {
+                    ldf.sink_ipc(path, options, cloud_options, sink_options.0)
+                },
+                SinkTarget::Partition(partition) => ldf.sink_ipc_partitioned(
+                    partition.path.as_ref(),
+                    partition.variant,
+                    options,
+                    cloud_options,
+                    sink_options.0,
+                ),
+            }
+        })
+        .map(Into::into)
+        .map_err(Into::into)
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
     #[pyo3(signature = (
-        path, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
+        target, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
         datetime_format, date_format, time_format, float_scientific, float_precision, null_value,
-        quote_style, maintain_order, cloud_options, credential_provider, retries
+        quote_style, cloud_options, credential_provider, retries, sink_options
     ))]
     fn sink_csv(
         &self,
         py: Python,
-        path: PathBuf,
+        target: SinkTarget,
         include_bom: bool,
         include_header: bool,
         separator: u8,
@@ -794,11 +861,11 @@ impl PyLazyFrame {
         float_precision: Option<usize>,
         null_value: Option<String>,
         quote_style: Option<Wrap<QuoteStyle>>,
-        maintain_order: bool,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
-    ) -> PyResult<()> {
+        sink_options: Wrap<SinkOptions>,
+    ) -> PyResult<PyLazyFrame> {
         let quote_style = quote_style.map_or(QuoteStyle::default(), |wrap| wrap.0);
         let null_value = null_value.unwrap_or(SerializeOptions::default().null);
 
@@ -818,20 +885,21 @@ impl PyLazyFrame {
         let options = CsvWriterOptions {
             include_bom,
             include_header,
-            maintain_order,
             batch_size,
             serialize_options,
         };
 
         #[cfg(feature = "cloud")]
         let cloud_options = {
-            let cloud_options =
-                parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
+            let cloud_options = parse_cloud_options(
+                target.unformatted_path().to_str().unwrap(),
+                cloud_options.unwrap_or_default(),
+            )?;
             Some(
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };
@@ -839,61 +907,85 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_csv(path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+            match target {
+                SinkTarget::Path(path) => {
+                    ldf.sink_csv(path, options, cloud_options, sink_options.0)
+                },
+                SinkTarget::Partition(partition) => ldf.sink_csv_partitioned(
+                    partition.path.as_ref(),
+                    partition.variant,
+                    options,
+                    cloud_options,
+                    sink_options.0,
+                ),
+            }
+        })
+        .map(Into::into)
+        .map_err(Into::into)
     }
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "json"))]
-    #[pyo3(signature = (path, maintain_order, cloud_options, credential_provider, retries))]
+    #[pyo3(signature = (target, cloud_options, credential_provider, retries, sink_options))]
     fn sink_json(
         &self,
         py: Python,
-        path: PathBuf,
-        maintain_order: bool,
+        target: SinkTarget,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
-    ) -> PyResult<()> {
-        let options = JsonWriterOptions { maintain_order };
+        sink_options: Wrap<SinkOptions>,
+    ) -> PyResult<PyLazyFrame> {
+        let options = JsonWriterOptions {};
 
         let cloud_options = {
-            let cloud_options =
-                parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
+            let cloud_options = parse_cloud_options(
+                target.unformatted_path().to_str().unwrap(),
+                cloud_options.unwrap_or_default(),
+            )?;
             Some(
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_json(path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+            match target {
+                SinkTarget::Path(path) => {
+                    ldf.sink_json(path, options, cloud_options, sink_options.0)
+                },
+                SinkTarget::Partition(partition) => ldf.sink_json_partitioned(
+                    partition.path.as_ref(),
+                    partition.variant,
+                    options,
+                    cloud_options,
+                    sink_options.0,
+                ),
+            }
+        })
+        .map(Into::into)
+        .map_err(Into::into)
     }
 
     fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
-        let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsErr::from))?;
-        Ok(df.into())
+        py.enter_polars_df(|| ldf.fetch(n_rows))
     }
 
     fn filter(&mut self, predicate: PyExpr) -> Self {
         let ldf = self.ldf.clone();
         ldf.filter(predicate.inner).into()
+    }
+
+    fn remove(&mut self, predicate: PyExpr) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.remove(predicate.inner).into()
     }
 
     fn select(&mut self, exprs: Vec<PyExpr>) -> Self {
@@ -990,7 +1082,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "asof_join")]
-    #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, coalesce, allow_eq))]
+    #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, coalesce, allow_eq, check_sortedness))]
     fn join_asof(
         &self,
         other: Self,
@@ -1006,6 +1098,7 @@ impl PyLazyFrame {
         tolerance_str: Option<String>,
         coalesce: bool,
         allow_eq: bool,
+        check_sortedness: bool,
     ) -> PyResult<Self> {
         let coalesce = if coalesce {
             JoinCoalesce::CoalesceColumns
@@ -1031,13 +1124,14 @@ impl PyLazyFrame {
                 tolerance: tolerance.map(|t| t.0.into_static()),
                 tolerance_str: tolerance_str.map(|s| s.into()),
                 allow_eq,
+                check_sortedness,
             }))
             .suffix(suffix)
             .finish()
             .into())
     }
 
-    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, join_nulls, how, suffix, validate, maintain_order, coalesce=None))]
+    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, nulls_equal, how, suffix, validate, maintain_order, coalesce=None))]
     fn join(
         &self,
         other: Self,
@@ -1045,7 +1139,7 @@ impl PyLazyFrame {
         right_on: Vec<PyExpr>,
         allow_parallel: bool,
         force_parallel: bool,
-        join_nulls: bool,
+        nulls_equal: bool,
         how: Wrap<JoinType>,
         suffix: String,
         validate: Wrap<JoinValidation>,
@@ -1075,7 +1169,7 @@ impl PyLazyFrame {
             .right_on(right_on)
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
-            .join_nulls(join_nulls)
+            .join_nulls(nulls_equal)
             .how(how.0)
             .suffix(suffix)
             .validate(validate.0)
@@ -1314,9 +1408,7 @@ impl PyLazyFrame {
     }
 
     fn collect_schema<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let schema = py
-            .allow_threads(|| self.ldf.collect_schema())
-            .map_err(PyPolarsErr::from)?;
+        let schema = py.enter_polars(|| self.ldf.collect_schema())?;
 
         let schema_dict = PyDict::new(py);
         schema.iter_fields().for_each(|fld| {

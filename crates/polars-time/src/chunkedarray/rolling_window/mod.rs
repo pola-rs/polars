@@ -3,8 +3,9 @@ mod dispatch;
 mod rolling_kernels;
 
 use arrow::array::{ArrayRef, PrimitiveArray};
-use arrow::legacy::kernels::rolling;
 pub use dispatch::*;
+use polars_compute::rolling;
+use polars_compute::rolling::RollingFnParams;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

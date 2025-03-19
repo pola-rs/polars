@@ -1,4 +1,7 @@
-use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
+use arrow::legacy::kernels::sort_partition::{
+    create_clean_partitions, partition_to_groups, partition_to_groups_amortized_varsize,
+};
+use polars_error::signals::try_raise_keyboard_interrupt;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
@@ -6,6 +9,7 @@ use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca_unordered;
 use crate::config::verbose;
 use crate::series::BitRepr;
+use crate::utils::Container;
 use crate::utils::flatten::flatten_par;
 
 /// Used to create the tuples for a group_by operation.
@@ -87,7 +91,7 @@ where
         };
 
         let n_threads = POOL.current_num_threads();
-        let groups = if multithreaded && n_threads > 1 {
+        if multithreaded && n_threads > 1 {
             let parts =
                 create_clean_partitions(values, n_threads, self.is_sorted_descending_flag());
             let n_parts = parts.len();
@@ -121,8 +125,7 @@ where
             flatten_par(&groups)
         } else {
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
-        };
-        groups
+        }
     }
 }
 
@@ -234,6 +237,7 @@ where
                 num_groups_proxy(ca, multithreaded, sorted)
             },
         };
+        try_raise_keyboard_interrupt();
         Ok(out)
     }
 }
@@ -274,6 +278,17 @@ impl IntoGroupsType for BinaryChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
+        if self.is_sorted_any() && !self.has_nulls() && self.n_chunks() == 1 {
+            let arr = self.downcast_get(0).unwrap();
+            let values = arr.values_iter();
+            let mut out = Vec::with_capacity(values.len() / 30);
+            partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
+            return Ok(GroupsType::Slice {
+                groups: out,
+                rolling: false,
+            });
+        }
+
         multithreaded &= POOL.current_num_threads() > 1;
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 
@@ -285,6 +300,7 @@ impl IntoGroupsType for BinaryChunked {
         } else {
             group_by(bh[0].iter(), sorted)
         };
+        try_raise_keyboard_interrupt();
         Ok(out)
     }
 }
@@ -296,6 +312,16 @@ impl IntoGroupsType for BinaryOffsetChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
+        if self.is_sorted_any() && !self.has_nulls() && self.n_chunks() == 1 {
+            let arr = self.downcast_get(0).unwrap();
+            let values = arr.values_iter();
+            let mut out = Vec::with_capacity(values.len() / 30);
+            partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
+            return Ok(GroupsType::Slice {
+                groups: out,
+                rolling: false,
+            });
+        }
         multithreaded &= POOL.current_num_threads() > 1;
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 

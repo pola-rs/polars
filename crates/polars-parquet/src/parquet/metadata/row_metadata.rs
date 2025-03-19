@@ -7,7 +7,7 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unitvec;
 
-use super::column_chunk_metadata::{column_metadata_byte_range, ColumnChunkMetadata};
+use super::column_chunk_metadata::{ColumnChunkMetadata, column_metadata_byte_range};
 use super::schema_descriptor::SchemaDescriptor;
 use crate::parquet::error::{ParquetError, ParquetResult};
 
@@ -36,7 +36,10 @@ impl InitColumnLookup for ColumnLookup {
 /// Metadata for a row group.
 #[derive(Debug, Clone, Default)]
 pub struct RowGroupMetadata {
-    columns: Arc<[ColumnChunkMetadata]>,
+    // Moving of `ColumnChunkMetadata` is very expensive they are rather big. So, we arc the vec
+    // instead of having an arc slice. This way we don't to move the vec values into an arc when
+    // collecting.
+    columns: Arc<Vec<ColumnChunkMetadata>>,
     column_lookup: PlHashMap<PlSmallStr, UnitVec<usize>>,
     num_rows: usize,
     total_byte_size: usize,
@@ -63,6 +66,10 @@ impl RowGroupMetadata {
     /// Fetch all columns under this root name if it exists.
     pub fn columns_idxs_under_root_iter<'a>(&'a self, root_name: &str) -> Option<&'a [usize]> {
         self.column_lookup.get(root_name).map(|x| x.as_slice())
+    }
+
+    pub fn parquet_columns(&self) -> &[ColumnChunkMetadata] {
+        self.columns.as_ref().as_slice()
     }
 
     /// Number of rows in this row group.
@@ -101,7 +108,11 @@ impl RowGroupMetadata {
         rg: RowGroup,
     ) -> ParquetResult<RowGroupMetadata> {
         if schema_descr.columns().len() != rg.columns.len() {
-            return Err(ParquetError::oos(format!("The number of columns in the row group ({}) must be equal to the number of columns in the schema ({})", rg.columns.len(), schema_descr.columns().len())));
+            return Err(ParquetError::oos(format!(
+                "The number of columns in the row group ({}) must be equal to the number of columns in the schema ({})",
+                rg.columns.len(),
+                schema_descr.columns().len()
+            )));
         }
         let total_byte_size = rg.total_byte_size.try_into()?;
         let num_rows = rg.num_rows.try_into()?;
@@ -135,7 +146,8 @@ impl RowGroupMetadata {
 
                 Ok(column)
             })
-            .collect::<ParquetResult<Arc<[_]>>>()?;
+            .collect::<ParquetResult<Vec<_>>>()?;
+        let columns = Arc::new(columns);
 
         Ok(RowGroupMetadata {
             columns,

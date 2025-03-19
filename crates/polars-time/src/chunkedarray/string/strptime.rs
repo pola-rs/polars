@@ -1,20 +1,21 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Much more opinionated, but also much faster strptrime than the one given in Chrono.
 //!
-use atoi::FromRadix10;
+use std::sync::LazyLock;
+
 use chrono::{NaiveDate, NaiveDateTime};
-use once_cell::sync::Lazy;
 use regex::Regex;
 
-use crate::chunkedarray::{polars_bail, PolarsResult};
+use crate::chunkedarray::{PolarsResult, polars_bail};
 
-static HOUR_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[HkIl]").unwrap());
-static MINUTE_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?M").unwrap());
-static SECOND_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?S").unwrap());
-static TWELVE_HOUR_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[Il]").unwrap());
-static MERIDIEM_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[pP]").unwrap());
+static HOUR_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?[HkIl]").unwrap());
+static MINUTE_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?M").unwrap());
+static SECOND_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?S").unwrap());
+static TWELVE_HOUR_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?[Il]").unwrap());
+static MERIDIEM_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?[pP]").unwrap());
 
 #[inline]
-fn update_and_parse<T: atoi::FromRadix10>(
+fn update_and_parse<T: atoi_simd::Parse>(
     incr: usize,
     offset: usize,
     vals: &[u8],
@@ -22,7 +23,7 @@ fn update_and_parse<T: atoi::FromRadix10>(
     // this maybe oob because we cannot entirely sure about fmt lengths
     let new_offset = offset + incr;
     let bytes = vals.get(offset..new_offset)?;
-    let (val, parsed) = T::from_radix_10(bytes);
+    let (val, parsed) = atoi_simd::parse_any(bytes).ok()?;
     if parsed == 0 {
         None
     } else {
@@ -154,7 +155,7 @@ impl StrpTimeState {
                         let new_offset = offset + 2;
                         let bytes = val.get_unchecked(offset..new_offset);
 
-                        let (decade, parsed) = i32::from_radix_10(bytes);
+                        let (decade, parsed) = atoi_simd::parse_any::<i32>(bytes).ok()?;
                         if parsed == 0 {
                             return None;
                         }
@@ -208,31 +209,34 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
 
     while let Some(&val) = iter.next() {
         match val {
-            b'%' => match iter.next().expect("invalid pattern") {
-                b'Y' => cnt += 4,
-                b'y' => cnt += 2,
-                b'd' => cnt += 2,
-                b'm' => cnt += 2,
-                b'b' => cnt += 3,
-                b'H' => cnt += 2,
-                b'M' => cnt += 2,
-                b'S' => cnt += 2,
-                b'9' => {
-                    cnt += 9;
-                    debug_assert_eq!(iter.next(), Some(&b'f'));
-                    return Some(cnt);
+            b'%' => match iter.next() {
+                Some(&next_val) => match next_val {
+                    b'Y' => cnt += 4,
+                    b'y' => cnt += 2,
+                    b'd' => cnt += 2,
+                    b'm' => cnt += 2,
+                    b'b' => cnt += 3,
+                    b'H' => cnt += 2,
+                    b'M' => cnt += 2,
+                    b'S' => cnt += 2,
+                    b'9' => {
+                        cnt += 9;
+                        debug_assert_eq!(iter.next(), Some(&b'f'));
+                        return Some(cnt);
+                    },
+                    b'6' => {
+                        cnt += 6;
+                        debug_assert_eq!(iter.next(), Some(&b'f'));
+                        return Some(cnt);
+                    },
+                    b'3' => {
+                        cnt += 3;
+                        debug_assert_eq!(iter.next(), Some(&b'f'));
+                        return Some(cnt);
+                    },
+                    _ => return None,
                 },
-                b'6' => {
-                    cnt += 6;
-                    debug_assert_eq!(iter.next(), Some(&b'f'));
-                    return Some(cnt);
-                },
-                b'3' => {
-                    cnt += 3;
-                    debug_assert_eq!(iter.next(), Some(&b'f'));
-                    return Some(cnt);
-                },
-                _ => return None,
+                None => return None,
             },
             _ => {
                 cnt += 1;

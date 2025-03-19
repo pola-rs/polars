@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from polars._utils.various import parse_version
 from polars.convert import from_arrow
 from polars.dependencies import import_optional
 
@@ -17,15 +18,9 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
     """Run asynchronous code as if it was synchronous."""
     import asyncio
 
-    from polars._utils.unstable import issue_unstable_warning
-    from polars.dependencies import import_optional
+    import polars._utils.nest_asyncio
 
-    issue_unstable_warning(
-        "Use of asynchronous connections is currently considered unstable "
-        "and unexpected issues may arise; if this happens, please report them."
-    )
-    nest_asyncio = import_optional("nest_asyncio")
-    nest_asyncio.apply()
+    polars._utils.nest_asyncio.apply()  # type: ignore[attr-defined]
     return asyncio.run(co)
 
 
@@ -40,10 +35,11 @@ def _read_sql_connectorx(
 ) -> DataFrame:
     cx = import_optional("connectorx")
     try:
+        return_type = "arrow2" if parse_version(cx.__version__) < (0, 4, 2) else "arrow"
         tbl = cx.read_sql(
             conn=connection_uri,
             query=query,
-            return_type="arrow2",
+            return_type=return_type,
             partition_on=partition_on,
             partition_range=partition_range,
             partition_num=partition_num,

@@ -47,10 +47,6 @@ def test_df_sort_idempotent(df: pl.DataFrame) -> None:
     assert_frame_equal(result, result.sort(cols, maintain_order=True))
 
 
-def is_sorted_any(s: pl.Series) -> bool:
-    return s.flags["SORTED_ASC"] or s.flags["SORTED_DESC"]
-
-
 def test_sort_dates_multiples() -> None:
     df = pl.DataFrame(
         [
@@ -625,7 +621,6 @@ def test_sort_by_in_over_5499() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_merge_sorted() -> None:
     df_a = (
         pl.datetime_range(
@@ -1131,3 +1126,14 @@ def test_sort_into_function_into_dynamic_groupby_20715() -> None:
         .collect()
         .shape
     ) == (90, 3)
+
+
+def test_sort_multicolum_null() -> None:
+    df = pl.DataFrame({"a": [1], "b": [None]})
+    assert df.sort(["a", "b"]).shape == (1, 2)
+
+
+def test_sort_nested_multi_column() -> None:
+    assert pl.DataFrame({"a": [0, 0], "b": [[2], [1]]}).sort(["a", "b"]).to_dict(
+        as_series=False
+    ) == {"a": [0, 0], "b": [[1], [2]]}

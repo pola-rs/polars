@@ -234,8 +234,9 @@ your solution, feel free to open a draft pull request and ask for help.
 ## Contributing to documentation
 
 The most important components of Polars documentation are the
-[user guide](https://docs.pola.rs/user-guide/), the [API references](https://docs.pola.rs/api/), and
-the database of questions on [StackOverflow](https://stackoverflow.com/).
+[user guide](https://docs.pola.rs/user-guide/), the
+[API references](https://docs.pola.rs/api/python/stable/reference/index.html), and the database of
+questions on [StackOverflow](https://stackoverflow.com/).
 
 ### User guide
 

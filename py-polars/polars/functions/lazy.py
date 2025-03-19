@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING, Any, Callable, overload
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils.deprecation import deprecate_function, issue_deprecation_warning
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_renamed_parameter,
+    deprecate_streaming_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
@@ -16,6 +21,7 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
+from polars.lazyframe.opt_flags import OptFlags
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -27,6 +33,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import (
         CorrelationMethod,
+        EngineType,
         EpochTimeUnit,
         IntoExpr,
         PolarsDataType,
@@ -785,7 +792,7 @@ def corr(
     propagate_nans: bool = False,
 ) -> Expr:
     """
-    Compute the Pearson's or Spearman rank correlation correlation between two columns.
+    Compute the Pearson's or Spearman rank correlation between two columns.
 
     Parameters
     ----------
@@ -1615,6 +1622,7 @@ def arg_sort_by(
     )
 
 
+@deprecate_streaming_parameter()
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
@@ -1629,13 +1637,16 @@ def collect_all(
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
     collapse_joins: bool = True,
-    streaming: bool = False,
     _check_order: bool = True,
+    engine: EngineType = "auto",
 ) -> list[DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
 
-    This runs all the computation graphs in parallel on the Polars threadpool.
+    This can run all the computation graphs in parallel or combined.
+
+    Common Subplan Elimination is applied on the combined plan, meaning
+    that diverging queries will run only once.
 
     Parameters
     ----------
@@ -1661,60 +1672,46 @@ def collect_all(
         Combine sequential independent calls to with_columns
     collapse_joins
         Collapse a join and filters into a faster join
-    streaming
-        Process the query in batches to handle larger-than-memory data.
-        If set to `False` (default), the entire query is processed in a single
-        batch.
-
-        .. warning::
-            Streaming mode is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+    engine
+        Select the engine used to process the query, optional.
+        At the moment, if set to `"auto"` (default), the query
+        is run using the polars in-memory engine. Polars will also
+        attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+        environment variable. If it cannot run the query using the
+        selected engine, the query is run using the polars in-memory
+        engine.
 
         .. note::
-            Use :func:`explain` to see if Polars can process the query in streaming
-            mode.
+           The GPU engine does not support async, or running in the
+           background. If either are enabled, then GPU execution is switched off.
 
     Returns
     -------
     list of DataFrames
         The collected DataFrames, returned in the same order as the input LazyFrames.
+
     """
+    optflags = OptFlags(
+        _type_coercion=type_coercion,
+        _type_check=_type_check,
+        predicate_pushdown=predicate_pushdown,
+        projection_pushdown=projection_pushdown,
+        simplify_expression=simplify_expression,
+        slice_pushdown=slice_pushdown,
+        comm_subplan_elim=comm_subplan_elim,
+        comm_subexpr_elim=comm_subexpr_elim,
+        cluster_with_columns=cluster_with_columns,
+        collapse_joins=collapse_joins,
+        check_order_observe=_check_order,
+    )
     if no_optimization:
-        predicate_pushdown = False
-        projection_pushdown = False
-        slice_pushdown = False
-        comm_subplan_elim = False
-        comm_subexpr_elim = False
-        cluster_with_columns = False
-        collapse_joins = False
+        optflags.no_optimizations()
 
-    if streaming:
+    if engine in ("streaming", "old-streaming"):
         issue_unstable_warning("Streaming mode is considered unstable.")
-        comm_subplan_elim = False
 
-    prepared = []
-
-    for lf in lazy_frames:
-        type_check = _type_check
-        ldf = lf._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=streaming,
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=False,
-        )
-        prepared.append(ldf)
-
-    out = plr.collect_all(prepared)
+    lfs = [lf._ldf for lf in lazy_frames]
+    out = plr.collect_all(lfs, engine, optflags._pyoptflags)
 
     # wrap the pydataframes into dataframe
     result = [wrap_df(pydf) for pydf in out]
@@ -1738,7 +1735,7 @@ def collect_all_async(
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
     collapse_joins: bool = True,
-    streaming: bool = True,
+    engine: EngineType = "auto",
 ) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
 
@@ -1758,11 +1755,12 @@ def collect_all_async(
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
     collapse_joins: bool = True,
-    streaming: bool = False,
+    engine: EngineType = "auto",
 ) -> Awaitable[list[DataFrame]]: ...
 
 
 @unstable()
+@deprecate_streaming_parameter()
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
@@ -1778,8 +1776,8 @@ def collect_all_async(
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
     collapse_joins: bool = True,
-    streaming: bool = False,
     _check_order: bool = True,
+    engine: EngineType = "auto",
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
@@ -1821,18 +1819,18 @@ def collect_all_async(
         Combine sequential independent calls to with_columns
     collapse_joins
         Collapse a join and filters into a faster join
-    streaming
-        Process the query in batches to handle larger-than-memory data.
-        If set to `False` (default), the entire query is processed in a single
-        batch.
-
-        .. warning::
-            Streaming mode is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+    engine
+        Select the engine used to process the query, optional.
+        At the moment, if set to `"auto"` (default), the query
+        is run using the polars in-memory engine. Polars will also
+        attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+        environment variable. If it cannot run the query using the
+        selected engine, the query is run using the polars in-memory
+        engine.
 
         .. note::
-            Use :func:`explain` to see if Polars can process the query in streaming
-            mode.
+           The GPU engine does not support async, or running in the
+           background. If either are enabled, then GPU execution is switched off.
 
     See Also
     --------
@@ -1851,46 +1849,105 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
+    optflags = OptFlags(
+        _type_coercion=type_coercion,
+        _type_check=_type_check,
+        predicate_pushdown=predicate_pushdown,
+        projection_pushdown=projection_pushdown,
+        simplify_expression=simplify_expression,
+        slice_pushdown=slice_pushdown,
+        comm_subplan_elim=comm_subplan_elim,
+        comm_subexpr_elim=comm_subexpr_elim,
+        cluster_with_columns=cluster_with_columns,
+        collapse_joins=collapse_joins,
+        check_order_observe=_check_order,
+    )
     if no_optimization:
-        predicate_pushdown = False
-        projection_pushdown = False
-        slice_pushdown = False
-        comm_subplan_elim = False
-        comm_subexpr_elim = False
-        cluster_with_columns = False
-        collapse_joins = False
+        optflags.no_optimizations()
 
-    if streaming:
+    if engine in ("streaming", "old-streaming"):
         issue_unstable_warning("Streaming mode is considered unstable.")
-        comm_subplan_elim = False
-
-    prepared = []
-
-    for lf in lazy_frames:
-        type_check = _type_check
-        ldf = lf._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=streaming,
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=False,
-        )
-        prepared.append(ldf)
 
     result: (
         _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
     ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-    plr.collect_all_with_callback(prepared, result._callback_all)
+    lfs = [lf._ldf for lf in lazy_frames]
+    plr.collect_all_with_callback(
+        lfs, engine, optflags._pyoptflags, result._callback_all
+    )
     return result
+
+
+@unstable()
+def explain_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    type_coercion: bool = True,
+    _type_check: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
+    _check_order: bool = True,
+) -> str:
+    """
+    Explain multiple LazyFrames as if passed to `collect_all`.
+
+    Common Subplan Elimination is applied on the combined plan, meaning
+    that diverging queries will run only once.
+
+    Parameters
+    ----------
+    lazy_frames
+        A list of LazyFrames to collect.
+    type_coercion
+        Do type coercion optimization.
+    predicate_pushdown
+        Do predicate pushdown optimization.
+    projection_pushdown
+        Do projection pushdown optimization.
+    simplify_expression
+        Run simplify expressions optimization.
+    no_optimization
+        Turn off optimizations.
+    slice_pushdown
+        Slice pushdown optimization.
+    comm_subplan_elim
+        Will try to cache branching subplans that occur on self-joins or unions.
+    comm_subexpr_elim
+        Common subexpressions will be cached and reused.
+    cluster_with_columns
+        Combine sequential independent calls to with_columns
+    collapse_joins
+        Collapse a join and filters into a faster join
+
+    Returns
+    -------
+    Explained plan.
+    """
+    optflags = OptFlags(
+        _type_coercion=type_coercion,
+        _type_check=_type_check,
+        predicate_pushdown=predicate_pushdown,
+        projection_pushdown=projection_pushdown,
+        simplify_expression=simplify_expression,
+        slice_pushdown=slice_pushdown,
+        comm_subplan_elim=comm_subplan_elim,
+        comm_subexpr_elim=comm_subexpr_elim,
+        cluster_with_columns=cluster_with_columns,
+        collapse_joins=collapse_joins,
+        check_order_observe=_check_order,
+    )
+    if no_optimization:
+        optflags.no_optimizations()
+
+    lfs = [lf._ldf for lf in lazy_frames]
+    return plr.explain_all(lfs, optflags._pyoptflags)
 
 
 @overload
@@ -2149,22 +2206,18 @@ def from_epoch(
         raise ValueError(msg)
 
 
-@unstable()
+@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
 def rolling_cov(
     a: str | Expr,
     b: str | Expr,
     *,
     window_size: int,
-    min_periods: int | None = None,
+    min_samples: int | None = None,
     ddof: int = 1,
 ) -> Expr:
     """
     Compute the rolling covariance between two columns/ expressions.
 
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
-
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
@@ -2176,39 +2229,35 @@ def rolling_cov(
         Column name or Expression.
     window_size
         The length of the window.
-    min_periods
+    min_samples
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom. The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
     """
-    if min_periods is None:
-        min_periods = window_size
+    if min_samples is None:
+        min_samples = window_size
     if isinstance(a, str):
         a = F.col(a)
     if isinstance(b, str):
         b = F.col(b)
     return wrap_expr(
-        plr.rolling_cov(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
+        plr.rolling_cov(a._pyexpr, b._pyexpr, window_size, min_samples, ddof)
     )
 
 
-@unstable()
+@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
 def rolling_corr(
     a: str | Expr,
     b: str | Expr,
     *,
     window_size: int,
-    min_periods: int | None = None,
+    min_samples: int | None = None,
     ddof: int = 1,
 ) -> Expr:
     """
     Compute the rolling correlation between two columns/ expressions.
-
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
@@ -2221,21 +2270,21 @@ def rolling_corr(
         Column name or Expression.
     window_size
         The length of the window.
-    min_periods
+    min_samples
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom. The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
     """
-    if min_periods is None:
-        min_periods = window_size
+    if min_samples is None:
+        min_samples = window_size
     if isinstance(a, str):
         a = F.col(a)
     if isinstance(b, str):
         b = F.col(b)
     return wrap_expr(
-        plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
+        plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_samples, ddof)
     )
 
 

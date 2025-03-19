@@ -1,11 +1,11 @@
 use std::error::Error;
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
-use once_cell::sync::Lazy;
-use polars_core::config::{self, verbose};
 use polars_core::POOL;
+use polars_core::config::{self, verbose};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Semaphore;
 
@@ -14,7 +14,7 @@ pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
 
 /// Used to determine chunks when splitting large ranges, or combining small
 /// ranges.
-static DOWNLOAD_CHUNK_SIZE: Lazy<usize> = Lazy::new(|| {
+static DOWNLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
     let v: usize = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE")
         .as_deref()
         .map(|x| x.parse().expect("integer"))
@@ -31,7 +31,7 @@ pub(super) fn get_download_chunk_size() -> usize {
     *DOWNLOAD_CHUNK_SIZE
 }
 
-static UPLOAD_CHUNK_SIZE: Lazy<usize> = Lazy::new(|| {
+static UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
     let v: usize = std::env::var("POLARS_UPLOAD_CHUNK_SIZE")
         .as_deref()
         .map(|x| x.parse().expect("integer"))
@@ -282,7 +282,7 @@ impl RuntimeManager {
             .unwrap_or(POOL.current_num_threads().clamp(1, 4));
 
         if polars_core::config::verbose() {
-            eprintln!("Async thread count: {}", n_threads);
+            eprintln!("async thread count: {}", n_threads);
         }
 
         let rt = Builder::new_multi_thread()
@@ -295,21 +295,21 @@ impl RuntimeManager {
         Self { rt }
     }
 
-    /// Keep track of rayon threads that drive the runtime. Every thread
-    /// only allows a single runtime. If this thread calls block_on and this
-    /// rayon thread is already driving an async execution we must start a new thread
-    /// otherwise we panic. This can happen when we parallelize reads over 100s of files.
+    /// Shorthand for `tokio::task::block_in_place(|| block_on(f))`. This is a variant of `block_on`
+    /// that is safe to call from if the current thread has already entered the async runtime, or
+    /// is a rayon thread.
     ///
     /// # Safety
     /// The tokio runtime flavor is multi-threaded.
-    pub fn block_on_potential_spawn<F>(&'static self, future: F) -> F::Output
+    pub fn block_in_place_on<F>(&self, future: F) -> F::Output
     where
-        F: Future + Send,
-        F::Output: Send,
+        F: Future,
     {
         tokio::task::block_in_place(|| self.rt.block_on(future))
     }
 
+    /// Note: `block_in_place_on` should be used instead if the current thread is a rayon thread or
+    /// has already entered the async runtime.
     pub fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,
@@ -364,7 +364,7 @@ impl RuntimeManager {
     }
 }
 
-static RUNTIME: Lazy<RuntimeManager> = Lazy::new(RuntimeManager::new);
+static RUNTIME: LazyLock<RuntimeManager> = LazyLock::new(RuntimeManager::new);
 
 pub fn get_runtime() -> &'static RuntimeManager {
     RUNTIME.deref()

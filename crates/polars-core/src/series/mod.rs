@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Type agnostic columnar data structure.
 use crate::chunked_array::flags::StatisticsFlags;
 pub use crate::prelude::ChunkCompareEq;
@@ -17,6 +18,7 @@ macro_rules! invalid_operation_panic {
 pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;
+pub mod builder;
 mod comparison;
 mod from;
 pub mod implementations;
@@ -37,11 +39,11 @@ use num_traits::NumCast;
 use polars_error::feature_gated;
 pub use series_trait::{IsSorted, *};
 
+use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{handle_casting_failures, materialize_dyn_int, Wrap};
-use crate::POOL;
+use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 
 /// # Series
 /// The columnar data type for a DataFrame.
@@ -154,7 +156,7 @@ impl Eq for Wrap<Series> {}
 
 impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let rs = PlRandomState::with_seeds(0, 0, 0, 0);
+        let rs = PlSeedableRandomStateQuality::fixed();
         let mut h = vec![];
         if self.0.vec_hash(rs, &mut h).is_ok() {
             let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));
@@ -179,7 +181,7 @@ impl Series {
         } else {
             match self.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => self
+                DataType::Object(_) => self
                     .take(&ChunkedArray::<IdxType>::new_vec(PlSmallStr::EMPTY, vec![]))
                     .unwrap(),
                 dt => Series::new_empty(self.name().clone(), dt),
@@ -193,6 +195,22 @@ impl Series {
             self.0 = self.0.clone_inner();
         }
         Arc::get_mut(&mut self.0).expect("implementation error")
+    }
+
+    /// Take or clone a owned copy of the inner [`ChunkedArray`].
+    pub fn take_inner<T>(self) -> ChunkedArray<T>
+    where
+        T: 'static + PolarsDataType<IsLogical = FalseT>,
+    {
+        let arc_any = self.0.as_arc_any();
+        let downcast = arc_any
+            .downcast::<implementations::SeriesWrap<ChunkedArray<T>>>()
+            .unwrap();
+
+        match Arc::try_unwrap(downcast) {
+            Ok(ca) => ca.0,
+            Err(ca) => ca.as_ref().as_ref().clone(),
+        }
     }
 
     /// # Safety
@@ -291,9 +309,23 @@ impl Series {
         let must_cast = other.dtype().matches_schema_type(self.dtype())?;
         if must_cast {
             let other = other.cast(self.dtype())?;
-            self._get_inner_mut().append(&other)?;
+            self.append_owned(other)?;
         } else {
             self._get_inner_mut().append(other)?;
+        }
+        Ok(self)
+    }
+
+    /// Append in place. This is done by adding the chunks of `other` to this [`Series`].
+    ///
+    /// See [`ChunkedArray::append_owned`] and [`ChunkedArray::extend`].
+    pub fn append_owned(&mut self, other: Series) -> PolarsResult<&mut Self> {
+        let must_cast = other.dtype().matches_schema_type(self.dtype())?;
+        if must_cast {
+            let other = other.cast(self.dtype())?;
+            self._get_inner_mut().append_owned(other)?;
+        } else {
+            self._get_inner_mut().append_owned(other)?;
         }
         Ok(self)
     }
@@ -359,6 +391,10 @@ impl Series {
                 true
             },
             dt if dt.is_primitive() && dt == self.dtype() => true,
+            #[cfg(feature = "dtype-categorical")]
+            D::Enum(None, _) => {
+                polars_bail!(InvalidOperation: "cannot cast / initialize Enum without categories present");
+            },
             _ => false,
         };
 
@@ -479,15 +515,26 @@ impl Series {
             },
 
             #[cfg(feature = "dtype-categorical")]
-            (D::UInt32, D::Categorical(revmap, ordering)) => Ok(unsafe {
-                CategoricalChunked::from_cats_and_rev_map_unchecked(
-                    self.u32().unwrap().clone(),
-                    revmap.as_ref().unwrap().clone(),
-                    false,
-                    *ordering,
-                )
-            }
-            .into_series()),
+            (D::UInt32, D::Categorical(revmap, ordering)) => match revmap {
+                Some(revmap) => Ok(unsafe {
+                    CategoricalChunked::from_cats_and_rev_map_unchecked(
+                        self.u32().unwrap().clone(),
+                        revmap.clone(),
+                        false,
+                        *ordering,
+                    )
+                }
+                .into_series()),
+                // In the streaming engine this is `None` and the global string cache is turned on
+                // for the duration of the query.
+                None => Ok(unsafe {
+                    CategoricalChunked::from_global_indices_unchecked(
+                        self.u32().unwrap().clone(),
+                        *ordering,
+                    )
+                    .into_series()
+                }),
+            },
             #[cfg(feature = "dtype-categorical")]
             (D::UInt32, D::Enum(revmap, ordering)) => Ok(unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -594,6 +641,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
+            DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
                 let arr = BooleanArray::full(self.len(), false, ArrowDataType::Boolean)
                     .with_validity(self.rechunk_validity());
@@ -622,6 +670,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
+            DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
                 let arr = BooleanArray::full(self.len(), true, ArrowDataType::Boolean)
                     .with_validity(self.rechunk_validity());
@@ -636,6 +685,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
+            DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
                 let arr = BooleanArray::full(self.len(), false, ArrowDataType::Boolean)
                     .with_validity(self.rechunk_validity());
@@ -949,7 +999,7 @@ impl Series {
                 },
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 let ArrowDataType::FixedSizeBinary(size) = self.chunks()[0].dtype() else {
                     unreachable!()
                 };

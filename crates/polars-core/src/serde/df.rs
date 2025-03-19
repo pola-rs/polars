@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use arrow::datatypes::Metadata;
-use arrow::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
+use arrow::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
 use arrow::io::ipc::write::WriteOptions;
-use polars_error::{polars_err, to_compute_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err, to_compute_err};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_serialize::deserialize_map_bytes;
 use polars_utils::pl_str::PlSmallStr;
@@ -74,7 +74,6 @@ impl DataFrame {
 
     pub fn deserialize_from_reader(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
         let mut md = read_stream_metadata(reader)?;
-        let arrow_schema = md.schema.clone();
 
         let custom_metadata = md.custom_schema_metadata.take();
 
@@ -82,7 +81,7 @@ impl DataFrame {
         let dfs = reader
             .into_iter()
             .map_while(|batch| match batch {
-                Ok(StreamState::Some(batch)) => Some(DataFrame::try_from((batch, &arrow_schema))),
+                Ok(StreamState::Some(batch)) => Some(Ok(DataFrame::from(batch))),
                 Ok(StreamState::Waiting) => None,
                 Err(e) => Some(Err(e)),
             })
@@ -166,7 +165,7 @@ impl<'de> Deserialize<'de> for DataFrame {
     where
         D: Deserializer<'de>,
     {
-        deserialize_map_bytes(deserializer, &mut |b| {
+        deserialize_map_bytes(deserializer, |b| {
             let v = &mut b.as_ref();
             Self::deserialize_from_reader(v)
         })?

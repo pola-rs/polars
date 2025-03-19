@@ -3,6 +3,7 @@ use std::iter::FlatMap;
 
 use polars_core::prelude::*;
 
+use self::visitor::{AexprNode, RewritingVisitor, TreeWalker};
 use crate::constants::get_len_name;
 use crate::prelude::*;
 
@@ -75,14 +76,25 @@ where
     current_expr.into_iter().any(matches)
 }
 
-/// Check if leaf expression is a literal
-#[cfg(feature = "is_in")]
-pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
-    match e {
-        Expr::Literal(_) => true,
-        _ => expr_to_leaf_column_exprs_iter(e).any(|e| matches!(e, Expr::Literal(_))),
-    }
+/// Check if expression is independent from any column.
+pub(crate) fn is_column_independent(expr: &Expr) -> bool {
+    !expr.into_iter().any(|e| match e {
+        Expr::Nth(_)
+        | Expr::Column(_)
+        | Expr::Columns(_)
+        | Expr::DtypeColumn(_)
+        | Expr::IndexColumn(_)
+        | Expr::Wildcard
+        | Expr::Len
+        | Expr::SubPlan(..)
+        | Expr::Selector(_) => true,
+
+        #[cfg(feature = "dtype-struct")]
+        Expr::Field(_) => true,
+        _ => false,
+    })
 }
+
 /// Check if leaf expression returns a scalar
 #[cfg(feature = "is_in")]
 pub(crate) fn all_return_scalar(e: &Expr) -> bool {
@@ -119,6 +131,7 @@ pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<PlSma
             AExpr::Alias(_, name) => return Ok(name.clone()),
             AExpr::Len => return Ok(get_len_name()),
             AExpr::Literal(val) => return Ok(val.output_column_name().clone()),
+            AExpr::Ternary { truthy, .. } => return aexpr_output_name(*truthy, arena),
             _ => {},
         }
     }
@@ -363,4 +376,36 @@ pub fn merge_schemas(schemas: &[SchemaRef]) -> PolarsResult<Schema> {
     }
 
     Ok(merged_schema)
+}
+
+/// Rename all reference to the column in `map` with their corresponding new name.
+pub fn rename_columns(
+    node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    map: &PlIndexMap<PlSmallStr, PlSmallStr>,
+) -> Node {
+    struct RenameColumns<'a>(&'a PlIndexMap<PlSmallStr, PlSmallStr>);
+    impl RewritingVisitor for RenameColumns<'_> {
+        type Node = AexprNode;
+        type Arena = Arena<AExpr>;
+
+        fn mutate(
+            &mut self,
+            node: Self::Node,
+            arena: &mut Self::Arena,
+        ) -> PolarsResult<Self::Node> {
+            if let AExpr::Column(name) = arena.get(node.node()) {
+                if let Some(new_name) = self.0.get(name) {
+                    return Ok(AexprNode::new(arena.add(AExpr::Column(new_name.clone()))));
+                }
+            }
+
+            Ok(node)
+        }
+    }
+
+    AexprNode::new(node)
+        .rewrite(&mut RenameColumns(map), expr_arena)
+        .unwrap()
+        .node()
 }

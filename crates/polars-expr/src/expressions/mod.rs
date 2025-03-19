@@ -408,7 +408,9 @@ impl<'a> AggregationContext<'a> {
                 #[cfg(debug_assertions)]
                 {
                     if self.groups.len() > s.len() {
-                        polars_warn!("groups may be out of bounds; more groups than elements in a series is only possible in dynamic group_by")
+                        polars_warn!(
+                            "groups may be out of bounds; more groups than elements in a series is only possible in dynamic group_by"
+                        )
                     }
                 }
 
@@ -517,7 +519,9 @@ impl<'a> AggregationContext<'a> {
                     // panic so we find cases where we accidentally explode overlapping groups
                     // we don't want this as this can create a lot of data
                     if let GroupsType::Slice { rolling: true, .. } = self.groups.as_ref().as_ref() {
-                        panic!("implementation error, polars should not hit this branch for overlapping groups")
+                        panic!(
+                            "implementation error, polars should not hit this branch for overlapping groups"
+                        )
                     }
                 }
 
@@ -602,10 +606,6 @@ pub trait PhysicalExpr: Send + Sync {
         None
     }
 
-    /// Get the variables that are used in the expression i.e. live variables.
-    /// This can contain duplicates.
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>);
-
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
     /// or not -> `false`
@@ -644,10 +644,6 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         self.expr
             .evaluate(df, &state)
             .map(|c| c.take_materialized_series())
-    }
-
-    fn collect_live_columns(&self, live_columns: &mut PlIndexSet<PlSmallStr>) {
-        self.expr.collect_live_columns(live_columns);
     }
 
     #[cfg(feature = "parquet")]

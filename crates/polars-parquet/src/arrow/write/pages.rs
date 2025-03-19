@@ -4,9 +4,9 @@ use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray, StructArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::PhysicalType;
 use arrow::offset::{Offset, OffsetsBuffer};
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
-use super::{array_to_pages, Encoding, WriteOptions};
+use super::{Encoding, WriteOptions, array_to_pages};
 use crate::arrow::read::schema::is_nullable;
 use crate::parquet::page::Page;
 use crate::parquet::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};
@@ -583,10 +583,10 @@ mod tests {
 
     use super::super::{FieldInfo, ParquetPhysicalType};
     use super::*;
+    use crate::parquet::schema::Repetition;
     use crate::parquet::schema::types::{
         GroupLogicalType, PrimitiveConvertedType, PrimitiveLogicalType,
     };
-    use crate::parquet::schema::Repetition;
 
     #[test]
     fn test_struct() {

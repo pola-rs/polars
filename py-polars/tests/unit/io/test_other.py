@@ -120,9 +120,9 @@ def test_unit_io_subdir_has_no_init() -> None:
     # --------------------------------------------------------------------------------
     io_dir = Path(__file__).parent
     assert io_dir.parts[-2:] == ("unit", "io")
-    assert not (
-        io_dir / "__init__.py"
-    ).exists(), "Found undesirable '__init__.py' in the 'unit.io' tests subdirectory"
+    assert not (io_dir / "__init__.py").exists(), (
+        "Found undesirable '__init__.py' in the 'unit.io' tests subdirectory"
+    )
 
 
 @pytest.mark.write_disk

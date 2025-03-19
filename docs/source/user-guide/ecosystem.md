@@ -47,6 +47,8 @@ Read how to use Delta Lake with Polars
 
 The [Scikit Learn](https://scikit-learn.org/stable/) machine learning package accepts a Polars
 `DataFrame` as input/output to all transformers and as input to models.
+[skrub](https://skrub-data.org) helps encoding DataFrames for scikit-learn estimators (eg converting
+dates or strings).
 
 #### XGBoost & LightGBM
 

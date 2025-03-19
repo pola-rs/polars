@@ -74,6 +74,18 @@ values so that it can be passed as an argument to `c`.
 --8<-- "python/user-guide/misc/visualization.py:matplotlib_make_plot"
 ```
 
+## Plotnine
+
+[Plotnine](https://plotnine.org/) is a reimplementation of ggplot2 in Python, bringing the Grammar
+of Graphics to Python users with an interface similar to its R counterpart. It supports Polars
+`DataFrame` by internally converting it to a pandas `DataFrame`.
+
+{{code_block('user-guide/misc/visualization','plotnine_show_plot',[])}}
+
+```python exec="on" session="user-guide/misc/visualization"
+--8<-- "python/user-guide/misc/visualization.py:plotnine_make_plot"
+```
+
 ## Seaborn and Plotly
 
 [Seaborn](https://seaborn.pydata.org/) and [Plotly](https://plotly.com/) can accept a Polars

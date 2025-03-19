@@ -12,10 +12,10 @@ use polars_utils::unitvec;
 use self::row_encode::get_row_encoding_context;
 use super::*;
 use crate::executors::operators::PlaceHolder;
+use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
 use crate::executors::sinks::joins::generic_probe_outer::GenericFullOuterJoinProbe;
 use crate::executors::sinks::utils::{hash_rows, load_vec};
-use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
@@ -33,7 +33,7 @@ pub struct GenericBuild<K: ExtraPayload> {
     //      * end = (offset + n_join_keys)
     materialized_join_cols: Vec<BinaryArray<i64>>,
     suffix: PlSmallStr,
-    hb: PlRandomState,
+    hb: PlSeedableRandomStateQuality,
     join_args: JoinArgs,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
@@ -48,7 +48,7 @@ pub struct GenericBuild<K: ExtraPayload> {
     hashes: Vec<u64>,
     // the join order is swapped to ensure we hash the smaller table
     swapped: bool,
-    join_nulls: bool,
+    nulls_equal: bool,
     node: Node,
     key_names_left: Arc<[PlSmallStr]>,
     key_names_right: Arc<[PlSmallStr]>,
@@ -63,13 +63,13 @@ impl<K: ExtraPayload> GenericBuild<K> {
         swapped: bool,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-        join_nulls: bool,
+        nulls_equal: bool,
         node: Node,
         key_names_left: Arc<[PlSmallStr]>,
         key_names_right: Arc<[PlSmallStr]>,
         placeholder: PlaceHolder,
     ) -> Self {
-        let hb: PlRandomState = Default::default();
+        let hb = PlSeedableRandomStateQuality::default();
         let partitions = _set_partition_size();
         let hash_tables = PartitionedHashMap::new(load_vec(partitions, || {
             PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE)
@@ -86,7 +86,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
             materialized_join_cols: vec![],
             hash_tables,
             hashes: vec![],
-            join_nulls,
+            nulls_equal,
             node,
             key_names_left,
             key_names_right,
@@ -142,7 +142,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let arr = s.to_physical_repr().rechunk().array_ref(0).clone();
             self.join_columns.push(arr);
-            ctxts.push(get_row_encoding_context(s.dtype()));
+            ctxts.push(get_row_encoding_context(s.dtype(), false));
         }
         let rows_encoded = polars_row::convert_columns_no_order(
             self.join_columns[0].len(), // @NOTE: does not work for ZFS
@@ -289,13 +289,13 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
             self.swapped,
             self.join_columns_left.clone(),
             self.join_columns_right.clone(),
-            self.join_nulls,
+            self.nulls_equal,
             self.node,
             self.key_names_left.clone(),
             self.key_names_right.clone(),
             self.placeholder.clone(),
         );
-        new.hb = self.hb.clone();
+        new.hb = self.hb;
         Box::new(new)
     }
 
@@ -313,7 +313,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
         // hashtable cmp.
         let materialized_join_cols = Arc::from(std::mem::take(&mut self.materialized_join_cols));
         let suffix = self.suffix.clone();
-        let hb = self.hb.clone();
+        let hb = self.hb;
         let hash_tables = Arc::new(PartitionedHashMap::new(std::mem::take(
             self.hash_tables.inner_mut(),
         )));
@@ -338,7 +338,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                     hashes,
                     context,
                     self.join_args.clone(),
-                    self.join_nulls,
+                    self.nulls_equal,
                 );
                 self.placeholder.replace(Box::new(probe_operator));
                 Ok(FinalizedSink::Operator)
@@ -354,7 +354,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
                     join_columns_left,
                     self.swapped,
                     hashes,
-                    self.join_nulls,
+                    self.nulls_equal,
                     coalesce,
                     self.key_names_left.clone(),
                     self.key_names_right.clone(),
