@@ -4,8 +4,9 @@ pub mod nulls;
 pub mod quantile_filter;
 mod window;
 
-use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use std::hash::{Hash, Hasher};
+use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+
 use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
