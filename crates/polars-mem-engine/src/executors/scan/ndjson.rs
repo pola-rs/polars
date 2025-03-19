@@ -63,7 +63,7 @@ impl JsonExec {
                 };
             }
             if let Some(row_index) = &self.file_options.row_index {
-                unsafe   {         df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset))};
+                unsafe { df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset)) };
             }
             return Ok(df);
         }

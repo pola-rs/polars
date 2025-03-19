@@ -536,7 +536,7 @@ impl ChunkReader {
                     polars_bail!(ComputeError: msg)
                 };
 
-                unsafe          {   df.with_row_index_mut(ri.name.clone(), Some(offset as IdxSize))};
+                unsafe { df.with_row_index_mut(ri.name.clone(), Some(offset as IdxSize)) };
             }
 
             Ok(df)
