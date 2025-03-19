@@ -3,6 +3,7 @@ use std::hash::BuildHasher;
 
 use arrow::array::{BinaryArray, PrimitiveArray, StaticArray, UInt64Array};
 use arrow::compute::utils::combine_validities_and_many;
+use polars_core::error::polars_err;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType};
@@ -102,6 +103,16 @@ impl HashKeys {
             || hash_keys_variant_for_dtype(df[0].dtype()) == HashKeysVariant::RowEncoded;
         if use_row_encoding {
             let keys = df.get_columns();
+            #[cfg(feature = "dtype-categorical")]
+            for key in keys {
+                if let DataType::Categorical(Some(rev_map), _) = key.dtype() {
+                    assert!(
+                        rev_map.is_active_global(),
+                        "{}",
+                        polars_err!(string_cache_mismatch)
+                    );
+                }
+            }
             let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap().into_array();
 
             if !null_is_valid {

@@ -146,7 +146,7 @@ def test_predicate_pushdown_join_fill_null_10058() -> None:
     ids = pl.LazyFrame({"id": [0, 1, 2]})
     filters = pl.LazyFrame({"id": [0, 1], "filter": [True, False]})
 
-    assert (
+    assert sorted(
         ids.join(filters, how="left", on="id")
         .filter(pl.col("filter").fill_null(True))
         .collect()

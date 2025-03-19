@@ -4,6 +4,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import with_string_cache_if_auto_streaming
 
 inf = float("inf")
 
@@ -110,6 +111,7 @@ def test_cut_bin_name_in_agg_context() -> None:
         ),
     ],
 )
+@with_string_cache_if_auto_streaming
 def test_cut_fast_unique_15981(
     breaks: list[int],
     expected_labels: pl.Series,

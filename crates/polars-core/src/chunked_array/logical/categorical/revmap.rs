@@ -6,7 +6,7 @@ use arrow::array::*;
 use polars_utils::aliases::PlFixedStateQuality;
 
 use crate::datatypes::PlHashMap;
-use crate::using_string_cache;
+use crate::{StringCache, using_string_cache};
 
 #[derive(Clone)]
 pub enum RevMapping {
@@ -46,6 +46,13 @@ impl Default for RevMapping {
 
 #[allow(clippy::len_without_is_empty)]
 impl RevMapping {
+    pub fn is_active_global(&self) -> bool {
+        match self {
+            Self::Global(_, _, id) => *id == StringCache::active_cache_id(),
+            _ => false,
+        }
+    }
+
     pub fn is_global(&self) -> bool {
         matches!(self, Self::Global(_, _, _))
     }
