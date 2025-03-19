@@ -896,7 +896,7 @@ impl PyLazyFrame {
                 cloud_options.unwrap_or_default(),
             )?;
             Some(
-                parsed_cloud_options
+                cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
                         credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
@@ -905,7 +905,7 @@ impl PyLazyFrame {
         };
 
         #[cfg(not(feature = "cloud"))]
-        let parsed_cloud_options = None;
+        let cloud_options = None;
 
         py.enter_polars(|| {
             let ldf = self.ldf.clone();

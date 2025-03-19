@@ -730,17 +730,6 @@ impl LazyFrame {
         physical_plan.execute(&mut state)
     }
 
-    // post_opt: A function that is called after optimization which also sinks the result.
-    // This can be used to modify the IR jit.
-    pub fn _sink_post_opt<P>(self, post_opt: P) -> Result<(), PolarsError>
-    where
-        P: Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
-    {
-        let (mut state, mut physical_plan, _) = self.prepare_collect_post_opt(false, post_opt)?;
-        let _ = physical_plan.execute(&mut state)?;
-        Ok(())
-    }
-
     #[allow(unused_mut)]
     fn prepare_collect(
         self,
