@@ -568,11 +568,11 @@ impl PartitionedAggregation for AggregationExpr {
                         let (agg_count, agg_s) =
                             unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
 
+                        // Ensure that we don't divide by zero by masking out zeros.
                         let agg_count = agg_count.idx().unwrap();
-                        // Ensure that we don't divide by zero.
-                        let agg_count = agg_count
-                            .apply_values(|v| if v == 0 { 1 } else { v })
-                            .into_series();
+                        let mask = agg_count.equal(0 as IdxSize);
+                        let agg_count = agg_count.set(&mask, None).unwrap().into_series();
+
                         let agg_s = &agg_s / &agg_count;
                         Ok(agg_s?.with_name(new_name).into_column())
                     },
