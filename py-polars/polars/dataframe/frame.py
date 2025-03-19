@@ -11721,8 +11721,9 @@ class DataFrame:
 
         Notes
         -----
-        This is syntactic sugar for a left/inner join, with an optional coalesce
-        when `include_nulls = False`
+        This is syntactic sugar for a left/inner join that preserves the order
+        of the left `DataFrame` by default, with an optional coalesce when
+        `include_nulls = False`.
 
         Examples
         --------
