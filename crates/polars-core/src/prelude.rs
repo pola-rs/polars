@@ -7,6 +7,7 @@ pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::trusted_len::TrustedLen;
 pub use polars_compute::rolling::{QuantileMethod, RollingFnParams, RollingVarParams};
+pub use polars_utils::aliases::*;
 pub use polars_utils::index::{ChunkId, IdxSize, NullableIdxSize};
 pub use polars_utils::pl_str::PlSmallStr;
 pub(crate) use polars_utils::total_ord::{TotalEq, TotalOrd};

@@ -1,3 +1,5 @@
+use std::hash::BuildHasher;
+
 use super::*;
 
 // Utility to cheaply check if we have duplicate sources.

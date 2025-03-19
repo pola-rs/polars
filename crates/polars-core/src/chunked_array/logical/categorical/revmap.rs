@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{BuildHasher, Hash, Hasher};
 
 use arrow::array::*;
-use polars_utils::aliases::PlRandomState;
+use polars_utils::aliases::PlFixedStateQuality;
 
 use crate::datatypes::PlHashMap;
 use crate::using_string_cache;
@@ -64,7 +64,7 @@ impl RevMapping {
 
     fn build_hash(categories: &Utf8ViewArray) -> u128 {
         // TODO! we must also validate the cases of duplicates!
-        let mut hb = PlRandomState::with_seed(0).build_hasher();
+        let mut hb = PlFixedStateQuality::with_seed(0).build_hasher();
         categories.values_iter().for_each(|val| {
             val.hash(&mut hb);
         });

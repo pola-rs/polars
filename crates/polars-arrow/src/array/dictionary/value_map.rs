@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 use std::fmt::{self, Debug};
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash};
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;

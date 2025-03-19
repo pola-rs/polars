@@ -17,7 +17,6 @@ polars-schema = { workspace = true }
 polars-time = { workspace = true, features = [], optional = true }
 polars-utils = { workspace = true, features = ['mmap'] }
 
-ahash = { workspace = true }
 arrow = { workspace = true }
 async-trait = { workspace = true, optional = true }
 atoi_simd = { workspace = true, optional = true }

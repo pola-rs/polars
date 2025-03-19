@@ -31,7 +31,7 @@ pub struct GenericFullOuterJoinProbe<K: ExtraPayload> {
     ///      * end = (offset + n_join_keys)
     materialized_join_cols: Arc<[BinaryArray<i64>]>,
     suffix: PlSmallStr,
-    hb: PlRandomState,
+    hb: PlSeedableRandomStateQuality,
     /// partitioned tables that will be used for probing.
     /// stores the key and the chunk_idx, df_idx of the left table.
     hash_tables: Arc<PartitionedMap<K>>,
@@ -62,7 +62,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
         df_a: DataFrame,
         materialized_join_cols: Arc<[BinaryArray<i64>]>,
         suffix: PlSmallStr,
-        hb: PlRandomState,
+        hb: PlSeedableRandomStateQuality,
         hash_tables: Arc<PartitionedMap<K>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         swapped: bool,

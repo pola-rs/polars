@@ -132,7 +132,7 @@ async fn select_keys(
     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
     Ok(HashKeys::from_df(
         &keys,
-        params.random_state.clone(),
+        params.random_state,
         params.args.nulls_equal,
         false,
     ))
@@ -1324,7 +1324,7 @@ impl EquiJoinNode {
                 left_payload_schema,
                 right_payload_schema,
                 args,
-                random_state: PlRandomState::new(),
+                random_state: PlRandomState::default(),
             },
             table: new_idx_table(unique_key_schema),
         })

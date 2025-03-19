@@ -33,7 +33,7 @@ pub struct GenericBuild<K: ExtraPayload> {
     //      * end = (offset + n_join_keys)
     materialized_join_cols: Vec<BinaryArray<i64>>,
     suffix: PlSmallStr,
-    hb: PlRandomState,
+    hb: PlSeedableRandomStateQuality,
     join_args: JoinArgs,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
@@ -69,7 +69,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
         key_names_right: Arc<[PlSmallStr]>,
         placeholder: PlaceHolder,
     ) -> Self {
-        let hb: PlRandomState = Default::default();
+        let hb = PlSeedableRandomStateQuality::default();
         let partitions = _set_partition_size();
         let hash_tables = PartitionedHashMap::new(load_vec(partitions, || {
             PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE)
@@ -295,7 +295,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
             self.key_names_right.clone(),
             self.placeholder.clone(),
         );
-        new.hb = self.hb.clone();
+        new.hb = self.hb;
         Box::new(new)
     }
 
@@ -313,7 +313,7 @@ impl<K: ExtraPayload> Sink for GenericBuild<K> {
         // hashtable cmp.
         let materialized_join_cols = Arc::from(std::mem::take(&mut self.materialized_join_cols));
         let suffix = self.suffix.clone();
-        let hb = self.hb.clone();
+        let hb = self.hb;
         let hash_tables = Arc::new(PartitionedHashMap::new(std::mem::take(
             self.hash_tables.inner_mut(),
         )));
