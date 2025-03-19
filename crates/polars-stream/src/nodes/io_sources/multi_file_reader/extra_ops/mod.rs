@@ -38,8 +38,10 @@ impl ExtraOperations {
 /// TODO: Eventually move this enum to polars-plan
 #[derive(Clone)]
 pub enum SchemaNamesMatchPolicy {
-    /// Errors if there are extra columns, or the columns are not in order.
-    /// Ignores missing columns, that is handled by a different module.
+    /// * If the schema lengths match, ensure that all columns match in the same order
+    /// * Otherwise, ensure that there are no extra columns in the incoming schema that
+    ///   cannot be found in the target schema.
+    ///   * Ignores if the incoming schema is missing columns, this is handled by a separate module.
     RequireOrderedExact,
 }
 

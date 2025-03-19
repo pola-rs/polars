@@ -27,7 +27,7 @@ impl MissingColumnsPolicy {
                     .find(|name| !incoming_schema.contains(name))
                 {
                     polars_bail!(
-                        ComputeError:
+                        ColumnNotFound:
                         "did not find column {}, consider enabling `allow_missing_columns`",
                         col,
                     )
