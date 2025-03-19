@@ -4,12 +4,15 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # This must be done before importing the Polars Rust bindings, otherwise we
     # might execute illegal instructions.
     import polars._cpu_check
+
     polars._cpu_check.check_cpu_flags()
-    
+
     # We also configure the allocator before importing the Polars Rust bindings.
     # See https://github.com/pola-rs/polars/issues/18088,
     # https://github.com/pola-rs/polars/pull/21829.
-    import sys, os
+    import os
+    import sys
+
     jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:-1"
     if sys.platform == "linux":
         # We only enable this on Linux, otherwise jemalloc gives warnings.
@@ -21,6 +24,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # Initialize polars on the rust side. This function is highly
     # unsafe and should only be called once.
     from polars.polars import __register_startup_deps
+
     __register_startup_deps()
 
 from typing import Any
