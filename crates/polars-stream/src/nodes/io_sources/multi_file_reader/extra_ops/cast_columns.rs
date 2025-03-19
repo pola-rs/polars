@@ -21,16 +21,16 @@ impl CastColumns {
         match policy {
             CastColumnsPolicy::ErrorOnMismatch => {
                 for (name, dtype) in incoming_schema.iter() {
-                    if let Some(target_dtype) = target_schema.get(name) {
-                        if dtype != target_dtype {
-                            polars_bail!(
-                                SchemaMismatch:
-                                "data type mismatch for column {}: expected: {}, found: {}",
-                                name, target_dtype, dtype
-                            )
-                        }
-                    } else if cfg!(debug_assertions) {
-                        panic!("impl error: column should exist in casting map")
+                    let target_dtype = target_schema
+                        .get(name)
+                        .expect("impl error: column should exist in casting map");
+
+                    if dtype != target_dtype {
+                        polars_bail!(
+                            SchemaMismatch:
+                            "data type mismatch for column {}: expected: {}, found: {}",
+                            name, target_dtype, dtype
+                        )
                     }
                 }
 
