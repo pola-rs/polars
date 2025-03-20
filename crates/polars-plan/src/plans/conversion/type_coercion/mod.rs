@@ -3,9 +3,7 @@ mod functions;
 #[cfg(feature = "is_in")]
 mod is_in;
 
-use arrow::temporal_conversions::SECONDS_IN_DAY;
 use binary::process_binary;
-use polars_compute::cast::temporal::time_unit_multiple;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
@@ -415,18 +413,8 @@ fn try_inline_literal_cast(
             },
             _ => return Ok(None),
         },
+        LiteralValue::Scalar(sc) => sc.clone().cast_with_options(dtype, options)?.into(),
         lv => {
-            // We generate cast literal datetimes, so ensure we cast upon conversion
-            // to create simpler expr trees.
-            if let LiteralValue::Scalar(sc) = &lv {
-                if dtype.is_date() {
-                    if let AnyValue::Datetime(ts, tu, None) = sc.value() {
-                        let from_size = time_unit_multiple(tu.to_arrow()) * SECONDS_IN_DAY;
-                        return Ok(Some(Scalar::new_date((*ts / from_size) as i32).into()));
-                    }
-                }
-            }
-
             let Some(av) = lv.to_any_value() else {
                 return Ok(None);
             };

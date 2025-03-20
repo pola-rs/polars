@@ -107,7 +107,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// [ChunkCompareIneq trait](crate::chunked_array::ops::ChunkCompareIneq).
 ///
 /// ## Iterators
-/// The Series variants contain differently typed [ChunkedArray](crate::chunked_array::ChunkedArray)s.
+/// The Series variants contain differently typed [ChunkedArray]s.
 /// These structs can be turned into iterators, making it possible to use any function/ closure you want
 /// on a Series.
 ///

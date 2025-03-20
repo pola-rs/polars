@@ -557,11 +557,7 @@ impl Display for ExprIRDisplay<'_> {
                 write!(f, "{expr}.alias(\"{name}\")")
             },
             Column(name) => write!(f, "col(\"{name}\")"),
-            Literal(v) => {
-                use std::fmt::Write;
-                let mut f = EscapeLabel(f);
-                write!(f, "{v:?}")
-            },
+            Literal(v) => write!(f, "{v:?}"),
             BinaryExpr { left, op, right } => {
                 let left = self.with_root(left);
                 let right = self.with_root(right);
