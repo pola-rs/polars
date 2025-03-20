@@ -1,23 +1,25 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::BuildHasher;
 
-use arrow::array::{BinaryArray, PrimitiveArray, StaticArray, UInt64Array};
+use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array};
 use arrow::compute::utils::combine_validities_and_many;
 use polars_core::error::polars_err;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
-use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType};
+use polars_core::prelude::{BinaryChunked, ChunkedArray, DataType, PlRandomState, PolarsDataType};
 use polars_core::series::Series;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalHash};
+use polars_utils::vec::PushUnchecked;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum HashKeysVariant {
     RowEncoded,
     Single,
+    Binview,
 }
 
 pub fn hash_keys_variant_for_dtype(dt: &DataType) -> HashKeysVariant {
@@ -29,10 +31,10 @@ pub fn hash_keys_variant_for_dtype(dt: &DataType) -> HashKeysVariant {
         #[cfg(feature = "dtype-categorical")]
         DataType::Enum(_, _) => HashKeysVariant::Single,
 
+        DataType::String | DataType::Binary => HashKeysVariant::Binview,
+
         // TODO: more efficient encoding for these.
-        DataType::String | DataType::Binary | DataType::Boolean | DataType::Null => {
-            HashKeysVariant::RowEncoded
-        },
+        DataType::Boolean | DataType::Null => HashKeysVariant::RowEncoded,
 
         _ => HashKeysVariant::RowEncoded,
     }
@@ -88,6 +90,7 @@ pub(crate) use downcast_single_key_ca;
 #[derive(Clone, Debug)]
 pub enum HashKeys {
     RowEncoded(RowEncodedKeys),
+    Binview(BinviewKeys),
     Single(SingleKeys),
 }
 
@@ -98,9 +101,10 @@ impl HashKeys {
         null_is_valid: bool,
         force_row_encoding: bool,
     ) -> Self {
+        let first_col_variant = hash_keys_variant_for_dtype(df[0].dtype());
         let use_row_encoding = force_row_encoding
             || df.width() > 1
-            || hash_keys_variant_for_dtype(df[0].dtype()) == HashKeysVariant::RowEncoded;
+            || first_col_variant == HashKeysVariant::RowEncoded;
         if use_row_encoding {
             let keys = df.get_columns();
             #[cfg(feature = "dtype-categorical")]
@@ -136,6 +140,29 @@ impl HashKeys {
                 hashes: PrimitiveArray::from_vec(hashes),
                 keys: keys_encoded,
             })
+        } else if first_col_variant == HashKeysVariant::Binview {
+            let keys = if let Ok(ca_str) = df[0].str() {
+                ca_str.as_binary()
+            } else {
+                df[0].binary().unwrap().clone()
+            };
+            let keys = keys.rechunk().downcast_as_array().clone();
+
+            let hashes = if keys.has_nulls() {
+                keys.iter()
+                    .map(|opt_k| opt_k.map(|k| random_state.hash_one(k)).unwrap_or(0))
+                    .collect()
+            } else {
+                keys.values_iter()
+                    .map(|k| random_state.hash_one(k))
+                    .collect()
+            };
+
+            Self::Binview(BinviewKeys {
+                hashes: PrimitiveArray::from_vec(hashes),
+                keys,
+                null_is_valid,
+            })
         } else {
             Self::Single(SingleKeys {
                 random_state,
@@ -149,6 +176,7 @@ impl HashKeys {
         match self {
             HashKeys::RowEncoded(s) => s.keys.len(),
             HashKeys::Single(s) => s.keys.len(),
+            HashKeys::Binview(s) => s.keys.len(),
         }
     }
 
@@ -168,6 +196,7 @@ impl HashKeys {
         match self {
             Self::RowEncoded(s) => s.gen_partitions(partitioner, partitions, partition_nulls),
             Self::Single(s) => s.gen_partitions(partitioner, partitions, partition_nulls),
+            Self::Binview(s) => s.gen_partitions(partitioner, partitions, partition_nulls),
         }
     }
 
@@ -195,6 +224,12 @@ impl HashKeys {
                     sketches,
                     partition_nulls,
                 ),
+                Self::Binview(s) => s.gen_idxs_per_partition::<false>(
+                    partitioner,
+                    partition_idxs,
+                    sketches,
+                    partition_nulls,
+                ),
             }
         } else {
             match self {
@@ -210,6 +245,12 @@ impl HashKeys {
                     sketches,
                     partition_nulls,
                 ),
+                Self::Binview(s) => s.gen_idxs_per_partition::<true>(
+                    partitioner,
+                    partition_idxs,
+                    sketches,
+                    partition_nulls,
+                ),
             }
         }
     }
@@ -218,13 +259,14 @@ impl HashKeys {
         match self {
             HashKeys::RowEncoded(s) => s.sketch_cardinality(sketch),
             HashKeys::Single(s) => s.sketch_cardinality(sketch),
+            HashKeys::Binview(s) => s.sketch_cardinality(sketch),
         }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct RowEncodedKeys {
-    pub hashes: UInt64Array,
+    pub hashes: UInt64Array, // Always non-null, we use the validity of keys.
     pub keys: BinaryArray<i64>,
 }
 
@@ -321,7 +363,6 @@ pub struct SingleKeys {
 }
 
 impl SingleKeys {
-    #[allow(clippy::ptr_arg)] // Remove when implemented.
     pub fn gen_partitions(
         &self,
         partitioner: &HashPartitioner,
@@ -476,5 +517,97 @@ fn sketch_cardinality<T>(
                 sketch.insert(random_state.tot_hash_one(k));
             }
         }
+    }
+}
+
+/// Pre-hashed binary view keys with prehashing.
+#[derive(Clone, Debug)]
+pub struct BinviewKeys {
+    pub hashes: UInt64Array,
+    pub keys: BinaryViewArray,
+    pub null_is_valid: bool,
+}
+
+impl BinviewKeys {
+    fn for_each_hash<F: FnMut(Option<u64>)>(&self, mut f: F) {
+        if self.keys.has_nulls() {
+            let hash_slice = self.hashes.values().as_slice();
+            if let Some(validity) = self.keys.validity() {
+                for (i, v) in validity.iter().enumerate() {
+                    if v {
+                        f(Some(unsafe { *hash_slice.get_unchecked(i) }));
+                    } else {
+                        f(None);
+                    }
+                }
+            } else {
+                for h in self.hashes.values_iter() {
+                    f(Some(*h))
+                }
+            }
+        } else {
+            for h in self.hashes.values_iter() {
+                f(Some(*h));
+            }
+        }
+    }
+
+    pub fn gen_partitions(
+        &self,
+        partitioner: &HashPartitioner,
+        partitions: &mut Vec<IdxSize>,
+        partition_nulls: bool,
+    ) {
+        unsafe {
+            // Arbitrarily put nulls in partition 0.
+            let null_p = if partition_nulls { 0 } else { IdxSize::MAX };
+            partitions.reserve(self.hashes.len());
+            self.for_each_hash(|opt_h| {
+                partitions.push_unchecked(
+                    opt_h
+                        .map(|h| partitioner.hash_to_partition(h) as IdxSize)
+                        .unwrap_or(null_p),
+                );
+            });
+        }
+    }
+
+    pub fn gen_idxs_per_partition<const BUILD_SKETCHES: bool>(
+        &self,
+        partitioner: &HashPartitioner,
+        partition_idxs: &mut [Vec<IdxSize>],
+        sketches: &mut [CardinalitySketch],
+        partition_nulls: bool,
+    ) {
+        assert!(partition_idxs.len() == partitioner.num_partitions());
+        assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
+
+        let mut idx = 0;
+        self.for_each_hash(|opt_h| {
+            if let Some(h) = opt_h {
+                unsafe {
+                    // SAFETY: we assured the number of partitions matches.
+                    let p = partitioner.hash_to_partition(h);
+                    partition_idxs.get_unchecked_mut(p).push(idx);
+                    if BUILD_SKETCHES {
+                        sketches.get_unchecked_mut(p).insert(h);
+                    }
+                }
+            } else if partition_nulls {
+                // Arbitrarily put nulls in partition 0.
+                unsafe {
+                    partition_idxs.get_unchecked_mut(0).push(idx);
+                }
+            }
+            idx += 1;
+        });
+    }
+
+    pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
+        self.for_each_hash(|opt_h| {
+            if let Some(h) = opt_h {
+                sketch.insert(h);
+            }
+        })
     }
 }
