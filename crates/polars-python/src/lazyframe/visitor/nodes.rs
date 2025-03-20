@@ -644,9 +644,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::Sink {
             input: _,
             payload: _,
-        } => Err(PyNotImplementedError::new_err(
-            "Not expecting to see a Sink node",
-        )),
+        } => Sink {
+            input: input.0,
+            payload: None,
+        }
+        .into_py_any(py),
         IR::SinkMultiple { .. } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a SinkMultiple node",
         )),

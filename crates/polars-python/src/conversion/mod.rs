@@ -19,6 +19,7 @@ use polars::series::ops::NullBehavior;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::materialize_dyn_int;
+use polars_io::csv::write::{CsvWriterOptions, QuoteStyle, SerializeOptions};
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
@@ -486,6 +487,60 @@ impl<'py> IntoPyObject<'py> for Wrap<TimeUnit> {
         self.0.to_ascii().into_pyobject(py)
     }
 }
+
+impl<'py> IntoPyObject<'py> for Wrap<CsvWriterOptions> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let dict = PyDict::new(py);
+        let _ = dict.set_item("include_bom", self.0.include_bom);
+        let _ = dict.set_item("include_header", self.0.include_header);
+        let _ = dict.set_item("batch_size", self.0.batch_size);
+        let _ = dict.set_item("serialize_options", Wrap(self.0.serialize_options));
+        Ok(dict)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<SerializeOptions> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let dict = PyDict::new(py);
+        let _ = dict.set_item("date_format", self.0.date_format);
+        let _ = dict.set_item("time_format", self.0.time_format);
+        let _ = dict.set_item("datetime_format", self.0.datetime_format);
+        let _ = dict.set_item("float_scientific", self.0.float_scientific);
+        let _ = dict.set_item("float_precision", self.0.float_precision);
+        let _ = dict.set_item("separator", self.0.separator);
+        let _ = dict.set_item("quote_char", self.0.quote_char);
+        let _ = dict.set_item("null", self.0.null);
+        let _ = dict.set_item("line_terminator", self.0.line_terminator);
+        let _ = dict.set_item("quote_style", Wrap(self.0.quote_style));
+        Ok(dict)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<QuoteStyle> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self.0 {
+            QuoteStyle::Necessary => "necessary",
+            QuoteStyle::Always => "always",
+            QuoteStyle::NonNumeric => "nonnumeric",
+            QuoteStyle::Never => "never",
+        }
+        .into_pyobject(py)
+    }
+}
+
+
 
 #[cfg(feature = "parquet")]
 impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
