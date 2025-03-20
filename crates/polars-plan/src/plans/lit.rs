@@ -102,7 +102,7 @@ impl DynListLiteralValue {
                 {
                     Int64Chunked::from_iter_options(
                         PlSmallStr::from_static("literal"),
-                        vs.into_iter().map(|v| v as i64),
+                        vs.into_iter().map(|v| v.map(|v| v as i64)),
                     )
                     .into_series()
                 }
