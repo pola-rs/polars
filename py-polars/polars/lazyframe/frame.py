@@ -1331,6 +1331,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         dot = _ldf.to_dot(optimized)
+        print(dot)
         return display_dot_graph(
             dot=dot,
             show=show,

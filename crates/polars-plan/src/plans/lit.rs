@@ -89,8 +89,23 @@ impl DynListLiteralValue {
                     .into_series()
             },
             DynListLiteralValue::Int(vs) => {
-                Int128Chunked::from_iter_options(PlSmallStr::from_static("literal"), vs.into_iter())
+                #[cfg(feature = "dtype-i128")]
+                {
+                    Int128Chunked::from_iter_options(
+                        PlSmallStr::from_static("literal"),
+                        vs.into_iter(),
+                    )
                     .into_series()
+                }
+
+                #[cfg(not(feature = "dtype-i128"))]
+                {
+                    Int64Chunked::from_iter_options(
+                        PlSmallStr::from_static("literal"),
+                        vs.into_iter().map(|v| v as i64),
+                    )
+                    .into_series()
+                }
             },
             DynListLiteralValue::Float(vs) => Float64Chunked::from_iter_options(
                 PlSmallStr::from_static("literal"),
@@ -103,6 +118,7 @@ impl DynListLiteralValue {
         let s = s.cast_with_options(inner_dtype, CastOptions::Strict)?;
         let value = match dtype {
             DataType::List(_) => AnyValue::List(s),
+            #[cfg(feature = "dtype-array")]
             DataType::Array(_, size) => AnyValue::Array(s, *size),
             _ => unreachable!(),
         };
@@ -224,6 +240,7 @@ impl LiteralValue {
                 let s = range.try_materialize_to_series(inner_dtype)?;
                 let value = match dtype {
                     DataType::List(_) => AnyValue::List(s),
+                    #[cfg(feature = "dtype-array")]
                     DataType::Array(_, size) => AnyValue::Array(s, *size),
                     _ => unreachable!(),
                 };

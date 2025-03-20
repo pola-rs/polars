@@ -74,15 +74,15 @@ impl<'a> IRDotDisplay<'a> {
         }
     }
 
-    fn display_expr(&self, expr: &'a ExprIR) -> Escape<ExprIRDisplay<'a>> {
-        Escape(expr.display(self.lp.expr_arena))
+    fn display_expr(&self, expr: &'a ExprIR) -> ExprIRDisplay<'a> {
+        expr.display(self.lp.expr_arena)
     }
 
-    fn display_exprs(&self, exprs: &'a [ExprIR]) -> Escape<ExprIRSliceDisplay<'a, ExprIR>> {
-        Escape(ExprIRSliceDisplay {
+    fn display_exprs(&self, exprs: &'a [ExprIR]) -> ExprIRSliceDisplay<'a, ExprIR> {
+        ExprIRSliceDisplay {
             exprs,
             expr_arena: self.lp.expr_arena,
-        })
+        }
     }
 
     fn _format(
@@ -458,15 +458,5 @@ impl fmt::Display for IRDotDisplay<'_> {
         writeln!(f, "}}")?;
 
         Ok(())
-    }
-}
-
-struct Escape<T>(T);
-
-impl<T: std::fmt::Display> fmt::Display for Escape<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use std::fmt::Write;
-        let mut f = EscapeLabel(f);
-        write!(f, "{}", self.0)
     }
 }
