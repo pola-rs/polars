@@ -21,7 +21,7 @@ pub fn spawn_bridge(
     let (outgoing_tx, outgoing) = connector::connector();
 
     let handle = async_executor::spawn(
-        TaskPriority::High,
+        TaskPriority::Low,
         Bridge {
             incoming,
             outgoing,
