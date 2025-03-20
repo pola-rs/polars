@@ -265,6 +265,7 @@ impl SinkNode for ParquetSinkNode {
                 write_options,
                 false,
                 key_value_metadata,
+                None,
             );
 
             let num_parquet_columns = writer.parquet_schema().leaves().len();

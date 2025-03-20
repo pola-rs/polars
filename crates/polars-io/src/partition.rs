@@ -21,9 +21,10 @@ impl WriteDataFrameToFile for ParquetWriteOptions {
         df: &mut DataFrame,
         path: &str,
         cloud_options: Option<&CloudOptions>,
+        context_info: Option<PlHashMap<String, String>>,
     ) -> PolarsResult<()> {
         let f = try_get_writeable(path, cloud_options)?;
-        self.to_writer(f).finish(df)?;
+        self.to_writer(f, context_info).finish(df)?;
         Ok(())
     }
 }
@@ -35,6 +36,7 @@ impl WriteDataFrameToFile for IpcWriterOptions {
         df: &mut DataFrame,
         path: &str,
         cloud_options: Option<&CloudOptions>,
+        _context_info: Option<PlHashMap<String, String>>,
     ) -> PolarsResult<()> {
         let f = try_get_writeable(path, cloud_options)?;
         self.to_writer(f).finish(df)?;
@@ -123,7 +125,16 @@ pub fn write_partitioned_dataset(
     };
 
     let write_part = |mut df: DataFrame, path: &Path| {
-        file_write_options.write_df_to_file(&mut df, path.to_str().unwrap(), cloud_options)?;
+        let mut context_info = PlHashMap::<String, String>::new();
+        if let Some(output_path) = path.to_str().map(|p| p.to_owned()) {
+            context_info.insert("output_path".to_owned(), output_path);
+        }
+        file_write_options.write_df_to_file(
+            &mut df,
+            path.to_str().unwrap(),
+            cloud_options,
+            Some(context_info),
+        )?;
         PolarsResult::Ok(())
     };
 

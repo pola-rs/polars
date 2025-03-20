@@ -3255,4 +3255,5 @@ def test_read_write_metadata(tmp_path: Path) -> None:
 
     df.write_parquet(tmp_path / "df.parquet", metadata=metadata)
     actual = pl.read_parquet_metadata(tmp_path / "df.parquet")
-    assert metadata == actual
+    assert "ARROW:schema" in actual
+    assert metadata == {k: v for k, v in actual.items() if k != "ARROW:schema"}

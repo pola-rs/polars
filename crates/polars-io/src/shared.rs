@@ -47,6 +47,7 @@ pub trait WriteDataFrameToFile {
         df: &mut DataFrame,
         path: &str,
         cloud_options: Option<&CloudOptions>,
+        context_info: Option<PlHashMap<String, String>>,
     ) -> PolarsResult<()>;
 }
 
