@@ -38,5 +38,4 @@ def _change_test_dir() -> Iterator[None]:
 @pytest.mark.parametrize("path", snippet_paths)
 @pytest.mark.usefixtures("_change_test_dir")
 def test_run_python_snippets(path: Path) -> None:
-    print(path)
     runpy.run_path(str(path))
