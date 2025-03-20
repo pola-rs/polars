@@ -181,7 +181,7 @@ where
                     Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn SinkTrait>
                 },
                 #[allow(unused_variables)]
-                SinkTypeIR::File(FileSinkType {
+                SinkTypeIRf::File(FileSinkType {
                     path,
                     file_type,
                     sink_options: _,
