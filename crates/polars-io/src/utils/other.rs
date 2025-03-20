@@ -257,9 +257,16 @@ mod tests {
         }
         for invalid in [
             // poorly formatted
-            "\"\"1\"\"",  "\"33428\"", "45...",
+            "\"\"1\"\"",
+            "\"33428\"",
+            "45...",
             // non-numerical characters
-            "NA", "01ü69", "42?530", "Q4558", "48xxx", "Ü8447",
+            "NA",
+            "01ü69",
+            "42?530",
+            "Q4558",
+            "48xxx",
+            "Ü8447",
             // floating point numbers
             "11.0",
             // Arabic-Indic
@@ -277,7 +284,11 @@ mod tests {
             // Chinese/Japanese:
             "一二三四五六七八九〇",
         ] {
-            assert!(!INTEGER_RE.is_match(invalid), "'{}' is not an integer", invalid);
+            assert!(
+                !INTEGER_RE.is_match(invalid),
+                "'{}' is not an integer",
+                invalid
+            );
         }
     }
 }
