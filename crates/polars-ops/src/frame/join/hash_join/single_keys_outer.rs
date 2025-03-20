@@ -1,3 +1,5 @@
+use std::hash::BuildHasher;
+
 use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use arrow::legacy::utils::CustomIterTools;
 use polars_utils::hashing::hash_to_partition;
@@ -52,7 +54,6 @@ where
         (0..n_partitions)
             .into_par_iter()
             .map(|partition_no| {
-                let build_hasher = build_hasher.clone();
                 let hashes_and_keys = &hashes_and_keys;
                 let mut hash_tbl: PlHashMap<T::TotalOrdItem, (bool, IdxVec)> =
                     PlHashMap::with_hasher(build_hasher);
@@ -225,10 +226,10 @@ where
     } else {
         prepare_hashed_relation_threaded(build)
     };
-    let random_state = hash_tbls[0].hasher().clone();
+    let random_state = hash_tbls[0].hasher();
 
     // we pre hash the probing values
-    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(random_state));
+    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(*random_state));
 
     let n_tables = hash_tbls.len();
     try_raise_keyboard_interrupt();

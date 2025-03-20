@@ -302,7 +302,11 @@ pub fn lower_ir(
                 let mut input = lower_ir!(*input)?;
                 match &variant {
                     PartitionVariantIR::MaxSize(_) => {},
-                    PartitionVariantIR::ByKey {
+                    PartitionVariantIR::Parted {
+                        key_exprs,
+                        include_key: _,
+                    }
+                    | PartitionVariantIR::ByKey {
                         key_exprs,
                         include_key: _,
                     } => {

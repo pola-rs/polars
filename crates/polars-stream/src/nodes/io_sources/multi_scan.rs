@@ -311,7 +311,7 @@ fn resolve_source_projection(
     Ok((source_projection.freeze(), missing_columns))
 }
 
-fn scan_predicate_to_mask(
+pub fn scan_predicate_to_mask(
     scan_predicate: &ScanIOPredicate,
     file_schema: &Schema,
     hive_schema: &Schema,
@@ -436,7 +436,7 @@ enum SourceInput {
 }
 
 const DEFAULT_MAX_CONCURRENT_SCANS: usize = 8;
-fn max_concurrent_scans(num_pipelines: usize) -> usize {
+pub fn max_concurrent_scans(num_pipelines: usize) -> usize {
     let max_num_concurrent_scans =
         std::env::var("POLARS_MAX_CONCURRENT_SCANS").map_or(DEFAULT_MAX_CONCURRENT_SCANS, |v| {
             v.parse::<usize>()
@@ -797,7 +797,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 if length == 0 {
                                     let mut df = DataFrame::empty_with_schema(&source_schema);
                                     if let Some(name) = &row_index_name {
-                                        df.with_row_index_mut(name.clone(), None);
+                                        unsafe            {        df.with_row_index_mut(name.clone(), None)};
                                     }
 
                                     let unrestricted_row_count_rx = {
@@ -1049,7 +1049,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     SourceInput::Serial(rx) => rx,
                                     SourceInput::Parallel(rxs) => {
                                         let (mut tx, rx) = connector();
-                                        let (mut lin_rx, lin_txs) = Linearizer::new(state.num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
+                                        let (mut lin_rx, lin_txs) = Linearizer::new(state.num_pipelines, *DEFAULT_LINEARIZER_BUFFER_SIZE);
 
                                         linearizer_tasks.extend(rxs.into_iter().zip(lin_txs).map(|(mut rx, mut lin_tx)|
                                             AbortOnDropHandle::new(spawn(TaskPriority::High, async move {

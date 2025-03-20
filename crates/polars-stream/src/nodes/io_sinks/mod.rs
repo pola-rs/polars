@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
@@ -28,8 +30,17 @@ pub mod parquet;
 pub mod partition;
 
 // This needs to be low to increase the backpressure.
-const DEFAULT_SINK_LINEARIZER_BUFFER_SIZE: usize = 1;
-const DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE: usize = 1;
+static DEFAULT_SINK_LINEARIZER_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("POLARS_DEFAULT_SINK_LINEARIZER_BUFFER_SIZE")
+        .map(|x| x.parse().unwrap())
+        .unwrap_or(1)
+});
+
+static DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("POLARS_DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE")
+        .map(|x| x.parse().unwrap())
+        .unwrap_or(1)
+});
 
 pub enum SinkInputPort {
     Serial(Receiver<Morsel>),
@@ -124,7 +135,7 @@ pub fn parallelize_receive_task<T: Ord + Send + Sync + 'static>(
             let port_rxs = port_rxs.parallel();
             let (lin_rx, lin_txs) = Linearizer::<T>::new_with_maintain_order(
                 num_pipelines,
-                DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
+                *DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
                 maintain_order,
             );
 

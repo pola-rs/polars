@@ -309,7 +309,7 @@ impl ComputeNode for MergeSortedNode {
                 }
 
                 let (mut distributor, dist_recv) =
-                    distributor_channel(send.len(), DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+                    distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
                 let mut left = left.map(|p| p.serial());
                 let mut right = right.map(|p| p.serial());

@@ -31,3 +31,8 @@ def test_rle_id() -> None:
 
     result_series = lf.collect().to_series().rle_id()
     assert_frame_equal(result_series.to_frame(), expected.collect())
+
+
+def test_empty_rle_21787() -> None:
+    assert pl.Series("a", [], pl.Int64).rle().is_empty()
+    assert pl.Series("a", [], pl.Int64).rle_id().is_empty()

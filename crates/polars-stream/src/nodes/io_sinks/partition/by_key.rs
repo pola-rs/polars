@@ -10,7 +10,6 @@ use polars_core::prelude::{Column, PlHashMap, PlHashSet, PlIndexMap, row_encode}
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::buffer::Buffer;
 use polars_error::PolarsResult;
-use polars_io::utils::URL_ENCODE_CHAR_SET;
 use polars_plan::dsl::SinkOptions;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -20,7 +19,9 @@ use super::CreateNewSinkFn;
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::execute::StreamingExecutionState;
 use crate::morsel::SourceToken;
-use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
+use crate::nodes::io_sinks::partition::{
+    SinkSender, insert_key_value_into_format_args, open_new_sink,
+};
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode, parallelize_receive_task};
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, PhaseOutcome, TaskPriority};
 
@@ -84,22 +85,6 @@ impl PartitionByKeySinkNode {
             create_new,
             sink_options,
         }
-    }
-}
-
-fn insert_key_value_into_format_args(
-    args: &mut PlHashMap<PlSmallStr, PlSmallStr>,
-    keys: &[Column],
-) {
-    for (i, key) in keys.iter().enumerate() {
-        *args
-            .get_mut(&format_pl_smallstr!("key[{i}].value"))
-            .unwrap() = percent_encoding::percent_encode(
-            key.get(0).unwrap().to_string().as_bytes(),
-            URL_ENCODE_CHAR_SET,
-        )
-        .to_string()
-        .into();
     }
 }
 

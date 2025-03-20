@@ -1,3 +1,5 @@
+use std::hash::BuildHasher;
+
 use arrow::bitmap::MutableBitmap;
 use either::Either;
 use polars::prelude::*;
@@ -513,7 +515,9 @@ impl PyDataFrame {
         k2: u64,
         k3: u64,
     ) -> PyResult<PySeries> {
-        let hb = PlRandomState::with_seeds(k0, k1, k2, k3);
+        // TODO: don't expose all these seeds.
+        let seed = PlFixedStateQuality::default().hash_one((k0, k1, k2, k3));
+        let hb = PlSeedableRandomStateQuality::seed_from_u64(seed);
         py.enter_polars_series(|| self.df.hash_rows(Some(hb)))
     }
 

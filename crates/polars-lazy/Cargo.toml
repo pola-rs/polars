@@ -25,7 +25,6 @@ polars-stream = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
-ahash = { workspace = true }
 bitflags = { workspace = true }
 either = { workspace = true }
 memchr = { workspace = true }

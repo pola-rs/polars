@@ -15,7 +15,7 @@ from polars.io.parquet import (
     read_parquet_schema,
     scan_parquet,
 )
-from polars.io.partition import PartitionByKey, PartitionMaxSize
+from polars.io.partition import PartitionByKey, PartitionMaxSize, PartitionParted
 from polars.io.plugins import _defer as defer
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 from polars.io.spreadsheet import read_excel, read_ods
@@ -24,6 +24,7 @@ __all__ = [
     "defer",
     "PartitionByKey",
     "PartitionMaxSize",
+    "PartitionParted",
     "read_avro",
     "read_clipboard",
     "read_csv",

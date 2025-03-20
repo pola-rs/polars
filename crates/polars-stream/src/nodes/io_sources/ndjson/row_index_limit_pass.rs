@@ -69,7 +69,7 @@ impl ApplyRowIndexOrLimit {
                     )
                 };
 
-                df.with_row_index_mut(row_index.name.clone(), Some(offset));
+                unsafe { df.with_row_index_mut(row_index.name.clone(), Some(offset)) };
             }
 
             n_rows_received = n_rows_received.saturating_add(df.height());

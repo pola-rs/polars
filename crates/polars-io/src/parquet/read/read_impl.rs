@@ -423,10 +423,12 @@ fn rg_to_dfs_prefiltered(
 
                     if let Some(rc) = &row_index {
                         df = unsafe { DataFrame::new_no_checks(md.num_rows(), vec![]) };
-                        df.with_row_index_mut(
-                            rc.name.clone(),
-                            Some(rg_offsets[rg_idx] + rc.offset),
-                        );
+                        unsafe {
+                            df.with_row_index_mut(
+                                rc.name.clone(),
+                                Some(rg_offsets[rg_idx] + rc.offset),
+                            )
+                        };
                         df = df.filter(&BooleanChunked::from_chunk_iter(
                             PlSmallStr::EMPTY,
                             [BooleanArray::new(ArrowDataType::Boolean, f.clone(), None)],
@@ -449,10 +451,12 @@ fn rg_to_dfs_prefiltered(
                     df = unsafe { DataFrame::new_no_checks(md.num_rows(), live_columns) };
 
                     if let Some(rc) = &row_index {
-                        df.with_row_index_mut(
-                            rc.name.clone(),
-                            Some(rg_offsets[rg_idx] + rc.offset),
-                        );
+                        unsafe {
+                            df.with_row_index_mut(
+                                rc.name.clone(),
+                                Some(rg_offsets[rg_idx] + rc.offset),
+                            )
+                        };
                     }
                     df = df.filter(mask)?;
 
@@ -692,10 +696,12 @@ fn rg_to_dfs_optionally_par_over_columns(
 
         let mut df = unsafe { DataFrame::new_no_checks(rg_slice.1, columns) };
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(
-                rc.name.clone(),
-                Some(*previous_row_count + rc.offset + rg_slice.0 as IdxSize),
-            );
+            unsafe {
+                df.with_row_index_mut(
+                    rc.name.clone(),
+                    Some(*previous_row_count + rc.offset + rg_slice.0 as IdxSize),
+                )
+            };
         }
 
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns);
@@ -829,10 +835,12 @@ fn rg_to_dfs_par_over_rg(
                 let mut df = unsafe { DataFrame::new_no_checks(slice.1, columns) };
 
                 if let Some(rc) = &row_index {
-                    df.with_row_index_mut(
-                        rc.name.clone(),
-                        Some(row_count_start as IdxSize + rc.offset + slice.0 as IdxSize),
-                    );
+                    unsafe {
+                        df.with_row_index_mut(
+                            rc.name.clone(),
+                            Some(row_count_start as IdxSize + rc.offset + slice.0 as IdxSize),
+                        )
+                    };
                 }
 
                 materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns);

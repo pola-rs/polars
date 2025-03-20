@@ -50,7 +50,7 @@ impl ComputeNode for WithRowIndexNode {
         let senders = send_ports[0].take().unwrap().parallel();
 
         let (mut distributor, distr_receivers) =
-            distributor_channel(senders.len(), DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+            distributor_channel(senders.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
         let name = self.name.clone();
 

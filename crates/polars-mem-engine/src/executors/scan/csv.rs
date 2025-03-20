@@ -200,7 +200,7 @@ impl CsvExec {
                 accumulate_dataframes_vertical(dfs.into_iter().flat_map(|dfs| dfs.into_iter()))?;
 
             if let Some(row_index) = self.file_options.row_index.clone() {
-                df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset));
+                unsafe { df.with_row_index_mut(row_index.name.clone(), Some(row_index.offset)) };
             }
 
             df

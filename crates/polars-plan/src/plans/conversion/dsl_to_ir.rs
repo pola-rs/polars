@@ -965,6 +965,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         PartitionVariant::MaxSize(max_size) => {
                             PartitionVariantIR::MaxSize(max_size)
                         },
+                        PartitionVariant::Parted {
+                            key_exprs,
+                            include_key,
+                        } => {
+                            let eirs = to_expr_irs(key_exprs, ctxt.expr_arena)?;
+                            ctxt.conversion_optimizer
+                                .fill_scratch(&eirs, ctxt.expr_arena);
+
+                            PartitionVariantIR::Parted {
+                                key_exprs: eirs,
+                                include_key,
+                            }
+                        },
                         PartitionVariant::ByKey {
                             key_exprs,
                             include_key,

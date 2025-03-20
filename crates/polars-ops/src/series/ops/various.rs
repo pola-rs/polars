@@ -5,6 +5,7 @@ use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::total_ord::TotalOrd;
 
 use crate::series::ops::SeriesSealed;
@@ -55,7 +56,7 @@ pub trait SeriesMethods: SeriesSealed {
     }
 
     #[cfg(feature = "hash")]
-    fn hash(&self, build_hasher: PlRandomState) -> UInt64Chunked {
+    fn hash(&self, build_hasher: PlSeedableRandomStateQuality) -> UInt64Chunked {
         let s = self.as_series().to_physical_repr();
         match s.dtype() {
             DataType::List(_) => {

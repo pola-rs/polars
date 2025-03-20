@@ -133,7 +133,7 @@ impl ParquetSourceNode {
         let use_statistics = self.options.use_statistics;
 
         let (mut raw_morsel_sender, raw_morsel_receivers) =
-            distributor_channel(self.config.num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+            distributor_channel(self.config.num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
         if let Some((_, 0)) = self.file_options.pre_slice {
             return (
                 raw_morsel_receivers,

@@ -9,6 +9,9 @@ from polars._utils.unstable import issue_unstable_warning
 from polars.expr import Expr
 
 if TYPE_CHECKING:
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        from polars.polars import PyExpr
+
     from pathlib import Path
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -44,6 +47,31 @@ class PartitionMaxSize:
     @property
     def _path(self) -> str:
         return self._p.path
+
+
+def _lower_by(
+    by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
+) -> list[PyExpr]:
+    def to_expr(i: str | Expr) -> Expr:
+        if isinstance(i, str):
+            return col(i)
+        else:
+            return i
+
+    lowered_by: list[PyExpr]
+    if isinstance(by, str):
+        lowered_by = [col(by)._pyexpr]
+    elif isinstance(by, Expr):
+        lowered_by = [by._pyexpr]
+    elif isinstance(by, Sequence):
+        lowered_by = [to_expr(e)._pyexpr for e in by]
+    elif isinstance(by, Mapping):
+        lowered_by = [e.alias(n)._pyexpr for n, e in by.items()]
+    else:
+        msg = "invalid `by` type"
+        raise TypeError(msg)
+
+    return lowered_by
 
 
 class PartitionByKey:
@@ -114,25 +142,71 @@ class PartitionByKey:
     ) -> None:
         issue_unstable_warning("Partitioning strategies are considered unstable.")
 
-        def to_expr(i: str | Expr) -> Expr:
-            if isinstance(i, str):
-                return col(i)
-            else:
-                return i
+        lowered_by = _lower_by(by)
+        self._p = PyPartitioning.new_by_key(
+            path, by=lowered_by, include_key=include_key
+        )
 
-        lowered_by: list[Expr]
-        if isinstance(by, str):
-            lowered_by = [col(by)._pyexpr]
-        elif isinstance(by, Expr):
-            lowered_by = [by._pyexpr]
-        elif isinstance(by, Sequence):
-            lowered_by = [to_expr(e)._pyexpr for e in by]
-        elif isinstance(by, Mapping):
-            lowered_by = [e.alias(n)._pyexpr for n, e in by.items()]
-        else:
-            msg = "PartitionByKey: invalid `by` type"
-            raise TypeError(msg)
+    @property
+    def _path(self) -> str:
+        return self._p.path
 
+
+class PartitionParted:
+    """
+    Partitioning scheme to split parted dataframes.
+
+    This is a specialized version of `PartitionByKey`. Where as `PartitionByKey` accepts
+    data in any order, this scheme expects the input data to be pre-grouped or
+    pre-sorted. This scheme suffers a lot less overhead than `PartitionByKey`, but may
+    not be always applicable.
+
+    Each new value of the key expressions starts a new partition, therefore repeating
+    the same value multiple times may overwrite previous partitions.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    path
+        The format path to the output files. Format arguments:
+        - `{part}` is replaced to the zero-based index of the file.
+        - `{key[i].name}` is replaced by the name of key `i`.
+        - `{key[i].value}` is replaced by the value of key `i`.
+
+        Use the `mkdir` option on the `sink_*` methods to ensure directories in
+        the path are created.
+    by
+        The expressions to partition by.
+    include_key : bool
+        Whether to include the key columns in the output files.
+
+    Examples
+    --------
+    Split a parquet file by a column `year` into CSV files:
+
+    >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
+    ...     PartitionParted(
+    ...         "./out/{key[0].value}.csv",
+    ...         by="year",
+    ...     ),
+    ... )  # doctest: +SKIP
+    """
+
+    _p: PyPartitioning
+
+    def __init__(
+        self,
+        path: Path | str,
+        *,
+        by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
+        include_key: bool = True,
+    ) -> None:
+        issue_unstable_warning("Partitioning strategies are considered unstable.")
+
+        lowered_by = _lower_by(by)
         self._p = PyPartitioning.new_by_key(
             path, by=lowered_by, include_key=include_key
         )

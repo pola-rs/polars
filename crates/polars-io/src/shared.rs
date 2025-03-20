@@ -74,7 +74,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         let mut df = DataFrame::from(batch);
 
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(rc.name.clone(), Some(current_num_rows + rc.offset));
+            unsafe { df.with_row_index_mut(rc.name.clone(), Some(current_num_rows + rc.offset)) };
         }
 
         if let Some(predicate) = &predicate {

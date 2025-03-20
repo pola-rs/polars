@@ -1,13 +1,12 @@
-#[global_allocator]
 #[cfg(all(
     not(allocator = "mimalloc"),
     not(allocator = "default"),
     target_family = "unix",
     not(target_os = "emscripten"),
 ))]
+#[global_allocator]
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-#[global_allocator]
 #[cfg(all(
     not(allocator = "default"),
     any(
@@ -16,6 +15,7 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
         allocator = "mimalloc"
     ),
 ))]
+#[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::alloc::Layout;

@@ -1,4 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use std::hash::BuildHasher;
+
 use arrow::array::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
@@ -15,7 +17,7 @@ pub struct CategoricalChunkedBuilder {
     ordering: CategoricalOrdering,
     categories: MutablePlString,
     local_mapping: HashTable<u32>,
-    local_hasher: PlRandomState,
+    local_hasher: PlFixedStateQuality,
 }
 
 impl CategoricalChunkedBuilder {

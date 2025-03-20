@@ -321,7 +321,12 @@ def test_join_suffix_collision_9562() -> None:
     )
     df.join(other_df, on="ham")
     assert df.lazy().join(
-        other_df.lazy(), how="inner", left_on="ham", right_on="ham", suffix="m"
+        other_df.lazy(),
+        how="inner",
+        left_on="ham",
+        right_on="ham",
+        suffix="m",
+        maintain_order="right",
     ).select("ham").collect().to_dict(as_series=False) == {"ham": ["a", "b"]}
 
 
@@ -399,7 +404,10 @@ def test_projection_pushdown_full_outer_join_duplicates() -> None:
     df1 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
     df2 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}).lazy()
     assert (
-        df1.join(df2, on="a", how="full").with_columns(c=0).select("a", "c").collect()
+        df1.join(df2, on="a", how="full", maintain_order="right")
+        .with_columns(c=0)
+        .select("a", "c")
+        .collect()
     ).to_dict(as_series=False) == {"a": [1, 2, 3], "c": [0, 0, 0]}
 
 

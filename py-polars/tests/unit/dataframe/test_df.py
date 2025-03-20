@@ -1576,21 +1576,17 @@ def test_reproducible_hash_with_seeds() -> None:
     """
     df = pl.DataFrame({"s": [1234, None, 5678]})
     seeds = (11, 22, 33, 44)
-    import platform
-
-    # m1 hash different random source seed
-    if platform.mac_ver()[-1] != "arm64":
-        expected = pl.Series(
-            "s",
-            [8661293245726181094, 9565952849861441858, 2921274555702885622],
-            dtype=pl.UInt64,
-        )
-        result = df.hash_rows(*seeds)
-        assert_series_equal(expected, result, check_names=False, check_exact=True)
-        result = df["s"].hash(*seeds)
-        assert_series_equal(expected, result, check_names=False, check_exact=True)
-        result = df.select([pl.col("s").hash(*seeds)])["s"]
-        assert_series_equal(expected, result, check_names=False, check_exact=True)
+    expected = pl.Series(
+        "s",
+        [10832467230526607564, 3044502640115867787, 17228373233104406792],
+        dtype=pl.UInt64,
+    )
+    result = df.hash_rows(*seeds)
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    result = df["s"].hash(*seeds)
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    result = df.select([pl.col("s").hash(*seeds)])["s"]
+    assert_series_equal(expected, result, check_names=False, check_exact=True)
 
 
 @pytest.mark.slow

@@ -59,9 +59,6 @@ avro-schema = { workspace = true, optional = true }
 # for division/remainder optimization at runtime
 strength_reduce = { workspace = true, optional = true }
 
-# Faster hashing
-ahash = { workspace = true }
-
 # For async arrow flight conversion
 async-stream = { version = "0.3", optional = true }
 tokio = { workspace = true, optional = true, features = ["io-util"] }

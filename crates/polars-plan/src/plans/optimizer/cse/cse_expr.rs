@@ -1,4 +1,7 @@
+use std::hash::BuildHasher;
+
 use hashbrown::hash_map::RawEntryMut;
+use polars_utils::aliases::PlFixedStateQuality;
 use polars_utils::format_pl_smallstr;
 use polars_utils::vec::CapacityByFactor;
 
@@ -45,7 +48,7 @@ impl ProjectionExprs {
 pub(super) struct Identifier {
     inner: Option<u64>,
     last_node: Option<AexprNode>,
-    hb: PlRandomState,
+    hb: PlFixedStateQuality,
 }
 
 impl Identifier {
@@ -53,7 +56,7 @@ impl Identifier {
         Self {
             inner: None,
             last_node: None,
-            hb: PlRandomState::with_seed(0),
+            hb: PlFixedStateQuality::with_seed(0),
         }
     }
 
@@ -102,7 +105,7 @@ impl Identifier {
         Self {
             inner,
             last_node: Some(*ae),
-            hb: self.hb.clone(),
+            hb: self.hb,
         }
     }
 }

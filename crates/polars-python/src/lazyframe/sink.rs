@@ -47,6 +47,17 @@ impl PyPartitioning {
         }
     }
 
+    #[staticmethod]
+    pub fn new_parted(path: PathBuf, by: Vec<PyExpr>, include_key: bool) -> PyPartitioning {
+        PyPartitioning {
+            path: Arc::new(path),
+            variant: PartitionVariant::Parted {
+                key_exprs: by.into_iter().map(|e| e.inner).collect(),
+                include_key,
+            },
+        }
+    }
+
     #[getter]
     fn path(&self) -> &str {
         self.path.to_str().unwrap()

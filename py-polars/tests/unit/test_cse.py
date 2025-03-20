@@ -34,7 +34,7 @@ def test_cse_rename_cross_join_5405() -> None:
             "D": [5, None, None, 6],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_union_duplicates() -> None:
@@ -106,7 +106,7 @@ def test_cse_schema_6081() -> None:
             "min_value": [1, 1, 2],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_cse_9630() -> None:

@@ -109,6 +109,7 @@ Sink to disk with differing partitioning strategies.
 
    PartitionByKey
    PartitionMaxSize
+   PartitionParted
 
 
 Parquet
