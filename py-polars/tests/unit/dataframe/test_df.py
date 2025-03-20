@@ -3038,3 +3038,15 @@ def test_select_oob_element_20775_too_large(idx: int) -> None:
         match=f"index {idx} is out of bounds for sequence of length 3",
     ):
         df[idx, "a"]
+
+
+def test_nan_to_null() -> None:
+    a = np.array([np.nan, 1])
+
+    df1 = pl.DataFrame(a, nan_to_null=True)
+    df2 = pl.DataFrame(
+        (a,),
+        nan_to_null=True,
+    )
+
+    assert_frame_equal(df1, df2)

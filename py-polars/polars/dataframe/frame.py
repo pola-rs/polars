@@ -371,6 +371,7 @@ class DataFrame:
                 strict=strict,
                 orient=orient,
                 infer_schema_length=infer_schema_length,
+                nan_to_null=nan_to_null,
             )
 
         elif isinstance(data, pl.Series):
