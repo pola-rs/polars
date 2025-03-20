@@ -6,7 +6,7 @@ use arrow::compute::utils::combine_validities_and_many;
 use polars_core::error::polars_err;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
-use polars_core::prelude::{BinaryChunked, ChunkedArray, DataType, PlRandomState, PolarsDataType};
+use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType};
 use polars_core::series::Series;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
