@@ -31,6 +31,10 @@ impl SeriesWrap<DecimalChunked> {
     }
 
     fn apply_scale(&self, mut scalar: Scalar) -> Scalar {
+        if scalar.is_null() {
+            return scalar;
+        }
+
         debug_assert_eq!(scalar.dtype(), &DataType::Float64);
         let v = scalar
             .value()
