@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
 
+use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::write::KeyValue;
 #[cfg(feature = "python")]
@@ -12,7 +13,10 @@ use pyo3::PyObject;
 use serde::{Deserialize, Serialize, de, ser};
 
 /// Context that can be used to construct custom file-level key value metadata for a Parquet file.
-pub struct MetadataContext {}
+pub struct KeyValueMetadataContext {
+    pub key_value_metadata: Vec<KeyValue>,
+    pub info: PlHashMap<String, String>,
+}
 
 /// Key/value pairs that can be attached to a Parquet file as file-level metadtaa.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -83,9 +87,14 @@ impl KeyValueMetadata {
 
     /// Turn the metadata into the key/value pairs to write to the Parquet file.
     /// The context is used to dynamically construct key/value pairs.
-    pub fn collect(&self, ctx: MetadataContext) -> PolarsResult<Vec<KeyValue>> {
+    pub fn collect(&self, ctx: KeyValueMetadataContext) -> PolarsResult<Vec<KeyValue>> {
         match self {
-            Self::Static(kv) => Ok(kv.clone()),
+            Self::Static(kv) => {
+                let mut ctx = ctx;
+                let mut result = kv.clone();
+                result.append(&mut ctx.key_value_metadata);
+                Ok(result)
+            },
             Self::DynamicRust(func) => Ok(func.0(ctx)),
             #[cfg(feature = "python")]
             Self::DynamicPython(py_func) => py_func.call(ctx),
@@ -95,7 +104,7 @@ impl KeyValueMetadata {
 
 #[derive(Clone)]
 pub struct RustKeyValueMetadataFunction(
-    Arc<dyn Fn(MetadataContext) -> Vec<KeyValue> + Send + Sync>,
+    Arc<dyn Fn(KeyValueMetadataContext) -> Vec<KeyValue> + Send + Sync>,
 );
 
 impl Debug for RustKeyValueMetadataFunction {
@@ -148,6 +157,7 @@ impl<'de> Deserialize<'de> for RustKeyValueMetadataFunction {
 
 #[cfg(feature = "python")]
 mod python_impl {
+    use std::collections::HashMap;
     use std::hash::Hash;
     use std::sync::Arc;
 
@@ -158,7 +168,7 @@ mod python_impl {
     use pyo3::{Bound, PyResult, Python, pyclass};
     use serde::{Deserialize, Serialize};
 
-    use super::MetadataContext;
+    use super::KeyValueMetadataContext;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -175,8 +185,8 @@ mod python_impl {
     );
 
     impl PythonKeyValueMetadataFunction {
-        pub fn call(&self, ctx: MetadataContext) -> PolarsResult<Vec<KeyValue>> {
-            let ctx = PythonMetadataContext::from_metadata_context(ctx);
+        pub fn call(&self, ctx: KeyValueMetadataContext) -> PolarsResult<Vec<KeyValue>> {
+            let ctx = PythonMetadataContext::from_key_value_metadata_context(ctx);
             Python::with_gil(|py| {
                 let args = (ctx,);
                 let dict: Bound<'_, PyDict> = self.0.call1(py, args)?.into_bound(py).extract()?;
@@ -203,18 +213,27 @@ mod python_impl {
 
     #[pyclass]
     pub struct PythonMetadataContext {
-        // #[pyo3(get)]
-        // current_metadata: HashMap<String, String>,
+        #[pyo3(get)]
+        key_value_metadata: HashMap<String, String>,
+        #[pyo3(get)]
+        info: HashMap<String, String>,
     }
 
     impl PythonMetadataContext {
-        pub fn from_metadata_context(_ctx: MetadataContext) -> Self {
-            // let mut current_metadata = HashMap::new();
-            // for (key, value) in ctx.current_metadata.into_iter() {
-            //     current_metadata.insert(key.to_string(), value.to_string());
-            // }
-            // Self { current_metadata }
-            Self {}
+        pub fn from_key_value_metadata_context(ctx: KeyValueMetadataContext) -> Self {
+            let mut key_value_metadata = HashMap::<String, String>::new();
+            for kv in ctx.key_value_metadata.into_iter() {
+                key_value_metadata.insert(kv.key, kv.value.unwrap_or_default());
+            }
+
+            let mut info = HashMap::<String, String>::new();
+            for item in ctx.info.into_iter() {
+                info.insert(item.0, item.1);
+            }
+            Self {
+                key_value_metadata,
+                info,
+            }
         }
     }
 }

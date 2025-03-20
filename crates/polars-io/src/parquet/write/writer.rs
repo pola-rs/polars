@@ -15,7 +15,11 @@ use super::{KeyValueMetadata, ParquetWriteOptions};
 use crate::shared::schema_to_arrow_checked;
 
 impl ParquetWriteOptions {
-    pub fn to_writer<F>(&self, f: F) -> ParquetWriter<F>
+    pub fn to_writer<F>(
+        &self,
+        f: F,
+        context_info: Option<PlHashMap<String, String>>,
+    ) -> ParquetWriter<F>
     where
         F: Write,
     {
@@ -25,6 +29,7 @@ impl ParquetWriteOptions {
             .with_row_group_size(self.row_group_size)
             .with_data_page_size(self.data_page_size)
             .with_key_value_metadata(self.key_value_metadata.clone())
+            .with_context_info(context_info)
     }
 }
 
@@ -44,6 +49,8 @@ pub struct ParquetWriter<W> {
     parallel: bool,
     /// Custom file-level key value metadata
     key_value_metadata: Option<KeyValueMetadata>,
+    /// Context info for the Parquet file being written.
+    context_info: Option<PlHashMap<String, String>>,
 }
 
 impl<W> ParquetWriter<W>
@@ -63,6 +70,7 @@ where
             data_page_size: None,
             parallel: true,
             key_value_metadata: None,
+            context_info: None,
         }
     }
 
@@ -106,6 +114,12 @@ where
         self
     }
 
+    /// Set context information for the writer
+    pub fn with_context_info(mut self, context_info: Option<PlHashMap<String, String>>) -> Self {
+        self.context_info = context_info;
+        self
+    }
+
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
         let parquet_schema = to_parquet_schema(&schema)?;
@@ -120,6 +134,7 @@ where
             options,
             parallel: self.parallel,
             key_value_metadata: self.key_value_metadata,
+            context_info: self.context_info,
         })
     }
 
@@ -132,7 +147,7 @@ where
         }
     }
 
-    /// Write the given DataFrame along with optional key value metadata in the writer `W`.
+    /// Write the given DataFrame in the writer `W`.
     /// Returns the total size of the file.
     pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
         let chunked_df = chunk_df_for_writing(df, self.row_group_size.unwrap_or(512 * 512))?;

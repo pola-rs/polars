@@ -12,9 +12,7 @@ pub use crate::parquet::metadata::KeyValue;
 
 /// Reads custom key value metadata from a Parquet's key value file metadata.
 pub fn read_custom_key_value_metadata(key_value_metadata: &Option<Vec<KeyValue>>) -> Metadata {
-    let mut metadata = parse_key_value_metadata(key_value_metadata);
-    metadata.remove(ARROW_SCHEMA_META_KEY);
-    metadata
+    parse_key_value_metadata(key_value_metadata)
 }
 
 /// Reads an arrow schema from Parquet's file metadata. Returns `None` if no schema was found.
