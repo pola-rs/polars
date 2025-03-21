@@ -22,6 +22,7 @@ impl LiteralExpr {
             L::Scalar(sc) => {
                 #[expect(clippy::single_match)]
                 match sc.as_any_value() {
+                    #[cfg(feature = "dtype-time")]
                     AnyValue::Time(v) => {
                         if !(0..NANOSECONDS_IN_DAY).contains(&v) {
                             polars_bail!(
