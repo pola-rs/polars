@@ -958,7 +958,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::File(f) => SinkTypeIR::File(f),
                 SinkType::Partition(f) => SinkTypeIR::Partition(PartitionSinkTypeIR {
-                    path_f_string: f.path_f_string,
+                    base_path: f.base_path,
+                    file_path_cb: f.file_path_cb,
                     file_type: f.file_type,
                     sink_options: f.sink_options,
                     variant: match f.variant {

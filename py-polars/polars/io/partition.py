@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from polars import col
 from polars._utils.unstable import issue_unstable_warning
@@ -13,9 +13,79 @@ if TYPE_CHECKING:
         from polars.polars import PyExpr
 
     from pathlib import Path
+    from typing import Callable
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyPartitioning
+
+
+class PartitionKey(TypedDict):
+    """
+    A key-value pair that got used during paritioning.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
+    Fields
+    ------
+    name
+        Name of the key column.
+    value
+        Value of the key for this partition.
+    """
+
+    name: str
+    value: str
+
+
+class KeyedPartitionContext(TypedDict):
+    """
+    Callback context for a partition creation using keys.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
+    Fields
+    ------
+    part
+        The index of the created file starting from zero.
+    keys
+        All the key names and values used for this partition.
+    file_path
+        The chosen output path before the callback was called without `base_path`.
+    full_path
+        The chosen output path before the callback was called with `base_path`.
+    """
+
+    part: int
+    keys: list[PartitionKey]
+    file_path: Path
+    full_path: Path
+
+
+class BasePartitionContext(TypedDict):
+    """
+    Callback context for a partition creation.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
+    Fields
+    ------
+    part
+        The index of the created file starting from zero.
+    file_path
+        The chosen output path before the callback was called without `base_path`.
+    full_path
+        The chosen output path before the callback was called with `base_path`.
+    """
+
+    part: int
+    file_path: Path
+    full_path: Path
 
 
 class PartitionMaxSize:
@@ -31,22 +101,40 @@ class PartitionMaxSize:
 
     Parameters
     ----------
-    path
-        The path to the output files. The format string `{part}` is replaced to the
-        zero-based index of the file.
+    base_path
+        The base path for the output files.
+    file_path
+        A callback to register or modify the output path for each partition
+        offset by the `base_path`.
     max_size : int
         The maximum size in rows of each of the generated files.
+
+    Examples
+    --------
+    Split a parquet file by over smaller CSV files with 100 000 rows each:
+
+    >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
+    ...     PartitionMax("./out", max_size=100_000),
+    ... )  # doctest: +SKIP
     """
 
     _p: PyPartitioning
 
-    def __init__(self, path: Path | str, *, max_size: int) -> None:
+    def __init__(
+        self,
+        base_path: str | Path,
+        *,
+        file_path: Callable[[BasePartitionContext], Path | str] | None = None,
+        max_size: int,
+    ) -> None:
         issue_unstable_warning("Partitioning strategies are considered unstable.")
-        self._p = PyPartitioning.new_max_size(path, max_size)
+        self._p = PyPartitioning.new_max_size(
+            base_path=base_path, file_path_cb=file_path, max_size=max_size
+        )
 
     @property
-    def _path(self) -> str:
-        return self._p.path
+    def _base_path(self) -> str | None:
+        return self._p.base_path
 
 
 def _lower_by(
@@ -91,14 +179,14 @@ class PartitionByKey:
 
     Parameters
     ----------
-    path
-        The format path to the output files. Format arguments:
-        - `{part}` is replaced to the zero-based index of the file.
-        - `{key[i].name}` is replaced by the name of key `i`.
-        - `{key[i].value}` is replaced by the value of key `i`.
+    base_path
+        The base path for the output files.
 
         Use the `mkdir` option on the `sink_*` methods to ensure directories in
         the path are created.
+    file_path
+        A callback to register or modify the output path for each partition
+        offset by the `base_path`.
     by
         The expressions to partition by.
     include_key : bool
@@ -106,15 +194,6 @@ class PartitionByKey:
 
     Examples
     --------
-    Split a parquet file by a column `year` into CSV files:
-
-    >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
-    ...     PartitionByKey(
-    ...         "./out/{key[0].value}.csv",
-    ...         by="year",
-    ...     ),
-    ... )  # doctest: +SKIP
-
     Split into a hive-partitioning style partition:
 
     >>> (
@@ -122,12 +201,22 @@ class PartitionByKey:
     ...     .lazy()
     ...     .sink_parquet(
     ...         PartitionByKey(
-    ...             "{key[0].name}={key[0].value}/{key[1].name}={key[1].value}/000",
+    ...             "./out",
     ...             by=[pl.col.a, pl.col.b],
     ...             include_key=False,
     ...         ),
     ...         mkdir=True,
     ...     )
+    ... )  # doctest: +SKIP
+
+    Split a parquet file by a column `year` into CSV files:
+
+    >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
+    ...     PartitionByKey(
+    ...         "./out/",
+    ...         file_path=lambda ctx: f"year={ctx.keys[0].value}.csv",
+    ...         by="year",
+    ...     ),
     ... )  # doctest: +SKIP
     """
 
@@ -135,8 +224,9 @@ class PartitionByKey:
 
     def __init__(
         self,
-        path: Path | str,
+        base_path: str | Path,
         *,
+        file_path: Callable[[KeyedPartitionContext], Path | str] | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
     ) -> None:
@@ -144,12 +234,15 @@ class PartitionByKey:
 
         lowered_by = _lower_by(by)
         self._p = PyPartitioning.new_by_key(
-            path, by=lowered_by, include_key=include_key
+            base_path=base_path,
+            file_path_cb=file_path,
+            by=lowered_by,
+            include_key=include_key,
         )
 
     @property
-    def _path(self) -> str:
-        return self._p.path
+    def _base_path(self) -> str | None:
+        return self._p.base_path
 
 
 class PartitionParted:
@@ -170,14 +263,14 @@ class PartitionParted:
 
     Parameters
     ----------
-    path
-        The format path to the output files. Format arguments:
-        - `{part}` is replaced to the zero-based index of the file.
-        - `{key[i].name}` is replaced by the name of key `i`.
-        - `{key[i].value}` is replaced by the value of key `i`.
+    base_path
+        The base path for the output files.
 
         Use the `mkdir` option on the `sink_*` methods to ensure directories in
         the path are created.
+    file_path
+        A callback to register or modify the output path for each partition
+        offset by the `base_path`.
     by
         The expressions to partition by.
     include_key : bool
@@ -188,10 +281,8 @@ class PartitionParted:
     Split a parquet file by a column `year` into CSV files:
 
     >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
-    ...     PartitionParted(
-    ...         "./out/{key[0].value}.csv",
-    ...         by="year",
-    ...     ),
+    ...     PartitionParted("./out", by="year"),
+    ...     mkdir=True,
     ... )  # doctest: +SKIP
     """
 
@@ -199,8 +290,9 @@ class PartitionParted:
 
     def __init__(
         self,
-        path: Path | str,
+        base_path: str | Path,
         *,
+        file_path: Callable[[KeyedPartitionContext], Path | str] | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
     ) -> None:
@@ -208,9 +300,12 @@ class PartitionParted:
 
         lowered_by = _lower_by(by)
         self._p = PyPartitioning.new_by_key(
-            path, by=lowered_by, include_key=include_key
+            base_path=base_path,
+            file_path_cb=file_path,
+            by=lowered_by,
+            include_key=include_key,
         )
 
     @property
-    def _path(self) -> str:
-        return self._p.path
+    def _base_path(self) -> str | None:
+        return self._p.base_path

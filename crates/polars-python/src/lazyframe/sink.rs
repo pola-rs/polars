@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use polars::prelude::sync_on_close::SyncOnCloseType;
 use polars::prelude::{PartitionVariant, SinkOptions};
 use polars_utils::IdxSize;
+use polars_utils::python_function::{PythonFunction, PythonObject};
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
-use pyo3::{Bound, FromPyObject, PyAny, PyResult, pyclass, pymethods};
+use pyo3::{Bound, FromPyObject, PyAny, PyObject, PyResult, pyclass, pymethods};
 
 use crate::expr::PyExpr;
 use crate::prelude::Wrap;
@@ -21,7 +21,9 @@ pub enum SinkTarget {
 #[pyclass]
 #[derive(Clone)]
 pub struct PyPartitioning {
-    pub path: Arc<PathBuf>,
+    #[pyo3(get)]
+    pub base_path: PathBuf,
+    pub file_path_cb: Option<PythonFunction>,
     pub variant: PartitionVariant,
 }
 
@@ -29,17 +31,32 @@ pub struct PyPartitioning {
 #[pymethods]
 impl PyPartitioning {
     #[staticmethod]
-    pub fn new_max_size(path: PathBuf, max_size: IdxSize) -> PyPartitioning {
+    #[pyo3(signature = (base_path, file_path_cb, max_size))]
+    pub fn new_max_size(
+        base_path: PathBuf,
+        file_path_cb: Option<PyObject>,
+        max_size: IdxSize,
+    ) -> PyPartitioning {
+        let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
         PyPartitioning {
-            path: Arc::new(path),
+            base_path,
+            file_path_cb,
             variant: PartitionVariant::MaxSize(max_size),
         }
     }
 
     #[staticmethod]
-    pub fn new_by_key(path: PathBuf, by: Vec<PyExpr>, include_key: bool) -> PyPartitioning {
+    #[pyo3(signature = (base_path, file_path_cb, by, include_key))]
+    pub fn new_by_key(
+        base_path: PathBuf,
+        file_path_cb: Option<PyObject>,
+        by: Vec<PyExpr>,
+        include_key: bool,
+    ) -> PyPartitioning {
+        let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
         PyPartitioning {
-            path: Arc::new(path),
+            base_path,
+            file_path_cb,
             variant: PartitionVariant::ByKey {
                 key_exprs: by.into_iter().map(|e| e.inner).collect(),
                 include_key,
@@ -48,19 +65,22 @@ impl PyPartitioning {
     }
 
     #[staticmethod]
-    pub fn new_parted(path: PathBuf, by: Vec<PyExpr>, include_key: bool) -> PyPartitioning {
+    #[pyo3(signature = (base_path, file_path_cb, by, include_key))]
+    pub fn new_parted(
+        base_path: PathBuf,
+        file_path_cb: Option<PyObject>,
+        by: Vec<PyExpr>,
+        include_key: bool,
+    ) -> PyPartitioning {
+        let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
         PyPartitioning {
-            path: Arc::new(path),
+            base_path,
+            file_path_cb,
             variant: PartitionVariant::Parted {
                 key_exprs: by.into_iter().map(|e| e.inner).collect(),
                 include_key,
             },
         }
-    }
-
-    #[getter]
-    fn path(&self) -> &str {
-        self.path.to_str().unwrap()
     }
 }
 
@@ -75,10 +95,10 @@ impl<'py> FromPyObject<'py> for SinkTarget {
 }
 
 impl SinkTarget {
-    pub fn unformatted_path(&self) -> &Path {
+    pub fn base_path(&self) -> &Path {
         match self {
             Self::Path(path) => path.as_path(),
-            Self::Partition(partition) => partition.path.as_ref().as_path(),
+            Self::Partition(partition) => partition.base_path.as_path(),
         }
     }
 }
