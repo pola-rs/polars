@@ -7,7 +7,6 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.datatypes.group import INTEGER_DTYPES
 from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal
 
@@ -564,7 +563,10 @@ def test_pivot_invalid() -> None:
         pl.DataFrame({"a": [1, 2], "b": [2, 3], "c": [3, 4]}).pivot("a")
 
 
-@pytest.mark.parametrize("dtype", list(INTEGER_DTYPES))
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
+)
 def test_pivot_empty_index_dtypes(dtype: PolarsIntegerType) -> None:
     index = pl.Series([], dtype=dtype)
     df = pl.DataFrame({"index": index, "on": [], "values": []})
