@@ -20,19 +20,15 @@ impl LiteralExpr {
         use LiteralValue as L;
         let column = match &self.0 {
             L::Scalar(sc) => {
-                #[expect(clippy::single_match)]
-                match sc.as_any_value() {
-                    #[cfg(feature = "dtype-time")]
-                    AnyValue::Time(v) => {
-                        if !(0..NANOSECONDS_IN_DAY).contains(&v) {
-                            polars_bail!(
-                                InvalidOperation: "value `{v}` is out-of-range for `time` which can be 0 - {}",
-                                NANOSECONDS_IN_DAY - 1
-                            );
-                        }
-                    },
-                    _ => {},
-                };
+                #[cfg(feature = "dtype-time")]
+                if let AnyValue::Time(v) = sc.value() {
+                    if !(0..NANOSECONDS_IN_DAY).contains(v) {
+                        polars_bail!(
+                            InvalidOperation: "value `{v}` is out-of-range for `time` which can be 0 - {}",
+                            NANOSECONDS_IN_DAY - 1
+                        );
+                    }
+                }
 
                 sc.clone().into_column(get_literal_name().clone())
             },
