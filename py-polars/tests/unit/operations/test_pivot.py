@@ -7,11 +7,12 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.datatypes.group import INTEGER_DTYPES
 from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PivotAgg
+    from polars._typing import PivotAgg, PolarsIntegerType
 
 
 def test_pivot() -> None:
@@ -561,3 +562,12 @@ def test_pivot_invalid() -> None:
         match="`index` and `values` cannot both be None in `pivot` operation",
     ):
         pl.DataFrame({"a": [1, 2], "b": [2, 3], "c": [3, 4]}).pivot("a")
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_pivot_empty_index_dtypes(dtype: PolarsIntegerType) -> None:
+    index = pl.Series([], dtype=dtype)
+    df = pl.DataFrame({"index": index, "on": [], "values": []})
+    result = df.pivot(index="index", on="on", values="values")
+    expected = pl.DataFrame({"index": index})
+    assert_frame_equal(result, expected)
