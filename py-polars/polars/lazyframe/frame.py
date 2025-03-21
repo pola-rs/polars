@@ -2730,8 +2730,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             else:
                 # Handle empty dict input
                 metadata = None
-        elif isinstance(metadata, Callable):
-            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
+        elif callable(metadata):
+            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore
 
         lf = lf.sink_parquet(
             target=target,
