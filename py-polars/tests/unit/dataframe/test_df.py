@@ -1835,7 +1835,7 @@ def test_extension() -> None:
 
     # foos and sys.getrefcount both have a reference.
     base_count = 2
-    
+
     # We compute the refcount on a separate line otherwise pytest's assert magic
     # might add reference counts.
     rc = sys.getrefcount(foos[0])
