@@ -9,15 +9,11 @@ use crate::series::ops::SeriesSealed;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
+#[derive(Default)]
 pub enum RoundMode {
+    #[default]
     HalfEven,
     HalfAwayFromZero,
-}
-
-impl Default for RoundMode {
-    fn default() -> Self {
-        RoundMode::HalfEven
-    }
 }
 
 pub trait RoundSeries: SeriesSealed {

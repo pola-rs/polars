@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([
             col("name"),
             (cols(["weight", "height"]) * lit(0.95))
-                .round(2)
+                .round(2, RoundMode::default())
                 .name()
                 .suffix("-5%"),
         ])
@@ -118,7 +118,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by([(col("birthdate").dt().year() / lit(10) * lit(10)).alias("decade")])
         .agg([
             len().alias("sample_size"),
-            col("weight").mean().round(2).alias("avg_weight"),
+            col("weight")
+                .mean()
+                .round(2, RoundMode::default())
+                .alias("avg_weight"),
             col("height").max().alias("tallest"),
         ])
         .collect()?;
@@ -139,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("name"),
             cols(["weight", "height"])
                 .mean()
-                .round(2)
+                .round(2, RoundMode::default())
                 .name()
                 .prefix("avg_"),
         ])
