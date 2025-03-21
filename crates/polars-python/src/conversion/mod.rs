@@ -835,6 +835,21 @@ impl<'py> FromPyObject<'py> for Wrap<ClosedWindow> {
     }
 }
 
+impl<'py> FromPyObject<'py> for Wrap<RoundMode> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "half_even" => RoundMode::HalfEven,
+            "half_away_from_zero" => RoundMode::HalfAwayFromZero,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`mode` must be one of {{'half_even', 'half_away_from_zero'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 #[cfg(feature = "csv")]
 impl<'py> FromPyObject<'py> for Wrap<CsvEncoding> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {

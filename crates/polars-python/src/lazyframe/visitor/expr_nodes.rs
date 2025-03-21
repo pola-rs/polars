@@ -1,5 +1,6 @@
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
+use polars::prelude::RoundMode;
 use polars::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 #[cfg(feature = "string_normalize")]
@@ -396,6 +397,19 @@ pub struct PyWindowMapping {
 
 #[pymethods]
 impl PyWindowMapping {
+    #[getter]
+    fn kind(&self) -> &str {
+        self.inner.into()
+    }
+}
+
+#[pyclass(name = "RoundMode")]
+pub struct PyRoundMode {
+    inner: RoundMode,
+}
+
+#[pymethods]
+impl PyRoundMode {
     #[getter]
     fn kind(&self) -> &str {
         self.inner.into()
@@ -1272,7 +1286,15 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Log1p => ("log1p",).into_py_any(py),
                 FunctionExpr::Exp => ("exp",).into_py_any(py),
                 FunctionExpr::Unique(maintain_order) => ("unique", maintain_order).into_py_any(py),
-                FunctionExpr::Round { decimals } => ("round", decimals).into_py_any(py),
+                FunctionExpr::Round { decimals, mode } => (
+                    "round",
+                    decimals,
+                    match mode {
+                        RoundMode::HalfEven => "half_even",
+                        RoundMode::HalfAwayFromZero => "half_away_from_zero",
+                    },
+                )
+                    .into_py_any(py),
                 FunctionExpr::RoundSF { digits } => ("round_sig_figs", digits).into_py_any(py),
                 FunctionExpr::Floor => ("floor",).into_py_any(py),
                 FunctionExpr::Ceil => ("ceil",).into_py_any(py),
