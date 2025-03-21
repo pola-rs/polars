@@ -772,8 +772,8 @@ impl Expr {
 
     /// Round underlying floating point array to given decimal numbers.
     #[cfg(feature = "round_series")]
-    pub fn round(self, decimals: u32) -> Self {
-        self.map_unary(FunctionExpr::Round { decimals })
+    pub fn round(self, decimals: u32, mode: RoundMode) -> Self {
+        self.map_unary(FunctionExpr::Round { decimals, mode })
     }
 
     /// Round to a number of significant figures.
