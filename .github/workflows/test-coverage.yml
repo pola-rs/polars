@@ -133,6 +133,8 @@ jobs:
 
       - name: Run Python tests
         working-directory: py-polars
+        env:
+          POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
           -n auto
@@ -144,6 +146,7 @@ jobs:
         working-directory: py-polars
         env:
           POLARS_FORCE_ASYNC: 1
+          POLARS_TIMEOUT_MS: 60000
         run: >
           pytest tests/unit/io/
           -n auto

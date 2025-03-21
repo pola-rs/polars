@@ -139,9 +139,12 @@ jobs:
       - name: Run non-benchmark tests
         working-directory: py-polars
         run: pytest -m 'not benchmark and not debug' -n auto
+        env:
+          POLARS_TIMEOUT_MS: 60000
 
       - name: Run non-benchmark tests on new streaming engine
         working-directory: py-polars
         env:
           POLARS_AUTO_NEW_STREAMING: 1
+          POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
