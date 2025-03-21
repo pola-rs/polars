@@ -135,6 +135,7 @@ pub fn create_multiple_physical_plans(
 }
 
 #[cfg(feature = "python")]
+#[allow(clippy::type_complexity)]
 pub fn python_scan_predicate(
     options: &mut PythonOptions,
     expr_arena: &Arena<AExpr>,

@@ -1,5 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::POOL;
@@ -19,7 +18,6 @@ use polars_plan::prelude::{FileType, FunctionFlags};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
-use pyo3::BoundObject;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
 
@@ -31,7 +29,7 @@ use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
 use crate::nodes::io_sinks::SinkComputeNode;
 use crate::nodes::io_sources::SourceComputeNode;
-use crate::nodes::io_sources::batch::{BatchSourceContext, BatchSourceNode};
+use crate::nodes::io_sources::batch::BatchSourceNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -944,93 +942,67 @@ fn to_graph_rec<'a>(
                 S::Cuda => todo!(),
                 S::IOPlugin => {
                     let batch_size = Some(get_ideal_morsel_size());
+                    let output_schema = output_schema.clone();
 
-                    let ctx = OnceLock::new();
-                    struct BatchSourceContext {
-                        done: AtomicBool,
-                        sent_once: AtomicBool,
-                        generator: Py<PyAny>,
-                        can_parse_predicate: bool,
-                    }
+                    let with_columns = with_columns.map(|x| {
+                        x.into_iter()
+                            .map(|x| x.to_string())
+                            .collect::<Vec<String>>()
+                    });
+
+                    // Setup the IO plugin generator.
+                    let (generator, can_parse_predicate) = {
+                        Python::with_gil(|py| {
+                            let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
+                            let utils = pl.getattr(intern!(py, "_utils")).unwrap();
+                            let callable =
+                                utils.getattr(intern!(py, "_execute_from_rust")).unwrap();
+
+                            let mut could_serialize_predicate = true;
+                            let predicate = match &options.predicate {
+                                PythonPredicate::PyArrow(s) => s.into_bound_py_any(py).unwrap(),
+                                PythonPredicate::None => None::<()>.into_bound_py_any(py).unwrap(),
+                                PythonPredicate::Polars(_) => {
+                                    assert!(pl_predicate.is_some(), "should be set");
+                                    match &predicate_serialized {
+                                        None => {
+                                            could_serialize_predicate = false;
+                                            PyNone::get(py).to_owned().into_any()
+                                        },
+                                        Some(buf) => PyBytes::new(py, buf).into_any(),
+                                    }
+                                },
+                            };
+
+                            let args = (
+                                python_scan_function,
+                                with_columns,
+                                predicate,
+                                n_rows,
+                                batch_size,
+                            );
+
+                            let generator_init =
+                                callable.call1(args).map_err(polars_error::to_compute_err)?;
+                            let generator = generator_init.get_item(0).map_err(
+                                |_| polars_err!(ComputeError: "expected tuple got {generator_init}"),
+                            )?;
+                            let can_parse_predicate = generator_init.get_item(1).map_err(
+                                |_| polars_err!(ComputeError: "expected tuple got {generator}"),
+                            )?;
+                            let can_parse_predicate = can_parse_predicate.extract::<bool>().map_err(
+                                |_| polars_err!(ComputeError: "expected bool got {can_parse_predicate}"),
+                            )? && could_serialize_predicate;
+
+                            let generator = generator.into_py_any(py).map_err(
+                                |_| polars_err!(ComputeError: "unable to grab reference to IO plugin generator"),
+                            )?;
+
+                            PolarsResult::Ok((generator, can_parse_predicate))
+                        })
+                    }?;
 
                     let get_batch_fn = Box::new(move |state: &StreamingExecutionState| {
-                        let ctx = ctx.get_or_init(|| {
-                                let mut could_serialize_predicate = true;
-                                let (callable, predicate) = Python::with_gil(|py| {
-                                    let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
-                                    let utils = pl.getattr(intern!(py, "_utils")).unwrap();
-                                    let callable =
-                                        utils.getattr(intern!(py, "_execute_from_rust")).unwrap();
-
-                                    let predicate = match &options.predicate {
-                                        PythonPredicate::PyArrow(s) => s.into_bound_py_any(py).unwrap(),
-                                        PythonPredicate::None => {
-                                            None::<()>.into_bound_py_any(py).unwrap()
-                                        },
-                                        PythonPredicate::Polars(_) => {
-                                            assert!(pl_predicate.is_some(), "should be set");
-
-                                            match &predicate_serialized {
-                                                None => {
-                                                    could_serialize_predicate = false;
-                                                    PyNone::get(py).to_owned().into_any()
-                                                },
-                                                Some(buf) => PyBytes::new(py, buf).into_any(),
-                                            }
-                                        },
-                                    };
-
-                                    (
-                                        callable.into_py_any(py).unwrap(),
-                                        predicate.into_py_any(py).unwrap(),
-                                    )
-                                });
-
-                                let python_scan_function =
-                                    Python::with_gil(|py| python_scan_function.clone_ref(py));
-
-                                let args = (
-                                    python_scan_function,
-                                    with_columns.clone().map(|x| {
-                                        x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()
-                                    }),
-                                    predicate,
-                                    n_rows,
-                                    batch_size,
-                                );
-
-                                Python::with_gil(|py| {
-                                    let generator_init = callable
-                                        .into_bound(py)
-                                        .call1(args)
-                                        .map_err(polars_error::to_compute_err)?;
-                                    let generator = generator_init.get_item(0).map_err(
-                                        |_| polars_err!(ComputeError: "expected tuple got {}", generator_init),
-                                    )?;
-                                    let can_parse_predicate = generator_init.get_item(1).map_err(
-                                        |_| polars_err!(ComputeError: "expected tuple got {}", generator),
-                                    )?;
-                                    let can_parse_predicate = can_parse_predicate.extract::<bool>().map_err(
-                                        |_| polars_err!(ComputeError: "expected bool got {}", can_parse_predicate),
-                                    )? && could_serialize_predicate;
-
-                                    PolarsResult::Ok(BatchSourceContext {
-                                        done: AtomicBool::new(false),
-                                        sent_once: AtomicBool::new(false),
-                                        generator: generator.into_py_any(py).unwrap(),
-                                        can_parse_predicate,
-                                    })
-                                })
-                            });
-                        let ctx = ctx.as_ref().map_err(|e| e.clone())?;
-
-                        if ctx.done.load(Ordering::Relaxed) {
-                            return Ok(None);
-                        }
-
-                        let generator = &ctx.generator;
-                        let can_parse_predicate = ctx.can_parse_predicate;
-
                         Python::with_gil(|py| {
                             match generator.bind(py).call_method0(intern!(py, "__next__")) {
                                 Ok(out) => {
@@ -1042,7 +1014,6 @@ fn to_graph_rec<'a>(
                                             pred.evaluate(&df, &state.in_memory_exec_state)?;
                                         df = df.filter(mask.bool()?)?;
                                     }
-                                    ctx.sent_once.store(true, Ordering::Relaxed);
                                     if validate_schema {
                                         polars_ensure!(
                                             df.schema() == &output_schema,
@@ -1055,14 +1026,6 @@ fn to_graph_rec<'a>(
                                 Err(err)
                                     if err.matches(py, PyStopIteration::type_object(py))? =>
                                 {
-                                    if !ctx.sent_once.load(Ordering::Relaxed) {
-                                        return Ok(Some(
-                                            polars_core::frame::DataFrame::empty_with_schema(
-                                                &output_schema,
-                                            ),
-                                        ));
-                                    }
-                                    ctx.done.store(true, Ordering::Relaxed);
                                     Ok(None)
                                 },
                                 Err(err) => polars_bail!(
@@ -1077,7 +1040,11 @@ fn to_graph_rec<'a>(
             };
 
             ctx.graph.add_node(
-                SourceComputeNode::new(BatchSourceNode::new(name, Some(get_batch_fn))),
+                SourceComputeNode::new(BatchSourceNode::new(
+                    name,
+                    output_schema,
+                    Some(get_batch_fn),
+                )),
                 [],
             )
         },
