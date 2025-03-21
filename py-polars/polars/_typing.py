@@ -329,11 +329,6 @@ FileSource: TypeAlias = Union[
 
 JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
 
-ParquetMetadataContext: TypeAlias = dict[str, str]
-ParquetMetadata: TypeAlias = Union[
-    dict[str, str],
-    Callable[[ParquetMetadataContext], dict[str, str]],
-]
 DeprecationType: TypeAlias = Literal[
     "function",
     "renamed_parameter",
@@ -449,3 +444,12 @@ __all__ = [
     "UnstackDirection",
     "WindowMappingStrategy",
 ]
+
+
+class ParquetMetadataContext(TypedDict):
+    key_value_metadata: dict[str, str]
+    info: dict[str, str]
+
+
+ParquetMetadataFn: TypeAlias = Callable[[ParquetMetadataContext], dict[str, str]]
+ParquetMetadata: TypeAlias = Union[dict[str, str], ParquetMetadataFn]

@@ -34,6 +34,7 @@ from polars._utils.deprecation import (
     deprecated,
     issue_deprecation_warning,
 )
+from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
@@ -2729,6 +2730,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             else:
                 # Handle empty dict input
                 metadata = None
+        elif isinstance(metadata, Callable):
+            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
 
         lf = lf.sink_parquet(
             target=target,

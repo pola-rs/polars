@@ -28,7 +28,11 @@ from polars.testing.parametric.strategies.core import series
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import ParallelStrategy, ParquetCompression
+    from polars._typing import (
+        ParallelStrategy,
+        ParquetCompression,
+        ParquetMetadataContext,
+    )
     from tests.unit.conftest import MemoryUsage
 
 
@@ -3248,12 +3252,42 @@ def test_parquet_read_timezone_22506() -> None:
     )
 
 
-
-def test_read_write_metadata(tmp_path: Path) -> None:
+@pytest.mark.parametrize("static", [True, False])
+@pytest.mark.parametrize("lazy", [True, False])
+def test_read_write_metadata(tmp_path: Path, static: bool, lazy: bool) -> None:
     metadata = {"hello": "world", "something": "else"}
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    df.write_parquet(tmp_path / "df.parquet", metadata=metadata)
+    def fn_metadata(ctx: ParquetMetadataContext) -> dict[str, str]:
+        return {**ctx["key_value_metadata"], **metadata}
+
+    if lazy:
+        df.lazy().sink_parquet(
+            tmp_path / "df.parquet",
+            metadata=metadata if static else fn_metadata,
+        )
+    else:
+        df.write_parquet(
+            tmp_path / "df.parquet",
+            metadata=metadata if static else fn_metadata,
+        )
+
     actual = pl.read_parquet_metadata(tmp_path / "df.parquet")
     assert "ARROW:schema" in actual
     assert metadata == {k: v for k, v in actual.items() if k != "ARROW:schema"}
+
+
+def test_metadata_callback_info(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    info_objects = []
+
+    def fn_metadata(ctx: ParquetMetadataContext) -> dict[str, str]:
+        nonlocal info_objects
+        info_objects.append(ctx["info"])
+        return ctx["key_value_metadata"]
+
+    df.write_parquet(tmp_path, partition_by="a", metadata=fn_metadata)
+
+    assert len(info_objects) == len(df)
+    assert all("output_path" in obj for obj in info_objects)
+    assert len({obj["output_path"] for obj in info_objects}) == len(df)
