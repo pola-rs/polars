@@ -3,9 +3,10 @@ use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_bail};
 
 /// TODO: Eventually move this enum to polars-plan
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum CastColumnsPolicy {
     /// Raise an error if the datatypes do not match
+    #[default]
     ErrorOnMismatch,
 }
 
