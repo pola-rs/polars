@@ -4039,7 +4039,7 @@ class DataFrame:
                 # Handle empty dict input
                 metadata = None
         elif callable(metadata):
-            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment,arg-type]
+            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
 
         if isinstance(statistics, bool) and statistics:
             statistics = {
