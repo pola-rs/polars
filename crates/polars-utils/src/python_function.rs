@@ -41,6 +41,26 @@ impl From<PyObject> for PythonObject {
     }
 }
 
+impl<'py> pyo3::conversion::IntoPyObject<'py> for PythonObject {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Ok(self.0.into_bound(py))
+    }
+}
+
+impl<'py> pyo3::conversion::IntoPyObject<'py> for &PythonObject {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Ok(self.0.bind(py).clone())
+    }
+}
+
 impl Eq for PythonObject {}
 
 impl PartialEq for PythonObject {
