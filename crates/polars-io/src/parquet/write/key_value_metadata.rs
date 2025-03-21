@@ -157,15 +157,14 @@ impl<'de> Deserialize<'de> for RustKeyValueMetadataFunction {
 
 #[cfg(feature = "python")]
 mod python_impl {
-    use std::collections::HashMap;
     use std::hash::Hash;
     use std::sync::Arc;
 
     use polars_error::{PolarsResult, to_compute_err};
     use polars_parquet::write::KeyValue;
     use polars_utils::python_function::PythonObject;
-    use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
-    use pyo3::{Bound, PyResult, Python, pyclass};
+    use pyo3::types::PyAnyMethods;
+    use pyo3::{PyResult, Python, pyclass};
     use serde::{Deserialize, Serialize};
 
     use super::KeyValueMetadataContext;
@@ -189,16 +188,15 @@ mod python_impl {
             let ctx = PythonMetadataContext::from_key_value_metadata_context(ctx);
             Python::with_gil(|py| {
                 let args = (ctx,);
-                let dict: Bound<'_, PyDict> = self.0.call1(py, args)?.into_bound(py).extract()?;
-                let mut result = Vec::<KeyValue>::with_capacity(dict.len());
-                for (k, v) in dict.iter() {
-                    let key = k.extract::<String>()?;
-                    let value = v.extract::<String>()?;
-                    result.push(KeyValue {
-                        key,
-                        value: Some(value),
-                    });
-                }
+                let out: Vec<(String, String)> =
+                    self.0.call1(py, args)?.into_bound(py).extract()?;
+                let result = out
+                    .into_iter()
+                    .map(|item| KeyValue {
+                        key: item.0,
+                        value: Some(item.1),
+                    })
+                    .collect::<Vec<_>>();
                 PyResult::Ok(result)
             })
             .map_err(to_compute_err)
@@ -214,22 +212,19 @@ mod python_impl {
     #[pyclass]
     pub struct PythonMetadataContext {
         #[pyo3(get)]
-        key_value_metadata: HashMap<String, String>,
+        key_value_metadata: Vec<(String, String)>,
         #[pyo3(get)]
-        info: HashMap<String, String>,
+        info: Vec<(String, String)>,
     }
 
     impl PythonMetadataContext {
         pub fn from_key_value_metadata_context(ctx: KeyValueMetadataContext) -> Self {
-            let mut key_value_metadata = HashMap::<String, String>::new();
-            for kv in ctx.key_value_metadata.into_iter() {
-                key_value_metadata.insert(kv.key, kv.value.unwrap_or_default());
-            }
-
-            let mut info = HashMap::<String, String>::new();
-            for item in ctx.info.into_iter() {
-                info.insert(item.0, item.1);
-            }
+            let key_value_metadata = ctx
+                .key_value_metadata
+                .into_iter()
+                .map(|kv| (kv.key, kv.value.unwrap_or_default()))
+                .collect::<Vec<_>>();
+            let info = ctx.info.into_iter().collect::<Vec<_>>();
             Self {
                 key_value_metadata,
                 info,

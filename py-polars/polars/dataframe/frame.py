@@ -41,6 +41,7 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_df_item_by_key
+from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import parse_into_expression
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
@@ -3989,7 +3990,7 @@ class DataFrame:
 
             # do not remove this import!
             # needed below
-            import pyarrow.parquet  # noqa: F401
+            import pyarrow.parquet
 
             if pyarrow_options is None:
                 pyarrow_options = {}
@@ -4037,6 +4038,8 @@ class DataFrame:
             else:
                 # Handle empty dict input
                 metadata = None
+        elif isinstance(metadata, Callable):
+            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
 
         if isinstance(statistics, bool) and statistics:
             statistics = {
