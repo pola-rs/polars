@@ -564,7 +564,7 @@ def test_pivot_invalid() -> None:
         pl.DataFrame({"a": [1, 2], "b": [2, 3], "c": [3, 4]}).pivot("a")
 
 
-@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+@pytest.mark.parametrize("dtype", list(INTEGER_DTYPES))
 def test_pivot_empty_index_dtypes(dtype: PolarsIntegerType) -> None:
     index = pl.Series([], dtype=dtype)
     df = pl.DataFrame({"index": index, "on": [], "values": []})
