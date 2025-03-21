@@ -66,8 +66,8 @@ impl ApplyExtraOps {
                     ExtraOperations {
                         row_index,
                         pre_slice,
-                        cast_columns,
-                        missing_columns,
+                        cast_columns_policy,
+                        missing_columns_policy,
                         include_file_paths,
                         predicate,
                     },
@@ -78,15 +78,11 @@ impl ApplyExtraOps {
                 // This should always be pushed to the reader, or otherwise handled separately.
                 assert!(pre_slice.is_none());
 
-                let cast_columns = if let Some(policy) = cast_columns {
-                    CastColumns::try_init_from_policy(
-                        policy,
-                        &final_output_schema,
-                        incoming_schema,
-                    )?
-                } else {
-                    None
-                };
+                let cast_columns = CastColumns::try_init_from_policy(
+                    cast_columns_policy,
+                    &final_output_schema,
+                    incoming_schema,
+                )?;
 
                 let n_expected_extra_columns = final_output_schema.len()
                     - incoming_schema.len()
@@ -95,13 +91,11 @@ impl ApplyExtraOps {
                 let mut extra_columns: Vec<ScalarColumn> =
                     Vec::with_capacity(n_expected_extra_columns);
 
-                if let Some(policy) = missing_columns {
-                    policy.initialize_policy(
-                        &projected_file_schema,
-                        incoming_schema,
-                        &mut extra_columns,
-                    )?;
-                }
+                missing_columns_policy.initialize_policy(
+                    &projected_file_schema,
+                    incoming_schema,
+                    &mut extra_columns,
+                )?;
 
                 if let Some(hive_parts) = hive_parts {
                     extra_columns.extend(hive_parts.df().get_columns().iter().map(|c| {

@@ -1,16 +1,20 @@
 //! Interface for single-file readers
 
 pub mod builder;
+pub mod capabilities;
 pub mod output;
 
 use async_trait::async_trait;
 use output::FileReaderOutputRecv;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
+use polars_io::RowIndex;
+use polars_io::predicates::ScanIOPredicate;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
-use super::extra_ops::apply::ApplyExtraOps;
+use super::extra_ops::cast_columns::CastColumnsPolicy;
+use super::extra_ops::missing_columns::MissingColumnsPolicy;
 use crate::async_executor::JoinHandle;
 
 /// Interface to read a single file
@@ -19,24 +23,12 @@ pub trait FileReader: Send + Sync {
     /// Initialize this FileReader. Intended to allow the reader to pre-fetch metadata.
     ///
     /// This must be called before calling any other functions of the FileReader.
-    ///
-    /// Returns the schema of the morsels that this FileReader will return.
     async fn initialize(&mut self) -> PolarsResult<()>;
 
     /// Begin reading the file into morsels.
     fn begin_read(
         &self,
-        // Note: This may contain more columns that what exist in the file. The reader should project
-        // the ones that it finds. The remaining ones will be handled in post.
-        projected_schema: &SchemaRef,
-        extra_ops: ApplyExtraOps,
-
-        num_pipelines: usize,
-        callbacks: FileReaderCallbacks,
-        // TODO
-        // We could introduce dynamic `Option<Box<dyn Any>>` for the reader to use. That would help
-        // with e.g. synchronizing row group prefetches across multiple files in Parquet. Currently
-        // every reader started concurrently will prefetch up to the row group prefetch limit.
+        args: BeginReadArgs,
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)>;
 
     /// This FileReader must be initialized before calling this.
@@ -46,15 +38,16 @@ pub trait FileReader: Send + Sync {
     async fn n_rows_in_file(&self) -> PolarsResult<IdxSize> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
-        let (morsel_receivers, handle) = self.begin_read(
-            &Default::default(), // pass empty schema
-            ApplyExtraOps::Noop,
-            1,
-            FileReaderCallbacks {
+        let (morsel_receivers, handle) = self.begin_read(BeginReadArgs {
+            // Passing 0-0 slice indicates to the reader that we want the full row count, but it can
+            // skip actually reading the data if it is able to.
+            pre_slice: Some(Slice::Positive { offset: 0, len: 0 }),
+            callbacks: FileReaderCallbacks {
                 n_rows_in_file_tx: Some(tx),
                 ..Default::default()
             },
-        )?;
+            ..Default::default()
+        })?;
 
         drop(morsel_receivers);
 
@@ -75,15 +68,14 @@ pub trait FileReader: Send + Sync {
 
         let (tx, rx) = tokio::sync::oneshot::channel();
 
-        let (mut morsel_receivers, handle) = self.begin_read(
-            &Default::default(), // pass empty schema
-            ApplyExtraOps::Noop,
-            1,
-            FileReaderCallbacks {
+        let (mut morsel_receivers, handle) = self.begin_read(BeginReadArgs {
+            pre_slice,
+            callbacks: FileReaderCallbacks {
                 row_position_on_end_tx: Some(tx),
                 ..Default::default()
             },
-        )?;
+            ..Default::default()
+        })?;
 
         // We are using the `row_position_on_end` callback, this means we must fully consume all of
         // the morsels sent by the reader.
@@ -102,7 +94,54 @@ pub trait FileReader: Send + Sync {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug)]
+pub struct BeginReadArgs {
+    /// Columns to project from the file.
+    pub projected_schema: SchemaRef,
+
+    pub row_index: Option<RowIndex>,
+    pub pre_slice: Option<Slice>,
+    pub predicate: Option<ScanIOPredicate>,
+
+    /// User-configured policy for when datatypes do not match.
+    ///
+    /// A reader may wish to use this if it is applying predicates.
+    ///
+    /// This can be ignored by the reader, as the policy is also applied in post.
+    #[expect(unused)]
+    pub cast_columns_policy: CastColumnsPolicy,
+    /// User-configured policy for when columns are not found in the file.
+    ///
+    /// A reader may wish to use this if it is applying predicates.
+    ///
+    /// This can be ignored by the reader, as the policy is also applied in post.
+    pub missing_columns_policy: MissingColumnsPolicy,
+
+    pub num_pipelines: usize,
+    pub callbacks: FileReaderCallbacks,
+    // TODO
+    // We could introduce dynamic `Option<Box<dyn Any>>` for the reader to use. That would help
+    // with e.g. synchronizing row group prefetches across multiple files in Parquet. Currently
+    // every reader started concurrently will prefetch up to the row group prefetch limit.
+}
+
+impl Default for BeginReadArgs {
+    fn default() -> Self {
+        BeginReadArgs {
+            projected_schema: SchemaRef::default(),
+            row_index: None,
+            pre_slice: None,
+            predicate: None,
+            // TODO: Use less restrictive default
+            cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
+            missing_columns_policy: MissingColumnsPolicy::Insert,
+            num_pipelines: 1,
+            callbacks: FileReaderCallbacks::default(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 /// We have this to avoid a footgun of accidentally swapping the arguments.
 pub struct FileReaderCallbacks {
     /// Full file schema
@@ -112,10 +151,10 @@ pub struct FileReaderCallbacks {
     /// on the source. Prefer instead to use `row_position_on_end`, which can be much faster.
     ///
     /// Notes:
+    /// * All readers must ensure that this count is sent if requested, even if the output port
+    ///   closes prematurely, or a slice is sent.
     /// * Some readers will only send this after their output morsels to be fully consumed (or if
     ///   their output port is dropped), so you should not block morsel consumption on waiting for this.
-    /// * All readers must ensure that this count is sent if requested, even if the output port
-    ///   closes prematurely.
     pub n_rows_in_file_tx: Option<tokio::sync::oneshot::Sender<IdxSize>>,
 
     /// Returns the row position reached by this reader.
@@ -139,19 +178,7 @@ pub fn calc_row_position_after_slice(n_rows_in_file: IdxSize, pre_slice: Option<
 
     let out = match pre_slice {
         None => n_rows_in_file,
-
-        Some(Slice::Positive { offset, len }) => {
-            let slice_end = offset.saturating_add(len);
-            n_rows_in_file.min(slice_end)
-        },
-
-        Some(Slice::Negative {
-            offset_from_end,
-            len,
-        }) => {
-            let n_from_end = offset_from_end.saturating_sub(len);
-            n_rows_in_file.saturating_sub(n_from_end)
-        },
+        Some(v) => v.restrict_to_bounds(n_rows_in_file).end_position(),
     };
 
     IdxSize::try_from(out).unwrap_or(IdxSize::MAX)

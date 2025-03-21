@@ -23,8 +23,8 @@ pub struct ExtraOperations {
     // Note: These fields are ordered according to when they (should be) applied.
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
-    pub cast_columns: Option<CastColumnsPolicy>,
-    pub missing_columns: Option<MissingColumnsPolicy>,
+    pub cast_columns_policy: CastColumnsPolicy,
+    pub missing_columns_policy: MissingColumnsPolicy,
     pub include_file_paths: Option<PlSmallStr>,
     pub predicate: Option<ScanIOPredicate>,
 }

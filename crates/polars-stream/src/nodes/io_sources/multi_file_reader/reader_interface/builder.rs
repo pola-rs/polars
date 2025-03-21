@@ -7,27 +7,12 @@ use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::ScanSource;
 
 use super::FileReader;
-
-/// `FileReaderType` to avoid confusion with a `FileType` enum from polars-plan.
-#[derive(Debug, Clone, PartialEq)]
-pub enum FileReaderType {
-    #[cfg(feature = "parquet")]
-    Parquet,
-    #[cfg(feature = "ipc")]
-    #[expect(unused)]
-    Ipc,
-    #[cfg(feature = "csv")]
-    #[expect(unused)]
-    Csv,
-    #[cfg(feature = "json")]
-    NDJson,
-    /// So that we can compile when all feature flags disabled.
-    #[expect(unused)]
-    Unknown,
-}
+use super::capabilities::ReaderCapabilities;
 
 pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
-    fn file_type(&self) -> FileReaderType;
+    fn reader_name(&self) -> &str;
+
+    fn reader_capabilities(&self) -> ReaderCapabilities;
 
     fn build_file_reader(
         &self,
