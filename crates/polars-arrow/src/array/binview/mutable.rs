@@ -8,7 +8,7 @@ use polars_error::PolarsResult;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
-use crate::array::binview::view::validate_utf8_only;
+use crate::array::binview::view::validate_views_utf8_only;
 use crate::array::binview::{
     BinaryViewArrayGeneric, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE, ViewType,
 };
@@ -632,10 +632,10 @@ impl MutableBinaryViewArray<[u8]> {
         let pushed = self.finish_in_progress();
         // views are correct
         unsafe {
-            validate_utf8_only(
+            validate_views_utf8_only(
                 &self.views[views_offset..],
-                &self.completed_buffers[buffer_offset..],
                 &self.completed_buffers,
+                buffer_offset,
             )?
         }
         // Restore in-progress buffer as we don't want to get too small buffers
