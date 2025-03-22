@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["unique_column_name"],"struct":["PlSmallStr"]};

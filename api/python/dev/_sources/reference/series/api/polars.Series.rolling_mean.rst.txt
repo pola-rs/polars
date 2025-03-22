@@ -1,0 +1,6 @@
+﻿polars.Series.rolling\_mean
+===========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.rolling_mean
