@@ -744,7 +744,7 @@ impl PyLazyFrame {
 
         let cloud_options = {
             let cloud_options = parse_cloud_options(
-                target.unformatted_path().to_str().unwrap(),
+                target.base_path().to_str().unwrap(),
                 cloud_options.unwrap_or_default(),
             )?;
             Some(
@@ -766,7 +766,8 @@ impl PyLazyFrame {
                     sink_options.0,
                 ),
                 SinkTarget::Partition(partition) => ldf.sink_parquet_partitioned(
-                    partition.path.as_ref(),
+                    partition.base_path,
+                    partition.file_path_cb.map(PartitionTargetCallback::Python),
                     partition.variant,
                     options,
                     cloud_options,
@@ -804,7 +805,7 @@ impl PyLazyFrame {
         #[cfg(feature = "cloud")]
         let cloud_options = {
             let cloud_options = parse_cloud_options(
-                target.unformatted_path().to_str().unwrap(),
+                target.base_path().to_str().unwrap(),
                 cloud_options.unwrap_or_default(),
             )?;
             Some(
@@ -826,7 +827,8 @@ impl PyLazyFrame {
                     ldf.sink_ipc(path, options, cloud_options, sink_options.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_ipc_partitioned(
-                    partition.path.as_ref(),
+                    partition.base_path,
+                    partition.file_path_cb.map(PartitionTargetCallback::Python),
                     partition.variant,
                     options,
                     cloud_options,
@@ -892,7 +894,7 @@ impl PyLazyFrame {
         #[cfg(feature = "cloud")]
         let cloud_options = {
             let cloud_options = parse_cloud_options(
-                target.unformatted_path().to_str().unwrap(),
+                target.base_path().to_str().unwrap(),
                 cloud_options.unwrap_or_default(),
             )?;
             Some(
@@ -914,7 +916,8 @@ impl PyLazyFrame {
                     ldf.sink_csv(path, options, cloud_options, sink_options.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_csv_partitioned(
-                    partition.path.as_ref(),
+                    partition.base_path,
+                    partition.file_path_cb.map(PartitionTargetCallback::Python),
                     partition.variant,
                     options,
                     cloud_options,
@@ -942,7 +945,7 @@ impl PyLazyFrame {
 
         let cloud_options = {
             let cloud_options = parse_cloud_options(
-                target.unformatted_path().to_str().unwrap(),
+                target.base_path().to_str().unwrap(),
                 cloud_options.unwrap_or_default(),
             )?;
             Some(
@@ -961,7 +964,8 @@ impl PyLazyFrame {
                     ldf.sink_json(path, options, cloud_options, sink_options.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_json_partitioned(
-                    partition.path.as_ref(),
+                    partition.base_path,
+                    partition.file_path_cb.map(PartitionTargetCallback::Python),
                     partition.variant,
                     options,
                     cloud_options,

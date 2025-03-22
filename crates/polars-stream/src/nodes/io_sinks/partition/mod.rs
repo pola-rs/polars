@@ -3,14 +3,11 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
-use polars_core::prelude::{Column, PlHashMap};
+use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
-use polars_io::utils::URL_ENCODE_CHAR_SET;
-use polars_plan::dsl::{FileType, SinkOptions};
-use polars_utils::format_pl_smallstr;
-use polars_utils::pl_str::PlSmallStr;
+use polars_plan::dsl::{FileType, PartitionTargetCallback, PartitionTargetContext, SinkOptions};
 
 use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -25,16 +22,6 @@ pub mod parted;
 
 pub type CreateNewSinkFn =
     Arc<dyn Send + Sync + Fn(SchemaRef, PathBuf) -> PolarsResult<Box<dyn SinkNode + Send + Sync>>>;
-
-pub fn format_path(path: &Path, format_args: &PlHashMap<PlSmallStr, PlSmallStr>) -> PathBuf {
-    // @Optimize: This can use aho-corasick.
-    let mut path = path.display().to_string();
-    for (name, value) in format_args {
-        let needle = &format!("{{{name}}}");
-        path = path.replace(needle, value);
-    }
-    std::path::PathBuf::from(path)
-}
 
 pub fn get_create_new_fn(
     file_type: FileType,
@@ -110,12 +97,36 @@ impl SinkSender {
     }
 }
 
+fn default_by_key_file_path_cb(ext: &str, _part: usize, columns: Option<&[Column]>) -> PathBuf {
+    let columns = columns.unwrap();
+    assert!(!columns.is_empty());
+
+    let mut file_path = PathBuf::from(format!("000.{ext}"));
+    for c in columns {
+        let name = c.name();
+        let value = c.get(0).unwrap();
+        let value = value.to_string();
+        let value = percent_encoding::percent_encode(
+            value.as_bytes(),
+            polars_io::utils::URL_ENCODE_CHAR_SET,
+        );
+        file_path = PathBuf::from(format!("{name}={value}")).join(file_path);
+    }
+
+    file_path
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn open_new_sink(
-    path_f_string: &Path,
+    base_path: &Path,
+    file_path_cb: Option<&PartitionTargetCallback>,
+    default_file_path_cb: fn(&str, usize, Option<&[Column]>) -> PathBuf,
+    part: &mut usize,
+    keys: Option<&[Column]>,
     create_new_sink: &CreateNewSinkFn,
-    format_args: &PlHashMap<PlSmallStr, PlSmallStr>,
     sink_input_schema: SchemaRef,
     partition_name: &'static str,
+    ext: &str,
     verbose: bool,
     state: &StreamingExecutionState,
 ) -> PolarsResult<
@@ -124,8 +135,35 @@ async fn open_new_sink(
         SinkSender,
     )>,
 > {
-    let path = format_path(path_f_string, format_args);
+    let mut file_path = default_file_path_cb(ext, *part, keys);
+    let mut path = base_path.join(file_path.as_path());
 
+    // If the user provided their own callback, modify the path to that.
+    if let Some(file_path_cb) = file_path_cb {
+        let keys = keys.map_or(Vec::new(), |keys| {
+            keys.iter()
+                .map(|k| polars_plan::dsl::PartitionTargetContextKey {
+                    name: k.name().clone(),
+                    value: percent_encoding::percent_encode(
+                        k.get(0).unwrap().to_string().as_bytes(),
+                        polars_io::utils::URL_ENCODE_CHAR_SET,
+                    )
+                    .to_string()
+                    .into(),
+                })
+                .collect()
+        });
+
+        file_path = file_path_cb.call(PartitionTargetContext {
+            part: *part,
+            keys,
+            file_path,
+            full_path: path,
+        })?;
+        path = base_path.join(file_path);
+    }
+
+    *part += 1;
     if verbose {
         eprintln!(
             "[partition[{partition_name}]]: Start on new file '{}'",
@@ -177,20 +215,4 @@ async fn open_new_sink(
     }
 
     Ok(Some((join_handles, sender)))
-}
-
-fn insert_key_value_into_format_args(
-    args: &mut PlHashMap<PlSmallStr, PlSmallStr>,
-    keys: &[Column],
-) {
-    for (i, key) in keys.iter().enumerate() {
-        *args
-            .get_mut(&format_pl_smallstr!("key[{i}].value"))
-            .unwrap() = percent_encoding::percent_encode(
-            key.get(0).unwrap().to_string().as_bytes(),
-            URL_ENCODE_CHAR_SET,
-        )
-        .to_string()
-        .into();
-    }
 }

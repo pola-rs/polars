@@ -6,12 +6,11 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, PlHashMap, PlHashSet, PlIndexMap, row_encode};
+use polars_core::prelude::{Column, PlHashSet, PlIndexMap, row_encode};
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::buffer::Buffer;
 use polars_error::PolarsResult;
-use polars_plan::dsl::SinkOptions;
-use polars_utils::format_pl_smallstr;
+use polars_plan::dsl::{PartitionTargetCallback, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 
@@ -19,9 +18,7 @@ use super::CreateNewSinkFn;
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::execute::StreamingExecutionState;
 use crate::morsel::SourceToken;
-use crate::nodes::io_sinks::partition::{
-    SinkSender, insert_key_value_into_format_args, open_new_sink,
-};
+use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode, parallelize_receive_task};
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, PhaseOutcome, TaskPriority};
 
@@ -37,18 +34,23 @@ pub struct PartitionByKeySinkNode {
     max_open_partitions: usize,
     include_key: bool,
 
-    path_f_string: Arc<PathBuf>,
+    base_path: PathBuf,
+    file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
+    ext: PlSmallStr,
 
     sink_options: SinkOptions,
 }
 
 impl PartitionByKeySinkNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         input_schema: SchemaRef,
         key_cols: Arc<[PlSmallStr]>,
-        path_f_string: Arc<PathBuf>,
+        base_path: PathBuf,
+        file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
+        ext: PlSmallStr,
         sink_options: SinkOptions,
         include_key: bool,
     ) -> Self {
@@ -81,8 +83,10 @@ impl PartitionByKeySinkNode {
             key_cols,
             max_open_partitions,
             include_key,
-            path_f_string,
+            base_path,
+            file_path_cb,
             create_new,
+            ext,
             sink_options,
         }
     }
@@ -178,9 +182,10 @@ impl SinkNode for PartitionByKeySinkNode {
         let state = state.clone();
         let sink_input_schema = self.sink_input_schema.clone();
         let max_open_partitions = self.max_open_partitions;
-        let key_cols = self.key_cols.clone();
-        let path_f_string = self.path_f_string.clone();
+        let base_path = self.base_path.clone();
+        let file_path_cb = self.file_path_cb.clone();
         let create_new_sink = self.create_new.clone();
+        let ext = self.ext.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
             enum OpenPartition {
                 Sink(
@@ -191,16 +196,8 @@ impl SinkNode for PartitionByKeySinkNode {
             }
 
             let verbose = config::verbose();
-            let mut part_idx = 0;
+            let mut part = 0;
             let mut open_partitions: PlIndexMap<Buffer<u8>, OpenPartition> = PlIndexMap::default();
-            let mut format_args = PlHashMap::default();
-
-            // Initialize the format args
-            format_args.insert(PlSmallStr::from_static("part"), PlSmallStr::EMPTY);
-            for (i, name) in key_cols.iter().enumerate() {
-                format_args.insert(format_pl_smallstr!("key[{i}].name"), name.clone());
-                format_args.insert(format_pl_smallstr!("key[{i}].value"), PlSmallStr::EMPTY);
-            }
 
             // Wrap this in a closure so that a failure to send (which signifies a failure) can be
             // caught while waiting for tasks.
@@ -227,11 +224,19 @@ impl SinkNode for PartitionByKeySinkNode {
                                     open_partitions.get_index_mut(idx).unwrap().1
                                 },
                                 None => {
-                                    *format_args.get_mut(&PlSmallStr::from_static("part")).unwrap() = format_pl_smallstr!("{part_idx}");
-                                    part_idx += 1;
-                                    insert_key_value_into_format_args(&mut format_args, &keys);
-
-                                    let result = open_new_sink(path_f_string.as_path(), &create_new_sink, &format_args, sink_input_schema.clone(), "by-key", verbose, &state).await?;
+                                    let result = open_new_sink(
+                                        base_path.as_path(),
+                                        file_path_cb.as_ref(),
+                                        super::default_by_key_file_path_cb,
+                                        &mut part,
+                                        Some(keys.as_slice()),
+                                        &create_new_sink,
+                                        sink_input_schema.clone(),
+                                        "by-key",
+                                        ext.as_str(),
+                                        verbose,
+                                        &state,
+                                    ).await?;
                                     let Some((join_handles, sender)) = result else {
                                         return Ok(());
                                     };
@@ -274,11 +279,19 @@ impl SinkNode for PartitionByKeySinkNode {
                         }
                     },
                     OpenPartition::Buffer(keys, buffered) => {
-                        *format_args.get_mut(&PlSmallStr::from_static("part")).unwrap() = format_pl_smallstr!("{part_idx}");
-                        part_idx += 1;
-                        insert_key_value_into_format_args(&mut format_args, &keys);
-
-                        let result = open_new_sink(path_f_string.as_path(), &create_new_sink, &format_args, sink_input_schema.clone(), "by-key", verbose, &state).await?;
+                        let result = open_new_sink(
+                            base_path.as_path(),
+                            file_path_cb.as_ref(),
+                            super::default_by_key_file_path_cb,
+                            &mut part,
+                            Some(keys.as_slice()),
+                            &create_new_sink,
+                            sink_input_schema.clone(),
+                            "by-key",
+                            ext.as_str(),
+                            verbose,
+                            &state
+                        ).await?;
                         let Some((mut join_handles, mut sender)) = result else {
                             return Ok(());
                         };
