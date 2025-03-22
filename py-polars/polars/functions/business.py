@@ -90,7 +90,7 @@ def business_day_count(
 
     >>> week_mask = (True, True, True, True, True, True, False)
     >>> df.with_columns(
-    ...     business_day_count=pl.business_day_count("start", "end", week_mask),
+    ...     business_day_count=pl.business_day_count("start", "end", week_mask=week_mask),
     ... )
     shape: (2, 3)
     ┌────────────┬────────────┬────────────────────┐
