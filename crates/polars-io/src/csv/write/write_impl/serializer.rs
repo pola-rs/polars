@@ -146,7 +146,7 @@ fn float_serializer_no_precision_scientific<I: NativeType + LowerExp>(
 ) -> impl Serializer {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         // Float writing into a buffer of `Vec<u8>` cannot fail.
-        let _ = write!(buf, "{item:.e}");
+        let _ = write!(buf, "{item:e}");
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
