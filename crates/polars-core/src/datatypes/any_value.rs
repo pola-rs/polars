@@ -1,7 +1,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
+use arrow::temporal_conversions::EPOCH_DAYS_FROM_CE;
 use arrow::types::PrimitiveType;
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Timelike};
 use polars_compute::cast::SerPrimitive;
 use polars_error::feature_gated;
 #[cfg(feature = "dtype-categorical")]
@@ -1714,6 +1716,12 @@ impl<'a> From<&'a str> for AnyValue<'a> {
 impl From<bool> for AnyValue<'static> {
     fn from(value: bool) -> Self {
         AnyValue::Boolean(value)
+    }
+}
+
+impl From<NaiveDate> for AnyValue<'static> {
+    fn from(value: NaiveDate) -> Self {
+        AnyValue::Date(value.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
     }
 }
 
