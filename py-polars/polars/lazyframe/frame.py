@@ -29,6 +29,7 @@ from polars._utils.deprecation import (
     deprecate_streaming_parameter,
     issue_deprecation_warning,
 )
+from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
@@ -123,6 +124,7 @@ if TYPE_CHECKING:
         Label,
         MaintainOrderJoin,
         Orientation,
+        ParquetMetadata,
         PolarsDataType,
         PythonDataType,
         RollingInterpolationMethod,
@@ -2437,6 +2439,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
+        metadata: ParquetMetadata | None = None,
     ) -> None: ...
     @overload
     def sink_parquet(
@@ -2466,6 +2469,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[True],
         engine: EngineType = "auto",
+        metadata: ParquetMetadata | None = None,
     ) -> LazyFrame: ...
     @unstable()
     def sink_parquet(
@@ -2495,6 +2499,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
+        metadata: ParquetMetadata | None = None,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -2675,6 +2680,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "mkdir": mkdir,
         }
 
+        if isinstance(metadata, dict):
+            if metadata:
+                metadata = list(metadata.items())  # type: ignore[assignment]
+            else:
+                # Handle empty dict input
+                metadata = None
+        elif callable(metadata):
+            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
+
         lf = lf.sink_parquet(
             target=target,
             compression=compression,
@@ -2686,6 +2700,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
+            metadata=metadata,
         )
         lf = LazyFrame._from_pyldf(lf)
 

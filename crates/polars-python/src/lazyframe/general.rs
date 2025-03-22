@@ -717,7 +717,7 @@ impl PyLazyFrame {
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (
         target, compression, compression_level, statistics, row_group_size, data_page_size,
-        cloud_options, credential_provider, retries, sink_options
+        cloud_options, credential_provider, retries, sink_options, metadata
     ))]
     fn sink_parquet(
         &self,
@@ -732,6 +732,7 @@ impl PyLazyFrame {
         credential_provider: Option<PyObject>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
+        metadata: Wrap<Option<KeyValueMetadata>>,
     ) -> PyResult<PyLazyFrame> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -740,6 +741,7 @@ impl PyLazyFrame {
             statistics: statistics.0,
             row_group_size,
             data_page_size,
+            key_value_metadata: metadata.0,
         };
 
         let cloud_options = {
