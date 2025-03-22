@@ -722,7 +722,9 @@ pub fn lower_ir(
         },
 
         #[cfg(feature = "python")]
-        IR::PythonScan { .. } => todo!(),
+        IR::PythonScan { options } => PhysNodeKind::PythonScan {
+            options: options.clone(),
+        },
 
         IR::Cache {
             input,

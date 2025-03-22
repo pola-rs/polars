@@ -3521,6 +3521,7 @@ dependencies = [
  "polars-parquet",
  "polars-plan",
  "polars-utils",
+ "pyo3",
  "rand",
  "rayon",
  "recursive",
