@@ -1,4 +1,4 @@
-use polars_core::prelude::PolarsResult;
+use polars_core::prelude::{AnyValue, PolarsResult};
 use polars_utils::pl_serialize;
 use recursive::recursive;
 
@@ -9,12 +9,15 @@ fn accept_as_io_predicate(e: &Expr) -> bool {
     const LIMIT: usize = 1 << 16;
     match e {
         Expr::Literal(lv) => match lv {
-            LiteralValue::Binary(v) => v.len() <= LIMIT,
-            LiteralValue::String(v) => v.len() <= LIMIT,
+            LiteralValue::Scalar(v) => match v.as_any_value() {
+                AnyValue::Binary(v) => v.len() <= LIMIT,
+                AnyValue::String(v) => v.len() <= LIMIT,
+                _ => true,
+            },
             LiteralValue::Series(s) => s.estimated_size() < LIMIT,
+
             // Don't accept dynamic types
-            LiteralValue::Int(_) => false,
-            LiteralValue::Float(_) => false,
+            LiteralValue::Dyn(_) => false,
             _ => true,
         },
         Expr::Wildcard | Expr::Column(_) => true,

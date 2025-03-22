@@ -252,7 +252,7 @@ def test_comp_incompatible_enum_dtype() -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match="conversion from `str` to `enum` failed in column 'literal'",
+        match="conversion from `str` to `enum` failed in column 'scalar'",
     ):
         df.with_columns(
             pl.when(pl.col("a") == "a").then(pl.col("a")).otherwise(pl.lit("c"))

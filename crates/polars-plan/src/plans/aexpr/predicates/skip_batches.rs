@@ -169,17 +169,16 @@ fn aexpr_to_skip_batch_predicate_rec(
         (null_count: $name:expr) => {{ col!(format_pl_smallstr!("{}_nc", $name)) }};
     }
     macro_rules! lv {
-        ($lv:expr) => {{ expr_arena.add(AExpr::Literal(LiteralValue::OtherScalar(Scalar::from($lv)))) }};
+        ($lv:expr) => {{ expr_arena.add(AExpr::Literal(Scalar::from($lv).into())) }};
         (idx: $lv:expr) => {{ expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize($lv))) }};
-        (bool: $lv:expr) => {{ expr_arena.add(AExpr::Literal(LiteralValue::Boolean($lv))) }};
     }
 
     let specialized = (|| {
         if let Some(Some(lv)) = constant_evaluate(e, expr_arena, schema, 0) {
             if let Some(av) = lv.to_any_value() {
                 return match av {
-                    AnyValue::Null => Some(lv!(bool: true)),
-                    AnyValue::Boolean(b) => Some(lv!(bool: !b)),
+                    AnyValue::Null => Some(lv!(true)),
+                    AnyValue::Boolean(b) => Some(lv!(!b)),
                     _ => None,
                 };
             }
@@ -216,7 +215,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                             lv, lv_node,
                             null: {
                                 if matches!(op, O::Eq) {
-                                    lv!(bool: false)
+                                    lv!(false)
                                 } else {
                                     let col_nc = col!(null_count: col);
                                     let idx_zero = lv!(idx: 0);
@@ -265,7 +264,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                             lv, lv_node,
                             null: {
                                 if matches!(op, O::NotEq) {
-                                    lv!(bool: false)
+                                    lv!(false)
                                 } else {
                                     let col_nc = col!(null_count: col);
                                     let len = col!(len);

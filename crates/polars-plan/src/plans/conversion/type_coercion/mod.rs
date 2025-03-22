@@ -4,7 +4,6 @@ mod functions;
 mod is_in;
 
 use binary::process_binary;
-use polars_compute::cast::temporal::{SECONDS_IN_DAY, time_unit_multiple};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
@@ -407,39 +406,15 @@ fn try_inline_literal_cast(
             let s = s.cast_with_options(dtype, options)?;
             LiteralValue::Series(SpecialEq::new(s))
         },
-        LiteralValue::StrCat(s) => {
-            let av = AnyValue::String(s).strict_cast(dtype);
-
-            match av {
-                None => return Ok(None),
-                Some(av) => av.into(),
-            }
-        },
-        // We generate cast literal datetimes, so ensure we cast upon conversion
-        // to create simpler expr trees.
-        #[cfg(feature = "dtype-datetime")]
-        LiteralValue::DateTime(ts, tu, None) if dtype.is_date() => {
-            let from_size = time_unit_multiple(tu.to_arrow()) * SECONDS_IN_DAY;
-            LiteralValue::Date((*ts / from_size) as i32)
-        },
-        lv @ (LiteralValue::Int(_) | LiteralValue::Float(_)) => {
-            let av = lv.to_any_value().ok_or_else(
-                || polars_err!(InvalidOperation: "literal value: {:?} too large for Polars", lv),
-            )?;
-            let av = av.strict_cast(dtype);
-
-            match av {
-                None => return Ok(None),
-                Some(av) => av.into(),
-            }
-        },
-        LiteralValue::Null => match dtype {
+        LiteralValue::Dyn(dyn_value) => dyn_value.clone().try_materialize_to_dtype(dtype)?.into(),
+        lv if lv.is_null() => match dtype {
             DataType::Unknown(UnknownKind::Float | UnknownKind::Int(_) | UnknownKind::Str) => {
-                LiteralValue::Null
+                LiteralValue::untyped_null()
             },
             _ => return Ok(None),
         },
-        _ => {
+        LiteralValue::Scalar(sc) => sc.clone().cast_with_options(dtype, options)?.into(),
+        lv => {
             let Some(av) = lv.to_any_value() else {
                 return Ok(None);
             };

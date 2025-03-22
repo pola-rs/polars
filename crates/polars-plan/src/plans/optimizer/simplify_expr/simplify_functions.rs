@@ -201,8 +201,8 @@ pub(super) fn optimize_functions(
                     ..
                 } => Some(expr_arena.get(input[0].node()).clone()),
                 // not(lit x) => !x
-                AExpr::Literal(LiteralValue::Boolean(b)) => {
-                    Some(AExpr::Literal(LiteralValue::Boolean(!b)))
+                AExpr::Literal(lv) if lv.bool().is_some() => {
+                    Some(AExpr::Literal(Scalar::from(!lv.bool().unwrap()).into()))
                 },
                 // not(x.is_null) => x.is_not_null
                 AExpr::Function {
