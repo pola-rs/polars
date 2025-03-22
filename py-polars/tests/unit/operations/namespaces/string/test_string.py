@@ -452,6 +452,14 @@ def test_str_to_integer() -> None:
         hex.str.to_integer(base=16)
 
 
+def test_whitespace_str_to_integer_12767() -> None:
+    num = pl.Series(["12", " 34 "])
+    assert_series_equal(num.str.to_integer(), pl.Series([12, 34]).cast(pl.Int64))
+
+    bin = pl.Series(["110", " 101"])
+    assert_series_equal(bin.str.to_integer(base=2), pl.Series([6, 5]).cast(pl.Int64))
+
+
 def test_str_to_integer_base_expr() -> None:
     df = pl.DataFrame(
         {"str": ["110", "ff00", "234", None, "130"], "base": [2, 16, 10, 8, None]}
