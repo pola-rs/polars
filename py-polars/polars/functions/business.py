@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 def business_day_count(
     start: date | IntoExprColumn,
     end: date | IntoExprColumn,
-    *,
     week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
     holidays: Iterable[date] = (),
 ) -> Expr:
