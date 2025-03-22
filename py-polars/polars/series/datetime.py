@@ -483,7 +483,6 @@ class DateTimeNameSpace:
     @unstable()
     def is_business_day(
         self,
-        *,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
         holidays: Iterable[dt.date] = (),
     ) -> Series:
