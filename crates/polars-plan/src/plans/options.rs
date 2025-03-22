@@ -107,6 +107,15 @@ pub enum CastingRules {
     /// Overflowing is not considered in this flag, that's handled in `strict` casting
     FirstArgLossless,
     Supertype(SuperTypeOptions),
+
+    /// Cast the second argument to the inner datatype of the first argument. This is only
+    /// applicable for functions on lists and arrays.
+    ArgToListSelfLossless,
+    /// Cast the inner datatype of  second argument to the datatype of the first argument. This is
+    /// only applicable for functions that accept a list or array as a second argument. This will
+    /// also account for the case where the second argument consists of flat values and implode
+    /// that to a list.
+    ListToSelfLossless,
 }
 
 impl CastingRules {

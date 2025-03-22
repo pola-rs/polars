@@ -403,6 +403,16 @@ impl DataType {
             (D::Array(from, l_width), D::Array(to, r_width)) => {
                 l_width == r_width && from.can_cast_to(to)?
             },
+
+            (D::List(..), dt) | (dt, D::List(..)) if !dt.is_nested() => false,
+            #[cfg(feature = "dtype-array")]
+            (D::Array(..), dt) | (dt, D::Array(..)) if !dt.is_nested() => false,
+
+            #[cfg(feature = "dtype-struct")]
+            (D::List(..), D::Struct(..)) | (D::Struct(..), D::List(..)) => false,
+            #[cfg(all(feature = "dtype-struct", feature = "dtype-array"))]
+            (D::Array(..), D::Struct(..)) | (D::Struct(..), D::Array(..)) => false,
+
             #[cfg(feature = "dtype-struct")]
             (D::Struct(l_fields), D::Struct(r_fields)) => {
                 if l_fields.is_empty() {
@@ -881,6 +891,19 @@ impl DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().all(|fld| fld.dtype.is_nested_null()),
             _ => false,
+        }
+    }
+
+    /// Return how deeply nested the list is.
+    /// 0 is no nesting (no list type),
+    /// 1 is [T]
+    /// 2 is [[T]]
+    /// etc
+    pub fn nested_level_list(&self) -> u32 {
+        if let DataType::List(inner) = self {
+            1 + inner.nested_level_list()
+        } else {
+            0
         }
     }
 
