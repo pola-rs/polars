@@ -5,6 +5,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from polars._utils.parse import parse_into_expression
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -17,14 +18,20 @@ if TYPE_CHECKING:
     from polars._typing import IntoExprColumn
 
 
+@unstable()
 def business_day_count(
     start: date | IntoExprColumn,
     end: date | IntoExprColumn,
+    *,
     week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
     holidays: Iterable[date] = (),
 ) -> Expr:
     """
     Count the number of business days between `start` and `end` (not including `end`).
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     Parameters
     ----------

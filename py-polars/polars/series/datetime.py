@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_function
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -37,15 +38,21 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         return s[item]
 
+    @unstable()
     def add_business_days(
         self,
         n: int | IntoExpr,
+        *,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
         holidays: Iterable[dt.date] = (),
         roll: Roll = "raise",
     ) -> Series:
         """
         Offset by `n` business days.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -474,6 +481,7 @@ class DateTimeNameSpace:
         ]
         """
 
+    @unstable()
     def is_business_day(
         self,
         *,
@@ -482,6 +490,10 @@ class DateTimeNameSpace:
     ) -> Series:
         """
         Determine whether each day lands on a business day.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------

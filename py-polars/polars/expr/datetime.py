@@ -8,6 +8,7 @@ from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
@@ -34,16 +35,22 @@ class ExprDateTimeNameSpace:
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
+    @unstable()
     @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.12.0")
     def add_business_days(
         self,
         n: int | IntoExpr,
+        *,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
         holidays: Iterable[dt.date] = (),
         roll: Roll = "raise",
     ) -> Expr:
         """
         Offset by `n` business days.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -885,6 +892,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_year())
 
+    @unstable()
     def is_business_day(
         self,
         *,
@@ -893,6 +901,10 @@ class ExprDateTimeNameSpace:
     ) -> Expr:
         """
         Determine whether each day lands on a business day.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
