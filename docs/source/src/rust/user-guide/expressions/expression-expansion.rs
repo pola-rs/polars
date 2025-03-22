@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_column(
             (cols(["price", "day_high", "day_low", "year_high", "year_low"]) / lit(eur_usd_rate))
-                .round(2),
+                .round(2, RoundMode::default()),
         )
         .collect()?;
     println!("{}", result);
@@ -32,11 +32,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:expression-list]
     let exprs = [
-        (col("price") / lit(eur_usd_rate)).round(2),
-        (col("day_high") / lit(eur_usd_rate)).round(2),
-        (col("day_low") / lit(eur_usd_rate)).round(2),
-        (col("year_high") / lit(eur_usd_rate)).round(2),
-        (col("year_low") / lit(eur_usd_rate)).round(2),
+        (col("price") / lit(eur_usd_rate)).round(2, RoundMode::default()),
+        (col("day_high") / lit(eur_usd_rate)).round(2, RoundMode::default()),
+        (col("day_low") / lit(eur_usd_rate)).round(2, RoundMode::default()),
+        (col("year_high") / lit(eur_usd_rate)).round(2, RoundMode::default()),
+        (col("year_low") / lit(eur_usd_rate)).round(2, RoundMode::default()),
     ];
 
     let result2 = df.clone().lazy().with_columns(exprs).collect()?;
@@ -47,7 +47,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = df
         .clone()
         .lazy()
-        .with_column((dtype_col(&DataType::Float64) / lit(eur_usd_rate)).round(2))
+        .with_column(
+            (dtype_col(&DataType::Float64) / lit(eur_usd_rate)).round(2, RoundMode::default()),
+        )
         .collect()?;
     println!("{}", result);
     // --8<-- [end:col-with-dtype]
@@ -57,7 +59,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .with_column(
-            (dtype_cols([DataType::Float32, DataType::Float64]) / lit(eur_usd_rate)).round(2),
+            (dtype_cols([DataType::Float32, DataType::Float64]) / lit(eur_usd_rate))
+                .round(2, RoundMode::default()),
         )
         .collect()?;
     println!("{}", result.equals(&result2));
