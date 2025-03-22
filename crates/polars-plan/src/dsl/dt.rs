@@ -85,6 +85,16 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Year))
     }
 
+    /// Determine whether days are business days.
+    #[cfg(feature = "business")]
+    pub fn is_business_day(self, week_mask: [bool; 7], holidays: Vec<i32>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::Business(BusinessFunction::IsBusinessDay {
+                week_mask,
+                holidays,
+            }))
+    }
+
     // Compute whether the year of a Date/Datetime is a leap year.
     pub fn is_leap_year(self) -> Expr {
         self.0

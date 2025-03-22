@@ -142,6 +142,13 @@ impl PyExpr {
     fn dt_year(&self) -> Self {
         self.inner.clone().dt().year().into()
     }
+    fn dt_is_business_day(&self, week_mask: [bool; 7], holidays: Vec<i32>) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .is_business_day(week_mask, holidays)
+            .into()
+    }
     fn dt_is_leap_year(&self) -> Self {
         self.inner.clone().dt().is_leap_year().into()
     }
