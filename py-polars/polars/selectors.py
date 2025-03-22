@@ -1850,7 +1850,7 @@ def exclude(
         | Collection[str | PolarsDataType | SelectorType | Expr]
     ),
     *more_columns: str | PolarsDataType | SelectorType | Expr,
-) -> Expr:
+) -> SelectorType:
     """
     Select all columns except those matching the given columns, datatypes, or selectors.
 
