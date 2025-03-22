@@ -86,6 +86,7 @@ features = [
   "array_arithmetic",
   "array_to_struct",
   "log",
+  "mermaid_diagram",
   "mode",
   "moment",
   "ndarray",

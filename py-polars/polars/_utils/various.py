@@ -702,3 +702,55 @@ def display_dot_graph(
         plt.imshow(img)
         plt.show()
         return None
+
+
+def display_mermaid_graph(
+    *,
+    mermaid: str,
+    show: bool = True,
+    output_path: str | Path | None = None,
+    raw_output: bool = False,
+) -> str | None:
+    if raw_output:
+        return mermaid
+
+    # Make font monospace
+    mermaid += r'%%{init: {"fontFamily": "monospace"}}%%' + "\n"
+
+    if output_path:
+        output_path = Path(output_path)
+        try:
+            subprocess.check_output(
+                [
+                    "mmdc",
+                    "--output",
+                    output_path,
+                    "--outputFormat",
+                    output_path.suffix[1:],
+                    "--input",
+                    "-",
+                ],
+                input=f"{mermaid}".encode(),
+            )
+
+        except (ImportError, FileNotFoundError):
+            msg = (
+                "The mermaid-cli `mmdc` binary should be on your PATH. "
+                "(If not installed you can download here: https://github.com/mermaid-js/mermaid-cli)"
+            )
+
+            raise ImportError(msg) from None
+        except subprocess.CalledProcessError as e:
+            msg = "Error while calling `mmdc` ensure that your file extension is one of `mmdc`'s supported output types."
+            raise ValueError(msg) from e
+
+    if not show:
+        return None
+
+    if not _in_notebook():
+        msg = "This function is only available in Jupyter notebooks."
+        raise OSError(msg)
+
+    from IPython.display import Markdown, display
+
+    return display(Markdown(f"```mermaid\n{mermaid}\n```"))
