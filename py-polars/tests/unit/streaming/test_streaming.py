@@ -415,3 +415,10 @@ def test_i128_sum_reduction() -> None:
         .item()
         == 6
     )
+
+
+def test_streaming_flag_21799() -> None:
+    with pytest.raises(DeprecationWarning):
+        pl.LazyFrame({"a": 1}).collect(streaming=False)  # type: ignore[call-overload]
+    with pytest.raises(DeprecationWarning):
+        pl.LazyFrame({"a": 1}).collect(streaming=True)  # type: ignore[call-overload]

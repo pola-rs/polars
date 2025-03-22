@@ -29,4 +29,5 @@ impl_from! {
     (f32, Float32, Float32)
     (f64, Float64, Float64)
     (PlSmallStr, StringOwned, String)
+    (Vec<u8>, BinaryOwned, Binary)
 }

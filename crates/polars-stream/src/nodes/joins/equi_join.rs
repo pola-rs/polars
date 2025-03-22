@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock};
 
 use arrow::array::builder::ShareStrategy;
@@ -132,7 +132,7 @@ async fn select_keys(
     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
     Ok(HashKeys::from_df(
         &keys,
-        params.random_state.clone(),
+        params.random_state,
         params.args.nulls_equal,
         false,
     ))
@@ -341,8 +341,8 @@ impl SampleState {
     fn try_transition_to_build(
         &mut self,
         recv: &[PortState],
-        num_pipelines: usize,
         params: &mut EquiJoinParams,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<Option<BuildState>> {
         let left_saturated = self.left_len >= *SAMPLE_LIMIT;
         let right_saturated = self.right_len >= *SAMPLE_LIMIT;
@@ -364,18 +364,17 @@ impl SampleState {
         }
 
         let estimate_cardinalities = || {
-            let execution_state = ExecutionState::new();
             let left_cardinality = estimate_cardinality(
                 &self.left,
                 &params.left_key_selectors,
                 params,
-                &execution_state,
+                &state.in_memory_exec_state,
             )?;
             let right_cardinality = estimate_cardinality(
                 &self.right,
                 &params.right_key_selectors,
                 params,
-                &execution_state,
+                &state.in_memory_exec_state,
             )?;
             if config::verbose() {
                 eprintln!(
@@ -419,16 +418,19 @@ impl SampleState {
             core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
         }
 
-        let partitioner = HashPartitioner::new(num_pipelines, 0);
-        let mut build_state = BuildState::new(num_pipelines, num_pipelines, sampled_probe_morsels);
+        let partitioner = HashPartitioner::new(state.num_pipelines, 0);
+        let mut build_state = BuildState::new(
+            state.num_pipelines,
+            state.num_pipelines,
+            sampled_probe_morsels,
+        );
 
         // Simulate the sample build morsels flowing into the build side.
         if !sampled_build_morsels.is_empty() {
-            let state = ExecutionState::new();
             crate::async_executor::task_scope(|scope| {
                 let mut join_handles = Vec::new();
                 let receivers = sampled_build_morsels
-                    .reinsert(num_pipelines, None, scope, &mut join_handles)
+                    .reinsert(state.num_pipelines, None, scope, &mut join_handles)
                     .unwrap();
 
                 for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers) {
@@ -439,7 +441,7 @@ impl SampleState {
                             local_builder,
                             partitioner.clone(),
                             params,
-                            &state,
+                            state,
                         ),
                     ));
                 }
@@ -503,7 +505,7 @@ impl BuildState {
         local: &mut LocalBuilder,
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
-        state: &ExecutionState,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         let track_unmatchable = params.emit_unmatched_build();
         let (key_selectors, payload_selector);
@@ -518,7 +520,13 @@ impl BuildState {
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later gathers.
-            let hash_keys = select_keys(morsel.df(), key_selectors, params, state).await?;
+            let hash_keys = select_keys(
+                morsel.df(),
+                key_selectors,
+                params,
+                &state.in_memory_exec_state,
+            )
+            .await?;
             let mut payload = select_payload(morsel.df().clone(), payload_selector);
             payload.rechunk_mut();
 
@@ -631,6 +639,7 @@ impl BuildState {
             table_per_partition: probe_tables.try_assume_init().ok().unwrap(),
             max_seq_sent: MorselSeq::default(),
             sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
+            unordered_morsel_seq: AtomicU64::new(0),
         }
     }
 
@@ -757,6 +766,7 @@ impl BuildState {
             table_per_partition: probe_tables.try_assume_init().ok().unwrap(),
             max_seq_sent: MorselSeq::default(),
             sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
+            unordered_morsel_seq: AtomicU64::new(0),
         }
     }
 }
@@ -771,6 +781,9 @@ struct ProbeState {
     table_per_partition: Vec<ProbeTable>,
     max_seq_sent: MorselSeq,
     sampled_probe_morsels: BufferedStream,
+
+    // For unordered joins we relabel output morsels to speed up the linearizer.
+    unordered_morsel_seq: AtomicU64,
 }
 
 impl ProbeState {
@@ -779,9 +792,10 @@ impl ProbeState {
         mut recv: Receiver<Morsel>,
         mut send: Sender<Morsel>,
         partitions: &[ProbeTable],
+        unordered_morsel_seq: &AtomicU64,
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
-        state: &ExecutionState,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<MorselSeq> {
         // TODO: shuffle after partitioning and keep probe tables thread-local.
         let mut partition_idxs = vec![Vec::new(); partitioner.num_partitions()];
@@ -813,42 +827,50 @@ impl ProbeState {
 
         // A simple estimate used to size reserves.
         let mut selectivity_estimate = 1.0;
+        let mut selectivity_estimate_confidence = 0.0;
 
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload.
-            let (df, seq, src_token, wait_token) = morsel.into_inner();
-            max_seq = seq;
+            let (df, in_seq, src_token, wait_token) = morsel.into_inner();
 
             let df_height = df.height();
             if df_height == 0 {
                 continue;
             }
 
-            let hash_keys = select_keys(&df, key_selectors, params, state).await?;
+            let hash_keys =
+                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
             let mut payload = select_payload(df, payload_selector);
             let mut payload_rechunked = false; // We don't eagerly rechunk because there might be no matches.
             let mut total_matches = 0;
 
             // Use selectivity estimate to reserve for morsel builders.
-            let max_match_per_key_est = selectivity_estimate as usize + 16;
+            let max_match_per_key_est = (selectivity_estimate * 1.2) as usize + 16;
             let out_est_size = ((selectivity_estimate * 1.2 * df_height as f64) as usize)
                 .min(probe_limit as usize);
             build_out.reserve(out_est_size + max_match_per_key_est);
 
             unsafe {
-                let new_morsel = |build: &mut DataFrameBuilder, probe: &mut DataFrameBuilder| {
-                    let mut build_df = build.freeze_reset();
-                    let mut probe_df = probe.freeze_reset();
-                    let out_df = if params.left_is_build.unwrap() {
-                        build_df.hstack_mut_unchecked(probe_df.get_columns());
-                        build_df
-                    } else {
-                        probe_df.hstack_mut_unchecked(build_df.get_columns());
-                        probe_df
+                let mut new_morsel =
+                    |build: &mut DataFrameBuilder, probe: &mut DataFrameBuilder| {
+                        let mut build_df = build.freeze_reset();
+                        let mut probe_df = probe.freeze_reset();
+                        let out_df = if params.left_is_build.unwrap() {
+                            build_df.hstack_mut_unchecked(probe_df.get_columns());
+                            build_df
+                        } else {
+                            probe_df.hstack_mut_unchecked(build_df.get_columns());
+                            probe_df
+                        };
+                        let out_df = postprocess_join(out_df, params);
+                        let out_seq = if params.preserve_order_probe {
+                            in_seq
+                        } else {
+                            MorselSeq::new(unordered_morsel_seq.fetch_add(1, Ordering::Relaxed))
+                        };
+                        max_seq = out_seq;
+                        Morsel::new(out_df, out_seq, src_token.clone())
                     };
-                    let out_df = postprocess_join(out_df, params);
-                    Morsel::new(out_df, seq, src_token.clone())
-                };
 
                 if params.preserve_order_probe {
                     // To preserve the order we can't do bulk probes per partition and must follow
@@ -911,6 +933,7 @@ impl ProbeState {
                                     &probe_match,
                                     ShareStrategy::Always,
                                 );
+                                let out_len = probe_match.len();
                                 probe_match.clear();
                                 let out_morsel = new_morsel(&mut build_out, &mut probe_out);
                                 if send.send(out_morsel).await.is_err() {
@@ -919,7 +942,8 @@ impl ProbeState {
                                 if probe_group_end != probe_partitions.len() {
                                     // We had enough matches to need a mid-partition flush, let's assume there are a lot of
                                     // matches and just do a large reserve.
-                                    build_out.reserve(probe_limit as usize + max_match_per_key_est);
+                                    let old_est = probe_limit as usize + max_match_per_key_est;
+                                    build_out.reserve(old_est.max(out_len + 16));
                                 }
                             }
                         }
@@ -980,6 +1004,7 @@ impl ProbeState {
                                     &probe_match,
                                     ShareStrategy::Always,
                                 );
+                                let out_len = probe_match.len();
                                 probe_match.clear();
                                 let out_morsel = new_morsel(&mut build_out, &mut probe_out);
                                 if send.send(out_morsel).await.is_err() {
@@ -987,7 +1012,8 @@ impl ProbeState {
                                 }
                                 // We had enough matches to need a mid-partition flush, let's assume there are a lot of
                                 // matches and just do a large reserve.
-                                build_out.reserve(probe_limit as usize + max_match_per_key_est);
+                                let old_est = probe_limit as usize + max_match_per_key_est;
+                                build_out.reserve(old_est.max(out_len + 16));
                             }
                         }
                     }
@@ -1008,9 +1034,12 @@ impl ProbeState {
 
             drop(wait_token);
 
-            // Move selectivity estimate a bit towards latest value.
-            selectivity_estimate =
-                0.8 * selectivity_estimate + 0.2 * (total_matches as f64 / df_height as f64);
+            // Move selectivity estimate a bit towards latest value. Allows rapid changes at first.
+            // TODO: implement something more re-usable and robust.
+            selectivity_estimate = selectivity_estimate_confidence * selectivity_estimate
+                + (1.0 - selectivity_estimate_confidence)
+                    * (total_matches as f64 / df_height as f64);
+            selectivity_estimate_confidence = (selectivity_estimate_confidence + 0.1).min(0.8);
         }
 
         Ok(max_seq)
@@ -1218,7 +1247,6 @@ impl EquiJoinParams {
 pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
-    num_pipelines: usize,
     table: Box<dyn IdxTable>,
 }
 
@@ -1283,7 +1311,6 @@ impl EquiJoinNode {
             Arc::new(select_schema(&right_input_schema, &right_payload_select));
         Ok(Self {
             state,
-            num_pipelines,
             params: EquiJoinParams {
                 left_is_build,
                 preserve_order_build,
@@ -1297,7 +1324,7 @@ impl EquiJoinNode {
                 left_payload_schema,
                 right_payload_schema,
                 args,
-                random_state: PlRandomState::new(),
+                random_state: PlRandomState::default(),
             },
             table: new_idx_table(unique_key_schema),
         })
@@ -1309,11 +1336,12 @@ impl ComputeNode for EquiJoinNode {
         "equi_join"
     }
 
-    fn initialize(&mut self, num_pipelines: usize) {
-        assert!(num_pipelines == self.num_pipelines);
-    }
-
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(recv.len() == 2 && send.len() == 1);
 
         // If the output doesn't want any more data, transition to being done.
@@ -1324,7 +1352,7 @@ impl ComputeNode for EquiJoinNode {
         // If we are sampling and both sides are done/filled, transition to building.
         if let EquiJoinState::Sample(sample_state) = &mut self.state {
             if let Some(build_state) =
-                sample_state.try_transition_to_build(recv, self.num_pipelines, &mut self.params)?
+                sample_state.try_transition_to_build(recv, &mut self.params, state)?
             {
                 self.state = EquiJoinState::Build(build_state);
             }
@@ -1357,11 +1385,10 @@ impl ComputeNode for EquiJoinNode {
                 if self.params.emit_unmatched_build() {
                     if self.params.preserve_order_build {
                         let unmatched = probe_state.ordered_unmatched(&self.params);
-                        let mut src = InMemorySourceNode::new(
+                        let src = InMemorySourceNode::new(
                             Arc::new(unmatched),
                             probe_state.max_seq_sent.successor(),
                         );
-                        src.initialize(self.num_pipelines);
                         self.state = EquiJoinState::EmitUnmatchedBuildInOrder(src);
                     } else {
                         self.state = EquiJoinState::EmitUnmatchedBuild(EmitUnmatchedState {
@@ -1432,7 +1459,7 @@ impl ComputeNode for EquiJoinNode {
             EquiJoinState::EmitUnmatchedBuildInOrder(src_node) => {
                 recv[build_idx] = PortState::Done;
                 recv[probe_idx] = PortState::Done;
-                src_node.update_state(&mut [], &mut send[0..1])?;
+                src_node.update_state(&mut [], &mut send[0..1], state)?;
                 if send[0] == PortState::Done {
                     self.state = EquiJoinState::Done;
                 }
@@ -1458,7 +1485,7 @@ impl ComputeNode for EquiJoinNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 2);
@@ -1515,7 +1542,7 @@ impl ComputeNode for EquiJoinNode {
                 assert!(recv_ports[probe_idx].is_none());
                 let receivers = recv_ports[build_idx].take().unwrap().parallel();
 
-                let partitioner = HashPartitioner::new(self.num_pipelines, 0);
+                let partitioner = HashPartitioner::new(state.num_pipelines, 0);
                 for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers) {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
@@ -1535,14 +1562,14 @@ impl ComputeNode for EquiJoinNode {
                 let receivers = probe_state
                     .sampled_probe_morsels
                     .reinsert(
-                        self.num_pipelines,
+                        state.num_pipelines,
                         recv_ports[probe_idx].take(),
                         scope,
                         join_handles,
                     )
                     .unwrap();
 
-                let partitioner = HashPartitioner::new(self.num_pipelines, 0);
+                let partitioner = HashPartitioner::new(state.num_pipelines, 0);
                 let probe_tasks = receivers
                     .into_iter()
                     .zip(senders)
@@ -1553,6 +1580,7 @@ impl ComputeNode for EquiJoinNode {
                                 recv,
                                 send,
                                 &probe_state.table_per_partition,
+                                &probe_state.unordered_morsel_seq,
                                 partitioner.clone(),
                                 &self.params,
                                 state,
@@ -1575,7 +1603,7 @@ impl ComputeNode for EquiJoinNode {
                 let send = send_ports[0].take().unwrap().serial();
                 join_handles.push(scope.spawn_task(
                     TaskPriority::Low,
-                    emit_state.emit_unmatched(send, &self.params, self.num_pipelines),
+                    emit_state.emit_unmatched(send, &self.params, state.num_pipelines),
                 ));
             },
             EquiJoinState::EmitUnmatchedBuildInOrder(src_node) => {

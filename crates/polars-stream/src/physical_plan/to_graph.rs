@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use polars_core::POOL;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
 use polars_expr::reduce::into_reduction;
@@ -22,11 +22,14 @@ use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
+use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
-use crate::morsel::MorselSeq;
+use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
 use crate::nodes::io_sinks::SinkComputeNode;
+use crate::nodes::io_sources::SourceComputeNode;
+use crate::nodes::io_sources::batch::BatchSourceNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -328,6 +331,22 @@ fn to_graph_rec<'a>(
                             path_f_string.clone(),
                             create_new,
                             sink_options.clone(),
+                        ),
+                    ),
+                    [(input_key, input.port)],
+                ),
+                PartitionVariantIR::Parted {
+                    key_exprs,
+                    include_key,
+                } => ctx.graph.add_node(
+                    SinkComputeNode::from(
+                        nodes::io_sinks::partition::parted::PartedPartitionSinkNode::new(
+                            input_schema,
+                            key_exprs.iter().map(|e| e.output_name().clone()).collect(),
+                            path_f_string.clone(),
+                            create_new,
+                            sink_options.clone(),
+                            *include_key,
                         ),
                     ),
                     [(input_key, input.port)],
@@ -744,7 +763,7 @@ fn to_graph_rec<'a>(
                     grouped_reductions,
                     grouper,
                     node.output_schema.clone(),
-                    PlRandomState::new(),
+                    PlRandomState::default(),
                 ),
                 [(input_key, input.port)],
             )
@@ -889,6 +908,144 @@ fn to_graph_rec<'a>(
                     (left_input_key, input_left.port),
                     (right_input_key, input_right.port),
                 ],
+            )
+        },
+
+        #[cfg(feature = "python")]
+        PythonScan { options } => {
+            use polars_plan::dsl::python_dsl::PythonScanSource as S;
+            use polars_plan::plans::PythonPredicate;
+            use pyo3::exceptions::PyStopIteration;
+            use pyo3::prelude::*;
+            use pyo3::types::{PyBytes, PyNone};
+            use pyo3::{IntoPyObjectExt, PyTypeInfo, intern};
+
+            let mut options = options.clone();
+            let with_columns = options.with_columns.take();
+            let n_rows = options.n_rows.take();
+
+            let python_scan_function = options.scan_fn.take().unwrap().0;
+
+            let with_columns = with_columns.map(|cols| cols.iter().cloned().collect::<Vec<_>>());
+
+            let (pl_predicate, predicate_serialized) = polars_mem_engine::python_scan_predicate(
+                &mut options,
+                ctx.expr_arena,
+                &mut ctx.expr_conversion_state,
+            )?;
+
+            let output_schema = options.output_schema.unwrap_or(options.schema);
+            let validate_schema = options.validate_schema;
+
+            let (name, get_batch_fn) = match options.python_source {
+                S::Pyarrow => todo!(),
+                S::Cuda => todo!(),
+                S::IOPlugin => {
+                    let batch_size = Some(get_ideal_morsel_size());
+                    let output_schema = output_schema.clone();
+
+                    let with_columns = with_columns.map(|x| {
+                        x.into_iter()
+                            .map(|x| x.to_string())
+                            .collect::<Vec<String>>()
+                    });
+
+                    // Setup the IO plugin generator.
+                    let (generator, can_parse_predicate) = {
+                        Python::with_gil(|py| {
+                            let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
+                            let utils = pl.getattr(intern!(py, "_utils")).unwrap();
+                            let callable =
+                                utils.getattr(intern!(py, "_execute_from_rust")).unwrap();
+
+                            let mut could_serialize_predicate = true;
+                            let predicate = match &options.predicate {
+                                PythonPredicate::PyArrow(s) => s.into_bound_py_any(py).unwrap(),
+                                PythonPredicate::None => None::<()>.into_bound_py_any(py).unwrap(),
+                                PythonPredicate::Polars(_) => {
+                                    assert!(pl_predicate.is_some(), "should be set");
+                                    match &predicate_serialized {
+                                        None => {
+                                            could_serialize_predicate = false;
+                                            PyNone::get(py).to_owned().into_any()
+                                        },
+                                        Some(buf) => PyBytes::new(py, buf).into_any(),
+                                    }
+                                },
+                            };
+
+                            let args = (
+                                python_scan_function,
+                                with_columns,
+                                predicate,
+                                n_rows,
+                                batch_size,
+                            );
+
+                            let generator_init =
+                                callable.call1(args).map_err(polars_error::to_compute_err)?;
+                            let generator = generator_init.get_item(0).map_err(
+                                |_| polars_err!(ComputeError: "expected tuple got {generator_init}"),
+                            )?;
+                            let can_parse_predicate = generator_init.get_item(1).map_err(
+                                |_| polars_err!(ComputeError: "expected tuple got {generator}"),
+                            )?;
+                            let can_parse_predicate = can_parse_predicate.extract::<bool>().map_err(
+                                |_| polars_err!(ComputeError: "expected bool got {can_parse_predicate}"),
+                            )? && could_serialize_predicate;
+
+                            let generator = generator.into_py_any(py).map_err(
+                                |_| polars_err!(ComputeError: "unable to grab reference to IO plugin generator"),
+                            )?;
+
+                            PolarsResult::Ok((generator, can_parse_predicate))
+                        })
+                    }?;
+
+                    let get_batch_fn = Box::new(move |state: &StreamingExecutionState| {
+                        Python::with_gil(|py| {
+                            match generator.bind(py).call_method0(intern!(py, "__next__")) {
+                                Ok(out) => {
+                                    let mut df = polars_plan::plans::python_df_to_rust(py, out)?;
+                                    if let (Some(pred), false) =
+                                        (&pl_predicate, can_parse_predicate)
+                                    {
+                                        let mask =
+                                            pred.evaluate(&df, &state.in_memory_exec_state)?;
+                                        df = df.filter(mask.bool()?)?;
+                                    }
+                                    if validate_schema {
+                                        polars_ensure!(
+                                            df.schema() == &output_schema,
+                                            SchemaMismatch: "user provided schema: {:?} doesn't match the DataFrame schema: {:?}",
+                                            output_schema, df.schema()
+                                        );
+                                    }
+                                    Ok(Some(df))
+                                },
+                                Err(err)
+                                    if err.matches(py, PyStopIteration::type_object(py))? =>
+                                {
+                                    Ok(None)
+                                },
+                                Err(err) => polars_bail!(
+                                    ComputeError: "caught exception during execution of a Python source, exception: {err}"
+                                ),
+                            }
+                        })
+                    }) as Box<_>;
+
+                    ("io_plugin", get_batch_fn)
+                },
+            };
+
+            ctx.graph.add_node(
+                SourceComputeNode::new(BatchSourceNode::new(
+                    name,
+                    output_schema,
+                    Some(get_batch_fn),
+                )),
+                [],
             )
         },
     };

@@ -90,20 +90,19 @@ impl SourceNode for CsvSourceNode {
 
     fn spawn_source(
         &mut self,
-        num_pipelines: usize,
         mut output_recv: Receiver<SourceOutput>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
-        let (mut send_to, recv_from) = (0..num_pipelines)
+        let (mut send_to, recv_from) = (0..state.num_pipelines)
             .map(|_| connector::<MorselOutput>())
             .collect::<(Vec<_>, Vec<_>)>();
 
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_right());
 
         let (line_batch_receivers, chunk_reader, line_batch_source_task_handle) =
-            self.init_line_batch_source(num_pipelines, unrestricted_row_count);
+            self.init_line_batch_source(state.num_pipelines, unrestricted_row_count);
 
         join_handles.extend(line_batch_receivers.into_iter().zip(recv_from).map(
             |(mut line_batch_rx, mut recv_from)| {
@@ -195,7 +194,7 @@ impl CsvSourceNode {
         let verbose = self.verbose;
 
         let (mut line_batch_sender, line_batch_receivers) =
-            distributor_channel(num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+            distributor_channel(num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
         let scan_source = self.scan_source.clone();
         let run_async = matches!(&scan_source, ScanSource::Path(p) if polars_io::is_cloud_url(p) || config::force_async());
@@ -537,7 +536,7 @@ impl ChunkReader {
                     polars_bail!(ComputeError: msg)
                 };
 
-                df.with_row_index_mut(ri.name.clone(), Some(offset as IdxSize));
+                unsafe { df.with_row_index_mut(ri.name.clone(), Some(offset as IdxSize)) };
             }
 
             Ok(df)

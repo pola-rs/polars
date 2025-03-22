@@ -10,6 +10,7 @@ use polars_ops::series::SearchSortedSide;
 use polars_plan::dsl::function_expr::rolling::RollingFunction;
 use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
 use polars_plan::dsl::{BooleanFunction, StringFunction, TemporalFunction};
+use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{
     AExpr, FunctionExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PowFunction,
     WindowMapping, WindowType,
@@ -543,96 +544,24 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         }
         .into_py_any(py),
         AExpr::Literal(lit) => {
-            use LiteralValue::*;
             let dtype: PyObject = Wrap(lit.get_datatype()).into_py_any(py)?;
-            match lit {
-                Float(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
+            let py_value = match lit {
+                LiteralValue::Dyn(d) => match d {
+                    DynLiteralValue::Int(v) => v.into_py_any(py)?,
+                    DynLiteralValue::Float(v) => v.into_py_any(py)?,
+                    DynLiteralValue::Str(v) => v.into_py_any(py)?,
+                    DynLiteralValue::List(_) => todo!(),
                 },
-                Float32(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
+                LiteralValue::Scalar(sc) => Wrap(sc.as_any_value()).into_py_any(py)?,
+                LiteralValue::Range(_) => {
+                    return Err(PyNotImplementedError::new_err("range literal"));
                 },
-                Float64(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                Int(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                Int8(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                Int16(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                Int32(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                Int64(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                Int128(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                UInt8(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                UInt16(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                UInt32(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                UInt64(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                Boolean(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                StrCat(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                String(v) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                Null => Literal {
-                    value: py.None(),
-                    dtype,
-                },
-                Binary(_) => return Err(PyNotImplementedError::new_err("binary literal")),
-                Range { .. } => return Err(PyNotImplementedError::new_err("range literal")),
-                OtherScalar { .. } => return Err(PyNotImplementedError::new_err("scalar literal")),
-                Date(..) | DateTime(..) | Decimal(..) => Literal {
-                    value: Wrap(lit.to_any_value().unwrap()).into_py_any(py)?,
-                    dtype,
-                },
-                Duration(v, _) => Literal {
-                    value: v.into_py_any(py)?,
-                    dtype,
-                },
-                Time(ns) => Literal {
-                    value: ns.into_py_any(py)?,
-                    dtype,
-                },
-                Series(s) => Literal {
-                    value: PySeries::new((**s).clone()).into_py_any(py)?,
-                    dtype,
-                },
+                LiteralValue::Series(s) => PySeries::new((**s).clone()).into_py_any(py)?,
+            };
+
+            Literal {
+                value: py_value,
+                dtype,
             }
         }
         .into_py_any(py),

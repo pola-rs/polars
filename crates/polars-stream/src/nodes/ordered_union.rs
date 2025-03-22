@@ -23,7 +23,12 @@ impl ComputeNode for OrderedUnionNode {
         "ordered_union"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(self.cur_input_idx <= recv.len() && send.len() == 1);
 
         // Skip inputs that are done.
@@ -54,7 +59,7 @@ impl ComputeNode for OrderedUnionNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         let ready_count = recv_ports.iter().filter(|r| r.is_some()).count();

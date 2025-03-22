@@ -8,7 +8,6 @@ use polars_core::config;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
 use polars_plan::dsl::SinkOptions;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
@@ -17,6 +16,7 @@ use super::CreateNewSinkFn;
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
+use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode};
 use crate::nodes::{JoinHandle, Morsel, PhaseOutcome, TaskPriority};
@@ -82,9 +82,8 @@ impl SinkNode for MaxSizePartitionSinkNode {
 
     fn spawn_sink(
         &mut self,
-        num_pipelines: usize,
         mut recv_port_recv: Receiver<(PhaseOutcome, SinkInputPort)>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         // Main Task -> Retire Tasks
@@ -96,6 +95,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
         // Main Task.
         //
         // Takes the morsels coming in and passes them to underlying sink.
+        let state = state.clone();
         let input_schema = self.input_schema.clone();
         let max_size = self.max_size;
         let path_f_string = self.path_f_string.clone();
@@ -136,9 +136,9 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                     &create_new,
                                     &format_args,
                                     input_schema.clone(),
-                                    num_pipelines,
                                     "max-size",
                                     verbose,
+                                    &state,
                                 )
                                 .await?;
                                 let Some((join_handles, sender)) = result else {

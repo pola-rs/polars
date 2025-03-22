@@ -788,7 +788,7 @@ impl PyLazyFrame {
         &self,
         py: Python,
         target: SinkTarget,
-        compression: Option<Wrap<IpcCompression>>,
+        compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
@@ -796,7 +796,7 @@ impl PyLazyFrame {
         sink_options: Wrap<SinkOptions>,
     ) -> PyResult<PyLazyFrame> {
         let options = IpcWriterOptions {
-            compression: compression.map(|c| c.0),
+            compression: compression.0,
             compat_level: compat_level.0,
             ..Default::default()
         };

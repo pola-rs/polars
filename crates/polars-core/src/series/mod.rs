@@ -107,7 +107,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// [ChunkCompareIneq trait](crate::chunked_array::ops::ChunkCompareIneq).
 ///
 /// ## Iterators
-/// The Series variants contain differently typed [ChunkedArray](crate::chunked_array::ChunkedArray)s.
+/// The Series variants contain differently typed [ChunkedArray]s.
 /// These structs can be turned into iterators, making it possible to use any function/ closure you want
 /// on a Series.
 ///
@@ -156,7 +156,7 @@ impl Eq for Wrap<Series> {}
 
 impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let rs = PlRandomState::with_seeds(0, 0, 0, 0);
+        let rs = PlSeedableRandomStateQuality::fixed();
         let mut h = vec![];
         if self.0.vec_hash(rs, &mut h).is_ok() {
             let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));

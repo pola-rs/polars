@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
@@ -5,7 +7,6 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
 
 use super::{
     ComputeNode, JoinHandle, Morsel, PhaseOutcome, PortState, RecvPort, SendPort, TaskScope,
@@ -15,6 +16,7 @@ use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::distributor_channel;
 use crate::async_primitives::linearizer::{Inserter, Linearizer};
 use crate::async_primitives::wait_group::WaitGroup;
+use crate::execute::StreamingExecutionState;
 use crate::nodes::TaskPriority;
 
 #[cfg(feature = "csv")]
@@ -28,8 +30,17 @@ pub mod parquet;
 pub mod partition;
 
 // This needs to be low to increase the backpressure.
-const DEFAULT_SINK_LINEARIZER_BUFFER_SIZE: usize = 1;
-const DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE: usize = 1;
+static DEFAULT_SINK_LINEARIZER_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("POLARS_DEFAULT_SINK_LINEARIZER_BUFFER_SIZE")
+        .map(|x| x.parse().unwrap())
+        .unwrap_or(1)
+});
+
+static DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("POLARS_DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE")
+        .map(|x| x.parse().unwrap())
+        .unwrap_or(1)
+});
 
 pub enum SinkInputPort {
     Serial(Receiver<Morsel>),
@@ -124,7 +135,7 @@ pub fn parallelize_receive_task<T: Ord + Send + Sync + 'static>(
             let port_rxs = port_rxs.parallel();
             let (lin_rx, lin_txs) = Linearizer::<T>::new_with_maintain_order(
                 num_pipelines,
-                DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
+                *DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
                 maintain_order,
             );
 
@@ -150,15 +161,15 @@ pub trait SinkNode {
     fn name(&self) -> &str;
 
     fn is_sink_input_parallel(&self) -> bool;
+
     fn do_maintain_order(&self) -> bool {
         true
     }
 
     fn spawn_sink(
         &mut self,
-        num_pipelines: usize,
         recv_ports_recv: Receiver<(PhaseOutcome, SinkInputPort)>,
-        state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
 }
@@ -172,7 +183,6 @@ struct StartedSinkComputeNode {
 /// A [`ComputeNode`] to wrap a [`SinkNode`].
 pub struct SinkComputeNode {
     sink: Box<dyn SinkNode + Send + Sync>,
-    num_pipelines: usize,
     started: Option<StartedSinkComputeNode>,
 }
 
@@ -180,7 +190,6 @@ impl SinkComputeNode {
     pub fn new(sink: Box<dyn SinkNode + Send + Sync>) -> Self {
         Self {
             sink,
-            num_pipelines: 0,
             started: None,
         }
     }
@@ -196,13 +205,12 @@ impl ComputeNode for SinkComputeNode {
     fn name(&self) -> &str {
         self.sink.name()
     }
-    fn initialize(&mut self, num_pipelines: usize) {
-        self.num_pipelines = num_pipelines;
-    }
+
     fn update_state(
         &mut self,
         recv: &mut [PortState],
         _send: &mut [PortState],
+        _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         if recv[0] != PortState::Done {
             recv[0] = PortState::Ready;
@@ -229,7 +237,7 @@ impl ComputeNode for SinkComputeNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert_eq!(recv_ports.len(), 1);
@@ -240,8 +248,7 @@ impl ComputeNode for SinkComputeNode {
             let (tx, rx) = connector();
             let mut join_handles = Vec::new();
 
-            self.sink
-                .spawn_sink(self.num_pipelines, rx, state, &mut join_handles);
+            self.sink.spawn_sink(rx, state, &mut join_handles);
             // One of the tasks might throw an error. In which case, we need to cancel all
             // handles and find the error.
             let join_handles: FuturesUnordered<_> =

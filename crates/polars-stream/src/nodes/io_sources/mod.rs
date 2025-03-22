@@ -6,16 +6,18 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
 use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
 use polars_io::predicates::ScanIOPredicate;
 use polars_utils::IdxSize;
 
-use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskPriority};
 use crate::async_executor::AbortOnDropHandle;
 use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::SourceToken;
+use crate::nodes::compute_node_prelude::*;
 
+pub mod multi_file_reader;
+
+pub mod batch;
 #[cfg(feature = "csv")]
 pub mod csv;
 #[cfg(feature = "ipc")]
@@ -41,7 +43,6 @@ struct StartedSourceComputeNode {
 /// A [`ComputeNode`] to wrap a [`SourceNode`].
 pub struct SourceComputeNode<T: SourceNode + Send + Sync> {
     source: T,
-    num_pipelines: usize,
     started: Option<StartedSourceComputeNode>,
 }
 
@@ -49,7 +50,6 @@ impl<T: SourceNode + Send + Sync> SourceComputeNode<T> {
     pub fn new(source: T) -> Self {
         Self {
             source,
-            num_pipelines: 0,
             started: None,
         }
     }
@@ -60,14 +60,11 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         self.source.name()
     }
 
-    fn initialize(&mut self, num_pipelines: usize) {
-        self.num_pipelines = num_pipelines;
-    }
-
     fn update_state(
         &mut self,
         recv: &mut [PortState],
         send: &mut [PortState],
+        _state: &StreamingExecutionState,
     ) -> polars_error::PolarsResult<()> {
         assert!(recv.is_empty());
         assert_eq!(send.len(), 1);
@@ -92,7 +89,7 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         scope: &'s super::TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.is_empty());
@@ -103,8 +100,7 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
             let (tx, rx) = connector();
             let mut join_handles = Vec::new();
 
-            self.source
-                .spawn_source(self.num_pipelines, rx, state, &mut join_handles, None);
+            self.source.spawn_source(rx, state, &mut join_handles, None);
             // One of the tasks might throw an error. In which case, we need to cancel all
             // handles and find the error.
             let join_handles: FuturesUnordered<_> =
@@ -285,9 +281,8 @@ pub trait SourceNode: Sized + Send + Sync {
     /// count before slicing and predicate filtering).
     fn spawn_source(
         &mut self,
-        num_pipelines: usize,
         output_recv: Receiver<SourceOutput>,
-        state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     );

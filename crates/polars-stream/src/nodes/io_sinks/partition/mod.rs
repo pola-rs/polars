@@ -3,22 +3,25 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
-use polars_core::prelude::PlHashMap;
+use polars_core::prelude::{Column, PlHashMap};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
+use polars_io::utils::URL_ENCODE_CHAR_SET;
 use polars_plan::dsl::{FileType, SinkOptions};
+use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::async_primitives::{connector, distributor_channel};
+use crate::execute::StreamingExecutionState;
 use crate::nodes::{Morsel, PhaseOutcome, TaskPriority};
 
 pub mod by_key;
 pub mod max_size;
+pub mod parted;
 
 pub type CreateNewSinkFn =
     Arc<dyn Send + Sync + Fn(SchemaRef, PathBuf) -> PolarsResult<Box<dyn SinkNode + Send + Sync>>>;
@@ -112,9 +115,9 @@ async fn open_new_sink(
     create_new_sink: &CreateNewSinkFn,
     format_args: &PlHashMap<PlSmallStr, PlSmallStr>,
     sink_input_schema: SchemaRef,
-    num_pipelines: usize,
     partition_name: &'static str,
     verbose: bool,
+    state: &StreamingExecutionState,
 ) -> PolarsResult<
     Option<(
         FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
@@ -134,10 +137,10 @@ async fn open_new_sink(
     let mut join_handles = Vec::new();
     let (sink_input, sender) = if node.is_sink_input_parallel() {
         let (tx, dist_rxs) = distributor_channel::distributor_channel(
-            num_pipelines,
-            DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
+            state.num_pipelines,
+            *DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
         );
-        let (txs, rxs) = (0..num_pipelines)
+        let (txs, rxs) = (0..state.num_pipelines)
             .map(|_| connector::connector())
             .collect::<(Vec<_>, Vec<_>)>();
         join_handles.extend(dist_rxs.into_iter().zip(txs).map(|(mut dist_rx, mut tx)| {
@@ -157,9 +160,8 @@ async fn open_new_sink(
         (SinkInputPort::Serial(rx), SinkSender::Connector(tx))
     };
 
-    let state = ExecutionState::new();
     let (mut sink_input_tx, sink_input_rx) = connector::connector();
-    node.spawn_sink(num_pipelines, sink_input_rx, &state, &mut join_handles);
+    node.spawn_sink(sink_input_rx, state, &mut join_handles);
     let mut join_handles =
         FuturesUnordered::from_iter(join_handles.into_iter().map(AbortOnDropHandle::new));
 
@@ -175,4 +177,20 @@ async fn open_new_sink(
     }
 
     Ok(Some((join_handles, sender)))
+}
+
+fn insert_key_value_into_format_args(
+    args: &mut PlHashMap<PlSmallStr, PlSmallStr>,
+    keys: &[Column],
+) {
+    for (i, key) in keys.iter().enumerate() {
+        *args
+            .get_mut(&format_pl_smallstr!("key[{i}].value"))
+            .unwrap() = percent_encoding::percent_encode(
+            key.get(0).unwrap().to_string().as_bytes(),
+            URL_ENCODE_CHAR_SET,
+        )
+        .to_string()
+        .into();
+    }
 }

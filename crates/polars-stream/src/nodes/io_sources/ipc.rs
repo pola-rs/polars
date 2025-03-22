@@ -15,7 +15,6 @@ use polars_core::utils::arrow::io::ipc::read::{
 };
 use polars_core::utils::slice_offsets;
 use polars_error::{ErrString, PolarsError, PolarsResult, polars_err};
-use polars_expr::state::ExecutionState;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
@@ -35,6 +34,7 @@ use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
+use crate::execute::StreamingExecutionState;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
@@ -191,12 +191,12 @@ impl SourceNode for IpcSourceNode {
 
     fn spawn_source(
         &mut self,
-        num_pipelines: usize,
         mut output_recv: Receiver<SourceOutput>,
-        _state: &ExecutionState,
+        state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
+        let num_pipelines = state.num_pipelines;
         // Split size for morsels.
         let max_morsel_size = get_max_morsel_size();
         let source_token = SourceToken::new();
@@ -221,12 +221,12 @@ impl SourceNode for IpcSourceNode {
 
         // Walker task -> Decoder tasks.
         let (mut batch_tx, batch_rxs) =
-            distributor_channel::<BatchMessage>(num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+            distributor_channel::<BatchMessage>(num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
         // Decoder tasks -> Distributor task.
         let (mut decoded_rx, decoded_tx) =
             Linearizer::<Priority<Reverse<MorselSeq>, DataFrame>>::new(
                 num_pipelines,
-                DEFAULT_LINEARIZER_BUFFER_SIZE,
+                *DEFAULT_LINEARIZER_BUFFER_SIZE,
             );
 
         // Distributor task.

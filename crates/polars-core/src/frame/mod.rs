@@ -474,28 +474,36 @@ impl DataFrame {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
         let offset = offset.unwrap_or(0);
 
-        let mut ca = IdxCa::from_vec(
-            name,
-            (offset..(self.height() as IdxSize) + offset).collect(),
-        );
-        ca.set_sorted_flag(IsSorted::Ascending);
-        columns.push(ca.into_series().into());
-
+        let col = Column::new_row_index(name, offset, self.height())?;
+        columns.push(col);
         columns.extend_from_slice(&self.columns);
         DataFrame::new(columns)
     }
 
     /// Add a row index column in place.
-    pub fn with_row_index_mut(&mut self, name: PlSmallStr, offset: Option<IdxSize>) -> &mut Self {
-        let offset = offset.unwrap_or(0);
-        let mut ca = IdxCa::from_vec(
-            name,
-            (offset..(self.height() as IdxSize) + offset).collect(),
+    ///
+    /// # Safety
+    /// The caller should ensure the DataFrame does not already contain a column with the given name.
+    ///
+    /// # Panics
+    /// Panics if the resulting column would reach or overflow IdxSize::MAX.
+    pub unsafe fn with_row_index_mut(
+        &mut self,
+        name: PlSmallStr,
+        offset: Option<IdxSize>,
+    ) -> &mut Self {
+        // TODO: Make this function unsafe
+        debug_assert!(
+            self.columns.iter().all(|c| c.name() != &name),
+            "with_row_index_mut(): column with name {} already exists",
+            &name
         );
-        ca.set_sorted_flag(IsSorted::Ascending);
+
+        let offset = offset.unwrap_or(0);
+        let col = Column::new_row_index(name, offset, self.height()).unwrap();
 
         self.clear_schema();
-        self.columns.insert(0, ca.into_series().into());
+        self.columns.insert(0, col);
         self
     }
 
@@ -3094,7 +3102,7 @@ impl DataFrame {
     #[cfg(feature = "row_hash")]
     pub fn hash_rows(
         &mut self,
-        hasher_builder: Option<PlRandomState>,
+        hasher_builder: Option<PlSeedableRandomStateQuality>,
     ) -> PolarsResult<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads(), false);
         let (cas, _) = _df_rows_to_hashes_threaded_vertical(&dfs, hasher_builder)?;

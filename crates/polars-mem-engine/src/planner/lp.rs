@@ -134,6 +134,58 @@ pub fn create_multiple_physical_plans(
     })
 }
 
+#[cfg(feature = "python")]
+#[allow(clippy::type_complexity)]
+pub fn python_scan_predicate(
+    options: &mut PythonOptions,
+    expr_arena: &Arena<AExpr>,
+    state: &mut ExpressionConversionState,
+) -> PolarsResult<(
+    Option<Arc<dyn polars_expr::prelude::PhysicalExpr>>,
+    Option<Vec<u8>>,
+)> {
+    let mut predicate_serialized = None;
+    let predicate = if let PythonPredicate::Polars(e) = &options.predicate {
+        // Convert to a pyarrow eval string.
+        if matches!(options.python_source, PythonScanSource::Pyarrow) {
+            if let Some(eval_str) = polars_plan::plans::python::pyarrow::predicate_to_pa(
+                e.node(),
+                expr_arena,
+                Default::default(),
+            ) {
+                options.predicate = PythonPredicate::PyArrow(eval_str);
+                // We don't have to use a physical expression as pyarrow deals with the filter.
+                None
+            } else {
+                Some(create_physical_expr(
+                    e,
+                    Context::Default,
+                    expr_arena,
+                    &options.schema,
+                    state,
+                )?)
+            }
+        }
+        // Convert to physical expression for the case the reader cannot consume the predicate.
+        else {
+            let dsl_expr = e.to_expr(expr_arena);
+            predicate_serialized = polars_plan::plans::python::predicate::serialize(&dsl_expr)?;
+
+            Some(create_physical_expr(
+                e,
+                Context::Default,
+                expr_arena,
+                &options.schema,
+                state,
+            )?)
+        }
+    } else {
+        None
+    };
+
+    Ok((predicate, predicate_serialized))
+}
+
 #[recursive]
 fn create_physical_plan_impl(
     root: Node,
@@ -160,45 +212,9 @@ fn create_physical_plan_impl(
     match logical_plan {
         #[cfg(feature = "python")]
         PythonScan { mut options } => {
-            let mut predicate_serialized = None;
-
-            let predicate = if let PythonPredicate::Polars(e) = &options.predicate {
-                let phys_expr = || {
-                    let mut state = ExpressionConversionState::new(true, state.expr_depth);
-                    create_physical_expr(
-                        e,
-                        Context::Default,
-                        expr_arena,
-                        &options.schema,
-                        &mut state,
-                    )
-                };
-
-                // Convert to a pyarrow eval string.
-                if matches!(options.python_source, PythonScanSource::Pyarrow) {
-                    if let Some(eval_str) = polars_plan::plans::python::pyarrow::predicate_to_pa(
-                        e.node(),
-                        expr_arena,
-                        Default::default(),
-                    ) {
-                        options.predicate = PythonPredicate::PyArrow(eval_str);
-                        // We don't have to use a physical expression as pyarrow deals with the filter.
-                        None
-                    } else {
-                        Some(phys_expr()?)
-                    }
-                }
-                // Convert to physical expression for the case the reader cannot consume the predicate.
-                else {
-                    let dsl_expr = e.to_expr(expr_arena);
-                    predicate_serialized =
-                        polars_plan::plans::python::predicate::serialize(&dsl_expr)?;
-
-                    Some(phys_expr()?)
-                }
-            } else {
-                None
-            };
+            let mut expr_conv_state = ExpressionConversionState::new(true, state.expr_depth);
+            let (predicate, predicate_serialized) =
+                python_scan_predicate(&mut options, expr_arena, &mut expr_conv_state)?;
             Ok(Box::new(executors::PythonScanExec {
                 options,
                 predicate,

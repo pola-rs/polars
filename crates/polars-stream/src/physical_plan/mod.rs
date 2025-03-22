@@ -227,6 +227,11 @@ pub enum PhysNodeKind {
         file_options: Box<FileScanOptions>,
     },
 
+    #[cfg(feature = "python")]
+    PythonScan {
+        options: polars_plan::plans::python::PythonOptions,
+    },
+
     GroupBy {
         input: PhysStream,
         key: Vec<ExprIR>,
@@ -284,6 +289,8 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::MultiScan { .. }
             | PhysNodeKind::FileScan { .. }
             | PhysNodeKind::InputIndependentSelect { .. } => {},
+            #[cfg(feature = "python")]
+            PhysNodeKind::PythonScan { .. } => {},
             PhysNodeKind::Select { input, .. }
             | PhysNodeKind::WithRowIndex { input, .. }
             | PhysNodeKind::Reduce { input, .. }

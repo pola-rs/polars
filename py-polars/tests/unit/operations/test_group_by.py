@@ -911,6 +911,17 @@ def test_partitioned_group_by_14954(monkeypatch: Any) -> None:
     }
 
 
+def test_partitioned_group_by_nulls_mean_21838() -> None:
+    size = 10
+    a = [1 for i in range(size)] + [2 for i in range(size)] + [3 for i in range(size)]
+    b = [1 for i in range(size)] + [None for i in range(size * 2)]
+    df = pl.DataFrame({"a": a, "b": b})
+    assert df.group_by("a").mean().sort("a").to_dict(as_series=False) == {
+        "a": [1, 2, 3],
+        "b": [1.0, None, None],
+    }
+
+
 def test_aggregated_scalar_elementwise_15602() -> None:
     df = pl.DataFrame({"group": [1, 2, 1]})
 
@@ -1218,3 +1229,12 @@ def test_enum_perfect_group_by_21360() -> None:
             ]
         ),
     )
+
+
+def test_partitioned_group_by_21634(partition_limit: int) -> None:
+    n = partition_limit
+    df = pl.DataFrame({"grp": [1] * n, "x": [1] * n})
+    assert df.group_by("grp", True).agg().to_dict(as_series=False) == {
+        "grp": [1],
+        "literal": [True],
+    }

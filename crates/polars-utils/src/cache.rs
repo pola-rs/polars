@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 use std::cell::Cell;
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash};
 use std::mem::MaybeUninit;
 
 use bytemuck::Zeroable;
