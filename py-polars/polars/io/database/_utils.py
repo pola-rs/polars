@@ -38,7 +38,7 @@ def _read_sql_connectorx(
 
     if parse_version(cx.__version__) < (0, 4, 2):
         if pre_execution_query:
-            msg = "pre_execution_query is only supported in connectorx version 0.4.2 or later."
+            msg = "'pre_execution_query' is only supported in connectorx version 0.4.2 or later"
             raise ValueError(msg)
         return_type = "arrow2"
         pre_execution_args = {}
