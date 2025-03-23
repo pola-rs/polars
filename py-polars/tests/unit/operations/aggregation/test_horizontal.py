@@ -660,5 +660,8 @@ def test_horizontal_mean_with_null_col_ignore_strategy(
 def test_raise_invalid_types_21835() -> None:
     df = pl.DataFrame({"x": [1, 2], "y": ["three", "four"]})
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(
+        ComputeError,
+        match=r"cannot compare string with numeric type \(i64\)",
+    ):
         df.select(pl.min_horizontal("x", "y"))
