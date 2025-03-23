@@ -893,7 +893,7 @@ def test_read_database_uri_pre_execution_not_supported_exception(
     with (
         pytest.raises(
             ValueError,
-            match="pre_execution_query is only supported in connectorx version 0.4.2 or later.",
+            match="'pre_execution_query' is only supported in connectorx version 0.4.2 or later",
         ),
     ):
         pl.read_database_uri(
