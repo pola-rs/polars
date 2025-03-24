@@ -148,7 +148,9 @@ def _resolve_file_path(path: Path, *, use_abs_path: bool = False) -> Path:
         return path.resolve()
     else:
         try:
-            relpath = path.relative_to(venv_path)
+            relpath = path.relative_to(
+                venv_path.parent
+            )  # relative path should resolve to the parent of the venv
         except (
             ValueError
         ):  # If the path is not inside the venv use absolute path instead

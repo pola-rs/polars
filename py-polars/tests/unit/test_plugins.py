@@ -60,7 +60,8 @@ def test_resolve_plugin_path(tmp_path: Path, use_abs_path: bool) -> None:
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(sys, "prefix", str(mock_venv))
         expected_full_path = mock_venv_lib / "lib1.so"
-        expected_relative_path = expected_full_path.relative_to(mock_venv)
+        venv_parent = mock_venv.parent
+        expected_relative_path = expected_full_path.relative_to(venv_parent)
 
         if use_abs_path:
             result = _resolve_plugin_path(mock_venv_lib, use_abs_path=use_abs_path)
