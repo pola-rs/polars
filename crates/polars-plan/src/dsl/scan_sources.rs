@@ -6,6 +6,8 @@ use std::sync::Arc;
 use polars_core::error::{PolarsResult, feature_gated};
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "cloud")]
+use polars_io::file_cache::FileCacheEntry;
+#[cfg(feature = "cloud")]
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
 use polars_io::{expand_paths, expand_paths_hive, expanded_from_single_directory};
 use polars_utils::mmap::MemSlice;
@@ -314,16 +316,26 @@ impl ScanSourceRef<'_> {
         self.to_memslice_possibly_async(false, None, 0)
     }
 
-    pub fn to_memslice_async_assume_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
+    #[allow(clippy::wrong_self_convention)]
+    #[cfg(feature = "cloud")]
+    fn to_memslice_async<F: Fn(Arc<FileCacheEntry>) -> PolarsResult<std::fs::File>>(
+        &self,
+        assume: F,
+        run_async: bool,
+    ) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {
-                let file = if run_async {
+                let path_str = path.to_str();
+                let file = if run_async && path_str.is_some() {
                     feature_gated!("cloud", {
-                        polars_io::file_cache::FILE_CACHE
-                            .get_entry(path.to_str().unwrap())
-                            // Safety: This was initialized by schema inference.
-                            .unwrap()
-                            .try_open_assume_latest()?
+                        // This isn't filled if we modified the DSL (e.g. in cloud)
+                        let entry = polars_io::file_cache::FILE_CACHE.get_entry(path_str.unwrap());
+
+                        if let Some(entry) = entry {
+                            assume(entry)?
+                        } else {
+                            polars_utils::open_file(path)?
+                        }
                     })
                 } else {
                     polars_utils::open_file(path)?
@@ -336,26 +348,36 @@ impl ScanSourceRef<'_> {
         }
     }
 
+    #[cfg(feature = "cloud")]
+    pub fn to_memslice_async_assume_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
+        self.to_memslice_async(|entry| entry.try_open_assume_latest(), run_async)
+    }
+
+    #[cfg(feature = "cloud")]
     pub fn to_memslice_async_check_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
+        self.to_memslice_async(|entry| entry.try_open_check_latest(), run_async)
+    }
+
+    #[cfg(not(feature = "cloud"))]
+    fn to_memslice_async(&self, run_async: bool) -> PolarsResult<MemSlice> {
         match self {
             ScanSourceRef::Path(path) => {
-                let file = if run_async {
-                    feature_gated!("cloud", {
-                        polars_io::file_cache::FILE_CACHE
-                            .get_entry(path.to_str().unwrap())
-                            // Safety: This was initialized by schema inference.
-                            .unwrap()
-                            .try_open_check_latest()?
-                    })
-                } else {
-                    polars_utils::open_file(path)?
-                };
-
+                let file = polars_utils::open_file(path)?;
                 MemSlice::from_file(&file)
             },
             ScanSourceRef::File(file) => MemSlice::from_file(file),
             ScanSourceRef::Buffer(buff) => Ok((*buff).clone()),
         }
+    }
+
+    #[cfg(not(feature = "cloud"))]
+    pub fn to_memslice_async_assume_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
+        self.to_memslice_async(run_async)
+    }
+
+    #[cfg(not(feature = "cloud"))]
+    pub fn to_memslice_async_check_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
+        self.to_memslice_async(run_async)
     }
 
     pub fn to_memslice_possibly_async(
