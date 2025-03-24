@@ -35,6 +35,8 @@ defaults:
 jobs:
   test-python:
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHON_GIL: ${{ matrix.python-version == '3.13t' && '0' || '1' }}
     strategy:
       fail-fast: false
       matrix:
