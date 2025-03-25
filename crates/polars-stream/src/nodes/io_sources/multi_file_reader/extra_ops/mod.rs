@@ -23,6 +23,7 @@ pub struct ExtraOperations {
     // Note: These fields are ordered according to when they (should be) applied.
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
+    // Note: These policies are here as convenience, but they should technically be somewhere else.
     pub cast_columns_policy: CastColumnsPolicy,
     pub missing_columns_policy: MissingColumnsPolicy,
     pub include_file_paths: Option<PlSmallStr>,

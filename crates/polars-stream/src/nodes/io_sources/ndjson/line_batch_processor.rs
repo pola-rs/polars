@@ -7,14 +7,12 @@ use polars_utils::mmap::MemSlice;
 use polars_utils::priority::Priority;
 
 use super::chunk_reader::ChunkReader;
-use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel;
 use crate::async_primitives::linearizer::Inserter;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::MorselSeq;
 use crate::nodes::compute_node_prelude::*;
-use crate::nodes::io_sources::MorselOutput;
+use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
 
 /// Parses chunks into DataFrames (or counts rows depending on state).
 pub(super) struct LineBatchProcessor {
@@ -58,17 +56,6 @@ impl LineBatchProcessor {
                 output_port.port_type()
             );
         }
-
-        if output_port.init().await.is_err() {
-            if verbose {
-                eprintln!(
-                    "[NDJSON LineBatchProcessor {}]: phase receiver ended at init, returning",
-                    worker_idx
-                );
-            }
-
-            return Ok(0);
-        };
 
         let mut n_rows_processed: usize = 0;
 
@@ -120,10 +107,7 @@ pub(super) struct LineBatch {
 pub(super) enum LineBatchProcessorOutputPort {
     /// Connected directly to source node output.
     Direct {
-        phase_tx: Option<MorselOutput>,
-        phase_tx_receiver: Receiver<MorselOutput>,
-        source_token: SourceToken,
-        wait_group: WaitGroup,
+        tx: FileReaderOutputSend,
     },
     /// Connected to:
     /// * Morsel reverser (negative slice)
@@ -144,47 +128,14 @@ impl LineBatchProcessorOutputPort {
         }
     }
 
-    async fn init(&mut self) -> Result<(), ()> {
-        if let Self::Direct {
-            phase_tx,
-            phase_tx_receiver,
-            ..
-        } = self
-        {
-            assert!(phase_tx.is_none());
-            *phase_tx = Some(phase_tx_receiver.recv().await?);
-        }
-
-        Ok(())
-    }
-
     async fn send(&mut self, morsel_seq: MorselSeq, df: DataFrame) -> Result<(), ()> {
         use LineBatchProcessorOutputPort::*;
 
         let result = async {
             match self {
-                Direct {
-                    phase_tx,
-                    phase_tx_receiver,
-                    source_token,
-                    wait_group,
-                } => {
-                    let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
-                    morsel.set_consume_token(wait_group.token());
-
-                    if phase_tx.as_mut().unwrap().port.send(morsel).await.is_err() {
-                        return Err(());
-                    };
-
-                    wait_group.wait().await;
-
-                    if source_token.stop_requested() {
-                        let v = phase_tx.take().unwrap();
-                        v.outcome.stop();
-                        drop(v);
-                        *phase_tx = Some(phase_tx_receiver.recv().await?);
-                    }
-
+                Direct { tx } => {
+                    let morsel = Morsel::new(df, morsel_seq, SourceToken::new());
+                    tx.send_morsel(morsel).await.map_err(|_| ())?;
                     Ok(())
                 },
                 Linearize { tx } => tx

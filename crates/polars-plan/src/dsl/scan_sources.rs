@@ -98,6 +98,14 @@ impl ScanSource {
     pub fn run_async(&self) -> bool {
         self.as_scan_source_ref().run_async()
     }
+
+    pub fn is_cloud_url(&self) -> bool {
+        if let ScanSource::Path(path) = self {
+            polars_io::is_cloud_url(path.as_ref())
+        } else {
+            false
+        }
+    }
 }
 
 /// An iterator for [`ScanSources`]

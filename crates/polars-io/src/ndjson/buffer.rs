@@ -36,6 +36,7 @@ impl Buffer<'_> {
     #[inline]
     pub(crate) fn add(&mut self, value: &Value) -> PolarsResult<()> {
         use AnyValueBuffer::*;
+        // FIXME: Raise an error instead of silently appending null when it doesn't match.
         match &mut self.buf {
             Boolean(buf) => {
                 match value {
