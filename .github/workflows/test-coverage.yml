@@ -31,6 +31,10 @@ env:
   CARGO_LLVM_COV_TARGET_DIR: ${{ github.workspace }}/target
   # We use the stable ABI, silences error from PyO3 that the system Python is too new.
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
+  # For a CPU with N cores, `pytest -n auto` runs N threads, and by default
+  # Polars starts N threads. That means N×N threads, which is a lot of extra
+  # time fighting over only N cores. So we limit to 2×N cores.
+  POLARS_MAX_THREADS: 2
 
 jobs:
   coverage-rust:
