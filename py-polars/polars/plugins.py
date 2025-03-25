@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-import sys
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -33,7 +33,7 @@ def register_plugin_function(
     cast_to_supertype: bool = False,
     input_wildcard_expansion: bool = False,
     pass_name_to_apply: bool = False,
-    use_abs_path: bool = True,
+    use_abs_path: bool = False,
 ) -> Expr:
     """
     Register a plugin function.
@@ -142,18 +142,13 @@ def _is_dynamic_lib(path: Path) -> bool:
 
 
 def _resolve_file_path(path: Path, *, use_abs_path: bool = False) -> Path:
-    venv_path = Path(sys.prefix)
-
     if use_abs_path:
         return path.resolve()
     else:
+        abs_path = path.resolve()
+        curr_dir = Path.cwd()
         try:
-            relpath = path.relative_to(
-                venv_path.parent
-            )  # relative path should resolve to the parent of the venv
-        except (
-            ValueError
-        ):  # If the path is not inside the venv use absolute path instead
-            return path.resolve()
-        else:
-            return relpath
+            file_path = Path(os.path.relpath(abs_path, curr_dir))
+        except OSError:  # Fallback
+            file_path = abs_path
+        return file_path

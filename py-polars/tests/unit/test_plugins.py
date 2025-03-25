@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +46,11 @@ def test_serialize_kwargs(input: dict[str, Any] | None, expected: bytes) -> None
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize("use_abs_path", [True, False])
-def test_resolve_plugin_path(tmp_path: Path, use_abs_path: bool) -> None:
+def test_resolve_plugin_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    use_abs_path: bool,
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     mock_venv = tmp_path / ".venv"
@@ -57,18 +60,14 @@ def test_resolve_plugin_path(tmp_path: Path, use_abs_path: bool) -> None:
     (mock_venv_lib / "lib1.so").touch()
     (mock_venv_lib / "__init__.py").touch()
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(sys, "prefix", str(mock_venv))
-        expected_full_path = mock_venv_lib / "lib1.so"
-        venv_parent = mock_venv.parent
-        expected_relative_path = expected_full_path.relative_to(venv_parent)
+    monkeypatch.chdir(tmp_path)
 
-        if use_abs_path:
-            result = _resolve_plugin_path(mock_venv_lib, use_abs_path=use_abs_path)
-            assert result == expected_full_path
-        else:
-            result = _resolve_plugin_path(mock_venv_lib, use_abs_path=use_abs_path)
-            assert result == expected_relative_path
+    if use_abs_path:
+        result = _resolve_plugin_path(mock_venv_lib, use_abs_path=use_abs_path)
+        assert result == (mock_venv_lib / "lib1.so").resolve()
+    else:
+        result = _resolve_plugin_path(mock_venv_lib, use_abs_path=use_abs_path)
+        assert result == Path(".venv/lib/lib1.so")
 
 
 @pytest.mark.write_disk
