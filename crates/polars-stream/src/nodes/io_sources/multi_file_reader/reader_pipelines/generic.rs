@@ -36,6 +36,7 @@ use crate::nodes::io_sources::multi_file_reader::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks,
 };
 use crate::nodes::io_sources::multi_scan::max_concurrent_scans;
+use crate::utils::TracedAwait;
 
 impl MultiScanTaskInitializer {
     /// Generic reader pipeline that should work for all file types and configurations
@@ -502,7 +503,7 @@ impl ReaderStarter {
             // * NDJSON skips rows (i.e. non-zero offset) in a single-threaded manner.
             if let Some(rx) = row_position_on_end_rx {
                 dbg!(scan_source_idx);
-                if let Ok(n) = rx.await {
+                if let Ok(n) = rx.traced_await().await {
                     current_row_position = current_row_position.saturating_add(n);
                 }
                 dbg!(scan_source_idx);
