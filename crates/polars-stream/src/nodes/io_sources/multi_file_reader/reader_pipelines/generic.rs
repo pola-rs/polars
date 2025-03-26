@@ -63,6 +63,7 @@ impl MultiScanTaskInitializer {
             pre_slice,
             initialized_readers,
         } = match self.config.pre_slice {
+            // This can hugely benefit NDJSON, as it can read backwards.
             Some(Slice::Negative { .. })
                 if self.config.sources.len() == 1
                     && reader_capabilities.contains(ReaderCapabilities::NEGATIVE_PRE_SLICE)
@@ -130,7 +131,8 @@ impl MultiScanTaskInitializer {
 
         let config = self.config.clone();
 
-        // Buffered initialization stream.
+        // Buffered initialization stream. This concurrently calls `FileReader::initialize()`,
+        // allowing for e.g. concurrent Parquet metadata fetch.
         let readers_init_iter = {
             let skip_files_mask = skip_files_mask.clone();
 
@@ -319,7 +321,7 @@ impl ReaderStarter {
 
         loop {
             // Note: This loop should only do basic bookkeeping (e.g. slice position) and reader initialization.
-            // It should avoid doing compute as much as possible - those should instead be done in the spawned task.
+            // It should avoid doing compute as much as possible - those should instead be deferred to spawned tasks.
 
             let pre_slice_this_file = extra_ops.pre_slice.clone().map(|x| match x {
                 Slice::Positive { .. } => x.offsetted(current_row_position as usize),
@@ -365,11 +367,11 @@ impl ReaderStarter {
                     )
                 }
 
-                // Should never: Negative slice should only hit this loop in the case:
-                // * Single NDJSON file that is not filtered out.
                 if extra_ops.has_row_index_or_slice() {
+                    // Should never: Negative slice should only hit this loop in the case:
+                    // * Single NDJSON file that is not filtered out.
                     if let Some(Slice::Negative { .. }) = pre_slice_this_file {
-                        unreachable!();
+                        panic!();
                     }
 
                     current_row_position = current_row_position.saturating_add(

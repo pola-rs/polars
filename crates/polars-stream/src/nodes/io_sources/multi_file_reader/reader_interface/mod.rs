@@ -142,7 +142,8 @@ impl Default for BeginReadArgs {
 }
 
 /// Note, these are oneshot, but we are using the connector as tokio's oneshot channel deadlocks
-/// on our async runtime. Not sure exactly why, seems to be something to do with the waker.
+/// on our async runtime. Not sure exactly why - a task wakeup seems to be lost somewhere.
+/// (See https://github.com/pola-rs/polars/pull/21916).
 #[derive(Default)]
 pub struct FileReaderCallbacks {
     /// Full file schema
