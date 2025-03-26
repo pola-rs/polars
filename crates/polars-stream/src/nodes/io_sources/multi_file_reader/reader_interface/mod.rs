@@ -78,7 +78,7 @@ pub trait FileReader: Send + Sync {
             ..Default::default()
         })?;
 
-        // We are using the `row_position_on_end_tx` callback, this means we must fully consume all of
+        // We are using the `n_rows_sent_tx` callback, this means we must fully consume all of
         // the morsels sent by the reader.
         //
         // Note:
@@ -150,7 +150,7 @@ pub struct FileReaderCallbacks {
     pub file_schema_tx: Option<connector::Sender<SchemaRef>>,
 
     /// Callback for full row count. Avoid using this as it can trigger a full row count depending
-    /// on the source. Prefer instead to use `row_position_on_end_tx`, which can be much faster.
+    /// on the source. Prefer instead to use `n_rows_sent_tx`, which can be much faster.
     ///
     /// Notes:
     /// * The reader must ensure that this count is sent if requested, even if the output port
@@ -159,15 +159,14 @@ pub struct FileReaderCallbacks {
     ///   their output port is dropped), so you should not block morsel consumption on waiting for this.
     pub n_rows_in_file_tx: Option<connector::Sender<IdxSize>>,
 
-    /// Callback that can either be the total row count of the file, or the number of rows that the
-    /// reader will have processed upon finishing if a slice was requested.
+    /// Callback for the row position this reader will have reached upon ending.
     ///
     /// This callback should be sent as soon as possible, as it can be a serial dependency for the
     /// next reader.
     ///
-    /// A reader that knows its total row count upfront will be able to send this value immediately
-    /// (e.g. Parquet). Other readers (e.g. CSV) would generally keep a counter of how many rows they
-    /// have seen and return this after finishing.
+    /// Readers that know their total row count upfront can send this as a pre-calculated position
+    /// in the file based on the requested slice (if any). Readers that don't have this information
+    /// may instead track their position in the file during reads and send this value after finishing.
     ///
     /// The returned value is useful for determining how much of a requested slice is consumed by a reader.
     /// It is more efficient than `n_rows_in_file_tx` as it allows the reader to stop early if it hits the
