@@ -166,7 +166,8 @@ pub struct FileReaderCallbacks {
     ///
     /// Readers that know their total row count upfront can send this as a pre-calculated position
     /// in the file based on the requested slice (if any). Readers that don't have this information
-    /// may instead track their position in the file during reads and send this value after finishing.
+    /// may instead track their position in the file during reading and send this value after
+    /// finishing.
     ///
     /// The returned value is useful for determining how much of a requested slice is consumed by a reader.
     /// It is more efficient than `n_rows_in_file_tx` as it allows the reader to stop early if it hits the
