@@ -1,19 +1,14 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 use crossbeam_queue::ArrayQueue;
 use polars_core::POOL;
-use polars_core::prelude::PlRandomState;
-use polars_core::schema::Schema;
 use polars_error::PolarsResult;
-use polars_ops::frame::{JoinArgs, JoinType};
 use polars_utils::itertools::Itertools;
-use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::expression::StreamExpr;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::RecvPort;
 
