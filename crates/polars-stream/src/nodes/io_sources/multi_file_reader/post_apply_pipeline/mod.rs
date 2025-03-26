@@ -12,7 +12,8 @@ use crate::nodes::io_sources::multi_file_reader::bridge::BridgeRecvPort;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::apply::ApplyExtraOps;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
 
-/// Pool kept alive for the duration of MultiScan, reused across files.
+/// Pool of workers to apply operations on morsels originating from a reader.
+/// Kept alive for the duration of the multiscan.
 pub struct PostApplyPool {
     workers: Vec<WorkerData>,
     reader_in_progress: bool,
@@ -57,7 +58,7 @@ impl PostApplyPool {
     /// `wait_current_reader` should be awaited on afterwards to catch errors from this file.
     ///
     /// # Panics
-    /// Panics if called more than 2 times in succession without `wait_current_reader` in between.
+    /// Panics if called twice without `wait_current_reader` in between.
     pub async fn run_with_reader(
         &mut self,
         mut reader_port: FileReaderOutputRecv,
