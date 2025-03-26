@@ -78,7 +78,7 @@ pub trait FileReader: Send + Sync {
             ..Default::default()
         })?;
 
-        // We are using the `n_rows_sent_tx` callback, this means we must fully consume all of
+        // We are using the `row_position_on_end_tx` callback, this means we must fully consume all of
         // the morsels sent by the reader.
         //
         // Note:
@@ -150,7 +150,7 @@ pub struct FileReaderCallbacks {
     pub file_schema_tx: Option<connector::Sender<SchemaRef>>,
 
     /// Callback for full row count. Avoid using this as it can trigger a full row count depending
-    /// on the source. Prefer instead to use `n_rows_sent_tx`, which can be much faster.
+    /// on the source. Prefer instead to use `row_position_on_end_tx`, which can be much faster.
     ///
     /// Notes:
     /// * The reader must ensure that this count is sent if requested, even if the output port

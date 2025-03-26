@@ -394,7 +394,7 @@ impl ReaderStarter {
                 ..extra_ops.clone()
             };
 
-            let (row_position_on_end_tx, n_rows_sent_tx_rx) =
+            let (row_position_on_end_tx, row_position_on_end_rx) =
                 if extra_ops.has_row_index_or_slice() && n_sources - scan_source_idx > 1 {
                     let (mut tx, rx) = connector::connector();
 
@@ -501,7 +501,7 @@ impl ReaderStarter {
             // TODO:
             // * Parallelize the CSV row count
             // * NDJSON skips rows (i.e. non-zero offset) in a single-threaded manner.
-            if let Some(mut rx) = n_rows_sent_tx_rx {
+            if let Some(mut rx) = row_position_on_end_rx {
                 if let Ok(n) = rx.recv().await {
                     current_row_position = current_row_position.saturating_add(n);
                 }
