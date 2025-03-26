@@ -147,7 +147,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LruCache<K, V, S> {
         match self.table.entry(
             hash,
             |lru_key| self.elements[*lru_key].key == key,
-            |_| unreachable!(),
+            |lru_key| self.build_hasher.hash_one(&self.elements[*lru_key].key),
         ) {
             Entry::Occupied(o) => {
                 let lru_key = *o.get();
@@ -196,7 +196,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LruCache<K, V, S> {
         match self.table.entry(
             hash,
             |lru_key| self.elements[*lru_key].key.borrow() == key,
-            |_| unreachable!(),
+            |lru_key| self.build_hasher.hash_one(&self.elements[*lru_key].key),
         ) {
             Entry::Occupied(o) => {
                 let lru_key = *o.get();
