@@ -1466,7 +1466,7 @@ impl SQLFunctionVisitor<'_> {
                             _ => format!("^.*{}.*$", pat),
                         };
                         if let Some(active_schema) = &active_schema {
-                            let rx = regex::Regex::new(&pat).unwrap();
+                            let rx = polars_utils::regex_cache::compile_regex(&pat).unwrap();
                             let col_names = active_schema
                                 .iter_names()
                                 .filter(|name| rx.is_match(name))

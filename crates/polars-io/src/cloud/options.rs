@@ -23,9 +23,7 @@ pub use object_store::gcp::GoogleConfigKey;
 use object_store::{BackoffConfig, RetryConfig};
 use polars_error::*;
 #[cfg(feature = "aws")]
-use polars_utils::cache::FastFixedCache;
-#[cfg(feature = "aws")]
-use regex::Regex;
+use polars_utils::cache::LruCache;
 #[cfg(feature = "http")]
 use reqwest::header::HeaderMap;
 #[cfg(feature = "serde")]
@@ -42,10 +40,8 @@ use crate::pl_async::with_concurrency_budget;
 
 #[cfg(feature = "aws")]
 static BUCKET_REGION: LazyLock<
-    std::sync::Mutex<
-        FastFixedCache<polars_utils::pl_str::PlSmallStr, polars_utils::pl_str::PlSmallStr>,
-    >,
-> = LazyLock::new(|| std::sync::Mutex::new(FastFixedCache::new(32)));
+    std::sync::Mutex<LruCache<polars_utils::pl_str::PlSmallStr, polars_utils::pl_str::PlSmallStr>>,
+> = LazyLock::new(|| std::sync::Mutex::new(LruCache::with_capacity(32)));
 
 /// The type of the config keys must satisfy the following requirements:
 /// 1. must be easily collected into a HashMap, the type required by the object_crate API.
@@ -245,7 +241,7 @@ fn read_config(
 
         for (pattern, key) in keys.iter() {
             if builder.get_config_value(key).is_none() {
-                let reg = Regex::new(pattern).unwrap();
+                let reg = polars_utils::regex_cache::compile_regex(pattern).unwrap();
                 let cap = reg.captures(content)?;
                 let m = cap.get(1)?;
                 let parsed = m.as_str();
@@ -340,7 +336,7 @@ impl CloudOptions {
         {
             let bucket = crate::cloud::CloudLocation::new(url, false)?.bucket;
             let region = {
-                let bucket_region = BUCKET_REGION.lock().unwrap();
+                let mut bucket_region = BUCKET_REGION.lock().unwrap();
                 bucket_region.get(bucket.as_str()).cloned()
             };
 
