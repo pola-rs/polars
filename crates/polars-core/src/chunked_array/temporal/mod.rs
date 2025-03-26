@@ -8,8 +8,6 @@ mod datetime;
 mod duration;
 #[cfg(feature = "dtype-time")]
 mod time;
-#[cfg(feature = "timezones")]
-use std::sync::LazyLock;
 
 #[cfg(feature = "dtype-date")]
 use chrono::NaiveDate;
@@ -20,8 +18,6 @@ use chrono::NaiveTime;
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(all(feature = "regex", feature = "timezones"))]
-use regex::Regex;
 #[cfg(feature = "dtype-time")]
 pub use time::time_to_time64ns;
 
@@ -39,8 +35,9 @@ static FIXED_OFFSET_PATTERN: &str = r#"(?x)
     $
     "#;
 #[cfg(feature = "timezones")]
-static FIXED_OFFSET_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(FIXED_OFFSET_PATTERN).unwrap());
+polars_utils::regex_cache::cached_regex! {
+    static FIXED_OFFSET_RE = FIXED_OFFSET_PATTERN;
+}
 
 #[cfg(feature = "timezones")]
 pub fn validate_time_zone(tz: &str) -> PolarsResult<()> {

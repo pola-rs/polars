@@ -2,8 +2,6 @@ use std::fmt;
 
 use polars_core::error::*;
 use polars_utils::{format_list_container_truncated, format_list_truncated};
-#[cfg(feature = "regex")]
-use regex::Regex;
 
 use crate::constants;
 use crate::plans::ir::IRPlanRef;
@@ -93,8 +91,10 @@ fn with_header(header: &Option<String>, text: &str) -> String {
 
 #[cfg(feature = "regex")]
 fn multiline_expression(expr: &str) -> std::borrow::Cow<'_, str> {
-    let re = Regex::new(r"([\)\]])(\.[a-z0-9]+\()").unwrap();
-    re.replace_all(expr, "$1\n  $2")
+    polars_utils::regex_cache::cached_regex! {
+        static RE = r"([\)\]])(\.[a-z0-9]+\()";
+    }
+    RE.replace_all(expr, "$1\n  $2")
 }
 
 impl<'a> TreeFmtNode<'a> {

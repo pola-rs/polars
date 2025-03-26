@@ -109,8 +109,8 @@ fn expand_regex(
     pattern: &str,
     exclude: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<()> {
-    let re =
-        regex::Regex::new(pattern).map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
+    let re = polars_utils::regex_cache::compile_regex(pattern)
+        .map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
     for name in schema.iter_names() {
         if re.is_match(name) && !exclude.contains(name.as_str()) {
             let mut new_expr = remove_exclude(expr.clone());
@@ -395,7 +395,7 @@ Hint: set 'upper_bound' for 'list.to_struct'.",
         else {
             #[cfg(feature = "regex")]
             {
-                let re = regex::Regex::new(first_name)
+                let re = polars_utils::regex_cache::compile_regex(first_name)
                     .map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
 
                 fields
