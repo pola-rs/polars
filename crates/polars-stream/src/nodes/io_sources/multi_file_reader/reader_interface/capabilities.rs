@@ -7,7 +7,7 @@ bitflags! {
         ///
         /// Readers may want to implement this if they implement any of:
         /// * NEGATIVE_PRE_SLICE
-        /// * FILTER
+        /// * SPECIALIZED_FILTER
         ///
         /// If any of the above operations are requested alongside ROW_INDEX, they cannot be pushed
         /// into the reader if ROW_INDEX is not supported in the reader.
