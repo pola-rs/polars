@@ -2,6 +2,7 @@ use arrow::array::Array;
 use polars_row::RowEncodingOptions;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
+use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
 
 use self::row_encode::get_row_encoding_context;
@@ -31,6 +32,10 @@ impl RowEncodedHashGrouper {
                 index
             },
         }
+    }
+
+    fn contains_key(&self, hash: u64, key: &[u8]) -> bool {
+        self.idx_map.contains_key(hash, key)
     }
 
     fn finalize_keys(&self, mut key_rows: Vec<&[u8]>) -> DataFrame {
@@ -81,13 +86,65 @@ impl Grouper for RowEncodedHashGrouper {
             unreachable!()
         };
         assert!(!keys.hashes.has_nulls());
-        assert!(!keys.keys.has_nulls());
 
-        group_idxs.clear();
-        group_idxs.reserve(keys.hashes.len());
-        for (hash, key) in keys.hashes.values_iter().zip(keys.keys.values_iter()) {
-            unsafe {
-                group_idxs.push_unchecked(self.insert_key(*hash, key));
+        unsafe {
+            if keys.keys.has_nulls() {
+                group_idxs.reserve(keys.keys.len() - keys.keys.null_count());
+                for (idx, hash) in keys.hashes.values_iter().enumerate() {
+                    if let Some(key) = keys.keys.get_unchecked(idx) {
+                        group_idxs.push_unchecked(self.insert_key(*hash, key));
+                    }
+                }
+            } else {
+                group_idxs.reserve(keys.hashes.len());
+                for (hash, key) in keys.hashes.values_iter().zip(keys.keys.values_iter()) {
+                    group_idxs.push_unchecked(self.insert_key(*hash, key));
+                }
+            }
+        }
+    }
+
+    unsafe fn insert_keys_subset(
+        &mut self,
+        keys: &HashKeys,
+        subset: &[IdxSize],
+        group_idxs: Option<&mut Vec<IdxSize>>,
+    ) {
+        let HashKeys::RowEncoded(keys) = keys else {
+            unreachable!()
+        };
+        assert!(!keys.hashes.has_nulls());
+
+        unsafe {
+            if keys.keys.has_nulls() {
+                let groups = subset.iter().filter_map(|idx| {
+                    if let Some(key) = keys.keys.get_unchecked(*idx as usize) {
+                        let hash = keys.hashes.value_unchecked(*idx as usize);
+                        Some(self.insert_key(hash, key))
+                    } else {
+                        None
+                    }
+                });
+
+                if let Some(group_idxs) = group_idxs {
+                    group_idxs.reserve(keys.keys.len() - keys.keys.null_count());
+                    group_idxs.extend(groups);
+                } else {
+                    groups.for_each(drop);
+                }
+            } else {
+                let groups = subset.iter().map(|idx| {
+                    let hash = keys.hashes.value_unchecked(*idx as usize);
+                    let key = keys.keys.value_unchecked(*idx as usize);
+                    self.insert_key(hash, key)
+                });
+
+                if let Some(group_idxs) = group_idxs {
+                    group_idxs.reserve(keys.hashes.len());
+                    group_idxs.extend(groups);
+                } else {
+                    groups.for_each(drop);
+                }
             }
         }
     }
@@ -168,6 +225,57 @@ impl Grouper for RowEncodedHashGrouper {
                 let p_idx = partitioner.hash_to_partition(hash);
                 let p = partition_idxs.get_unchecked_mut(p_idx);
                 p.push_unchecked(i as IdxSize);
+            }
+        }
+    }
+
+    /// # Safety
+    /// All groupers must be a RowEncodedHashGrouper.
+    unsafe fn probe_partitioned_groupers(
+        &self,
+        groupers: &[Box<dyn Grouper>],
+        keys: &HashKeys,
+        probe_matches: &mut Vec<IdxSize>,
+        partitioner: &HashPartitioner,
+        invert: bool,
+    ) {
+        let HashKeys::RowEncoded(keys) = keys else {
+            unreachable!()
+        };
+        assert!(partitioner.num_partitions() == groupers.len());
+
+        unsafe {
+            if keys.keys.has_nulls() {
+                for (idx, hash) in keys.hashes.values_iter().enumerate_idx() {
+                    let has_group = if let Some(key) = keys.keys.get_unchecked(idx as usize) {
+                        let p = partitioner.hash_to_partition(*hash);
+                        let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
+                        let grouper =
+                            &*(dyn_grouper as *const dyn Grouper as *const RowEncodedHashGrouper);
+                        grouper.contains_key(*hash, key)
+                    } else {
+                        false
+                    };
+
+                    if has_group != invert {
+                        probe_matches.push(idx);
+                    }
+                }
+            } else {
+                for (idx, (hash, key)) in keys
+                    .hashes
+                    .values_iter()
+                    .zip(keys.keys.values_iter())
+                    .enumerate_idx()
+                {
+                    let p = partitioner.hash_to_partition(*hash);
+                    let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
+                    let grouper =
+                        &*(dyn_grouper as *const dyn Grouper as *const RowEncodedHashGrouper);
+                    if grouper.contains_key(*hash, key) != invert {
+                        probe_matches.push(idx);
+                    }
+                }
             }
         }
     }

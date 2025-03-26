@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use polars_ops::frame::JoinType;
 use polars_plan::dsl::FileScan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
@@ -255,9 +256,25 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
+        }
+        | PhysNodeKind::SemiAntiJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
         } => {
-            let mut label = if matches!(phys_sm[node_key].kind, PhysNodeKind::EquiJoin { .. }) {
-                "equi-join".to_string()
+            let mut label = if matches!(
+                phys_sm[node_key].kind,
+                PhysNodeKind::EquiJoin { .. } | PhysNodeKind::SemiAntiJoin { .. }
+            ) {
+                if args.how.is_equi() {
+                    "equi-join".to_string()
+                } else if args.how == JoinType::Semi {
+                    "semi-join".to_string()
+                } else {
+                    "anti-join".to_string()
+                }
             } else {
                 "in-memory-join".to_string()
             };

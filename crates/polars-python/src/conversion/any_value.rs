@@ -561,7 +561,7 @@ pub(crate) fn py_object_to_any_value<'py>(
                 }
             }
 
-            let conversion_func = lut.get(&py_type_address).unwrap();
+            let conversion_func = *lut.get(&py_type_address).unwrap();
             conversion_func(ob, strict)
         })
     })

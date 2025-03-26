@@ -238,6 +238,10 @@ impl JoinType {
         )
     }
 
+    pub fn is_semi_anti(&self) -> bool {
+        matches!(self, JoinType::Semi | JoinType::Anti)
+    }
+
     pub fn is_asof(&self) -> bool {
         #[cfg(feature = "asof_join")]
         {
