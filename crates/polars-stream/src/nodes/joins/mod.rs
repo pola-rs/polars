@@ -31,43 +31,6 @@ static JOIN_SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
 // smaller side as the build side without checking cardinalities.
 const LOPSIDED_SAMPLE_FACTOR: usize = 10;
 
-struct EquiJoinParams {
-    left_is_build: Option<bool>,
-    preserve_order_build: bool,
-    preserve_order_probe: bool,
-    left_key_schema: Arc<Schema>,
-    left_key_selectors: Vec<StreamExpr>,
-    #[allow(dead_code)]
-    right_key_schema: Arc<Schema>,
-    right_key_selectors: Vec<StreamExpr>,
-    left_payload_select: Vec<Option<PlSmallStr>>,
-    right_payload_select: Vec<Option<PlSmallStr>>,
-    left_payload_schema: Arc<Schema>,
-    right_payload_schema: Arc<Schema>,
-    args: JoinArgs,
-    random_state: PlRandomState,
-}
-
-impl EquiJoinParams {
-    /// Should we emit unmatched rows from the build side?
-    fn emit_unmatched_build(&self) -> bool {
-        if self.left_is_build.unwrap() {
-            self.args.how == JoinType::Left || self.args.how == JoinType::Full
-        } else {
-            self.args.how == JoinType::Right || self.args.how == JoinType::Full
-        }
-    }
-
-    /// Should we emit unmatched rows from the probe side?
-    fn emit_unmatched_probe(&self) -> bool {
-        if self.left_is_build.unwrap() {
-            self.args.how == JoinType::Right || self.args.how == JoinType::Full
-        } else {
-            self.args.how == JoinType::Left || self.args.how == JoinType::Full
-        }
-    }
-}
-
 // TODO: improve, generalize this, and move it away from here.
 struct BufferedStream {
     morsels: ArrayQueue<Morsel>,

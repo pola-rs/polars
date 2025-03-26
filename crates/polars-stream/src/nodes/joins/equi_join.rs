@@ -22,13 +22,50 @@ use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
-use super::{BufferedStream, EquiJoinParams, JOIN_SAMPLE_LIMIT, LOPSIDED_SAMPLE_FACTOR};
+use super::{BufferedStream, JOIN_SAMPLE_LIMIT, LOPSIDED_SAMPLE_FACTOR};
 use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
+
+struct EquiJoinParams {
+    left_is_build: Option<bool>,
+    preserve_order_build: bool,
+    preserve_order_probe: bool,
+    left_key_schema: Arc<Schema>,
+    left_key_selectors: Vec<StreamExpr>,
+    #[allow(dead_code)]
+    right_key_schema: Arc<Schema>,
+    right_key_selectors: Vec<StreamExpr>,
+    left_payload_select: Vec<Option<PlSmallStr>>,
+    right_payload_select: Vec<Option<PlSmallStr>>,
+    left_payload_schema: Arc<Schema>,
+    right_payload_schema: Arc<Schema>,
+    args: JoinArgs,
+    random_state: PlRandomState,
+}
+
+impl EquiJoinParams {
+    /// Should we emit unmatched rows from the build side?
+    fn emit_unmatched_build(&self) -> bool {
+        if self.left_is_build.unwrap() {
+            self.args.how == JoinType::Left || self.args.how == JoinType::Full
+        } else {
+            self.args.how == JoinType::Right || self.args.how == JoinType::Full
+        }
+    }
+
+    /// Should we emit unmatched rows from the probe side?
+    fn emit_unmatched_probe(&self) -> bool {
+        if self.left_is_build.unwrap() {
+            self.args.how == JoinType::Right || self.args.how == JoinType::Full
+        } else {
+            self.args.how == JoinType::Left || self.args.how == JoinType::Full
+        }
+    }
+}
 
 /// A payload selector contains for each column whether that column should be
 /// included in the payload, and if yes with what name.
