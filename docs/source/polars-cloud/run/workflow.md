@@ -94,7 +94,7 @@ query = (
 )
 ```
 
-Next, we set our compute context and call `.remote(ctx)` on our query.
+Next, we set our compute context and call `.remote(context=ctx)` on our query.
 
 ```python
 import polars_cloud as pc
@@ -105,7 +105,7 @@ ctx = pc.ComputeContext(
     cpus=8
 )
 
-query.remote(ctx).sink_parquet("s3://bucket/result.parquet")
+query.remote(context=ctx).sink_parquet("s3://bucket/result.parquet")
 ```
 
 ### Continue analysis in interactive mode
@@ -121,7 +121,7 @@ ctx = pc.ComputeContext(
     interactive=True,  # set interactive to True
 )
 
-result = query.remote(ctx).collect()
+result = query.remote(context=ctx).collect()
 
 print(result.collect())
 ```
