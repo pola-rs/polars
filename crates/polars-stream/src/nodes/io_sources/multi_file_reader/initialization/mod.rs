@@ -52,8 +52,6 @@ impl MultiScanTaskInitializer {
         let background_tasks_handle = AbortOnDropHandle::new(async_executor::spawn(
             TaskPriority::Low,
             async move {
-                // Note: We don't mutate `self.config` and we don't use it at runtime. All resolved
-                // information become variables in this scope.
                 let (skip_files_mask, predicate) = self.initialize_predicate()?;
 
                 if verbose {

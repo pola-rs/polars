@@ -154,8 +154,7 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
 
     let scan_source_idx = config.sources.len() - n_files_from_end;
     let initialized_readers = Some((scan_source_idx, initialized_readers));
-    let resolved_slice =
-        pre_slice.restrict_to_bounds(usize::try_from(n_rows_seen).unwrap_or(usize::MAX));
+    let resolved_slice = pre_slice.restrict_to_bounds(usize::try_from(n_rows_seen).unwrap());
 
     if verbose {
         eprintln!(
