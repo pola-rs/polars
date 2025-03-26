@@ -149,6 +149,6 @@ def _resolve_file_path(path: Path, *, use_abs_path: bool = False) -> Path:
         curr_dir = Path.cwd()
         try:
             file_path = Path(os.path.relpath(abs_path, curr_dir))
-        except OSError:  # Fallback
+        except (ValueError, OSError):  # Fallback
             file_path = abs_path
         return file_path
