@@ -1,5 +1,5 @@
 disallowed-types = ["std::collections::HashMap", "std::collections::HashSet"]
 
 disallowed-methods = [
-    { path = "regex::Regex::new", reason = "use polars_utils::regex_cache" },
+  { path = "regex::Regex::new", reason = "use polars_utils::regex_cache" },
 ]
