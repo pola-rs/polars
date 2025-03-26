@@ -16,6 +16,7 @@ use polars_utils::slice_enum::Slice;
 use super::extra_ops::cast_columns::CastColumnsPolicy;
 use super::extra_ops::missing_columns::MissingColumnsPolicy;
 use crate::async_executor::JoinHandle;
+use crate::async_primitives::connector;
 
 /// Interface to read a single file
 #[async_trait]
@@ -36,7 +37,7 @@ pub trait FileReader: Send + Sync {
     /// Note: The default implementation of this dispatches to `begin_read`, so should not be
     /// called from there.
     async fn n_rows_in_file(&self) -> PolarsResult<IdxSize> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (tx, mut rx) = connector::connector();
 
         let (morsel_receivers, handle) = self.begin_read(BeginReadArgs {
             // Passing 0-0 slice indicates to the reader that we want the full row count, but it can
@@ -51,7 +52,7 @@ pub trait FileReader: Send + Sync {
 
         drop(morsel_receivers);
 
-        match rx.await {
+        match rx.recv().await {
             Ok(v) => Ok(v),
             // It is an impl error if nothing is returned on a non-error case.
             Err(_) => Err(handle.await.unwrap_err()),
@@ -66,7 +67,7 @@ pub trait FileReader: Send + Sync {
             return self.n_rows_in_file().await;
         }
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (tx, mut rx) = connector::connector();
 
         let (mut morsel_receivers, handle) = self.begin_read(BeginReadArgs {
             pre_slice,
@@ -77,7 +78,7 @@ pub trait FileReader: Send + Sync {
             ..Default::default()
         })?;
 
-        // We are using the `row_position_on_end` callback, this means we must fully consume all of
+        // We are using the `n_rows_sent_tx` callback, this means we must fully consume all of
         // the morsels sent by the reader.
         //
         // Note:
@@ -86,7 +87,7 @@ pub trait FileReader: Send + Sync {
         //   from a non-zero offset.
         while morsel_receivers.recv().await.is_ok() {}
 
-        match rx.await {
+        match rx.recv().await {
             Ok(v) => Ok(v),
             // It is an impl error if nothing is returned on a non-error case.
             Err(_) => Err(handle.await.unwrap_err()),
@@ -108,7 +109,6 @@ pub struct BeginReadArgs {
     /// A reader may wish to use this if it is applying predicates.
     ///
     /// This can be ignored by the reader, as the policy is also applied in post.
-    #[expect(unused)]
     pub cast_columns_policy: CastColumnsPolicy,
     /// User-configured policy for when columns are not found in the file.
     ///
@@ -141,35 +141,59 @@ impl Default for BeginReadArgs {
     }
 }
 
-#[derive(Debug, Default)]
-/// We have this to avoid a footgun of accidentally swapping the arguments.
+/// Note, these are oneshot, but we are using the connector as tokio's oneshot channel deadlocks
+/// on our async runtime. Not sure exactly why, seems to be something to do with the waker.
+#[derive(Default)]
 pub struct FileReaderCallbacks {
     /// Full file schema
-    pub file_schema_tx: Option<tokio::sync::oneshot::Sender<SchemaRef>>,
+    pub file_schema_tx: Option<connector::Sender<SchemaRef>>,
 
     /// Callback for full row count. Avoid using this as it can trigger a full row count depending
-    /// on the source. Prefer instead to use `row_position_on_end`, which can be much faster.
+    /// on the source. Prefer instead to use `n_rows_sent_tx`, which can be much faster.
     ///
     /// Notes:
-    /// * All readers must ensure that this count is sent if requested, even if the output port
-    ///   closes prematurely, or a slice is sent.
+    /// * The reader must ensure that this count is sent if requested, even if the output port
+    ///   closes prematurely, or a slice is sent. This is unless the reader encounters an error.
     /// * Some readers will only send this after their output morsels to be fully consumed (or if
     ///   their output port is dropped), so you should not block morsel consumption on waiting for this.
-    pub n_rows_in_file_tx: Option<tokio::sync::oneshot::Sender<IdxSize>>,
+    pub n_rows_in_file_tx: Option<connector::Sender<IdxSize>>,
 
-    /// Returns the row position reached by this reader.
+    /// Callback that can either be the total row count of the file, or the number of rows that the
+    /// reader will have processed upon finishing if a slice was requested.
     ///
-    /// The returned value indicates how much of a requested slice was consumed (or the full row
-    /// count if there was none). This is only guaranteed to be the case if the morsels of this
-    /// reader are fully consumed (i.e. no premature stopping), and the reader finishes with an Ok(()) result.
+    /// This callback should be sent as soon as possible, as it can be a serial dependency for the
+    /// next reader.
     ///
-    /// In all other cases, the behavior is subject to reader-specific implementation details and is
-    /// generally not well-defined - i.e. it could be any of:
-    /// * An upfront calculated position based on the total row count
-    /// * An arbitrary position in the file where the reader is currently positioned
-    /// * Not sent at all
-    /// * etc.
-    pub row_position_on_end_tx: Option<tokio::sync::oneshot::Sender<IdxSize>>,
+    /// A reader that knows its total row count upfront will be able to send this value immediately
+    /// (e.g. Parquet). Other readers (e.g. CSV) would generally keep a counter of how many rows they
+    /// have seen and return this after finishing.
+    ///
+    /// The returned value is useful for determining how much of a requested slice is consumed by a reader.
+    /// It is more efficient than `n_rows_in_file_tx` as it allows the reader to stop early if it hits the
+    /// end of a requested slice.
+    pub row_position_on_end_tx: Option<connector::Sender<IdxSize>>,
+}
+
+impl std::fmt::Debug for FileReaderCallbacks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let FileReaderCallbacks {
+            file_schema_tx,
+            n_rows_in_file_tx,
+            row_position_on_end_tx,
+        } = self;
+
+        f.write_str(&format!(
+            "\
+        FileReaderCallbacks: \
+        file_schema_tx: {:?} \
+        n_rows_in_file_tx: {:?} \
+        row_position_on_end_tx: {:?} \
+        ",
+            file_schema_tx.as_ref().map(|_| ""),
+            n_rows_in_file_tx.as_ref().map(|_| ""),
+            row_position_on_end_tx.as_ref().map(|_| "")
+        ))
+    }
 }
 
 /// Calculate from a known total row count.
