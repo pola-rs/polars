@@ -238,6 +238,7 @@ impl JoinType {
         )
     }
 
+    #[cfg(feature = "semi_anti_join")]
     pub fn is_semi_anti(&self) -> bool {
         matches!(self, JoinType::Semi | JoinType::Anti)
     }
