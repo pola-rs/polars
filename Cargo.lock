@@ -3425,6 +3425,7 @@ dependencies = [
  "chrono-tz",
  "either",
  "flate2",
+ "hashbrown 0.15.2",
  "itoa",
  "libc",
  "ndarray",
