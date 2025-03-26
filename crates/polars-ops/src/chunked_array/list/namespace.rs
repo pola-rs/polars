@@ -639,6 +639,7 @@ pub trait ListNameSpaceImpl: AsList {
                 .flat_map(|s| {
                     let lst = s.list().unwrap();
                     lst.get_as_series(0)
+                        .map(|s| s.cast(&inner_super_type).unwrap())
                 })
                 .collect::<Vec<_>>();
             // there was a None, so all values will be None

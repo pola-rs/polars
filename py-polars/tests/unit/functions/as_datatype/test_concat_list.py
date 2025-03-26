@@ -1,8 +1,15 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_list_concat() -> None:
@@ -36,6 +43,33 @@ def test_concat_list_with_lit() -> None:
     result = df.select(pl.concat_list([pl.lit(1), pl.col("a")]).alias("a"))
     expected = {"a": [[1, 1], [1, 2], [1, 3]]}
     assert result.to_dict(as_series=False) == expected
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("ms", time_zone="EST"),
+        pl.Duration("ns"),
+        pl.Time,
+    ],
+)
+def test_concat_list_temporal_with_null(dtype: PolarsDataType) -> None:
+    df = pl.DataFrame({"dt": pl.Series([1, 2], dtype=dtype)})
+    result = df.select(dt_list=pl.concat_list(pl.col("dt"), None))
+    expected = pl.DataFrame(
+        {
+            "dt_list": pl.Series(
+                [
+                    [1, None],
+                    [2, None],
+                ],
+                dtype=pl.List(dtype),
+            )
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_concat_list_empty_raises() -> None:
