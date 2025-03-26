@@ -28,7 +28,7 @@ lf = lf.select(
     (pl.col("weight") / (pl.col("height") ** 2)).alias("bmi"),
 ).sort(by="bmi")
 
-lf.remote(ctx).sink_parquet("s3://bucket/output.parquet")
+lf.remote(context=ctx).sink_parquet("s3://bucket/output.parquet")
 # --8<-- [end:batch]
 
 # --8<-- [start:interactive]
@@ -42,7 +42,7 @@ lf = lf.select(
     (pl.col("weight") / (pl.col("height") ** 2)).alias("bmi"),
 ).sort(by="bmi")
 
-res1 = lf.remote(ctx).collect()
+res1 = lf.remote(context=ctx).collect()
 
 # --8<-- [end:interactive]
 
@@ -52,7 +52,7 @@ res2 = (
     .filter(
         pl.col("birth_year").is_in([1983, 1985]),
     )
-    .remote(ctx)
+    .remote(context=ctx)
     .collect()
 )
 # --8<-- [end:interactive-next]
