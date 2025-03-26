@@ -449,7 +449,7 @@ impl ReaderStarter {
 
             // Note: We do set_external_columns later below to avoid blocking this loop.
             let predicate = if extra_ops_post.predicate.is_some()
-                && reader_capabilities.contains(ReaderCapabilities::FILTER)
+                && reader_capabilities.contains(ReaderCapabilities::SPECIALIZED_FILTER)
                 && extra_ops_post.row_index.is_none()
                 && extra_ops_post.pre_slice.is_none()
             {
