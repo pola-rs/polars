@@ -172,6 +172,7 @@ def test_nested_dtypes_dont_support_ascending(
 ) -> None:
     # Due to issues with row encoding implementation details, search an
     # descending list/array/struct Series is unsupported, for now at least.
+    # See https://github.com/pola-rs/polars/issues/21946
     series = pl.Series(values, dtype=dtype).sort(descending=True)
     with pytest.raises(
         InvalidOperationError,

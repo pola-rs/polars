@@ -83,7 +83,8 @@ pub fn search_sorted(
         dt if dt.is_nested() => {
             // Unfortunately in some combinations of ascending sort and
             // nulls_last, the row encoding does not preserve sort order. So for
-            // now we don't support it.
+            // now we don't support it until
+            // https://github.com/pola-rs/polars/issues/21946 is fixed.
             polars_ensure!(
                 !descending,
                 InvalidOperation: "descending sort is not supported in nested dtypes"
