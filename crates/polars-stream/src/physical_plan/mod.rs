@@ -246,6 +246,14 @@ pub enum PhysNodeKind {
         args: JoinArgs,
     },
 
+    SemiAntiJoin {
+        input_left: PhysStream,
+        input_right: PhysStream,
+        left_on: Vec<ExprIR>,
+        right_on: Vec<ExprIR>,
+        args: JoinArgs,
+    },
+
     /// Generic fallback for (as-of-yet) unsupported streaming joins.
     /// Fully sinks all data to in-memory data frames and uses the in-memory
     /// engine to perform the join.
@@ -316,6 +324,11 @@ fn visit_node_inputs_mut(
                 ..
             }
             | PhysNodeKind::EquiJoin {
+                input_left,
+                input_right,
+                ..
+            }
+            | PhysNodeKind::SemiAntiJoin {
                 input_left,
                 input_right,
                 ..

@@ -71,6 +71,15 @@ impl<V> BytesIndexMap<V> {
         unsafe { Some(&self.tuples.get_unchecked(*idx as usize).1) }
     }
 
+    pub fn contains_key(&self, hash: u64, key: &[u8]) -> bool {
+        self.table
+            .find(hash.wrapping_mul(self.seed), |i| unsafe {
+                let t = self.tuples.get_unchecked(*i as usize);
+                hash == t.0.key_hash && key == t.0.get(&self.key_data)
+            })
+            .is_some()
+    }
+
     pub fn entry<'k>(&mut self, hash: u64, key: &'k [u8]) -> Entry<'_, 'k, V> {
         let entry = self.table.entry(
             hash.wrapping_mul(self.seed),
