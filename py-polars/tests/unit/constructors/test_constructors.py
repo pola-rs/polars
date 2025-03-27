@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Optional
 from collections import OrderedDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -451,7 +452,7 @@ def test_dataclasses_initvar_typing() -> None:
     class ABC:
         x: date
         y: float
-        z: dataclasses.InitVar[list[str]] = None
+        z: dataclasses.InitVar[Optional[list[str]]] = None
 
     # should be able to parse the initvar typing...
     abc = ABC(x=date(1999, 12, 31), y=100.0)
