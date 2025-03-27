@@ -276,9 +276,7 @@ impl ProbeState {
         };
 
         while let Ok(morsel) = recv.recv().await {
-            // Compute hashed keys and payload.
             let (df, in_seq, src_token, wait_token) = morsel.into_inner();
-
             if df.height() == 0 {
                 continue;
             }
@@ -316,13 +314,15 @@ impl ProbeState {
                     }
                     df.take_slice_unchecked(&probe_match)
                 };
-                let morsel = Morsel::new(out_df, in_seq, src_token.clone());
+
+                let mut morsel = Morsel::new(out_df, in_seq, src_token.clone());
+                if let Some(token) = wait_token {
+                    morsel.set_consume_token(token);
+                }
                 if send.send(morsel).await.is_err() {
                     return Ok(());
                 }
             }
-
-            drop(wait_token);
         }
 
         Ok(())
