@@ -27,10 +27,11 @@ pub(crate) struct Buffer<'a> {
 }
 
 impl Buffer<'_> {
-    pub fn into_series(self) -> Series {
-        let mut s = self.buf.into_series();
+    pub fn into_series(self) -> PolarsResult<Series> {
+        let mut buf = self.buf;
+        let mut s = buf.reset(0, !self.ignore_errors)?;
         s.rename(PlSmallStr::from_str(self.name));
-        s
+        Ok(s)
     }
 
     #[inline]
@@ -40,12 +41,14 @@ impl Buffer<'_> {
             Boolean(buf) => {
                 match value {
                     Value::Static(StaticNode::Bool(b)) => buf.append_value(*b),
-                    _ => buf.append_null(),
+                    Value::Static(StaticNode::Null) => buf.append_null(),
+                    _ if self.ignore_errors => buf.append_null(),
+                    v => polars_bail!(ComputeError: "cannot parse '{}' as Boolean", v),
                 }
                 Ok(())
             },
             Int32(buf) => {
-                let n = deserialize_number::<i32>(value);
+                let n = deserialize_number::<i32>(value, "Int32", self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -53,7 +56,7 @@ impl Buffer<'_> {
                 Ok(())
             },
             Int64(buf) => {
-                let n = deserialize_number::<i64>(value);
+                let n = deserialize_number::<i64>(value, "Int64", self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -61,7 +64,7 @@ impl Buffer<'_> {
                 Ok(())
             },
             UInt64(buf) => {
-                let n = deserialize_number::<u64>(value);
+                let n = deserialize_number::<u64>(value, "UInt64", self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -69,7 +72,7 @@ impl Buffer<'_> {
                 Ok(())
             },
             UInt32(buf) => {
-                let n = deserialize_number::<u32>(value);
+                let n = deserialize_number::<u32>(value, "UInt32", self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -77,7 +80,7 @@ impl Buffer<'_> {
                 Ok(())
             },
             Float32(buf) => {
-                let n = deserialize_number::<f32>(value);
+                let n = deserialize_number::<f32>(value, "Float32", self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -85,7 +88,7 @@ impl Buffer<'_> {
                 Ok(())
             },
             Float64(buf) => {
-                let n = deserialize_number::<f64>(value);
+                let n = deserialize_number::<f64>(value, "Float64", self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -96,19 +99,21 @@ impl Buffer<'_> {
             String(buf) => {
                 match value {
                     Value::String(v) => buf.append_value(v),
-                    _ => buf.append_null(),
+                    Value::Static(StaticNode::Null) => buf.append_null(),
+                    _ if self.ignore_errors => buf.append_null(),
+                    v => polars_bail!(ComputeError: "cannot parse '{}' as String", v),
                 }
                 Ok(())
             },
             #[cfg(feature = "dtype-datetime")]
             Datetime(buf, _, _) => {
-                let v = deserialize_datetime::<Int64Type>(value);
+                let v = deserialize_datetime::<Int64Type>(value, "Datetime", self.ignore_errors)?;
                 buf.append_option(v);
                 Ok(())
             },
             #[cfg(feature = "dtype-date")]
             Date(buf) => {
-                let v = deserialize_datetime::<Int32Type>(value);
+                let v = deserialize_datetime::<Int32Type>(value, "Date", self.ignore_errors)?;
                 buf.append_option(v);
                 Ok(())
             },
@@ -118,12 +123,17 @@ impl Buffer<'_> {
                 Ok(())
             },
             Null(builder) => {
+                if !(matches!(value, Value::Static(StaticNode::Null)) || self.ignore_errors) {
+                    polars_bail!(ComputeError: "got non-null value for NULL-typed column: {}", value)
+                };
+
                 builder.append_null();
                 Ok(())
             },
             _ => panic!("unexpected dtype when deserializing ndjson"),
         }
     }
+
     pub fn add_null(&mut self) {
         self.buf.add(AnyValue::Null).expect("should not fail");
     }
@@ -150,32 +160,64 @@ pub(crate) fn init_buffers(
         .collect()
 }
 
-fn deserialize_number<T: NativeType + NumCast>(value: &Value) -> Option<T> {
+fn deserialize_number<T: NativeType + NumCast>(
+    value: &Value,
+    type_name: &str,
+    ignore_errors: bool,
+) -> PolarsResult<Option<T>> {
+    let to_result = |x: Option<T>| {
+        let out = if ignore_errors {
+            x
+        } else {
+            Some(x.ok_or_else(
+                || polars_err!(ComputeError: "cannot parse '{}' as {}", value, type_name),
+            )?)
+        };
+
+        Ok(out)
+    };
+
     match value {
-        Value::Static(StaticNode::F64(f)) => num_traits::cast(*f),
-        Value::Static(StaticNode::I64(i)) => num_traits::cast(*i),
-        Value::Static(StaticNode::U64(u)) => num_traits::cast(*u),
-        Value::Static(StaticNode::Bool(b)) => num_traits::cast(*b as i32),
-        _ => None,
+        Value::Static(StaticNode::F64(f)) => to_result(num_traits::cast(*f)),
+        Value::Static(StaticNode::I64(i)) => to_result(num_traits::cast(*i)),
+        Value::Static(StaticNode::U64(u)) => to_result(num_traits::cast(*u)),
+        Value::Static(StaticNode::Bool(b)) => to_result(num_traits::cast(*b as i32)),
+        Value::Static(StaticNode::Null) => Ok(None),
+        _ => to_result(None),
     }
 }
 
 #[cfg(feature = "dtype-datetime")]
-fn deserialize_datetime<T>(value: &Value) -> Option<T::Native>
+fn deserialize_datetime<T>(
+    value: &Value,
+    type_name: &str,
+    ignore_errors: bool,
+) -> PolarsResult<Option<T::Native>>
 where
     T: PolarsNumericType,
     DatetimeInfer<T>: TryFromWithUnit<Pattern>,
 {
-    let val = match value {
-        Value::String(s) => s,
-        _ => return None,
+    match value {
+        Value::String(val) => {
+            if let Some(pattern) = infer_pattern_single(val) {
+                if let Ok(mut infer) =
+                    DatetimeInfer::try_from_with_unit(pattern, Some(TimeUnit::Microseconds))
+                {
+                    if let Some(v) = infer.parse(val) {
+                        return Ok(Some(v));
+                    }
+                }
+            }
+        },
+        Value::Static(StaticNode::Null) => return Ok(None),
+        _ => {},
     };
-    infer_pattern_single(val).and_then(|pattern| {
-        match DatetimeInfer::try_from_with_unit(pattern, Some(TimeUnit::Microseconds)) {
-            Ok(mut infer) => infer.parse(val),
-            Err(_) => None,
-        }
-    })
+
+    if ignore_errors {
+        return Ok(None);
+    }
+
+    polars_bail!(ComputeError: "cannot parse '{}' as {}", value, type_name)
 }
 
 fn deserialize_all<'a>(
@@ -201,8 +243,9 @@ fn deserialize_all<'a>(
                 .iter()
                 .map(|val| deserialize_all(val, inner_dtype, ignore_errors))
                 .collect::<PolarsResult<_>>()?;
+            let strict = !ignore_errors;
             let s =
-                Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &vals, inner_dtype, false)?;
+                Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &vals, inner_dtype, strict)?;
             AnyValue::List(s)
         },
         #[cfg(feature = "dtype-struct")]

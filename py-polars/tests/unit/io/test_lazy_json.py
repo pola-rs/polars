@@ -211,3 +211,78 @@ def test_scan_ndjson_slicing(
         lf.slice(-3, 999),
     ]:
         assert_frame_equal(q.collect(), q.collect(no_optimization=True))
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Boolean,
+        pl.Int32,
+        pl.Int64,
+        pl.UInt64,
+        pl.UInt32,
+        pl.Float32,
+        pl.Float64,
+        pl.Datetime,
+        pl.Date,
+        pl.Null,
+    ],
+)
+def test_scan_ndjson_raises_on_parse_error(dtype: pl.DataType) -> None:
+    buf = b"""\
+{"a": "AAAA"}
+"""
+
+    cx = (
+        pytest.raises(
+            pl.exceptions.ComputeError,
+            match="got non-null value for NULL-typed column: AAAA",
+        )
+        if str(dtype) == "Null"
+        else pytest.raises(pl.exceptions.ComputeError, match="cannot parse 'AAAA' as ")
+    )
+
+    with cx:
+        pl.scan_ndjson(
+            buf,
+            schema={"a": dtype},
+        ).collect()
+
+    assert_frame_equal(
+        pl.scan_ndjson(buf, schema={"a": dtype}, ignore_errors=True).collect(),
+        pl.DataFrame({"a": [None]}, schema={"a": dtype}),
+    )
+
+
+def test_scan_ndjson_parse_string() -> None:
+    assert_frame_equal(
+        pl.scan_ndjson(
+            b"""\
+{"a": "123"}
+""",
+            schema={"a": pl.String},
+        ).collect(),
+        pl.DataFrame({"a": "123"}),
+    )
+
+
+def test_scan_ndjson_raises_on_parse_error_nested() -> None:
+    buf = b"""\
+{"a": {"b": "AAAA"}}
+"""
+    q = pl.scan_ndjson(
+        buf,
+        schema={"a": pl.Struct({"b": pl.Int64})},
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError, match='"AAAA"'):
+        q.collect()
+
+    q = pl.scan_ndjson(
+        buf, schema={"a": pl.Struct({"b": pl.Int64})}, ignore_errors=True
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [{"b": None}]}, schema={"a": pl.Struct({"b": pl.Int64})}),
+    )
