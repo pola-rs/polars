@@ -20,9 +20,10 @@ from polars.dataframe import DataFrame
 from polars.dependencies import _check_for_pandas, _check_for_pyarrow
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
+from polars.exceptions import InvalidOperationError
 from polars.lazyframe import LazyFrame
 from polars.series import Series
-from polars.exceptions import InvalidOperationError
+
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PySQLContext
@@ -202,10 +203,11 @@ class SQLContext(Generic[FrameType]):
 
         if frames is not None:
             if not isinstance(frames, dict):
-                raise InvalidOperationError(
-            "All values must be named. Use named parameters or pass a dictionary with named frames.\n"
-            "Example: pl.SQLContext(df=df) or pl.SQLContext(frames={'df': df})"
-            )
+                msg = (
+                    "All values must be named. Use named parameters or pass a dictionary with named frames.\n"
+                    "Example: pl.SQLContext(df=df) or pl.SQLContext(frames={'df': df})"
+                )
+                raise InvalidOperationError(msg)
 
         frames = dict(frames or {})
         if register_globals:
