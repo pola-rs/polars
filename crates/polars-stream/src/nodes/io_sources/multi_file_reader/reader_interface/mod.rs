@@ -81,7 +81,7 @@ pub trait FileReader: Send + Sync {
             ..Default::default()
         })?;
 
-        // We are using the `row_position_on_end_tx` callback, this means we must fully consume all of
+        // We are using the `row_position_on_end` callback, this means we must fully consume all of
         // the morsels sent by the reader.
         //
         // Note:

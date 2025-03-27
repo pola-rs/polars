@@ -570,6 +570,13 @@ async fn start_reader_impl(
         None
     };
 
+    // Should not have both of these set, as the `n_rows_in_file` will cause the `row_position_on_end`
+    // callback to be unnecessarily blocked in CSV and NDJSON.
+    debug_assert!(
+        !(begin_read_args.callbacks.row_position_on_end_tx.is_some()
+            && begin_read_args.callbacks.n_rows_in_file_tx.is_some()),
+    );
+
     if let Some(predicate) = begin_read_args.predicate.as_mut() {
         let mut external_predicate_cols = Vec::with_capacity(
             hive_parts.as_ref().map_or(0, |x| x.df().width())
