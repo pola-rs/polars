@@ -692,7 +692,7 @@ impl PyLazyFrame {
 
     #[pyo3(signature = (engine, lambda))]
     fn collect_with_callback(&self, py: Python, engine: Wrap<Engine>, lambda: PyObject) {
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             let ldf = self.ldf.clone();
 
             polars_core::POOL.spawn(move || {
@@ -713,7 +713,10 @@ impl PyLazyFrame {
                     },
                 });
             });
+
+            PolarsResult::Ok(())
         })
+        .unwrap()
     }
 
     #[cfg(all(feature = "streaming", feature = "parquet"))]
