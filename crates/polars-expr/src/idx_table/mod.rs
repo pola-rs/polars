@@ -5,6 +5,7 @@ use polars_utils::IdxSize;
 
 use crate::hash_keys::HashKeys;
 
+mod binview;
 mod row_encoded;
 mod single_key;
 
@@ -104,6 +105,8 @@ pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
             DataType::Decimal(_, _) => Box::new(SKIT::<Int128Type>::new()),
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(_, _) => Box::new(SKIT::<UInt32Type>::new()),
+
+            DataType::String | DataType::Binary => Box::new(binview::BinviewKeyIdxTable::new()),
 
             _ => Box::new(row_encoded::RowEncodedIdxTable::new()),
         }

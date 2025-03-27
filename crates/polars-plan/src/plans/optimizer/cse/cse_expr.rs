@@ -1,4 +1,7 @@
+use std::hash::BuildHasher;
+
 use hashbrown::hash_map::RawEntryMut;
+use polars_utils::aliases::PlFixedStateQuality;
 use polars_utils::format_pl_smallstr;
 use polars_utils::vec::CapacityByFactor;
 
@@ -45,7 +48,7 @@ impl ProjectionExprs {
 pub(super) struct Identifier {
     inner: Option<u64>,
     last_node: Option<AexprNode>,
-    hb: PlRandomState,
+    hb: PlFixedStateQuality,
 }
 
 impl Identifier {
@@ -53,7 +56,7 @@ impl Identifier {
         Self {
             inner: None,
             last_node: None,
-            hb: PlRandomState::with_seed(0),
+            hb: PlFixedStateQuality::with_seed(0),
         }
     }
 
@@ -102,7 +105,7 @@ impl Identifier {
         Self {
             inner,
             last_node: Some(*ae),
-            hb: self.hb.clone(),
+            hb: self.hb,
         }
     }
 }
@@ -304,7 +307,7 @@ impl ExprIdentifierVisitor<'_> {
             AExpr::Window { .. } => REFUSE_SKIP,
             // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
             // TODO! Add a typed null
-            AExpr::Literal(LiteralValue::Null) => REFUSE_NO_MEMBER,
+            AExpr::Literal(LiteralValue::Scalar(sc)) if sc.is_null() => REFUSE_NO_MEMBER,
             AExpr::Literal(s) => {
                 match s {
                     LiteralValue::Series(s) => {

@@ -46,6 +46,8 @@ fn visualize_plan_rec(
             ),
             &[][..],
         ),
+        #[cfg(feature = "python")]
+        PhysNodeKind::PythonScan { .. } => ("python-scan".to_string(), &[][..]),
         PhysNodeKind::SinkMultiple { sinks } => {
             for sink in sinks {
                 visualize_plan_rec(*sink, phys_sm, expr_arena, visited, out);

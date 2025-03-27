@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -7,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars.io.plugins import register_io_source
+from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -23,7 +25,6 @@ def test_io_plugin_predicate_no_serialization_21130() -> None:
             df = pl.DataFrame(
                 {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
             )
-            print(predicate)
             if predicate is not None:
                 df = df.filter(predicate)
             if batch_size and df.height > batch_size:
@@ -69,3 +70,60 @@ def test_empty_iterator_io_plugin() -> None:
     schema = pl.Schema([("a", pl.Int64)])
     df = register_io_source(_io_source, schema=schema)
     assert df.collect().schema == schema
+
+
+def test_scan_lines() -> None:
+    def scan_lines(f: io.BytesIO) -> pl.LazyFrame:
+        schema = pl.Schema({"lines": pl.String()})
+
+        def generator(
+            with_columns: list[str] | None,
+            predicate: pl.Expr | None,
+            n_rows: int | None,
+            batch_size: int | None,
+        ) -> Iterator[pl.DataFrame]:
+            x = f
+            if batch_size is None:
+                batch_size = 100_000
+
+            batch_lines: list[str] = []
+            while n_rows != 0:
+                batch_lines.clear()
+                remaining_rows = batch_size
+                if n_rows is not None:
+                    remaining_rows = min(remaining_rows, n_rows)
+                    n_rows -= remaining_rows
+
+                while remaining_rows != 0 and (line := x.readline().rstrip()):
+                    if isinstance(line, str):
+                        batch_lines += [batch_lines]
+                    else:
+                        batch_lines += [line.decode()]
+                    remaining_rows -= 1
+
+                df = pl.Series("lines", batch_lines, pl.String()).to_frame()
+
+                if with_columns is not None:
+                    df = df.select(with_columns)
+                if predicate is not None:
+                    df = df.filter(predicate)
+
+                yield df
+
+                if remaining_rows != 0:
+                    break
+
+        return register_io_source(io_source=generator, schema=schema)
+
+    text = """
+Hello
+This is some text
+It is spread over multiple lines
+This allows it to read into multiple rows.
+    """.strip()
+    f = io.BytesIO(bytes(text, encoding="utf-8"))
+
+    assert_series_equal(
+        scan_lines(f).collect().to_series(),
+        pl.Series("lines", text.splitlines(), pl.String()),
+    )

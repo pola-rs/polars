@@ -7745,6 +7745,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
         include_nulls: bool = False,
+        maintain_order: MaintainOrderJoin | None = "left",
     ) -> LazyFrame:
         """
         Update the values in this `LazyFrame` with the values in `other`.
@@ -7773,10 +7774,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         include_nulls
             Overwrite values in the left frame with null values from the right frame.
             If set to `False` (default), null values in the right frame are ignored.
+        maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
+            Which order of rows from the inputs to preserve. See :func:`~LazyFrame.join`
+            for details. Unlike `join` this function preserves the left order by
+            default.
 
         Notes
         -----
-        This is syntactic sugar for a left/inner join, with an optional coalesce when
+        This is syntactic sugar for a left/inner join that preserves the order
+        of the left `DataFrame` by default, with an optional coalesce when
         `include_nulls = False`.
 
         Examples
@@ -7949,6 +7955,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 how=how,
                 suffix=tmp_name,
                 coalesce=True,
+                maintain_order=maintain_order,
             )
             .with_columns(
                 (

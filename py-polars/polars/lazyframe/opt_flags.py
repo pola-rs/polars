@@ -25,6 +25,7 @@ class OptFlags:
         self._pyoptflags = PyOptFlags.empty()
 
         self._pyoptflags.type_check = _type_check
+        self._pyoptflags.type_coercion = _type_coercion
         self._pyoptflags.predicate_pushdown = predicate_pushdown
         self._pyoptflags.projection_pushdown = projection_pushdown
         self._pyoptflags.simplify_expression = simplify_expression

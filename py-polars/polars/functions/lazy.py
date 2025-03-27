@@ -1878,6 +1878,78 @@ def collect_all_async(
     return result
 
 
+@unstable()
+def explain_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    type_coercion: bool = True,
+    _type_check: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
+    _check_order: bool = True,
+) -> str:
+    """
+    Explain multiple LazyFrames as if passed to `collect_all`.
+
+    Common Subplan Elimination is applied on the combined plan, meaning
+    that diverging queries will run only once.
+
+    Parameters
+    ----------
+    lazy_frames
+        A list of LazyFrames to collect.
+    type_coercion
+        Do type coercion optimization.
+    predicate_pushdown
+        Do predicate pushdown optimization.
+    projection_pushdown
+        Do projection pushdown optimization.
+    simplify_expression
+        Run simplify expressions optimization.
+    no_optimization
+        Turn off optimizations.
+    slice_pushdown
+        Slice pushdown optimization.
+    comm_subplan_elim
+        Will try to cache branching subplans that occur on self-joins or unions.
+    comm_subexpr_elim
+        Common subexpressions will be cached and reused.
+    cluster_with_columns
+        Combine sequential independent calls to with_columns
+    collapse_joins
+        Collapse a join and filters into a faster join
+
+    Returns
+    -------
+    Explained plan.
+    """
+    optflags = OptFlags(
+        _type_coercion=type_coercion,
+        _type_check=_type_check,
+        predicate_pushdown=predicate_pushdown,
+        projection_pushdown=projection_pushdown,
+        simplify_expression=simplify_expression,
+        slice_pushdown=slice_pushdown,
+        comm_subplan_elim=comm_subplan_elim,
+        comm_subexpr_elim=comm_subexpr_elim,
+        cluster_with_columns=cluster_with_columns,
+        collapse_joins=collapse_joins,
+        check_order_observe=_check_order,
+    )
+    if no_optimization:
+        optflags.no_optimizations()
+
+    lfs = [lf._ldf for lf in lazy_frames]
+    return plr.explain_all(lfs, optflags._pyoptflags)
+
+
 @overload
 def select(
     *exprs: IntoExpr | Iterable[IntoExpr],

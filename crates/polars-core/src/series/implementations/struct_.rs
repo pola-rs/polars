@@ -69,14 +69,18 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         self.0.agg_list(groups)
     }
 
-    fn vec_hash(&self, build_hasher: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         let mut fields = self.0.fields_as_series().into_iter();
 
         if let Some(s) = fields.next() {
-            s.vec_hash(build_hasher.clone(), buf)?
+            s.vec_hash(build_hasher, buf)?
         };
         for s in fields {
-            s.vec_hash_combine(build_hasher.clone(), buf)?
+            s.vec_hash_combine(build_hasher, buf)?
         }
         Ok(())
     }

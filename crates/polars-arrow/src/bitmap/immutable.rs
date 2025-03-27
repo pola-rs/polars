@@ -398,8 +398,11 @@ impl Bitmap {
         // We intentionally leak 1MiB of zeroed memory once so we don't have to
         // refcount it.
         const GLOBAL_ZERO_SIZE: usize = 1024 * 1024;
-        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> =
-            LazyLock::new(|| SharedStorage::from_static(vec![0; GLOBAL_ZERO_SIZE].leak()));
+        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> = LazyLock::new(|| {
+            let mut ss = SharedStorage::from_vec(vec![0; GLOBAL_ZERO_SIZE]);
+            ss.leak();
+            ss
+        });
 
         let bytes_needed = length.div_ceil(8);
         let storage = if bytes_needed <= GLOBAL_ZERO_SIZE {

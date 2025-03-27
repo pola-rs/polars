@@ -1460,9 +1460,9 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "foldhash"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0d2fde1f7b3d48b8395d5f2de76c18a528bd6a9cdde438df747bfcba3e05d6f"
+checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
 name = "foreign-types"
@@ -2295,7 +2295,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -2941,7 +2941,6 @@ dependencies = [
 name = "polars"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "apache-avro",
  "avro-schema",
  "chrono",
@@ -2971,7 +2970,6 @@ dependencies = [
 name = "polars-arrow"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "async-stream",
  "atoi_simd",
  "avro-schema",
@@ -3039,6 +3037,7 @@ dependencies = [
  "chrono",
  "either",
  "fast-float2",
+ "hashbrown 0.15.2",
  "itoa",
  "num-traits",
  "polars-arrow",
@@ -3056,7 +3055,6 @@ dependencies = [
 name = "polars-core"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "bincode",
  "bitflags",
  "bytemuck",
@@ -3132,7 +3130,6 @@ dependencies = [
 name = "polars-expr"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "bitflags",
  "hashbrown 0.15.2",
  "num-traits",
@@ -3162,7 +3159,6 @@ dependencies = [
 name = "polars-io"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "async-trait",
  "atoi_simd",
  "blake3",
@@ -3212,7 +3208,6 @@ dependencies = [
 name = "polars-json"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "chrono",
  "chrono-tz",
  "fallible-streaming-iterator",
@@ -3233,7 +3228,6 @@ dependencies = [
 name = "polars-lazy"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "bitflags",
  "chrono",
  "either",
@@ -3285,7 +3279,6 @@ dependencies = [
 name = "polars-ops"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "aho-corasick",
  "argminmax",
  "base64 0.22.1",
@@ -3323,7 +3316,6 @@ dependencies = [
 name = "polars-parquet"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "async-stream",
  "base64 0.22.1",
  "brotli",
@@ -3389,7 +3381,6 @@ dependencies = [
 name = "polars-plan"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "bitflags",
  "bytemuck",
  "bytes",
@@ -3426,7 +3417,6 @@ dependencies = [
 name = "polars-python"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "arboard",
  "bincode",
  "bytemuck",
@@ -3509,7 +3499,9 @@ dependencies = [
 name = "polars-stream"
 version = "0.46.0"
 dependencies = [
+ "async-trait",
  "atomic-waker",
+ "bitflags",
  "crossbeam-channel",
  "crossbeam-deque",
  "crossbeam-queue",
@@ -3529,6 +3521,7 @@ dependencies = [
  "polars-parquet",
  "polars-plan",
  "polars-utils",
+ "pyo3",
  "rand",
  "rayon",
  "recursive",
@@ -3571,12 +3564,12 @@ dependencies = [
 name = "polars-utils"
 version = "0.46.0"
 dependencies = [
- "ahash",
  "bincode",
  "bytemuck",
  "bytes",
  "compact_str",
  "flate2",
+ "foldhash",
  "hashbrown 0.15.2",
  "indexmap",
  "libc",
@@ -3684,7 +3677,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.25.2"
+version = "1.26.0"
 dependencies = [
  "either",
  "libc",

@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import with_string_cache_if_auto_streaming
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -204,6 +205,7 @@ def test_unique_with_bad_subset(
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+@with_string_cache_if_auto_streaming
 def test_categorical_unique_19409() -> None:
     df = pl.DataFrame({"x": [str(n % 50) for n in range(127)]}).cast(pl.Categorical)
     uniq = df.unique()

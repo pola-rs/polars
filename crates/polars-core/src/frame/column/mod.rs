@@ -5,6 +5,7 @@ use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
 use polars_compute::rolling::QuantileMethod;
 use polars_error::PolarsResult;
+use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
 pub use scalar::ScalarColumn;
@@ -73,6 +74,26 @@ impl Column {
     #[inline]
     pub fn new_partitioned(name: PlSmallStr, scalar: Scalar, length: usize) -> Self {
         Self::Scalar(ScalarColumn::new(name, scalar, length))
+    }
+
+    pub fn new_row_index(name: PlSmallStr, offset: IdxSize, length: usize) -> PolarsResult<Column> {
+        let length = IdxSize::try_from(length).unwrap_or(IdxSize::MAX);
+
+        if offset.checked_add(length).is_none() {
+            polars_bail!(
+                ComputeError:
+                "row index with offset {} overflows on dataframe with height {}",
+                offset, length
+            )
+        }
+
+        let range = offset..offset + length;
+
+        let mut ca = IdxCa::from_vec(name, range.collect());
+        ca.set_sorted_flag(IsSorted::Ascending);
+        let col = ca.into_series().into();
+
+        Ok(col)
     }
 
     // # Materialize
@@ -892,14 +913,18 @@ impl Column {
         }
     }
 
-    pub fn vec_hash(&self, build_hasher: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    pub fn vec_hash(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         // @scalar-opt?
         self.as_materialized_series().vec_hash(build_hasher, buf)
     }
 
     pub fn vec_hash_combine(
         &self,
-        build_hasher: PlRandomState,
+        build_hasher: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
         // @scalar-opt?

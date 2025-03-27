@@ -9,6 +9,7 @@ use arrow::types::NativeType;
 
 pub mod arithmetic;
 pub mod arity;
+pub mod binview_index_map;
 pub mod bitwise;
 #[cfg(feature = "approx_unique")]
 pub mod cardinality;

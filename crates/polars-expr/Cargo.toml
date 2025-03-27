@@ -9,7 +9,6 @@ repository.workspace = true
 description = "Physical expression implementation of the Polars project."
 
 [dependencies]
-ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
 hashbrown = { workspace = true }

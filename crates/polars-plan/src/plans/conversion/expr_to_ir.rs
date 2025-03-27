@@ -94,22 +94,12 @@ fn to_aexpr_impl_materialized_lit(
     // Already convert `Lit Float and Lit Int` expressions that are not used in a binary / function expression.
     // This means they can be materialized immediately
     let e = match expr {
-        Expr::Literal(lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_)) => {
-            let av = lv.to_any_value().unwrap();
-            Expr::Literal(LiteralValue::from(av))
-        },
-        Expr::Alias(inner, name)
-            if matches!(
-                &*inner,
-                Expr::Literal(LiteralValue::Int(_) | LiteralValue::Float(_))
-            ) =>
-        {
-            let Expr::Literal(lv @ LiteralValue::Int(_) | lv @ LiteralValue::Float(_)) = &*inner
-            else {
+        Expr::Literal(lv @ LiteralValue::Dyn(_)) => Expr::Literal(lv.materialize()),
+        Expr::Alias(inner, name) if matches!(&*inner, Expr::Literal(LiteralValue::Dyn(_))) => {
+            let Expr::Literal(lv) = &*inner else {
                 unreachable!()
             };
-            let av = lv.to_any_value().unwrap();
-            Expr::Alias(Arc::new(Expr::Literal(LiteralValue::from(av))), name)
+            Expr::Alias(Arc::new(Expr::Literal(lv.clone().materialize())), name)
         },
         e => e,
     };

@@ -108,7 +108,8 @@ pub fn finish_infer_field_schema(possibilities: &PlHashSet<DataType>) -> DataTyp
 pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bool) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
     // String for them
-    if string.starts_with('"') {
+    let bytes = string.as_bytes();
+    if bytes.len() >= 2 && *bytes.first().unwrap() == b'"' && *bytes.last().unwrap() == b'"' {
         if try_parse_dates {
             #[cfg(feature = "polars-time")]
             {

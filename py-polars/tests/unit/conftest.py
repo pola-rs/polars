@@ -6,6 +6,7 @@ import random
 import string
 import sys
 from contextlib import contextmanager
+from functools import wraps
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -297,3 +298,20 @@ def mock_module_import(
                 sys.modules[name] = original
             else:
                 del sys.modules[name]
+
+
+# The new streaming engine currently only works if you keep the same string cache
+# alive the entire time.
+def with_string_cache_if_auto_streaming(f: Any) -> Any:
+    if (
+        os.getenv("POLARS_AUTO_NEW_STREAMING", os.getenv("POLARS_FORCE_NEW_STREAMING"))
+        != "1"
+    ):
+        return f
+
+    @wraps(f)
+    def with_cache(*args: Any, **kwargs: Any) -> Any:
+        with pl.StringCache():
+            return f(*args, **kwargs)
+
+    return with_cache

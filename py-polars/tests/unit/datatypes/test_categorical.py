@@ -15,6 +15,7 @@ from polars.exceptions import (
     StringCacheMismatchError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import with_string_cache_if_auto_streaming
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -113,6 +114,7 @@ def test_categorical_is_in_list() -> None:
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+@with_string_cache_if_auto_streaming
 def test_unset_sorted_on_append() -> None:
     df1 = pl.DataFrame(
         [
@@ -912,6 +914,7 @@ def test_nested_categorical_concat(
         pl.concat([a, b])
 
 
+@with_string_cache_if_auto_streaming
 @pytest.mark.usefixtures("test_global_and_local")
 def test_perfect_group_by_19452() -> None:
     n = 40

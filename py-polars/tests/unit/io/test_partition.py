@@ -6,9 +6,8 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.io.partition import PartitionByKey, PartitionMaxSize
-from polars.testing import assert_series_equal
-from polars.testing.asserts.frame import assert_frame_equal
+from polars.io.partition import PartitionByKey, PartitionMaxSize, PartitionParted
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies import dataframes
 
 if TYPE_CHECKING:
@@ -140,6 +139,84 @@ def test_partition_by_key(
         .to_series(),
         pl.Series("a", ["3"], pl.String),
     )
+
+
+@pytest.mark.parametrize("io_type", io_types)
+@pytest.mark.write_disk
+def test_partition_parted(
+    tmp_path: Path,
+    io_type: IOType,
+) -> None:
+    s = pl.Series("a", [1, 1, 2, 3, 3, 4, 4, 4, 6], pl.Int64)
+    lf = s.to_frame().lazy()
+
+    (io_type["sink"])(
+        lf,
+        PartitionParted(tmp_path / f"{{part}}.{io_type['ext']}", by="a"),
+        engine="streaming",
+        # We need to sync here because platforms do not guarantee that a close on
+        # one thread is immediately visible on another thread.
+        #
+        # "Multithreaded processes and close()"
+        # https://man7.org/linux/man-pages/man2/close.2.html
+        sync_on_close="data",
+    )
+
+    rle = s.rle()
+
+    for i, row in enumerate(rle.struct.unnest().rows(named=True)):
+        assert_series_equal(
+            (io_type["scan"])(tmp_path / f"{i}.{io_type['ext']}").collect().to_series(),
+            pl.Series("a", [row["value"]] * row["len"], pl.Int64),
+        )
+
+    scan_flags = (
+        {"schema_overrides": pl.Schema({"a_str": pl.String()})}
+        if io_type["ext"] == "csv"
+        else {}
+    )
+
+    # Change the datatype.
+    (io_type["sink"])(
+        lf,
+        PartitionParted(
+            tmp_path / f"{{part}}.{io_type['ext']}",
+            by=[pl.col.a, pl.col.a.cast(pl.String()).alias("a_str")],
+        ),
+        engine="streaming",
+        sync_on_close="data",
+    )
+
+    for i, row in enumerate(rle.struct.unnest().rows(named=True)):
+        assert_frame_equal(
+            (io_type["scan"])(
+                tmp_path / f"{i}.{io_type['ext']}", **scan_flags
+            ).collect(),
+            pl.DataFrame(
+                [
+                    pl.Series("a", [row["value"]] * row["len"], pl.Int64),
+                    pl.Series("a_str", [str(row["value"])] * row["len"], pl.String),
+                ]
+            ),
+        )
+
+    # No include key.
+    (io_type["sink"])(
+        lf,
+        PartitionParted(
+            tmp_path / f"{{part}}.{io_type['ext']}",
+            by=[pl.col.a.cast(pl.String()).alias("a_str")],
+            include_key=False,
+        ),
+        engine="streaming",
+        sync_on_close="data",
+    )
+
+    for i, row in enumerate(rle.struct.unnest().rows(named=True)):
+        assert_series_equal(
+            (io_type["scan"])(tmp_path / f"{i}.{io_type['ext']}").collect().to_series(),
+            pl.Series("a", [row["value"]] * row["len"], pl.Int64),
+        )
 
 
 # We only deal with self-describing formats
