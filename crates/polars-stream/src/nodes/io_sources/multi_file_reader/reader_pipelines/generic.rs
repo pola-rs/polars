@@ -343,7 +343,7 @@ impl ReaderStarter {
                 break;
             }
 
-            let Some((scan_source_idx, scan_source, reader, opt_n_rows_in_file)) =
+            let Some((scan_source_idx, scan_source, mut reader, opt_n_rows_in_file)) =
                 readers_init_iter.next().await.transpose()?
             else {
                 if verbose {
@@ -553,7 +553,7 @@ async fn start_reader_impl(
     let StartReaderArgsPerFile {
         scan_source,
         scan_source_idx,
-        reader,
+        mut reader,
         mut begin_read_args,
         extra_ops_post,
     } = args_this_file;

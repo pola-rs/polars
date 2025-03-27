@@ -28,7 +28,7 @@ pub trait FileReader: Send + Sync {
 
     /// Begin reading the file into morsels.
     fn begin_read(
-        &self,
+        &mut self,
         args: BeginReadArgs,
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)>;
 
@@ -36,7 +36,7 @@ pub trait FileReader: Send + Sync {
     ///
     /// Note: The default implementation of this dispatches to `begin_read`, so should not be
     /// called from there.
-    async fn n_rows_in_file(&self) -> PolarsResult<IdxSize> {
+    async fn n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
         let (tx, mut rx) = connector::connector();
 
         let (morsel_receivers, handle) = self.begin_read(BeginReadArgs {
@@ -62,7 +62,10 @@ pub trait FileReader: Send + Sync {
     /// Returns the row position after applying a slice.
     ///
     /// This is essentially `n_rows_in_file`, but potentially with early stopping.
-    async fn row_position_after_slice(&self, pre_slice: Option<Slice>) -> PolarsResult<IdxSize> {
+    async fn row_position_after_slice(
+        &mut self,
+        pre_slice: Option<Slice>,
+    ) -> PolarsResult<IdxSize> {
         if pre_slice.is_none() {
             return self.n_rows_in_file().await;
         }

@@ -120,7 +120,7 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
     let mut n_rows_trimmed: IdxSize = 0;
     let mut n_files_from_end: usize = 0;
 
-    while let Some(file_reader) = readers_init_iter.next().await.transpose()? {
+    while let Some(mut file_reader) = readers_init_iter.next().await.transpose()? {
         let n_rows = file_reader.n_rows_in_file().await?;
 
         // push_front: we are walking in reverse
@@ -182,7 +182,7 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
         let mut n_rows_skipped_from_start: IdxSize = 0;
 
         // Fully traverse to the beginning to update the row index offset.
-        while let Some(reader) = readers_init_iter.next().await.transpose()? {
+        while let Some(mut reader) = readers_init_iter.next().await.transpose()? {
             let n_rows = reader.n_rows_in_file().await?;
             n_rows_skipped_from_start = n_rows_skipped_from_start.saturating_add(n_rows);
         }
