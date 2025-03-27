@@ -252,6 +252,7 @@ pub enum PhysNodeKind {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         args: JoinArgs,
+        output_bool: bool,
     },
 
     /// Generic fallback for (as-of-yet) unsupported streaming joins.

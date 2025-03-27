@@ -2,6 +2,7 @@
 use std::hash::BuildHasher;
 
 use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array};
+use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and_many;
 use polars_core::error::polars_err;
 use polars_core::frame::DataFrame;
@@ -166,7 +167,7 @@ impl HashKeys {
         } else {
             Self::Single(SingleKeys {
                 random_state,
-                keys: df[0].as_materialized_series().clone(),
+                keys: df[0].as_materialized_series().rechunk(),
                 null_is_valid,
             })
         }
@@ -182,6 +183,14 @@ impl HashKeys {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn validity(&self) -> Option<&Bitmap> {
+        match self {
+            HashKeys::RowEncoded(s) => s.keys.validity(),
+            HashKeys::Single(s) => s.keys.chunks()[0].validity(),
+            HashKeys::Binview(s) => s.keys.validity(),
+        }
     }
 
     /// After this call partitions will be extended with the partition for each

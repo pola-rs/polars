@@ -1,5 +1,6 @@
 use std::any::Any;
 
+use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -76,9 +77,22 @@ pub trait Grouper: Any + Send + Sync {
         &self,
         groupers: &[Box<dyn Grouper>],
         keys: &HashKeys,
-        probe_matches: &mut Vec<IdxSize>,
         partitioner: &HashPartitioner,
         invert: bool,
+        probe_matches: &mut Vec<IdxSize>,
+    );
+
+    /// Returns for each key if it is found in the groupers. If invert is true
+    /// it returns true if it isn't found.
+    /// # Safety
+    /// All groupers must have the same schema.
+    unsafe fn contains_key_partitioned_groupers(
+        &self,
+        groupers: &[Box<dyn Grouper>],
+        keys: &HashKeys,
+        partitioner: &HashPartitioner,
+        invert: bool,
+        contains_key: &mut BitmapBuilder,
     );
 
     fn as_any(&self) -> &dyn Any;

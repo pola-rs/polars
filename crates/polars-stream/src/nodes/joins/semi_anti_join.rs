@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use arrow::array::BooleanArray;
+use arrow::bitmap::BitmapBuilder;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
@@ -41,6 +43,7 @@ struct SemiAntiJoinParams {
     right_key_selectors: Vec<StreamExpr>,
     nulls_equal: bool,
     is_anti: bool,
+    return_bool: bool,
     random_state: PlRandomState,
 }
 
@@ -56,6 +59,7 @@ impl SemiAntiJoinNode {
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         args: JoinArgs,
+        return_bool: bool,
         num_pipelines: usize,
     ) -> PolarsResult<Self> {
         let left_is_build = false;
@@ -71,6 +75,7 @@ impl SemiAntiJoinNode {
                 right_key_selectors,
                 random_state: PlRandomState::default(),
                 nulls_equal: args.nulls_equal,
+                return_bool,
                 is_anti,
             },
             grouper: new_hash_grouper(unique_key_schema),
@@ -274,8 +279,7 @@ impl ProbeState {
             // Compute hashed keys and payload.
             let (df, in_seq, src_token, wait_token) = morsel.into_inner();
 
-            let df_height = df.height();
-            if df_height == 0 {
+            if df.height() == 0 {
                 continue;
             }
 
@@ -283,21 +287,38 @@ impl ProbeState {
                 select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
 
             unsafe {
-                probe_match.clear();
-                partitions[0].probe_partitioned_groupers(
-                    partitions,
-                    &hash_keys,
-                    &mut probe_match,
-                    &partitioner,
-                    params.is_anti,
-                );
-
-                if !probe_match.is_empty() {
-                    let out_df = df.take_slice_unchecked(&probe_match);
-                    let morsel = Morsel::new(out_df, in_seq, src_token.clone());
-                    if send.send(morsel).await.is_err() {
-                        return Ok(());
+                let out_df = if params.return_bool {
+                    let mut builder = BitmapBuilder::with_capacity(df.height());
+                    partitions[0].contains_key_partitioned_groupers(
+                        partitions,
+                        &hash_keys,
+                        &partitioner,
+                        params.is_anti,
+                        &mut builder,
+                    );
+                    let mut arr = BooleanArray::from(builder.freeze());
+                    if !params.nulls_equal {
+                        arr.set_validity(hash_keys.validity().cloned());
                     }
+                    let s = BooleanChunked::with_chunk(df[0].name().clone(), arr).into_series();
+                    DataFrame::new(vec![Column::from(s)])?
+                } else {
+                    probe_match.clear();
+                    partitions[0].probe_partitioned_groupers(
+                        partitions,
+                        &hash_keys,
+                        &partitioner,
+                        params.is_anti,
+                        &mut probe_match,
+                    );
+                    if probe_match.is_empty() {
+                        continue;
+                    }
+                    df.take_slice_unchecked(&probe_match)
+                };
+                let morsel = Morsel::new(out_df, in_seq, src_token.clone());
+                if send.send(morsel).await.is_err() {
+                    return Ok(());
                 }
             }
 
@@ -310,10 +331,11 @@ impl ProbeState {
 
 impl ComputeNode for SemiAntiJoinNode {
     fn name(&self) -> &str {
-        if self.params.is_anti {
-            "anti_join"
-        } else {
-            "semi_join"
+        match (self.params.return_bool, self.params.is_anti) {
+            (false, false) => "semi_join",
+            (false, true) => "anti_join",
+            (true, false) => "is_in",
+            (true, true) => "is_not_in",
         }
     }
 

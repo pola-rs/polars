@@ -831,6 +831,7 @@ pub fn lower_ir(
                             left_on: trans_left_on,
                             right_on: trans_right_on,
                             args: args.clone(),
+                            output_bool: false,
                         },
                     ))
                 };

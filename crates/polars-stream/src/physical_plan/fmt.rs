@@ -263,6 +263,7 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
+            output_bool: _,
         } => {
             let mut label = if matches!(
                 phys_sm[node_key].kind,
@@ -280,12 +281,14 @@ fn visualize_plan_rec(
             };
             write!(label, r"\nleft_on:\n{}", fmt_exprs(left_on, expr_arena)).unwrap();
             write!(label, r"\nright_on:\n{}", fmt_exprs(right_on, expr_arena)).unwrap();
-            write!(
-                label,
-                r"\nhow: {}",
-                escape_graphviz(&format!("{:?}", args.how))
-            )
-            .unwrap();
+            if args.how.is_equi() {
+                write!(
+                    label,
+                    r"\nhow: {}",
+                    escape_graphviz(&format!("{:?}", args.how))
+                )
+                .unwrap();
+            }
             if args.nulls_equal {
                 write!(label, r"\njoin-nulls").unwrap();
             }
