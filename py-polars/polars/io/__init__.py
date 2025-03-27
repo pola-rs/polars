@@ -12,6 +12,7 @@ from polars.io.ndjson import read_ndjson, scan_ndjson
 from polars.io.parquet import read_parquet, read_parquet_schema, scan_parquet
 from polars.io.partition import (
     BasePartitionContext,
+    KeyedPartition,
     KeyedPartitionContext,
     PartitionByKey,
     PartitionMaxSize,
@@ -26,6 +27,7 @@ __all__ = [
     "PartitionByKey",
     "PartitionMaxSize",
     "PartitionParted",
+    "KeyedPartition",
     "BasePartitionContext",
     "KeyedPartitionContext",
     "read_avro",

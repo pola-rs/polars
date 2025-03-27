@@ -85,7 +85,7 @@ def test_max_size_partition_lambda(
         lf,
         PartitionMaxSize(
             tmp_path,
-            file_path=lambda ctx: "abc-" + ctx.unmodified_path,
+            file_path=lambda ctx: ctx.file_path.with_name("abc-" + ctx.file_path.name),
             max_size=max_size,
         ),
         engine="streaming",
@@ -117,7 +117,9 @@ def test_partition_by_key(
 
     (io_type["sink"])(
         lf,
-        PartitionByKey(tmp_path, lambda ctx: f"{ctx.part}.{io_type['ext']}", by="a"),
+        PartitionByKey(
+            tmp_path, file_path=lambda ctx: f"{ctx.part}.{io_type['ext']}", by="a"
+        ),
         engine="streaming",
         # We need to sync here because platforms do not guarantee that a close on
         # one thread is immediately visible on another thread.
@@ -152,7 +154,9 @@ def test_partition_by_key(
     (io_type["sink"])(
         lf,
         PartitionByKey(
-            tmp_path / f"{{part}}.{io_type['ext']}", by=pl.col.a.cast(pl.String())
+            tmp_path,
+            file_path=lambda ctx: f"{ctx.part}.{io_type['ext']}",
+            by=pl.col.a.cast(pl.String()),
         ),
         engine="streaming",
         sync_on_close="data",
@@ -311,7 +315,6 @@ def test_partition_by_key_parametric(
         )
 
 
-@pytest.mark.parametrize("io_type", io_types)
 def test_max_size_partition_collect_files(tmp_path: Path) -> None:
     length = 17
     max_size = 3
@@ -321,7 +324,10 @@ def test_max_size_partition_collect_files(tmp_path: Path) -> None:
     output_files = []
 
     def file_path_cb(ctx: BasePartitionContext) -> Path:
+        print(ctx)
+        print(ctx.full_path)
         output_files.append(ctx.full_path)
+        print(ctx.file_path)
         return ctx.file_path
 
     (io_type["sink"])(

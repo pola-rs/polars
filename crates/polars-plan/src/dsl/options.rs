@@ -622,7 +622,7 @@ impl FileType {
             #[cfg(feature = "csv")]
             Self::Csv(_) => "csv",
             #[cfg(feature = "json")]
-            Self::Json(_) => "ndjson",
+            Self::Json(_) => "jsonl",
         }
     }
 }

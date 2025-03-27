@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, TypedDict
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from polars import col
 from polars._utils.unstable import issue_unstable_warning
@@ -12,34 +13,36 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars.polars import PyExpr
 
-    from pathlib import Path
     from typing import Callable
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyPartitioning
 
 
-class PartitionKey(TypedDict):
+class KeyedPartition:
     """
-    A key-value pair that got used during paritioning.
+    A key-value pair for a partition.
 
     .. warning::
         This functionality is currently considered **unstable**. It may be
         changed at any point without it being considered a breaking change.
 
-    Fields
-    ------
-    name
-        Name of the key column.
-    value
-        Value of the key for this partition.
+    See Also
+    --------
+    PartitionByKey
+    PartitionParted
+    KeyedPartitionContext
     """
 
-    name: str
-    value: str
+    def __init__(self, name: str, value: str) -> None:
+        self.name = name
+        self.value = value
+
+    name: str  #: Name of the key column.
+    value: str  #: Value of the key for this partition.
 
 
-class KeyedPartitionContext(TypedDict):
+class KeyedPartitionContext:
     """
     Callback context for a partition creation using keys.
 
@@ -47,25 +50,29 @@ class KeyedPartitionContext(TypedDict):
         This functionality is currently considered **unstable**. It may be
         changed at any point without it being considered a breaking change.
 
-    Fields
-    ------
-    part
-        The index of the created file starting from zero.
-    keys
-        All the key names and values used for this partition.
-    file_path
-        The chosen output path before the callback was called without `base_path`.
-    full_path
-        The chosen output path before the callback was called with `base_path`.
+    See Also
+    --------
+    PartitionByKey
+    PartitionParted
     """
 
-    part: int
-    keys: list[PartitionKey]
-    file_path: Path
-    full_path: Path
+    def __init__(
+        self, part: int, keys: list[KeyedPartition], file_path: Path, full_path: Path
+    ) -> None:
+        self.part = part
+        self.keys = keys
+        self.file_path = file_path
+        self.full_path = full_path
+
+    part: int  #: The index of the created file starting from zero.
+    keys: list[KeyedPartition]  #: All the key names and values used for this partition.
+    file_path: Path  #: The chosen output path before the callback was called without `base_path`.
+    full_path: (
+        Path  #: The chosen output path before the callback was called with `base_path`.
+    )
 
 
-class BasePartitionContext(TypedDict):
+class BasePartitionContext:
     """
     Callback context for a partition creation.
 
@@ -73,19 +80,50 @@ class BasePartitionContext(TypedDict):
         This functionality is currently considered **unstable**. It may be
         changed at any point without it being considered a breaking change.
 
-    Fields
-    ------
-    part
-        The index of the created file starting from zero.
-    file_path
-        The chosen output path before the callback was called without `base_path`.
-    full_path
-        The chosen output path before the callback was called with `base_path`.
+    See Also
+    --------
+    PartitionMaxSize
     """
 
-    part: int
-    file_path: Path
-    full_path: Path
+    def __init__(self, part: int, file_path: Path, full_path: Path) -> None:
+        self.part = part
+        self.file_path = file_path
+        self.full_path = full_path
+
+    part: int  #: The index of the created file starting from zero.
+    file_path: Path  #: The chosen output path before the callback was called without `base_path`.
+    full_path: (
+        Path  #: The chosen output path before the callback was called with `base_path`.
+    )
+
+
+def _cast_base_file_path_cb(
+    file_path_cb: Callable[[KeyedPartitionContext], Path | str] | None,
+) -> Callable[[BasePartitionContext], Path | str] | None:
+    if file_path_cb is None:
+        return None
+    return lambda ctx: file_path_cb(
+        BasePartitionContext(
+            part=ctx.part,
+            file_path=Path(ctx.file_path),
+            full_path=Path(ctx.full_path),
+        )
+    )
+
+
+def _cast_keyed_file_path_cb(
+    file_path_cb: Callable[[KeyedPartitionContext], Path | str] | None,
+) -> Callable[[KeyedPartitionContext], Path | str] | None:
+    if file_path_cb is None:
+        return None
+    return lambda ctx: file_path_cb(
+        KeyedPartitionContext(
+            part=ctx.part,
+            keys=[KeyedPartition(name=kv.name, value=kv.value) for kv in ctx.keys],
+            file_path=Path(ctx.file_path),
+            full_path=Path(ctx.full_path),
+        )
+    )
 
 
 class PartitionMaxSize:
@@ -105,7 +143,11 @@ class PartitionMaxSize:
         The base path for the output files.
     file_path
         A callback to register or modify the output path for each partition
-        offset by the `base_path`.
+        relative to the `base_path`. The callback provides a
+        :class:`polars.io.partition.BasePartitionContext` that contains information
+        about the partition.
+
+        If no callback is given, it defaults to `{base_path}/{part}.{ext}`.
     max_size : int
         The maximum size in rows of each of the generated files.
 
@@ -116,6 +158,12 @@ class PartitionMaxSize:
     >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
     ...     PartitionMax("./out", max_size=100_000),
     ... )  # doctest: +SKIP
+
+    See Also
+    --------
+    PartitionByKey
+    PartitionParted
+    polars.io.partition.BasePartitionContext
     """
 
     _p: PyPartitioning
@@ -129,7 +177,9 @@ class PartitionMaxSize:
     ) -> None:
         issue_unstable_warning("Partitioning strategies are considered unstable.")
         self._p = PyPartitioning.new_max_size(
-            base_path=base_path, file_path_cb=file_path, max_size=max_size
+            base_path=base_path,
+            file_path_cb=_cast_base_file_path_cb(file_path),
+            max_size=max_size,
         )
 
     @property
@@ -186,7 +236,12 @@ class PartitionByKey:
         the path are created.
     file_path
         A callback to register or modify the output path for each partition
-        offset by the `base_path`.
+        relative to the `base_path`. The callback provides a
+        :class:`polars.io.partition.KeyedPartitionContext` that contains information
+        about the partition.
+
+        If no callback is given, it defaults to
+        `{base_path}/{keys[0].value}={keys[0].value}/.../{keys[n-1].value}={keys[n-1].value}/000.{ext}`.
     by
         The expressions to partition by.
     include_key : bool
@@ -218,6 +273,12 @@ class PartitionByKey:
     ...         by="year",
     ...     ),
     ... )  # doctest: +SKIP
+
+    See Also
+    --------
+    PartitionMaxSize
+    PartitionParted
+    polars.io.partition.KeyedPartitionContext
     """
 
     _p: PyPartitioning
@@ -235,7 +296,7 @@ class PartitionByKey:
         lowered_by = _lower_by(by)
         self._p = PyPartitioning.new_by_key(
             base_path=base_path,
-            file_path_cb=file_path,
+            file_path_cb=_cast_keyed_file_path_cb(file_path),
             by=lowered_by,
             include_key=include_key,
         )
@@ -249,10 +310,10 @@ class PartitionParted:
     """
     Partitioning scheme to split parted dataframes.
 
-    This is a specialized version of `PartitionByKey`. Where as `PartitionByKey` accepts
-    data in any order, this scheme expects the input data to be pre-grouped or
-    pre-sorted. This scheme suffers a lot less overhead than `PartitionByKey`, but may
-    not be always applicable.
+    This is a specialized version of :class:`PartitionByKey`. Where as
+    :class:`PartitionByKey` accepts data in any order, this scheme expects the input
+    data to be pre-grouped or pre-sorted. This scheme suffers a lot less overhead than
+    :class:`PartitionByKey`, but may not be always applicable.
 
     Each new value of the key expressions starts a new partition, therefore repeating
     the same value multiple times may overwrite previous partitions.
@@ -270,7 +331,12 @@ class PartitionParted:
         the path are created.
     file_path
         A callback to register or modify the output path for each partition
-        offset by the `base_path`.
+        relative to the `base_path`.The callback provides a
+        :class:`polars.io.partition.KeyedPartitionContext` that contains information
+        about the partition.
+
+        If no callback is given, it defaults to
+        `{base_path}/{keys[0].value}={keys[0].value}/.../{keys[n-1].value}={keys[n-1].value}/000.{ext}`.
     by
         The expressions to partition by.
     include_key : bool
@@ -284,6 +350,12 @@ class PartitionParted:
     ...     PartitionParted("./out", by="year"),
     ...     mkdir=True,
     ... )  # doctest: +SKIP
+
+    See Also
+    --------
+    PartitionMaxSize
+    PartitionByKey
+    polars.io.partition.KeyedPartitionContext
     """
 
     _p: PyPartitioning
@@ -301,7 +373,7 @@ class PartitionParted:
         lowered_by = _lower_by(by)
         self._p = PyPartitioning.new_by_key(
             base_path=base_path,
-            file_path_cb=file_path,
+            file_path_cb=_cast_keyed_file_path_cb(file_path),
             by=lowered_by,
             include_key=include_key,
         )
