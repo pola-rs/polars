@@ -1474,7 +1474,10 @@ impl SQLContext {
                 .replace('%', ".*")
                 .replace('_', ".");
 
-            modifiers.ilike = Some(regex::Regex::new(format!("^(?is){}$", rx).as_str()).unwrap());
+            modifiers.ilike = Some(
+                polars_utils::regex_cache::compile_regex(format!("^(?is){}$", rx).as_str())
+                    .unwrap(),
+            );
         }
 
         // SELECT * RENAME
@@ -1571,10 +1574,10 @@ fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
             .map(|name| col(name.clone()))
             .collect::<Vec<_>>(),
         Expr::Column(nm) if is_regex_colname(nm.as_str()) => {
-            let rx = regex::Regex::new(&nm).unwrap();
+            let re = polars_utils::regex_cache::compile_regex(&nm).unwrap();
             schema
                 .iter_names()
-                .filter(|name| rx.is_match(name))
+                .filter(|name| re.is_match(name))
                 .map(|name| col(name.clone()))
                 .collect::<Vec<_>>()
         },

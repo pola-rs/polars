@@ -28,6 +28,7 @@ pub mod mem;
 pub mod min_max;
 pub mod pl_str;
 pub mod priority;
+pub mod regex_cache;
 pub mod select;
 pub mod slice;
 pub mod slice_enum;

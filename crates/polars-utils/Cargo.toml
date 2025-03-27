@@ -25,9 +25,11 @@ pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 raw-cpuid = { workspace = true }
 rayon = { workspace = true }
+regex = { workspace = true }
 rmp-serde = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+slotmap = { workspace = true }
 stacker = { workspace = true }
 sysinfo = { version = "0.33", default-features = false, features = ["system"], optional = true }
 

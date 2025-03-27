@@ -2,7 +2,7 @@ use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 use polars_core::prelude::arity::broadcast_try_binary_elementwise;
 use polars_core::prelude::*;
-use polars_utils::cache::FastFixedCache;
+use polars_utils::cache::LruCache;
 
 use crate::prelude::*;
 use crate::truncate::fast_truncate;
@@ -65,7 +65,7 @@ impl PolarsRound for DatetimeChunked {
         }
 
         // A sqrt(n) cache is not too small, not too large.
-        let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+        let mut duration_cache = LruCache::with_capacity((every.len() as f64).sqrt() as usize);
 
         let func = match self.time_unit() {
             TimeUnit::Nanoseconds => Window::round_ns,
@@ -78,8 +78,7 @@ impl PolarsRound for DatetimeChunked {
             opt_every,
         ) {
             (Some(timestamp), Some(every)) => {
-                let every =
-                    *duration_cache.get_or_insert_with(every, |every| Duration::parse(every));
+                let every = *duration_cache.get_or_insert_with(every, Duration::parse);
 
                 if every.negative {
                     polars_bail!(ComputeError: "cannot round a Datetime to a negative duration")
@@ -117,11 +116,11 @@ impl PolarsRound for DateChunked {
             },
             _ => broadcast_try_binary_elementwise(self, every, |opt_t, opt_every| {
                 // A sqrt(n) cache is not too small, not too large.
-                let mut duration_cache = FastFixedCache::new((every.len() as f64).sqrt() as usize);
+                let mut duration_cache =
+                    LruCache::with_capacity((every.len() as f64).sqrt() as usize);
                 match (opt_t, opt_every) {
                     (Some(t), Some(every)) => {
-                        let every = *duration_cache
-                            .get_or_insert_with(every, |every| Duration::parse(every));
+                        let every = *duration_cache.get_or_insert_with(every, Duration::parse);
 
                         if every.negative {
                             polars_bail!(ComputeError: "cannot round a Date to a negative duration")
