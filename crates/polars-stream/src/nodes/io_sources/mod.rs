@@ -27,6 +27,8 @@ pub mod multi_scan;
 pub mod ndjson;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+#[cfg(feature = "parquet")]
+pub mod parquet_reader;
 
 #[derive(Clone, Debug)]
 pub enum RowRestriction {

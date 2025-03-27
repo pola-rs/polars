@@ -14,12 +14,12 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
-use super::{AsyncTaskData, ParquetSourceNode};
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::morsel::get_ideal_morsel_size;
+use super::{AsyncTaskData, ParquetReadImpl};
+use crate::async_executor;
+use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
+use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext::{self, AbortOnDropHandle};
-use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, async_executor};
 
 async fn calculate_row_group_pred_pushdown_skip_mask(
     row_group_slice: Range<usize>,
@@ -123,28 +123,31 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
     Ok(Some(skip_row_group_mask))
 }
 
-impl ParquetSourceNode {
+impl ParquetReadImpl {
     /// Constructs the task that distributes morsels across the engine pipelines.
     #[allow(clippy::type_complexity)]
-    pub(super) fn init_raw_morsel_distributor(&mut self) -> AsyncTaskData {
+    pub(super) fn init_morsel_distributor(&mut self) -> AsyncTaskData {
         let verbose = self.verbose;
         let io_runtime = polars_io::pl_async::get_runtime();
 
         let use_statistics = self.options.use_statistics;
 
-        let (mut raw_morsel_sender, raw_morsel_receivers) =
-            distributor_channel(self.config.num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-        if let Some((_, 0)) = self.file_options.pre_slice {
+        let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
+
+        if let Some((_, 0)) = self.normalized_pre_slice {
             return (
-                raw_morsel_receivers,
+                morsel_rx,
                 task_handles_ext::AbortOnDropHandle(io_runtime.spawn(std::future::ready(Ok(())))),
             );
         }
 
-        let reader_schema = self.schema.clone().unwrap();
+        let reader_schema = self.schema.clone();
 
         let row_group_prefetch_size = self.config.row_group_prefetch_size;
-        let projection = self.file_options.with_columns.clone();
+        // For row group fetching, only set this if we have a projection, as it will cause individual
+        // byte range requests for every column in the row group.
+        let projection = (self.projected_arrow_schema.len() < self.schema.len())
+            .then_some(self.projected_arrow_schema.clone());
         let predicate = self.predicate.clone();
         let memory_prefetch_func = self.memory_prefetch_func;
 
@@ -159,9 +162,7 @@ impl ParquetSourceNode {
 
         let metadata = self.metadata.clone();
         let normalized_pre_slice = self.normalized_pre_slice;
-        let scan_sources = self.scan_sources.clone();
-        let byte_source_builder = self.byte_source_builder.clone();
-        let cloud_options = self.cloud_options.clone();
+        let byte_source = self.byte_source.clone();
 
         // Prefetch loop (spawns prefetches on the tokio scheduler).
         let (prefetch_send, mut prefetch_recv) =
@@ -172,14 +173,6 @@ impl ParquetSourceNode {
                 bigidx,
                 ctx = "parquet file",
                 size = metadata.num_rows
-            );
-
-            let byte_source = Arc::new(
-                scan_sources
-                    .get(0)
-                    .unwrap()
-                    .to_dyn_byte_source(&byte_source_builder, cloud_options.as_ref())
-                    .await?,
             );
 
             // Calculate the row groups that need to be read and the slice range relative to those
@@ -316,7 +309,11 @@ impl ParquetSourceNode {
                     next.is_none(),
                     last_morsel_min_split,
                 ) {
-                    if raw_morsel_sender.send((df, morsel_seq)).await.is_err() {
+                    if morsel_sender
+                        .send_morsel(Morsel::new(df, morsel_seq, SourceToken::new()))
+                        .await
+                        .is_err()
+                    {
                         return Ok(());
                     }
                     morsel_seq = morsel_seq.successor();
@@ -332,7 +329,7 @@ impl ParquetSourceNode {
             Ok(())
         });
 
-        (raw_morsel_receivers, AbortOnDropHandle(join_task))
+        (morsel_rx, AbortOnDropHandle(join_task))
     }
 
     /// Creates a `RowGroupDecoder` that turns `RowGroupData` into DataFrames.
@@ -340,12 +337,12 @@ impl ParquetSourceNode {
     /// * `self.projected_arrow_schema`
     /// * `self.physical_predicate`
     pub(super) fn init_row_group_decoder(&self) -> RowGroupDecoder {
-        let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
+        let projected_arrow_schema = self.projected_arrow_schema.clone();
         let row_index = self.row_index.clone();
         let min_values_per_thread = self.config.min_values_per_thread;
 
         let mut use_prefiltered = self.predicate.is_some()
-            && self.file_options.pre_slice.is_none()
+            && self.normalized_pre_slice.is_none()
             && matches!(
                 self.options.parallel,
                 ParallelStrategy::Auto | ParallelStrategy::Prefiltered
@@ -410,30 +407,12 @@ impl ParquetSourceNode {
     }
 
     pub(super) fn init_projected_arrow_schema(&mut self) {
-        let reader_schema = self.schema.clone().unwrap();
-
-        self.projected_arrow_schema = Some(
-            if let Some(columns) = self.file_options.with_columns.as_deref() {
-                Arc::new(
-                    columns
-                        .iter()
-                        .map(|x| {
-                            let (_, k, v) = reader_schema.get_full(x).unwrap();
-                            (k.clone(), v.clone())
-                        })
-                        .collect(),
-                )
-            } else {
-                reader_schema.clone()
-            },
-        );
+        let reader_schema = self.schema.clone();
 
         if self.verbose {
             eprintln!(
                 "[ParquetSource]: {} / {} parquet columns to be projected from {} files",
-                self.projected_arrow_schema
-                    .as_ref()
-                    .map_or(reader_schema.len(), |x| x.len()),
+                self.projected_arrow_schema.len(),
                 reader_schema.len(),
                 self.scan_sources.len(),
             );

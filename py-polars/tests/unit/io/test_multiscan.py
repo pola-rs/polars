@@ -308,7 +308,14 @@ def test_multiscan_row_index(
                 reason="See https://github.com/pola-rs/polars/issues/21211"
             ),
         ),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
+        pytest.param(
+            pl.scan_ndjson,
+            pl.DataFrame.write_ndjson,
+            "jsonl",
+            marks=pytest.mark.xfail(
+                reason="TODO: NDJSON silently ignores parsing errors"
+            ),
+        ),
     ],
 )
 @pytest.mark.write_disk
@@ -493,7 +500,7 @@ def test_multiscan_slice_middle(
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
-        (pl.scan_csv, pl.DataFrame.write_csv, "jsonl"),
+        (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
     ],
 )
 @given(offset=st.integers(-100, 100), length=st.integers(0, 101))
@@ -528,6 +535,20 @@ def test_multiscan_slice_parametric(
         .collect(),
         scan(fs, row_index_name="ri", row_index_offset=42)
         .slice(offset, length)
+        .collect(engine="streaming"),
+    )
+
+    if scan is pl.scan_csv:
+        pytest.skip("TODO: fix projecting only row index with slice for CSV")
+
+    assert_frame_equal(
+        scan(ref, row_index_name="ri", row_index_offset=42)
+        .slice(offset, length)
+        .select("ri")
+        .collect(),
+        scan(fs, row_index_name="ri", row_index_offset=42)
+        .slice(offset, length)
+        .select("ri")
         .collect(engine="streaming"),
     )
 

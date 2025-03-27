@@ -123,6 +123,7 @@ pub struct BeginReadArgs {
     // We could introduce dynamic `Option<Box<dyn Any>>` for the reader to use. That would help
     // with e.g. synchronizing row group prefetches across multiple files in Parquet. Currently
     // every reader started concurrently will prefetch up to the row group prefetch limit.
+    pub scan_source_idx: usize,
 }
 
 impl Default for BeginReadArgs {
@@ -137,6 +138,7 @@ impl Default for BeginReadArgs {
             missing_columns_policy: MissingColumnsPolicy::Insert,
             num_pipelines: 1,
             callbacks: FileReaderCallbacks::default(),
+            scan_source_idx: usize::MAX,
         }
     }
 }
@@ -151,24 +153,25 @@ pub struct FileReaderCallbacks {
     /// on the source. Prefer instead to use `row_position_on_end`, which can be much faster.
     ///
     /// Notes:
-    /// * All readers must ensure that this count is sent if requested, even if the output port
-    ///   closes prematurely, or a slice is sent.
+    /// * The reader must ensure that this count is sent if requested, even if the output port
+    ///   closes prematurely, or a slice is sent. This is unless the reader encounters an error.
     /// * Some readers will only send this after their output morsels to be fully consumed (or if
     ///   their output port is dropped), so you should not block morsel consumption on waiting for this.
     pub n_rows_in_file_tx: Option<tokio::sync::oneshot::Sender<IdxSize>>,
 
-    /// Returns the row position reached by this reader.
+    /// Callback that can either be the total row count of the file, or the number of rows that the
+    /// reader will have processed upon finishing if a slice was requested.
     ///
-    /// The returned value indicates how much of a requested slice was consumed (or the full row
-    /// count if there was none). This is only guaranteed to be the case if the morsels of this
-    /// reader are fully consumed (i.e. no premature stopping), and the reader finishes with an Ok(()) result.
+    /// This callback should be sent as soon as possible, as it can be a serial dependency for the
+    /// next reader.
     ///
-    /// In all other cases, the behavior is subject to reader-specific implementation details and is
-    /// generally not well-defined - i.e. it could be any of:
-    /// * An upfront calculated position based on the total row count
-    /// * An arbitrary position in the file where the reader is currently positioned
-    /// * Not sent at all
-    /// * etc.
+    /// A reader that knows its total row count upfront will be able to send this value immediately
+    /// (e.g. Parquet). Other readers (e.g. CSV) would generally keep a counter of how many rows they
+    /// have seen and return this after finishing.
+    ///
+    /// The returned value is useful for determining how much of a requested slice is consumed by a reader.
+    /// It is more efficient than `n_rows_in_file_tx` as it allows the reader to stop early if it hits the
+    /// end of a requested slice.
     pub row_position_on_end_tx: Option<tokio::sync::oneshot::Sender<IdxSize>>,
 }
 
