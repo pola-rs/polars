@@ -95,7 +95,7 @@ fn read_unordered_json() {
 {"a":1, "b":0.6, "c":false, "d":"text"}
 {"d":1, "c":false, "d":"4", "b":2.0}
 {"b":-3.5, "c":true, "d":"4", "a":5}
-{"d":"text", "a":1, "c":false, "b":0.6}
+{"d":"text", "a":"1", "c":false, "b":0.6}
 {"a":1, "b":2.0, "c":false, "d":"4"}
 {"a":1, "b":-3.5, "c":true, "d":"4"}
 {"a":100000000000000, "b":0.6, "c":false, "d":"text"}
