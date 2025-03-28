@@ -427,7 +427,7 @@ impl PartitionTargetContextKey {
         self.name.as_str()
     }
     #[getter]
-    pub fn value(&self) -> pyo3::PyResult<String> {
+    pub fn str_value(&self) -> pyo3::PyResult<String> {
         let value = self
             .raw_value
             .clone()

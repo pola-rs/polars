@@ -34,17 +34,18 @@ class KeyedPartition:
     KeyedPartitionContext
     """
 
-    def __init__(self, name: str, value: str, raw_value: any) -> None:
+    def __init__(self, name: str, str_value: str, raw_value: any) -> None:
         self.name = name
-        self.value = value
+        self.str_value = str_value
+        self.raw_value = raw_value
 
     name: str  #: Name of the key column.
-    value: str  #: Value of the key as a path and URL safe string
+    str_value: str  #: Value of the key as a path and URL safe string.
     raw_value: any  #: Value of the key for this partition.
 
     def hive_name(self) -> str:
         """Get the `key=value`."""
-        return f"{self.name}={self.value}"
+        return f"{self.name}={self.str_value}"
 
 
 class KeyedPartitionContext:
@@ -145,7 +146,9 @@ def _cast_keyed_file_path_cb(
             part_idx=ctx.part_idx,
             in_part_idx=ctx.in_part_idx,
             keys=[
-                KeyedPartition(name=kv.name, value=kv.value, raw_value=kv.raw_value)
+                KeyedPartition(
+                    name=kv.name, str_value=kv.str_value, raw_value=kv.raw_value
+                )
                 for kv in ctx.keys
             ],
             file_path=Path(ctx.file_path),
