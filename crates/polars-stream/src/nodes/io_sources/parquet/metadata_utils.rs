@@ -4,7 +4,7 @@ use polars_utils::mmap::MemSlice;
 
 /// Read the metadata bytes of a parquet file, does not decode the bytes. If during metadata fetch
 /// the bytes of the entire file are loaded, it is returned in the second return value.
-pub(super) async fn read_parquet_metadata_bytes(
+pub async fn read_parquet_metadata_bytes(
     byte_source: &DynByteSource,
     verbose: bool,
 ) -> PolarsResult<(MemSlice, Option<MemSlice>)> {
@@ -70,7 +70,7 @@ pub(super) async fn read_parquet_metadata_bytes(
         debug_assert!(!matches!(byte_source, DynByteSource::MemSlice(_)));
         if verbose {
             eprintln!(
-                "[ParquetSource]: Extra {} bytes need to be fetched for metadata \
+                "[ParquetFileReader]: Extra {} bytes need to be fetched for metadata \
             (initial estimate = {}, actual size = {})",
                 footer_size - estimated_metadata_size,
                 bytes.len(),
@@ -92,7 +92,7 @@ pub(super) async fn read_parquet_metadata_bytes(
     } else {
         if verbose && !matches!(byte_source, DynByteSource::MemSlice(_)) {
             eprintln!(
-                "[ParquetSource]: Fetched all bytes for metadata on first try \
+                "[ParquetFileReader]: Fetched all bytes for metadata on first try \
                 (initial estimate = {}, actual size = {}, excess = {})",
                 bytes.len(),
                 footer_size,

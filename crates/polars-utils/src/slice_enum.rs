@@ -1,3 +1,6 @@
+use std::num::TryFromIntError;
+use std::ops::Range;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Slice {
     /// Or zero
@@ -99,6 +102,29 @@ impl From<(i64, usize)> for Slice {
                 offset_from_end: usize::try_from(-offset).unwrap(),
                 len,
             }
+        }
+    }
+}
+
+impl TryFrom<Slice> for (i64, usize) {
+    type Error = TryFromIntError;
+
+    fn try_from(value: Slice) -> Result<Self, Self::Error> {
+        match value {
+            Slice::Positive { offset, len } => Ok((i64::try_from(offset)?, len)),
+            Slice::Negative {
+                offset_from_end,
+                len,
+            } => Ok((-i64::try_from(offset_from_end)?, len)),
+        }
+    }
+}
+
+impl From<Slice> for Range<usize> {
+    fn from(value: Slice) -> Self {
+        match value {
+            Slice::Positive { offset, len } => offset..offset.checked_add(len).unwrap(),
+            Slice::Negative { .. } => panic!("cannot convert negative slice into range"),
         }
     }
 }
