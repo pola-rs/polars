@@ -242,7 +242,7 @@ class CatNameSpace:
 
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
-        Extract a substring from each string value.
+        Extract a substring from the string representation of each string value.
 
         Parameters
         ----------

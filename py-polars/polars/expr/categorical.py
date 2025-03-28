@@ -240,7 +240,7 @@ class ExprCatNameSpace:
 
     def slice(self, offset: int, length: int | None = None) -> Expr:
         """
-        Extract a substring from each string value.
+        Extract a substring from the string representation of each value.
 
         Parameters
         ----------
