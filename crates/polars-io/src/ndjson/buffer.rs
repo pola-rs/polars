@@ -8,6 +8,7 @@ use polars_core::prelude::*;
 use polars_time::prelude::string::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::string::infer::{DatetimeInfer, TryFromWithUnit, infer_pattern_single};
+use polars_utils::format_pl_smallstr;
 use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,8 +101,8 @@ impl Buffer<'_> {
                 match value {
                     Value::String(v) => buf.append_value(v),
                     Value::Static(StaticNode::Null) => buf.append_null(),
-                    _ if self.ignore_errors => buf.append_null(),
-                    v => polars_bail!(ComputeError: "cannot parse '{}' as String", v),
+                    // Forcibly convert to String using the Display impl.
+                    v => buf.append_value(v.to_string()),
                 }
                 Ok(())
             },
@@ -225,6 +226,14 @@ fn deserialize_all<'a>(
     dtype: &DataType,
     ignore_errors: bool,
 ) -> PolarsResult<AnyValue<'a>> {
+    if let DataType::String = dtype {
+        return Ok(match json {
+            Value::String(s) => AnyValue::StringOwned(s.as_ref().into()),
+            Value::Static(StaticNode::Null) => AnyValue::Null,
+            v => AnyValue::StringOwned(format_pl_smallstr!("{}", v)),
+        });
+    }
+
     let out = match json {
         Value::Static(StaticNode::Bool(b)) => AnyValue::Boolean(*b),
         Value::Static(StaticNode::I64(i)) => AnyValue::Int64(*i),
