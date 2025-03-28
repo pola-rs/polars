@@ -20,23 +20,43 @@ pub fn _merge_sorted_dfs(
         ComputeError: "merge-sort datatype mismatch: {} != {}", dtype_lhs, dtype_rhs
     );
 
-    if dtype_lhs.is_categorical() {
-        let rev_map_lhs = left_s.categorical().unwrap().get_rev_map();
-        let rev_map_rhs = right_s.categorical().unwrap().get_rev_map();
+    let (merge_indicator, dtype_out) = if dtype_lhs.is_categorical() {
+        let ca_left = left_s.categorical().unwrap();
+        let ca_right = right_s.categorical().unwrap();
+        let rev_map_lhs = ca_left.get_rev_map();
+        let rev_map_rhs = ca_right.get_rev_map();
+        // This check must be performed before the fast return check. Even if one frame is empty, if
+        // it has an incompatible Categorical dtype then it's an error.
         polars_ensure!(
             rev_map_lhs.same_src(rev_map_rhs),
             ComputeError: "can only merge-sort categoricals with the same categories"
         );
-    }
+        // If one frame is empty, we can return the other immediately.
+        if right_s.is_empty() {
+            return Ok(left.clone());
+        } else if left_s.is_empty() {
+            return Ok(right.clone());
+        }
+        let (ca_left, ca_right) = make_categoricals_compatible(ca_left, ca_right)?;
+        let left = ca_left.into_series();
+        let right = ca_right.into_series();
+        (
+            series_to_merge_indicator(&left, &right)?,
+            left.dtype().clone(),
+        )
+    } else {
+        // If one frame is empty, we can return the other immediately.
+        if right_s.is_empty() {
+            return Ok(left.clone());
+        } else if left_s.is_empty() {
+            return Ok(right.clone());
+        }
+        (
+            series_to_merge_indicator(left_s, right_s)?,
+            dtype_lhs.clone(),
+        )
+    };
 
-    // If one frame is empty, we can return the other immediately.
-    if right_s.is_empty() {
-        return Ok(left.clone());
-    } else if left_s.is_empty() {
-        return Ok(right.clone());
-    }
-
-    let merge_indicator = series_to_merge_indicator(left_s, right_s)?;
     let new_columns = left
         .get_columns()
         .iter()
@@ -50,7 +70,7 @@ pub fn _merge_sorted_dfs(
                 rhs_phys.as_materialized_series(),
                 &merge_indicator,
             )?);
-            let mut out = unsafe { out.from_physical_unchecked(lhs.dtype()) }.unwrap();
+            let mut out = unsafe { out.from_physical_unchecked(&dtype_out) }.unwrap();
             out.rename(lhs.name().clone());
             Ok(out)
         })

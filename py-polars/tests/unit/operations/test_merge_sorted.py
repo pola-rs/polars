@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import time
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import given
@@ -7,6 +10,10 @@ import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
+
+if TYPE_CHECKING:
+    from polars._typing import CategoricalOrdering
+
 
 left = pl.DataFrame({"a": [42, 13, 37], "b": [3, 8, 9]})
 right = pl.DataFrame({"a": [5, 10, 1996], "b": [1, 5, 7]})
@@ -233,3 +240,34 @@ def test_merge_time() -> None:
     s = pl.Series("a", [time(0, 0)], pl.Time)
     df = pl.DataFrame([s])
     assert df.merge_sorted(df, "a").get_column("a").dtype == pl.Time()
+
+
+def test_merge_sorted_invalid_categorical_local() -> None:
+    df1 = pl.DataFrame({"a": pl.Series(["a", "b", "c"], dtype=pl.Categorical)})
+    df2 = pl.DataFrame({"a": pl.Series(["a", "b", "d"], dtype=pl.Categorical)})
+
+    with pytest.raises(
+        ComputeError, match="can only merge-sort categoricals with the same categories"
+    ):
+        df1.merge_sorted(df2, key="a")
+
+
+@pytest.mark.parametrize("ordering", ["physical", "lexical"])
+def test_merge_sorted_categorical_global(ordering: CategoricalOrdering) -> None:
+    with pl.StringCache():
+        df1 = pl.DataFrame(
+            {"a": pl.Series(["a", "b", None], dtype=pl.Categorical(ordering=ordering))}
+        )
+        df2 = pl.DataFrame(
+            {"a": pl.Series(["a", "c", "d"], dtype=pl.Categorical(ordering=ordering))}
+        )
+        expected = pl.DataFrame(
+            {
+                "a": pl.Series(
+                    ["a", "a", "b", None, "c", "d"],
+                    dtype=pl.Categorical(ordering=ordering),
+                )
+            }
+        )
+    result = df1.merge_sorted(df2, key="a")
+    assert_frame_equal(result, expected)
