@@ -272,7 +272,8 @@ class ExprCatNameSpace:
         ...             ["pear", None, "papaya", "dragonfruit"],
         ...             dtype=pl.Categorical,
         ...         )
-        ...     },
+        ...     }
+        ... )
         >>> df.with_columns(pl.col("s").cat.slice(-3).alias("slice"))
         shape: (4, 2)
         ┌─────────────┬───────┐
