@@ -300,7 +300,7 @@ class PartitionByKey:
     >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
     ...     PartitionByKey(
     ...         "./out/",
-    ...         file_path=lambda ctx: f"year={ctx.keys[0].value}.csv",
+    ...         file_path=lambda ctx: f"year={ctx.keys[0].str_value}.csv",
     ...         by="year",
     ...     ),
     ... )  # doctest: +SKIP
