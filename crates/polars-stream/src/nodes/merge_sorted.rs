@@ -56,7 +56,7 @@ fn find_mergeable(
 ) -> PolarsResult<Option<(DataFrame, DataFrame)>> {
     fn first_non_empty(vd: &mut VecDeque<DataFrame>) -> Option<DataFrame> {
         let mut df = vd.pop_front()?;
-        while df.is_empty() {
+        while df.height() == 0 {
             df = vd.pop_front()?;
         }
         Some(df)
