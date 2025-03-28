@@ -98,7 +98,7 @@ class BasePartitionContext:
 
 
 def _cast_base_file_path_cb(
-    file_path_cb: Callable[[KeyedPartitionContext], Path | str] | None,
+    file_path_cb: Callable[[BasePartitionContext], Path | str] | None,
 ) -> Callable[[BasePartitionContext], Path | str] | None:
     if file_path_cb is None:
         return None

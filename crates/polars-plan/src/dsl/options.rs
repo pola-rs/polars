@@ -28,8 +28,6 @@ use polars_time::RollingGroupOptions;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::python_function::PythonFunction;
-use pyo3::Python;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -428,7 +426,7 @@ impl PartitionTargetContextKey {
 pub enum PartitionTargetCallback {
     Rust(SpecialEq<Arc<dyn Fn(PartitionTargetContext) -> PolarsResult<PathBuf> + Send + Sync>>),
     #[cfg(feature = "python")]
-    Python(PythonFunction),
+    Python(polars_utils::python_function::PythonFunction),
 }
 
 impl PartitionTargetCallback {
@@ -436,7 +434,7 @@ impl PartitionTargetCallback {
         match self {
             Self::Rust(f) => f(ctx),
             #[cfg(feature = "python")]
-            Self::Python(f) => Python::with_gil(|py| {
+            Self::Python(f) => pyo3::Python::with_gil(|py| {
                 let file_path = f.call1(py, (ctx,)).map_err(to_compute_err)?;
                 let file_path = file_path.extract::<PathBuf>(py).map_err(to_compute_err)?;
                 PolarsResult::Ok(file_path)
@@ -453,7 +451,9 @@ impl<'de> serde::Deserialize<'de> for PartitionTargetCallback {
     {
         #[cfg(feature = "python")]
         {
-            Ok(Self::Python(PythonFunction::deserialize(_deserializer)?))
+            Ok(Self::Python(
+                polars_utils::python_function::PythonFunction::deserialize(_deserializer)?,
+            ))
         }
         #[cfg(not(feature = "python"))]
         {
