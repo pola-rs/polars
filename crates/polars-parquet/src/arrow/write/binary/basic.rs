@@ -7,7 +7,7 @@ use super::super::{WriteOptions, utils};
 use crate::arrow::read::schema::is_nullable;
 use crate::parquet::encoding::{Encoding, delta_bitpacked};
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
+use crate::parquet::statistics::BinaryStatistics;
 use crate::write::utils::invalid_encoding;
 use crate::write::{EncodeNullability, Page, StatisticsOptions};
 
@@ -79,8 +79,8 @@ pub fn array_to_page<O: Offset>(
         _ => return Err(invalid_encoding(encoding, array.dtype())),
     }
 
-    let statistics = if options.has_statistics() {
-        Some(build_statistics(array, type_.clone(), &options.statistics))
+    let statistics = if options.has_page_statistics() {
+        Some(build_statistics(array, type_.clone(), &options.statistics).serialize())
     } else {
         None
     };
@@ -104,7 +104,7 @@ pub(crate) fn build_statistics<O: Offset>(
     array: &BinaryArray<O>,
     primitive_type: PrimitiveType,
     options: &StatisticsOptions,
-) -> ParquetStatistics {
+) -> BinaryStatistics {
     use polars_compute::min_max::MinMaxKernel;
 
     BinaryStatistics {
@@ -120,7 +120,6 @@ pub(crate) fn build_statistics<O: Offset>(
             .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
             .flatten(),
     }
-    .serialize()
 }
 
 pub(crate) fn encode_delta<O: Offset>(

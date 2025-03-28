@@ -33,7 +33,7 @@ where
 
     let buffer = encode_plain(array, encode_options, buffer);
 
-    let statistics = if options.has_statistics() {
+    let statistics = if options.has_page_statistics() {
         Some(build_statistics(array, type_.clone(), &options.statistics).serialize())
     } else {
         None

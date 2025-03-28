@@ -5,8 +5,7 @@ use arrow::datatypes::PhysicalType;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::write::{
-    CompressionOptions, Encoding, FileWriter, StatisticsOptions, Version, WriteOptions,
-    to_parquet_schema, transverse,
+    Encoding, FileWriter, StatisticsOptions, Version, WriteOptions, to_parquet_schema, transverse,
 };
 
 use super::ParquetWriteOptions;
@@ -31,14 +30,9 @@ impl ParquetWriteOptions {
 #[must_use]
 pub struct ParquetWriter<W> {
     writer: W,
-    /// Data page compression
-    compression: CompressionOptions,
-    /// Compute and write column statistics.
-    statistics: StatisticsOptions,
+    options: WriteOptions,
     /// if `None` will be 512^2 rows
     row_group_size: Option<usize>,
-    /// if `None` will be 1024^2 bytes
-    data_page_size: Option<usize>,
     /// Serialize columns in parallel
     parallel: bool,
 }
@@ -54,10 +48,14 @@ where
     {
         ParquetWriter {
             writer,
-            compression: ParquetCompression::default().into(),
-            statistics: StatisticsOptions::default(),
+            options: WriteOptions {
+                compression: ParquetCompression::default().into(),
+                page_index: false,
+                version: Version::V1,
+                statistics: StatisticsOptions::default(),
+                data_page_size: None,
+            },
             row_group_size: None,
-            data_page_size: None,
             parallel: true,
         }
     }
@@ -67,13 +65,19 @@ where
     /// The default compression `Zstd` has very good performance, but may not yet been supported
     /// by older readers. If you want more compatibility guarantees, consider using `Snappy`.
     pub fn with_compression(mut self, compression: ParquetCompression) -> Self {
-        self.compression = compression.into();
+        self.options.compression = compression.into();
         self
     }
 
     /// Compute and write statistic
     pub fn with_statistics(mut self, statistics: StatisticsOptions) -> Self {
-        self.statistics = statistics;
+        self.options.statistics = statistics;
+        self
+    }
+
+    /// Compute and write statistic
+    pub fn with_page_index(mut self, page_index: bool) -> Self {
+        self.options.page_index = page_index;
         self
     }
 
@@ -86,7 +90,7 @@ where
 
     /// Sets the maximum bytes size of a data page. If `None` will be 1024^2 bytes.
     pub fn with_data_page_size(mut self, limit: Option<usize>) -> Self {
-        self.data_page_size = limit;
+        self.options.data_page_size = limit;
         self
     }
 
@@ -100,7 +104,7 @@ where
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
         let parquet_schema = to_parquet_schema(&schema)?;
         let encodings = get_encodings(&schema);
-        let options = self.materialize_options();
+        let options = self.options;
         let writer = Mutex::new(FileWriter::try_new(self.writer, schema, options)?);
 
         Ok(BatchedWriter {
@@ -110,15 +114,6 @@ where
             options,
             parallel: self.parallel,
         })
-    }
-
-    fn materialize_options(&self) -> WriteOptions {
-        WriteOptions {
-            statistics: self.statistics,
-            compression: self.compression,
-            version: Version::V1,
-            data_page_size: self.data_page_size,
-        }
     }
 
     /// Write the given DataFrame in the writer `W`. Returns the total size of the file.

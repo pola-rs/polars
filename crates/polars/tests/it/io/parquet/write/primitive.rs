@@ -6,7 +6,7 @@ use polars_parquet::parquet::metadata::Descriptor;
 use polars_parquet::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
 use polars_parquet::parquet::statistics::PrimitiveStatistics;
 use polars_parquet::parquet::types::NativeType;
-use polars_parquet::parquet::write::WriteOptions;
+use polars_parquet::write::WriteOptions;
 
 fn unzip_option<T: NativeType>(array: &[Option<T>]) -> ParquetResult<(Vec<u8>, Vec<u8>)> {
     // leave the first 4 bytes announcing the length of the def level
@@ -49,7 +49,7 @@ pub fn array_to_page_v1<T: NativeType>(
 
     buffer.extend_from_slice(&values);
 
-    let statistics = if options.write_statistics {
+    let statistics = if options.has_page_statistics() {
         let statistics = &PrimitiveStatistics {
             primitive_type: descriptor.primitive_type.clone(),
             null_count: Some((array.len() - array.iter().flatten().count()) as i64),

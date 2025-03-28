@@ -13,6 +13,8 @@ pub struct ParquetWriteOptions {
     pub compression: ParquetCompression,
     /// Compute and write column statistics.
     pub statistics: StatisticsOptions,
+    /// Compute and write page indexes.
+    pub page_index: bool,
     /// If `None` will be all written to a single row group.
     pub row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes

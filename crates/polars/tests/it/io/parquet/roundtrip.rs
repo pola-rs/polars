@@ -24,6 +24,7 @@ fn round_trip(
 
     let options = WriteOptions {
         statistics: StatisticsOptions::full(),
+        page_index: false,
         compression,
         version,
         data_page_size: None,
@@ -42,7 +43,7 @@ fn round_trip(
     let mut writer = FileWriter::try_new(writer, schema.clone(), options)?;
 
     for group in row_groups {
-        writer.write(group?)?;
+        writer.write(group?, &[])?;
     }
     writer.end(None)?;
 

@@ -43,6 +43,7 @@ use crate::parquet::schema::types::PrimitiveType as ParquetPrimitiveType;
 pub use crate::parquet::schema::types::{
     FieldInfo, ParquetType, PhysicalType as ParquetPhysicalType,
 };
+use crate::parquet::statistics::Statistics;
 pub use crate::parquet::write::{
     Compressor, DynIter, DynStreamingIterator, RowGroupIterColumns, Version, compress,
     write_metadata_sidecar,
@@ -57,6 +58,15 @@ pub struct StatisticsOptions {
     pub max_value: bool,
     pub distinct_count: bool,
     pub null_count: bool,
+    pub level: StatisticsLevel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum StatisticsLevel {
+    None,
+    Chunk,
+    Page,
 }
 
 impl Default for StatisticsOptions {
@@ -66,6 +76,7 @@ impl Default for StatisticsOptions {
             max_value: true,
             distinct_count: false,
             null_count: true,
+            level: StatisticsLevel::Page,
         }
     }
 }
@@ -82,6 +93,8 @@ pub enum EncodeNullability {
 pub struct WriteOptions {
     /// Whether to write statistics
     pub statistics: StatisticsOptions,
+    /// Whether to write the page index
+    pub page_index: bool,
     /// The page and file version to use
     pub version: Version,
     /// The compression to apply to every page
@@ -108,6 +121,7 @@ impl StatisticsOptions {
             max_value: false,
             distinct_count: false,
             null_count: false,
+            level: StatisticsLevel::None,
         }
     }
 
@@ -117,6 +131,7 @@ impl StatisticsOptions {
             max_value: true,
             distinct_count: true,
             null_count: true,
+            level: StatisticsLevel::Page,
         }
     }
 
@@ -131,7 +146,13 @@ impl StatisticsOptions {
 
 impl WriteOptions {
     pub fn has_statistics(&self) -> bool {
-        !self.statistics.is_empty()
+        self.statistics.level != StatisticsLevel::None && !self.statistics.is_empty()
+    }
+    pub fn has_chunk_statistics(&self) -> bool {
+        self.statistics.level != StatisticsLevel::None && !self.statistics.is_empty()
+    }
+    pub fn has_page_statistics(&self) -> bool {
+        self.statistics.level == StatisticsLevel::Page && !self.statistics.is_empty()
     }
 }
 
@@ -523,7 +544,7 @@ pub fn array_to_page_simple(
                 values.into(),
                 array.validity().cloned(),
             );
-            let statistics = if options.has_statistics() {
+            let statistics = if options.has_page_statistics() {
                 Some(fixed_size_binary::build_statistics(
                     &array,
                     type_.clone(),
@@ -550,7 +571,7 @@ pub fn array_to_page_simple(
                 values.into(),
                 array.validity().cloned(),
             );
-            let statistics = if options.has_statistics() {
+            let statistics = if options.has_page_statistics() {
                 Some(fixed_size_binary::build_statistics(
                     &array,
                     type_.clone(),
@@ -563,7 +584,7 @@ pub fn array_to_page_simple(
         },
         ArrowDataType::FixedSizeBinary(_) => {
             let array = array.as_any().downcast_ref().unwrap();
-            let statistics = if options.has_statistics() {
+            let statistics = if options.has_page_statistics() {
                 Some(fixed_size_binary::build_statistics(
                     array,
                     type_.clone(),
@@ -615,7 +636,7 @@ pub fn array_to_page_simple(
                 );
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
-                let statistics = if options.has_statistics() {
+                let statistics = if options.has_page_statistics() {
                     let stats = fixed_size_binary::build_statistics_decimal256_with_i128(
                         array,
                         type_.clone(),
@@ -644,7 +665,7 @@ pub fn array_to_page_simple(
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
-                let statistics = if options.has_statistics() {
+                let statistics = if options.has_page_statistics() {
                     let stats = fixed_size_binary::build_statistics_decimal256(
                         array,
                         type_.clone(),
@@ -710,7 +731,7 @@ pub fn array_to_page_simple(
             } else {
                 let size = decimal_length_from_precision(precision);
 
-                let statistics = if options.has_statistics() {
+                let statistics = if options.has_page_statistics() {
                     let stats = fixed_size_binary::build_statistics_decimal(
                         array,
                         type_.clone(),
@@ -853,7 +874,7 @@ fn array_to_page_nested(
             } else {
                 let size = decimal_length_from_precision(precision);
 
-                let statistics = if options.has_statistics() {
+                let statistics = if options.has_page_statistics() {
                     let stats = fixed_size_binary::build_statistics_decimal(
                         array,
                         type_.clone(),
@@ -914,7 +935,7 @@ fn array_to_page_nested(
                 primitive::nested_array_to_page::<i64, i64>(&array, options, type_, nested)
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
-                let statistics = if options.has_statistics() {
+                let statistics = if options.has_page_statistics() {
                     let stats = fixed_size_binary::build_statistics_decimal256_with_i128(
                         array,
                         type_.clone(),
@@ -943,7 +964,7 @@ fn array_to_page_nested(
                     .as_any()
                     .downcast_ref::<PrimitiveArray<i256>>()
                     .unwrap();
-                let statistics = if options.has_statistics() {
+                let statistics = if options.has_page_statistics() {
                     let stats = fixed_size_binary::build_statistics_decimal256(
                         array,
                         type_.clone(),
@@ -1018,6 +1039,319 @@ fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
         },
         Union => todo!(),
     }
+}
+
+/// Converts an [`Array`] to a [`Statistics`] based on options.
+pub fn array_to_statistics_leaf(
+    array: &dyn Array,
+    type_: ParquetPrimitiveType,
+    options: &WriteOptions,
+) -> PolarsResult<Statistics> {
+    let dtype = array.dtype();
+
+    match dtype.to_logical_type() {
+        ArrowDataType::Boolean => Ok(boolean::build_statistics(
+            array.as_any().downcast_ref().unwrap(),
+            &options.statistics,
+        )
+        .into()),
+        // casts below MUST match the casts done at the metadata (field -> parquet type).
+        ArrowDataType::UInt8 => Ok(primitive::array_to_statistics::<u8, i32>(
+            array.as_any().downcast_ref().unwrap(),
+            type_,
+            &options.statistics,
+        )
+        .into()),
+        ArrowDataType::UInt16 => Ok(primitive::array_to_statistics::<u16, i32>(
+            array.as_any().downcast_ref().unwrap(),
+            type_,
+            &options.statistics,
+        )
+        .into()),
+        ArrowDataType::UInt32 => Ok(primitive::array_to_statistics::<u32, i32>(
+            array.as_any().downcast_ref().unwrap(),
+            type_,
+            &options.statistics,
+        )
+        .into()),
+        ArrowDataType::UInt64 => Ok(primitive::array_to_statistics::<u64, i64>(
+            array.as_any().downcast_ref().unwrap(),
+            type_,
+            &options.statistics,
+        )
+        .into()),
+        ArrowDataType::Int8 => Ok(primitive::array_to_statistics::<i8, i32>(
+            array.as_any().downcast_ref().unwrap(),
+            type_,
+            &options.statistics,
+        )
+        .into()),
+        ArrowDataType::Int16 => Ok(primitive::array_to_statistics::<i16, i32>(
+            array.as_any().downcast_ref().unwrap(),
+            type_,
+            &options.statistics,
+        )
+        .into()),
+        ArrowDataType::Int32 | ArrowDataType::Date32 | ArrowDataType::Time32(_) => {
+            Ok(primitive::array_to_statistics::<i32, i32>(
+                array.as_any().downcast_ref().unwrap(),
+                type_,
+                &options.statistics,
+            )
+            .into())
+        },
+        ArrowDataType::Int64
+        | ArrowDataType::Date64
+        | ArrowDataType::Time64(_)
+        | ArrowDataType::Timestamp(_, _)
+        | ArrowDataType::Duration(_) => Ok(primitive::array_to_statistics::<i64, i64>(
+            array.as_any().downcast_ref().unwrap(),
+            type_,
+            &options.statistics,
+        )
+        .into()),
+        ArrowDataType::Float32 => Ok(primitive::array_to_statistics::<f32, f32>(
+            array.as_any().downcast_ref().unwrap(),
+            type_,
+            &options.statistics,
+        )
+        .into()),
+        ArrowDataType::Float64 => Ok(primitive::array_to_statistics::<f64, f64>(
+            array.as_any().downcast_ref().unwrap(),
+            type_,
+            &options.statistics,
+        )
+        .into()),
+        ArrowDataType::LargeUtf8 => {
+            let array =
+                polars_compute::cast::cast(array, &ArrowDataType::LargeBinary, Default::default())
+                    .unwrap();
+            Ok(binary::build_statistics::<i64>(
+                array.as_any().downcast_ref().unwrap(),
+                type_,
+                &options.statistics,
+            )
+            .into())
+        },
+        ArrowDataType::LargeBinary => Ok(binary::build_statistics::<i64>(
+            array.as_any().downcast_ref().unwrap(),
+            type_,
+            &options.statistics,
+        )
+        .into()),
+        ArrowDataType::BinaryView => Ok(binview::build_statistics(
+            array.as_any().downcast_ref().unwrap(),
+            type_,
+            &options.statistics,
+        )
+        .into()),
+        ArrowDataType::Utf8View => {
+            let array =
+                polars_compute::cast::cast(array, &ArrowDataType::BinaryView, Default::default())
+                    .unwrap();
+            Ok(binview::build_statistics(
+                array.as_any().downcast_ref().unwrap(),
+                type_,
+                &options.statistics,
+            )
+            .into())
+        },
+        ArrowDataType::Null => {
+            let array = Int32Array::new_null(ArrowDataType::Int32, array.len());
+            Ok(
+                primitive::array_to_statistics::<i32, i32>(&array, type_, &options.statistics)
+                    .into(),
+            )
+        },
+        ArrowDataType::Interval(IntervalUnit::YearMonth) => {
+            let array = array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<i32>>()
+                .unwrap();
+            let mut values = Vec::<u8>::with_capacity(12 * array.len());
+            array.values().iter().for_each(|x| {
+                let bytes = &x.to_le_bytes();
+                values.extend_from_slice(bytes);
+                values.extend_from_slice(&[0; 8]);
+            });
+            let array = FixedSizeBinaryArray::new(
+                ArrowDataType::FixedSizeBinary(12),
+                values.into(),
+                array.validity().cloned(),
+            );
+            Ok(
+                fixed_size_binary::build_statistics(&array, type_.clone(), &options.statistics)
+                    .into(),
+            )
+        },
+        ArrowDataType::Interval(IntervalUnit::DayTime) => {
+            let array = array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<days_ms>>()
+                .unwrap();
+            let mut values = Vec::<u8>::with_capacity(12 * array.len());
+            array.values().iter().for_each(|x| {
+                let bytes = &x.to_le_bytes();
+                values.extend_from_slice(&[0; 4]); // months
+                values.extend_from_slice(bytes); // days and seconds
+            });
+            let array = FixedSizeBinaryArray::new(
+                ArrowDataType::FixedSizeBinary(12),
+                values.into(),
+                array.validity().cloned(),
+            );
+            Ok(
+                fixed_size_binary::build_statistics(&array, type_.clone(), &options.statistics)
+                    .into(),
+            )
+        },
+        ArrowDataType::FixedSizeBinary(_) => {
+            let array = array.as_any().downcast_ref().unwrap();
+            Ok(
+                fixed_size_binary::build_statistics(array, type_.clone(), &options.statistics)
+                    .into(),
+            )
+        },
+        ArrowDataType::Decimal256(precision, _) => {
+            let precision = *precision;
+            let array = array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<i256>>()
+                .unwrap();
+            if precision <= 9 {
+                let values = array
+                    .values()
+                    .iter()
+                    .map(|x| x.0.as_i32())
+                    .collect::<Vec<_>>()
+                    .into();
+
+                let array = PrimitiveArray::<i32>::new(
+                    ArrowDataType::Int32,
+                    values,
+                    array.validity().cloned(),
+                );
+                Ok(
+                    primitive::array_to_statistics::<i32, i32>(&array, type_, &options.statistics)
+                        .into(),
+                )
+            } else if precision <= 18 {
+                let values = array
+                    .values()
+                    .iter()
+                    .map(|x| x.0.as_i64())
+                    .collect::<Vec<_>>()
+                    .into();
+
+                let array = PrimitiveArray::<i64>::new(
+                    ArrowDataType::Int64,
+                    values,
+                    array.validity().cloned(),
+                );
+                Ok(
+                    primitive::array_to_statistics::<i64, i64>(&array, type_, &options.statistics)
+                        .into(),
+                )
+            } else if precision <= 38 {
+                let size = decimal_length_from_precision(precision);
+                Ok(fixed_size_binary::build_statistics_decimal256_with_i128(
+                    array,
+                    type_.clone(),
+                    size,
+                    &options.statistics,
+                )
+                .into())
+            } else {
+                let size = 32;
+                let array = array
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<i256>>()
+                    .unwrap();
+                Ok(fixed_size_binary::build_statistics_decimal256(
+                    array,
+                    type_.clone(),
+                    size,
+                    &options.statistics,
+                )
+                .into())
+            }
+        },
+        ArrowDataType::Decimal(precision, _) => {
+            let precision = *precision;
+            let array = array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<i128>>()
+                .unwrap();
+            if precision <= 9 {
+                let values = array
+                    .values()
+                    .iter()
+                    .map(|x| *x as i32)
+                    .collect::<Vec<_>>()
+                    .into();
+
+                let array = PrimitiveArray::<i32>::new(
+                    ArrowDataType::Int32,
+                    values,
+                    array.validity().cloned(),
+                );
+                Ok(
+                    primitive::array_to_statistics::<i32, i32>(&array, type_, &options.statistics)
+                        .into(),
+                )
+            } else if precision <= 18 {
+                let values = array
+                    .values()
+                    .iter()
+                    .map(|x| *x as i64)
+                    .collect::<Vec<_>>()
+                    .into();
+
+                let array = PrimitiveArray::<i64>::new(
+                    ArrowDataType::Int64,
+                    values,
+                    array.validity().cloned(),
+                );
+                Ok(
+                    primitive::array_to_statistics::<i64, i64>(&array, type_, &options.statistics)
+                        .into(),
+                )
+            } else {
+                let size = decimal_length_from_precision(precision);
+
+                Ok(fixed_size_binary::build_statistics_decimal(
+                    array,
+                    type_.clone(),
+                    size,
+                    &options.statistics,
+                )
+                .into())
+            }
+        },
+        other => polars_bail!(nyi = "Writing parquet pages for data type {other:?}"),
+    }
+}
+
+/// Returns a vector of iterators of [`Page`], one per leaf column in the array
+pub fn array_to_statistics<A: AsRef<dyn Array> + Send + Sync>(
+    array: A,
+    type_: ParquetType,
+    options: &WriteOptions,
+) -> PolarsResult<Vec<Statistics>> {
+    let array = array.as_ref();
+
+    let types = to_parquet_leaves(type_);
+
+    let mut values = Vec::new();
+    to_leaves(array, &mut values);
+
+    values
+        .iter()
+        .zip(types)
+        .map(|(values, type_)| {
+            crate::write::array_to_statistics_leaf(values.as_ref(), type_, options)
+        })
+        .collect()
 }
 
 /// Transverses the `dtype` up to its (parquet) columns and returns a vector of

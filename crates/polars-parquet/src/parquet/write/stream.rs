@@ -4,14 +4,16 @@ use futures::{AsyncWrite, AsyncWriteExt};
 use polars_parquet_format::RowGroup;
 use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
 
+use super::RowGroupIterColumns;
 use super::row_group::write_row_group_async;
-use super::{RowGroupIterColumns, WriteOptions};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
+use crate::parquet::statistics::Statistics;
 use crate::parquet::write::State;
 use crate::parquet::write::indexes::{write_column_index_async, write_offset_index_async};
 use crate::parquet::write::page::PageWriteSpec;
 use crate::parquet::{FOOTER_SIZE, PARQUET_MAGIC};
+use crate::write::WriteOptions;
 
 async fn start_file<W: AsyncWrite + Unpin>(writer: &mut W) -> ParquetResult<u64> {
     writer.write_all(&PARQUET_MAGIC).await?;
@@ -107,7 +109,11 @@ impl<W: AsyncWrite + Unpin + Send> FileStreamer<W> {
     }
 
     /// Writes a row group to the file.
-    pub async fn write<E>(&mut self, row_group: RowGroupIterColumns<'_, E>) -> ParquetResult<()>
+    pub async fn write<E>(
+        &mut self,
+        row_group: RowGroupIterColumns<'_, E>,
+        chunk_statistics: &[Option<Statistics>],
+    ) -> ParquetResult<()>
     where
         ParquetError: From<E>,
         E: std::error::Error,
@@ -123,6 +129,8 @@ impl<W: AsyncWrite + Unpin + Send> FileStreamer<W> {
             self.schema.columns(),
             row_group,
             ordinal,
+            chunk_statistics,
+            &self.options,
         )
         .await?;
         self.offset += size;
@@ -146,7 +154,7 @@ impl<W: AsyncWrite + Unpin + Send> FileStreamer<W> {
         // compute file stats
         let num_rows = self.row_groups.iter().map(|group| group.num_rows).sum();
 
-        if self.options.write_statistics {
+        if self.options.page_index {
             // write column indexes (require page statistics)
             for (group, pages) in self.row_groups.iter_mut().zip(self.page_specs.iter()) {
                 for (column, pages) in group.columns.iter_mut().zip(pages.iter()) {
@@ -157,15 +165,15 @@ impl<W: AsyncWrite + Unpin + Send> FileStreamer<W> {
                     column.column_index_length = Some(length as i32);
                 }
             }
-        };
 
-        // write offset index
-        for (group, pages) in self.row_groups.iter_mut().zip(self.page_specs.iter()) {
-            for (column, pages) in group.columns.iter_mut().zip(pages.iter()) {
-                let offset = self.offset;
-                column.offset_index_offset = Some(offset as i64);
-                self.offset += write_offset_index_async(&mut self.writer, pages).await?;
-                column.offset_index_length = Some((self.offset - offset) as i32);
+            // write offset index
+            for (group, pages) in self.row_groups.iter_mut().zip(self.page_specs.iter()) {
+                for (column, pages) in group.columns.iter_mut().zip(pages.iter()) {
+                    let offset = self.offset;
+                    column.offset_index_offset = Some(offset as i64);
+                    self.offset += write_offset_index_async(&mut self.writer, pages).await?;
+                    column.offset_index_length = Some((self.offset - offset) as i32);
+                }
             }
         }
 

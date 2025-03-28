@@ -19,12 +19,16 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::ColumnDescriptor;
 use crate::parquet::page::{CompressedPage, PageType};
+use crate::parquet::statistics::Statistics;
+use crate::write::WriteOptions;
 
 pub fn write_column_chunk<W, E>(
     writer: &mut W,
     mut offset: u64,
     descriptor: &ColumnDescriptor,
     mut compressed_pages: DynStreamingIterator<'_, CompressedPage, E>,
+    chunk_statistics: Option<&Statistics>,
+    options: &WriteOptions,
 ) -> ParquetResult<(ColumnChunk, Vec<PageWriteSpec>, u64)>
 where
     W: Write,
@@ -43,7 +47,7 @@ where
     }
     let mut bytes_written = offset - initial;
 
-    let column_chunk = build_column_chunk(&specs, descriptor)?;
+    let column_chunk = build_column_chunk(&specs, descriptor, chunk_statistics, options)?;
 
     // write metadata
     let mut protocol = TCompactOutputProtocol::new(writer);
@@ -63,6 +67,8 @@ pub async fn write_column_chunk_async<W, E>(
     mut offset: u64,
     descriptor: &ColumnDescriptor,
     mut compressed_pages: DynStreamingIterator<'_, CompressedPage, E>,
+    chunk_statistics: Option<&Statistics>,
+    options: &WriteOptions,
 ) -> ParquetResult<(ColumnChunk, Vec<PageWriteSpec>, u64)>
 where
     W: AsyncWrite + Unpin + Send,
@@ -79,7 +85,7 @@ where
     }
     let mut bytes_written = offset - initial;
 
-    let column_chunk = build_column_chunk(&specs, descriptor)?;
+    let column_chunk = build_column_chunk(&specs, descriptor, chunk_statistics, options)?;
 
     // write metadata
     let mut protocol = TCompactOutputStreamProtocol::new(writer);
@@ -96,6 +102,8 @@ where
 fn build_column_chunk(
     specs: &[PageWriteSpec],
     descriptor: &ColumnDescriptor,
+    chunk_statistics: Option<&Statistics>,
+    options: &WriteOptions,
 ) -> ParquetResult<ColumnChunk> {
     // compute stats to build header at the end of the chunk
 
@@ -170,9 +178,15 @@ fn build_column_chunk(
     // Sort the encodings to have deterministic metadata
     encodings.sort();
 
-    let statistics = specs.iter().map(|x| &x.statistics).collect::<Vec<_>>();
-    let statistics = reduce(&statistics)?;
-    let statistics = statistics.map(|x| x.serialize());
+    let mut statistics = None;
+    if options.has_chunk_statistics() {
+        if options.has_page_statistics() {
+            let page_statistics = specs.iter().map(|x| &x.statistics).collect::<Vec<_>>();
+            statistics = reduce(&page_statistics)?.map(|x| x.serialize());
+        } else {
+            statistics = Some(chunk_statistics.unwrap().serialize());
+        }
+    }
 
     let (type_, _): (Type, Option<i32>) = descriptor.descriptor.primitive_type.physical_type.into();
 

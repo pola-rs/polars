@@ -7,7 +7,7 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::encoding::hybrid_rle::{self, bitpacked_encode};
 use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{BooleanStatistics, ParquetStatistics};
+use crate::parquet::statistics::BooleanStatistics;
 use crate::write::{EncodeNullability, StatisticsOptions};
 
 fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> PolarsResult<()> {
@@ -81,8 +81,8 @@ pub fn array_to_page(
         other => polars_bail!(nyi = "Encoding boolean as {other:?}"),
     }
 
-    let statistics = if options.has_statistics() {
-        Some(build_statistics(array, &options.statistics))
+    let statistics = if options.has_page_statistics() {
+        Some(build_statistics(array, &options.statistics).serialize())
     } else {
         None
     };
@@ -101,10 +101,7 @@ pub fn array_to_page(
     )
 }
 
-pub(super) fn build_statistics(
-    array: &BooleanArray,
-    options: &StatisticsOptions,
-) -> ParquetStatistics {
+pub fn build_statistics(array: &BooleanArray, options: &StatisticsOptions) -> BooleanStatistics {
     use polars_compute::min_max::MinMaxKernel;
     use polars_compute::unique::GenericUniqueKernel;
 
@@ -123,5 +120,4 @@ pub(super) fn build_statistics(
             .then(|| array.min_propagate_nan_kernel())
             .flatten(),
     }
-    .serialize()
 }

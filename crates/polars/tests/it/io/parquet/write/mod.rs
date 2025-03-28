@@ -7,6 +7,7 @@ use std::io::{Cursor, Read, Seek};
 use polars::io::SerReader;
 use polars::io::parquet::read::ParquetReader;
 use polars::io::parquet::write::ParquetWriter;
+use polars::prelude::StatisticsOptions;
 use polars_core::df;
 use polars_core::prelude::*;
 use polars_parquet::parquet::compression::{BrotliLevel, CompressionOptions};
@@ -16,9 +17,10 @@ use polars_parquet::parquet::page::Page;
 use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType};
 use polars_parquet::parquet::statistics::Statistics;
 use polars_parquet::parquet::write::{
-    Compressor, DynIter, DynStreamingIterator, FileWriter, Version, WriteOptions,
+    Compressor, DynIter, DynStreamingIterator, FileWriter, Version,
 };
 use polars_parquet::read::read_metadata;
+use polars_parquet::write::WriteOptions;
 use polars_utils::mmap::MemReader;
 use primitive::array_to_page_v1;
 
@@ -51,8 +53,11 @@ fn test_column(column: &str, compression: CompressionOptions) -> ParquetResult<(
     let array = alltypes_plain(column);
 
     let options = WriteOptions {
-        write_statistics: true,
+        statistics: Default::default(),
+        page_index: false,
         version: Version::V1,
+        compression,
+        data_page_size: None,
     };
 
     // prepare schema
@@ -87,7 +92,7 @@ fn test_column(column: &str, compression: CompressionOptions) -> ParquetResult<(
     let writer = Cursor::new(vec![]);
     let mut writer = FileWriter::new(writer, schema, options, None);
 
-    writer.write(DynIter::new(columns))?;
+    writer.write(DynIter::new(columns), &[None])?;
     writer.end(None)?;
 
     let data = writer.into_inner().into_inner();
@@ -176,8 +181,11 @@ fn basic() -> ParquetResult<()> {
     ];
 
     let options = WriteOptions {
-        write_statistics: false,
         version: Version::V1,
+        statistics: StatisticsOptions::default(),
+        page_index: false,
+        compression: CompressionOptions::Uncompressed,
+        data_page_size: None,
     };
 
     let schema = SchemaDescriptor::new(
@@ -202,7 +210,7 @@ fn basic() -> ParquetResult<()> {
     let writer = Cursor::new(vec![]);
     let mut writer = FileWriter::new(writer, schema, options, None);
 
-    writer.write(DynIter::new(columns))?;
+    writer.write(DynIter::new(columns), &[None])?;
     writer.end(None)?;
 
     let data = writer.into_inner().into_inner();

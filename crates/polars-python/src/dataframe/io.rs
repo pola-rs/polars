@@ -397,7 +397,7 @@ impl PyDataFrame {
 
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (
-        py_f, compression, compression_level, statistics, row_group_size, data_page_size,
+        py_f, compression, compression_level, statistics, page_index, row_group_size, data_page_size,
         partition_by, partition_chunk_size_bytes, cloud_options, credential_provider, retries
     ))]
     pub fn write_parquet(
@@ -407,6 +407,7 @@ impl PyDataFrame {
         compression: &str,
         compression_level: Option<i32>,
         statistics: Wrap<StatisticsOptions>,
+        page_index: bool,
         row_group_size: Option<usize>,
         data_page_size: Option<usize>,
         partition_by: Option<Vec<String>>,
@@ -442,6 +443,7 @@ impl PyDataFrame {
             return py.enter_polars(|| {
                 let write_options = ParquetWriteOptions {
                     compression,
+                    page_index,
                     statistics: statistics.0,
                     row_group_size,
                     data_page_size,

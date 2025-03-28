@@ -668,6 +668,7 @@ fn integration_write(
     chunks: &[RecordBatchT<Box<dyn Array>>],
 ) -> PolarsResult<Vec<u8>> {
     let options = WriteOptions {
+        page_index: false,
         statistics: StatisticsOptions::full(),
         compression: CompressionOptions::Uncompressed,
         version: Version::V1,
@@ -695,7 +696,7 @@ fn integration_write(
     let mut writer = FileWriter::try_new(writer, schema.clone(), options)?;
 
     for group in row_groups {
-        writer.write(group?)?;
+        writer.write(group?, &[])?;
     }
     writer.end(None)?;
 

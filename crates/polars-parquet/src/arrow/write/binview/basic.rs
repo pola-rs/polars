@@ -4,7 +4,7 @@ use polars_error::PolarsResult;
 
 use crate::parquet::encoding::delta_bitpacked;
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
+use crate::parquet::statistics::BinaryStatistics;
 use crate::read::schema::is_nullable;
 use crate::write::binary::encode_non_null_values;
 use crate::write::utils::invalid_encoding;
@@ -85,8 +85,8 @@ pub fn array_to_page(
         _ => return Err(invalid_encoding(encoding, array.dtype())),
     }
 
-    let statistics = if options.has_statistics() {
-        Some(build_statistics(array, type_.clone(), &options.statistics))
+    let statistics = if options.has_page_statistics() {
+        Some(build_statistics(array, type_.clone(), &options.statistics).serialize())
     } else {
         None
     };
@@ -110,7 +110,7 @@ pub(crate) fn build_statistics(
     array: &BinaryViewArray,
     primitive_type: PrimitiveType,
     options: &StatisticsOptions,
-) -> ParquetStatistics {
+) -> BinaryStatistics {
     BinaryStatistics {
         primitive_type,
         null_count: options.null_count.then_some(array.null_count() as i64),
@@ -124,5 +124,4 @@ pub(crate) fn build_statistics(
             .then(|| array.min_propagate_nan_kernel().map(<[u8]>::to_vec))
             .flatten(),
     }
-    .serialize()
 }
