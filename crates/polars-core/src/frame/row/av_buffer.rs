@@ -130,7 +130,7 @@ impl<'a> AnyValueBuffer<'a> {
             },
             (Null(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use AnyValues for that
-            (All(_, vals), v) => vals.push(v),
+            (All(_, vals), v) => vals.push(v.into_static()),
 
             // dynamic types
             (String(builder), av) => match av {
