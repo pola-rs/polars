@@ -150,7 +150,7 @@ impl SinkNode for PartedPartitionSinkNode {
                 let mut recv_port = recv_port.serial();
                 while let Ok(morsel) = recv_port.recv().await {
                     let (mut df, seq, source_token, consume_token) = morsel.into_inner();
-                    if df.is_empty() {
+                    if df.height() == 0 {
                         continue;
                     }
 

@@ -331,10 +331,16 @@ def test_schema_mismatch_type_mismatch(
 
     q = scan(multiscan_path)
 
-    with pytest.raises(
-        pl.exceptions.SchemaError,
-        match="data type mismatch for column xyz_col: expected: i64, found: str",
-    ):
+    cx = (
+        pytest.raises(pl.exceptions.ComputeError, match="cannot parse 'a' as Int64")
+        if scan is pl.scan_ndjson
+        else pytest.raises(
+            pl.exceptions.SchemaError,
+            match="data type mismatch for column xyz_col: expected: i64, found: str",
+        )
+    )
+
+    with cx:
         q.collect(engine="streaming")
 
 
@@ -493,7 +499,7 @@ def test_multiscan_slice_middle(
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
-        (pl.scan_csv, pl.DataFrame.write_csv, "jsonl"),
+        (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
     ],
 )
 @given(offset=st.integers(-100, 100), length=st.integers(0, 101))
@@ -528,6 +534,17 @@ def test_multiscan_slice_parametric(
         .collect(),
         scan(fs, row_index_name="ri", row_index_offset=42)
         .slice(offset, length)
+        .collect(engine="streaming"),
+    )
+
+    assert_frame_equal(
+        scan(ref, row_index_name="ri", row_index_offset=42)
+        .slice(offset, length)
+        .select("ri")
+        .collect(),
+        scan(fs, row_index_name="ri", row_index_offset=42)
+        .slice(offset, length)
+        .select("ri")
         .collect(engine="streaming"),
     )
 

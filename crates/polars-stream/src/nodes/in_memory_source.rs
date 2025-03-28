@@ -90,7 +90,7 @@ impl ComputeNode for InMemorySourceNode {
 
                     // TODO: remove this 'always sent at least one morsel'
                     // condition, see update_state.
-                    if df.is_empty() && seq > 0 {
+                    if df.height() == 0 && seq > 0 {
                         break;
                     }
 

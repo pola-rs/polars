@@ -58,7 +58,7 @@ impl ComputeNode for FilterNode {
                         df._filter_seq(mask)
                     }).await?;
 
-                    if morsel.df().is_empty() {
+                    if morsel.df().height() == 0 {
                         continue;
                     }
 

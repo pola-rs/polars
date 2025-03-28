@@ -1,4 +1,5 @@
 pub mod predicate;
+pub mod projection;
 pub mod slice;
 
 use std::sync::{Arc, Mutex};
