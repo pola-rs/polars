@@ -378,12 +378,14 @@ pub enum SinkTypeIR {
 #[derive(Clone)]
 pub struct PartitionTargetContextKey {
     pub name: PlSmallStr,
-    pub value: PlSmallStr,
+    pub raw_value: Scalar,
 }
 
 #[cfg_attr(feature = "python", pyo3::pyclass)]
 pub struct PartitionTargetContext {
-    pub part: usize,
+    pub file_idx: usize,
+    pub part_idx: usize,
+    pub in_part_idx: usize,
     pub keys: Vec<PartitionTargetContextKey>,
     pub file_path: PathBuf,
     pub full_path: PathBuf,
@@ -393,8 +395,16 @@ pub struct PartitionTargetContext {
 #[pyo3::pymethods]
 impl PartitionTargetContext {
     #[getter]
-    pub fn part(&self) -> usize {
-        self.part
+    pub fn file_idx(&self) -> usize {
+        self.file_idx
+    }
+    #[getter]
+    pub fn part_idx(&self) -> usize {
+        self.part_idx
+    }
+    #[getter]
+    pub fn in_part_idx(&self) -> usize {
+        self.in_part_idx
     }
     #[getter]
     pub fn keys(&self) -> Vec<PartitionTargetContextKey> {
@@ -417,8 +427,24 @@ impl PartitionTargetContextKey {
         self.name.as_str()
     }
     #[getter]
-    pub fn value(&self) -> &str {
-        self.name.as_str()
+    pub fn value(&self) -> pyo3::PyResult<String> {
+        let value = self
+            .raw_value
+            .clone()
+            .into_series(PlSmallStr::EMPTY)
+            .strict_cast(&DataType::String)
+            .map_err(|err| pyo3::exceptions::PyRuntimeError::new_err(err.to_string()))?;
+        let value = value.str().unwrap();
+        let value = value.get(0).unwrap_or("null").as_bytes();
+        let value = percent_encoding::percent_encode(value, polars_io::utils::URL_ENCODE_CHAR_SET);
+        Ok(value.to_string())
+    }
+    #[getter]
+    pub fn raw_value(&self) -> pyo3::PyObject {
+        let converter = polars_core::chunked_array::object::registry::get_pyobject_converter();
+        *(converter.as_ref())(self.raw_value.as_any_value())
+            .downcast::<pyo3::PyObject>()
+            .unwrap()
     }
 }
 

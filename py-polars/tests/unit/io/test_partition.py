@@ -118,7 +118,7 @@ def test_partition_by_key(
     (io_type["sink"])(
         lf,
         PartitionByKey(
-            tmp_path, file_path=lambda ctx: f"{ctx.part}.{io_type['ext']}", by="a"
+            tmp_path, file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}", by="a"
         ),
         engine="streaming",
         # We need to sync here because platforms do not guarantee that a close on
@@ -155,7 +155,7 @@ def test_partition_by_key(
         lf,
         PartitionByKey(
             tmp_path,
-            file_path=lambda ctx: f"{ctx.part}.{io_type['ext']}",
+            file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}",
             by=pl.col.a.cast(pl.String()),
         ),
         engine="streaming",
@@ -200,7 +200,7 @@ def test_partition_parted(
     (io_type["sink"])(
         lf,
         PartitionParted(
-            tmp_path, file_path=lambda ctx: f"{ctx.part}.{io_type['ext']}", by="a"
+            tmp_path, file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}", by="a"
         ),
         engine="streaming",
         # We need to sync here because platforms do not guarantee that a close on
@@ -230,7 +230,7 @@ def test_partition_parted(
         lf,
         PartitionParted(
             tmp_path,
-            file_path=lambda ctx: f"{ctx.part}.{io_type['ext']}",
+            file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}",
             by=[pl.col.a, pl.col.a.cast(pl.String()).alias("a_str")],
         ),
         engine="streaming",
@@ -255,7 +255,7 @@ def test_partition_parted(
         lf,
         PartitionParted(
             tmp_path,
-            file_path=lambda ctx: f"{ctx.part}.{io_type['ext']}",
+            file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}",
             by=[pl.col.a.cast(pl.String()).alias("a_str")],
             include_key=False,
         ),
@@ -278,7 +278,13 @@ def test_partition_parted(
         min_cols=1,
         excluded_dtypes=[
             pl.Decimal,  # Bug see: https://github.com/pola-rs/polars/issues/21684
+            pl.Duration,  # Bug see: https://github.com/pola-rs/polars/issues/21964
             pl.Categorical,  # We cannot ensure the string cache is properly held.
+            # Generate invalid UTF-8
+            pl.Binary,
+            pl.Struct,
+            pl.Array,
+            pl.List,
         ],
     )
 )
@@ -295,7 +301,7 @@ def test_partition_by_key_parametric(
     (io_type["sink"])(
         df.lazy(),
         PartitionByKey(
-            tmp_path, file_path=lambda ctx: f"{ctx.part}.{io_type['ext']}", by=col1
+            tmp_path, file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}", by=col1
         ),
         engine="streaming",
         # We need to sync here because platforms do not guarantee that a close on

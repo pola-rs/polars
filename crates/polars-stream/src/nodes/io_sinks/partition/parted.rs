@@ -140,7 +140,7 @@ impl SinkNode for PartedPartitionSinkNode {
             }
 
             let verbose = config::verbose();
-            let mut part = 0;
+            let mut file_idx = 0;
             let mut current_sink_opt: Option<CurrentSink> = None;
             let mut lengths = Vec::new();
 
@@ -195,7 +195,9 @@ impl SinkNode for PartedPartitionSinkNode {
                                     base_path.as_path(),
                                     file_path_cb.as_ref(),
                                     super::default_by_key_file_path_cb,
-                                    &mut part,
+                                    file_idx,
+                                    file_idx,
+                                    0,
                                     Some(
                                         parted_df
                                             .select_columns(key_cols.iter().cloned())?
@@ -209,6 +211,7 @@ impl SinkNode for PartedPartitionSinkNode {
                                     &state,
                                 )
                                 .await?;
+                                file_idx += 1;
                                 let Some((join_handles, sender)) = result else {
                                     return Ok(());
                                 };

@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
-use polars_core::prelude::Column;
+use polars_core::prelude::{Column, DataType};
+use polars_core::scalar::Scalar;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
@@ -97,31 +98,39 @@ impl SinkSender {
     }
 }
 
-fn default_by_key_file_path_cb(ext: &str, _part: usize, columns: Option<&[Column]>) -> PathBuf {
+fn default_by_key_file_path_cb(
+    ext: &str,
+    _file_idx: usize,
+    _part_idx: usize,
+    in_part_idx: usize,
+    columns: Option<&[Column]>,
+) -> PolarsResult<PathBuf> {
     let columns = columns.unwrap();
     assert!(!columns.is_empty());
 
-    let mut file_path = PathBuf::from(format!("000.{ext}"));
+    let mut file_path = PathBuf::from(format!("{in_part_idx}.{ext}"));
     for c in columns {
         let name = c.name();
-        let value = c.get(0).unwrap();
-        let value = value.to_string();
-        let value = percent_encoding::percent_encode(
-            value.as_bytes(),
-            polars_io::utils::URL_ENCODE_CHAR_SET,
-        );
+        let value = c.head(Some(1)).strict_cast(&DataType::String)?;
+        let value = value.str().unwrap();
+        let value = value.get(0).unwrap_or("null").as_bytes();
+        let value = percent_encoding::percent_encode(value, polars_io::utils::URL_ENCODE_CHAR_SET);
         file_path = PathBuf::from(format!("{name}={value}")).join(file_path);
     }
 
-    file_path
+    Ok(file_path)
 }
+
+type FilePathCallback = fn(&str, usize, usize, usize, Option<&[Column]>) -> PolarsResult<PathBuf>;
 
 #[allow(clippy::too_many_arguments)]
 async fn open_new_sink(
     base_path: &Path,
     file_path_cb: Option<&PartitionTargetCallback>,
-    default_file_path_cb: fn(&str, usize, Option<&[Column]>) -> PathBuf,
-    part: &mut usize,
+    default_file_path_cb: FilePathCallback,
+    file_idx: usize,
+    part_idx: usize,
+    in_part_idx: usize,
     keys: Option<&[Column]>,
     create_new_sink: &CreateNewSinkFn,
     sink_input_schema: SchemaRef,
@@ -135,7 +144,7 @@ async fn open_new_sink(
         SinkSender,
     )>,
 > {
-    let mut file_path = default_file_path_cb(ext, *part, keys);
+    let mut file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys)?;
     let mut path = base_path.join(file_path.as_path());
 
     // If the user provided their own callback, modify the path to that.
@@ -144,18 +153,15 @@ async fn open_new_sink(
             keys.iter()
                 .map(|k| polars_plan::dsl::PartitionTargetContextKey {
                     name: k.name().clone(),
-                    value: percent_encoding::percent_encode(
-                        k.get(0).unwrap().to_string().as_bytes(),
-                        polars_io::utils::URL_ENCODE_CHAR_SET,
-                    )
-                    .to_string()
-                    .into(),
+                    raw_value: Scalar::new(k.dtype().clone(), k.get(0).unwrap().into_static()),
                 })
                 .collect()
         });
 
         file_path = file_path_cb.call(PartitionTargetContext {
-            part: *part,
+            file_idx,
+            part_idx,
+            in_part_idx,
             keys,
             file_path,
             full_path: path,
@@ -163,7 +169,6 @@ async fn open_new_sink(
         path = base_path.join(file_path);
     }
 
-    *part += 1;
     if verbose {
         eprintln!(
             "[partition[{partition_name}]]: Start on new file '{}'",

@@ -74,8 +74,14 @@ impl MaxSizePartitionSinkNode {
     }
 }
 
-fn default_file_path_cb(ext: &str, part: usize, _columns: Option<&[Column]>) -> PathBuf {
-    PathBuf::from(format!("{part}.{ext}"))
+fn default_file_path_cb(
+    ext: &str,
+    file_idx: usize,
+    _part_idx: usize,
+    _in_part_idx: usize,
+    _columns: Option<&[Column]>,
+) -> PolarsResult<PathBuf> {
+    Ok(PathBuf::from(format!("{file_idx}.{ext}")))
 }
 
 impl SinkNode for MaxSizePartitionSinkNode {
@@ -121,7 +127,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
             }
 
             let verbose = config::verbose();
-            let mut part = 0;
+            let mut file_idx = 0;
             let mut current_sink_opt = None;
 
             while let Ok((outcome, recv_port)) = recv_port_recv.recv().await {
@@ -139,7 +145,9 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                     base_path.as_path(),
                                     file_path_cb.as_ref(),
                                     default_file_path_cb,
-                                    &mut part,
+                                    file_idx,
+                                    file_idx,
+                                    0,
                                     None,
                                     &create_new,
                                     input_schema.clone(),
@@ -149,6 +157,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                     &state,
                                 )
                                 .await?;
+                                file_idx += 1;
                                 let Some((join_handles, sender)) = result else {
                                     return Ok(());
                                 };

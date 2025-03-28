@@ -34,12 +34,17 @@ class KeyedPartition:
     KeyedPartitionContext
     """
 
-    def __init__(self, name: str, value: str) -> None:
+    def __init__(self, name: str, value: str, raw_value: any) -> None:
         self.name = name
         self.value = value
 
     name: str  #: Name of the key column.
-    value: str  #: Value of the key for this partition.
+    value: str  #: Value of the key as a path and URL safe string
+    raw_value: any  #: Value of the key for this partition.
+
+    def hive_name(self) -> str:
+        """Get the `key=value`."""
+        return f"{self.name}={self.value}"
 
 
 class KeyedPartitionContext:
@@ -57,19 +62,37 @@ class KeyedPartitionContext:
     """
 
     def __init__(
-        self, part: int, keys: list[KeyedPartition], file_path: Path, full_path: Path
+        self,
+        file_idx: int,
+        part_idx: int,
+        in_part_idx: int,
+        keys: list[KeyedPartition],
+        file_path: Path,
+        full_path: Path,
     ) -> None:
-        self.part = part
+        self.file_idx = file_idx
+        self.part_idx = part_idx
+        self.in_part_idx = in_part_idx
         self.keys = keys
         self.file_path = file_path
         self.full_path = full_path
 
-    part: int  #: The index of the created file starting from zero.
+    file_idx: int  #: The index of the created file starting from zero.
+    part_idx: int  #: The index of the created partition starting from zero.
+    in_part_idx: int  #: The index of the file within this partition starting from zero.
     keys: list[KeyedPartition]  #: All the key names and values used for this partition.
     file_path: Path  #: The chosen output path before the callback was called without `base_path`.
     full_path: (
         Path  #: The chosen output path before the callback was called with `base_path`.
     )
+
+    def hive_dirs(self) -> Path:
+        """The keys mapped to hive directories."""
+        assert len(self.keys) > 0
+        p = Path(self.keys[0].hive_name())
+        for key in self.keys[1:]:
+            p /= Path(key.hive_name())
+        return p
 
 
 class BasePartitionContext:
@@ -85,12 +108,12 @@ class BasePartitionContext:
     PartitionMaxSize
     """
 
-    def __init__(self, part: int, file_path: Path, full_path: Path) -> None:
-        self.part = part
+    def __init__(self, file_idx: int, file_path: Path, full_path: Path) -> None:
+        self.file_idx = file_idx
         self.file_path = file_path
         self.full_path = full_path
 
-    part: int  #: The index of the created file starting from zero.
+    file_idx: int  #: The index of the created file starting from zero.
     file_path: Path  #: The chosen output path before the callback was called without `base_path`.
     full_path: (
         Path  #: The chosen output path before the callback was called with `base_path`.
@@ -104,7 +127,7 @@ def _cast_base_file_path_cb(
         return None
     return lambda ctx: file_path_cb(
         BasePartitionContext(
-            part=ctx.part,
+            file_idx=ctx.file_idx,
             file_path=Path(ctx.file_path),
             full_path=Path(ctx.full_path),
         )
@@ -118,8 +141,13 @@ def _cast_keyed_file_path_cb(
         return None
     return lambda ctx: file_path_cb(
         KeyedPartitionContext(
-            part=ctx.part,
-            keys=[KeyedPartition(name=kv.name, value=kv.value) for kv in ctx.keys],
+            file_idx=ctx.file_idx,
+            part_idx=ctx.part_idx,
+            in_part_idx=ctx.in_part_idx,
+            keys=[
+                KeyedPartition(name=kv.name, value=kv.value, raw_value=kv.raw_value)
+                for kv in ctx.keys
+            ],
             file_path=Path(ctx.file_path),
             full_path=Path(ctx.full_path),
         )
@@ -147,7 +175,7 @@ class PartitionMaxSize:
         :class:`polars.io.partition.BasePartitionContext` that contains information
         about the partition.
 
-        If no callback is given, it defaults to `{base_path}/{part}.{ext}`.
+        If no callback is given, it defaults to `{ctx.file_idx}.{EXT}`.
     max_size : int
         The maximum size in rows of each of the generated files.
 
@@ -241,7 +269,7 @@ class PartitionByKey:
         about the partition.
 
         If no callback is given, it defaults to
-        `{base_path}/{keys[0].value}={keys[0].value}/.../{keys[n-1].value}={keys[n-1].value}/000.{ext}`.
+        `{ctx.keys.hive_dirs()}/{ctx.in_part_idx}.{EXT}`.
     by
         The expressions to partition by.
     include_key : bool
@@ -336,7 +364,7 @@ class PartitionParted:
         about the partition.
 
         If no callback is given, it defaults to
-        `{base_path}/{keys[0].value}={keys[0].value}/.../{keys[n-1].value}={keys[n-1].value}/000.{ext}`.
+        `{ctx.keys.hive_dirs()}/{ctx.in_part_idx}.{EXT}`.
     by
         The expressions to partition by.
     include_key : bool

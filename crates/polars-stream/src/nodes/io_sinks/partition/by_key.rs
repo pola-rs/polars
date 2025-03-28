@@ -196,7 +196,7 @@ impl SinkNode for PartitionByKeySinkNode {
             }
 
             let verbose = config::verbose();
-            let mut part = 0;
+            let mut file_idx = 0;
             let mut open_partitions: PlIndexMap<Buffer<u8>, OpenPartition> = PlIndexMap::default();
 
             // Wrap this in a closure so that a failure to send (which signifies a failure) can be
@@ -228,7 +228,9 @@ impl SinkNode for PartitionByKeySinkNode {
                                         base_path.as_path(),
                                         file_path_cb.as_ref(),
                                         super::default_by_key_file_path_cb,
-                                        &mut part,
+                                        file_idx,
+                                        file_idx,
+                                        0,
                                         Some(keys.as_slice()),
                                         &create_new_sink,
                                         sink_input_schema.clone(),
@@ -237,6 +239,8 @@ impl SinkNode for PartitionByKeySinkNode {
                                         verbose,
                                         &state,
                                     ).await?;
+                                    file_idx += 1;
+
                                     let Some((join_handles, sender)) = result else {
                                         return Ok(());
                                     };
@@ -283,7 +287,9 @@ impl SinkNode for PartitionByKeySinkNode {
                             base_path.as_path(),
                             file_path_cb.as_ref(),
                             super::default_by_key_file_path_cb,
-                            &mut part,
+                            file_idx,
+                            file_idx,
+                            0,
                             Some(keys.as_slice()),
                             &create_new_sink,
                             sink_input_schema.clone(),
@@ -292,6 +298,7 @@ impl SinkNode for PartitionByKeySinkNode {
                             verbose,
                             &state
                         ).await?;
+                        file_idx += 1;
                         let Some((mut join_handles, mut sender)) = result else {
                             return Ok(());
                         };
