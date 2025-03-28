@@ -1547,7 +1547,7 @@ fn test_round_after_agg() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("groups")])
         .agg([((col("b") * col("c")).sum() / col("b").sum())
-            .round(2, polars_ops::series::RoundMode::HalfEven)
+            .round(2, polars_ops::series::RoundMode::default())
             .alias("foo")])
         .collect()?;
 

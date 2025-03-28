@@ -1290,7 +1290,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     "round",
                     decimals,
                     match mode {
-                        RoundMode::HalfEven => "half_even",
+                        RoundMode::HalfToEven => "half_to_even",
                         RoundMode::HalfAwayFromZero => "half_away_from_zero",
                     },
                 )

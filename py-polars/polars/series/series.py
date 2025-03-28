@@ -5019,7 +5019,7 @@ class Series:
         ]
         """
 
-    def round(self, decimals: int = 0, mode: RoundMode = "half_even") -> Series:
+    def round(self, decimals: int = 0, mode: RoundMode = "half_to_even") -> Series:
         """
         Round underlying floating point data by `decimals` digits.
 

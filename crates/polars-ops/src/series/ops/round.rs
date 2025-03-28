@@ -12,7 +12,7 @@ use crate::series::ops::SeriesSealed;
 #[derive(Default)]
 pub enum RoundMode {
     #[default]
-    HalfEven,
+    HalfToEven,
     HalfAwayFromZero,
 }
 
@@ -23,7 +23,7 @@ pub trait RoundSeries: SeriesSealed {
 
         if let Ok(ca) = s.f32() {
             match mode {
-                RoundMode::HalfEven => {
+                RoundMode::HalfToEven => {
                     return if decimals == 0 {
                         let s = ca.apply_values(|val| val.round_ties_even()).into_series();
                         Ok(s)
@@ -59,7 +59,7 @@ pub trait RoundSeries: SeriesSealed {
         }
         if let Ok(ca) = s.f64() {
             match mode {
-                RoundMode::HalfEven => {
+                RoundMode::HalfToEven => {
                     return if decimals == 0 {
                         let s = ca.apply_values(|val| val.round_ties_even()).into_series();
                         Ok(s)
@@ -98,7 +98,7 @@ pub trait RoundSeries: SeriesSealed {
             let threshold = multiplier / 2;
 
             let res = match mode {
-                RoundMode::HalfEven => ca.apply_values(|v| {
+                RoundMode::HalfToEven => ca.apply_values(|v| {
                     let rem = v % multiplier;
                     let is_v_floor_even = ((v - rem) / multiplier) % 2 == 0;
                     let threshold = threshold + i128::from(is_v_floor_even);
@@ -124,8 +124,7 @@ pub trait RoundSeries: SeriesSealed {
                 .into_series());
         }
 
-        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "round can only be used on numeric types" );
-        Ok(s.clone())
+        polars_bail!(InvalidOperation: "round can only be used on numeric types (f32, f64, or decimal)");
     }
 
     fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {
@@ -275,7 +274,7 @@ mod test {
     #[test]
     fn test_round_series() {
         let series = Series::new("a".into(), &[1.003, 2.23222, 3.4352]);
-        let out = series.round(2, RoundMode::HalfEven).unwrap();
+        let out = series.round(2, RoundMode::default()).unwrap();
         let ca = out.f64().unwrap();
         assert_eq!(ca.get(0), Some(1.0));
     }
