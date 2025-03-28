@@ -102,6 +102,12 @@ impl HivePartitionsDf {
     }
 }
 
+impl From<DataFrame> for HivePartitionsDf {
+    fn from(value: DataFrame) -> Self {
+        Self(value)
+    }
+}
+
 /// Note: Returned hive partitions are ordered by their position in the `reader_schema`
 ///
 /// # Safety
