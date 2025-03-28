@@ -268,11 +268,19 @@ fn visualize_plan_rec(
             let label = match phys_sm[node_key].kind {
                 PhysNodeKind::EquiJoin { .. } if args.how.is_equi() => "equi-join",
                 PhysNodeKind::EquiJoin { .. } => "in-memory-join",
-                PhysNodeKind::SemiAntiJoin { output_bool: false, .. } if args.how == JoinType::Semi => "semi-join",
-                PhysNodeKind::SemiAntiJoin { output_bool: false, .. } if args.how == JoinType::Anti => "anti-join",
-                PhysNodeKind::SemiAntiJoin { output_bool: true, .. } if args.how == JoinType::Semi => "is-in",
-                PhysNodeKind::SemiAntiJoin { output_bool: true, .. } if args.how == JoinType::Anti => "is-not-in",
-                _ => unreachable!()
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: false, ..
+                } if args.how == JoinType::Semi => "semi-join",
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: false, ..
+                } if args.how == JoinType::Anti => "anti-join",
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: true, ..
+                } if args.how == JoinType::Semi => "is-in",
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: true, ..
+                } if args.how == JoinType::Anti => "is-not-in",
+                _ => unreachable!(),
             };
             let mut label = label.to_string();
             write!(label, r"\nleft_on:\n{}", fmt_exprs(left_on, expr_arena)).unwrap();
