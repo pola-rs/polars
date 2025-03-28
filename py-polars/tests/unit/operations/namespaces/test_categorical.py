@@ -276,3 +276,28 @@ def test_starts_ends_with() -> None:
 
     with pytest.raises(TypeError, match="'suffix' must be a string; found"):
         df.select(pl.col("a").cat.ends_with(None))  # type: ignore[arg-type]
+
+
+def test_cat_slice() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [
+                    "foobar",
+                    "barfoo",
+                    "foobar",
+                    "x",
+                    None,
+                ],
+                dtype=pl.Categorical,
+            )
+        }
+    )
+    assert df["a"].cat.slice(-3).to_list() == ["bar", "foo", "bar", "x", None]
+    assert df.select([pl.col("a").cat.slice(2, 4)])["a"].to_list() == [
+        "obar",
+        "rfoo",
+        "obar",
+        "",
+        None,
+    ]
