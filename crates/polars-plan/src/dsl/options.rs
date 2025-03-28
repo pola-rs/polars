@@ -649,6 +649,9 @@ impl FileType {
             Self::Csv(_) => "csv",
             #[cfg(feature = "json")]
             Self::Json(_) => "jsonl",
+
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("enable file type features"),
         }
     }
 }

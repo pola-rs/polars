@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars.polars import PyExpr
 
-    from typing import Callable
+    from typing import Any, Callable
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyPartitioning
@@ -34,14 +34,14 @@ class KeyedPartition:
     KeyedPartitionContext
     """
 
-    def __init__(self, name: str, str_value: str, raw_value: any) -> None:
+    def __init__(self, name: str, str_value: str, raw_value: Any) -> None:
         self.name = name
         self.str_value = str_value
         self.raw_value = raw_value
 
     name: str  #: Name of the key column.
     str_value: str  #: Value of the key as a path and URL safe string.
-    raw_value: any  #: Value of the key for this partition.
+    raw_value: Any  #: Value of the key for this partition.
 
     def hive_name(self) -> str:
         """Get the `key=value`."""
