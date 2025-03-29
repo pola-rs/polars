@@ -23,6 +23,11 @@ pub enum BusinessFunction {
         holidays: Vec<i32>,
         roll: Roll,
     },
+    #[cfg(feature = "business")]
+    IsBusinessDay {
+        week_mask: [bool; 7],
+        holidays: Vec<i32>,
+    },
 }
 
 impl Display for BusinessFunction {
@@ -33,6 +38,8 @@ impl Display for BusinessFunction {
             &BusinessDayCount { .. } => "business_day_count",
             #[cfg(feature = "business")]
             &AddBusinessDay { .. } => "add_business_days",
+            #[cfg(feature = "business")]
+            &IsBusinessDay { .. } => "is_business_day",
         };
         write!(f, "{s}")
     }
@@ -55,6 +62,13 @@ impl From<BusinessFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 roll,
             } => {
                 map_as_slice!(add_business_days, week_mask, &holidays, roll)
+            },
+            #[cfg(feature = "business")]
+            IsBusinessDay {
+                week_mask,
+                holidays,
+            } => {
+                map_as_slice!(is_business_day, week_mask, &holidays)
             },
         }
     }
@@ -94,4 +108,15 @@ pub(super) fn add_business_days(
         roll,
     )
     .map(Column::from)
+}
+
+#[cfg(feature = "business")]
+pub(super) fn is_business_day(
+    s: &[Column],
+    week_mask: [bool; 7],
+    holidays: &[i32],
+) -> PolarsResult<Column> {
+    let dates = &s[0];
+    polars_ops::prelude::is_business_day(dates.as_materialized_series(), week_mask, holidays)
+        .map(Column::from)
 }

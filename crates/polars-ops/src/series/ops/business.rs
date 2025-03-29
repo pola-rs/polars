@@ -314,6 +314,51 @@ fn add_business_days_impl(
     }
 }
 
+/// Determine if a day lands on a business day.
+///
+/// # Arguments
+/// - `week_mask`: A boolean array of length 7, where `true` indicates that the day is a business day.
+/// - `holidays`: timestamps that are holidays. Must be provided as i32, i.e. the number of
+///   days since the UNIX epoch.
+pub fn is_business_day(
+    dates: &Series,
+    week_mask: [bool; 7],
+    holidays: &[i32],
+) -> PolarsResult<Series> {
+    if !week_mask.iter().any(|&x| x) {
+        polars_bail!(ComputeError:"`week_mask` must have at least one business day");
+    }
+
+    match dates.dtype() {
+        DataType::Date => {},
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(_, None) => {
+            return is_business_day(&dates.cast(&DataType::Date)?, week_mask, holidays);
+        },
+        #[cfg(feature = "timezones")]
+        DataType::Datetime(_, Some(_)) => {
+            let dates_local = replace_time_zone(
+                dates.datetime().unwrap(),
+                None,
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?;
+            return is_business_day(&dates_local.cast(&DataType::Date)?, week_mask, holidays);
+        },
+        _ => polars_bail!(InvalidOperation: "expected date or datetime, got {}", dates.dtype()),
+    }
+
+    // Sort now so we can use `binary_search` in the hot for-loop.
+    let holidays = normalise_holidays(holidays, &week_mask);
+    let dates = dates.date()?;
+    let out: BooleanChunked = dates.apply_nonnull_values_generic(DataType::Boolean, |date| {
+        let day_of_week = get_day_of_week(date);
+        // SAFETY: week_mask is length 7, day_of_week is between 0 and 6
+        unsafe { (*week_mask.get_unchecked(day_of_week)) && holidays.binary_search(&date).is_err() }
+    });
+    Ok(out.into_series())
+}
+
 fn roll_start_date(
     mut date: i32,
     roll: Roll,
