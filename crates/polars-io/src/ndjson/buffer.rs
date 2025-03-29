@@ -302,7 +302,7 @@ impl std::fmt::Display for ValueDisplay<'_> {
         use Value::*;
 
         match self.0 {
-            Static(s) => write!(f, r#"{s}"#),
+            Static(s) => write!(f, "{s}"),
             String(s) => write!(f, r#""{s}""#),
             Array(a) => {
                 write!(f, "[")?;
