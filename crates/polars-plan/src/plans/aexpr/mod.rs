@@ -1,3 +1,4 @@
+mod builder;
 mod evaluate;
 #[cfg(feature = "cse")]
 mod hash;
@@ -23,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 mod properties;
+pub use builder::AExprBuilder;
 pub use properties::*;
 
 use crate::constants::LEN;
