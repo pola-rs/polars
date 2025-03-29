@@ -307,7 +307,7 @@ impl std::fmt::Display for ValueDisplay<'_> {
             Array(a) => {
                 write!(f, "[")?;
 
-                let mut iter = a.as_ref().iter();
+                let mut iter = a.iter();
 
                 for v in (&mut iter).take(1) {
                     write!(f, "{}", ValueDisplay(v))?;
