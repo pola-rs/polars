@@ -294,7 +294,7 @@ fn deserialize_all<'a>(
 /// * ValueDisplay: `{x: 1}`
 ///
 /// This intended for reading in arbitrary `Value` types into a String type. Note that the output
-/// is not guaranteed to be valid JSON.
+/// is not guaranteed to be valid JSON as we don't do any escaping of e.g. quote/newline values.
 struct ValueDisplay<'a>(&'a Value<'a>);
 
 impl std::fmt::Display for ValueDisplay<'_> {
