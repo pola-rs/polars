@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -60,14 +61,17 @@ def test_resolve_plugin_path(
     (mock_venv_lib / "lib1.so").touch()
     (mock_venv_lib / "__init__.py").touch()
 
-    monkeypatch.chdir(tmp_path)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(sys, "prefix", str(mock_venv))
+        expected_full_path = mock_venv_lib / "lib1.so"
+        expected_relative_path = expected_full_path.relative_to(mock_venv)
 
-    if use_abs_path:
-        result = _resolve_plugin_path(mock_venv_lib, use_abs_path=use_abs_path)
-        assert result == (mock_venv_lib / "lib1.so").resolve()
-    else:
-        result = _resolve_plugin_path(mock_venv_lib, use_abs_path=use_abs_path)
-        assert result == Path(".venv/lib/lib1.so")
+        if use_abs_path:
+            result = _resolve_plugin_path(mock_venv_lib, use_abs_path=use_abs_path)
+            assert result == expected_full_path
+        else:
+            result = _resolve_plugin_path(mock_venv_lib, use_abs_path=use_abs_path)
+            assert result == expected_relative_path
 
 
 @pytest.mark.write_disk

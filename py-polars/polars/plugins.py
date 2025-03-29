@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -142,13 +142,14 @@ def _is_dynamic_lib(path: Path) -> bool:
 
 
 def _resolve_file_path(path: Path, *, use_abs_path: bool = False) -> Path:
+    venv_path = Path(sys.prefix)
+
     if use_abs_path:
         return path.resolve()
     else:
-        abs_path = path.resolve()
-        curr_dir = Path.cwd()
         try:
-            file_path = Path(os.path.relpath(abs_path, curr_dir))
-        except (ValueError, OSError):  # Fallback
-            file_path = abs_path
-        return file_path
+            file_path = path.relative_to(venv_path)
+        except ValueError:  # Fallback
+            file_path = path.resolve()
+
+    return file_path
