@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use polars_core::config::verbose;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::string::infer as date_infer;
@@ -39,7 +38,7 @@ impl SchemaInferenceResult {
         let skip_lines = options.skip_lines;
         let skip_rows_after_header = options.skip_rows_after_header;
         let raise_if_empty = options.raise_if_empty;
-        let mut n_threads = options.n_threads;
+        let n_threads = options.n_threads;
 
         let bytes_total = reader_bytes.len();
 
@@ -53,7 +52,6 @@ impl SchemaInferenceResult {
             skip_lines,
             skip_rows_after_header,
             raise_if_empty,
-            &mut n_threads,
         )?;
 
         let this = Self {
@@ -199,7 +197,6 @@ fn infer_file_schema_inner(
     skip_rows_after_header: usize,
     recursion_count: u8,
     raise_if_empty: bool,
-    n_threads: &mut Option<usize>,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -305,7 +302,6 @@ fn infer_file_schema_inner(
             skip_rows_after_header,
             recursion_count + 1,
             raise_if_empty,
-            n_threads,
         );
     } else if !raise_if_empty {
         return Ok((Schema::default(), 0, 0));
@@ -374,98 +370,92 @@ fn infer_file_schema_inner(
             }
         }
 
-        let mut record = SplitFields::new(
+        let record = SplitFields::new(
             line,
             parse_options.separator,
             parse_options.quote_char,
             parse_options.eol_char,
         );
 
-        let mut i = 0;
-        loop {
-            if let Some((slice, needs_escaping)) = record.next() {
-                // When `has_header = False`
-                // Increase the schema if the first line didn't have all columns.
-                if i >= headers.len() {
-                    if !has_header {
-                        headers.push(column_name(i));
-                        column_types.push(Default::default());
-                        nulls.push(false);
-                    } else {
-                        break;
-                    }
-                }
-
-                if slice.is_empty() {
-                    unsafe { *nulls.get_unchecked_mut(i) = true };
+        for (i, (slice, needs_escaping)) in record.enumerate() {
+            // When `has_header = False` and ``
+            // Increase the schema if the first line didn't have all columns.
+            if i >= headers.len() {
+                if !has_header {
+                    headers.push(column_name(i));
+                    column_types.push(Default::default());
+                    nulls.push(false);
                 } else {
-                    let slice_escaped = if needs_escaping && (slice.len() >= 2) {
-                        &slice[1..(slice.len() - 1)]
-                    } else {
-                        slice
-                    };
-                    let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
-                    let dtype = match &parse_options.null_values {
-                        None => Some(infer_field_schema(
-                            &s,
-                            parse_options.try_parse_dates,
-                            parse_options.decimal_comma,
-                        )),
-                        Some(NullValues::AllColumns(names)) => {
-                            if !names.iter().any(|nv| nv == s.as_ref()) {
-                                Some(infer_field_schema(
-                                    &s,
-                                    parse_options.try_parse_dates,
-                                    parse_options.decimal_comma,
-                                ))
-                            } else {
-                                None
-                            }
-                        },
-                        Some(NullValues::AllColumnsSingle(name)) => {
-                            if s.as_ref() != name.as_str() {
-                                Some(infer_field_schema(
-                                    &s,
-                                    parse_options.try_parse_dates,
-                                    parse_options.decimal_comma,
-                                ))
-                            } else {
-                                None
-                            }
-                        },
-                        Some(NullValues::Named(names)) => {
-                            // SAFETY:
-                            // we iterate over headers length.
-                            let current_name = unsafe { headers.get_unchecked(i) };
-                            let null_name = &names.iter().find(|name| name.0 == current_name);
-
-                            if let Some(null_name) = null_name {
-                                if null_name.1.as_str() != s.as_ref() {
-                                    Some(infer_field_schema(
-                                        &s,
-                                        parse_options.try_parse_dates,
-                                        parse_options.decimal_comma,
-                                    ))
-                                } else {
-                                    None
-                                }
-                            } else {
-                                Some(infer_field_schema(
-                                    &s,
-                                    parse_options.try_parse_dates,
-                                    parse_options.decimal_comma,
-                                ))
-                            }
-                        },
-                    };
-                    if let Some(dtype) = dtype {
-                        unsafe { column_types.get_unchecked_mut(i).insert(dtype) };
-                    }
+                    break;
                 }
-            } else {
-                break;
             }
-            i += 1;
+
+            if slice.is_empty() {
+                unsafe { *nulls.get_unchecked_mut(i) = true };
+            } else {
+                let slice_escaped = if needs_escaping && (slice.len() >= 2) {
+                    &slice[1..(slice.len() - 1)]
+                } else {
+                    slice
+                };
+                let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
+                let dtype = match &parse_options.null_values {
+                    None => Some(infer_field_schema(
+                        &s,
+                        parse_options.try_parse_dates,
+                        parse_options.decimal_comma,
+                    )),
+                    Some(NullValues::AllColumns(names)) => {
+                        if !names.iter().any(|nv| nv == s.as_ref()) {
+                            Some(infer_field_schema(
+                                &s,
+                                parse_options.try_parse_dates,
+                                parse_options.decimal_comma,
+                            ))
+                        } else {
+                            None
+                        }
+                    },
+                    Some(NullValues::AllColumnsSingle(name)) => {
+                        if s.as_ref() != name.as_str() {
+                            Some(infer_field_schema(
+                                &s,
+                                parse_options.try_parse_dates,
+                                parse_options.decimal_comma,
+                            ))
+                        } else {
+                            None
+                        }
+                    },
+                    Some(NullValues::Named(names)) => {
+                        // SAFETY:
+                        // we iterate over headers length.
+                        let current_name = unsafe { headers.get_unchecked(i) };
+                        let null_name = &names.iter().find(|name| name.0 == current_name);
+
+                        if let Some(null_name) = null_name {
+                            if null_name.1.as_str() != s.as_ref() {
+                                Some(infer_field_schema(
+                                    &s,
+                                    parse_options.try_parse_dates,
+                                    parse_options.decimal_comma,
+                                ))
+                            } else {
+                                None
+                            }
+                        } else {
+                            Some(infer_field_schema(
+                                &s,
+                                parse_options.try_parse_dates,
+                                parse_options.decimal_comma,
+                            ))
+                        }
+                    },
+                };
+                if let Some(dtype) = dtype {
+                    unsafe { column_types.get_unchecked_mut(i).insert(dtype) };
+                }
+            }
         }
     }
 
@@ -514,7 +504,6 @@ fn infer_file_schema_inner(
             skip_rows_after_header,
             recursion_count + 1,
             raise_if_empty,
-            n_threads,
         );
     }
 
@@ -548,7 +537,6 @@ pub fn infer_file_schema(
     skip_lines: usize,
     skip_rows_after_header: usize,
     raise_if_empty: bool,
-    n_threads: &mut Option<usize>,
 ) -> PolarsResult<(Schema, usize, usize)> {
     check_decimal_comma(parse_options.decimal_comma, parse_options.separator)?;
 
@@ -566,7 +554,6 @@ pub fn infer_file_schema(
             skip_rows_after_header,
             0,
             raise_if_empty,
-            n_threads,
         )
     } else {
         infer_file_schema_inner(
@@ -579,7 +566,6 @@ pub fn infer_file_schema(
             skip_rows_after_header,
             0,
             raise_if_empty,
-            n_threads,
         )
     }
 }
