@@ -102,7 +102,7 @@ impl Buffer<'_> {
                     Value::String(v) => buf.append_value(v),
                     Value::Static(StaticNode::Null) => buf.append_null(),
                     // Forcibly convert to String using the Display impl.
-                    v => buf.append_value(v.to_string()),
+                    v => buf.append_value(format_pl_smallstr!("{}", ValueDisplay(v))),
                 }
                 Ok(())
             },
@@ -230,7 +230,7 @@ fn deserialize_all<'a>(
         return Ok(match json {
             Value::String(s) => AnyValue::StringOwned(s.as_ref().into()),
             Value::Static(StaticNode::Null) => AnyValue::Null,
-            v => AnyValue::StringOwned(format_pl_smallstr!("{}", v)),
+            v => AnyValue::StringOwned(format_pl_smallstr!("{}", ValueDisplay(v))),
         });
     }
 
@@ -286,4 +286,54 @@ fn deserialize_all<'a>(
         val => AnyValue::StringOwned(format!("{:#?}", val).into()),
     };
     Ok(out)
+}
+
+/// Wrapper for Value with a human-friendly Display impl for nested types:
+///
+/// * Default: `{"x": Static(U64(1))}`
+/// * ValueDisplay: `{x: 1}`
+///
+/// This intended for reading in arbitrary `Value` types into a String type. Note that the output
+/// is not guaranteed to be valid JSON.
+struct ValueDisplay<'a>(&'a Value<'a>);
+
+impl std::fmt::Display for ValueDisplay<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Value::*;
+
+        match self.0 {
+            Static(s) => write!(f, r#"{s}"#),
+            String(s) => write!(f, r#""{s}""#),
+            Array(a) => {
+                write!(f, "[")?;
+
+                let mut iter = a.as_ref().iter();
+
+                for v in (&mut iter).take(1) {
+                    write!(f, "{}", ValueDisplay(v))?;
+                }
+
+                for v in iter {
+                    write!(f, ", {}", ValueDisplay(v))?;
+                }
+
+                write!(f, "]")
+            },
+            Object(o) => {
+                write!(f, "{{")?;
+
+                let mut iter = o.iter();
+
+                for (k, v) in (&mut iter).take(1) {
+                    write!(f, r#""{}": {}"#, k, ValueDisplay(v))?;
+                }
+
+                for (k, v) in iter {
+                    write!(f, r#", "{}": {}"#, k, ValueDisplay(v))?;
+                }
+
+                write!(f, "}}")
+            },
+        }
+    }
 }
