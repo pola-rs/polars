@@ -268,6 +268,7 @@ pub(super) fn contains(s: &[Column]) -> PolarsResult<Column> {
         item.as_materialized_series(),
         array.as_materialized_series(),
         true,
+        true,
     )?
     .with_name(array.name().clone())
     .into_column())
