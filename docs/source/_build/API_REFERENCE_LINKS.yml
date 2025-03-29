@@ -23,6 +23,7 @@ python:
   cs.temporal: https://docs.pola.rs/api/python/stable/reference/selectors.html#polars.selectors.temporal
   DataFrame: https://docs.pola.rs/api/python/stable/reference/dataframe/index.html
   DataFrame.explode: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.explode.html
+  DataFrame.interpolate: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.interpolate.html
   date_range: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.date_range.html
   datetime_range: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.datetime_range.html
   describe: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.describe.html
@@ -72,7 +73,7 @@ python:
   group_by_dynamic: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.group_by_dynamic.html
   head: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.head.html
   implode: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.implode.html
-  interpolate: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.interpolate.html
+  interpolate: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.interpolate.html
   is_between: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.is_between.html
   is_duplicated: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.is_duplicated.html
   is_null: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.is_null.html
