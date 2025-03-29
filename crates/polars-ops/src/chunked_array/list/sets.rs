@@ -432,7 +432,7 @@ pub fn list_set_operation(
     if let (DataType::Categorical(_, _), DataType::Categorical(_, _)) =
         (&a.inner_dtype(), &b.inner_dtype())
     {
-        (a, b) = make_list_categoricals_compatible(a, b)?;
+        (a, b) = make_rhs_list_categoricals_compatible(a, b)?;
     }
 
     // we use the unsafe variant because we want to keep the nested logical types type.

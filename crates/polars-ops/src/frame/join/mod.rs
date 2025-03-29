@@ -229,7 +229,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 Ok(_) => {},
                 Err(_) => {
                     let (ca_left, ca_right) =
-                        make_categoricals_compatible(l.categorical()?, r.categorical()?)?;
+                        make_rhs_categoricals_compatible(l.categorical()?, r.categorical()?)?;
                     *l = ca_left.into_series().with_name(l.name().clone());
                     *r = ca_right.into_series().with_name(r.name().clone());
                 },
