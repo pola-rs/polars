@@ -1,7 +1,4 @@
-from __future__ import annotations
-
 from datetime import time
-from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import given
@@ -10,10 +7,6 @@ import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
-
-if TYPE_CHECKING:
-    from polars._typing import CategoricalOrdering
-
 
 left = pl.DataFrame({"a": [42, 13, 37], "b": [3, 8, 9]})
 right = pl.DataFrame({"a": [5, 10, 1996], "b": [1, 5, 7]})
@@ -254,22 +247,64 @@ def test_merge_sorted_invalid_categorical_local() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
-@pytest.mark.parametrize("ordering", ["physical", "lexical"])
-def test_merge_sorted_categorical_global(ordering: CategoricalOrdering) -> None:
+def test_merge_sorted_categorical_global_physical() -> None:
     with pl.StringCache():
         df1 = pl.DataFrame(
-            {"a": pl.Series(["a", "b", None], dtype=pl.Categorical(ordering=ordering))}
+            {"a": pl.Series(["e", "a", "f"], dtype=pl.Categorical("physical"))}
         )
         df2 = pl.DataFrame(
-            {"a": pl.Series(["a", "c", "d"], dtype=pl.Categorical(ordering=ordering))}
+            {"a": pl.Series(["a", "c", "d"], dtype=pl.Categorical("physical"))}
         )
         expected = pl.DataFrame(
             {
                 "a": pl.Series(
-                    ["a", "a", "b", None, "c", "d"],
-                    dtype=pl.Categorical(ordering=ordering),
+                    (["e", "a", "a", "f", "c", "d"]),
+                    dtype=pl.Categorical("physical"),
                 )
             }
         )
     result = df1.merge_sorted(df2, key="a")
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_merge_sorted_categorical_global_lexical() -> None:
+    with pl.StringCache():
+        df1 = pl.DataFrame(
+            {"a": pl.Series(["a", "e", "f"], dtype=pl.Categorical("lexical"))}
+        )
+        df2 = pl.DataFrame(
+            {"a": pl.Series(["a", "c", "d"], dtype=pl.Categorical("lexical"))}
+        )
+        expected = pl.DataFrame(
+            {
+                "a": pl.Series(
+                    (["a", "a", "c", "d", "e", "f"]),
+                    dtype=pl.Categorical("lexical"),
+                )
+            }
+        )
+    result = df1.merge_sorted(df2, key="a")
+    assert_frame_equal(result, expected)
+
+
+def test_merge_sorted_categorical_21952() -> None:
+    with pl.StringCache():
+        df1 = pl.DataFrame({"a": ["a", "b", "c"]}).cast(pl.Categorical("lexical"))
+        df2 = pl.DataFrame({"a": ["a", "b", "d"]}).cast(pl.Categorical("lexical"))
+        df = df1.merge_sorted(df2, key="a")
+        assert repr(df) == (
+            "shape: (6, 1)\n"
+            "┌─────┐\n"
+            "│ a   │\n"
+            "│ --- │\n"
+            "│ cat │\n"
+            "╞═════╡\n"
+            "│ a   │\n"
+            "│ a   │\n"
+            "│ b   │\n"
+            "│ b   │\n"
+            "│ c   │\n"
+            "│ d   │\n"
+            "└─────┘"
+        )
