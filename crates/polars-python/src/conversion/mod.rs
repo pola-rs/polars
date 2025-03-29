@@ -20,6 +20,7 @@ use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
+use polars_parquet::write::StatisticsLevel;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
@@ -490,14 +491,30 @@ impl<'py> IntoPyObject<'py> for Wrap<TimeUnit> {
 #[cfg(feature = "parquet")]
 impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
     fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
-        let mut statistics = StatisticsOptions::empty();
+        let mut statistics = StatisticsOptions::default();
 
         let dict = ob.downcast::<PyDict>()?;
         for (key, val) in dict {
             let key = key.extract::<PyBackedStr>()?;
+            let key: &str = key.as_ref();
+
+            if key == "level" {
+                statistics.level = match val.extract::<Option<String>>()?.as_deref() {
+                    Some("chunk") => StatisticsLevel::Chunk,
+                    Some("page") => StatisticsLevel::Page,
+                    None => StatisticsLevel::None,
+                    Some(v) => {
+                        return Err(PyTypeError::new_err(format!(
+                            "'{v}' is not a valid value for statistics `level`",
+                        )));
+                    },
+                };
+                continue;
+            }
+
             let val = val.extract::<bool>()?;
 
-            match key.as_ref() {
+            match key {
                 "min" => statistics.min_value = val,
                 "max" => statistics.max_value = val,
                 "distinct_count" => statistics.distinct_count = val,

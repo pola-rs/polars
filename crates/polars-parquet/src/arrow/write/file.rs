@@ -6,7 +6,8 @@ use polars_error::{PolarsError, PolarsResult};
 use super::schema::schema_to_metadata_key;
 use super::{ThriftFileMetadata, WriteOptions, to_parquet_schema};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
-use crate::parquet::write::{RowGroupIterColumns, WriteOptions as FileWriteOptions};
+use crate::parquet::statistics::Statistics;
+use crate::parquet::write::RowGroupIterColumns;
 
 /// Attaches [`ArrowSchema`] to `key_value_metadata`
 pub fn add_arrow_schema(
@@ -62,10 +63,7 @@ impl<W: Write> FileWriter<W> {
             writer: crate::parquet::write::FileWriter::new(
                 writer,
                 parquet_schema,
-                FileWriteOptions {
-                    version: options.version,
-                    write_statistics: options.has_statistics(),
-                },
+                options,
                 created_by,
             ),
             schema,
@@ -87,8 +85,12 @@ impl<W: Write> FileWriter<W> {
     }
 
     /// Writes a row group to the file.
-    pub fn write(&mut self, row_group: RowGroupIterColumns<'_, PolarsError>) -> PolarsResult<()> {
-        Ok(self.writer.write(row_group)?)
+    pub fn write(
+        &mut self,
+        row_group: RowGroupIterColumns<'_, PolarsError>,
+        chunk_statistics: &[Option<Statistics>],
+    ) -> PolarsResult<()> {
+        Ok(self.writer.write(row_group, chunk_statistics)?)
     }
 
     /// Writes the footer of the parquet file. Returns the total size of the file.

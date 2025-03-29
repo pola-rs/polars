@@ -1,7 +1,9 @@
+use polars::prelude::StatisticsOptions;
 use polars_parquet::parquet::error::ParquetError;
 use polars_parquet::parquet::metadata::SchemaDescriptor;
 use polars_parquet::parquet::schema::types::{ParquetType, PhysicalType};
-use polars_parquet::parquet::write::{FileWriter, Version, WriteOptions, write_metadata_sidecar};
+use polars_parquet::parquet::write::{FileWriter, Version, write_metadata_sidecar};
+use polars_parquet::write::WriteOptions;
 
 #[test]
 fn basic() -> Result<(), ParquetError> {
@@ -19,8 +21,11 @@ fn basic() -> Result<(), ParquetError> {
             writer,
             schema.clone(),
             WriteOptions {
-                write_statistics: true,
+                statistics: StatisticsOptions::default(),
+                page_index: false,
                 version: Version::V2,
+                compression: polars_parquet::write::CompressionOptions::Uncompressed,
+                data_page_size: None,
             },
             None,
         );

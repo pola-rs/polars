@@ -29,8 +29,8 @@ where
 
     encode_plain(array, encode_options, &mut buffer);
 
-    let statistics = if options.has_statistics() {
-        Some(build_statistics(array, type_.clone(), &options.statistics))
+    let statistics = if options.has_page_statistics() {
+        Some(build_statistics(array, type_.clone(), &options.statistics).serialize())
     } else {
         None
     };

@@ -723,8 +723,8 @@ impl PyLazyFrame {
 
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (
-        target, compression, compression_level, statistics, row_group_size, data_page_size,
-        cloud_options, credential_provider, retries, sink_options
+        target, compression, compression_level, statistics, page_index, row_group_size,
+        data_page_size, cloud_options, credential_provider, retries, sink_options
     ))]
     fn sink_parquet(
         &self,
@@ -733,6 +733,7 @@ impl PyLazyFrame {
         compression: &str,
         compression_level: Option<i32>,
         statistics: Wrap<StatisticsOptions>,
+        page_index: bool,
         row_group_size: Option<usize>,
         data_page_size: Option<usize>,
         cloud_options: Option<Vec<(String, String)>>,
@@ -744,6 +745,7 @@ impl PyLazyFrame {
 
         let options = ParquetWriteOptions {
             compression,
+            page_index,
             statistics: statistics.0,
             row_group_size,
             data_page_size,

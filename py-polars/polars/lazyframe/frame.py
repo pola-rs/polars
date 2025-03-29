@@ -2475,6 +2475,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compression: str = "zstd",
         compression_level: int | None = None,
         statistics: bool | str | dict[str, bool] = True,
+        page_index: bool,
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
@@ -2538,6 +2539,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               - "max": column maximum value (default: `True`)
               - "distinct_count": number of unique column values (default: `False`)
               - "null_count": number of null values in column (default: `True`)
+              - "level" at which granularity to write statistics either `chunk` or
+              `page`. `None`, (default: `chunk)
+        page_index:
+            Write write the column and offset indexes.
         row_group_size
             Size of the row groups in number of rows.
             If None (default), the chunks of the `DataFrame` are
@@ -2637,6 +2642,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "max": True,
                 "distinct_count": False,
                 "null_count": True,
+                "level": "page",
             }
         elif isinstance(statistics, bool) and not statistics:
             statistics = {}
@@ -2646,6 +2652,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "max": True,
                 "distinct_count": True,
                 "null_count": True,
+                "level": "page",
             }
 
         from polars.io.cloud.credential_provider._builder import (
@@ -2680,6 +2687,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,
+            page_index=page_index,
             row_group_size=row_group_size,
             data_page_size=data_page_size,
             cloud_options=storage_options,

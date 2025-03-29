@@ -4,11 +4,12 @@ use std::sync::Mutex;
 use arrow::record_batch::RecordBatch;
 use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_parquet::parquet::statistics::Statistics;
 use polars_parquet::read::{ParquetError, fallible_streaming_iterator};
 use polars_parquet::write::{
     CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding, FallibleStreamingIterator,
-    FileWriter, Page, ParquetType, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
-    array_to_columns,
+    FileWriter, Page, ParquetType, RowGroupIterColumns, SchemaDescriptor, StatisticsLevel,
+    WriteOptions, array_to_columns, array_to_statistics,
 };
 use rayon::prelude::*;
 
@@ -76,7 +77,8 @@ impl<W: Write> BatchedWriter<W> {
         // Lock before looping so that order is maintained under contention.
         let mut writer = self.writer.lock().unwrap();
         for group in row_group_iter {
-            writer.write(group?)?;
+            let (group, chunk_statistics) = group?;
+            writer.write(group, &chunk_statistics)?;
         }
         Ok(())
     }
@@ -86,14 +88,18 @@ impl<W: Write> BatchedWriter<W> {
         writer.parquet_schema()
     }
 
-    pub fn write_row_group(&mut self, rg: &[Vec<CompressedPage>]) -> PolarsResult<()> {
+    pub fn write_row_group(
+        &mut self,
+        rg: &[Vec<CompressedPage>],
+        chunk_statistics: &[Option<Statistics>],
+    ) -> PolarsResult<()> {
         let writer = self.writer.get_mut().unwrap();
         let rg = DynIter::new(rg.iter().map(|col_pages| {
             Ok(DynStreamingIterator::new(
                 fallible_streaming_iterator::convert(col_pages.iter().map(PolarsResult::Ok)),
             ))
         }));
-        writer.write(rg)?;
+        writer.write(rg, chunk_statistics)?;
         Ok(())
     }
 
@@ -107,8 +113,11 @@ impl<W: Write> BatchedWriter<W> {
     ) -> PolarsResult<()> {
         // Lock before looping so that order is maintained.
         let mut writer = self.writer.lock().unwrap();
+        let chunk_statistics: Vec<_> = (0..writer.parquet_schema().fields().len())
+            .map(|_| None)
+            .collect();
         for group in rgs {
-            writer.write(group)?;
+            writer.write(group, &chunk_statistics)?;
         }
         Ok(())
     }
@@ -128,15 +137,32 @@ fn prepare_rg_iter<'a>(
     encodings: &'a [Vec<Encoding>],
     options: WriteOptions,
     parallel: bool,
-) -> impl Iterator<Item = PolarsResult<RowGroupIterColumns<'static, PolarsError>>> + 'a {
+) -> impl Iterator<
+    Item = PolarsResult<(
+        RowGroupIterColumns<'static, PolarsError>,
+        Vec<Option<Statistics>>,
+    )>,
+> + 'a {
     let rb_iter = df.iter_chunks(CompatLevel::newest(), false);
     rb_iter.filter_map(move |batch| match batch.len() {
         0 => None,
         _ => {
+            let mut chunk_statistics: Vec<Option<Statistics>> =
+                (0..parquet_schema.fields().len()).map(|_| None).collect();
+            if options.statistics.level == StatisticsLevel::Chunk {
+                let mut offset = 0;
+                for (arr, field) in batch.arrays().iter().zip(parquet_schema.fields()) {
+                    let stats = array_to_statistics(arr, field.clone(), &options).unwrap();
+                    for stat in stats {
+                        chunk_statistics[offset] = Some(stat);
+                        offset += 1;
+                    }
+                }
+            }
             let row_group =
                 create_serializer(batch, parquet_schema.fields(), encodings, options, parallel);
 
-            Some(row_group)
+            Some(row_group.map(|rg| (rg, chunk_statistics)))
         },
     })
 }

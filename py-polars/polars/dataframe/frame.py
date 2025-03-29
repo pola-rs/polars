@@ -3834,6 +3834,8 @@ class DataFrame:
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
         statistics: bool | str | dict[str, bool] = True,
+        page_index: bool = False,
+        column_indexes: bool = True,
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         use_pyarrow: bool = False,
@@ -3884,6 +3886,10 @@ class DataFrame:
               - "max": column maximum value (default: `True`)
               - "distinct_count": number of unique column values (default: `False`)
               - "null_count": number of null values in column (default: `True`)
+              - "level" at which granularity to write statistics either `chunk` or
+              `page`. `None`, (default: `chunk`)
+        page_index:
+            Write write the column and offset indexes.
         row_group_size
             Size of the row groups in number of rows. Defaults to 512^2 rows.
         data_page_size
@@ -3995,6 +4001,7 @@ class DataFrame:
             )
             pyarrow_options["compression_level"] = compression_level
             pyarrow_options["write_statistics"] = statistics
+            pyarrow_options["write_page_index"] = page_index
             pyarrow_options["row_group_size"] = row_group_size
             pyarrow_options["data_page_size"] = data_page_size
 
@@ -4034,6 +4041,7 @@ class DataFrame:
                 "max": True,
                 "distinct_count": False,
                 "null_count": True,
+                "level": "page",
             }
         elif isinstance(statistics, bool) and not statistics:
             statistics = {}
@@ -4043,6 +4051,7 @@ class DataFrame:
                 "max": True,
                 "distinct_count": True,
                 "null_count": True,
+                "level": "page",
             }
 
         if partition_by is not None:
@@ -4057,8 +4066,9 @@ class DataFrame:
             compression,
             compression_level,
             statistics,
-            row_group_size,
-            data_page_size,
+            page_index=page_index,
+            row_group_size=row_group_size,
+            data_page_size=data_page_size,
             partition_by=partition_by,
             partition_chunk_size_bytes=partition_chunk_size_bytes,
             cloud_options=storage_options,

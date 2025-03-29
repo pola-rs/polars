@@ -12,10 +12,11 @@ use polars_io::prelude::{ParquetWriteOptions, get_encodings};
 use polars_io::schema_to_arrow_checked;
 use polars_io::utils::file::Writeable;
 use polars_parquet::parquet::error::ParquetResult;
+use polars_parquet::parquet::statistics::Statistics;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
-    CompressedPage, Compressor, Encoding, FileWriter, SchemaDescriptor, Version, WriteOptions,
-    array_to_columns, to_parquet_schema,
+    CompressedPage, Compressor, Encoding, FileWriter, SchemaDescriptor, StatisticsLevel, Version,
+    WriteOptions, array_to_columns, array_to_statistics, to_parquet_schema,
 };
 use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
@@ -99,12 +100,14 @@ impl SinkNode for ParquetSinkNode {
         let (mut lin_rx, lin_txs) =
             Linearizer::new(state.num_pipelines, *DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
         // Collect task -> IO task
-        let (mut io_tx, mut io_rx) = connector::<Vec<Vec<CompressedPage>>>();
+        let (mut io_tx, mut io_rx) =
+            connector::<(Vec<Vec<CompressedPage>>, Vec<Option<Statistics>>)>();
 
         let write_options = self.write_options;
 
         let options = WriteOptions {
             statistics: write_options.statistics,
+            page_index: write_options.page_index,
             compression: write_options.compression.into(),
             version: Version::V1,
             data_page_size: write_options.data_page_size,
@@ -146,8 +149,19 @@ impl SinkNode for ParquetSinkNode {
                             // it has a struct datatype), we return a Vec<Vec<CompressedPage>>.
 
                             // Array -> Parquet pages.
-                            let encoded_columns =
-                                array_to_columns(array, type_.clone(), options, encodings)?;
+                            let encoded_columns = array_to_columns(
+                                array.as_ref(),
+                                type_.clone(),
+                                options,
+                                encodings,
+                            )?;
+
+                            let chunk_statistics =
+                                if options.statistics.level == StatisticsLevel::Chunk {
+                                    array_to_statistics(array.as_ref(), type_.clone(), &options)?
+                                } else {
+                                    Vec::new()
+                                };
 
                             // Compress the pages.
                             let compressed_pages = encoded_columns
@@ -169,7 +183,10 @@ impl SinkNode for ParquetSinkNode {
                                 .collect::<ParquetResult<Vec<_>>>()?;
 
                             if lin_tx
-                                .insert(Priority(Reverse(rg_idx), (col_idx, compressed_pages)))
+                                .insert(Priority(
+                                    Reverse(rg_idx),
+                                    (col_idx, compressed_pages, chunk_statistics),
+                                ))
                                 .await
                                 .is_err()
                             {
@@ -192,16 +209,20 @@ impl SinkNode for ParquetSinkNode {
                 seq: usize,
                 num_columns_seen: usize,
                 columns: Vec<Option<Vec<Vec<CompressedPage>>>>,
+                statistics: Vec<Option<Vec<Statistics>>>,
             }
 
             let mut current = Current {
                 seq: 0,
                 num_columns_seen: 0,
                 columns: (0..input_schema.len()).map(|_| None).collect(),
+                statistics: (0..input_schema.len()).map(|_| None).collect(),
             };
 
             // Linearize from all the Encoder tasks.
-            while let Some(Priority(Reverse(seq), (i, compressed_pages))) = lin_rx.get().await {
+            while let Some(Priority(Reverse(seq), (i, compressed_pages, chunk_statistics))) =
+                lin_rx.get().await
+            {
                 if current.num_columns_seen == 0 {
                     current.seq = seq;
                 }
@@ -209,6 +230,7 @@ impl SinkNode for ParquetSinkNode {
                 debug_assert_eq!(current.seq, seq);
                 debug_assert!(current.columns[i].is_none());
                 current.columns[i] = Some(compressed_pages);
+                current.statistics[i] = Some(chunk_statistics);
                 current.num_columns_seen += 1;
 
                 if current.num_columns_seen == input_schema.len() {
@@ -216,11 +238,29 @@ impl SinkNode for ParquetSinkNode {
                     // them.
                     let mut current_row_group: Vec<Vec<CompressedPage>> =
                         Vec::with_capacity(num_parquet_columns);
-                    for column in current.columns.iter_mut() {
-                        current_row_group.extend(column.take().unwrap());
+                    let mut current_chunk_statistics: Vec<Option<Statistics>> =
+                        Vec::with_capacity(num_parquet_columns);
+                    for (column, statistics) in current
+                        .columns
+                        .iter_mut()
+                        .zip(current.statistics.iter_mut())
+                    {
+                        let column = column.take().unwrap();
+                        let statistics = statistics.take().unwrap();
+
+                        if statistics.is_empty() {
+                            current_chunk_statistics.extend((0..column.len()).map(|_| None));
+                        } else {
+                            current_chunk_statistics.extend(statistics.into_iter().map(Some));
+                        }
+                        current_row_group.extend(column);
                     }
 
-                    if io_tx.send(current_row_group).await.is_err() {
+                    if io_tx
+                        .send((current_row_group, current_chunk_statistics))
+                        .await
+                        .is_err()
+                    {
                         return Ok(());
                     }
                     current.num_columns_seen = 0;
@@ -254,6 +294,7 @@ impl SinkNode for ParquetSinkNode {
             let writer = BufWriter::new(&mut *file);
             let write_options = WriteOptions {
                 statistics: write_options.statistics,
+                page_index: false,
                 compression: write_options.compression.into(),
                 version: Version::V1,
                 data_page_size: write_options.data_page_size,
@@ -267,11 +308,11 @@ impl SinkNode for ParquetSinkNode {
             let mut writer = BatchedWriter::new(file_writer, encodings, write_options, false);
 
             let num_parquet_columns = writer.parquet_schema().leaves().len();
-            while let Ok(current_row_group) = io_rx.recv().await {
+            while let Ok((current_row_group, current_statistics)) = io_rx.recv().await {
                 // @TODO: At the moment this is a sync write, this is not ideal because we can only
                 // have so many blocking threads in the tokio threadpool.
                 assert_eq!(current_row_group.len(), num_parquet_columns);
-                writer.write_row_group(&current_row_group)?;
+                writer.write_row_group(&current_row_group, &current_statistics)?;
             }
 
             writer.finish()?;
