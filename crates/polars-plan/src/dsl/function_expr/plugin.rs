@@ -4,6 +4,8 @@ use std::sync::{LazyLock, RwLock};
 
 use arrow::ffi::{ArrowSchema, import_field_from_c};
 use libloading::Library;
+use pyo3::Python;
+use pyo3::types::PyAnyMethods;
 
 use super::*;
 
@@ -18,8 +20,22 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
         Ok(unsafe { std::mem::transmute::<&PluginAndVersion, &'static PluginAndVersion>(library) })
     } else {
         drop(lib_map);
+
+        let load_path = if !std::path::Path::new(lib).is_absolute() {
+            // Get python virtual environment path
+            let prefix = Python::with_gil(|py| {
+                let sys = py.import("sys").unwrap();
+                let prefix = sys.getattr("prefix").unwrap();
+                prefix.to_string()
+            });
+            let full_path = std::path::Path::new(&prefix).join(lib);
+            full_path.to_string_lossy().into_owned()
+        } else {
+            lib.to_string()
+        };
+
         let library = unsafe {
-            Library::new(lib).map_err(|e| {
+            Library::new(&load_path).map_err(|e| {
                 PolarsError::ComputeError(format!("error loading dynamic library: {e}").into())
             })?
         };
