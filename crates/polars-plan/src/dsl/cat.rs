@@ -36,4 +36,12 @@ impl CategoricalNameSpace {
                 suffix,
             )))
     }
+
+    #[cfg(feature = "strings")]
+    pub fn slice(self, offset: i64, length: Option<usize>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::Categorical(CategoricalFunction::Slice(
+                offset, length,
+            )))
+    }
 }

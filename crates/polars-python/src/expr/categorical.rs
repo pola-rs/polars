@@ -23,4 +23,9 @@ impl PyExpr {
     fn cat_ends_with(&self, suffix: String) -> Self {
         self.inner.clone().cat().ends_with(suffix).into()
     }
+
+    #[pyo3(signature = (offset, length=None))]
+    fn cat_slice(&self, offset: i64, length: Option<usize>) -> Self {
+        self.inner.clone().cat().slice(offset, length).into()
+    }
 }

@@ -92,7 +92,7 @@ fn substring_ternary_offsets(
     ))
 }
 
-fn substring_ternary_offsets_value(str_val: &str, offset: i64, length: u64) -> (usize, usize) {
+pub fn substring_ternary_offsets_value(str_val: &str, offset: i64, length: u64) -> (usize, usize) {
     // Fast-path: always empty string.
     if length == 0 || offset >= str_val.len() as i64 {
         return (0, 0);
@@ -137,7 +137,7 @@ fn substring_ternary(
     unsafe { opt_str_val.map(|str_val| str_val.get_unchecked(start..end)) }
 }
 
-fn update_view(mut view: View, start: usize, end: usize, val: &str) -> View {
+pub fn update_view(mut view: View, start: usize, end: usize, val: &str) -> View {
     let length = (end - start) as u32;
     view.length = length;
 
