@@ -18,6 +18,7 @@ use polars_plan::prelude::{FileType, FunctionFlags};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
+use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
 
@@ -305,7 +306,8 @@ fn to_graph_rec<'a>(
         },
 
         PartitionSink {
-            path_f_string,
+            base_path,
+            file_path_cb,
             sink_options,
             variant,
             file_type,
@@ -315,7 +317,9 @@ fn to_graph_rec<'a>(
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
 
-            let path_f_string = path_f_string.clone();
+            let base_path = base_path.clone();
+            let file_path_cb = file_path_cb.clone();
+            let ext = PlSmallStr::from_static(file_type.extension());
             let create_new = nodes::io_sinks::partition::get_create_new_fn(
                 file_type.clone(),
                 sink_options.clone(),
@@ -328,8 +332,10 @@ fn to_graph_rec<'a>(
                         nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
                             input_schema,
                             *max_size,
-                            path_f_string.clone(),
+                            base_path,
+                            file_path_cb,
                             create_new,
+                            ext,
                             sink_options.clone(),
                         ),
                     ),
@@ -343,8 +349,10 @@ fn to_graph_rec<'a>(
                         nodes::io_sinks::partition::parted::PartedPartitionSinkNode::new(
                             input_schema,
                             key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                            path_f_string.clone(),
+                            base_path,
+                            file_path_cb,
                             create_new,
+                            ext,
                             sink_options.clone(),
                             *include_key,
                         ),
@@ -359,8 +367,10 @@ fn to_graph_rec<'a>(
                         nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
                             input_schema,
                             key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                            path_f_string.clone(),
+                            base_path,
+                            file_path_cb,
                             create_new,
+                            ext,
                             sink_options.clone(),
                             *include_key,
                         ),
