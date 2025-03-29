@@ -10,6 +10,11 @@ use polars_utils::pl_str::PlSmallStr;
 use super::super::super::ARROW_SCHEMA_META_KEY;
 pub use crate::parquet::metadata::KeyValue;
 
+/// Reads custom key value metadata from a Parquet's key value file metadata.
+pub fn read_custom_key_value_metadata(key_value_metadata: &Option<Vec<KeyValue>>) -> Metadata {
+    parse_key_value_metadata(key_value_metadata)
+}
+
 /// Reads an arrow schema from Parquet's file metadata. Returns `None` if no schema was found.
 /// # Errors
 /// Errors iff the schema cannot be correctly parsed.

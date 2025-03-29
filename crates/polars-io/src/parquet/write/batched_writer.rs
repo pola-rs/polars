@@ -8,9 +8,11 @@ use polars_parquet::read::{ParquetError, fallible_streaming_iterator};
 use polars_parquet::write::{
     CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding, FallibleStreamingIterator,
     FileWriter, Page, ParquetType, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
-    array_to_columns,
+    array_to_columns, schema_to_metadata_key,
 };
 use rayon::prelude::*;
+
+use super::{KeyValueMetadata, KeyValueMetadataContext};
 
 pub struct BatchedWriter<W: Write> {
     // A mutex so that streaming engine can get concurrent read access to
@@ -23,6 +25,8 @@ pub struct BatchedWriter<W: Write> {
     pub(super) encodings: Vec<Vec<Encoding>>,
     pub(super) options: WriteOptions,
     pub(super) parallel: bool,
+    pub(super) key_value_metadata: Option<KeyValueMetadata>,
+    pub(super) context_info: Option<PlHashMap<String, String>>,
 }
 
 impl<W: Write> BatchedWriter<W> {
@@ -31,6 +35,8 @@ impl<W: Write> BatchedWriter<W> {
         encodings: Vec<Vec<Encoding>>,
         options: WriteOptions,
         parallel: bool,
+        key_value_metadata: Option<KeyValueMetadata>,
+        context_info: Option<PlHashMap<String, String>>,
     ) -> Self {
         Self {
             writer,
@@ -38,6 +44,8 @@ impl<W: Write> BatchedWriter<W> {
             encodings,
             options,
             parallel,
+            key_value_metadata,
+            context_info,
         }
     }
 
@@ -116,7 +124,20 @@ impl<W: Write> BatchedWriter<W> {
     /// Writes the footer of the parquet file. Returns the total size of the file.
     pub fn finish(&self) -> PolarsResult<u64> {
         let mut writer = self.writer.lock().unwrap();
-        let size = writer.end(None)?;
+
+        let key_value_metadata = self
+            .key_value_metadata
+            .as_ref()
+            .map(|meta| {
+                let ctx = KeyValueMetadataContext {
+                    key_value_metadata: vec![schema_to_metadata_key(writer.schema())],
+                    info: self.context_info.clone().unwrap_or_default(),
+                };
+                meta.collect(ctx)
+            })
+            .transpose()?;
+
+        let size = writer.end(key_value_metadata)?;
         Ok(size)
     }
 }

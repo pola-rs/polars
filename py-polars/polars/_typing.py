@@ -320,3 +320,12 @@ FileSource: TypeAlias = Union[
 ]
 
 JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
+
+
+class ParquetMetadataContext(TypedDict):
+    key_value_metadata: dict[str, str]
+    info: dict[str, str]
+
+
+ParquetMetadataFn: TypeAlias = Callable[[ParquetMetadataContext], dict[str, str]]
+ParquetMetadata: TypeAlias = Union[dict[str, str], ParquetMetadataFn]
