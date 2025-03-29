@@ -242,6 +242,7 @@ def test_merge_time() -> None:
     assert df.merge_sorted(df, "a").get_column("a").dtype == pl.Time()
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_merge_sorted_invalid_categorical_local() -> None:
     df1 = pl.DataFrame({"a": pl.Series(["a", "b", "c"], dtype=pl.Categorical)})
     df2 = pl.DataFrame({"a": pl.Series(["a", "b", "d"], dtype=pl.Categorical)})
@@ -252,6 +253,7 @@ def test_merge_sorted_invalid_categorical_local() -> None:
         df1.merge_sorted(df2, key="a")
 
 
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("ordering", ["physical", "lexical"])
 def test_merge_sorted_categorical_global(ordering: CategoricalOrdering) -> None:
     with pl.StringCache():
