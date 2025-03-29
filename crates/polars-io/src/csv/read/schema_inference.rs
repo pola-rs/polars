@@ -182,6 +182,10 @@ fn parse_bytes_with_encoding(bytes: &[u8], encoding: CsvEncoding) -> PolarsResul
     })
 }
 
+fn column_name(i: usize) -> PlSmallStr {
+    format_pl_smallstr!("column_{}", i + 1)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn infer_file_schema_inner(
     reader_bytes: &ReaderBytes,
@@ -235,7 +239,7 @@ fn infer_file_schema_inner(
     }
 
     // now that we've found the first non-comment line we parse the headers, or we create a header
-    let headers: Vec<PlSmallStr> = if let Some(mut header_line) = first_line {
+    let mut headers: Vec<PlSmallStr> = if let Some(mut header_line) = first_line {
         let len = header_line.len();
         if len > 1 {
             // remove carriage return
@@ -281,7 +285,7 @@ fn infer_file_schema_inner(
         } else {
             byterecord
                 .enumerate()
-                .map(|(i, _s)| format_pl_smallstr!("column_{}", i + 1))
+                .map(|(i, _s)| column_name(i))
                 .collect::<Vec<PlSmallStr>>()
         }
     } else if has_header && !bytes.is_empty() && recursion_count == 0 {
@@ -319,15 +323,14 @@ fn infer_file_schema_inner(
         .skip(skip_rows);
     }
 
-    let header_length = headers.len();
     // keep track of inferred field types
     let mut column_types: Vec<PlHashSet<DataType>> =
-        vec![PlHashSet::with_capacity(4); header_length];
+        vec![PlHashSet::with_capacity(4); headers.len()];
     // keep track of columns with nulls
-    let mut nulls: Vec<bool> = vec![false; header_length];
+    let mut nulls: Vec<bool> = vec![false; headers.len()];
 
     let mut rows_count = 0;
-    let mut fields = Vec::with_capacity(header_length);
+    let mut fields = Vec::with_capacity(headers.len());
 
     // needed to prevent ownership going into the iterator loop
     let records_ref = &mut lines;
@@ -378,8 +381,21 @@ fn infer_file_schema_inner(
             parse_options.eol_char,
         );
 
-        for i in 0..header_length {
+        let mut i = 0;
+        loop {
             if let Some((slice, needs_escaping)) = record.next() {
+                // When `has_header = False`
+                // Increase the schema if the first line didn't have all columns.
+                if i >= headers.len() {
+                    if !has_header {
+                        headers.push(column_name(i));
+                        column_types.push(Default::default());
+                        nulls.push(false);
+                    } else {
+                        break;
+                    }
+                }
+
                 if slice.is_empty() {
                     unsafe { *nulls.get_unchecked_mut(i) = true };
                 } else {
@@ -443,38 +459,18 @@ fn infer_file_schema_inner(
                         },
                     };
                     if let Some(dtype) = dtype {
-                        if matches!(&dtype, DataType::String)
-                            && needs_escaping
-                            && n_threads.unwrap_or(2) > 1
-                        {
-                            // The parser will chunk the file.
-                            // However this will be increasingly unlikely to be correct if there are many
-                            // new line characters in an escaped field. So we set a (somewhat arbitrary)
-                            // upper bound to the number of escaped lines we accept.
-                            // On the chunking side we also have logic to make this more robust.
-                            if slice
-                                .iter()
-                                .filter(|b| **b == parse_options.eol_char)
-                                .count()
-                                > 8
-                            {
-                                if verbose() {
-                                    eprintln!(
-                                        "falling back to single core reading because of many escaped new line chars."
-                                    )
-                                }
-                                *n_threads = Some(1);
-                            }
-                        }
                         unsafe { column_types.get_unchecked_mut(i).insert(dtype) };
                     }
                 }
+            } else {
+                break;
             }
+            i += 1;
         }
     }
 
     // build schema from inference results
-    for i in 0..header_length {
+    for i in 0..headers.len() {
         let field_name = &headers[i];
 
         if let Some(schema_overwrite) = schema_overwrite {
@@ -485,7 +481,7 @@ fn infer_file_schema_inner(
 
             // column might have been renamed
             // execute only if schema is complete
-            if schema_overwrite.len() == header_length {
+            if schema_overwrite.len() == headers.len() {
                 if let Some((name, dtype)) = schema_overwrite.get_at_index(i) {
                     fields.push(Field::new(name.clone(), dtype.clone()));
                     continue;
