@@ -288,7 +288,7 @@ fn deserialize_all<'a>(
     Ok(out)
 }
 
-/// Wrapper for Value with a human-friendly Display impl for nested types:
+/// Wrapper for serde_json's `Value` with a human-friendly Display impl for nested types:
 ///
 /// * Default: `{"x": Static(U64(1))}`
 /// * ValueDisplay: `{x: 1}`
