@@ -2548,8 +2548,8 @@ def test_csv_enum_raise() -> None:
 def test_csv_no_header_ragged_lines_1505() -> None:
     # Test that the header schema will grow dynamically.
     csv = io.StringIO("""a,b,c
-    a,b,c,d,e,f
-    g,h,i,j,k""")
+a,b,c,d,e,f
+g,h,i,j,k""")
 
     assert pl.read_csv(csv, has_header=False).to_dict(as_series=False) == {
         "column_1": ["a", "a", "g"],
