@@ -35,11 +35,13 @@ defaults:
 jobs:
   test-python:
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHON_GIL: ${{ matrix.python-version == '3.13t' && '0' || '1' }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.9', '3.12', '3.13']
+        python-version: ['3.9', '3.12', '3.13', '3.13t']
         include:
           - os: windows-latest
             python-version: '3.13'
@@ -48,7 +50,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        # TODO requires main: https://github.com/actions/setup-python/issues/771#issuecomment-2708960882
+        uses: actions/setup-python@main
         with:
           python-version: ${{ matrix.python-version }}
 
