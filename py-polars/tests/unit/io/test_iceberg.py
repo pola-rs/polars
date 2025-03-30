@@ -27,6 +27,9 @@ def iceberg_path(io_files_path: Path) -> str:
     return f"file://{iceberg_path.resolve()}"
 
 
+def test_scan_iceberg_2(iceberg_path: str) -> None:
+    print(pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811).collect())
+
 @pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.filterwarnings(
