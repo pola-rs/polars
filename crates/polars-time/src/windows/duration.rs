@@ -217,7 +217,14 @@ impl Duration {
         let mut parsed_int = false;
 
         while let Some((i, mut ch)) = iter.next() {
-            if !ch.is_ascii_digit() {
+            if ch.is_ascii_digit() {
+                if iter.peek().is_none() {
+                    polars_bail!(InvalidOperation:
+                        "expected a unit to follow integer in the {} string '{}'",
+                        parse_type, s
+                    );
+                }
+            } else {
                 let Ok(n) = s[start..i].parse::<i64>() else {
                     polars_bail!(InvalidOperation:
                         "expected leading integer in the {} string, found {}",
