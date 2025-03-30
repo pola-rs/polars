@@ -37,6 +37,25 @@ impl Default for RankOptions {
     }
 }
 
+impl RankOptions {
+    /// Create `RankOptions` with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    /// Sets the ranking method. Default `RankMethod::Dense`.
+    pub fn with_method(mut self, method: RankMethod) -> Self {
+        self.method = method;
+        self
+    }
+
+    /// Sets the descending order. Default `false`.
+    pub fn with_descending(mut self, descending: bool) -> Self {
+        self.descending = descending;
+        self
+    }
+}
+
 #[cfg(feature = "random")]
 fn get_random_seed() -> u64 {
     let mut rng = SmallRng::from_entropy();
