@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import os
 import warnings
 from collections.abc import Collection, Mapping
@@ -2663,11 +2664,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
-        target: str | Path | PyPartitioning
-        if not isinstance(path, (str, Path)):
-            target = path._p
-        else:
+        target: str | Path | io.BytesIO | PyPartitioning
+        if isinstance(path, (str, Path)):
             target = normalize_filepath(path)
+        elif isinstance(path, (io.BytesIO)):
+            target = path
+        else:
+            target = path._p
 
         sink_options = {
             "sync_on_close": sync_on_close or "none",
@@ -2891,11 +2894,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
-        target: str | Path | PyPartitioning
-        if not isinstance(path, (str, Path)):
-            target = path._p
-        else:
+        target: str | Path | io.BytesIO | PyPartitioning
+        if isinstance(path, (str, Path)):
+            target = normalize_filepath(path)
+        elif isinstance(path, (io.BytesIO)):
             target = path
+        else:
+            target = path._p
 
         sink_options = {
             "sync_on_close": sync_on_close or "none",
@@ -3208,11 +3213,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
-        target: str | Path | PyPartitioning
-        if not isinstance(path, (str, Path)):
-            target = path._p
-        else:
+        target: str | Path | io.BytesIO | PyPartitioning
+        if isinstance(path, (str, Path)):
             target = normalize_filepath(path)
+        elif isinstance(path, (io.BytesIO)):
+            target = path
+        else:
+            target = path._p
 
         sink_options = {
             "sync_on_close": sync_on_close or "none",
@@ -3432,11 +3439,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
-        target: str | Path | PyPartitioning
-        if not isinstance(path, (str, Path)):
-            target = path._p
-        else:
+        target: str | Path | io.BytesIO | PyPartitioning
+        if isinstance(path, (str, Path)):
+            target = normalize_filepath(path)
+        elif isinstance(path, (io.BytesIO)):
             target = path
+        else:
+            target = path._p
 
         sink_options = {
             "sync_on_close": sync_on_close or "none",

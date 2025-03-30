@@ -229,7 +229,7 @@ pub(crate) enum PythonScanSourceInput {
     File(ClosableFile),
 }
 
-fn try_get_pyfile(
+pub(crate) fn try_get_pyfile(
     py: Python,
     py_f: Bound<'_, PyAny>,
     write: bool,

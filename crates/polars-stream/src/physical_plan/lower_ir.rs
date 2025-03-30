@@ -15,7 +15,7 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, Context, FunctionIR, IR, IRAggExpr, LiteralValue};
-use polars_plan::prelude::{FileType, GroupbyOptions};
+use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::unique_column_name;
@@ -229,72 +229,34 @@ pub fn lower_ir(
                 PhysNodeKind::InMemorySink { input: phys_input }
             },
             SinkTypeIR::File(FileSinkType {
-                path,
+                target,
                 sink_options,
                 file_type,
                 cloud_options,
             }) => {
-                let path = path.clone();
+                let target = target.clone();
                 let sink_options = sink_options.clone();
                 let file_type = file_type.clone();
                 let cloud_options = cloud_options.clone();
 
-                match file_type {
-                    #[cfg(feature = "ipc")]
-                    FileType::Ipc(_) => {
-                        let phys_input = lower_ir!(*input)?;
-                        PhysNodeKind::FileSink {
-                            path,
-                            sink_options,
-                            file_type,
-                            input: phys_input,
-                            cloud_options,
-                        }
-                    },
-                    #[cfg(feature = "parquet")]
-                    FileType::Parquet(_) => {
-                        let phys_input = lower_ir!(*input)?;
-                        PhysNodeKind::FileSink {
-                            path,
-                            sink_options,
-                            file_type,
-                            input: phys_input,
-                            cloud_options,
-                        }
-                    },
-                    #[cfg(feature = "csv")]
-                    FileType::Csv(_) => {
-                        let phys_input = lower_ir!(*input)?;
-                        PhysNodeKind::FileSink {
-                            path,
-                            sink_options,
-                            file_type,
-                            input: phys_input,
-                            cloud_options,
-                        }
-                    },
-                    #[cfg(feature = "json")]
-                    FileType::Json(_) => {
-                        let phys_input = lower_ir!(*input)?;
-                        PhysNodeKind::FileSink {
-                            path,
-                            sink_options,
-                            file_type,
-                            input: phys_input,
-                            cloud_options,
-                        }
-                    },
+                let phys_input = lower_ir!(*input)?;
+                PhysNodeKind::FileSink {
+                    target,
+                    sink_options,
+                    file_type,
+                    input: phys_input,
+                    cloud_options,
                 }
             },
             SinkTypeIR::Partition(PartitionSinkTypeIR {
-                base_path,
+                base,
                 file_path_cb,
                 sink_options,
                 variant,
                 file_type,
                 cloud_options,
             }) => {
-                let base_path = base_path.clone();
+                let base = base.clone();
                 let file_path_cb = file_path_cb.clone();
                 let sink_options = sink_options.clone();
                 let variant = variant.clone();
@@ -341,7 +303,7 @@ pub fn lower_ir(
                 };
 
                 PhysNodeKind::PartitionSink {
-                    base_path,
+                    base,
                     file_path_cb,
                     sink_options,
                     variant,

@@ -240,7 +240,7 @@ fn to_graph_rec<'a>(
         },
 
         FileSink {
-            path,
+            target,
             sink_options,
             file_type,
             input,
@@ -255,7 +255,7 @@ fn to_graph_rec<'a>(
                 FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
                         input_schema,
-                        path.to_path_buf(),
+                        target.clone(),
                         sink_options,
                         *ipc_writer_options,
                         cloud_options.clone(),
@@ -265,7 +265,7 @@ fn to_graph_rec<'a>(
                 #[cfg(feature = "json")]
                 FileType::Json(_) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
-                        path.to_path_buf(),
+                        target.clone(),
                         sink_options,
                         cloud_options.clone(),
                     )),
@@ -275,7 +275,7 @@ fn to_graph_rec<'a>(
                 FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
                         input_schema,
-                        path,
+                        target.clone(),
                         sink_options,
                         parquet_writer_options,
                         cloud_options.clone(),
@@ -285,7 +285,7 @@ fn to_graph_rec<'a>(
                 #[cfg(feature = "csv")]
                 FileType::Csv(csv_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
-                        path.to_path_buf(),
+                        target.clone(),
                         input_schema,
                         sink_options,
                         csv_writer_options.clone(),
@@ -306,7 +306,7 @@ fn to_graph_rec<'a>(
         },
 
         PartitionSink {
-            base_path,
+            base,
             file_path_cb,
             sink_options,
             variant,
@@ -317,7 +317,7 @@ fn to_graph_rec<'a>(
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
 
-            let base_path = base_path.clone();
+            let base = base.clone();
             let file_path_cb = file_path_cb.clone();
             let ext = PlSmallStr::from_static(file_type.extension());
             let create_new = nodes::io_sinks::partition::get_create_new_fn(
@@ -332,7 +332,7 @@ fn to_graph_rec<'a>(
                         nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
                             input_schema,
                             *max_size,
-                            base_path,
+                            base,
                             file_path_cb,
                             create_new,
                             ext,
@@ -349,7 +349,7 @@ fn to_graph_rec<'a>(
                         nodes::io_sinks::partition::parted::PartedPartitionSinkNode::new(
                             input_schema,
                             key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                            base_path,
+                            base,
                             file_path_cb,
                             create_new,
                             ext,
@@ -367,7 +367,7 @@ fn to_graph_rec<'a>(
                         nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
                             input_schema,
                             key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                            base_path,
+                            base,
                             file_path_cb,
                             create_new,
                             ext,

@@ -8,7 +8,7 @@ use polars_core::config;
 use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_plan::dsl::{PartitionTargetCallback, SinkOptions};
+use polars_plan::dsl::{PartitionBase, PartitionTargetCallback, SinkOptions};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -25,7 +25,7 @@ pub struct MaxSizePartitionSinkNode {
     input_schema: SchemaRef,
     max_size: IdxSize,
 
-    base_path: PathBuf,
+    base: PartitionBase,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -47,7 +47,7 @@ impl MaxSizePartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         max_size: IdxSize,
-        base_path: PathBuf,
+        base: PartitionBase,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
@@ -64,7 +64,7 @@ impl MaxSizePartitionSinkNode {
         Self {
             input_schema,
             max_size,
-            base_path,
+            base,
             file_path_cb,
             create_new,
             ext,
@@ -114,7 +114,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
         let state = state.clone();
         let input_schema = self.input_schema.clone();
         let max_size = self.max_size;
-        let base_path = self.base_path.clone();
+        let base = self.base.clone();
         let file_path_cb = self.file_path_cb.clone();
         let create_new = self.create_new.clone();
         let ext = self.ext.clone();
@@ -142,7 +142,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                             Some(c) => c,
                             None => {
                                 let result = open_new_sink(
-                                    base_path.as_path(),
+                                    &base,
                                     file_path_cb.as_ref(),
                                     default_file_path_cb,
                                     file_idx,

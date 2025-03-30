@@ -4,9 +4,11 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::{fmt, io};
 
 use polars_core::error::{PolarsResult, to_compute_err};
 use polars_core::prelude::*;
+use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
@@ -15,6 +17,7 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
+use polars_io::utils::file::Writeable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_io::{HiveOptions, RowIndex, is_cloud_url};
 #[cfg(feature = "iejoin")]
@@ -357,10 +360,160 @@ impl Default for SinkOptions {
     }
 }
 
+type MemorySinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Box<dyn io::Write + Send>>>>>;
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum SinkTarget {
+    Path(Arc<PathBuf>),
+    Memory(MemorySinkTarget),
+}
+
+impl SinkTarget {
+    pub fn open_into_writeable(
+        &self,
+        sink_options: &SinkOptions,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Writeable> {
+        match self {
+            SinkTarget::Path(path) => {
+                if sink_options.mkdir {
+                    polars_io::utils::mkdir::mkdir_recursive(path.as_path())?;
+                }
+
+                let path = path.as_ref().display().to_string();
+                polars_io::utils::file::Writeable::try_new(&path, cloud_options)
+            },
+            SinkTarget::Memory(memory_writer) => Ok(Writeable::Memory(
+                memory_writer.lock().unwrap().take().unwrap(),
+            )),
+        }
+    }
+
+    pub async fn open_into_writeable_async(
+        &self,
+        sink_options: &SinkOptions,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Writeable> {
+        match self {
+            SinkTarget::Path(path) => {
+                if sink_options.mkdir {
+                    polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
+                }
+
+                let path = path.as_ref().display().to_string();
+                polars_io::utils::file::Writeable::try_new(&path, cloud_options)
+            },
+            SinkTarget::Memory(memory_writer) => Ok(Writeable::Memory(
+                memory_writer.lock().unwrap().take().unwrap(),
+            )),
+        }
+    }
+}
+
+impl fmt::Debug for SinkTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SinkTarget::")?;
+        match self {
+            Self::Path(p) => write!(f, "Path({p:?})"),
+            Self::Memory(_) => f.write_str("Memory"),
+        }
+    }
+}
+
+impl std::hash::Hash for SinkTarget {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Path(p) => p.hash(state),
+            Self::Memory(_) => {},
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for SinkTarget {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Path(p) => p.serialize(serializer),
+            Self::Memory(_) => Err(serde::ser::Error::custom(
+                "cannot serialize in-memory sink target",
+            )),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for SinkTarget {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(Self::Path(Arc::new(PathBuf::deserialize(deserializer)?)))
+    }
+}
+
+pub trait InMemoryPartition: Send {
+    fn open_partition(&mut self, path: PathBuf) -> PolarsResult<Box<dyn io::Write + Send>>;
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum PartitionBase {
+    Path(Arc<PathBuf>),
+    Memory(SpecialEq<Arc<std::sync::Mutex<Box<dyn InMemoryPartition>>>>),
+}
+
+impl fmt::Debug for PartitionBase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("PartitionBase::")?;
+        match self {
+            Self::Path(p) => write!(f, "Path({p:?})"),
+            Self::Memory(_) => f.write_str("Memory"),
+        }
+    }
+}
+
+impl std::hash::Hash for PartitionBase {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Path(p) => p.hash(state),
+            Self::Memory(_) => {},
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for PartitionBase {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Path(p) => p.serialize(serializer),
+            Self::Memory(_) => Err(serde::ser::Error::custom(
+                "cannot serialize in-memory sink target",
+            )),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for PartitionBase {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(Self::Path(Arc::new(PathBuf::deserialize(deserializer)?)))
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FileSinkType {
-    pub path: Arc<PathBuf>,
+    pub target: SinkTarget,
     pub file_type: FileType,
     pub sink_options: SinkOptions,
     pub cloud_options: Option<polars_io::cloud::CloudOptions>,
@@ -511,7 +664,7 @@ impl serde::Serialize for PartitionTargetCallback {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkType {
-    pub base_path: PathBuf,
+    pub base: PartitionBase,
     pub file_path_cb: Option<PartitionTargetCallback>,
     pub file_type: FileType,
     pub sink_options: SinkOptions,
@@ -522,7 +675,7 @@ pub struct PartitionSinkType {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkTypeIR {
-    pub base_path: PathBuf,
+    pub base: PartitionBase,
     pub file_path_cb: Option<PartitionTargetCallback>,
     pub file_type: FileType,
     pub sink_options: SinkOptions,
@@ -608,13 +761,23 @@ impl PartitionVariantIR {
 
 impl SinkType {
     pub(crate) fn is_cloud_destination(&self) -> bool {
-        if let Self::File(f) = self {
-            if is_cloud_url(f.path.as_ref()) {
-                return true;
-            }
-        }
+        match self {
+            Self::Memory => false,
+            Self::File(f) => {
+                let SinkTarget::Path(p) = &f.target else {
+                    return false;
+                };
 
-        false
+                is_cloud_url(p.as_path())
+            },
+            Self::Partition(f) => {
+                let PartitionBase::Path(p) = &f.base else {
+                    return false;
+                };
+
+                is_cloud_url(p.as_path())
+            },
+        }
     }
 }
 

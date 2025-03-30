@@ -208,7 +208,7 @@ class PartitionMaxSize:
     ) -> None:
         issue_unstable_warning("Partitioning strategies are considered unstable.")
         self._p = PyPartitioning.new_max_size(
-            base_path=base_path,
+            base=base_path,
             file_path_cb=_cast_base_file_path_cb(file_path),
             max_size=max_size,
         )
@@ -326,7 +326,7 @@ class PartitionByKey:
 
         lowered_by = _lower_by(by)
         self._p = PyPartitioning.new_by_key(
-            base_path=base_path,
+            base=base_path,
             file_path_cb=_cast_keyed_file_path_cb(file_path),
             by=lowered_by,
             include_key=include_key,
@@ -403,7 +403,7 @@ class PartitionParted:
 
         lowered_by = _lower_by(by)
         self._p = PyPartitioning.new_by_key(
-            base_path=base_path,
+            base=base_path,
             file_path_cb=_cast_keyed_file_path_cb(file_path),
             by=lowered_by,
             include_key=include_key,

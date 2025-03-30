@@ -182,11 +182,14 @@ where
                 },
                 #[allow(unused_variables)]
                 SinkTypeIR::File(FileSinkType {
-                    path,
+                    target,
                     file_type,
                     sink_options: _,
                     cloud_options,
                 }) => {
+                    let SinkTarget::Path(path) = target else {
+                        polars_bail!(InvalidOperation: "in-memory sinks are not supported for the old streaming engine");
+                    };
                     let path = path.as_ref().as_path();
                     match &file_type {
                         #[cfg(feature = "parquet")]

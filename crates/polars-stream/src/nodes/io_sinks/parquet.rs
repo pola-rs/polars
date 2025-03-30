@@ -1,6 +1,5 @@
 use std::cmp::Reverse;
 use std::io::BufWriter;
-use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use polars_core::prelude::{ArrowSchema, CompatLevel};
@@ -17,7 +16,7 @@ use polars_parquet::write::{
     CompressedPage, Compressor, Encoding, FileWriter, SchemaDescriptor, Version, WriteOptions,
     array_to_columns, to_parquet_schema,
 };
-use polars_plan::dsl::SinkOptions;
+use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
 
 use super::{
@@ -32,7 +31,7 @@ use crate::execute::StreamingExecutionState;
 use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
 
 pub struct ParquetSinkNode {
-    path: PathBuf,
+    target: SinkTarget,
 
     input_schema: SchemaRef,
     sink_options: SinkOptions,
@@ -47,7 +46,7 @@ pub struct ParquetSinkNode {
 impl ParquetSinkNode {
     pub fn new(
         input_schema: SchemaRef,
-        path: &Path,
+        target: SinkTarget,
         sink_options: SinkOptions,
         write_options: &ParquetWriteOptions,
         cloud_options: Option<CloudOptions>,
@@ -57,7 +56,7 @@ impl ParquetSinkNode {
         let encodings: Vec<Vec<Encoding>> = get_encodings(&schema);
 
         Ok(Self {
-            path: path.to_path_buf(),
+            target,
 
             input_schema,
             sink_options,
@@ -234,7 +233,7 @@ impl SinkNode for ParquetSinkNode {
         //
         // Task that will actually do write to the target file. It is important that this is only
         // spawned once.
-        let path = self.path.clone();
+        let target = self.target.clone();
         let sink_options = self.sink_options.clone();
         let cloud_options = self.cloud_options.clone();
         let write_options = self.write_options;
@@ -242,14 +241,9 @@ impl SinkNode for ParquetSinkNode {
         let parquet_schema = self.parquet_schema.clone();
         let encodings = self.encodings.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
-            if sink_options.mkdir {
-                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
-            }
-
-            let mut file = polars_io::utils::file::Writeable::try_new(
-                path.to_str().unwrap(),
-                cloud_options.as_ref(),
-            )?;
+            let mut file = target
+                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .await?;
 
             let writer = BufWriter::new(&mut *file);
             let write_options = WriteOptions {
