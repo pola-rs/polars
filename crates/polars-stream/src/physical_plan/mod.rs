@@ -10,7 +10,8 @@ use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::{
-    FileScan, JoinTypeOptionsIR, PartitionVariantIR, ScanSource, ScanSources, SinkOptions,
+    FileScan, JoinTypeOptionsIR, PartitionTargetCallback, PartitionVariantIR, ScanSource,
+    ScanSources, SinkOptions,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, IR};
@@ -143,7 +144,8 @@ pub enum PhysNodeKind {
     },
 
     PartitionSink {
-        path_f_string: Arc<PathBuf>,
+        base_path: PathBuf,
+        file_path_cb: Option<PartitionTargetCallback>,
         sink_options: SinkOptions,
         variant: PartitionVariantIR,
         file_type: FileType,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from polars import col
@@ -12,10 +13,148 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars.polars import PyExpr
 
-    from pathlib import Path
+    from typing import Any, Callable
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyPartitioning
+
+
+class KeyedPartition:
+    """
+    A key-value pair for a partition.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    PartitionByKey
+    PartitionParted
+    KeyedPartitionContext
+    """
+
+    def __init__(self, name: str, str_value: str, raw_value: Any) -> None:
+        self.name = name
+        self.str_value = str_value
+        self.raw_value = raw_value
+
+    name: str  #: Name of the key column.
+    str_value: str  #: Value of the key as a path and URL safe string.
+    raw_value: Any  #: Value of the key for this partition.
+
+    def hive_name(self) -> str:
+        """Get the `key=value`."""
+        return f"{self.name}={self.str_value}"
+
+
+class KeyedPartitionContext:
+    """
+    Callback context for a partition creation using keys.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    PartitionByKey
+    PartitionParted
+    """
+
+    def __init__(
+        self,
+        file_idx: int,
+        part_idx: int,
+        in_part_idx: int,
+        keys: list[KeyedPartition],
+        file_path: Path,
+        full_path: Path,
+    ) -> None:
+        self.file_idx = file_idx
+        self.part_idx = part_idx
+        self.in_part_idx = in_part_idx
+        self.keys = keys
+        self.file_path = file_path
+        self.full_path = full_path
+
+    file_idx: int  #: The index of the created file starting from zero.
+    part_idx: int  #: The index of the created partition starting from zero.
+    in_part_idx: int  #: The index of the file within this partition starting from zero.
+    keys: list[KeyedPartition]  #: All the key names and values used for this partition.
+    file_path: Path  #: The chosen output path before the callback was called without `base_path`.
+    full_path: (
+        Path  #: The chosen output path before the callback was called with `base_path`.
+    )
+
+    def hive_dirs(self) -> Path:
+        """The keys mapped to hive directories."""
+        assert len(self.keys) > 0
+        p = Path(self.keys[0].hive_name())
+        for key in self.keys[1:]:
+            p /= Path(key.hive_name())
+        return p
+
+
+class BasePartitionContext:
+    """
+    Callback context for a partition creation.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    PartitionMaxSize
+    """
+
+    def __init__(self, file_idx: int, file_path: Path, full_path: Path) -> None:
+        self.file_idx = file_idx
+        self.file_path = file_path
+        self.full_path = full_path
+
+    file_idx: int  #: The index of the created file starting from zero.
+    file_path: Path  #: The chosen output path before the callback was called without `base_path`.
+    full_path: (
+        Path  #: The chosen output path before the callback was called with `base_path`.
+    )
+
+
+def _cast_base_file_path_cb(
+    file_path_cb: Callable[[BasePartitionContext], Path | str] | None,
+) -> Callable[[BasePartitionContext], Path | str] | None:
+    if file_path_cb is None:
+        return None
+    return lambda ctx: file_path_cb(
+        BasePartitionContext(
+            file_idx=ctx.file_idx,
+            file_path=Path(ctx.file_path),
+            full_path=Path(ctx.full_path),
+        )
+    )
+
+
+def _cast_keyed_file_path_cb(
+    file_path_cb: Callable[[KeyedPartitionContext], Path | str] | None,
+) -> Callable[[KeyedPartitionContext], Path | str] | None:
+    if file_path_cb is None:
+        return None
+    return lambda ctx: file_path_cb(
+        KeyedPartitionContext(
+            file_idx=ctx.file_idx,
+            part_idx=ctx.part_idx,
+            in_part_idx=ctx.in_part_idx,
+            keys=[
+                KeyedPartition(
+                    name=kv.name, str_value=kv.str_value, raw_value=kv.raw_value
+                )
+                for kv in ctx.keys
+            ],
+            file_path=Path(ctx.file_path),
+            full_path=Path(ctx.full_path),
+        )
+    )
 
 
 class PartitionMaxSize:
@@ -31,22 +170,52 @@ class PartitionMaxSize:
 
     Parameters
     ----------
-    path
-        The path to the output files. The format string `{part}` is replaced to the
-        zero-based index of the file.
+    base_path
+        The base path for the output files.
+    file_path
+        A callback to register or modify the output path for each partition
+        relative to the `base_path`. The callback provides a
+        :class:`polars.io.partition.BasePartitionContext` that contains information
+        about the partition.
+
+        If no callback is given, it defaults to `{ctx.file_idx}.{EXT}`.
     max_size : int
         The maximum size in rows of each of the generated files.
+
+    Examples
+    --------
+    Split a parquet file by over smaller CSV files with 100 000 rows each:
+
+    >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
+    ...     PartitionMax("./out", max_size=100_000),
+    ... )  # doctest: +SKIP
+
+    See Also
+    --------
+    PartitionByKey
+    PartitionParted
+    polars.io.partition.BasePartitionContext
     """
 
     _p: PyPartitioning
 
-    def __init__(self, path: Path | str, *, max_size: int) -> None:
+    def __init__(
+        self,
+        base_path: str | Path,
+        *,
+        file_path: Callable[[BasePartitionContext], Path | str] | None = None,
+        max_size: int,
+    ) -> None:
         issue_unstable_warning("Partitioning strategies are considered unstable.")
-        self._p = PyPartitioning.new_max_size(path, max_size)
+        self._p = PyPartitioning.new_max_size(
+            base_path=base_path,
+            file_path_cb=_cast_base_file_path_cb(file_path),
+            max_size=max_size,
+        )
 
     @property
-    def _path(self) -> str:
-        return self._p.path
+    def _base_path(self) -> str | None:
+        return self._p.base_path
 
 
 def _lower_by(
@@ -91,14 +260,19 @@ class PartitionByKey:
 
     Parameters
     ----------
-    path
-        The format path to the output files. Format arguments:
-        - `{part}` is replaced to the zero-based index of the file.
-        - `{key[i].name}` is replaced by the name of key `i`.
-        - `{key[i].value}` is replaced by the value of key `i`.
+    base_path
+        The base path for the output files.
 
         Use the `mkdir` option on the `sink_*` methods to ensure directories in
         the path are created.
+    file_path
+        A callback to register or modify the output path for each partition
+        relative to the `base_path`. The callback provides a
+        :class:`polars.io.partition.KeyedPartitionContext` that contains information
+        about the partition.
+
+        If no callback is given, it defaults to
+        `{ctx.keys.hive_dirs()}/{ctx.in_part_idx}.{EXT}`.
     by
         The expressions to partition by.
     include_key : bool
@@ -106,15 +280,6 @@ class PartitionByKey:
 
     Examples
     --------
-    Split a parquet file by a column `year` into CSV files:
-
-    >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
-    ...     PartitionByKey(
-    ...         "./out/{key[0].value}.csv",
-    ...         by="year",
-    ...     ),
-    ... )  # doctest: +SKIP
-
     Split into a hive-partitioning style partition:
 
     >>> (
@@ -122,21 +287,38 @@ class PartitionByKey:
     ...     .lazy()
     ...     .sink_parquet(
     ...         PartitionByKey(
-    ...             "{key[0].name}={key[0].value}/{key[1].name}={key[1].value}/000",
+    ...             "./out",
     ...             by=[pl.col.a, pl.col.b],
     ...             include_key=False,
     ...         ),
     ...         mkdir=True,
     ...     )
     ... )  # doctest: +SKIP
+
+    Split a parquet file by a column `year` into CSV files:
+
+    >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
+    ...     PartitionByKey(
+    ...         "./out/",
+    ...         file_path=lambda ctx: f"year={ctx.keys[0].str_value}.csv",
+    ...         by="year",
+    ...     ),
+    ... )  # doctest: +SKIP
+
+    See Also
+    --------
+    PartitionMaxSize
+    PartitionParted
+    polars.io.partition.KeyedPartitionContext
     """
 
     _p: PyPartitioning
 
     def __init__(
         self,
-        path: Path | str,
+        base_path: str | Path,
         *,
+        file_path: Callable[[KeyedPartitionContext], Path | str] | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
     ) -> None:
@@ -144,22 +326,25 @@ class PartitionByKey:
 
         lowered_by = _lower_by(by)
         self._p = PyPartitioning.new_by_key(
-            path, by=lowered_by, include_key=include_key
+            base_path=base_path,
+            file_path_cb=_cast_keyed_file_path_cb(file_path),
+            by=lowered_by,
+            include_key=include_key,
         )
 
     @property
-    def _path(self) -> str:
-        return self._p.path
+    def _base_path(self) -> str | None:
+        return self._p.base_path
 
 
 class PartitionParted:
     """
     Partitioning scheme to split parted dataframes.
 
-    This is a specialized version of `PartitionByKey`. Where as `PartitionByKey` accepts
-    data in any order, this scheme expects the input data to be pre-grouped or
-    pre-sorted. This scheme suffers a lot less overhead than `PartitionByKey`, but may
-    not be always applicable.
+    This is a specialized version of :class:`PartitionByKey`. Where as
+    :class:`PartitionByKey` accepts data in any order, this scheme expects the input
+    data to be pre-grouped or pre-sorted. This scheme suffers a lot less overhead than
+    :class:`PartitionByKey`, but may not be always applicable.
 
     Each new value of the key expressions starts a new partition, therefore repeating
     the same value multiple times may overwrite previous partitions.
@@ -170,14 +355,19 @@ class PartitionParted:
 
     Parameters
     ----------
-    path
-        The format path to the output files. Format arguments:
-        - `{part}` is replaced to the zero-based index of the file.
-        - `{key[i].name}` is replaced by the name of key `i`.
-        - `{key[i].value}` is replaced by the value of key `i`.
+    base_path
+        The base path for the output files.
 
         Use the `mkdir` option on the `sink_*` methods to ensure directories in
         the path are created.
+    file_path
+        A callback to register or modify the output path for each partition
+        relative to the `base_path`.The callback provides a
+        :class:`polars.io.partition.KeyedPartitionContext` that contains information
+        about the partition.
+
+        If no callback is given, it defaults to
+        `{ctx.keys.hive_dirs()}/{ctx.in_part_idx}.{EXT}`.
     by
         The expressions to partition by.
     include_key : bool
@@ -188,19 +378,24 @@ class PartitionParted:
     Split a parquet file by a column `year` into CSV files:
 
     >>> pl.scan_parquet("/path/to/file.parquet").sink_csv(
-    ...     PartitionParted(
-    ...         "./out/{key[0].value}.csv",
-    ...         by="year",
-    ...     ),
+    ...     PartitionParted("./out", by="year"),
+    ...     mkdir=True,
     ... )  # doctest: +SKIP
+
+    See Also
+    --------
+    PartitionMaxSize
+    PartitionByKey
+    polars.io.partition.KeyedPartitionContext
     """
 
     _p: PyPartitioning
 
     def __init__(
         self,
-        path: Path | str,
+        base_path: str | Path,
         *,
+        file_path: Callable[[KeyedPartitionContext], Path | str] | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
     ) -> None:
@@ -208,9 +403,12 @@ class PartitionParted:
 
         lowered_by = _lower_by(by)
         self._p = PyPartitioning.new_by_key(
-            path, by=lowered_by, include_key=include_key
+            base_path=base_path,
+            file_path_cb=_cast_keyed_file_path_cb(file_path),
+            by=lowered_by,
+            include_key=include_key,
         )
 
     @property
-    def _path(self) -> str:
-        return self._p.path
+    def _base_path(self) -> str | None:
+        return self._p.base_path

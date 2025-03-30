@@ -15,7 +15,7 @@ def _first_scan_path(
     elif is_path_or_str_sequence(source) and source:
         return source[0]
     elif isinstance(source, PartitionMaxSize):
-        return source._path
+        return source._base_path
 
     return None
 

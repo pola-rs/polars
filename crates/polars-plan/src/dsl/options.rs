@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use polars_core::error::PolarsResult;
+use polars_core::error::{PolarsResult, to_compute_err};
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::write::CsvWriterOptions;
@@ -32,7 +32,7 @@ use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-use super::{AExpr, Expr, ExprIR};
+use super::{AExpr, Expr, ExprIR, SpecialEq};
 use crate::dsl::Selector;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
@@ -367,17 +367,152 @@ pub struct FileSinkType {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SinkTypeIR {
     Memory,
     File(FileSinkType),
     Partition(PartitionSinkTypeIR),
 }
 
+#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[derive(Clone)]
+pub struct PartitionTargetContextKey {
+    pub name: PlSmallStr,
+    pub raw_value: Scalar,
+}
+
+#[cfg_attr(feature = "python", pyo3::pyclass)]
+pub struct PartitionTargetContext {
+    pub file_idx: usize,
+    pub part_idx: usize,
+    pub in_part_idx: usize,
+    pub keys: Vec<PartitionTargetContextKey>,
+    pub file_path: PathBuf,
+    pub full_path: PathBuf,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl PartitionTargetContext {
+    #[getter]
+    pub fn file_idx(&self) -> usize {
+        self.file_idx
+    }
+    #[getter]
+    pub fn part_idx(&self) -> usize {
+        self.part_idx
+    }
+    #[getter]
+    pub fn in_part_idx(&self) -> usize {
+        self.in_part_idx
+    }
+    #[getter]
+    pub fn keys(&self) -> Vec<PartitionTargetContextKey> {
+        self.keys.clone()
+    }
+    #[getter]
+    pub fn file_path(&self) -> &std::path::Path {
+        self.file_path.as_path()
+    }
+    #[getter]
+    pub fn full_path(&self) -> &std::path::Path {
+        self.full_path.as_path()
+    }
+}
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl PartitionTargetContextKey {
+    #[getter]
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+    #[getter]
+    pub fn str_value(&self) -> pyo3::PyResult<String> {
+        let value = self
+            .raw_value
+            .clone()
+            .into_series(PlSmallStr::EMPTY)
+            .strict_cast(&DataType::String)
+            .map_err(|err| pyo3::exceptions::PyRuntimeError::new_err(err.to_string()))?;
+        let value = value.str().unwrap();
+        let value = value.get(0).unwrap_or("null").as_bytes();
+        let value = percent_encoding::percent_encode(value, polars_io::utils::URL_ENCODE_CHAR_SET);
+        Ok(value.to_string())
+    }
+    #[getter]
+    pub fn raw_value(&self) -> pyo3::PyObject {
+        let converter = polars_core::chunked_array::object::registry::get_pyobject_converter();
+        *(converter.as_ref())(self.raw_value.as_any_value())
+            .downcast::<pyo3::PyObject>()
+            .unwrap()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum PartitionTargetCallback {
+    Rust(SpecialEq<Arc<dyn Fn(PartitionTargetContext) -> PolarsResult<PathBuf> + Send + Sync>>),
+    #[cfg(feature = "python")]
+    Python(polars_utils::python_function::PythonFunction),
+}
+
+impl PartitionTargetCallback {
+    pub fn call(&self, ctx: PartitionTargetContext) -> PolarsResult<PathBuf> {
+        match self {
+            Self::Rust(f) => f(ctx),
+            #[cfg(feature = "python")]
+            Self::Python(f) => pyo3::Python::with_gil(|py| {
+                let file_path = f.call1(py, (ctx,)).map_err(to_compute_err)?;
+                let file_path = file_path.extract::<PathBuf>(py).map_err(to_compute_err)?;
+                PolarsResult::Ok(file_path)
+            }),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for PartitionTargetCallback {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[cfg(feature = "python")]
+        {
+            Ok(Self::Python(
+                polars_utils::python_function::PythonFunction::deserialize(_deserializer)?,
+            ))
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            use serde::de::Error;
+            Err(D::Error::custom(
+                "cannot deserialize PartitionOutputCallback",
+            ))
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for PartitionTargetCallback {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::Error;
+
+        #[cfg(feature = "python")]
+        if let Self::Python(v) = self {
+            return v.serialize(_serializer);
+        }
+
+        Err(S::Error::custom(format!("cannot serialize {:?}", self)))
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkType {
-    pub path_f_string: Arc<PathBuf>,
+    pub base_path: PathBuf,
+    pub file_path_cb: Option<PartitionTargetCallback>,
     pub file_type: FileType,
     pub sink_options: SinkOptions,
     pub variant: PartitionVariant,
@@ -385,9 +520,10 @@ pub struct PartitionSinkType {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkTypeIR {
-    pub path_f_string: Arc<PathBuf>,
+    pub base_path: PathBuf,
+    pub file_path_cb: Option<PartitionTargetCallback>,
     pub file_type: FileType,
     pub sink_options: SinkOptions,
     pub variant: PartitionVariantIR,
@@ -395,7 +531,7 @@ pub struct PartitionSinkTypeIR {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SinkType {
     Memory,
     File(FileSinkType),
@@ -438,7 +574,6 @@ impl SinkTypeIR {
             Self::Memory => {},
             Self::File(f) => f.hash(state),
             Self::Partition(f) => {
-                f.path_f_string.hash(state);
                 f.file_type.hash(state);
                 f.sink_options.hash(state);
                 f.variant.traverse_and_hash(expr_arena, state);
@@ -502,6 +637,25 @@ pub enum FileType {
     #[cfg(feature = "json")]
     Json(JsonWriterOptions),
 }
+
+impl FileType {
+    pub fn extension(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "parquet")]
+            Self::Parquet(_) => "parquet",
+            #[cfg(feature = "ipc")]
+            Self::Ipc(_) => "ipc",
+            #[cfg(feature = "csv")]
+            Self::Csv(_) => "csv",
+            #[cfg(feature = "json")]
+            Self::Json(_) => "jsonl",
+
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("enable file type features"),
+        }
+    }
+}
+
 //
 // Arguments given to `concat`. Differs from `UnionOptions` as the latter is IR state.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
