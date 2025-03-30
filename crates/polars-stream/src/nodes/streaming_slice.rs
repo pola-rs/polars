@@ -81,7 +81,7 @@ impl ComputeNode for StreamingSliceNode {
                     morsel.source_token().stop();
                 }
 
-                if !morsel.df().is_empty() && send.send(morsel).await.is_err() {
+                if morsel.df().height() > 0 && send.send(morsel).await.is_err() {
                     break;
                 }
 

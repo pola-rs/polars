@@ -1530,6 +1530,7 @@ def test_csv_categorical_categorical_merge() -> None:
     ).unique(maintain_order=True)["x"].to_list() == ["A", "B"]
 
 
+@pytest.mark.write_disk
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     assert isinstance(reader, BatchedCsvReader)
@@ -1556,10 +1557,10 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
         tmp.write(data)
         tmp.seek(0)
 
-        expected = pl.DataFrame({"column_1": ["A", "B", "C"]})
+        expected = pl.DataFrame({"A": ["B", "C"]})
         batches = pl.read_csv_batched(
             tmp.name,
-            has_header=False,
+            has_header=True,
             truncate_ragged_lines=True,
         ).next_batches(1)
 
@@ -1914,25 +1915,25 @@ def test_ignore_errors_date_parser() -> None:
 
 
 def test_csv_ragged_lines() -> None:
-    expected = {"column_1": ["A", "B", "C"]}
+    expected = {"A": ["B", "C"]}
     assert (
         pl.read_csv(
-            io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
+            io.StringIO("A\nB,ragged\nC"), has_header=True, truncate_ragged_lines=True
         ).to_dict(as_series=False)
         == expected
     )
     assert (
         pl.read_csv(
-            io.StringIO("A\nB\nC,ragged"), has_header=False, truncate_ragged_lines=True
+            io.StringIO("A\nB\nC,ragged"), has_header=True, truncate_ragged_lines=True
         ).to_dict(as_series=False)
         == expected
     )
 
     for s in ["A\nB,ragged\nC", "A\nB\nC,ragged"]:
         with pytest.raises(ComputeError, match=r"found more fields than defined"):
-            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+            pl.read_csv(io.StringIO(s), has_header=True, truncate_ragged_lines=False)
         with pytest.raises(ComputeError, match=r"found more fields than defined"):
-            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+            pl.read_csv(io.StringIO(s), has_header=True, truncate_ragged_lines=False)
 
 
 def test_provide_schema() -> None:
@@ -2542,3 +2543,19 @@ def test_csv_enum_raise() -> None:
             csv,
             schema={"col": ENUM_DTYPE},
         )
+
+
+def test_csv_no_header_ragged_lines_1505() -> None:
+    # Test that the header schema will grow dynamically.
+    csv = io.StringIO("""a,b,c
+a,b,c,d,e,f
+g,h,i,j,k""")
+
+    assert pl.read_csv(csv, has_header=False).to_dict(as_series=False) == {
+        "column_1": ["a", "a", "g"],
+        "column_2": ["b", "b", "h"],
+        "column_3": ["c", "c", "i"],
+        "column_4": [None, "d", "j"],
+        "column_5": [None, "e", "k"],
+        "column_6": [None, "f", None],
+    }

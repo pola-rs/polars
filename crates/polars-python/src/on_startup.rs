@@ -113,12 +113,5 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
         if catch_keyboard_interrupt {
             register_polars_keyboard_interrupt_hook();
         }
-
-        Python::with_gil(|py| {
-            // Init AnyValue LUT.
-            crate::conversion::any_value::LUT
-                .set(py, Default::default())
-                .unwrap();
-        });
     });
 }

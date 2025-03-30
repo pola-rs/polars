@@ -22,6 +22,10 @@ processes within your workspace.
   - With Resource based custom amount of vCPUs, RAM, Storage and cluster size can be defined.
   - Instance based allows to select a default instance type from the cloud service provider.
 
+Setting default compute configurations eliminates the need to explicitly define a compute context.
+More information on configuration can be found in the section on
+[setting up compute context](../run/compute-context.md).
+
 ## Query and compute labels
 
 Labels help organize and categorize queries and compute within your workspace. The labels can only

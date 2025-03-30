@@ -259,7 +259,6 @@ impl ScanExec for CsvExec {
                     self.options.skip_lines,
                     self.options.skip_rows_after_header,
                     self.options.raise_if_empty,
-                    &mut self.options.n_threads,
                 )?
                 .0,
             )));

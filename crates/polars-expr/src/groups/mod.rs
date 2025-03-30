@@ -1,6 +1,6 @@
 use std::any::Any;
-use std::path::Path;
 
+use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -21,9 +21,21 @@ pub trait Grouper: Any + Send + Sync {
     /// Returns the number of groups in this Grouper.
     fn num_groups(&self) -> IdxSize;
 
-    /// Inserts the given keys into this Grouper, mutating groups_idxs such
-    /// that group_idxs[i] is the group index of keys[..][i].
+    /// Inserts the given keys into this Grouper, extending groups_idxs with
+    /// the group index of keys[i].
     fn insert_keys(&mut self, keys: HashKeys, group_idxs: &mut Vec<IdxSize>);
+
+    /// Inserts the given subset of keys into this Grouper. If groups_idxs is
+    /// passed it is extended such with the group index of keys[subset[i]].
+    ///
+    /// # Safety
+    /// The subset indexes must be in-bounds.
+    unsafe fn insert_keys_subset(
+        &mut self,
+        keys: &HashKeys,
+        subset: &[IdxSize],
+        group_idxs: Option<&mut Vec<IdxSize>>,
+    );
 
     /// Adds the given Grouper into this one, mutating groups_idxs such that
     /// the ith group of other now has group index group_idxs[i] in self.
@@ -57,15 +69,31 @@ pub trait Grouper: Any + Send + Sync {
     /// group i is returned in row i.
     fn get_keys_in_group_order(&self) -> DataFrame;
 
-    /// Stores this Grouper at the given path.
-    fn store_ooc(&self, _path: &Path) {
-        unimplemented!();
-    }
+    /// Returns the (indices of the) keys found in the groupers. If
+    /// invert is true it instead returns the keys not found in the groupers.
+    /// # Safety
+    /// All groupers must have the same schema.
+    unsafe fn probe_partitioned_groupers(
+        &self,
+        groupers: &[Box<dyn Grouper>],
+        keys: &HashKeys,
+        partitioner: &HashPartitioner,
+        invert: bool,
+        probe_matches: &mut Vec<IdxSize>,
+    );
 
-    /// Loads this Grouper from the given path.
-    fn load_ooc(&mut self, _path: &Path) {
-        unimplemented!();
-    }
+    /// Returns for each key if it is found in the groupers. If invert is true
+    /// it returns true if it isn't found.
+    /// # Safety
+    /// All groupers must have the same schema.
+    unsafe fn contains_key_partitioned_groupers(
+        &self,
+        groupers: &[Box<dyn Grouper>],
+        keys: &HashKeys,
+        partitioner: &HashPartitioner,
+        invert: bool,
+        contains_key: &mut BitmapBuilder,
+    );
 
     fn as_any(&self) -> &dyn Any;
 }

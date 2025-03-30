@@ -1,10 +1,7 @@
-use std::sync::LazyLock;
-
 use arrow::array::PrimitiveArray;
 use chrono::format::ParseErrorKind;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use polars_core::prelude::*;
-use regex::Regex;
 
 use super::patterns::{self, Pattern};
 #[cfg(feature = "dtype-date")]
@@ -12,7 +9,8 @@ use crate::chunkedarray::date::naive_date_to_date;
 use crate::chunkedarray::string::strptime;
 use crate::prelude::string::strptime::StrpTimeState;
 
-const DATETIME_DMY_PATTERN: &str = r#"(?x)
+polars_utils::regex_cache::cached_regex! {
+    static DATETIME_DMY_RE = r#"(?x)
         ^
         ['"]?                        # optional quotes
         (?:\d{1,2})                  # day
@@ -37,66 +35,62 @@ const DATETIME_DMY_PATTERN: &str = r#"(?x)
         $
         "#;
 
-static DATETIME_DMY_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(DATETIME_DMY_PATTERN).unwrap());
-const DATETIME_YMD_PATTERN: &str = r#"(?x)
-        ^
-        ['"]?                      # optional quotes
-        (?:\d{4,})                 # year
-        [-/\.]                     # separator
-        (?P<month>[01]?\d{1})      # month
-        [-/\.]                     # separator
-        (?:\d{1,2})                # day
-        (?:
+    static DATETIME_YMD_RE = r#"(?x)
+            ^
+            ['"]?                      # optional quotes
+            (?:\d{4,})                 # year
+            [-/\.]                     # separator
+            (?P<month>[01]?\d{1})      # month
+            [-/\.]                     # separator
+            (?:\d{1,2})                # day
+            (?:
+                [T\ ]                  # separator
+                (?:\d{1,2})            # hour
+                :?                     # separator
+                (?:\d{1,2})            # minute
+                (?:
+                    :?                 # separator
+                    (?:\d{1,2})        # seconds
+                    (?:
+                        \.(?:\d{1,9})  # subsecond
+                    )?
+                )?
+            )?
+            ['"]?                      # optional quotes
+            $
+            "#;
+
+    static DATETIME_YMDZ_RE = r#"(?x)
+            ^
+            ['"]?                  # optional quotes
+            (?:\d{4,})             # year
+            [-/\.]                 # separator
+            (?P<month>[01]?\d{1})  # month
+            [-/\.]                 # separator
+            (?:\d{1,2})            # year
             [T\ ]                  # separator
-            (?:\d{1,2})            # hour
+            (?:\d{2})              # hour
             :?                     # separator
-            (?:\d{1,2})            # minute
+            (?:\d{2})              # minute
             (?:
                 :?                 # separator
-                (?:\d{1,2})        # seconds
+                (?:\d{2})          # second
                 (?:
                     \.(?:\d{1,9})  # subsecond
                 )?
             )?
-        )?
-        ['"]?                      # optional quotes
-        $
-        "#;
-static DATETIME_YMD_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(DATETIME_YMD_PATTERN).unwrap());
-const DATETIME_YMDZ_PATTERN: &str = r#"(?x)
-        ^
-        ['"]?                  # optional quotes
-        (?:\d{4,})             # year
-        [-/\.]                 # separator
-        (?P<month>[01]?\d{1})  # month
-        [-/\.]                 # separator
-        (?:\d{1,2})            # year
-        [T\ ]                  # separator
-        (?:\d{2})              # hour
-        :?                     # separator
-        (?:\d{2})              # minute
-        (?:
-            :?                 # separator
-            (?:\d{2})          # second
             (?:
-                \.(?:\d{1,9})  # subsecond
-            )?
-        )?
-        (?:
-            # offset (e.g. +01:00)
-            [+-](?:\d{2})
-            :?
-            (?:\d{2})
-            # or Zulu suffix
-            |Z
-        )
-        ['"]?                  # optional quotes
-        $
-        "#;
-static DATETIME_YMDZ_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(DATETIME_YMDZ_PATTERN).unwrap());
+                # offset (e.g. +01:00)
+                [+-](?:\d{2})
+                :?
+                (?:\d{2})
+                # or Zulu suffix
+                |Z
+            )
+            ['"]?                  # optional quotes
+            $
+            "#;
+}
 
 impl Pattern {
     pub fn is_inferable(&self, val: &str) -> bool {

@@ -219,3 +219,8 @@ def test_transpose_multiple_chunks() -> None:
     df = pl.DataFrame({"a": ["1"]})
     expected = pl.DataFrame({"column_0": ["1"], "column_1": ["1"]})
     assert_frame_equal(df.vstack(df).transpose(), expected)
+
+
+def test_nested_struct_transpose_21923() -> None:
+    df = pl.DataFrame({"x": [{"a": {"b": 1, "c": 2}}]})
+    assert df.transpose().item() == df.item()

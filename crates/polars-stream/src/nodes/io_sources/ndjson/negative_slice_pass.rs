@@ -195,7 +195,7 @@ impl MorselStreamReverser {
                             let mut df =
                                 combined_df.slice(row_offset.try_into().unwrap(), chunk_size);
 
-                            assert!(!df.is_empty()); // If we did our calculations properly
+                            assert!(df.height() > 0); // If we did our calculations properly
 
                             if let Some(row_index) = row_index.clone() {
                                 let offset = row_index.offset.saturating_add(

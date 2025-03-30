@@ -3425,6 +3425,7 @@ dependencies = [
  "chrono-tz",
  "either",
  "flate2",
+ "hashbrown 0.15.2",
  "itoa",
  "libc",
  "ndarray",
@@ -3580,9 +3581,11 @@ dependencies = [
  "rand",
  "raw-cpuid",
  "rayon",
+ "regex",
  "rmp-serde",
  "serde",
  "serde_json",
+ "slotmap",
  "stacker",
  "sysinfo",
  "version_check",
@@ -3677,7 +3680,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.25.2"
+version = "1.26.0"
 dependencies = [
  "either",
  "libc",

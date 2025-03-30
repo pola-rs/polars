@@ -21,7 +21,6 @@ pub mod expr;
 pub mod file;
 #[cfg(feature = "pymethods")]
 pub mod functions;
-pub mod gil_once_cell;
 pub mod interop;
 pub mod lazyframe;
 pub mod lazygroupby;
