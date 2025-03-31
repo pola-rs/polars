@@ -112,12 +112,14 @@ pub struct BeginReadArgs {
     /// A reader may wish to use this if it is applying predicates.
     ///
     /// This can be ignored by the reader, as the policy is also applied in post.
+    #[expect(unused)]
     pub cast_columns_policy: CastColumnsPolicy,
     /// User-configured policy for when columns are not found in the file.
     ///
     /// A reader may wish to use this if it is applying predicates.
     ///
     /// This can be ignored by the reader, as the policy is also applied in post.
+    #[expect(unused)]
     pub missing_columns_policy: MissingColumnsPolicy,
 
     pub num_pipelines: usize,
