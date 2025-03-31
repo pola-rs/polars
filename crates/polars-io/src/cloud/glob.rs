@@ -25,7 +25,7 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Opt
     // after_last_slash
     // `a/b/c*/`
     //      ^
-    let mut pos: usize = if let Some(after_last_slash) = memchr::memchr2(b'*', b'.', url.as_bytes())
+    let mut pos: usize = if let Some(after_last_slash) = memchr::memchr2(b'*', b'[', url.as_bytes())
         .map(|i| {
             url.as_bytes()[..i]
                 .iter()
@@ -39,16 +39,18 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Opt
     };
 
     while pos < url.len() {
-        match memchr::memchr(b'*', &url.as_bytes()[pos..]) {
+        match memchr::memchr2(b'*', b'.', &url.as_bytes()[pos..]) {
             None => break,
             Some(i) => pos += i,
         }
 
         let (len, replace): (usize, &[u8]) = match &url[pos..] {
-            // v if v.starts_with("**/*") => (4, b".*" as _),
-            // v if v.starts_with("**/") => (3, b".*/" as _),
-            v if v.starts_with("**/") => (3, b"(.*/)?" as _),
-            v if v.starts_with("**") => polars_bail!(ComputeError: "invalid ** glob pattern"),
+            v if v.starts_with("**") && (v.len() == 2 || v.as_bytes()[2] == b'/') => {
+                (3, b"(.*/)?" as _)
+            },
+            v if v.starts_with("**") => {
+                polars_bail!(ComputeError: "invalid ** glob pattern")
+            },
             v if v.starts_with('*') => (1, b"([^/]*)" as _),
             v if v.starts_with('.') => (1, b"\\." as _),
             _ => {
@@ -77,7 +79,10 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Opt
         pos = offset + len;
     }
 
-    expansion.extend_from_slice(&url.as_bytes()[pos..]);
+    if pos < url.len() {
+        expansion.extend_from_slice(&url.as_bytes()[pos..]);
+    }
+
     expansion.push(b'$');
 
     Ok((prefix, Some(String::from_utf8(expansion).unwrap())))
@@ -284,19 +289,19 @@ mod test {
         );
         assert_eq!(
             extract_prefix_expansion("a/**").unwrap(),
-            ("a/".into(), Some("^.*$".into()))
+            ("a/".into(), Some("^(.*/)?$".into()))
         );
         assert_eq!(
             extract_prefix_expansion("a/**/b").unwrap(),
-            ("a/".into(), Some("^.*b$".into()))
+            ("a/".into(), Some("^(.*/)?b$".into()))
         );
         assert_eq!(
             extract_prefix_expansion("a/**/*b").unwrap(),
-            ("a/".into(), Some("^.*([^/]*)b$".into()))
+            ("a/".into(), Some("^(.*/)?([^/]*)b$".into()))
         );
         assert_eq!(
             extract_prefix_expansion("a/**/data/*b").unwrap(),
-            ("a/".into(), Some("^.*data/([^/]*)b$".into()))
+            ("a/".into(), Some("^(.*/)?data/([^/]*)b$".into()))
         );
         assert_eq!(
             extract_prefix_expansion("a/*b").unwrap(),
@@ -395,5 +400,12 @@ mod test {
         assert!(a.is_matching("folder/data.parquet"));
         assert!(a.is_matching("folder/abc/data.parquet"));
         assert!(a.is_matching("folder/abc/def/data.parquet"));
+
+        let url = "s3://bucket/folder/data_*.parquet";
+        let cloud_location = CloudLocation::new(url, true).unwrap();
+
+        let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
+
+        assert!(!a.is_matching("folder/data_1.ipc"))
     }
 }
