@@ -23,7 +23,7 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Opt
     // (offset, len, replacement)
     let mut replacements: Vec<(usize, usize, &[u8])> = vec![];
 
-    // after_last_slash
+    // The position after the last slash before glob characters begin.
     // `a/b/c*/`
     //      ^
     let mut pos: usize = if let Some(after_last_slash) = memchr::memchr2(b'*', b'[', url.as_bytes())
@@ -47,6 +47,9 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Opt
         }
 
         let (len, replace): (usize, &[u8]) = match &url[pos..] {
+            // Accept:
+            // - `**/`
+            // - `**` only if it is the end of the url
             v if v.starts_with("**") && (v.len() == 2 || v.as_bytes()[2] == b'/') => {
                 (3, b"(.*/)?" as _)
             },
