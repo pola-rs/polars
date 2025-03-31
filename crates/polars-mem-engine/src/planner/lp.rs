@@ -1,7 +1,6 @@
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
-use polars_io::utils::file::Writeable;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::format_pl_smallstr;
@@ -317,12 +316,7 @@ fn create_physical_plan_impl(
                                 },
                             }
 
-                            if let Writeable::Local(file) = &mut file {
-                                polars_io::utils::sync_on_close::sync_on_close(
-                                    sink_options.sync_on_close,
-                                    file,
-                                )?;
-                            }
+                            file.sync_on_close(sink_options.sync_on_close)?;
                             file.close()?;
 
                             Ok(None)

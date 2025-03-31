@@ -6,7 +6,6 @@ use polars_error::PolarsResult;
 use polars_io::SerWriter;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::{CsvWriter, CsvWriterOptions};
-use polars_io::utils::file::AsyncWriteable;
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
 
@@ -159,14 +158,7 @@ impl SinkNode for CsvSinkNode {
                 }
             }
 
-            if let AsyncWriteable::Local(file) = &mut file {
-                polars_io::utils::sync_on_close::tokio_sync_on_close(
-                    sink_options.sync_on_close,
-                    file,
-                )
-                .await?;
-            }
-
+            file.sync_on_close(sink_options.sync_on_close).await?;
             file.close().await?;
 
             PolarsResult::Ok(())

@@ -12,7 +12,6 @@ use polars_error::PolarsResult;
 use polars_io::SerWriter;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::{IpcWriter, IpcWriterOptions};
-use polars_io::utils::file::Writeable;
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
 
@@ -317,10 +316,7 @@ impl SinkNode for IpcSinkNode {
             writer.finish()?;
             drop(writer);
 
-            if let Writeable::Local(file) = &mut file {
-                polars_io::utils::sync_on_close::sync_on_close(sink_options.sync_on_close, file)?;
-            }
-
+            file.sync_on_close(sink_options.sync_on_close)?;
             file.close()?;
 
             PolarsResult::Ok(())

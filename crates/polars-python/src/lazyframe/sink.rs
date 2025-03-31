@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use polars::prelude::file::DynWriteable;
 use polars::prelude::sync_on_close::SyncOnCloseType;
 use polars::prelude::{InMemoryPartition, PartitionBase, PartitionVariant, SinkOptions, SpecialEq};
 use polars_error::{PolarsResult, polars_bail, to_compute_err};
@@ -14,7 +15,6 @@ use pyo3::{
 };
 
 use crate::expr::PyExpr;
-use crate::file::EitherRustPythonFile;
 use crate::prelude::Wrap;
 
 #[derive(Clone)]
@@ -105,15 +105,14 @@ impl<'py> FromPyObject<'py> for SinkTarget {
         } else {
             let writer = Python::with_gil(|py| {
                 let py_f = ob.clone();
-                PyResult::Ok(match crate::file::try_get_pyfile(py, py_f, true)?.0 {
-                    EitherRustPythonFile::Py(py_file_like_object) => {
-                        Box::new(py_file_like_object) as _
-                    },
-                    EitherRustPythonFile::Rust(closable_file) => Box::new(closable_file) as _,
-                })
+                PyResult::Ok(
+                    crate::file::try_get_pyfile(py, py_f, true)?
+                        .0
+                        .into_writeable(),
+                )
             })?;
 
-            Ok(Self::File(polars::prelude::SinkTarget::Memory(
+            Ok(Self::File(polars::prelude::SinkTarget::Dyn(
                 SpecialEq::new(Arc::new(Mutex::new(Some(writer)))),
             )))
         }
@@ -123,7 +122,7 @@ impl<'py> FromPyObject<'py> for SinkTarget {
 struct PyDictInMemoryPartition(Py<PyAny>);
 
 impl InMemoryPartition for PyDictInMemoryPartition {
-    fn open_partition(&mut self, path: PathBuf) -> PolarsResult<Box<dyn std::io::Write + Send>> {
+    fn open_partition(&mut self, path: PathBuf) -> PolarsResult<Box<dyn DynWriteable>> {
         Python::with_gil(|py| {
             let io = py.import("io").map_err(to_compute_err)?;
             let bytes_io = io.getattr("BytesIO").map_err(to_compute_err)?;
@@ -137,15 +136,15 @@ impl InMemoryPartition for PyDictInMemoryPartition {
             dict.set_item(path, bytes_io.clone())
                 .map_err(to_compute_err)?;
 
-            let EitherRustPythonFile::Py(py_file_like_object) =
-                crate::file::try_get_pyfile(py, bytes_io, true)
-                    .map_err(to_compute_err)?
-                    .0
+            let py_f = crate::file::try_get_pyfile(py, bytes_io, true)
+                .map_err(to_compute_err)?
+                .0
             else {
                 polars_bail!(ComputeError: "expected python bytes io object");
             };
 
-            PolarsResult::Ok(Box::new(py_file_like_object) as _)
+            let py_f = py_f.into_writeable();
+            PolarsResult::Ok(py_f)
         })
     }
 }
@@ -169,7 +168,7 @@ impl SinkTarget {
         match self {
             Self::File(t) => match t {
                 polars::prelude::SinkTarget::Path(p) => Some(p.as_path()),
-                polars::prelude::SinkTarget::Memory(_) => None,
+                polars::prelude::SinkTarget::Dyn(_) => None,
             },
             Self::Partition(p) => match &p.base.0 {
                 PartitionBase::Path(p) => Some(p.as_path()),

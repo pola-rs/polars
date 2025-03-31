@@ -94,17 +94,14 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame, get_engine_affinity
+    from polars.polars import PyLazyFrame, PyPartitioning, get_engine_affinity
 
 
 if TYPE_CHECKING:
     import sys
     from collections.abc import Awaitable, Iterable, Sequence
     from io import IOBase
-    from typing import Literal
-
-    with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyPartitioning
+    from typing import IO, Literal
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -153,6 +150,20 @@ if TYPE_CHECKING:
 
 def _select_engine(engine: EngineType) -> EngineType:
     return get_engine_affinity() if engine == "auto" else engine
+
+
+def _to_sink_target(
+    path: str | Path | IO[bytes] | IO[str],
+) -> str | Path | IO[bytes] | IO[str] | PyPartitioning:
+    if isinstance(path, (str, Path)):
+        return normalize_filepath(path)
+    elif isinstance(path, (io.IOBase)):
+        return path
+    elif isinstance(path, PyPartitioning):
+        return path._p
+    else:
+        msg = f"`path` argument has an invalid type '{type(path)}' and cannot be turned into a sink target"
+        raise TypeError(msg)
 
 
 def _gpu_engine_callback(
@@ -2664,14 +2675,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
-        target: str | Path | io.BytesIO | PyPartitioning
-        if isinstance(path, (str, Path)):
-            target = normalize_filepath(path)
-        elif isinstance(path, (io.BytesIO)):
-            target = path
-        else:
-            target = path._p
-
+        target = _to_sink_target(path)
         sink_options = {
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
@@ -2894,14 +2898,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
-        target: str | Path | io.BytesIO | PyPartitioning
-        if isinstance(path, (str, Path)):
-            target = normalize_filepath(path)
-        elif isinstance(path, (io.BytesIO)):
-            target = path
-        else:
-            target = path._p
-
+        target = _to_sink_target(path)
         sink_options = {
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
@@ -3213,14 +3210,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
-        target: str | Path | io.BytesIO | PyPartitioning
-        if isinstance(path, (str, Path)):
-            target = normalize_filepath(path)
-        elif isinstance(path, (io.BytesIO)):
-            target = path
-        else:
-            target = path._p
-
+        target = _to_sink_target(path)
         sink_options = {
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,
@@ -3439,14 +3429,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
-        target: str | Path | io.BytesIO | PyPartitioning
-        if isinstance(path, (str, Path)):
-            target = normalize_filepath(path)
-        elif isinstance(path, (io.BytesIO)):
-            target = path
-        else:
-            target = path._p
-
+        target = _to_sink_target(path)
         sink_options = {
             "sync_on_close": sync_on_close or "none",
             "maintain_order": maintain_order,

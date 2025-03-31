@@ -271,10 +271,7 @@ impl SinkNode for ParquetSinkNode {
             writer.finish()?;
             drop(writer);
 
-            if let Writeable::Local(file) = &mut file {
-                polars_io::utils::sync_on_close::sync_on_close(sink_options.sync_on_close, file)?;
-            }
-
+            file.sync_on_close(sink_options.sync_on_close)?;
             file.close()?;
 
             PolarsResult::Ok(())

@@ -1,10 +1,10 @@
+use std::fmt;
 use std::hash::{Hash, Hasher};
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::{fmt, io};
 
 use polars_core::error::{PolarsResult, to_compute_err};
 use polars_core::prelude::*;
@@ -17,7 +17,7 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
-use polars_io::utils::file::Writeable;
+use polars_io::utils::file::{DynWriteable, Writeable};
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_io::{HiveOptions, RowIndex, is_cloud_url};
 #[cfg(feature = "iejoin")]
@@ -360,12 +360,12 @@ impl Default for SinkOptions {
     }
 }
 
-type MemorySinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Box<dyn io::Write + Send>>>>>;
+type MemorySinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Box<dyn DynWriteable>>>>>;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum SinkTarget {
     Path(Arc<PathBuf>),
-    Memory(MemorySinkTarget),
+    Dyn(MemorySinkTarget),
 }
 
 impl SinkTarget {
@@ -383,7 +383,7 @@ impl SinkTarget {
                 let path = path.as_ref().display().to_string();
                 polars_io::utils::file::Writeable::try_new(&path, cloud_options)
             },
-            SinkTarget::Memory(memory_writer) => Ok(Writeable::Memory(
+            SinkTarget::Dyn(memory_writer) => Ok(Writeable::Dyn(
                 memory_writer.lock().unwrap().take().unwrap(),
             )),
         }
@@ -403,7 +403,7 @@ impl SinkTarget {
                 let path = path.as_ref().display().to_string();
                 polars_io::utils::file::Writeable::try_new(&path, cloud_options)
             },
-            SinkTarget::Memory(memory_writer) => Ok(Writeable::Memory(
+            SinkTarget::Dyn(memory_writer) => Ok(Writeable::Dyn(
                 memory_writer.lock().unwrap().take().unwrap(),
             )),
         }
@@ -415,7 +415,7 @@ impl fmt::Debug for SinkTarget {
         f.write_str("SinkTarget::")?;
         match self {
             Self::Path(p) => write!(f, "Path({p:?})"),
-            Self::Memory(_) => f.write_str("Memory"),
+            Self::Dyn(_) => f.write_str("Memory"),
         }
     }
 }
@@ -425,7 +425,7 @@ impl std::hash::Hash for SinkTarget {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Path(p) => p.hash(state),
-            Self::Memory(_) => {},
+            Self::Dyn(_) => {},
         }
     }
 }
@@ -438,7 +438,7 @@ impl serde::Serialize for SinkTarget {
     {
         match self {
             Self::Path(p) => p.serialize(serializer),
-            Self::Memory(_) => Err(serde::ser::Error::custom(
+            Self::Dyn(_) => Err(serde::ser::Error::custom(
                 "cannot serialize in-memory sink target",
             )),
         }
@@ -456,7 +456,7 @@ impl<'de> serde::Deserialize<'de> for SinkTarget {
 }
 
 pub trait InMemoryPartition: Send {
-    fn open_partition(&mut self, path: PathBuf) -> PolarsResult<Box<dyn io::Write + Send>>;
+    fn open_partition(&mut self, path: PathBuf) -> PolarsResult<Box<dyn DynWriteable>>;
 }
 
 #[derive(Clone, PartialEq, Eq)]

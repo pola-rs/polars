@@ -190,7 +190,7 @@ async fn open_new_sink(
 
     let target = match base {
         PartitionBase::Path(_) => SinkTarget::Path(Arc::new(path)),
-        PartitionBase::Memory(base) => SinkTarget::Memory(SpecialEq::new(Arc::new(Mutex::new(
+        PartitionBase::Memory(base) => SinkTarget::Dyn(SpecialEq::new(Arc::new(Mutex::new(
             Some(base.lock().unwrap().open_partition(path)?),
         )))),
     };
