@@ -358,7 +358,7 @@ def test_schema_mismatch_type_mismatch(
                 reason="See https://github.com/pola-rs/polars/issues/21211"
             ),
         ),
-        # (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"), # TODO
+        # (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"), # TODO: _
     ],
 )
 @pytest.mark.write_disk
