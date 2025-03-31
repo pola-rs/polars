@@ -33,6 +33,7 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Opt
                 .rposition(|x| *x == b'/')
                 .map_or(0, |x| 1 + x)
         }) {
+        // First value is used as the starting point later.
         replacements.push((after_last_slash, 0, &[]));
         after_last_slash
     } else {
