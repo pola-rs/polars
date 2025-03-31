@@ -203,6 +203,7 @@ impl std::fmt::Debug for FileReaderCallbacks {
 }
 
 /// Calculate from a known total row count.
+#[expect(unused)]
 pub fn calc_row_position_after_slice(n_rows_in_file: IdxSize, pre_slice: Option<Slice>) -> IdxSize {
     let n_rows_in_file = usize::try_from(n_rows_in_file).unwrap();
 
