@@ -123,7 +123,8 @@ class BasePartitionContext:
 
 
 def _cast_base_file_path_cb(
-    file_path_cb: Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]] | None,
+    file_path_cb: Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]]
+    | None,
 ) -> Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]] | None:
     if file_path_cb is None:
         return None
@@ -137,7 +138,8 @@ def _cast_base_file_path_cb(
 
 
 def _cast_keyed_file_path_cb(
-    file_path_cb: Callable[[KeyedPartitionContext], Path | str | IO[bytes] | IO[str]] | None,
+    file_path_cb: Callable[[KeyedPartitionContext], Path | str | IO[bytes] | IO[str]]
+    | None,
 ) -> Callable[[KeyedPartitionContext], Path | str | IO[bytes] | IO[str]] | None:
     if file_path_cb is None:
         return None
