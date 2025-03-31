@@ -20,6 +20,7 @@ const DELIMITER: char = '/';
 /// 2. a regular expression representation of the rest.
 pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Option<String>)> {
     let url = url.strip_prefix('/').unwrap_or(url);
+    // (offset, len, replacement)
     let mut replacements: Vec<(usize, usize, &[u8])> = vec![];
 
     // after_last_slash
