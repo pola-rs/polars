@@ -242,6 +242,7 @@ fn create_physical_plan_impl(
                         FileType::Csv(_) => "csv",
                         #[cfg(feature = "json")]
                         FileType::Json(_) => "json",
+                        _ => panic!("enable filetype feature"),
                     };
 
                     Ok(Box::new(SinkExecutor {
