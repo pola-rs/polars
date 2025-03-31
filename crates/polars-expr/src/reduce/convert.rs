@@ -55,14 +55,17 @@ pub fn into_reduction(
         },
         AExpr::Len => {
             // Compute length on the first column, or if none exist we'll use
-            // a zero-length dummy series.
+            // a scalar expr that will broadcast to the height of the morsel.
             let out: Box<dyn GroupedReduction> = Box::new(LenReduce::default());
             let expr = if let Some(first_column) = schema.iter_names().next() {
                 expr_arena.add(AExpr::Column(first_column.as_str().into()))
             } else {
-                let dummy = Series::new_null(PlSmallStr::from_static("dummy"), 0);
-                expr_arena.add(AExpr::Literal(LiteralValue::Series(SpecialEq::new(dummy))))
+                expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+                    DataType::Null,
+                    AnyValue::Null,
+                ))))
             };
+
             (out, expr)
         },
         _ => unreachable!(),

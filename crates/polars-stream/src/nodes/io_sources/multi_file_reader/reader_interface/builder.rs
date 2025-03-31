@@ -18,5 +18,6 @@ pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
         &self,
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
+        scan_source_idx: usize,
     ) -> Box<dyn FileReader>;
 }

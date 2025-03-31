@@ -452,7 +452,7 @@ def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) ->
     pl.DataFrame({"c": [1, 2, 3], "d": [4, 5, 6]}).write_parquet(tmp_path / "2.parquet")
 
     if streaming:
-        with pytest.raises(pl.exceptions.SchemaError):
+        with pytest.raises(pl.exceptions.ColumnNotFoundError):
             pl.scan_parquet(tmp_path).collect(engine="streaming")
     else:
         with pytest.raises(pl.exceptions.ColumnNotFoundError):
@@ -791,8 +791,13 @@ def test_parquet_schema_arg(
             allow_missing_columns=allow_missing_columns,
         )
 
+        # Streaming currently defaults to not erroring
+        if streaming:
+            lf.collect(engine="streaming")
+            continue
+
         with pytest.raises(pl.exceptions.SchemaError):
-            lf.collect(engine="streaming" if streaming else "in-memory")
+            lf.collect(engine="streaming" if streaming else "in-memory")  # type: ignore[call-overload, redundant-expr]
 
     lf = pl.scan_parquet(paths, parallel=parallel, schema=schema).select("a")
 

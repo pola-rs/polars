@@ -35,6 +35,10 @@ pub fn cast_columns(
     parallel: bool,
     ignore_errors: bool,
 ) -> PolarsResult<()> {
+    if to_cast.is_empty() {
+        return Ok(());
+    }
+
     let cast_fn = |c: &Column, fld: &Field| {
         let out = match (c.dtype(), fld.dtype()) {
             #[cfg(feature = "temporal")]
@@ -64,9 +68,11 @@ pub fn cast_columns(
                 .map(|ca| ca.into_column()),
             (_, dt) => c.cast(dt),
         }?;
+
         if !ignore_errors && c.null_count() != out.null_count() {
             handle_casting_failures(c.as_materialized_series(), out.as_materialized_series())?;
         }
+
         Ok(out)
     };
 
@@ -93,6 +99,9 @@ pub fn cast_columns(
             }
         }
     }
+
+    df.clear_schema();
+
     Ok(())
 }
 
