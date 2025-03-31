@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::io;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
@@ -16,16 +15,16 @@ use crate::cloud::CloudOptions;
 use crate::{is_cloud_url, resolve_homedir};
 
 pub trait DynWriteable: io::Write + Send {
-    fn close(&mut self) -> io::Result<()>;
+    fn close(self: Box<Self>) -> io::Result<()>;
     fn sync_on_close(&mut self, sync_on_close: SyncOnCloseType) -> io::Result<()>;
 }
 
-impl DynWriteable for File {
-    fn close(&mut self) -> io::Result<()> {
-        Ok(())
+impl DynWriteable for ClosableFile {
+    fn close(self: Box<Self>) -> io::Result<()> {
+        ClosableFile::close(*self)
     }
     fn sync_on_close(&mut self, sync_on_close: SyncOnCloseType) -> io::Result<()> {
-        super::sync_on_close::sync_on_close(sync_on_close, self)
+        super::sync_on_close::sync_on_close(sync_on_close, self.as_mut())
     }
 }
 
@@ -152,7 +151,7 @@ impl Writeable {
 
     pub fn close(self) -> std::io::Result<()> {
         match self {
-            Self::Dyn(mut v) => v.close(),
+            Self::Dyn(v) => v.close(),
             Self::Local(v) => ClosableFile::from(v).close(),
             #[cfg(feature = "cloud")]
             Self::Cloud(mut v) => v.close(),
@@ -275,8 +274,8 @@ mod async_writeable {
         pub async fn close(self) -> PolarsResult<()> {
             match self {
                 Self::Dyn(mut v) => {
-                    task::block_in_place(|| v.0.close())?;
-                    v.shutdown().await.map_err(PolarsError::from)
+                    v.shutdown().await.map_err(PolarsError::from)?;
+                    Ok(task::block_in_place(|| v.0.close())?)
                 },
                 Self::Local(v) => async {
                     let f = v.into_std().await;

@@ -33,10 +33,6 @@ impl ClosableFile {
     pub fn close(self) -> std::io::Result<()> {
         Ok(())
     }
-
-    pub fn into_inner(self) -> File {
-        self.inner
-    }
 }
 
 impl AsMut<File> for ClosableFile {

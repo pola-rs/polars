@@ -31,10 +31,9 @@ pub(crate) struct PyFileLikeObject {
 
 impl WriteClose for PyFileLikeObject {}
 impl DynWriteable for PyFileLikeObject {
-    fn close(&mut self) -> io::Result<()> {
+    fn close(self: Box<Self>) -> io::Result<()> {
         Ok(())
     }
-
     fn sync_on_close(&mut self, _sync_on_close: SyncOnCloseType) -> io::Result<()> {
         Ok(())
     }
@@ -229,7 +228,7 @@ impl EitherRustPythonFile {
     pub(crate) fn into_writeable(self) -> Box<dyn DynWriteable> {
         match self {
             Self::Py(f) => Box::new(f),
-            Self::Rust(f) => Box::new(f.into_inner()),
+            Self::Rust(f) => Box::new(f),
         }
     }
 
