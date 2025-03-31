@@ -1,6 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::PlHashMap;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::Bitmap;
@@ -24,7 +25,7 @@ pub(super) struct RowGroupData {
 }
 
 pub(super) struct RowGroupDataFetcher {
-    pub(super) projection: Option<Arc<[PlSmallStr]>>,
+    pub(super) projection: Option<ArrowSchemaRef>,
     #[allow(unused)] // TODO: Fix!
     pub(super) predicate: Option<ScanIOPredicate>,
     pub(super) slice_range: Option<Range<usize>>,
@@ -94,7 +95,7 @@ impl RowGroupDataFetcher {
                             if let Some(columns) = projection.as_ref() {
                                 for range in get_row_group_byte_ranges_for_projection(
                                     row_group_metadata,
-                                    columns.as_ref(),
+                                    &mut columns.iter_names(),
                                 ) {
                                     memory_prefetch_func(unsafe { slice.get_unchecked(range) })
                                 }
@@ -117,7 +118,7 @@ impl RowGroupDataFetcher {
                     } else if let Some(columns) = projection.as_ref() {
                         let mut ranges = get_row_group_byte_ranges_for_projection(
                             row_group_metadata,
-                            columns.as_ref(),
+                            &mut columns.iter_names(),
                         )
                         .collect::<Vec<_>>();
 
@@ -190,9 +191,9 @@ impl FetchedBytes {
 
 fn get_row_group_byte_ranges_for_projection<'a>(
     row_group_metadata: &'a RowGroupMetadata,
-    columns: &'a [PlSmallStr],
+    columns: &'a mut dyn Iterator<Item = &PlSmallStr>,
 ) -> impl Iterator<Item = std::ops::Range<usize>> + 'a {
-    columns.iter().flat_map(|col_name| {
+    columns.flat_map(|col_name| {
         row_group_metadata
             .columns_under_root_iter(col_name)
             // `Option::into_iter` so that we return an empty iterator for the
