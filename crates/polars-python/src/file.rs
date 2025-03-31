@@ -217,12 +217,6 @@ impl EitherRustPythonFile {
             EitherRustPythonFile::Rust(f) => PythonScanSourceInput::File(f),
         }
     }
-    pub(crate) fn into_dyn_writeable(self) -> Box<dyn WriteClose + Send> {
-        match self {
-            EitherRustPythonFile::Py(f) => Box::new(f),
-            EitherRustPythonFile::Rust(f) => Box::new(f),
-        }
-    }
 
     pub(crate) fn into_writeable(self) -> Writeable {
         match self {
@@ -451,9 +445,7 @@ pub(crate) fn try_get_writeable(
                 .map_err(PyPolarsErr::from)
                 .map_err(|e| e.into())
         } else {
-            Ok(Writeable::DynClosable(
-                try_get_pyfile(py, py_f, true)?.0.into_dyn_writeable(),
-            ))
+            Ok(try_get_pyfile(py, py_f, true)?.0.into_writeable())
         }
     })
 }
