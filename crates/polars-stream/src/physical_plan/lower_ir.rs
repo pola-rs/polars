@@ -490,6 +490,20 @@ pub fn lower_ir(
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
                 }
             } else if let Some((file_reader_builder, cloud_options)) = match &*scan_type {
+                #[cfg(feature = "parquet")]
+                FileScan::Parquet {
+                    options,
+                    cloud_options,
+                    metadata: first_metadata,
+                } => Some((
+                    Arc::new(
+                        crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
+                            options: Arc::new(options.clone()),
+                            first_metadata: first_metadata.clone(),
+                        },
+                    ) as Arc<dyn FileReaderBuilder>,
+                    cloud_options,
+                )),
                 #[cfg(feature = "json")]
                 FileScan::NDJson {
                     options,
