@@ -327,7 +327,6 @@ type AsyncTaskData = (
     task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
 );
 
-#[expect(clippy::type_complexity)]
 struct ParquetReadImpl {
     predicate: Option<ScanIOPredicate>,
     options: ParquetOptions,
