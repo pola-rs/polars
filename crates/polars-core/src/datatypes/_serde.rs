@@ -144,7 +144,7 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-array")]
             Array(dt, width) => Self::Array(Box::new(dt.as_ref().into()), *width),
             Null => Self::Null,
-            Unknown(kind) => Self::Unknown(*kind),
+            Unknown(kind) => Self::Unknown(kind.clone()),
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]

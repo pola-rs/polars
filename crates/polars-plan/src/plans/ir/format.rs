@@ -1,5 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 
+use polars_core::prelude::{AnyValue, DataType};
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_utils::format_list_truncated;
@@ -783,9 +784,61 @@ impl fmt::Debug for DynLiteralValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Int(v) => write!(f, "dyn int: {v}"),
-            Self::Float(v) => write!(f, "dyn float: {}", v),
+            Self::Float(v) => write!(f, "dyn float: {v}"),
             Self::Str(v) => write!(f, "dyn str: {v}"),
-            Self::List(_) => todo!(),
+            Self::List(v) => {
+                let mut list_depth = 1;
+                let mut dtype = v.dtype();
+                while let Some(inner) = dtype.inner_dtype() {
+                    dtype = inner;
+                    list_depth += 1;
+                }
+                f.write_str("dyn ")?;
+                for _ in 0..list_depth {
+                    f.write_str("list[")?;
+                }
+                f.write_str(match dtype {
+                    DataType::Null => "null",
+                    DataType::String => "str",
+                    DataType::Float64 => "float",
+                    DataType::Int128 => "int",
+                    _ => unreachable!(),
+                })?;
+                for _ in 0..list_depth {
+                    f.write_str("]")?;
+                }
+                f.write_str(": ")?;
+
+                fn format_list_values(
+                    s: &polars_core::series::Series,
+                    f: &mut fmt::Formatter<'_>,
+                ) -> fmt::Result {
+                    f.write_str("[")?;
+                    let mut is_first = true;
+                    for v in s.iter() {
+                        if !is_first {
+                            f.write_str(", ")?;
+                        }
+
+                        match v {
+                            AnyValue::Null
+                            | AnyValue::String(_)
+                            | AnyValue::Float64(_)
+                            | AnyValue::Int128(_) => std::fmt::Display::fmt(&v, f)?,
+                            AnyValue::List(s) => {
+                                format_list_values(&s, f)?;
+                            },
+                            _ => unreachable!(),
+                        }
+
+                        is_first = false;
+                    }
+                    f.write_str("]")?;
+                    Ok(())
+                }
+
+                format_list_values(v, f)
+            },
         }
     }
 }

@@ -649,11 +649,11 @@ pub(crate) fn args_to_supertype<D: AsRef<DataType>>(dtypes: &[D]) -> PolarsResul
         #[cfg(feature = "dtype-categorical")]
         (DataType::Categorical(_, ord), DataType::String) => st = DataType::Categorical(None, *ord),
         _ => {
-            if let DataType::Unknown(kind) = st {
+            if let DataType::Unknown(kind) = &st {
                 match kind {
                     UnknownKind::Float => st = DataType::Float64,
                     UnknownKind::Int(v) => {
-                        st = materialize_dyn_int(v).dtype();
+                        st = materialize_dyn_int(*v).dtype();
                     },
                     UnknownKind::Str => st = DataType::String,
                     _ => {},

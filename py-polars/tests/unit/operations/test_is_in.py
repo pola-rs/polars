@@ -300,7 +300,7 @@ def test_is_in_boolean_list(dtype: PolarsDataType) -> None:
 
 @pytest.mark.may_fail_auto_streaming
 def test_is_in_invalid_shape() -> None:
-    with pytest.raises(ComputeError):
+    with pytest.raises(InvalidOperationError):
         pl.Series("a", [1, 2, 3]).is_in([[]])
 
 

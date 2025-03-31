@@ -463,6 +463,7 @@ impl ChunkCast for BooleanChunked {
 impl ChunkCast for ListChunked {
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         use DataType::*;
+        dbg!(self.dtype(), dtype);
         match dtype {
             List(child_type) => {
                 match (self.inner_dtype(), &**child_type) {

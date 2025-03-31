@@ -157,7 +157,7 @@ def lit(
     elif isinstance(value, (list, tuple)):
         return wrap_expr(
             plr.lit(
-                pl.Series("literal", [value], dtype=dtype)._s,
+                value,
                 allow_object,
                 is_scalar=True,
             )

@@ -4,7 +4,7 @@ use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::UnionArgs;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
+use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyIterator, PyList, PyString, PyTuple};
 
 use crate::conversion::any_value::py_object_to_any_value;
 use crate::conversion::{Wrap, get_lf};
@@ -445,6 +445,98 @@ pub fn nth(n: i64) -> PyExpr {
     dsl::nth(n).into()
 }
 
+// - Ok -> Non Dynamic
+// - Err -> Dynamic
+fn find_pyiterable_dtype(
+    value: Bound<'_, PyIterator>,
+    allow_object: bool,
+    max_depth: &mut usize,
+) -> PyResult<Result<DataType, DataType>> {
+    let mut pyiterable_stack = Vec::new();
+    pyiterable_stack.push(value);
+    while let Some(mut iterable) = pyiterable_stack.pop() {
+        for v in iterable.by_ref() {
+            let v = v?;
+            if v.is_instance_of::<PyBool>() {
+                return Ok(Ok(DataType::Boolean));
+            } else if v.is_instance_of::<PyInt>() {
+                return Ok(Err(DataType::Int128));
+            } else if v.is_instance_of::<PyFloat>() {
+                return Ok(Err(DataType::Float64));
+            } else if v.is_instance_of::<PyString>() {
+                return Ok(Err(DataType::String));
+            } else if v.is_instance_of::<PyList>() {
+                pyiterable_stack.push(iterable);
+                *max_depth = pyiterable_stack.len().max(*max_depth);
+                pyiterable_stack.push(v.downcast::<PyList>()?.try_iter()?);
+                break;
+            } else if v.is_instance_of::<PyTuple>() {
+                pyiterable_stack.push(iterable);
+                *max_depth = pyiterable_stack.len().max(*max_depth);
+                pyiterable_stack.push(v.downcast::<PyTuple>()?.try_iter()?);
+                break;
+            } else if v.is_instance_of::<PySeries>() {
+                // If we see a series, we assume that its type is the final type. If the series
+                // contains further nested that is fine.
+                let series = v.extract::<PySeries>()?;
+                *max_depth = pyiterable_stack.len(); // The series is seen as another list.
+                return Ok(Ok(series.series.dtype().clone()));
+            } else if v.is_none() {
+                continue;
+            } else if v.is_instance_of::<PyBytes>() {
+                return Ok(Err(DataType::Binary));
+            } else {
+                let av = py_object_to_any_value(&v, true, allow_object).map_err(|_| {
+                    PyTypeError::new_err(
+                        format!(
+                            "cannot create expression literal for value of type {}.\
+                            \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
+                            v.get_type().qualname().map(|s|s.to_string()).unwrap_or("unknown".to_owned()),
+                        )
+                    )
+                })?;
+                return Ok(Ok(av.dtype()));
+            }
+        }
+    }
+
+    Ok(Ok(DataType::Null))
+}
+
+fn pyiterable_to_literal(
+    value: &Bound<'_, PyAny>,
+    iterable: Bound<'_, PyIterator>,
+    allow_object: bool,
+) -> PyResult<LiteralValue> {
+    // 1. Find the type
+    // 2. Parse the value as a anyvalue of that type
+
+    let mut max_depth = 0;
+    let pyiterable_dtype = find_pyiterable_dtype(iterable, allow_object, &mut max_depth)?;
+    let is_dyn = pyiterable_dtype.is_err();
+    let mut dtype = match pyiterable_dtype {
+        Ok(dtype) => dtype,
+        Err(dtype) => dtype,
+    };
+    for _ in 0..max_depth {
+        dtype = DataType::List(Box::new(dtype));
+    }
+
+    let pl = value.py().import("polars")?;
+    let series = pl.getattr("Series")?;
+    let series = series.call1(("literal", value, &Wrap(dtype.clone())))?;
+    let series = series.getattr("_s")?.extract::<PySeries>()?;
+
+    Ok(if is_dyn {
+        LiteralValue::Dyn(DynLiteralValue::List(SpecialEq::new(series.series)))
+    } else {
+        LiteralValue::Scalar(Scalar::new(
+            DataType::List(Box::new(dtype)),
+            AnyValue::List(series.series),
+        ))
+    })
+}
+
 #[pyfunction]
 pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyResult<PyExpr> {
     let py = value.py();
@@ -462,6 +554,14 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
         Ok(Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(val))).into())
     } else if let Ok(pystr) = value.downcast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
+    } else if let Ok(pylist) = value.downcast::<PyList>() {
+        let iterable = pylist.try_iter()?;
+        let literal = pyiterable_to_literal(value, iterable, allow_object)?;
+        Ok(Expr::Literal(literal).into())
+    } else if let Ok(pytuple) = value.downcast::<PyTuple>() {
+        let iterable = pytuple.try_iter()?;
+        let literal = pyiterable_to_literal(value, iterable, allow_object)?;
+        Ok(Expr::Literal(literal).into())
     } else if let Ok(series) = value.extract::<PySeries>() {
         let s = series.series;
         if is_scalar {
