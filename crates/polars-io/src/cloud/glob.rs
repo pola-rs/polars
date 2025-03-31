@@ -273,7 +273,7 @@ mod test {
                 scheme: "s3".into(),
                 bucket: "a".into(),
                 prefix: "b/".into(),
-                expansion: Some("^([^/]*)\\.c$".into()),
+                expansion: Some("^[^/]*\\.c$".into()),
             }
         );
         assert_eq!(
