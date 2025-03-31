@@ -304,15 +304,15 @@ mod test {
         );
         assert_eq!(
             extract_prefix_expansion("a/**/*b").unwrap(),
-            ("a/".into(), Some("^(.*/)?([^/]*)b$".into()))
+            ("a/".into(), Some("^(.*/)?[^/]*b$".into()))
         );
         assert_eq!(
             extract_prefix_expansion("a/**/data/*b").unwrap(),
-            ("a/".into(), Some("^(.*/)?data/([^/]*)b$".into()))
+            ("a/".into(), Some("^(.*/)?data/[^/]*b$".into()))
         );
         assert_eq!(
             extract_prefix_expansion("a/*b").unwrap(),
-            ("a/".into(), Some("^([^/]*)b$".into()))
+            ("a/".into(), Some("^[^/]*b$".into()))
         );
     }
 
