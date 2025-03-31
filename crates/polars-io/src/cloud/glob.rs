@@ -51,12 +51,14 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Opt
             // - `**/`
             // - `**` only if it is the end of the url
             v if v.starts_with("**") && (v.len() == 2 || v.as_bytes()[2] == b'/') => {
+                // Wrapping in a capture group ensures we also match non-nested paths.
                 (3, b"(.*/)?" as _)
             },
             v if v.starts_with("**") => {
                 polars_bail!(ComputeError: "invalid ** glob pattern")
             },
-            v if v.starts_with('*') => (1, b"([^/]*)" as _),
+            v if v.starts_with('*') => (1, b"[^/]*" as _),
+            // Dots need to be escaped in regex.
             v if v.starts_with('.') => (1, b"\\." as _),
             _ => {
                 pos += 1;
