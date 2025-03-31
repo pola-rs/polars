@@ -37,12 +37,13 @@ impl ExtraOperations {
 
 /// TODO: Eventually move this enum to polars-plan
 #[derive(Clone)]
+#[expect(unused)]
 pub enum SchemaNamesMatchPolicy {
     /// * If the schema lengths match, ensure that all columns match in the same order
     /// * Otherwise, ensure that there are no extra columns in the incoming schema that
     ///   cannot be found in the target schema.
     ///   * Ignores if the incoming schema is missing columns, this is handled by a separate module.
-    RequireOrderedExact,
+    OrderedExact,
 }
 
 impl SchemaNamesMatchPolicy {
@@ -53,7 +54,7 @@ impl SchemaNamesMatchPolicy {
     ) -> PolarsResult<()> {
         use SchemaNamesMatchPolicy::*;
         match self {
-            RequireOrderedExact => {
+            OrderedExact => {
                 if incoming_schema.len() == target_schema.len() {
                     if incoming_schema
                         .iter_names()
