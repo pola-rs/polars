@@ -1,7 +1,8 @@
+use std::borrow::Cow;
+
 use futures::TryStreamExt;
 use object_store::path::Path;
 use polars_core::error::to_compute_err;
-use polars_core::prelude::polars_ensure;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -12,64 +13,75 @@ use super::{CloudOptions, parse_url};
 
 const DELIMITER: char = '/';
 
-/// Split the url in
+/// Converts a glob to regex form.
+///
+/// # Returns
 /// 1. the prefix part (all path components until the first one with '*')
 /// 2. a regular expression representation of the rest.
-pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(String, Option<String>)> {
-    let splits = url.split(DELIMITER);
-    let mut prefix = String::new();
-    let mut expansion = String::new();
-    let mut last_split_was_wildcard = false;
-    for split in splits {
-        if expansion.is_empty() && memchr::memchr2(b'*', b'[', split.as_bytes()).is_none() {
-            // We are still gathering splits in the prefix.
-            if !prefix.is_empty() {
-                prefix.push(DELIMITER);
-            }
-            prefix.push_str(split);
-            continue;
+pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Option<String>)> {
+    let url = url.strip_prefix('/').unwrap_or(url);
+    let mut replacements: Vec<(usize, usize, &[u8])> = vec![];
+
+    // after_last_slash
+    // `a/b/c*/`
+    //      ^
+    let mut pos: usize = if let Some(after_last_slash) = memchr::memchr2(b'*', b'.', url.as_bytes())
+        .map(|i| {
+            url[..i]
+                .as_bytes()
+                .iter()
+                .rposition(|x| *x == b'/')
+                .map_or(0, |x| 1 + x)
+        }) {
+        replacements.push((after_last_slash, 0, &[]));
+        after_last_slash
+    } else {
+        usize::MAX
+    };
+
+    while pos < url.as_bytes().len() {
+        match memchr::memchr(b'*', url[pos..].as_bytes()) {
+            None => break,
+            Some(i) => pos += i,
         }
-        // We are gathering splits for the expansion.
-        //
-        // Handle '**', we expect them to be by themselves in a split.
-        if split == "**" {
-            last_split_was_wildcard = true;
-            expansion.push_str(".*");
-            continue;
-        }
-        polars_ensure!(
-            !split.contains("**"),
-            ComputeError: "expected '**' by itself in path component, got {}", url
-        );
-        if !last_split_was_wildcard && !expansion.is_empty() {
-            expansion.push(DELIMITER);
-        }
-        // Handle '.' inside a split.
-        if memchr::memchr2(b'.', b'*', split.as_bytes()).is_some() {
-            let processed = split.replace('.', "\\.");
-            expansion.push_str(&processed.replace('*', "([^/]*)"));
-            continue;
-        }
-        last_split_was_wildcard = false;
-        expansion.push_str(split);
+
+        let (len, replace): (usize, &[u8]) = match &url[pos..] {
+            // v if v.starts_with("**/*") => (4, b".*" as _),
+            // v if v.starts_with("**/") => (3, b".*/" as _),
+            v if v.starts_with("**/") => (3, b"(.*/)?" as _),
+            v if v.starts_with("**") => polars_bail!(ComputeError: "invalid ** glob pattern"),
+            v if v.starts_with('*') => (1, b"([^/]*)" as _),
+            v if v.starts_with('.') => (1, b"\\." as _),
+            _ => {
+                pos += 1;
+                continue;
+            },
+        };
+
+        replacements.push((pos, len, replace));
+        pos += len;
     }
-    // Prefix post-processing: when present, prefix should end with '/' in order to simplify matching.
-    if !prefix.is_empty() && !expansion.is_empty() {
-        prefix.push(DELIMITER);
+
+    if replacements.is_empty() {
+        return Ok((Cow::Borrowed(url), None));
     }
-    // Expansion post-processing: when present, expansion should cover the whole input.
-    if !expansion.is_empty() {
-        expansion.insert(0, '^');
-        expansion.push('$');
+
+    let prefix = Cow::Borrowed(&url[..replacements[0].0]);
+
+    let mut pos = replacements[0].0;
+    let mut expansion = Vec::with_capacity(url.as_bytes().len() - pos);
+    expansion.push(b'^');
+
+    for (offset, len, replace) in replacements {
+        expansion.extend_from_slice(&url.as_bytes()[pos..offset]);
+        expansion.extend_from_slice(replace);
+        pos = offset + len;
     }
-    Ok((
-        prefix,
-        if !expansion.is_empty() {
-            Some(expansion)
-        } else {
-            None
-        },
-    ))
+
+    expansion.extend_from_slice(&url.as_bytes()[pos..]);
+    expansion.push(b'$');
+
+    Ok((prefix, Some(String::from_utf8(expansion).unwrap())))
 }
 
 /// A location on cloud storage, may have wildcards.
@@ -116,8 +128,9 @@ impl CloudLocation {
             .decode_utf8()
             .map_err(to_compute_err)?;
         let (prefix, expansion) = if glob {
-            let (mut prefix, expansion) = extract_prefix_expansion(&key)?;
-            if is_local && key.starts_with(DELIMITER) {
+            let (prefix, expansion) = extract_prefix_expansion(&key)?;
+            let mut prefix = prefix.into_owned();
+            if is_local && key.starts_with(DELIMITER) && !prefix.starts_with(DELIMITER) {
                 prefix.insert(0, DELIMITER);
             }
             (prefix, expansion.map(|x| x.into()))
@@ -307,14 +320,17 @@ mod test {
     #[test]
     fn test_matcher_folders() {
         let cloud_location = CloudLocation::new("s3://bucket/folder/**/*.parquet", true).unwrap();
+
         let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
         // Intermediary folders are optional.
         assert!(a.is_matching(Path::from("folder/1.parquet").as_ref()));
         // Intermediary folders are allowed.
         assert!(a.is_matching(Path::from("folder/other/1.parquet").as_ref()));
+
         let cloud_location =
             CloudLocation::new("s3://bucket/folder/**/data/*.parquet", true).unwrap();
         let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
+
         // Required folder `data` is missing.
         assert!(!a.is_matching(Path::from("folder/1.parquet").as_ref()));
         // Required folder is present.
@@ -366,5 +382,22 @@ mod test {
                 expansion: None,
             }
         );
+    }
+
+    #[test]
+    fn test_glob_wildcard_21736() {
+        let url = "s3://bucket/folder/**/data.parquet";
+        let cloud_location = CloudLocation::new(url, true).unwrap();
+
+        dbg!(&cloud_location.prefix);
+        dbg!(&cloud_location.expansion);
+
+        let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
+
+        assert!(!a.is_matching("folder/_data.parquet"));
+
+        assert!(a.is_matching("folder/data.parquet"));
+        assert!(a.is_matching("folder/abc/data.parquet"));
+        assert!(a.is_matching("folder/abc/def/data.parquet"));
     }
 }
