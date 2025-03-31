@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use polars::prelude::file::DynWriteable;
 use polars::prelude::sync_on_close::SyncOnCloseType;
 use polars::prelude::{InMemoryPartition, PartitionBase, PartitionVariant, SinkOptions, SpecialEq};
-use polars_error::{PolarsResult, polars_bail, to_compute_err};
+use polars_error::{PolarsResult, to_compute_err};
 use polars_utils::IdxSize;
 use polars_utils::python_function::{PythonFunction, PythonObject};
 use pyo3::exceptions::PyValueError;
@@ -138,10 +138,7 @@ impl InMemoryPartition for PyDictInMemoryPartition {
 
             let py_f = crate::file::try_get_pyfile(py, bytes_io, true)
                 .map_err(to_compute_err)?
-                .0
-            else {
-                polars_bail!(ComputeError: "expected python bytes io object");
-            };
+                .0;
 
             let py_f = py_f.into_writeable();
             PolarsResult::Ok(py_f)

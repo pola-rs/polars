@@ -9,7 +9,6 @@ use polars_io::cloud::CloudOptions;
 use polars_io::parquet::write::BatchedWriter;
 use polars_io::prelude::{ParquetWriteOptions, get_encodings};
 use polars_io::schema_to_arrow_checked;
-use polars_io::utils::file::Writeable;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
