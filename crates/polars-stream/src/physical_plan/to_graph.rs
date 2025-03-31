@@ -666,20 +666,7 @@ fn to_graph_rec<'a>(
                         options,
                         cloud_options,
                         metadata: first_metadata,
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::SourceComputeNode::new(
-                            nodes::io_sources::parquet::ParquetSourceNode::new(
-                                scan_source.into_sources(),
-                                file_info,
-                                predicate,
-                                options,
-                                cloud_options,
-                                file_options,
-                                first_metadata.unwrap(),
-                            ),
-                        ),
-                        [],
-                    ),
+                    } => unreachable!(),
                     #[cfg(feature = "ipc")]
                     FileScan::Ipc {
                         options,
