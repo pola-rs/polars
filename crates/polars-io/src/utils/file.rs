@@ -23,8 +23,6 @@ pub enum Writeable {
     Local(std::fs::File),
     /// Dynamic dispatch, without `close()`
     Dyn(Box<dyn Write + Send>),
-    // TODO?
-    // DynClosable(Box<dyn WriteClose + Send>),
     #[cfg(feature = "cloud")]
     Cloud(crate::cloud::BlockingCloudWriter),
 }
