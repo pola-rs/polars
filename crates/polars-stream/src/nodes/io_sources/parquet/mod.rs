@@ -260,10 +260,13 @@ impl FileReader for ParquetFileReader {
                 unimplemented!("column casting w/ predicate in parquet")
             }
 
-            CastColumns::try_init_from_policy(
+            CastColumns::try_init_from_policy_from_iter(
                 cast_columns_policy,
                 &projected_schema,
-                &file_schema_pl,
+                &mut file_schema_pl
+                    .iter()
+                    .filter(|(name, _)| predicate.live_columns.contains(*name))
+                    .map(|(name, dtype)| (name.as_ref(), dtype)),
             )?;
         }
 
