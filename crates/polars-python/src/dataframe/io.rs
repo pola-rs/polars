@@ -375,7 +375,7 @@ impl PyDataFrame {
         let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
         py.enter_polars(|| {
-            CsvWriter::new(&mut f)
+            CsvWriter::new(&mut *f)
                 .include_bom(include_bom)
                 .include_header(include_header)
                 .with_separator(separator)
@@ -391,7 +391,7 @@ impl PyDataFrame {
                 .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
                 .finish(&mut self.df)?;
 
-            crate::file::close_file(f)
+            f.close().map_err(PyPolarsErr::from)
         })
     }
 
@@ -460,14 +460,14 @@ impl PyDataFrame {
         let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
         py.enter_polars(|| {
-            ParquetWriter::new(BufWriter::new(&mut f))
+            ParquetWriter::new(BufWriter::new(&mut *f))
                 .with_compression(compression)
                 .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)
                 .with_data_page_size(data_page_size)
                 .finish(&mut self.df)?;
 
-            crate::file::close_file(f)
+            f.close().map_err(PyPolarsErr::from)
         })
     }
 
@@ -533,12 +533,12 @@ impl PyDataFrame {
         let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
         py.enter_polars(|| {
-            IpcWriter::new(&mut f)
+            IpcWriter::new(&mut *f)
                 .with_compression(compression.0)
                 .with_compat_level(compat_level.0)
                 .finish(&mut self.df)?;
 
-            crate::file::close_file(f)
+            f.close().map_err(PyPolarsErr::from)
         })
     }
 

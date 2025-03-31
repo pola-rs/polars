@@ -10,7 +10,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
-use polars_error::{PolarsResult, polars_err};
+use polars::prelude::file::Writeable;
+use polars_error::polars_err;
 use polars_io::cloud::CloudOptions;
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
@@ -429,26 +430,26 @@ pub(crate) fn get_mmap_bytes_reader_and_path(
     }
 }
 
+/// Construct a [`Writeable`] from a Python object.
+///
+/// If the Python object is a writeable Python object (e.g. opened file / BytesIO),
+/// the returned Writeable will have a no-op `close()`.
 pub(crate) fn try_get_writeable(
     py_f: PyObject,
     cloud_options: Option<&CloudOptions>,
-) -> PyResult<Box<dyn WriteClose + Send>> {
+) -> PyResult<Writeable> {
     Python::with_gil(|py| {
         let py_f = py_f.into_bound(py);
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {
             polars::prelude::file::try_get_writeable(&s, cloud_options)
+                .map(Writeable::DynClosable)
                 .map_err(PyPolarsErr::from)
                 .map_err(|e| e.into())
         } else {
-            Ok(try_get_pyfile(py, py_f, true)?.0.into_dyn_writeable())
+            Ok(Writeable::Dyn(
+                try_get_pyfile(py, py_f, true)?.0.into_dyn_writeable(),
+            ))
         }
-    })
-}
-
-pub(crate) fn close_file(f: Box<dyn WriteClose>) -> PolarsResult<()> {
-    f.close().map_err(|e| {
-        let err: polars_error::PolarsError = e.into();
-        err
     })
 }
