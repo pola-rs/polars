@@ -389,9 +389,6 @@ mod test {
         let url = "s3://bucket/folder/**/data.parquet";
         let cloud_location = CloudLocation::new(url, true).unwrap();
 
-        dbg!(&cloud_location.prefix);
-        dbg!(&cloud_location.expansion);
-
         let a = Matcher::new(cloud_location.prefix, cloud_location.expansion.as_deref()).unwrap();
 
         assert!(!a.is_matching("folder/_data.parquet"));
