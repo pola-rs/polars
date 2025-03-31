@@ -23,7 +23,8 @@ pub enum Writeable {
     Local(std::fs::File),
     /// Dynamic dispatch, without `close()`
     Dyn(Box<dyn Write + Send>),
-    DynClosable(Box<dyn WriteClose + Send>),
+    // TODO?
+    // DynClosable(Box<dyn WriteClose + Send>),
     #[cfg(feature = "cloud")]
     Cloud(crate::cloud::BlockingCloudWriter),
 }
@@ -112,7 +113,6 @@ impl Writeable {
         match self {
             Self::Local(v) => Ok(AsyncWriteable::Local(tokio::fs::File::from_std(v))),
             Self::Dyn(_) => todo!(),
-            Self::DynClosable(_) => todo!(),
             // Moves the `BufWriter` out of the `BlockingCloudWriter` wrapper, as
             // `BlockingCloudWriter` has a `Drop` impl that we don't want.
             Self::Cloud(v) => v
@@ -126,7 +126,6 @@ impl Writeable {
         match self {
             Self::Local(v) => ClosableFile::from(v).close(),
             Self::Dyn(_) => todo!(),
-            Self::DynClosable(_) => todo!(),
             #[cfg(feature = "cloud")]
             Self::Cloud(mut v) => v.close(),
         }
@@ -140,7 +139,6 @@ impl Deref for Writeable {
         match self {
             Self::Local(v) => v,
             Self::Dyn(v) => &**v,
-            Self::DynClosable(v) => &**v,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v,
         }
@@ -152,7 +150,6 @@ impl DerefMut for Writeable {
         match self {
             Self::Local(v) => v,
             Self::Dyn(v) => &mut **v,
-            Self::DynClosable(v) => &mut **v,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v,
         }
@@ -169,7 +166,6 @@ pub fn try_get_writeable(
     Writeable::try_new(path, cloud_options).map(|x| match x {
         Writeable::Local(v) => Box::new(ClosableFile::from(v)) as Box<dyn WriteClose + Send>,
         Writeable::Dyn(_) => unreachable!(),
-        Writeable::DynClosable(_) => unreachable!(),
         #[cfg(feature = "cloud")]
         Writeable::Cloud(v) => Box::new(v) as Box<dyn WriteClose + Send>,
     })

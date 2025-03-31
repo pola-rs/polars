@@ -442,8 +442,7 @@ pub(crate) fn try_get_writeable(
         let py_f = py_f.into_bound(py);
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {
-            polars::prelude::file::try_get_writeable(&s, cloud_options)
-                .map(Writeable::DynClosable)
+            Writeable::try_new(&s, cloud_options)
                 .map_err(PyPolarsErr::from)
                 .map_err(|e| e.into())
         } else {
