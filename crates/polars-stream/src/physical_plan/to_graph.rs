@@ -526,30 +526,7 @@ fn to_graph_rec<'a>(
             } else {
                 match &**scan_type {
                     #[cfg(feature = "parquet")]
-                    polars_plan::dsl::FileScan::Parquet {
-                        options,
-                        cloud_options,
-                        ..
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::SourceComputeNode::new(
-                            nodes::io_sources::multi_scan::MultiScanNode::<
-                                nodes::io_sources::parquet::ParquetSourceNode,
-                            >::new(
-                                scan_sources.clone(),
-                                hive_parts.clone().map(Arc::new),
-                                *allow_missing_columns,
-                                include_file_paths.clone(),
-                                file_schema.clone(),
-                                projection.clone(),
-                                row_index.clone(),
-                                row_restriction.clone(),
-                                predicate,
-                                options.clone(),
-                                cloud_options.clone(),
-                            ),
-                        ),
-                        [],
-                    ),
+                    polars_plan::dsl::FileScan::Parquet { .. } => unreachable!(),
                     #[cfg(feature = "ipc")]
                     polars_plan::dsl::FileScan::Ipc {
                         options,
@@ -662,11 +639,7 @@ fn to_graph_rec<'a>(
 
                 match *scan_type {
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet {
-                        options,
-                        cloud_options,
-                        metadata: first_metadata,
-                    } => unreachable!(),
+                    FileScan::Parquet { .. } => unreachable!(),
                     #[cfg(feature = "ipc")]
                     FileScan::Ipc {
                         options,
