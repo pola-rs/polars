@@ -276,7 +276,7 @@ impl IR {
                     SinkTypeIR::Memory => SinkType::Memory,
                     SinkTypeIR::File(f) => SinkType::File(f),
                     SinkTypeIR::Partition(f) => SinkType::Partition(PartitionSinkType {
-                        base: f.base,
+                        base_path: f.base_path,
                         file_path_cb: f.file_path_cb,
                         file_type: f.file_type,
                         sink_options: f.sink_options,

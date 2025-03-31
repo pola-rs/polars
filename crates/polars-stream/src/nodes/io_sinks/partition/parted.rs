@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -8,7 +9,7 @@ use polars_core::prelude::row_encode::_get_rows_encoded_ca_unordered;
 use polars_core::prelude::{AnyValue, IntoColumn, PlHashSet};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_plan::dsl::{PartitionBase, PartitionTargetCallback, SinkOptions};
+use polars_plan::dsl::{PartitionTargetCallback, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::CreateNewSinkFn;
@@ -26,7 +27,7 @@ pub struct PartedPartitionSinkNode {
     sink_input_schema: SchemaRef,
 
     key_cols: Arc<[PlSmallStr]>,
-    base: PartitionBase,
+    base_path: Arc<PathBuf>,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -50,7 +51,7 @@ impl PartedPartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         key_cols: Arc<[PlSmallStr]>,
-        base: PartitionBase,
+        base_path: Arc<PathBuf>,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
@@ -84,7 +85,7 @@ impl PartedPartitionSinkNode {
         Self {
             sink_input_schema,
             key_cols,
-            base,
+            base_path,
             file_path_cb,
             create_new,
             ext,
@@ -125,7 +126,7 @@ impl SinkNode for PartedPartitionSinkNode {
         let state = state.clone();
         let sink_input_schema = self.sink_input_schema.clone();
         let key_cols = self.key_cols.clone();
-        let base = self.base.clone();
+        let base_path = self.base_path.clone();
         let file_path_cb = self.file_path_cb.clone();
         let create_new = self.create_new.clone();
         let ext = self.ext.clone();
@@ -191,7 +192,7 @@ impl SinkNode for PartedPartitionSinkNode {
                             Some(c) => c,
                             None => {
                                 let result = open_new_sink(
-                                    &base,
+                                    base_path.as_path(),
                                     file_path_cb.as_ref(),
                                     super::default_by_key_file_path_cb,
                                     file_idx,

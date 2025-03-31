@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -9,7 +10,7 @@ use polars_core::prelude::{Column, PlHashSet, PlIndexMap, row_encode};
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::buffer::Buffer;
 use polars_error::PolarsResult;
-use polars_plan::dsl::{PartitionBase, PartitionTargetCallback, SinkOptions};
+use polars_plan::dsl::{PartitionTargetCallback, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 
@@ -33,7 +34,7 @@ pub struct PartitionByKeySinkNode {
     max_open_partitions: usize,
     include_key: bool,
 
-    base: PartitionBase,
+    base_path: Arc<PathBuf>,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -46,7 +47,7 @@ impl PartitionByKeySinkNode {
     pub fn new(
         input_schema: SchemaRef,
         key_cols: Arc<[PlSmallStr]>,
-        base: PartitionBase,
+        base_path: Arc<PathBuf>,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
@@ -82,7 +83,7 @@ impl PartitionByKeySinkNode {
             key_cols,
             max_open_partitions,
             include_key,
-            base,
+            base_path,
             file_path_cb,
             create_new,
             ext,
@@ -181,7 +182,7 @@ impl SinkNode for PartitionByKeySinkNode {
         let state = state.clone();
         let sink_input_schema = self.sink_input_schema.clone();
         let max_open_partitions = self.max_open_partitions;
-        let base = self.base.clone();
+        let base_path = self.base_path.clone();
         let file_path_cb = self.file_path_cb.clone();
         let create_new_sink = self.create_new.clone();
         let ext = self.ext.clone();
@@ -224,7 +225,7 @@ impl SinkNode for PartitionByKeySinkNode {
                                 },
                                 None => {
                                     let result = open_new_sink(
-                                        &base,
+                                        base_path.as_path(),
                                         file_path_cb.as_ref(),
                                         super::default_by_key_file_path_cb,
                                         file_idx,
@@ -283,7 +284,7 @@ impl SinkNode for PartitionByKeySinkNode {
                     },
                     OpenPartition::Buffer(keys, buffered) => {
                         let result = open_new_sink(
-                            &base,
+                            base_path.as_path(),
                             file_path_cb.as_ref(),
                             super::default_by_key_file_path_cb,
                             file_idx,

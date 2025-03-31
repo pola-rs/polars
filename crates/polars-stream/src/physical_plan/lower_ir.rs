@@ -249,14 +249,14 @@ pub fn lower_ir(
                 }
             },
             SinkTypeIR::Partition(PartitionSinkTypeIR {
-                base,
+                base_path,
                 file_path_cb,
                 sink_options,
                 variant,
                 file_type,
                 cloud_options,
             }) => {
-                let base = base.clone();
+                let base_path = base_path.clone();
                 let file_path_cb = file_path_cb.clone();
                 let sink_options = sink_options.clone();
                 let variant = variant.clone();
@@ -303,7 +303,7 @@ pub fn lower_ir(
                 };
 
                 PhysNodeKind::PartitionSink {
-                    base,
+                    base_path,
                     file_path_cb,
                     sink_options,
                     variant,

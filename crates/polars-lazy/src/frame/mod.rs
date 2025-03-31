@@ -9,6 +9,7 @@ mod exitable;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
@@ -1068,7 +1069,7 @@ impl LazyFrame {
     #[cfg(feature = "parquet")]
     pub fn sink_parquet_partitioned(
         self,
-        base: PartitionBase,
+        base_path: Arc<PathBuf>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: ParquetWriteOptions,
@@ -1076,7 +1077,7 @@ impl LazyFrame {
         sink_options: SinkOptions,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
-            base,
+            base_path,
             file_path_cb,
             sink_options,
             variant,
@@ -1091,7 +1092,7 @@ impl LazyFrame {
     #[cfg(feature = "ipc")]
     pub fn sink_ipc_partitioned(
         self,
-        base: PartitionBase,
+        base_path: Arc<PathBuf>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: IpcWriterOptions,
@@ -1099,7 +1100,7 @@ impl LazyFrame {
         sink_options: SinkOptions,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
-            base,
+            base_path,
             file_path_cb,
             sink_options,
             variant,
@@ -1114,7 +1115,7 @@ impl LazyFrame {
     #[cfg(feature = "csv")]
     pub fn sink_csv_partitioned(
         self,
-        base: PartitionBase,
+        base_path: Arc<PathBuf>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: CsvWriterOptions,
@@ -1122,7 +1123,7 @@ impl LazyFrame {
         sink_options: SinkOptions,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
-            base,
+            base_path,
             file_path_cb,
             sink_options,
             variant,
@@ -1137,7 +1138,7 @@ impl LazyFrame {
     #[cfg(feature = "json")]
     pub fn sink_json_partitioned(
         self,
-        base: PartitionBase,
+        base_path: Arc<PathBuf>,
         file_path_cb: Option<PartitionTargetCallback>,
         variant: PartitionVariant,
         options: JsonWriterOptions,
@@ -1145,7 +1146,7 @@ impl LazyFrame {
         sink_options: SinkOptions,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
-            base,
+            base_path,
             file_path_cb,
             sink_options,
             variant,

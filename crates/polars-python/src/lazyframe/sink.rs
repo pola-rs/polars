@@ -1,18 +1,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use polars::prelude::file::DynWriteable;
 use polars::prelude::sync_on_close::SyncOnCloseType;
-use polars::prelude::{InMemoryPartition, PartitionBase, PartitionVariant, SinkOptions, SpecialEq};
-use polars_error::{PolarsResult, to_compute_err};
+use polars::prelude::{PartitionVariant, SinkOptions, SpecialEq};
 use polars_utils::IdxSize;
 use polars_utils::python_function::{PythonFunction, PythonObject};
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
-use pyo3::{
-    Bound, FromPyObject, IntoPyObjectExt, Py, PyAny, PyObject, PyResult, Python, pyclass, pymethods,
-};
+use pyo3::{Bound, FromPyObject, PyAny, PyObject, PyResult, Python, pyclass, pymethods};
 
 use crate::expr::PyExpr;
 use crate::prelude::Wrap;
@@ -26,7 +22,8 @@ pub enum SinkTarget {
 #[pyclass]
 #[derive(Clone)]
 pub struct PyPartitioning {
-    pub base: Wrap<PartitionBase>,
+    #[pyo3(get)]
+    pub base_path: PathBuf,
     pub file_path_cb: Option<PythonFunction>,
     pub variant: PartitionVariant,
 }
@@ -35,31 +32,31 @@ pub struct PyPartitioning {
 #[pymethods]
 impl PyPartitioning {
     #[staticmethod]
-    #[pyo3(signature = (base, file_path_cb, max_size))]
+    #[pyo3(signature = (base_path, file_path_cb, max_size))]
     pub fn new_max_size(
-        base: Wrap<PartitionBase>,
+        base_path: PathBuf,
         file_path_cb: Option<PyObject>,
         max_size: IdxSize,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
         PyPartitioning {
-            base,
+            base_path,
             file_path_cb,
             variant: PartitionVariant::MaxSize(max_size),
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (base, file_path_cb, by, include_key))]
+    #[pyo3(signature = (base_path, file_path_cb, by, include_key))]
     pub fn new_by_key(
-        base: Wrap<PartitionBase>,
+        base_path: PathBuf,
         file_path_cb: Option<PyObject>,
         by: Vec<PyExpr>,
         include_key: bool,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
         PyPartitioning {
-            base,
+            base_path,
             file_path_cb,
             variant: PartitionVariant::ByKey {
                 key_exprs: by.into_iter().map(|e| e.inner).collect(),
@@ -69,16 +66,16 @@ impl PyPartitioning {
     }
 
     #[staticmethod]
-    #[pyo3(signature = (base, file_path_cb, by, include_key))]
+    #[pyo3(signature = (base_path, file_path_cb, by, include_key))]
     pub fn new_parted(
-        base: Wrap<PartitionBase>,
+        base_path: PathBuf,
         file_path_cb: Option<PyObject>,
         by: Vec<PyExpr>,
         include_key: bool,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
         PyPartitioning {
-            base,
+            base_path,
             file_path_cb,
             variant: PartitionVariant::Parted {
                 key_exprs: by.into_iter().map(|e| e.inner).collect(),
@@ -86,22 +83,12 @@ impl PyPartitioning {
             },
         }
     }
-
-    #[getter]
-    pub fn base_path(&self) -> Option<&Path> {
-        match &self.base.0 {
-            PartitionBase::Path(p) => Some(p.as_path()),
-            PartitionBase::Memory(_) => None,
-        }
-    }
 }
 
-impl<'py> FromPyObject<'py> for SinkTarget {
+impl<'py> FromPyObject<'py> for Wrap<polars_plan::dsl::SinkTarget> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        if let Ok(v) = ob.extract::<PyPartitioning>() {
-            Ok(Self::Partition(v))
-        } else if let Ok(v) = ob.extract::<PathBuf>() {
-            Ok(Self::File(polars::prelude::SinkTarget::Path(Arc::new(v))))
+        if let Ok(v) = ob.extract::<PathBuf>() {
+            Ok(Wrap(polars::prelude::SinkTarget::Path(Arc::new(v))))
         } else {
             let writer = Python::with_gil(|py| {
                 let py_f = ob.clone();
@@ -112,50 +99,21 @@ impl<'py> FromPyObject<'py> for SinkTarget {
                 )
             })?;
 
-            Ok(Self::File(polars::prelude::SinkTarget::Dyn(
-                SpecialEq::new(Arc::new(Mutex::new(Some(writer)))),
-            )))
+            Ok(Wrap(polars_plan::prelude::SinkTarget::Dyn(SpecialEq::new(
+                Arc::new(Mutex::new(Some(writer))),
+            ))))
         }
     }
 }
 
-struct PyDictInMemoryPartition(Py<PyAny>);
-
-impl InMemoryPartition for PyDictInMemoryPartition {
-    fn open_partition(&mut self, path: PathBuf) -> PolarsResult<Box<dyn DynWriteable>> {
-        Python::with_gil(|py| {
-            let io = py.import("io").map_err(to_compute_err)?;
-            let bytes_io = io.getattr("BytesIO").map_err(to_compute_err)?;
-            let bytes_io = bytes_io.call0().map_err(to_compute_err)?;
-
-            let dict = self
-                .0
-                .extract::<pyo3::Bound<'_, PyDict>>(py)
-                .map_err(to_compute_err)?;
-
-            dict.set_item(path, bytes_io.clone())
-                .map_err(to_compute_err)?;
-
-            let py_f = crate::file::try_get_pyfile(py, bytes_io, true)
-                .map_err(to_compute_err)?
-                .0;
-
-            let py_f = py_f.into_writeable();
-            PolarsResult::Ok(py_f)
-        })
-    }
-}
-
-impl<'py> FromPyObject<'py> for Wrap<PartitionBase> {
+impl<'py> FromPyObject<'py> for SinkTarget {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        if let Ok(v) = ob.extract::<pyo3::Bound<'_, PyDict>>() {
-            let dict = Python::with_gil(|py| v.into_py_any(py))?;
-            Ok(Wrap(PartitionBase::Memory(SpecialEq::new(Arc::new(
-                Mutex::new(Box::new(PyDictInMemoryPartition(dict))),
-            )))))
+        if let Ok(v) = ob.extract::<PyPartitioning>() {
+            Ok(Self::Partition(v))
         } else {
-            let path = ob.extract::<PathBuf>()?;
-            Ok(Wrap(PartitionBase::Path(Arc::new(path))))
+            Ok(Self::File(
+                <Wrap<polars_plan::dsl::SinkTarget>>::extract_bound(ob)?.0,
+            ))
         }
     }
 }
@@ -167,10 +125,7 @@ impl SinkTarget {
                 polars::prelude::SinkTarget::Path(p) => Some(p.as_path()),
                 polars::prelude::SinkTarget::Dyn(_) => None,
             },
-            Self::Partition(p) => match &p.base.0 {
-                PartitionBase::Path(p) => Some(p.as_path()),
-                PartitionBase::Memory(_) => None,
-            },
+            Self::Partition(p) => Some(&p.base_path),
         }
     }
 }

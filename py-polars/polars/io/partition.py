@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from polars import col
+from polars._typing import PartitioningScheme
 from polars._utils.unstable import issue_unstable_warning
 from polars.expr import Expr
 
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars.polars import PyExpr
 
-    from typing import Any, Callable
+    from typing import IO, Any, Callable
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyPartitioning
@@ -122,8 +123,8 @@ class BasePartitionContext:
 
 
 def _cast_base_file_path_cb(
-    file_path_cb: Callable[[BasePartitionContext], Path | str] | None,
-) -> Callable[[BasePartitionContext], Path | str] | None:
+    file_path_cb: Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]] | None,
+) -> Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]] | None:
     if file_path_cb is None:
         return None
     return lambda ctx: file_path_cb(
@@ -136,8 +137,8 @@ def _cast_base_file_path_cb(
 
 
 def _cast_keyed_file_path_cb(
-    file_path_cb: Callable[[KeyedPartitionContext], Path | str] | None,
-) -> Callable[[KeyedPartitionContext], Path | str] | None:
+    file_path_cb: Callable[[KeyedPartitionContext], Path | str | IO[bytes] | IO[str]] | None,
+) -> Callable[[KeyedPartitionContext], Path | str | IO[bytes] | IO[str]] | None:
     if file_path_cb is None:
         return None
     return lambda ctx: file_path_cb(
@@ -157,7 +158,7 @@ def _cast_keyed_file_path_cb(
     )
 
 
-class PartitionMaxSize:
+class PartitionMaxSize(PartitioningScheme):
     """
     Partitioning scheme to write files with a maximum size.
 
@@ -197,25 +198,22 @@ class PartitionMaxSize:
     polars.io.partition.BasePartitionContext
     """
 
-    _p: PyPartitioning
-
     def __init__(
         self,
         base_path: str | Path,
         *,
-        file_path: Callable[[BasePartitionContext], Path | str] | None = None,
+        file_path: Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]]
+        | None = None,
         max_size: int,
     ) -> None:
         issue_unstable_warning("Partitioning strategies are considered unstable.")
-        self._p = PyPartitioning.new_max_size(
-            base=base_path,
-            file_path_cb=_cast_base_file_path_cb(file_path),
-            max_size=max_size,
+        super().__init__(
+            PyPartitioning.new_max_size(
+                base_path=base_path,
+                file_path_cb=_cast_base_file_path_cb(file_path),
+                max_size=max_size,
+            )
         )
-
-    @property
-    def _base_path(self) -> str | None:
-        return self._p.base_path
 
 
 def _lower_by(
@@ -243,7 +241,7 @@ def _lower_by(
     return lowered_by
 
 
-class PartitionByKey:
+class PartitionByKey(PartitioningScheme):
     """
     Partitioning scheme to write files split by the values of keys.
 
@@ -312,32 +310,29 @@ class PartitionByKey:
     polars.io.partition.KeyedPartitionContext
     """
 
-    _p: PyPartitioning
-
     def __init__(
         self,
         base_path: str | Path,
         *,
-        file_path: Callable[[KeyedPartitionContext], Path | str] | None = None,
+        file_path: Callable[[KeyedPartitionContext], Path | str | IO[bytes] | IO[str]]
+        | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
     ) -> None:
         issue_unstable_warning("Partitioning strategies are considered unstable.")
 
         lowered_by = _lower_by(by)
-        self._p = PyPartitioning.new_by_key(
-            base=base_path,
-            file_path_cb=_cast_keyed_file_path_cb(file_path),
-            by=lowered_by,
-            include_key=include_key,
+        super().__init__(
+            PyPartitioning.new_by_key(
+                base_path=base_path,
+                file_path_cb=_cast_keyed_file_path_cb(file_path),
+                by=lowered_by,
+                include_key=include_key,
+            )
         )
 
-    @property
-    def _base_path(self) -> str | None:
-        return self._p.base_path
 
-
-class PartitionParted:
+class PartitionParted(PartitioningScheme):
     """
     Partitioning scheme to split parted dataframes.
 
@@ -389,26 +384,23 @@ class PartitionParted:
     polars.io.partition.KeyedPartitionContext
     """
 
-    _p: PyPartitioning
-
     def __init__(
         self,
         base_path: str | Path,
         *,
-        file_path: Callable[[KeyedPartitionContext], Path | str] | None = None,
+        file_path: Callable[[KeyedPartitionContext], Path | str | IO[bytes] | IO[str]]
+        | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
     ) -> None:
         issue_unstable_warning("Partitioning strategies are considered unstable.")
 
         lowered_by = _lower_by(by)
-        self._p = PyPartitioning.new_by_key(
-            base=base_path,
-            file_path_cb=_cast_keyed_file_path_cb(file_path),
-            by=lowered_by,
-            include_key=include_key,
+        super().__init__(
+            PyPartitioning.new_by_key(
+                base_path=base_path,
+                file_path_cb=_cast_keyed_file_path_cb(file_path),
+                by=lowered_by,
+                include_key=include_key,
+            )
         )
-
-    @property
-    def _base_path(self) -> str | None:
-        return self._p.base_path

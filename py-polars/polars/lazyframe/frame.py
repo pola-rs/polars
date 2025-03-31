@@ -22,6 +22,9 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._typing import (
+    PartitioningScheme,
+)
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
@@ -94,7 +97,7 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame, PyPartitioning, get_engine_affinity
+    from polars.polars import PyLazyFrame, get_engine_affinity
 
 
 if TYPE_CHECKING:
@@ -102,6 +105,9 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Iterable, Sequence
     from io import IOBase
     from typing import IO, Literal
+
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        from polars.polars import PyPartitioning
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -153,14 +159,14 @@ def _select_engine(engine: EngineType) -> EngineType:
 
 
 def _to_sink_target(
-    path: str | Path | IO[bytes] | IO[str],
+    path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
 ) -> str | Path | IO[bytes] | IO[str] | PyPartitioning:
     if isinstance(path, (str, Path)):
         return normalize_filepath(path)
-    elif isinstance(path, (io.IOBase)):
+    elif isinstance(path, io.IOBase):
         return path
-    elif isinstance(path, PyPartitioning):
-        return path._p
+    elif isinstance(path, PartitioningScheme):
+        return path._py_partitioning
     else:
         msg = f"`path` argument has an invalid type '{type(path)}' and cannot be turned into a sink target"
         raise TypeError(msg)
@@ -2424,7 +2430,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | PartitioningScheme,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2453,7 +2459,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | PartitioningScheme,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2482,7 +2488,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def sink_parquet(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | PartitioningScheme,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2704,7 +2710,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ipc(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | PartitioningScheme,
         *,
         compression: IpcCompression | None = "zstd",
         compat_level: CompatLevel | None = None,
@@ -2730,7 +2736,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ipc(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | PartitioningScheme,
         *,
         compression: IpcCompression | None = "zstd",
         compat_level: CompatLevel | None = None,
@@ -2756,7 +2762,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def sink_ipc(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | PartitioningScheme,
         *,
         compression: IpcCompression | None = "zstd",
         compat_level: CompatLevel | None = None,
@@ -2932,7 +2938,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -2969,7 +2975,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3006,7 +3012,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def sink_csv(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
         *,
         include_bom: bool = False,
         include_header: bool = True,
@@ -3247,7 +3253,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
         *,
         maintain_order: bool = True,
         type_coercion: bool = True,
@@ -3271,7 +3277,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
         *,
         maintain_order: bool = True,
         type_coercion: bool = True,
@@ -3295,7 +3301,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def sink_ndjson(
         self,
-        path: str | Path,
+        path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
         *,
         maintain_order: bool = True,
         type_coercion: bool = True,

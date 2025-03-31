@@ -306,7 +306,7 @@ fn to_graph_rec<'a>(
         },
 
         PartitionSink {
-            base,
+            base_path,
             file_path_cb,
             sink_options,
             variant,
@@ -317,7 +317,7 @@ fn to_graph_rec<'a>(
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
 
-            let base = base.clone();
+            let base_path = base_path.clone();
             let file_path_cb = file_path_cb.clone();
             let ext = PlSmallStr::from_static(file_type.extension());
             let create_new = nodes::io_sinks::partition::get_create_new_fn(
@@ -332,7 +332,7 @@ fn to_graph_rec<'a>(
                         nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
                             input_schema,
                             *max_size,
-                            base,
+                            base_path,
                             file_path_cb,
                             create_new,
                             ext,
@@ -349,7 +349,7 @@ fn to_graph_rec<'a>(
                         nodes::io_sinks::partition::parted::PartedPartitionSinkNode::new(
                             input_schema,
                             key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                            base,
+                            base_path,
                             file_path_cb,
                             create_new,
                             ext,
@@ -367,7 +367,7 @@ fn to_graph_rec<'a>(
                         nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
                             input_schema,
                             key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                            base,
+                            base_path,
                             file_path_cb,
                             create_new,
                             ext,

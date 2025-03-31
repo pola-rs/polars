@@ -1,5 +1,5 @@
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -9,8 +9,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::{
-    FileType, PartitionBase, PartitionTargetCallback, PartitionTargetContext, SinkOptions,
-    SinkTarget, SpecialEq,
+    FileType, PartitionTargetCallback, PartitionTargetContext, SinkOptions, SinkTarget,
 };
 
 use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
@@ -131,7 +130,7 @@ type FilePathCallback = fn(&str, usize, usize, usize, Option<&[Column]>) -> Pola
 
 #[allow(clippy::too_many_arguments)]
 async fn open_new_sink(
-    base: &PartitionBase,
+    base_path: &Path,
     file_path_cb: Option<&PartitionTargetCallback>,
     default_file_path_cb: FilePathCallback,
     file_idx: usize,
@@ -150,14 +149,11 @@ async fn open_new_sink(
         SinkSender,
     )>,
 > {
-    let mut file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys)?;
-    let mut path = match base {
-        PartitionBase::Path(base_path) => base_path.join(file_path.as_path()),
-        PartitionBase::Memory(_) => file_path.clone(),
-    };
+    let file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys)?;
+    let path = base_path.join(file_path.as_path());
 
     // If the user provided their own callback, modify the path to that.
-    if let Some(file_path_cb) = file_path_cb {
+    let target = if let Some(file_path_cb) = file_path_cb {
         let keys = keys.map_or(Vec::new(), |keys| {
             keys.iter()
                 .map(|k| polars_plan::dsl::PartitionTargetContextKey {
@@ -167,7 +163,7 @@ async fn open_new_sink(
                 .collect()
         });
 
-        file_path = file_path_cb.call(PartitionTargetContext {
+        let target = file_path_cb.call(PartitionTargetContext {
             file_idx,
             part_idx,
             in_part_idx,
@@ -175,25 +171,24 @@ async fn open_new_sink(
             file_path,
             full_path: path,
         })?;
-        path = match base {
-            PartitionBase::Path(base_path) => base_path.join(file_path.as_path()),
-            PartitionBase::Memory(_) => file_path.clone(),
-        };
-    }
+        // Offset the given path by the base_path.
+        match target {
+            SinkTarget::Path(p) => SinkTarget::Path(Arc::new(base_path.join(p.as_path()))),
+            target => target,
+        }
+    } else {
+        SinkTarget::Path(Arc::new(path))
+    };
 
     if verbose {
-        eprintln!(
-            "[partition[{partition_name}]]: Start on new file '{}'",
-            path.display()
-        );
+        match &target {
+            SinkTarget::Path(p) => eprintln!(
+                "[partition[{partition_name}]]: Start on new file '{}'",
+                p.display(),
+            ),
+            SinkTarget::Dyn(_) => eprintln!("[partition[{partition_name}]]: Start on new file",),
+        }
     }
-
-    let target = match base {
-        PartitionBase::Path(_) => SinkTarget::Path(Arc::new(path)),
-        PartitionBase::Memory(base) => SinkTarget::Dyn(SpecialEq::new(Arc::new(Mutex::new(
-            Some(base.lock().unwrap().open_partition(path)?),
-        )))),
-    };
 
     let mut node = (create_new_sink)(sink_input_schema.clone(), target)?;
     let mut join_handles = Vec::new();

@@ -773,7 +773,7 @@ impl PyLazyFrame {
                     ldf.sink_parquet(target, options, cloud_options, sink_options.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_parquet_partitioned(
-                    partition.base.0,
+                    Arc::new(partition.base_path),
                     partition.file_path_cb.map(PartitionTargetCallback::Python),
                     partition.variant,
                     options,
@@ -837,7 +837,7 @@ impl PyLazyFrame {
                     ldf.sink_ipc(target, options, cloud_options, sink_options.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_ipc_partitioned(
-                    partition.base.0,
+                    Arc::new(partition.base_path),
                     partition.file_path_cb.map(PartitionTargetCallback::Python),
                     partition.variant,
                     options,
@@ -929,7 +929,7 @@ impl PyLazyFrame {
                     ldf.sink_csv(target, options, cloud_options, sink_options.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_csv_partitioned(
-                    partition.base.0,
+                    Arc::new(partition.base_path),
                     partition.file_path_cb.map(PartitionTargetCallback::Python),
                     partition.variant,
                     options,
@@ -980,7 +980,7 @@ impl PyLazyFrame {
                     ldf.sink_json(path, options, cloud_options, sink_options.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_json_partitioned(
-                    partition.base.0,
+                    Arc::new(partition.base_path),
                     partition.file_path_cb.map(PartitionTargetCallback::Python),
                     partition.variant,
                     options,
