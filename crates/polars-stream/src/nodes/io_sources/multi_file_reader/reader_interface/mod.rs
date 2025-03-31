@@ -112,12 +112,14 @@ pub struct BeginReadArgs {
     /// A reader may wish to use this if it is applying predicates.
     ///
     /// This can be ignored by the reader, as the policy is also applied in post.
+    #[expect(unused)]
     pub cast_columns_policy: CastColumnsPolicy,
     /// User-configured policy for when columns are not found in the file.
     ///
     /// A reader may wish to use this if it is applying predicates.
     ///
     /// This can be ignored by the reader, as the policy is also applied in post.
+    #[expect(unused)]
     pub missing_columns_policy: MissingColumnsPolicy,
 
     pub num_pipelines: usize,
@@ -201,6 +203,7 @@ impl std::fmt::Debug for FileReaderCallbacks {
 }
 
 /// Calculate from a known total row count.
+#[expect(unused)]
 pub fn calc_row_position_after_slice(n_rows_in_file: IdxSize, pre_slice: Option<Slice>) -> IdxSize {
     let n_rows_in_file = usize::try_from(n_rows_in_file).unwrap();
 

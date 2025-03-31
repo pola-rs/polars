@@ -182,8 +182,11 @@ impl MultiScanTaskInitializer {
                                 ));
                             }
 
-                            let mut reader = file_reader_builder
-                                .build_file_reader(scan_source.clone(), cloud_options);
+                            let mut reader = file_reader_builder.build_file_reader(
+                                scan_source.clone(),
+                                cloud_options,
+                                scan_source_idx,
+                            );
 
                             // Skip initialization if this file is filtered, this can save some cloud calls / metadata deserialization.
                             // Downstream must also check against `skip_files_mask` and avoid calling any functions on this reader
@@ -237,8 +240,7 @@ impl MultiScanTaskInitializer {
                     final_output_schema,
                     projected_file_schema,
                     full_file_schema,
-                    // TODO: Expose config for this and default to not checking.
-                    check_schema_names: Some(SchemaNamesMatchPolicy::RequireOrderedExact),
+                    check_schema_names: None,
                 },
                 num_pipelines,
                 verbose,

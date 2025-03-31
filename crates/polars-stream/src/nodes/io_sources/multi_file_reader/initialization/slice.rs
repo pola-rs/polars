@@ -97,7 +97,11 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
                         .unwrap()
                         .into_owned()
                         .map(|source| {
-                            file_reader_builder.build_file_reader(source, cloud_options.clone())
+                            file_reader_builder.build_file_reader(
+                                source,
+                                cloud_options.clone(),
+                                scan_source_idx,
+                            )
                         })?;
 
                 if verbose {
