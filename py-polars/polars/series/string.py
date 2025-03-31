@@ -1875,9 +1875,9 @@ class StringNameSpace:
         self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
     ) -> Series:
         """
-        Use the Aho-Corasick algorithm to find matches.
-
         Determines if any of the patterns are contained in the string.
+
+        Use the Aho-Corasick algorithm to find matches.
 
         Parameters
         ----------
