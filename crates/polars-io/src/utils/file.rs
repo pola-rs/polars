@@ -123,7 +123,7 @@ impl Writeable {
     pub fn close(self) -> std::io::Result<()> {
         match self {
             Self::Local(v) => ClosableFile::from(v).close(),
-            Self::Dyn(_) => todo!(),
+            Self::Dyn(mut v) => v.flush(),
             #[cfg(feature = "cloud")]
             Self::Cloud(mut v) => v.close(),
         }
