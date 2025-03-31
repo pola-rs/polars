@@ -27,8 +27,7 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Opt
     //      ^
     let mut pos: usize = if let Some(after_last_slash) = memchr::memchr2(b'*', b'.', url.as_bytes())
         .map(|i| {
-            url[..i]
-                .as_bytes()
+            url.as_bytes()[..i]
                 .iter()
                 .rposition(|x| *x == b'/')
                 .map_or(0, |x| 1 + x)
@@ -39,8 +38,8 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Opt
         usize::MAX
     };
 
-    while pos < url.as_bytes().len() {
-        match memchr::memchr(b'*', url[pos..].as_bytes()) {
+    while pos < url.len() {
+        match memchr::memchr(b'*', &url.as_bytes()[pos..]) {
             None => break,
             Some(i) => pos += i,
         }
@@ -69,7 +68,7 @@ pub(crate) fn extract_prefix_expansion(url: &str) -> PolarsResult<(Cow<str>, Opt
     let prefix = Cow::Borrowed(&url[..replacements[0].0]);
 
     let mut pos = replacements[0].0;
-    let mut expansion = Vec::with_capacity(url.as_bytes().len() - pos);
+    let mut expansion = Vec::with_capacity(url.len() - pos);
     expansion.push(b'^');
 
     for (offset, len, replace) in replacements {
