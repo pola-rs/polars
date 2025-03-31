@@ -15,11 +15,21 @@ use crate::cloud::CloudOptions;
 use crate::{is_cloud_url, resolve_homedir};
 
 pub trait DynWriteable: io::Write + Send {
+    // Needed because trait upcasting is only stable in 1.86.
+    fn as_dyn_write(&self) -> &(dyn io::Write + Send + 'static);
+    fn as_mut_dyn_write(&mut self) -> &mut (dyn io::Write + Send + 'static);
+
     fn close(self: Box<Self>) -> io::Result<()>;
     fn sync_on_close(&mut self, sync_on_close: SyncOnCloseType) -> io::Result<()>;
 }
 
 impl DynWriteable for ClosableFile {
+    fn as_dyn_write(&self) -> &(dyn io::Write + Send + 'static) {
+        self as _
+    }
+    fn as_mut_dyn_write(&mut self) -> &mut (dyn io::Write + Send + 'static) {
+        self as _
+    }
     fn close(self: Box<Self>) -> io::Result<()> {
         ClosableFile::close(*self)
     }
@@ -165,7 +175,7 @@ impl Deref for Writeable {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Self::Dyn(v) => v.deref(),
+            Self::Dyn(v) => v.as_dyn_write(),
             Self::Local(v) => v,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v,
@@ -176,7 +186,7 @@ impl Deref for Writeable {
 impl DerefMut for Writeable {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
-            Self::Dyn(v) => v.deref_mut() as _,
+            Self::Dyn(v) => v.as_mut_dyn_write(),
             Self::Local(v) => v,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v,

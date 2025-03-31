@@ -233,7 +233,7 @@ fn create_physical_plan_impl(
                     sink_options,
                     cloud_options,
                 }) => {
-                    let name = match &file_type {
+                    let name: &'static str = match &file_type {
                         #[cfg(feature = "parquet")]
                         FileType::Parquet(_) => "parquet",
                         #[cfg(feature = "ipc")]

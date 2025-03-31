@@ -106,7 +106,7 @@ impl std::hash::Hash for SinkTarget {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Path(p) => p.hash(state),
-            Self::Dyn(p) => Arc::as_ptr(&p).hash(state),
+            Self::Dyn(p) => Arc::as_ptr(p).hash(state),
         }
     }
 }

@@ -31,6 +31,12 @@ pub(crate) struct PyFileLikeObject {
 
 impl WriteClose for PyFileLikeObject {}
 impl DynWriteable for PyFileLikeObject {
+    fn as_dyn_write(&self) -> &(dyn io::Write + Send + 'static) {
+        self as _
+    }
+    fn as_mut_dyn_write(&mut self) -> &mut (dyn io::Write + Send + 'static) {
+        self as _
+    }
     fn close(self: Box<Self>) -> io::Result<()> {
         Ok(())
     }
