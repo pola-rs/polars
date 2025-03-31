@@ -302,4 +302,30 @@ impl<'a> IRBuilder<'a> {
         };
         self.add_alp(lp)
     }
+
+    /// Append a sink. Any expressions within the payload are going to simplified, coerced, and type-checked.
+    pub fn sink_optimized(self, payload: SinkTypeIR) -> PolarsResult<Self> {
+        let lp_node = self.lp_arena.add(IR::Sink {
+            input: self.root,
+            payload,
+        });
+
+        // Run the optimizer
+        let mut conversion_optimizer = ConversionOptimizer::new(true, true, true);
+        conversion_optimizer.fill_scratch(&self.lp_arena.get(lp_node).get_exprs(), self.expr_arena);
+        conversion_optimizer
+            .optimize_exprs(self.expr_arena, self.lp_arena, lp_node)
+            .map_err(|e| e.context("optimizing 'sink' failed".into()))?;
+
+        Ok(Self {
+            root: lp_node,
+            expr_arena: self.expr_arena,
+            lp_arena: self.lp_arena,
+        })
+    }
+
+    /// An escape hatch to add an `Expr`. Working with IR is preferred.
+    pub fn add_expr(&mut self, expr: Expr) -> PolarsResult<ExprIR> {
+        to_expr_ir(expr, self.expr_arena)
+    }
 }
