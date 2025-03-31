@@ -216,7 +216,7 @@ impl EitherRustPythonFile {
         }
     }
 
-    pub(crate) fn into_dyn_writeable(self) -> Box<dyn WriteClose + Send> {
+    pub(crate) fn into_dyn_writeable(self) -> Box<dyn Write + Send> {
         match self {
             EitherRustPythonFile::Py(f) => Box::new(f),
             EitherRustPythonFile::Rust(f) => Box::new(f),
