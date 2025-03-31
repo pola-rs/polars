@@ -145,6 +145,7 @@ impl Writeable {
             Writeable::Local(file) => {
                 crate::utils::sync_on_close::sync_on_close(sync_on_close, file)
             },
+            #[cfg(feature = "cloud")]
             Writeable::Cloud(_) => Ok(()),
         }
     }
