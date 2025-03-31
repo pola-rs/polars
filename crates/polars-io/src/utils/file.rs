@@ -21,8 +21,7 @@ use crate::{is_cloud_url, resolve_homedir};
 #[allow(clippy::large_enum_variant)] // It will be boxed
 pub enum Writeable {
     Local(std::fs::File),
-    /// Dynamic dispatch, without `close()`
-    Dyn(Box<dyn Write + Send>),
+    DynClosable(Box<dyn WriteClose + Send>),
     #[cfg(feature = "cloud")]
     Cloud(crate::cloud::BlockingCloudWriter),
 }
