@@ -40,6 +40,43 @@ pub struct IpcReadOptions {
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
 }
 
+impl std::fmt::Debug for IpcReadOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let IpcReadOptions {
+            projection,
+            row_limit,
+            row_index,
+            predicate,
+        } = self;
+
+        return display::IpcReadOptions {
+            projection,
+            row_limit,
+            row_index,
+            predicate: predicate.as_ref().map(|_| "<predicate>"),
+        }
+        .fmt(f);
+
+        // Use a private mod to have the same struct name show up in the fmt.
+        mod display {
+            use std::sync::Arc;
+
+            use polars_utils::pl_str::PlSmallStr;
+
+            use crate::RowIndex;
+
+            #[derive(Debug)]
+            #[expect(unused)]
+            pub struct IpcReadOptions<'a> {
+                pub projection: &'a Option<Arc<[PlSmallStr]>>,
+                pub row_limit: &'a Option<usize>,
+                pub row_index: &'a Option<RowIndex>,
+                pub predicate: Option<&'static str>,
+            }
+        }
+    }
+}
+
 impl IpcReadOptions {
     pub fn with_projection(mut self, projection: Option<Arc<[PlSmallStr]>>) -> Self {
         self.projection = projection;

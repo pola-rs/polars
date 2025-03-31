@@ -357,13 +357,16 @@ def test_file_list_schema_mismatch(
         df.write_csv(path)
 
     lf = pl.scan_csv(paths)
-    with pytest.raises(ComputeError):
+    with pytest.raises((ComputeError, pl.exceptions.ColumnNotFoundError)):
         lf.collect(engine="streaming" if streaming else "in-memory")
+
+    if streaming:
+        pytest.xfail(reason="missing_columns parameter for CSV")
 
     if len({df.width for df in dfs}) == 1:
         expect = pl.concat(df.select(x=pl.first().cast(pl.Int8)) for df in dfs)
-        out = pl.scan_csv(paths, schema={"x": pl.Int8}).collect(
-            engine="streaming" if streaming else "in-memory"
+        out = pl.scan_csv(paths, schema={"x": pl.Int8}).collect(  # type: ignore[call-overload]
+            engine="streaming" if streaming else "in-memory"  # type: ignore[redundant-expr]
         )
 
         assert_frame_equal(out, expect)

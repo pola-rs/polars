@@ -233,10 +233,12 @@ def test_parquet_eq_statistics(
     captured = capfd.readouterr().err
     if streaming:
         assert (
-            "[ParquetSource]: Predicate pushdown: reading 1 / 1 row groups" in captured
+            "[ParquetFileReader]: Predicate pushdown: reading 1 / 1 row groups"
+            in captured
         )
         assert (
-            "[ParquetSource]: Predicate pushdown: reading 0 / 1 row groups" in captured
+            "[ParquetFileReader]: Predicate pushdown: reading 0 / 1 row groups"
+            in captured
         )
     else:
         assert (

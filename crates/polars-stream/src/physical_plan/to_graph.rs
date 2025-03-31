@@ -526,81 +526,17 @@ fn to_graph_rec<'a>(
             } else {
                 match &**scan_type {
                     #[cfg(feature = "parquet")]
-                    polars_plan::dsl::FileScan::Parquet {
-                        options,
-                        cloud_options,
-                        ..
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::SourceComputeNode::new(
-                            nodes::io_sources::multi_scan::MultiScanNode::<
-                                nodes::io_sources::parquet::ParquetSourceNode,
-                            >::new(
-                                scan_sources.clone(),
-                                hive_parts.clone().map(Arc::new),
-                                *allow_missing_columns,
-                                include_file_paths.clone(),
-                                file_schema.clone(),
-                                projection.clone(),
-                                row_index.clone(),
-                                row_restriction.clone(),
-                                predicate,
-                                options.clone(),
-                                cloud_options.clone(),
-                            ),
-                        ),
-                        [],
-                    ),
+                    polars_plan::dsl::FileScan::Parquet { .. } => unreachable!(),
                     #[cfg(feature = "ipc")]
-                    polars_plan::dsl::FileScan::Ipc {
-                        options,
-                        cloud_options,
-                        ..
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::SourceComputeNode::new(
-                            nodes::io_sources::multi_scan::MultiScanNode::<
-                                nodes::io_sources::ipc::IpcSourceNode,
-                            >::new(
-                                scan_sources.clone(),
-                                hive_parts.clone().map(Arc::new),
-                                *allow_missing_columns,
-                                include_file_paths.clone(),
-                                file_schema.clone(),
-                                projection.clone(),
-                                row_index.clone(),
-                                row_restriction.clone(),
-                                predicate,
-                                options.clone(),
-                                cloud_options.clone(),
-                            ),
-                        ),
-                        [],
-                    ),
+                    polars_plan::dsl::FileScan::Ipc { .. } => unreachable!(),
                     #[cfg(feature = "csv")]
                     polars_plan::dsl::FileScan::Csv {
                         options,
                         cloud_options,
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::SourceComputeNode::new(
-                            nodes::io_sources::multi_scan::MultiScanNode::<
-                                nodes::io_sources::csv::CsvSourceNode,
-                            >::new(
-                                scan_sources.clone(),
-                                hive_parts.clone().map(Arc::new),
-                                *allow_missing_columns,
-                                include_file_paths.clone(),
-                                file_schema.clone(),
-                                projection.clone(),
-                                row_index.clone(),
-                                row_restriction.clone(),
-                                predicate,
-                                options.clone(),
-                                cloud_options.clone(),
-                            ),
-                        ),
-                        [],
-                    ),
+                    } => unreachable!(),
                     #[cfg(feature = "json")]
                     polars_plan::dsl::FileScan::NDJson { .. } => unreachable!(),
+
                     _ => todo!(),
                 }
             }
@@ -662,71 +598,15 @@ fn to_graph_rec<'a>(
 
                 match *scan_type {
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet {
-                        options,
-                        cloud_options,
-                        metadata: first_metadata,
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::SourceComputeNode::new(
-                            nodes::io_sources::parquet::ParquetSourceNode::new(
-                                scan_source.into_sources(),
-                                file_info,
-                                predicate,
-                                options,
-                                cloud_options,
-                                file_options,
-                                first_metadata.unwrap(),
-                            ),
-                        ),
-                        [],
-                    ),
+                    FileScan::Parquet { .. } => unreachable!(),
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc {
-                        options,
-                        cloud_options,
-                        metadata: first_metadata,
-                    } => {
-                        // Should have been rewritten in terms of separate streaming nodes.
-                        assert!(predicate.is_none());
-
-                        ctx.graph.add_node(
-                            nodes::io_sources::SourceComputeNode::new(
-                                nodes::io_sources::ipc::IpcSourceNode::new(
-                                    scan_source,
-                                    file_info,
-                                    options,
-                                    cloud_options,
-                                    *file_options,
-                                    first_metadata,
-                                )?,
-                            ),
-                            [],
-                        )
-                    },
+                    FileScan::Ipc { .. } => unreachable!(),
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { options, .. } => {
-                        assert!(predicate.is_none());
-
-                        if options.parse_options.comment_prefix.is_some() {
-                            // Should have been re-written to separate streaming nodes
-                            assert!(file_options.row_index.is_none());
-                            assert!(file_options.pre_slice.is_none());
-                        }
-
-                        ctx.graph.add_node(
-                            nodes::io_sources::SourceComputeNode::new(
-                                nodes::io_sources::csv::CsvSourceNode::new(
-                                    scan_source,
-                                    file_info,
-                                    file_options,
-                                    options,
-                                ),
-                            ),
-                            [],
-                        )
-                    },
+                    FileScan::Csv { .. } => unreachable!(),
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => unreachable!(),
+                    FileScan::NDJson { .. } => {
+                        unreachable!()
+                    },
                     _ => todo!(),
                 }
             }

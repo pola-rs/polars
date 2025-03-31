@@ -8,6 +8,7 @@ use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_io::RowIndex;
+use polars_io::ipc::IpcScanOptions;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::dsl::{
     FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, ScanFlags, ScanSource,
@@ -23,8 +24,10 @@ use polars_utils::{IdxSize, unique_column_name};
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
+use crate::nodes::io_sources::ipc::builder::IpcReaderBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::MultiscanRowRestriction;
+use crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder;
 use crate::nodes::io_sources::{RowRestriction, multi_file_reader};
 use crate::physical_plan::lower_expr::{
     ExprCache, build_length_preserving_select_stream, build_select_stream,
@@ -490,6 +493,40 @@ pub fn lower_ir(
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
                 }
             } else if let Some((file_reader_builder, cloud_options)) = match &*scan_type {
+                #[cfg(feature = "parquet")]
+                FileScan::Parquet {
+                    options,
+                    cloud_options,
+                    metadata: first_metadata,
+                } => Some((
+                    Arc::new(ParquetReaderBuilder {
+                        options: Arc::new(options.clone()),
+                        first_metadata: first_metadata.clone(),
+                    }) as Arc<dyn FileReaderBuilder>,
+                    cloud_options,
+                )),
+
+                #[cfg(feature = "ipc")]
+                FileScan::Ipc {
+                    options: IpcScanOptions {},
+                    cloud_options,
+                    metadata: first_metadata,
+                } => Some((
+                    Arc::new(IpcReaderBuilder {
+                        first_metadata: first_metadata.clone(),
+                    }) as Arc<dyn FileReaderBuilder>,
+                    cloud_options,
+                )),
+
+                #[cfg(feature = "csv")]
+                FileScan::Csv {
+                    options,
+                    cloud_options,
+                } => Some((
+                    Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>,
+                    cloud_options,
+                )),
+
                 #[cfg(feature = "json")]
                 FileScan::NDJson {
                     options,
