@@ -39,9 +39,67 @@ pub mod sql;
 pub mod timeout;
 pub mod utils;
 
+use std::sync::Arc;
+
+use polars::prelude::{DslBuilder, LazyFrame, ParallelStrategy, ScanSources};
+use polars_io::HiveOptions;
+use polars_utils::mmap::MemSlice;
+
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::expr::PyExpr;
 use crate::lazyframe::PyLazyFrame;
 use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
+
+#[test]
+fn test() {
+    unsafe {
+        std::env::set_var("POLARS_MAX_THREADS", "2");
+        std::env::set_var("POLARS_FORCE_NEW_STREAMING", "1");
+    };
+
+    let dsl = DslBuilder::scan_parquet(
+        ScanSources::Buffers(
+            (0..13)
+                .map(|i| {
+                    let bytes = std::fs::read(format!(
+                        "/Users/nxs/git/polars/.env/oneshot-deadlock-parquet/{}",
+                        i
+                    ))
+                    .unwrap();
+                    MemSlice::from_vec(bytes)
+                })
+                .collect::<Arc<[_]>>(),
+        ),
+        None,
+        false,
+        ParallelStrategy::Auto,
+        None,
+        false,
+        false,
+        None,
+        false,
+        None,
+        HiveOptions {
+            enabled: Some(false),
+            hive_start_idx: 0,
+            schema: None,
+            try_parse_dates: false,
+        },
+        false,
+        None,
+        false,
+    )
+    .unwrap()
+    .slice(99, 89)
+    .build();
+
+    let lf = LazyFrame::from(dsl);
+
+    loop {
+        lf.clone()
+            .collect_with_engine(polars::prelude::Engine::Streaming)
+            .unwrap();
+    }
+}
