@@ -504,6 +504,18 @@ pub fn lower_ir(
                     ) as Arc<dyn FileReaderBuilder>,
                     cloud_options,
                 )),
+                #[cfg(feature = "ipc")]
+                FileScan::Ipc {
+                    options: polars_io::ipc::IpcScanOptions {},
+                    cloud_options,
+                    metadata: first_metadata,
+                } => Some((
+                    Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
+                        first_metadata: first_metadata.clone(),
+                    }) as Arc<dyn FileReaderBuilder>,
+                    cloud_options,
+                )),
+
                 #[cfg(feature = "json")]
                 FileScan::NDJson {
                     options,
