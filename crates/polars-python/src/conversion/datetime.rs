@@ -7,7 +7,7 @@ use chrono_tz::Tz;
 use polars::datatypes::TimeUnit;
 use polars_core::datatypes::TimeZone;
 use pyo3::types::PyAnyMethods;
-use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python, intern};
+use pyo3::{Bound, IntoPyObjectExt, PyAny, PyResult, Python, intern};
 
 use crate::error::PyPolarsErr;
 use crate::py_modules::pl_utils;
@@ -57,16 +57,16 @@ pub fn datetime_to_py_object<'py>(
                     .call1((v, tu.to_ascii(), time_zone.as_str()))
             } else {
                 let datetime = utc_datetime.with_timezone(&tz);
-                datetime.into_pyobject(py)
+                datetime.into_bound_py_any(py)
             }
         } else if let Ok(tz) = FixedOffset::from_str(time_zone) {
             let naive_datetime = timestamp_to_naive_datetime(v, tu);
             let datetime = tz.from_utc_datetime(&naive_datetime);
-            datetime.into_pyobject(py)
+            datetime.into_bound_py_any(py)
         } else {
             Err(PyPolarsErr::Other(format!("Could not parse timezone: {time_zone}")).into())
         }
     } else {
-        timestamp_to_naive_datetime(v, tu).into_pyobject(py)
+        timestamp_to_naive_datetime(v, tu).into_bound_py_any(py)
     }
 }
