@@ -331,6 +331,14 @@ impl StringNameSpace {
         ambiguous: Expr,
     ) -> Expr {
         // If time_unit is None, try to infer it from the format or set a default
+
+        let default_time_unit = match std::env::var("POLARS_DEFAULT_TIME_UNIT").as_deref() {
+            Ok("ns") => TimeUnit::Nanoseconds,
+            Ok("us") => TimeUnit::Microseconds,
+            Ok("ms") => TimeUnit::Milliseconds,
+            _ => TimeUnit::Microseconds,
+        };
+
         let time_unit = match (&options.format, time_unit) {
             (_, Some(time_unit)) => time_unit,
             (Some(format), None) => {
@@ -342,7 +350,7 @@ impl StringNameSpace {
                     TimeUnit::Microseconds
                 }
             },
-            (None, None) => TimeUnit::Microseconds,
+            (None, None) => default_time_unit,
         };
 
         self.strptime(DataType::Datetime(time_unit, time_zone), options, ambiguous)
