@@ -53,7 +53,6 @@ fn partitionable_gb(
 
 #[derive(Clone)]
 struct ConversionState {
-    expr_depth: u16,
     has_cache_child: bool,
     has_cache_parent: bool,
 }
@@ -61,7 +60,6 @@ struct ConversionState {
 impl ConversionState {
     fn new() -> PolarsResult<Self> {
         Ok(ConversionState {
-            expr_depth: get_expr_depth_limit()?,
             has_cache_child: false,
             has_cache_parent: false,
         })
@@ -212,7 +210,7 @@ fn create_physical_plan_impl(
     match logical_plan {
         #[cfg(feature = "python")]
         PythonScan { mut options } => {
-            let mut expr_conv_state = ExpressionConversionState::new(true, state.expr_depth);
+            let mut expr_conv_state = ExpressionConversionState::new(true);
             let (predicate, predicate_serialized) =
                 python_scan_predicate(&mut options, expr_arena, &mut expr_conv_state)?;
             Ok(Box::new(executors::PythonScanExec {
@@ -457,7 +455,7 @@ fn create_physical_plan_impl(
                     }
             }
             let input = recurse!(input, state)?;
-            let mut state = ExpressionConversionState::new(true, state.expr_depth);
+            let mut state = ExpressionConversionState::new(true);
             let predicate = create_physical_expr(
                 &predicate,
                 Context::Default,
@@ -488,7 +486,7 @@ fn create_physical_plan_impl(
                 _set_n_rows_for_scan(None).map(|x| (0, x))
             };
 
-            let mut state = ExpressionConversionState::new(true, state.expr_depth);
+            let mut state = ExpressionConversionState::new(true);
             let do_new_multifile = (sources.len() > 1 || hive_parts.is_some())
                 && !matches!(&*scan_type, FileScan::Anonymous { .. })
                 && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1");
@@ -601,10 +599,7 @@ fn create_physical_plan_impl(
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
-            let mut state = ExpressionConversionState::new(
-                POOL.current_num_threads() > expr.len(),
-                state.expr_depth,
-            );
+            let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
             let phys_expr = create_physical_expressions_from_irs(
                 &expr,
                 Context::Default,
@@ -648,7 +643,7 @@ fn create_physical_plan_impl(
                 Context::Default,
                 expr_arena,
                 input_schema.as_ref(),
-                &mut ExpressionConversionState::new(true, state.expr_depth),
+                &mut ExpressionConversionState::new(true),
             )?;
             let input = recurse!(input, state)?;
             Ok(Box::new(executors::SortExec {
@@ -704,14 +699,14 @@ fn create_physical_plan_impl(
                 Context::Default,
                 expr_arena,
                 &input_schema,
-                &mut ExpressionConversionState::new(true, state.expr_depth),
+                &mut ExpressionConversionState::new(true),
             )?;
             let phys_aggs = create_physical_expressions_from_irs(
                 &aggs,
                 Context::Aggregation,
                 expr_arena,
                 &input_schema,
-                &mut ExpressionConversionState::new(true, state.expr_depth),
+                &mut ExpressionConversionState::new(true),
             )?;
 
             let _slice = options.slice;
@@ -820,14 +815,14 @@ fn create_physical_plan_impl(
                 Context::Default,
                 expr_arena,
                 &schema_left,
-                &mut ExpressionConversionState::new(true, state.expr_depth),
+                &mut ExpressionConversionState::new(true),
             )?;
             let right_on = create_physical_expressions_from_irs(
                 &right_on,
                 Context::Default,
                 expr_arena,
                 &schema_right,
-                &mut ExpressionConversionState::new(true, state.expr_depth),
+                &mut ExpressionConversionState::new(true),
             )?;
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
 
@@ -842,7 +837,7 @@ fn create_physical_plan_impl(
                             Context::Default,
                             expr_arena,
                             &schema,
-                            &mut ExpressionConversionState::new(false, state.expr_depth),
+                            &mut ExpressionConversionState::new(false),
                         )?;
 
                         let execution_state = ExecutionState::default();
@@ -881,10 +876,8 @@ fn create_physical_plan_impl(
                     .iter()
                     .all(|e| is_elementwise_rec_no_cat_cast(expr_arena.get(e.node()), expr_arena));
 
-            let mut state = ExpressionConversionState::new(
-                POOL.current_num_threads() > exprs.len(),
-                state.expr_depth,
-            );
+            let mut state =
+                ExpressionConversionState::new(POOL.current_num_threads() > exprs.len());
 
             let phys_exprs = create_physical_expressions_from_irs(
                 &exprs,
