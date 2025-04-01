@@ -238,12 +238,18 @@ impl Duration {
                         ' ' | ',' if as_interval => {},
                         _ => break,
                     }
-                    match iter.next() {
-                        Some((i, ch_)) => {
-                            ch = ch_;
-                            start = i
-                        },
-                        None => break,
+                    // If next character is a digit, we don't want to consume
+                    // it so that we can run the check above that the string
+                    // doesn't end up with a number without unit.
+                    if let Some(&(next_i, next_ch)) = iter.peek() {
+                        if next_ch.is_ascii_digit() {
+                            start = next_i;
+                            break;
+                        }
+                        let (_, ch_) = iter.next().unwrap();
+                        ch = ch_;
+                    } else {
+                        break;
                     }
                 }
                 if unit.is_empty() {

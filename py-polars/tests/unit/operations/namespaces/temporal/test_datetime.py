@@ -225,11 +225,12 @@ def test_offset_by_missing_unit() -> None:
         match="expected a unit to follow integer in the duration string '1'",
     ):
         pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("1")
+
     with pytest.raises(
         InvalidOperationError,
-        match="expected a unit to follow integer in the duration string '1d23'",
+        match="expected a unit to follow integer in the duration string '1d23m4'",
     ):
-        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("1d23")
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("1mo23d4")
 
 
 def test_dt_datetime_date_time_invalid() -> None:
