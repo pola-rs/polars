@@ -86,19 +86,10 @@ def test_concat_group_by() -> None:
 def test_concat_19877() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     out = df.select(pl.concat([pl.col("a"), pl.col("b")]))
-    assert_frame_equal(
-        out,
-        pl.DataFrame({"a": [1, 2, 3, 4]})
-    )
+    assert_frame_equal(out, pl.DataFrame({"a": [1, 2, 3, 4]}))
 
 
 def test_concat_zip_series_21980() -> None:
     df = pl.DataFrame({"x": 1, "y": 2})
-    out = df.select(
-        pl.concat([pl.col.x, pl.col.y]),
-        pl.Series([3, 4])
-    )
-    assert_frame_equal(
-        out,
-        pl.DataFrame({"x": [1, 2], "": [3, 4]})
-    )
+    out = df.select(pl.concat([pl.col.x, pl.col.y]), pl.Series([3, 4]))
+    assert_frame_equal(out, pl.DataFrame({"x": [1, 2], "": [3, 4]}))
