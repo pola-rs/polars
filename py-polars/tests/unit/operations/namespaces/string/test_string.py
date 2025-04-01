@@ -460,17 +460,20 @@ def test_str_to_integer_invalid_base() -> None:
         check_exact=True,
     )
 
-    assert_series_equal(
-        numbers.str.to_integer(base=pl.Series([0, 1, 100, 1000]), strict=False),
-        pl.Series([None, None, None, None]).cast(pl.Int64),
-        check_exact=True,
-    )
-
     with pytest.raises(ComputeError):
         numbers.str.to_integer(base=100)
 
+    df = pl.DataFrame({"str": numbers, "base": [0, 1, 100, 1000]})
+
+    assert_frame_equal(
+        df.select(
+            pl.col("str").str.to_integer(base=pl.col("base"), strict=False).alias("out")
+        ),
+        pl.DataFrame({"out": pl.Series([None, None, None, None]).cast(pl.Int64)}),
+    )
+
     with pytest.raises(ComputeError):
-        numbers.str.to_integer(base=pl.Series([0, 1, 100, 1000]))
+        df.select(pl.col("str").str.to_integer(base=pl.col("base")))
 
 
 def test_str_to_integer_base_expr() -> None:
