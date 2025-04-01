@@ -69,13 +69,15 @@ pub trait StringNameSpaceImpl: AsString {
 
         let parse = |opt_s: Option<&str>, opt_base: Option<u32>| -> PolarsResult<i64> {
             match (opt_s, opt_base) {
-                (_, Some(2..36)) => Err(PolarsError::ComputeError("invalid base".into())),
-                (Some(s), Some(base)) => match <i64 as Num>::from_str_radix(s, base) {
-                    Ok(t) => Ok(t),
-                    Err(parse_int_error) => Err(PolarsError::ComputeError(
-                        format!("parse int error: {}", parse_int_error).into(),
-                    )),
+                (Some(s), Some(base)) if (2..=36).contains(&base) => {
+                    match <i64 as Num>::from_str_radix(s, base) {
+                        Ok(t) => Ok(t),
+                        Err(parse_int_error) => Err(PolarsError::ComputeError(
+                            format!("parse int error: {}", parse_int_error).into(),
+                        )),
+                    }
                 },
+                (Some(_), Some(_)) => Err(PolarsError::ComputeError("invalid base".into())),
                 (None, Some(_)) => Err(PolarsError::ComputeError(
                     "Cannot parse string without a numeric string".into(),
                 )),
