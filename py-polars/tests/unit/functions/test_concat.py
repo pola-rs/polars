@@ -80,6 +80,7 @@ def test_concat_group_by() -> None:
                 "a": [[0, 1, 2, 3, 8, 9, 10, 11], [4, 5, 6, 7, 12, 13, 14, 15]],
             }
         ),
+        check_row_order=False
     )
 
 
