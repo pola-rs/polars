@@ -66,11 +66,30 @@ pub trait StringNameSpaceImpl: AsString {
     // Parse a string number with base _radix_ into a decimal (i64)
     fn to_integer(&self, base: &UInt32Chunked, strict: bool) -> PolarsResult<Int64Chunked> {
         let ca = self.as_string();
-        let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> Option<i64> {
+
+        let parse = |opt_s: Option<&str>, opt_base: Option<u32>| -> PolarsResult<i64> {
             match (opt_s, opt_base) {
-                (Some(s), Some(base)) => <i64 as Num>::from_str_radix(s, base).ok(),
-                _ => None,
+                (_, Some(2..36)) => Err(PolarsError::ComputeError("invalid base".into())),
+                (Some(s), Some(base)) => match <i64 as Num>::from_str_radix(s, base) {
+                    Ok(t) => Ok(t),
+                    Err(parse_int_error) => Err(PolarsError::ComputeError(
+                        format!("parse int error: {}", parse_int_error).into(),
+                    )),
+                },
+                (None, Some(_)) => Err(PolarsError::ComputeError(
+                    "Cannot parse string without a numeric string".into(),
+                )),
+                (Some(_), None) => Err(PolarsError::ComputeError(
+                    "Cannot parse string without a base".into(),
+                )),
+                (None, None) => Err(PolarsError::ComputeError(
+                    "Cannot parse string without a numeric string and base".into(),
+                )),
             }
+        };
+
+        let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> Option<i64> {
+            parse(opt_s, opt_base).ok()
         };
         let out = broadcast_binary_elementwise(ca, base, f);
         if strict && ca.null_count() != out.null_count() {
@@ -83,22 +102,21 @@ pub trait StringNameSpaceImpl: AsString {
             let some_failures = all_failures.unique()?.slice(0, 10).sort(false);
             let some_error_msg = match base.len() {
                 1 => {
-                    // we can ensure that base is not null.
-                    let base = base.get(0).unwrap();
+                    let base = base.get(0);
                     some_failures
                         .get(0)
-                        .and_then(|s| <i64 as Num>::from_str_radix(s, base).err())
+                        .and_then(|s| parse(Some(s), base).err())
                         .map_or_else(
                             || unreachable!("failed to extract ParseIntError"),
                             |e| format!("{}", e),
                         )
                 },
                 _ => {
-                    let base_filures = base.filter(&failure_mask)?;
+                    let base_failures = base.filter(&failure_mask)?;
                     some_failures
                         .get(0)
-                        .zip(base_filures.get(0))
-                        .and_then(|(s, base)| <i64 as Num>::from_str_radix(s, base).err())
+                        .zip(base_failures.get(0))
+                        .and_then(|(s, base)| parse(Some(s), Some(base)).err())
                         .map_or_else(
                             || unreachable!("failed to extract ParseIntError"),
                             |e| format!("{}", e),

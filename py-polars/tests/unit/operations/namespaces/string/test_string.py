@@ -452,6 +452,27 @@ def test_str_to_integer() -> None:
         hex.str.to_integer(base=16)
 
 
+def test_str_to_integer_invalid_base() -> None:
+    numbers = pl.Series(["1", "ZZZ", "-ABCZZZ", None])
+    assert_series_equal(
+        numbers.str.to_integer(base=100, strict=False),
+        pl.Series([None, None, None, None]).cast(pl.Int64),
+        check_exact=True,
+    )
+
+    assert_series_equal(
+        numbers.str.to_integer(base=pl.Series([0, 1, 100, 1000]), strict=False),
+        pl.Series([None, None, None, None]).cast(pl.Int64),
+        check_exact=True,
+    )
+
+    with pytest.raises(ComputeError):
+        numbers.str.to_integer(base=100)
+
+    with pytest.raises(ComputeError):
+        numbers.str.to_integer(base=pl.Series([0, 1, 100, 1000]))
+
+
 def test_str_to_integer_base_expr() -> None:
     df = pl.DataFrame(
         {"str": ["110", "ff00", "234", None, "130"], "base": [2, 16, 10, 8, None]}
