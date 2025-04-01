@@ -846,6 +846,9 @@ class ExprStringNameSpace:
         │ null         ┆ null         │
         └──────────────┴──────────────┘
         """
+        if not isinstance(fill_char, str):
+            msg = f"pad_start expects a `str`, given a `{type(fill_char)}`"
+            raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_pad_start(length, fill_char))
 
     def pad_end(self, length: int, fill_char: str = " ") -> Expr:
@@ -880,6 +883,9 @@ class ExprStringNameSpace:
         │ null         ┆ null         │
         └──────────────┴──────────────┘
         """
+        if not isinstance(fill_char, str):
+            msg = f"pad_end expects a `str`, given a `{type(fill_char)}`"
+            raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
 
     def zfill(self, length: int | IntoExprColumn) -> Expr:
