@@ -117,9 +117,10 @@ pub(crate) fn all_return_scalar(e: &Expr) -> bool {
 }
 
 pub fn has_null(current_expr: &Expr) -> bool {
-    has_expr(current_expr, |e| {
-        matches!(e, Expr::Literal(LiteralValue::Null))
-    })
+    has_expr(
+        current_expr,
+        |e| matches!(e, Expr::Literal(LiteralValue::Scalar(sc)) if sc.is_null()),
+    )
 }
 
 pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<PlSmallStr> {

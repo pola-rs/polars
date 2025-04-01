@@ -33,7 +33,7 @@ def register_plugin_function(
     cast_to_supertype: bool = False,
     input_wildcard_expansion: bool = False,
     pass_name_to_apply: bool = False,
-    use_abs_path: bool = False,
+    use_abs_path: bool = True,
 ) -> Expr:
     """
     Register a plugin function.

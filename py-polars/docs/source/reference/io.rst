@@ -111,6 +111,16 @@ Sink to disk with differing partitioning strategies.
    PartitionMaxSize
    PartitionParted
 
+.. currentmodule:: polars.io.partition
+
+.. autosummary::
+   :toctree: api/
+
+   KeyedPartition
+   BasePartitionContext
+   KeyedPartitionContext
+
+.. currentmodule:: polars
 
 Parquet
 ~~~~~~~

@@ -136,7 +136,7 @@ impl SpillPartitions {
                             .iter_mut()
                             .zip(self.output_schema.iter_names())
                             .map(|(b, name)| {
-                                let mut s = b.reset(OB_SIZE);
+                                let mut s = b.reset(OB_SIZE, false).unwrap();
                                 s.rename(name.clone());
                                 s
                             })
@@ -208,7 +208,10 @@ impl SpillPartitions {
                         hashes,
                         chunk_idx,
                         keys: keys_builder.into(),
-                        aggs: spilled_aggs.iter_mut().map(|b| b.reset(0)).collect(),
+                        aggs: spilled_aggs
+                            .iter_mut()
+                            .map(|b| b.reset(0, false).unwrap())
+                            .collect(),
                     },
                 )
             })

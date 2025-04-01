@@ -188,7 +188,7 @@ impl StringNameSpace {
         // and we need to compile it here to determine the output datatype
 
         use polars_utils::format_pl_smallstr;
-        let reg = regex::Regex::new(pat)?;
+        let reg = polars_utils::regex_cache::compile_regex(pat)?;
         let names = reg
             .capture_names()
             .enumerate()
@@ -358,7 +358,7 @@ impl StringNameSpace {
     #[cfg(feature = "dtype-decimal")]
     pub fn to_decimal(self, infer_length: usize) -> Expr {
         self.0
-            .map_private(StringFunction::ToDecimal(infer_length).into())
+            .apply_private(StringFunction::ToDecimal(infer_length).into())
     }
 
     /// Concat the values into a string array.

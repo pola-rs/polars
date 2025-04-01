@@ -244,9 +244,9 @@ impl LazyCsvReader {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let mut n_threads = self.read_options.n_threads;
+        let n_threads = self.read_options.n_threads;
 
-        let mut infer_schema = |bytes: MemSlice| {
+        let infer_schema = |bytes: MemSlice| {
             let skip_rows = self.read_options.skip_rows;
             let skip_lines = self.read_options.skip_lines;
             let parse_options = self.read_options.get_parse_options();
@@ -266,7 +266,6 @@ impl LazyCsvReader {
                     skip_lines,
                     self.read_options.skip_rows_after_header,
                     self.read_options.raise_if_empty,
-                    &mut n_threads,
                 )?
                 .0,
             )

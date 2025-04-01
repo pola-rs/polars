@@ -1,8 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
 
+use bytemuck::Zeroable;
 use either::Either;
-use num_traits::Zero;
 
 use super::IntoIter;
 use crate::array::{ArrayAccessor, Splitable};
@@ -279,9 +279,9 @@ impl<T: Clone> Buffer<T> {
     }
 }
 
-impl<T: Zero + Copy> Buffer<T> {
+impl<T: Zeroable + Copy> Buffer<T> {
     pub fn zeroed(len: usize) -> Self {
-        vec![T::zero(); len].into()
+        vec![T::zeroed(); len].into()
     }
 }
 
@@ -292,11 +292,18 @@ impl<T> From<Vec<T>> for Buffer<T> {
     }
 }
 
-impl<T> std::ops::Deref for Buffer<T> {
+impl<T> Deref for Buffer<T> {
     type Target = [T];
 
-    #[inline]
+    #[inline(always)]
     fn deref(&self) -> &[T] {
+        self.as_slice()
+    }
+}
+
+impl<T> AsRef<[T]> for Buffer<T> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[T] {
         self.as_slice()
     }
 }

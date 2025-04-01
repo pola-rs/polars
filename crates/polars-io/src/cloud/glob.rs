@@ -156,7 +156,9 @@ impl Matcher {
     /// Build a Matcher for the given prefix and expansion.
     pub(crate) fn new(prefix: String, expansion: Option<&str>) -> PolarsResult<Matcher> {
         // Cloud APIs accept a prefix without any expansion, extract it.
-        let re = expansion.map(Regex::new).transpose()?;
+        let re = expansion
+            .map(polars_utils::regex_cache::compile_regex)
+            .transpose()?;
         Ok(Matcher { prefix, re })
     }
 

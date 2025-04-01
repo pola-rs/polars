@@ -42,17 +42,7 @@ impl fmt::Debug for Expr {
             Explode(expr) => write!(f, "{expr:?}.explode()"),
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),
-            Literal(v) => {
-                match v {
-                    LiteralValue::String(v) => {
-                        // dot breaks with debug fmt due to \"
-                        write!(f, "String({v})")
-                    },
-                    _ => {
-                        write!(f, "{v:?}")
-                    },
-                }
-            },
+            Literal(v) => write!(f, "{v:?}"),
             BinaryExpr { left, op, right } => write!(f, "[({left:?}) {op:?} ({right:?})]"),
             Sort { expr, options } => {
                 if options.descending {

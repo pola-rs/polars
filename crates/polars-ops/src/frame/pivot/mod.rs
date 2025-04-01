@@ -76,6 +76,10 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
             let ca = s.u32().unwrap();
             ca.reinterpret_signed().cast(logical_type).unwrap()
         },
+        (dt, DataType::Null) => {
+            let ca = Series::full_null(s.name().clone(), s.len(), dt);
+            ca.into_series()
+        },
         _ => unsafe { s.from_physical_unchecked(logical_type).unwrap() },
     }
 }

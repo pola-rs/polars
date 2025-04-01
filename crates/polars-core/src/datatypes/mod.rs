@@ -45,7 +45,7 @@ use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::TotalHash;
 pub use schema::SchemaExtPl;
 #[cfg(feature = "serde")]
-use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
+use serde::de::{EnumAccess, VariantAccess, Visitor};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]

@@ -132,6 +132,7 @@ nav:
                 - polars-cloud/cli.md
                 - polars-cloud/faq.md
                 - API Reference: https://docs.cloud.pola.rs
+                - polars-cloud/release-notes.md
 not_in_nav: |
     /_build/
 validation:

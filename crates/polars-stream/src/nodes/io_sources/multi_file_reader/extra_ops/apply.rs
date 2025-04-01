@@ -12,6 +12,7 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::ScanSource;
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::IdxSize;
+use polars_utils::slice_enum::Slice;
 
 use super::ExtraOperations;
 use super::cast_columns::CastColumns;
@@ -37,6 +38,7 @@ pub enum ApplyExtraOps {
     Initialized {
         // Note: These fields are ordered according to when they (should be) applied.
         row_index: Option<RowIndex>,
+        pre_slice: Option<Slice>,
         cast_columns: Option<CastColumns>,
         /// This will have include_file_paths, hive columns, missing columns.
         extra_columns: Vec<ScalarColumn>,
@@ -66,8 +68,8 @@ impl ApplyExtraOps {
                     ExtraOperations {
                         row_index,
                         pre_slice,
-                        cast_columns,
-                        missing_columns,
+                        cast_columns_policy,
+                        missing_columns_policy,
                         include_file_paths,
                         predicate,
                     },
@@ -75,18 +77,16 @@ impl ApplyExtraOps {
                 scan_source_idx,
                 hive_parts,
             } => {
-                // This should always be pushed to the reader, or otherwise handled separately.
-                assert!(pre_slice.is_none());
+                // Negative slice should have been resolved earlier.
+                if let Some(Slice::Negative { .. }) = pre_slice {
+                    panic!("impl error: negative pre_slice at post")
+                }
 
-                let cast_columns = if let Some(policy) = cast_columns {
-                    CastColumns::try_init_from_policy(
-                        policy,
-                        &final_output_schema,
-                        incoming_schema,
-                    )?
-                } else {
-                    None
-                };
+                let cast_columns = CastColumns::try_init_from_policy(
+                    cast_columns_policy,
+                    &final_output_schema,
+                    incoming_schema,
+                )?;
 
                 let n_expected_extra_columns = final_output_schema.len()
                     - incoming_schema.len()
@@ -95,13 +95,11 @@ impl ApplyExtraOps {
                 let mut extra_columns: Vec<ScalarColumn> =
                     Vec::with_capacity(n_expected_extra_columns);
 
-                if let Some(policy) = missing_columns {
-                    policy.initialize_policy(
-                        &projected_file_schema,
-                        incoming_schema,
-                        &mut extra_columns,
-                    )?;
-                }
+                missing_columns_policy.initialize_policy(
+                    &projected_file_schema,
+                    incoming_schema,
+                    &mut extra_columns,
+                )?;
 
                 if let Some(hive_parts) = hive_parts {
                     extra_columns.extend(hive_parts.df().get_columns().iter().map(|c| {
@@ -132,6 +130,7 @@ impl ApplyExtraOps {
 
                 let mut slf = Self::Initialized {
                     row_index,
+                    pre_slice,
                     cast_columns,
                     extra_columns,
                     predicate,
@@ -172,6 +171,7 @@ impl ApplyExtraOps {
                 let slf = match slf {
                     Initialized {
                         row_index: None,
+                        pre_slice: None,
                         cast_columns: None,
                         extra_columns,
                         predicate: None,
@@ -197,6 +197,7 @@ impl ApplyExtraOps {
     ) -> PolarsResult<()> {
         let Self::Initialized {
             row_index,
+            pre_slice,
             cast_columns,
             extra_columns,
             predicate,
@@ -222,6 +223,17 @@ impl ApplyExtraOps {
                     df.height(),
                 )?)
             };
+        }
+
+        if let Some(pre_slice) = pre_slice.clone() {
+            let Slice::Positive { offset, len } = pre_slice
+                .offsetted(usize::try_from(current_row_position).unwrap())
+                .restrict_to_bounds(df.height())
+            else {
+                unreachable!()
+            };
+
+            *df = df.slice(i64::try_from(offset).unwrap(), len)
         }
 
         if let Some(cast_columns) = cast_columns {

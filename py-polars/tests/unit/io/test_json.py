@@ -239,8 +239,8 @@ def test_ndjson_ignore_errors() -> None:
         "SeqNo": [1, 1],
         "Timestamp": [1, 1],
         "Fields": [
-            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": None}],
-            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": None}],
+            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": '{"a": 1}'}],
+            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": '{"a": 1}'}],
         ],
     }
 

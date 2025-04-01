@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Field, InitHashMaps, PlHashMap, PlHashSet};
+use polars_core::prelude::{DataType, Field, InitHashMaps, PlHashMap, PlHashSet};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
-use polars_expr::planner::get_expr_depth_limit;
 use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
+use polars_ops::frame::{JoinArgs, JoinType};
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::prelude::*;
@@ -383,8 +383,7 @@ fn build_fallback_node_with_ctx(
     };
 
     let output_schema = schema_for_select(input_stream, exprs, ctx)?;
-    let expr_depth_limit = get_expr_depth_limit()?;
-    let mut conv_state = ExpressionConversionState::new(false, expr_depth_limit);
+    let mut conv_state = ExpressionConversionState::new(false);
     let phys_exprs = exprs
         .iter()
         .map(|expr| {
@@ -536,6 +535,103 @@ fn lower_exprs_with_ctx(
                 let node_key = build_input_independent_node_with_ctx(&[inner_expr], ctx)?;
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: FunctionExpr::ConcatExpr(_rechunk),
+                options: _,
+            } => {
+                // We have to lower each expression separately as they might have different lengths.
+                let mut concat_streams = Vec::new();
+                let out_name = unique_column_name();
+                for inner_expr in inner_exprs {
+                    let (trans_input, trans_expr) =
+                        lower_exprs_with_ctx(input, &[inner_expr.node()], ctx)?;
+                    let select_expr =
+                        ExprIR::new(trans_expr[0], OutputName::Alias(out_name.clone()));
+                    concat_streams.push(build_select_stream_with_ctx(
+                        trans_input,
+                        &[select_expr],
+                        ctx,
+                    )?);
+                }
+
+                let output_schema = ctx.phys_sm[concat_streams[0].node].output_schema.clone();
+                let node_kind = PhysNodeKind::OrderedUnion {
+                    inputs: concat_streams,
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
+                options: _,
+            } if {
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let left_dt = inner_exprs[0]
+                    .dtype(input_schema, Context::Default, ctx.expr_arena)
+                    .unwrap();
+                let right_dt = inner_exprs[1]
+                    .dtype(input_schema, Context::Default, ctx.expr_arena)
+                    .unwrap();
+                left_dt == right_dt
+            } =>
+            {
+                // Translate left and right side separately (they could have different lengths).
+                let left_on_name = unique_column_name();
+                let right_on_name = unique_column_name();
+                let (trans_input_left, trans_expr_left) =
+                    lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
+                let (trans_input_right, trans_expr_right) =
+                    lower_exprs_with_ctx(input, &[inner_exprs[1].node()], ctx)?;
+
+                // We have to ensure the left input has the right name for the semi-anti-join to
+                // generate the correct output name.
+                let left_col_expr = ctx.expr_arena.add(AExpr::Column(left_on_name.clone()));
+                let left_select_stream = build_select_stream_with_ctx(
+                    trans_input_left,
+                    &[ExprIR::new(
+                        trans_expr_left[0],
+                        OutputName::Alias(left_on_name.clone()),
+                    )],
+                    ctx,
+                )?;
+
+                let node_kind = PhysNodeKind::SemiAntiJoin {
+                    input_left: left_select_stream,
+                    input_right: trans_input_right,
+                    left_on: vec![ExprIR::new(
+                        left_col_expr,
+                        OutputName::Alias(left_on_name.clone()),
+                    )],
+                    right_on: vec![ExprIR::new(
+                        trans_expr_right[0],
+                        OutputName::Alias(right_on_name),
+                    )],
+                    args: JoinArgs {
+                        how: JoinType::Semi,
+                        validation: Default::default(),
+                        suffix: None,
+                        slice: None,
+                        nulls_equal,
+                        coalesce: Default::default(),
+                        maintain_order: Default::default(),
+                    },
+                    output_bool: true,
+                };
+
+                // SemiAntiJoin with output_bool returns a column with the same name as the first
+                // input column.
+                let output_schema = Schema::from_iter([(left_on_name.clone(), DataType::Boolean)]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(left_col_expr);
             },
 
             ref node @ AExpr::Function {

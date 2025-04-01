@@ -31,7 +31,7 @@ The query you execute in batch mode runs in your cloud environment. The data and
 query are not sent to Polars Cloud, ensuring that your data and output remain secure.
 
 ```python
-lf.remote(ctx).sink_parquet("s3://bucket/output.parquet")
+lf.remote(context=ctx).sink_parquet("s3://bucket/output.parquet")
 ```
 
 ## Interactive

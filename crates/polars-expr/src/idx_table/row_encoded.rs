@@ -4,7 +4,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use arrow::array::Array;
-use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
+use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
 use polars_utils::unitvec;
@@ -16,7 +16,7 @@ use crate::hash_keys::HashKeys;
 pub struct RowEncodedIdxTable {
     // These AtomicU64s actually are IdxSizes, but we use the top bit of the
     // first index in each to mark keys during probing.
-    idx_map: BytesIndexMap<UnitVec<AtomicU64>>,
+    idx_map: BinaryViewIndexMap<UnitVec<AtomicU64>>,
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
 }
@@ -24,7 +24,7 @@ pub struct RowEncodedIdxTable {
 impl RowEncodedIdxTable {
     pub fn new() -> Self {
         Self {
-            idx_map: BytesIndexMap::new(),
+            idx_map: BinaryViewIndexMap::new(),
             idx_offset: 0,
             null_keys: Vec::new(),
         }

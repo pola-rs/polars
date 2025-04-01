@@ -28,7 +28,7 @@ To authenticate using a Service Account, you must set environment variables. The
 should be defined using the credentials provided when the service account was created:
 
 ```bash
-export POLARS_CLOUD_CLIENT_ID ="CLIENT_ID_HERE"
+export POLARS_CLOUD_CLIENT_ID="CLIENT_ID_HERE"
 export POLARS_CLOUD_CLIENT_SECRET="CLIENT_SECRET_HERE"
 ```
 

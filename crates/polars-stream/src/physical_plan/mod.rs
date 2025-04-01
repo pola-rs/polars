@@ -10,7 +10,8 @@ use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::{
-    FileScan, JoinTypeOptionsIR, PartitionVariantIR, ScanSource, ScanSources, SinkOptions,
+    FileScan, JoinTypeOptionsIR, PartitionTargetCallback, PartitionVariantIR, ScanSource,
+    ScanSources, SinkOptions,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, IR};
@@ -26,9 +27,11 @@ pub use fmt::visualize_plan;
 use polars_plan::prelude::{FileScanOptions, FileType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::slice_enum::Slice;
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
+use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::MultiscanRowRestriction;
 use crate::physical_plan::lower_expr::ExprCache;
 
@@ -143,7 +146,8 @@ pub enum PhysNodeKind {
     },
 
     PartitionSink {
-        path_f_string: Arc<PathBuf>,
+        base_path: PathBuf,
+        file_path_cb: Option<PartitionTargetCallback>,
         sink_options: SinkOptions,
         variant: PartitionVariantIR,
         file_type: FileType,
@@ -211,12 +215,23 @@ pub enum PhysNodeKind {
         /// `allow_missing_columns == false`.
         file_schema: SchemaRef,
 
+        /// Final output schema of morsels being sent out of MultiScan.
+        output_schema: SchemaRef,
+
         /// Selection of `file_schema` columns should to be included in the output morsels.
         projection: Option<Bitmap>,
 
         row_restriction: Option<MultiscanRowRestriction>,
         predicate: Option<ExprIR>,
         row_index: Option<RowIndex>,
+
+        // Fields for new multiscan
+        // TODO: Remove `Option<>`
+        file_reader_builder: Option<Arc<dyn FileReaderBuilder>>,
+        /// Columns to project from the file.
+        projected_file_schema: SchemaRef,
+        cloud_options: Option<Arc<CloudOptions>>,
+        pre_slice: Option<Slice>,
     },
     FileScan {
         scan_source: ScanSource,
@@ -225,6 +240,11 @@ pub enum PhysNodeKind {
         output_schema: Option<SchemaRef>,
         scan_type: Box<FileScan>,
         file_options: Box<FileScanOptions>,
+    },
+
+    #[cfg(feature = "python")]
+    PythonScan {
+        options: polars_plan::plans::python::PythonOptions,
     },
 
     GroupBy {
@@ -239,6 +259,15 @@ pub enum PhysNodeKind {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         args: JoinArgs,
+    },
+
+    SemiAntiJoin {
+        input_left: PhysStream,
+        input_right: PhysStream,
+        left_on: Vec<ExprIR>,
+        right_on: Vec<ExprIR>,
+        args: JoinArgs,
+        output_bool: bool,
     },
 
     /// Generic fallback for (as-of-yet) unsupported streaming joins.
@@ -284,6 +313,8 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::MultiScan { .. }
             | PhysNodeKind::FileScan { .. }
             | PhysNodeKind::InputIndependentSelect { .. } => {},
+            #[cfg(feature = "python")]
+            PhysNodeKind::PythonScan { .. } => {},
             PhysNodeKind::Select { input, .. }
             | PhysNodeKind::WithRowIndex { input, .. }
             | PhysNodeKind::Reduce { input, .. }
@@ -309,6 +340,11 @@ fn visit_node_inputs_mut(
                 ..
             }
             | PhysNodeKind::EquiJoin {
+                input_left,
+                input_right,
+                ..
+            }
+            | PhysNodeKind::SemiAntiJoin {
                 input_left,
                 input_right,
                 ..

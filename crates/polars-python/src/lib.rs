@@ -21,7 +21,6 @@ pub mod expr;
 pub mod file;
 #[cfg(feature = "pymethods")]
 pub mod functions;
-pub mod gil_once_cell;
 pub mod interop;
 pub mod lazyframe;
 pub mod lazygroupby;
@@ -36,6 +35,7 @@ pub mod py_modules;
 pub mod series;
 #[cfg(feature = "sql")]
 pub mod sql;
+pub mod timeout;
 pub mod utils;
 
 use crate::conversion::Wrap;
