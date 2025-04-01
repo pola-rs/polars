@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::FixedSizeBinaryArray;
 use crate::array::physical_binary::extend_validity;
@@ -221,6 +221,14 @@ impl MutableFixedSizeBinaryArray {
         if let Some(validity) = &mut self.validity {
             validity.shrink_to_fit()
         }
+    }
+
+    pub fn freeze(self) -> FixedSizeBinaryArray {
+        FixedSizeBinaryArray::new(
+            ArrowDataType::FixedSizeBinary(self.size),
+            self.values.into(),
+            self.validity.map(|x| x.into()),
+        )
     }
 }
 

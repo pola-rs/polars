@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
-use polars_core::frame::column::Column;
 use polars_core::frame::DataFrame;
+use polars_core::frame::column::Column;
 use polars_core::schema::Schema;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
@@ -22,7 +22,7 @@ pub static mut CALL_DF_UDF_PYTHON: Option<
 > = None;
 
 pub use polars_utils::python_function::{
-    PythonFunction, PYTHON3_VERSION, PYTHON_SERDE_MAGIC_BYTE_MARK,
+    PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON3_VERSION, PythonFunction,
 };
 
 pub struct PythonUdfExpression {
@@ -73,7 +73,7 @@ impl PythonUdfExpression {
         // Load UDF metadata
         let mut reader = Cursor::new(buf);
         let (output_type, is_elementwise, returns_scalar): (Option<DataType>, bool, bool) =
-            pl_serialize::deserialize_from_reader(&mut reader)?;
+            pl_serialize::deserialize_from_reader::<_, _, true>(&mut reader)?;
 
         let remainder = &buf[reader.position() as usize..];
 
@@ -163,7 +163,7 @@ impl ColumnsUdf for PythonUdfExpression {
             buf.extend_from_slice(&*PYTHON3_VERSION);
 
             // Write UDF metadata
-            pl_serialize::serialize_into_writer(
+            pl_serialize::serialize_into_writer::<_, _, true>(
                 &mut *buf,
                 &(
                     self.output_type.clone(),
@@ -199,7 +199,8 @@ impl PythonGetOutput {
         let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
 
         let mut reader = Cursor::new(buf);
-        let return_dtype: Option<DataType> = pl_serialize::deserialize_from_reader(&mut reader)?;
+        let return_dtype: Option<DataType> =
+            pl_serialize::deserialize_from_reader::<_, _, true>(&mut reader)?;
 
         Ok(Arc::new(Self::new(return_dtype)) as Arc<dyn FunctionOutputField>)
     }
@@ -226,7 +227,7 @@ impl FunctionOutputField for PythonGetOutput {
         use polars_utils::pl_serialize;
 
         buf.extend_from_slice(PYTHON_SERDE_MAGIC_BYTE_MARK);
-        pl_serialize::serialize_into_writer(&mut *buf, &self.return_dtype)
+        pl_serialize::serialize_into_writer::<_, _, true>(&mut *buf, &self.return_dtype)
     }
 }
 

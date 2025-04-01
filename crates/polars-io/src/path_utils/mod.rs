@@ -1,37 +1,124 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use once_cell::sync::Lazy;
 use polars_core::config;
-use polars_core::error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_core::error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::pl_str::PlSmallStr;
-use regex::Regex;
 
 #[cfg(feature = "cloud")]
 mod hugging_face;
 
 use crate::cloud::CloudOptions;
 
-pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
-    let path = std::env::var("POLARS_TEMP_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            PathBuf::from(std::env::temp_dir().to_string_lossy().as_ref()).join("polars/")
-        })
+pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
+    (|| {
+        let verbose = config::verbose();
+
+        let path = if let Ok(v) = std::env::var("POLARS_TEMP_DIR").map(PathBuf::from) {
+            if verbose {
+                eprintln!("init_temp_dir: sourced from POLARS_TEMP_DIR")
+            }
+            v
+        } else if cfg!(target_family = "unix") {
+            let id = std::env::var("USER")
+                .inspect(|_| {
+                    if verbose {
+                        eprintln!("init_temp_dir: sourced $USER")
+                    }
+                })
+                .or_else(|_e| {
+                    // We shouldn't hit here, but we can fallback to hashing $HOME if blake3 is
+                    // available (it is available when file_cache is activated).
+                    #[cfg(feature = "file_cache")]
+                    {
+                        std::env::var("HOME")
+                            .inspect(|_| {
+                                if verbose {
+                                    eprintln!("init_temp_dir: sourced $HOME")
+                                }
+                            })
+                            .map(|x| blake3::hash(x.as_bytes()).to_hex()[..32].to_string())
+                    }
+                    #[cfg(not(feature = "file_cache"))]
+                    {
+                        Err(_e)
+                    }
+                });
+
+            if let Ok(v) = id {
+                std::env::temp_dir().join(format!("polars-{}/", v))
+            } else {
+                return Err(std::io::Error::other(
+                    "could not load $USER or $HOME environment variables",
+                ));
+            }
+        } else if cfg!(target_family = "windows") {
+            // Setting permissions on Windows is not as easy compared to Unix, but fortunately
+            // the default temporary directory location is underneath the user profile, so we
+            // shouldn't need to do anything.
+            std::env::temp_dir().join("polars/")
+        } else {
+            std::env::temp_dir().join("polars/")
+        }
         .into_boxed_path();
 
-    if let Err(err) = std::fs::create_dir_all(path.as_ref()) {
-        if !path.is_dir() {
-            panic!(
-                "failed to create temporary directory: path = {}, err = {}",
-                path.to_str().unwrap(),
-                err
-            );
+        if let Err(err) = std::fs::create_dir_all(path.as_ref()) {
+            if !path.is_dir() {
+                panic!(
+                    "failed to create temporary directory: {} (path = {:?})",
+                    err,
+                    path.as_ref()
+                );
+            }
         }
-    }
 
-    path
+        #[cfg(target_family = "unix")]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let result = (|| {
+                std::fs::set_permissions(path.as_ref(), std::fs::Permissions::from_mode(0o700))?;
+                let perms = std::fs::metadata(path.as_ref())?.permissions();
+
+                if (perms.mode() % 0o1000) != 0o700 {
+                    std::io::Result::Err(std::io::Error::other(format!(
+                        "permission mismatch: {:?}",
+                        perms
+                    )))
+                } else {
+                    std::io::Result::Ok(())
+                }
+            })()
+            .map_err(|e| {
+                std::io::Error::new(
+                    e.kind(),
+                    format!(
+                        "error setting temporary directory permissions: {} (path = {:?})",
+                        e,
+                        path.as_ref()
+                    ),
+                )
+            });
+
+            if std::env::var("POLARS_ALLOW_UNSECURED_TEMP_DIR").as_deref() != Ok("1") {
+                result?;
+            }
+        }
+
+        std::io::Result::Ok(path)
+    })()
+    .map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!(
+                "error initializing temporary directory: {} \
+                 consider explicitly setting POLARS_TEMP_DIR",
+                e
+            ),
+        )
+    })
+    .unwrap()
 });
 
 /// Replaces a "~" in the Path with the home directory.
@@ -49,8 +136,9 @@ pub fn resolve_homedir(path: &dyn AsRef<Path>) -> PathBuf {
     path.into()
 }
 
-static CLOUD_URL: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?|hf)://").unwrap());
+polars_utils::regex_cache::cached_regex! {
+    static CLOUD_URL = r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?|hf)://";
+}
 
 /// Check if the path is a cloud url.
 pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
@@ -210,13 +298,14 @@ pub fn expand_paths_hive(
             use crate::cloud::object_path_from_str;
 
             if first_path.starts_with("hf://") {
-                let (expand_start_idx, paths) = crate::pl_async::get_runtime()
-                    .block_on_potential_spawn(hugging_face::expand_paths_hf(
+                let (expand_start_idx, paths) = crate::pl_async::get_runtime().block_in_place_on(
+                    hugging_face::expand_paths_hf(
                         paths,
                         check_directory_level,
                         cloud_options,
                         glob,
-                    ))?;
+                    ),
+                )?;
 
                 return Ok((Arc::from(paths), expand_start_idx));
             }
@@ -232,7 +321,7 @@ pub fn expand_paths_hive(
             let expand_path_cloud = |path: &str,
                                      cloud_options: Option<&CloudOptions>|
              -> PolarsResult<(usize, Vec<PathBuf>)> {
-                crate::pl_async::get_runtime().block_on_potential_spawn(async {
+                crate::pl_async::get_runtime().block_in_place_on(async {
                     let (cloud_location, store) =
                         crate::cloud::build_object_store(path, cloud_options, glob).await?;
                     let prefix = object_path_from_str(&cloud_location.prefix)?;
@@ -335,9 +424,8 @@ pub fn expand_paths_hive(
 
                 hive_idx_tracker.update(0, path_idx)?;
 
-                let iter = crate::pl_async::get_runtime().block_on_potential_spawn(
-                    crate::async_glob(path.to_str().unwrap(), cloud_options),
-                )?;
+                let iter = crate::pl_async::get_runtime()
+                    .block_in_place_on(crate::async_glob(path.to_str().unwrap(), cloud_options))?;
 
                 if is_cloud {
                     out_paths.extend(iter.into_iter().map(PathBuf::from));
@@ -426,11 +514,7 @@ pub fn expand_paths_hive(
 pub(crate) fn ensure_directory_init(path: &Path) -> std::io::Result<()> {
     let result = std::fs::create_dir_all(path);
 
-    if path.is_dir() {
-        Ok(())
-    } else {
-        result
-    }
+    if path.is_dir() { Ok(()) } else { result }
 }
 
 #[cfg(test)]

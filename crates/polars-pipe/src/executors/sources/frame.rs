@@ -1,10 +1,10 @@
 use std::iter::Enumerate;
 use std::vec::IntoIter;
 
+use polars_core::POOL;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::utils::split_df;
-use polars_core::POOL;
 use polars_utils::IdxSize;
 
 use crate::executors::sources::get_source_index;

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 pub mod version_0;
 
 use std::mem::ManuallyDrop;

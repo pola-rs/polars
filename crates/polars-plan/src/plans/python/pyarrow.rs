@@ -29,7 +29,7 @@ pub fn predicate_to_pa(
 ) -> Option<String> {
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {
-            if op.is_comparison() {
+            if op.is_comparison_or_bitwise() {
                 let left = predicate_to_pa(*left, expr_arena, args)?;
                 let right = predicate_to_pa(*right, expr_arena, args)?;
                 Some(format!("({left} {op} {right})"))
@@ -116,7 +116,7 @@ pub fn predicate_to_pa(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+            function: FunctionExpr::Boolean(BooleanFunction::IsIn { .. }),
             input,
             ..
         } => {

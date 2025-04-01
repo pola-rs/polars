@@ -1,7 +1,9 @@
 use std::fmt::Write;
 
+use polars_ops::frame::JoinType;
+use polars_plan::dsl::FileScan;
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, EscapeLabel, FileScan, ScanSourcesDisplay};
+use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
@@ -45,6 +47,14 @@ fn visualize_plan_rec(
             ),
             &[][..],
         ),
+        #[cfg(feature = "python")]
+        PhysNodeKind::PythonScan { .. } => ("python-scan".to_string(), &[][..]),
+        PhysNodeKind::SinkMultiple { sinks } => {
+            for sink in sinks {
+                visualize_plan_rec(*sink, phys_sm, expr_arena, visited, out);
+            }
+            return;
+        },
         PhysNodeKind::Select {
             input,
             selectors,
@@ -118,6 +128,20 @@ fn visualize_plan_rec(
             #[allow(unreachable_patterns)]
             _ => todo!(),
         },
+        PhysNodeKind::PartitionSink {
+            input, file_type, ..
+        } => match file_type {
+            #[cfg(feature = "parquet")]
+            FileType::Parquet(_) => ("parquet-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "ipc")]
+            FileType::Ipc(_) => ("ipc-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "csv")]
+            FileType::Csv(_) => ("csv-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "json")]
+            FileType::Json(_) => ("json-partition-sink".to_string(), from_ref(input)),
+            #[allow(unreachable_patterns)]
+            _ => todo!(),
+        },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
             ("in-memory-map".to_string(), from_ref(input))
         },
@@ -144,16 +168,25 @@ fn visualize_plan_rec(
             (label.to_string(), inputs.as_slice())
         },
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
+        PhysNodeKind::MultiScan { hive_parts, .. } => {
+            let mut out = "multi-scan-source".to_string();
+            let mut f = EscapeLabel(&mut out);
+
+            if let Some(v) = hive_parts.as_ref().map(|h| h.df().width()) {
+                write!(f, "\nhive: {} columns", v).unwrap();
+            }
+
+            (out, &[][..])
+        },
         PhysNodeKind::FileScan {
-            scan_sources,
+            scan_source,
             file_info,
-            hive_parts,
             output_schema: _,
             scan_type,
             predicate,
             file_options,
         } => {
-            let name = match scan_type {
+            let name = match &**scan_type {
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet { .. } => "parquet-source",
                 #[cfg(feature = "csv")]
@@ -169,9 +202,7 @@ fn visualize_plan_rec(
             let mut f = EscapeLabel(&mut out);
 
             {
-                let disp = ScanSourcesDisplay(scan_sources);
-
-                write!(f, "\npaths: {}", disp).unwrap();
+                write!(f, "\npath: {}", scan_source.as_scan_source_ref()).unwrap();
             }
 
             {
@@ -193,19 +224,12 @@ fn visualize_plan_rec(
                 write!(f, r#"\nrow index: name: "{}", offset: {}"#, name, offset).unwrap();
             }
 
-            if let Some((offset, len)) = file_options.slice {
+            if let Some((offset, len)) = file_options.pre_slice {
                 write!(f, "\nslice: offset: {}, len: {}", offset, len).unwrap();
             }
 
             if let Some(predicate) = predicate.as_ref() {
                 write!(f, "\nfilter: {}", predicate.display(expr_arena)).unwrap();
-            }
-
-            if let Some(v) = hive_parts
-                .as_deref()
-                .map(|x| x[0].get_statistics().column_stats().len())
-            {
-                write!(f, "\nhive: {} columns", v).unwrap();
             }
 
             (out, &[][..])
@@ -232,21 +256,44 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
+        }
+        | PhysNodeKind::SemiAntiJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+            output_bool: _,
         } => {
-            let mut label = if matches!(phys_sm[node_key].kind, PhysNodeKind::EquiJoin { .. }) {
-                "equi-join".to_string()
-            } else {
-                "in-memory-join".to_string()
+            let label = match phys_sm[node_key].kind {
+                PhysNodeKind::EquiJoin { .. } if args.how.is_equi() => "equi-join",
+                PhysNodeKind::EquiJoin { .. } => "in-memory-join",
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: false, ..
+                } if args.how == JoinType::Semi => "semi-join",
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: false, ..
+                } if args.how == JoinType::Anti => "anti-join",
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: true, ..
+                } if args.how == JoinType::Semi => "is-in",
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: true, ..
+                } if args.how == JoinType::Anti => "is-not-in",
+                _ => unreachable!(),
             };
+            let mut label = label.to_string();
             write!(label, r"\nleft_on:\n{}", fmt_exprs(left_on, expr_arena)).unwrap();
             write!(label, r"\nright_on:\n{}", fmt_exprs(right_on, expr_arena)).unwrap();
-            write!(
-                label,
-                r"\nhow: {}",
-                escape_graphviz(&format!("{:?}", args.how))
-            )
-            .unwrap();
-            if args.join_nulls {
+            if args.how.is_equi() {
+                write!(
+                    label,
+                    r"\nhow: {}",
+                    escape_graphviz(&format!("{:?}", args.how))
+                )
+                .unwrap();
+            }
+            if args.nulls_equal {
                 write!(label, r"\njoin-nulls").unwrap();
             }
             (label, &[*input_left, *input_right][..])

@@ -10,7 +10,6 @@ use super::in_memory_source::InMemorySourceNode;
 pub enum InMemoryMapNode {
     Sink {
         sink_node: InMemorySinkNode,
-        num_pipelines: usize,
         map: Arc<dyn DataFrameUdf>,
     },
     Source(InMemorySourceNode),
@@ -21,7 +20,6 @@ impl InMemoryMapNode {
     pub fn new(input_schema: Arc<Schema>, map: Arc<dyn DataFrameUdf>) -> Self {
         Self::Sink {
             sink_node: InMemorySinkNode::new(input_schema),
-            num_pipelines: 0,
             map,
         }
     }
@@ -32,14 +30,12 @@ impl ComputeNode for InMemoryMapNode {
         "in_memory_map"
     }
 
-    fn initialize(&mut self, num_pipelines_: usize) {
-        match self {
-            Self::Sink { num_pipelines, .. } => *num_pipelines = num_pipelines_,
-            _ => unreachable!(),
-        }
-    }
-
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
         // If the output doesn't want any more data, transition to being done.
@@ -48,31 +44,25 @@ impl ComputeNode for InMemoryMapNode {
         }
 
         // If the input is done, transition to being a source.
-        if let Self::Sink {
-            sink_node,
-            num_pipelines,
-            map,
-        } = self
-        {
+        if let Self::Sink { sink_node, map } = self {
             if recv[0] == PortState::Done {
                 let df = sink_node.get_output()?;
-                let mut source_node = InMemorySourceNode::new(
+                let source_node = InMemorySourceNode::new(
                     Arc::new(map.call_udf(df.unwrap())?),
                     MorselSeq::default(),
                 );
-                source_node.initialize(*num_pipelines);
                 *self = Self::Source(source_node);
             }
         }
 
         match self {
             Self::Sink { sink_node, .. } => {
-                sink_node.update_state(recv, &mut [])?;
+                sink_node.update_state(recv, &mut [], state)?;
                 send[0] = PortState::Blocked;
             },
             Self::Source(source_node) => {
                 recv[0] = PortState::Done;
-                source_node.update_state(&mut [], send)?;
+                source_node.update_state(&mut [], send, state)?;
             },
             Self::Done => {
                 recv[0] = PortState::Done;
@@ -91,7 +81,7 @@ impl ComputeNode for InMemoryMapNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         match self {

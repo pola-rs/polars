@@ -52,11 +52,7 @@ macro_rules! impl_signed_arith_kernel {
                     Some(&mask),
                 );
                 let ret = prim_binary_values(lhs, other, |lhs, rhs| {
-                    if rhs != 0 {
-                        lhs.wrapping_div(rhs)
-                    } else {
-                        0
-                    }
+                    if rhs != 0 { lhs.wrapping_div(rhs) } else { 0 }
                 });
                 ret.with_validity(valid)
             }
@@ -195,11 +191,7 @@ macro_rules! impl_signed_arith_kernel {
                         }
 
                         // Remainder should have sign of RHS.
-                        if rhs < 0 {
-                            -(rem_u as $T)
-                        } else {
-                            rem_u as $T
-                        }
+                        if rhs < 0 { -(rem_u as $T) } else { rem_u as $T }
                     })
                 }
             }

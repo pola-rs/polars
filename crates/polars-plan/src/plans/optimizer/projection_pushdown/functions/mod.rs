@@ -42,14 +42,9 @@ pub(super) fn process_functions(
             Ok(lp)
         },
         Explode { columns, .. } => {
-            columns.iter().for_each(|name| {
-                add_str_to_accumulated(
-                    name.clone(),
-                    &mut ctx.acc_projections,
-                    &mut ctx.projected_names,
-                    expr_arena,
-                )
-            });
+            columns
+                .iter()
+                .for_each(|name| add_str_to_accumulated(name.clone(), &mut ctx, expr_arena));
             proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
             Ok(IRBuilder::new(input, expr_arena, lp_arena)
                 .explode(columns.clone())

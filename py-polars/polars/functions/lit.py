@@ -4,6 +4,7 @@ import contextlib
 import enum
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import polars._reexport as pl
 from polars._utils.wrap import wrap_expr
@@ -87,12 +88,25 @@ def lit(
         if value_tz is None:
             tz = dtype_tz
         else:
+            # value has time zone, but dtype does not: keep value time zone
             if dtype_tz is None:
-                # value has time zone, but dtype does not: keep value time zone
-                tz = str(value_tz)
+                if isinstance(value_tz, ZoneInfo):
+                    # named timezone
+                    tz = str(value_tz)
+                else:
+                    # fixed offset from UTC (eg: +4:00)
+                    value = value.astimezone(timezone.utc)
+                    tz = "UTC"
+
+            # dtype and value both have same time zone
             elif str(value_tz) == dtype_tz:
-                # dtype and value both have same time zone
                 tz = str(value_tz)
+
+            # given a fixed offset from UTC that matches the dtype tz offset
+            elif hasattr(value_tz, "utcoffset") and getattr(
+                ZoneInfo(dtype_tz).utcoffset(value), "seconds", 0
+            ) == getattr(value_tz.utcoffset(value), "seconds", 1):
+                tz = dtype_tz
             else:
                 # value has time zone that differs from dtype time zone
                 msg = (

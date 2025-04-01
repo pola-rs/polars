@@ -82,7 +82,9 @@ impl PySeries {
                 }))
             },
             dt => {
-                let msg = format!("`_get_buffer_info` not implemented for non-physical type {dt}; try to select a buffer first");
+                let msg = format!(
+                    "`_get_buffer_info` not implemented for non-physical type {dt}; try to select a buffer first"
+                );
                 Err(PyTypeError::new_err(msg))
             },
         }
@@ -246,11 +248,7 @@ fn get_boolean_buffer_length_in_bytes(length: usize, offset: usize) -> usize {
     let n_bits = offset + length;
     let n_bytes = n_bits / 8;
     let rest = n_bits % 8;
-    if rest == 0 {
-        n_bytes
-    } else {
-        n_bytes + 1
-    }
+    if rest == 0 { n_bytes } else { n_bytes + 1 }
 }
 
 #[pymethods]
@@ -322,9 +320,11 @@ impl PySeries {
                         }
                         series_to_offsets(s)
                     },
-                    None => return Err(PyTypeError::new_err(
-                        "`_from_buffers` cannot create a String column without an offsets buffer",
-                    )),
+                    None => {
+                        return Err(PyTypeError::new_err(
+                            "`_from_buffers` cannot create a String column without an offsets buffer",
+                        ));
+                    },
                 };
                 let values = series_to_buffer::<UInt8Type>(values);
                 py.enter_polars(|| from_buffers_string_impl(values, validity, offsets))?
@@ -346,15 +346,12 @@ where
 {
     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
     let ca = ca.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
-    arr.values().clone()
+    ca.downcast_as_array().values().clone()
 }
 fn series_to_bitmap(s: Series) -> PyResult<Bitmap> {
     let ca_result = s.bool();
     let ca = ca_result.map_err(PyPolarsErr::from)?.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
-    let bitmap = arr.values().clone();
-    Ok(bitmap)
+    Ok(ca.downcast_as_array().values().clone())
 }
 fn series_to_offsets(s: Series) -> OffsetsBuffer<i64> {
     let buffer = series_to_buffer::<Int64Type>(s);

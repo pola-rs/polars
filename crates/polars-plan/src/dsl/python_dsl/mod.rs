@@ -1,4 +1,5 @@
 mod python_udf;
-pub mod source;
+mod source;
 
 pub use python_udf::*;
+pub use source::*;

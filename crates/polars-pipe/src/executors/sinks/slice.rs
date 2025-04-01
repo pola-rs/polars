@@ -7,7 +7,7 @@ use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 
 use crate::operators::{
-    chunks_to_df_unchecked, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
+    DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, chunks_to_df_unchecked,
 };
 
 #[derive(Clone)]

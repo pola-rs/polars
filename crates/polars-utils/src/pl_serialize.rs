@@ -1,19 +1,33 @@
-use polars_error::{to_compute_err, PolarsResult};
+//! Centralized Polars serialization entry.
+//!
+//! Currently provides two serialization scheme's.
+//! - Self-describing (and thus more forward compatible) activated with `FC: true`
+//! - Compact activated with `FC: false`
+use polars_error::{PolarsResult, to_compute_err};
 
-fn serialize_impl<W, T>(writer: W, value: &T) -> PolarsResult<()>
+fn serialize_impl<W, T, const FC: bool>(writer: W, value: &T) -> PolarsResult<()>
 where
     W: std::io::Write,
     T: serde::ser::Serialize,
 {
-    bincode::serialize_into(writer, value).map_err(to_compute_err)
+    if FC {
+        let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
+        value.serialize(&mut s).map_err(to_compute_err)
+    } else {
+        bincode::serialize_into(writer, value).map_err(to_compute_err)
+    }
 }
 
-pub fn deserialize_impl<T, R>(reader: R) -> PolarsResult<T>
+pub fn deserialize_impl<T, R, const FC: bool>(reader: R) -> PolarsResult<T>
 where
     T: serde::de::DeserializeOwned,
     R: std::io::Read,
 {
-    bincode::deserialize_from(reader).map_err(to_compute_err)
+    if FC {
+        rmp_serde::from_read(reader).map_err(to_compute_err)
+    } else {
+        bincode::deserialize_from(reader).map_err(to_compute_err)
+    }
 }
 
 /// Mainly used to enable compression when serializing the final outer value.
@@ -29,38 +43,42 @@ impl SerializeOptions {
         self
     }
 
-    pub fn serialize_into_writer<W, T>(&self, writer: W, value: &T) -> PolarsResult<()>
+    pub fn serialize_into_writer<W, T, const FC: bool>(
+        &self,
+        writer: W,
+        value: &T,
+    ) -> PolarsResult<()>
     where
         W: std::io::Write,
         T: serde::ser::Serialize,
     {
         if self.compression {
             let writer = flate2::write::ZlibEncoder::new(writer, flate2::Compression::fast());
-            serialize_impl(writer, value)
+            serialize_impl::<_, _, FC>(writer, value)
         } else {
-            serialize_impl(writer, value)
+            serialize_impl::<_, _, FC>(writer, value)
         }
     }
 
-    pub fn deserialize_from_reader<T, R>(&self, reader: R) -> PolarsResult<T>
+    pub fn deserialize_from_reader<T, R, const FC: bool>(&self, reader: R) -> PolarsResult<T>
     where
         T: serde::de::DeserializeOwned,
         R: std::io::Read,
     {
         if self.compression {
-            deserialize_impl(flate2::read::ZlibDecoder::new(reader))
+            deserialize_impl::<_, _, FC>(flate2::read::ZlibDecoder::new(reader))
         } else {
-            deserialize_impl(reader)
+            deserialize_impl::<_, _, FC>(reader)
         }
     }
 
-    pub fn serialize_to_bytes<T>(&self, value: &T) -> PolarsResult<Vec<u8>>
+    pub fn serialize_to_bytes<T, const FC: bool>(&self, value: &T) -> PolarsResult<Vec<u8>>
     where
         T: serde::ser::Serialize,
     {
         let mut v = vec![];
 
-        self.serialize_into_writer(&mut v, value)?;
+        self.serialize_into_writer::<_, _, FC>(&mut v, value)?;
 
         Ok(v)
     }
@@ -73,29 +91,29 @@ impl Default for SerializeOptions {
     }
 }
 
-pub fn serialize_into_writer<W, T>(writer: W, value: &T) -> PolarsResult<()>
+pub fn serialize_into_writer<W, T, const FC: bool>(writer: W, value: &T) -> PolarsResult<()>
 where
     W: std::io::Write,
     T: serde::ser::Serialize,
 {
-    serialize_impl(writer, value)
+    serialize_impl::<_, _, FC>(writer, value)
 }
 
-pub fn deserialize_from_reader<T, R>(reader: R) -> PolarsResult<T>
+pub fn deserialize_from_reader<T, R, const FC: bool>(reader: R) -> PolarsResult<T>
 where
     T: serde::de::DeserializeOwned,
     R: std::io::Read,
 {
-    deserialize_impl(reader)
+    deserialize_impl::<_, _, FC>(reader)
 }
 
-pub fn serialize_to_bytes<T>(value: &T) -> PolarsResult<Vec<u8>>
+pub fn serialize_to_bytes<T, const FC: bool>(value: &T) -> PolarsResult<Vec<u8>>
 where
     T: serde::ser::Serialize,
 {
     let mut v = vec![];
 
-    serialize_into_writer(&mut v, value)?;
+    serialize_into_writer::<_, _, FC>(&mut v, value)?;
 
     Ok(v)
 }
@@ -105,7 +123,7 @@ where
 /// This is essentially boilerplate for visiting bytes without copying where possible.
 pub fn deserialize_map_bytes<'de, D, O>(
     deserializer: D,
-    func: &mut (dyn for<'b> FnMut(std::borrow::Cow<'b, [u8]>) -> O),
+    mut func: impl for<'b> FnMut(std::borrow::Cow<'b, [u8]>) -> O,
 ) -> Result<O, D::Error>
 where
     D: serde::de::Deserializer<'de>,
@@ -177,17 +195,17 @@ mod tests {
         }
 
         let v = Enum::A;
-        let b = super::serialize_to_bytes(&v).unwrap();
-        let r: Enum = super::deserialize_from_reader(b.as_slice()).unwrap();
+        let b = super::serialize_to_bytes::<_, false>(&v).unwrap();
+        let r: Enum = super::deserialize_from_reader::<_, _, false>(b.as_slice()).unwrap();
 
         assert_eq!(r, v);
 
         let v = Enum::A;
         let b = super::SerializeOptions::default()
-            .serialize_to_bytes(&v)
+            .serialize_to_bytes::<_, false>(&v)
             .unwrap();
         let r: Enum = super::SerializeOptions::default()
-            .deserialize_from_reader(b.as_slice())
+            .deserialize_from_reader::<_, _, false>(b.as_slice())
             .unwrap();
 
         assert_eq!(r, v);

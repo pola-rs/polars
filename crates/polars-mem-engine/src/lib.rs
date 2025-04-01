@@ -2,8 +2,9 @@ mod executors;
 mod planner;
 mod predicate;
 mod prelude;
-mod utils;
 
 pub use executors::Executor;
-pub use planner::{create_physical_plan, create_scan_predicate};
+#[cfg(feature = "python")]
+pub use planner::python_scan_predicate;
+pub use planner::{create_multiple_physical_plans, create_physical_plan, create_scan_predicate};
 pub use predicate::ScanPredicate;

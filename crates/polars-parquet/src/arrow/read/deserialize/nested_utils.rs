@@ -1,12 +1,11 @@
-use arrow::array::Array;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
-use arrow::datatypes::ArrowDataType;
 
-use super::{utils, BasicDecompressor, Filter};
+use super::utils::PageDecoder;
+use super::{Filter, utils};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage};
+use crate::parquet::page::{DataPage, split_buffer};
 use crate::parquet::read::levels::get_bit_width;
 
 pub struct Nested {
@@ -91,10 +90,11 @@ impl Nested {
                 validity.extend_constant(self.num_invalids, false);
             }
 
-            debug_assert!(self
-                .validity
-                .as_ref()
-                .is_none_or(|v| v.len() == self.length));
+            debug_assert!(
+                self.validity
+                    .as_ref()
+                    .is_none_or(|v| v.len() == self.length)
+            );
         }
 
         self.num_valids = 0;
@@ -558,14 +558,6 @@ fn decode_nested(
     Ok(())
 }
 
-pub struct PageNestedDecoder<D: utils::Decoder> {
-    pub iter: BasicDecompressor,
-    pub dtype: ArrowDataType,
-    pub dict: Option<D::Dict>,
-    pub decoder: D,
-    pub init: Vec<InitNested>,
-}
-
 /// Return the definition and repetition level iterators for this page.
 fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDecoder)> {
     let split = split_buffer(page)?;
@@ -581,33 +573,17 @@ fn level_iters(page: &DataPage) -> ParquetResult<(HybridRleDecoder, HybridRleDec
     Ok((def_iter, rep_iter))
 }
 
-impl<D: utils::Decoder> PageNestedDecoder<D> {
-    pub fn new(
-        mut iter: BasicDecompressor,
-        dtype: ArrowDataType,
-        mut decoder: D,
-        init: Vec<InitNested>,
-    ) -> ParquetResult<Self> {
-        let dict_page = iter.read_dict_page()?;
-        let dict = dict_page.map(|d| decoder.deserialize_dict(d)).transpose()?;
-
-        Ok(Self {
-            iter,
-            dtype,
-            dict,
-            decoder,
-            init,
-        })
-    }
-
-    pub fn collect(
+impl<D: utils::Decoder> PageDecoder<D> {
+    pub fn collect_nested(
         mut self,
         filter: Option<Filter>,
     ) -> ParquetResult<(NestedState, D::Output, Bitmap)> {
+        let init = self.init_nested.as_mut().unwrap();
+
         // @TODO: We should probably count the filter so that we don't overallocate
         let mut target = self.decoder.with_capacity(self.iter.total_num_values());
         // @TODO: Self capacity
-        let mut nested_state = init_nested(&self.init, 0);
+        let mut nested_state = init_nested(init, 0);
 
         if let Some(dict) = self.dict.as_ref() {
             self.decoder.apply_dictionary(&mut target, dict)?;
@@ -719,14 +695,5 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
         let array = self.decoder.finalize(self.dtype, self.dict, target)?;
 
         Ok((nested_state, array, Bitmap::new()))
-    }
-
-    pub fn collect_boxed(
-        self,
-        filter: Option<Filter>,
-    ) -> ParquetResult<(NestedState, Box<dyn Array>, Bitmap)> {
-        use arrow::array::IntoBoxedArray;
-        let (nested, array, ptm) = self.collect(filter)?;
-        Ok((nested, array.into_boxed(), ptm))
     }
 }

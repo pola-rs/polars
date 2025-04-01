@@ -1,15 +1,16 @@
-use std::mem::ManuallyDrop;
+use std::hash::BuildHasher;
 
 use arrow::bitmap::MutableBitmap;
 use either::Either;
 use polars::prelude::*;
+use polars_ffi::version_0::SeriesExport;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyList;
-use pyo3::IntoPyObjectExt;
 
 use self::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use super::PyDataFrame;
@@ -514,7 +515,9 @@ impl PyDataFrame {
         k2: u64,
         k3: u64,
     ) -> PyResult<PySeries> {
-        let hb = PlRandomState::with_seeds(k0, k1, k2, k3);
+        // TODO: don't expose all these seeds.
+        let seed = PlFixedStateQuality::default().hash_one((k0, k1, k2, k3));
+        let hb = PlSeedableRandomStateQuality::seed_from_u64(seed);
         py.enter_polars_series(|| self.df.hash_rows(Some(hb)))
     }
 
@@ -560,7 +563,7 @@ impl PyDataFrame {
         invalid_indices: Vec<usize>,
     ) -> PyResult<PySeries> {
         py.enter_polars_series(|| {
-            let ca = self.df.clone().into_struct(name.into());
+            let mut ca = self.df.clone().into_struct(name.into());
 
             if !invalid_indices.is_empty() {
                 let mut validity = MutableBitmap::with_capacity(ca.len());
@@ -568,7 +571,7 @@ impl PyDataFrame {
                 for i in invalid_indices {
                     validity.set(i, false);
                 }
-                let ca = ca.rechunk();
+                ca.rechunk_mut();
                 Ok(ca.with_outer_validity(Some(validity.freeze())))
             } else {
                 Ok(ca)
@@ -580,17 +583,23 @@ impl PyDataFrame {
         py.enter_polars_df(|| Ok(self.df.clear()))
     }
 
-    #[allow(clippy::wrong_self_convention)]
-    pub fn into_raw_parts(&mut self) -> (usize, usize, usize) {
-        // Used for polars-lazy python node. This takes the dataframe from
-        // underneath of you, so don't use this anywhere else.
-        let df = std::mem::take(&mut self.df);
-        let cols = df.take_columns();
-        let mut md_cols = ManuallyDrop::new(cols);
-        let ptr = md_cols.as_mut_ptr();
-        let len = md_cols.len();
-        let cap = md_cols.capacity();
-        (ptr as usize, len, cap)
+    /// Export the columns via polars-ffi
+    /// # Safety
+    /// Needs a preallocated *mut SeriesExport that has allocated space for n_columns.
+    pub unsafe fn _export_columns(&mut self, location: usize) {
+        use polars_ffi::version_0::export_column;
+
+        let cols = self.df.get_columns();
+
+        let location = location as *mut SeriesExport;
+
+        for (i, col) in cols.iter().enumerate() {
+            let e = export_column(col);
+            // SAFETY:
+            // Caller should ensure address is allocated.
+            // Be careful not to drop `e` here as that should be dropped by the ffi consumer
+            unsafe { core::ptr::write(location.add(i), e) };
+        }
     }
 
     /// Internal utility function to allow direct access to the row encoding from python.

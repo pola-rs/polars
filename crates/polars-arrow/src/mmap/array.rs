@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 
 use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, StructArray, View};
 use crate::datatypes::ArrowDataType;
 use crate::ffi::mmap::create_array;
-use crate::ffi::{export_array_to_c, try_from, ArrowArray, InternalArrowArray};
-use crate::io::ipc::read::{Dictionaries, IpcBuffer, Node, OutOfSpecKind};
+use crate::ffi::{ArrowArray, InternalArrowArray, export_array_to_c, try_from};
 use crate::io::ipc::IpcField;
+use crate::io::ipc::read::{Dictionaries, IpcBuffer, Node, OutOfSpecKind};
 use crate::offset::Offset;
 use crate::types::NativeType;
 use crate::{match_integer_type, with_match_primitive_type_full};

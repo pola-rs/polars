@@ -6,18 +6,20 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 
+use crate::PyExpr;
 use crate::error::PyPolarsErr;
 use crate::exceptions::ComputeError;
 use crate::file::get_file_like;
-use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
+    // Pickle we set FC is false, as that is used for caching (compact is faster) and is not intended to be used
+    // across different versions.
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         // Used in pickle/pickling
         let mut writer: Vec<u8> = vec![];
         pl_serialize::SerializeOptions::default()
-            .serialize_into_writer(&mut writer, &self.inner)
+            .serialize_into_writer::<_, _, false>(&mut writer, &self.inner)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
         Ok(PyBytes::new(py, &writer))
@@ -27,7 +29,7 @@ impl PyExpr {
         // Used in pickle/pickling
         let bytes = state.extract::<PyBackedBytes>()?;
         self.inner = pl_serialize::SerializeOptions::default()
-            .deserialize_from_reader(&*bytes)
+            .deserialize_from_reader::<_, _, false>(&*bytes)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
         Ok(())
     }
@@ -37,7 +39,7 @@ impl PyExpr {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         pl_serialize::SerializeOptions::default()
-            .serialize_into_writer(writer, &self.inner)
+            .serialize_into_writer::<_, _, true>(writer, &self.inner)
             .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
@@ -56,7 +58,7 @@ impl PyExpr {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
         let expr: Expr = pl_serialize::SerializeOptions::default()
-            .deserialize_from_reader(reader)
+            .deserialize_from_reader::<_, _, true>(reader)
             .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(expr.into())
     }

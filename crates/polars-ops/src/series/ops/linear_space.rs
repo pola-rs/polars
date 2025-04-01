@@ -21,7 +21,7 @@ pub fn new_linear_space_f32(
     n: u64,
     closed: ClosedInterval,
     name: PlSmallStr,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Float32Chunked> {
     let mut ca = match n {
         0 => Float32Chunked::full_null(name, 0),
         1 => match closed {
@@ -55,8 +55,7 @@ pub fn new_linear_space_f32(
         IsSorted::Ascending
     };
     ca.set_sorted_flag(is_sorted);
-
-    Ok(ca.into_series())
+    Ok(ca)
 }
 
 pub fn new_linear_space_f64(
@@ -65,7 +64,7 @@ pub fn new_linear_space_f64(
     n: u64,
     closed: ClosedInterval,
     name: PlSmallStr,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Float64Chunked> {
     let mut ca = match n {
         0 => Float64Chunked::full_null(name, 0),
         1 => match closed {
@@ -99,6 +98,5 @@ pub fn new_linear_space_f64(
         IsSorted::Ascending
     };
     ca.set_sorted_flag(is_sorted);
-
-    Ok(ca.into_series())
+    Ok(ca)
 }

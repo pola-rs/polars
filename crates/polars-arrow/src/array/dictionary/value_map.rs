@@ -1,10 +1,10 @@
 use std::borrow::Borrow;
 use std::fmt::{self, Debug};
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash};
 
-use hashbrown::hash_table::Entry;
 use hashbrown::HashTable;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use hashbrown::hash_table::Entry;
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::PlRandomState;
 
 use super::DictionaryKey;

@@ -33,7 +33,7 @@ pub(crate) use filter::*;
 pub(crate) use gather::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
-use polars_io::predicates::{PhysicalIoExpr, SpecializedColumnPredicateExpr};
+use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::prelude::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(crate) use rolling::RollingExpr;
@@ -408,7 +408,9 @@ impl<'a> AggregationContext<'a> {
                 #[cfg(debug_assertions)]
                 {
                     if self.groups.len() > s.len() {
-                        polars_warn!("groups may be out of bounds; more groups than elements in a series is only possible in dynamic group_by")
+                        polars_warn!(
+                            "groups may be out of bounds; more groups than elements in a series is only possible in dynamic group_by"
+                        )
                     }
                 }
 
@@ -517,7 +519,9 @@ impl<'a> AggregationContext<'a> {
                     // panic so we find cases where we accidentally explode overlapping groups
                     // we don't want this as this can create a lot of data
                     if let GroupsType::Slice { rolling: true, .. } = self.groups.as_ref().as_ref() {
-                        panic!("implementation error, polars should not hit this branch for overlapping groups")
+                        panic!(
+                            "implementation error, polars should not hit this branch for overlapping groups"
+                        )
                     }
                 }
 
@@ -602,17 +606,6 @@ pub trait PhysicalExpr: Send + Sync {
         None
     }
 
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )>;
-    fn to_column(&self) -> Option<&PlSmallStr> {
-        None
-    }
-
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
     /// or not -> `false`
@@ -656,17 +649,6 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         self.expr.as_stats_evaluator()
-    }
-
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalIoExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        let (expr, specialized) = self.expr.isolate_column_expr(name)?;
-        Some((phys_expr_to_io_expr(expr), specialized))
     }
 }
 

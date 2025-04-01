@@ -1,5 +1,6 @@
+use std::sync::LazyLock;
+
 use arrow::array::MutableBinaryArray;
-use once_cell::sync::Lazy;
 use polars_utils::hashing::hash_to_partition;
 
 use super::*;
@@ -7,7 +8,7 @@ use crate::pipeline::PARTITION_SIZE;
 
 const OB_SIZE: usize = 2048;
 
-static SPILL_SIZE: Lazy<usize> = Lazy::new(|| {
+static SPILL_SIZE: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("POLARS_STREAMING_GROUPBY_SPILL_SIZE")
         .map(|v| v.parse::<usize>().unwrap())
         .unwrap_or(10_000)
@@ -135,7 +136,7 @@ impl SpillPartitions {
                             .iter_mut()
                             .zip(self.output_schema.iter_names())
                             .map(|(b, name)| {
-                                let mut s = b.reset(OB_SIZE);
+                                let mut s = b.reset(OB_SIZE, false).unwrap();
                                 s.rename(name.clone());
                                 s
                             })
@@ -207,7 +208,10 @@ impl SpillPartitions {
                         hashes,
                         chunk_idx,
                         keys: keys_builder.into(),
-                        aggs: spilled_aggs.iter_mut().map(|b| b.reset(0)).collect(),
+                        aggs: spilled_aggs
+                            .iter_mut()
+                            .map(|b| b.reset(0, false).unwrap())
+                            .collect(),
                     },
                 )
             })

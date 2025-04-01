@@ -53,12 +53,21 @@ def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
         ("ordinal_day", pl.Series(values=[139, 278, 51], dtype=pl.Int16)),
     ],
 )
+@pytest.mark.parametrize("time_zone", ["Asia/Kathmandu", None])
 def test_dt_extract_datetime_component(
     unit_attr: str,
     expected: pl.Series,
     series_of_int_dates: pl.Series,
+    time_zone: str | None,
 ) -> None:
     assert_series_equal(getattr(series_of_int_dates.dt, unit_attr)(), expected)
+    assert_series_equal(
+        getattr(
+            series_of_int_dates.cast(pl.Datetime).dt.replace_time_zone(time_zone).dt,
+            unit_attr,
+        )(),
+        expected,
+    )
 
 
 @pytest.mark.parametrize(
@@ -201,6 +210,13 @@ def test_offset_by_sortedness(
     result = s.dt.offset_by(offset)
     assert result.flags["SORTED_ASC"] == expected
     assert not result.flags["SORTED_DESC"]
+
+
+def test_offset_by_invalid_duration() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="expected leading integer in the duration string"
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("P")
 
 
 def test_dt_datetime_date_time_invalid() -> None:
@@ -617,6 +633,13 @@ def test_round_negative() -> None:
         ComputeError, match="cannot round a Datetime to a negative duration"
     ):
         pl.Series([datetime(1895, 5, 7)]).dt.round("-1m")
+
+
+def test_round_invalid_duration() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="expected leading integer in the duration string"
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.round("P")
 
 
 @pytest.mark.parametrize(

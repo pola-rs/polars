@@ -24,7 +24,7 @@ where
     }
 
     let mut out = vec![0; left.len()];
-    let mut mask = vec![0; (left.len() + 7) / 8];
+    let mut mask = vec![0; left.len().div_ceil(8)];
     let mut state = S::new(allow_eq);
 
     if left.null_count() == 0 && right.null_count() == 0 {
@@ -120,8 +120,8 @@ pub(crate) fn join_asof_numeric<T: PolarsNumericType>(
 
     let ca = input_ca.rechunk();
     let other = other.rechunk();
-    let left = ca.downcast_iter().next().unwrap();
-    let right = other.downcast_iter().next().unwrap();
+    let left = ca.downcast_as_array();
+    let right = other.downcast_as_array();
 
     let out = if let Some(t) = tolerance {
         let native_tolerance = t.try_extract::<T::Native>()?;

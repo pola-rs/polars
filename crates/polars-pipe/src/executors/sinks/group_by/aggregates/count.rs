@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use polars_core::datatypes::{AnyValue, DataType};
-use polars_core::prelude::{Series, IDX_DTYPE};
+use polars_core::prelude::{IDX_DTYPE, Series};
 
 use super::*;
 use crate::operators::IdxSize;

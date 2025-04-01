@@ -306,7 +306,7 @@ def test_hist_more_bins_than_data() -> None:
     width = span / 8
     breaks = [-5 + width * i for i in range(8 + 1)]
     breaks[0] -= span * 0.001
-    categories = [f"({breaks[i]}, {breaks[i+1]}]" for i in range(8)]
+    categories = [f"({breaks[i]}, {breaks[i + 1]}]" for i in range(8)]
 
     expected = pl.DataFrame(
         {
@@ -474,3 +474,53 @@ def test_hist_breakpoint_accuracy() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_hist_ensure_max_value_20879() -> None:
+    s = pl.Series([-1 / 3, 0, 1, 2, 3, 7])
+    with pl.StringCache():
+        result = s.hist(bin_count=3)
+        expected = pl.DataFrame(
+            {
+                "breakpoint": pl.Series(
+                    [
+                        2.0 + 1 / 9,
+                        4.0 + 5 / 9,
+                        7.0,
+                    ],
+                    dtype=pl.Float64,
+                ),
+                "category": pl.Series(
+                    [
+                        "(-0.340667, 2.111111]",
+                        "(2.111111, 4.555556]",
+                        "(4.555556, 7.0]",
+                    ],
+                    dtype=pl.Categorical,
+                ),
+                "count": pl.Series([4, 1, 1], dtype=pl.get_index_type()),
+            }
+        )
+    assert_frame_equal(result, expected)
+
+
+def test_hist_ignore_nans_21082() -> None:
+    s = pl.Series([0.0, float("nan"), 0.5, float("nan"), 1.0])
+    with pl.StringCache():
+        result = s.hist(bins=[-0.001, 0.25, 0.5, 0.75, 1.0])
+        expected = pl.DataFrame(
+            {
+                "breakpoint": pl.Series([0.25, 0.5, 0.75, 1.0], dtype=pl.Float64),
+                "category": pl.Series(
+                    [
+                        "(-0.001, 0.25]",
+                        "(0.25, 0.5]",
+                        "(0.5, 0.75]",
+                        "(0.75, 1.0]",
+                    ],
+                    dtype=pl.Categorical,
+                ),
+                "count": pl.Series([1, 1, 0, 1], dtype=pl.get_index_type()),
+            }
+        )
+    assert_frame_equal(result, expected)

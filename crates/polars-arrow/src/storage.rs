@@ -40,16 +40,28 @@ enum BackingStorage {
         vtable: &'static VecVTable,
     },
     InternalArrowArray(InternalArrowArray),
+
+    /// Backed by some external method which we do not need to take care of,
+    /// but we still should refcount and drop the SharedStorageInner.
+    External,
+
+    /// Both the backing storage and the SharedStorageInner are leaked, no
+    /// refcounting is done. This technically should be a flag on
+    /// SharedStorageInner instead of being here, but that would add 8 more
+    /// bytes to SharedStorageInner, so here it is.
+    Leaked,
 }
 
 struct SharedStorageInner<T> {
     ref_count: AtomicU64,
     ptr: *mut T,
     length_in_bytes: usize,
-    backing: Option<BackingStorage>,
+    backing: BackingStorage,
     // https://github.com/rust-lang/rfcs/blob/master/text/0769-sound-generic-drop.md#phantom-data
     phantom: PhantomData<T>,
 }
+
+unsafe impl<T: Sync + Send> Sync for SharedStorageInner<T> {}
 
 impl<T> SharedStorageInner<T> {
     pub fn from_vec(mut v: Vec<T>) -> Self {
@@ -61,10 +73,10 @@ impl<T> SharedStorageInner<T> {
             ref_count: AtomicU64::new(1),
             ptr,
             length_in_bytes,
-            backing: Some(BackingStorage::Vec {
+            backing: BackingStorage::Vec {
                 original_capacity,
                 vtable: VecVTable::new_static::<T>(),
-            }),
+            },
             phantom: PhantomData,
         }
     }
@@ -72,12 +84,12 @@ impl<T> SharedStorageInner<T> {
 
 impl<T> Drop for SharedStorageInner<T> {
     fn drop(&mut self) {
-        match self.backing.take() {
-            Some(BackingStorage::InternalArrowArray(a)) => drop(a),
-            Some(BackingStorage::Vec {
+        match core::mem::replace(&mut self.backing, BackingStorage::External) {
+            BackingStorage::InternalArrowArray(a) => drop(a),
+            BackingStorage::Vec {
                 original_capacity,
                 vtable,
-            }) => unsafe {
+            } => unsafe {
                 // Drop the elements in our slice.
                 if std::mem::needs_drop::<T>() {
                     core::ptr::drop_in_place(core::ptr::slice_from_raw_parts_mut(
@@ -87,9 +99,11 @@ impl<T> Drop for SharedStorageInner<T> {
                 }
 
                 // Free the buffer.
-                (vtable.drop_buffer)(self.ptr.cast(), original_capacity);
+                if original_capacity > 0 {
+                    (vtable.drop_buffer)(self.ptr.cast(), original_capacity);
+                }
             },
-            None => {},
+            BackingStorage::External | BackingStorage::Leaked => {},
         }
     }
 }
@@ -102,16 +116,38 @@ pub struct SharedStorage<T> {
 unsafe impl<T: Sync + Send> Send for SharedStorage<T> {}
 unsafe impl<T: Sync + Send> Sync for SharedStorage<T> {}
 
+impl<T> Default for SharedStorage<T> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 impl<T> SharedStorage<T> {
+    const fn empty() -> Self {
+        assert!(align_of::<T>() <= 1 << 30);
+        static INNER: SharedStorageInner<()> = SharedStorageInner {
+            ref_count: AtomicU64::new(1),
+            ptr: core::ptr::without_provenance_mut(1 << 30), // Very overaligned for any T.
+            length_in_bytes: 0,
+            backing: BackingStorage::Leaked,
+            phantom: PhantomData,
+        };
+
+        Self {
+            inner: NonNull::new(&raw const INNER as *mut SharedStorageInner<T>).unwrap(),
+            phantom: PhantomData,
+        }
+    }
+
     pub fn from_static(slice: &'static [T]) -> Self {
         #[expect(clippy::manual_slice_size_calculation)]
         let length_in_bytes = slice.len() * size_of::<T>();
         let ptr = slice.as_ptr().cast_mut();
         let inner = SharedStorageInner {
-            ref_count: AtomicU64::new(2), // Never used, but 2 so it won't pass exclusivity tests.
+            ref_count: AtomicU64::new(1),
             ptr,
             length_in_bytes,
-            backing: None,
+            backing: BackingStorage::External,
             phantom: PhantomData,
         };
         Self {
@@ -132,12 +168,27 @@ impl<T> SharedStorage<T> {
             ref_count: AtomicU64::new(1),
             ptr: ptr.cast_mut(),
             length_in_bytes: len * size_of::<T>(),
-            backing: Some(BackingStorage::InternalArrowArray(arr)),
+            backing: BackingStorage::InternalArrowArray(arr),
             phantom: PhantomData,
         };
         Self {
             inner: NonNull::new(Box::into_raw(Box::new(inner))).unwrap(),
             phantom: PhantomData,
+        }
+    }
+
+    /// Leaks this SharedStorage such that it and its inner value is never
+    /// dropped. In return no refcounting needs to be performed.
+    ///
+    /// The SharedStorage must be exclusive.
+    pub fn leak(&mut self) {
+        assert!(self.is_exclusive());
+        unsafe {
+            let inner = &mut *self.inner.as_ptr();
+            core::mem::forget(core::mem::replace(
+                &mut inner.backing,
+                BackingStorage::Leaked,
+            ));
         }
     }
 }
@@ -210,20 +261,6 @@ impl<T> SharedStorage<T> {
 
     /// Try to take the vec backing this SharedStorage, leaving this as an empty slice.
     pub fn try_take_vec(&mut self) -> Option<Vec<T>> {
-        // We may only go back to a Vec if we originally came from a Vec
-        // where the desired size/align matches the original.
-        let Some(BackingStorage::Vec {
-            original_capacity,
-            vtable,
-        }) = self.inner().backing
-        else {
-            return None;
-        };
-
-        if vtable.size != size_of::<T>() || vtable.align != align_of::<T>() {
-            return None;
-        }
-
         // If there are other references we can't get an exclusive reference.
         if !self.is_exclusive() {
             return None;
@@ -232,10 +269,26 @@ impl<T> SharedStorage<T> {
         let ret;
         unsafe {
             let inner = &mut *self.inner.as_ptr();
+
+            // We may only go back to a Vec if we originally came from a Vec
+            // where the desired size/align matches the original.
+            let BackingStorage::Vec {
+                original_capacity,
+                vtable,
+            } = &mut inner.backing
+            else {
+                return None;
+            };
+
+            if vtable.size != size_of::<T>() || vtable.align != align_of::<T>() {
+                return None;
+            }
+
+            // Steal vec from inner.
             let len = inner.length_in_bytes / size_of::<T>();
-            ret = Vec::from_raw_parts(inner.ptr, len, original_capacity);
+            ret = Vec::from_raw_parts(inner.ptr, len, *original_capacity);
+            *original_capacity = 0;
             inner.length_in_bytes = 0;
-            inner.backing = None;
         }
         Some(ret)
     }
@@ -318,7 +371,7 @@ impl<T> Deref for SharedStorage<T> {
 impl<T> Clone for SharedStorage<T> {
     fn clone(&self) -> Self {
         let inner = self.inner();
-        if inner.backing.is_some() {
+        if !matches!(inner.backing, BackingStorage::Leaked) {
             // Ordering semantics copied from Arc<T>.
             inner.ref_count.fetch_add(1, Ordering::Relaxed);
         }
@@ -332,7 +385,7 @@ impl<T> Clone for SharedStorage<T> {
 impl<T> Drop for SharedStorage<T> {
     fn drop(&mut self) {
         let inner = self.inner();
-        if inner.backing.is_none() {
+        if matches!(inner.backing, BackingStorage::Leaked) {
             return;
         }
 

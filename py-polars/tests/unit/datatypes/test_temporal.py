@@ -554,6 +554,14 @@ def test_read_utc_times_parquet() -> None:
     assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0, tzinfo=tz)
 
 
+def test_convert_pandas_timezone_info() -> None:
+    ts = pd.Timestamp("20200101 00:00").tz_localize("America/New_York")
+    df = pl.DataFrame({"date": [ts]})
+    assert df["date"][0] == datetime(
+        2020, 1, 1, 0, 0, tzinfo=ZoneInfo("America/New_York")
+    )
+
+
 def test_asof_join_tolerance_grouper() -> None:
     from datetime import date
 
@@ -1745,12 +1753,6 @@ def test_to_string_invalid_format() -> None:
         ComputeError, match="cannot format timezone-naive Datetime with format '%z'"
     ):
         tz_naive.dt.to_string("%z")
-    with pytest.raises(
-        ComputeError, match="cannot format timezone-aware Datetime with format '%q'"
-    ):
-        tz_naive.dt.replace_time_zone("UTC").dt.to_string("%q")
-    with pytest.raises(ComputeError, match="cannot format Date with format '%q'"):
-        tz_naive.dt.date().dt.to_string("%q")
 
 
 def test_tz_aware_to_string() -> None:

@@ -77,6 +77,7 @@ impl Display for ErrString {
 
 #[derive(Debug, Clone)]
 pub enum PolarsError {
+    AssertionError(ErrString),
     ColumnNotFound(ErrString),
     ComputeError(ErrString),
     Duplicate(ErrString),
@@ -113,6 +114,7 @@ impl Display for PolarsError {
             | SQLInterface(msg)
             | SQLSyntax(msg) => write!(f, "{msg}"),
 
+            AssertionError(msg) => write!(f, "assertion failed: {msg}"),
             ColumnNotFound(msg) => write!(f, "not found: {msg}"),
             Duplicate(msg) => write!(f, "duplicate: {msg}"),
             IO { error, msg } => match msg {
@@ -148,11 +150,7 @@ impl From<regex::Error> for PolarsError {
 #[cfg(feature = "object_store")]
 impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("object-store error: {err:?}"),
-        )
-        .into()
+        std::io::Error::other(format!("object-store error: {err:?}")).into()
     }
 }
 
@@ -226,6 +224,7 @@ impl PolarsError {
     pub fn wrap_msg<F: FnOnce(&str) -> String>(&self, func: F) -> Self {
         use PolarsError::*;
         match self {
+            AssertionError(msg) => AssertionError(func(msg).into()),
             ColumnNotFound(msg) => ColumnNotFound(func(msg).into()),
             ComputeError(msg) => ComputeError(func(msg).into()),
             Duplicate(msg) => Duplicate(func(msg).into()),
@@ -338,6 +337,14 @@ macro_rules! polars_err {
     (opq = $op:ident, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(op = stringify!($op), $lhs, $rhs)
     };
+    (bigidx, ctx = $ctx:expr, size = $size:expr) => {
+        $crate::polars_err!(ComputeError: "\
+{} produces {} rows which is more than maximum allowed pow(2, 32) rows; \
+consider compiling with bigidx feature (polars-u64-idx package on python)",
+            $ctx,
+            $size,
+        )
+    };
     (append) => {
         polars_err!(SchemaMismatch: "cannot append series, data types don't match")
     };
@@ -357,11 +364,9 @@ cannot compare categoricals coming from different sources, consider setting a gl
 Help: if you're using Python, this may look something like:
 
     with pl.StringCache():
-        # Initialize Categoricals.
         df1 = pl.DataFrame({'a': ['1', '2']}, schema={'a': pl.Categorical})
         df2 = pl.DataFrame({'a': ['1', '3']}, schema={'a': pl.Categorical})
-    # Your operations go here.
-    pl.concat([df1, df2])
+        pl.concat([df1, df2])
 
 Alternatively, if the performance cost is acceptable, you could just set:
 
@@ -371,10 +376,18 @@ Alternatively, if the performance cost is acceptable, you could just set:
 on startup."#.trim_start())
     };
     (duplicate = $name:expr) => {
-        polars_err!(Duplicate: "column with name '{}' has more than one occurrence", $name)
+        $crate::polars_err!(Duplicate: "column with name '{}' has more than one occurrence", $name)
     };
     (col_not_found = $name:expr) => {
-        polars_err!(ColumnNotFound: "{:?} not found", $name)
+        $crate::polars_err!(ColumnNotFound: "{:?} not found", $name)
+    };
+    (mismatch, col=$name:expr, expected=$expected:expr, found=$found:expr) => {
+        $crate::polars_err!(
+            SchemaMismatch: "data type mismatch for column {}: expected: {}, found: {}",
+            $name,
+            $expected,
+            $found,
+        )
     };
     (oob = $idx:expr, $len:expr) => {
         polars_err!(OutOfBounds: "index {} is out of bounds for sequence of length {}", $idx, $len)
@@ -390,6 +403,12 @@ on startup."#.trim_start())
         polars_err!(
             ComputeError: "could not find an appropriate format to parse {}s, please define a format",
             $dtype,
+        )
+    };
+    (assertion_error = $objects:expr, $detail:expr, $lhs:expr, $rhs:expr) => {
+        $crate::polars_err!(
+            AssertionError: "{} are different ({})\n[left]: {}\n[right]: {}",
+            $objects, $detail, $lhs, $rhs
         )
     };
 }

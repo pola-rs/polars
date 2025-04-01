@@ -13,7 +13,7 @@ fn main() {
         .cast(&DataType::UInt64) // Here, we actually cast after inference.
         .unwrap();
     println!("{} {}", s1.dtype(), s2.dtype()); // i32 u64
-                                               // --8<-- [end:series-dtype]
+    // --8<-- [end:series-dtype]
 
     // --8<-- [start:df]
     use chrono::prelude::*;

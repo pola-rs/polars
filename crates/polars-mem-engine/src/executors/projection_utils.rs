@@ -28,7 +28,7 @@ fn rolling_evaluate(
                 // clear the cache for every partitioned group
                 let state = state.split();
 
-                let (_time_key, _keys, groups) = df.rolling(vec![], options)?;
+                let (_time_key, groups) = df.rolling(None, options)?;
 
                 let groups_key = format!("{:?}", options);
                 // Set the groups so all expressions in partition can use it.
@@ -379,11 +379,7 @@ pub(super) fn check_expand_literals(
     // This prevents a panic.
     let df = if zero_length {
         let min = df.get_columns().iter().map(|s| s.len()).min();
-        if min.is_some() {
-            df.head(min)
-        } else {
-            df
-        }
+        if min.is_some() { df.head(min) } else { df }
     } else {
         df
     };

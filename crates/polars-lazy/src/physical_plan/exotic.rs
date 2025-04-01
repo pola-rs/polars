@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
+use polars_expr::{ExpressionConversionState, create_physical_expr};
 
 use crate::prelude::*;
 
@@ -43,6 +43,6 @@ pub(crate) fn prepare_expression_for_context(
         ctxt,
         &expr_arena,
         &input_schema,
-        &mut ExpressionConversionState::new(true, 0),
+        &mut ExpressionConversionState::new(true),
     )
 }

@@ -72,7 +72,7 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
     // Series is null:
     if series.dtype().is_null() {
         if needle.is_null() {
-            return Ok((series.len() > 0).then_some(0));
+            return Ok((!series.is_empty()).then_some(0));
         } else {
             return Ok(None);
         }

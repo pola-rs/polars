@@ -5,13 +5,17 @@ use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
+use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
+use polars_plan::plans::{node_to_expr, to_aexpr};
+use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
-use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
+use crate::PyExpr;
+use crate::conversion::{Wrap, parse_fill_null_strategy, vec_extract_wrapped};
 use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
-use crate::PyExpr;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PyExpr {
@@ -648,8 +652,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "is_in")]
-    fn is_in(&self, expr: Self) -> Self {
-        self.inner.clone().is_in(expr.inner).into()
+    fn is_in(&self, expr: Self, nulls_equal: bool) -> Self {
+        self.inner.clone().is_in(expr.inner, nulls_equal).into()
     }
 
     #[cfg(feature = "repeat_by")]
@@ -943,5 +947,21 @@ impl PyExpr {
             .clone()
             .hist(bins, bin_count, include_category, include_breakpoint)
             .into()
+    }
+
+    #[pyo3(signature = (schema))]
+    fn skip_batch_predicate(&self, py: Python, schema: Wrap<Schema>) -> PyResult<Option<Self>> {
+        let mut aexpr_arena = Arena::new();
+        py.enter_polars(|| {
+            let node = to_aexpr(self.inner.clone(), &mut aexpr_arena)?;
+            let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
+            else {
+                return Ok(None);
+            };
+            let skip_batch_predicate = node_to_expr(node, &aexpr_arena);
+            PolarsResult::Ok(Some(Self {
+                inner: skip_batch_predicate,
+            }))
+        })
     }
 }

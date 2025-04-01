@@ -1,6 +1,6 @@
-use polars_core::prelude::*;
 use polars_core::POOL;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
+use polars_core::prelude::*;
+use polars_expr::{ExpressionConversionState, create_physical_expr};
 use rayon::prelude::*;
 
 use super::*;
@@ -62,7 +62,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                 Context::Default,
                 &arena,
                 &schema,
-                &mut ExpressionConversionState::new(true, 0),
+                &mut ExpressionConversionState::new(true),
             )?;
 
             let state = ExecutionState::new();

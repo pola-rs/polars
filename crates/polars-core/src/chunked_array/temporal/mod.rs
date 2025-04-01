@@ -8,6 +8,7 @@ mod datetime;
 mod duration;
 #[cfg(feature = "dtype-time")]
 mod time;
+
 #[cfg(feature = "dtype-date")]
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
@@ -16,17 +17,13 @@ use chrono::NaiveTime;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
-use once_cell::sync::Lazy;
-#[cfg(feature = "timezones")]
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(all(feature = "regex", feature = "timezones"))]
-use regex::Regex;
 #[cfg(feature = "dtype-time")]
 pub use time::time_to_time64ns;
 
 pub use self::conversion::*;
 #[cfg(feature = "timezones")]
-use crate::prelude::{polars_bail, PolarsResult};
+use crate::prelude::{PolarsResult, polars_bail};
 
 #[cfg(feature = "timezones")]
 static FIXED_OFFSET_PATTERN: &str = r#"(?x)
@@ -38,7 +35,9 @@ static FIXED_OFFSET_PATTERN: &str = r#"(?x)
     $
     "#;
 #[cfg(feature = "timezones")]
-static FIXED_OFFSET_RE: Lazy<Regex> = Lazy::new(|| Regex::new(FIXED_OFFSET_PATTERN).unwrap());
+polars_utils::regex_cache::cached_regex! {
+    static FIXED_OFFSET_RE = FIXED_OFFSET_PATTERN;
+}
 
 #[cfg(feature = "timezones")]
 pub fn validate_time_zone(tz: &str) -> PolarsResult<()> {

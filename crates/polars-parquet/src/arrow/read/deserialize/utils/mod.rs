@@ -7,12 +7,13 @@ use arrow::array::{Array, IntoBoxedArray, Splitable};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
+use polars_compute::filter::filter_boolean_kernel;
 
 use self::filter::Filter;
-use super::{BasicDecompressor, PredicateFilter};
+use super::{BasicDecompressor, InitNested, NestedState, PredicateFilter};
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::parquet::schema::Repetition;
 
 #[derive(Debug)]
@@ -240,17 +241,17 @@ pub(crate) fn unspecialized_decode<T: Default>(
 
             let mut iter = |mut f: u64, mut v: u64| {
                 while f != 0 {
-                    let offset = f.trailing_ones();
+                    let offset = f.trailing_zeros();
+
+                    let skip = (v & (1u64 << offset).wrapping_sub(1)).count_ones() as usize;
+                    for _ in 0..skip {
+                        decode_one()?;
+                    }
 
                     if (v >> offset) & 1 != 0 {
                         target.push(decode_one()?);
                     } else {
                         target.push(T::default());
-                    }
-
-                    let skip = (v & (1u64 << offset).wrapping_sub(1)).count_ones() as usize;
-                    for _ in 0..skip {
-                        decode_one()?;
                     }
 
                     v >>= offset + 1;
@@ -275,7 +276,7 @@ pub(crate) fn unspecialized_decode<T: Default>(
 
             iter(f, v)?;
 
-            validity.extend_from_bitmap(&page_validity);
+            validity.extend_from_bitmap(&filter_boolean_kernel(&page_validity, &mask));
         },
         (Some(Filter::Predicate(_)), _) => todo!(),
     }
@@ -298,7 +299,7 @@ pub(super) trait Decoder: Sized {
     /// The state that this decoder derives from a [`DataPage`]. This is bound to the page.
     type Translation<'a>: StateTranslation<'a, Self>;
     /// The dictionary representation that the decoder uses
-    type Dict: Array;
+    type Dict: Array + Clone;
     /// The target state that this Decoder decodes into.
     type DecodedState: Decoded;
 
@@ -337,11 +338,15 @@ pub(super) trait Decoder: Sized {
         decoded: &mut Self::DecodedState,
         pred_true_mask: &mut BitmapBuilder,
         predicate: &PredicateFilter,
+        dict: Option<Self::Dict>,
         dtype: &ArrowDataType,
     ) -> ParquetResult<()> {
         let is_optional = state.is_optional;
 
         let mut intermediate_array = self.with_capacity(state.translation.num_rows());
+        if let Some(dict) = dict.as_ref() {
+            self.apply_dictionary(&mut intermediate_array, dict)?;
+        }
         self.extend_filtered_with_state(
             state,
             &mut intermediate_array,
@@ -349,7 +354,7 @@ pub(super) trait Decoder: Sized {
             None,
         )?;
         let intermediate_array = self
-            .finalize(dtype.clone(), None, intermediate_array)?
+            .finalize(dtype.clone(), dict, intermediate_array)?
             .into_boxed();
 
         let mask = if let Some(validity) = intermediate_array.validity() {
@@ -357,7 +362,7 @@ pub(super) trait Decoder: Sized {
             let mask = predicate.predicate.evaluate(ignore_validity_array.as_ref());
 
             if predicate.predicate.evaluate_null() {
-                &mask | validity
+                arrow::bitmap::or_not(&mask, validity)
             } else {
                 &mask & validity
             }
@@ -403,6 +408,8 @@ pub struct PageDecoder<D: Decoder> {
     pub dtype: ArrowDataType,
     pub dict: Option<D::Dict>,
     pub decoder: D,
+
+    pub init_nested: Option<Vec<InitNested>>,
 }
 
 impl<D: Decoder> PageDecoder<D> {
@@ -410,6 +417,8 @@ impl<D: Decoder> PageDecoder<D> {
         mut iter: BasicDecompressor,
         dtype: ArrowDataType,
         mut decoder: D,
+
+        init_nested: Option<Vec<InitNested>>,
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;
         let dict = dict_page.map(|d| decoder.deserialize_dict(d)).transpose()?;
@@ -419,10 +428,27 @@ impl<D: Decoder> PageDecoder<D> {
             dtype,
             dict,
             decoder,
+
+            init_nested,
         })
     }
 
-    pub fn collect(mut self, mut filter: Option<Filter>) -> ParquetResult<(D::Output, Bitmap)> {
+    pub fn collect(
+        self,
+        filter: Option<Filter>,
+    ) -> ParquetResult<(Option<NestedState>, D::Output, Bitmap)> {
+        if self.init_nested.is_some() {
+            self.collect_nested(filter)
+                .map(|(nested, arr, ptm)| (Some(nested), arr, ptm))
+        } else {
+            self.collect_flat(filter).map(|(arr, ptm)| (None, arr, ptm))
+        }
+    }
+
+    pub fn collect_flat(
+        mut self,
+        mut filter: Option<Filter>,
+    ) -> ParquetResult<(D::Output, Bitmap)> {
         let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_values());
 
         // @TODO: Don't allocate if include_values == false
@@ -512,6 +538,7 @@ impl<D: Decoder> PageDecoder<D> {
                         &mut target,
                         &mut pred_true_mask,
                         p,
+                        self.dict.clone(),
                         &self.dtype,
                     )?
                 },
@@ -534,9 +561,13 @@ impl<D: Decoder> PageDecoder<D> {
         Ok((array, pred_true_mask.freeze()))
     }
 
-    pub fn collect_boxed(self, filter: Option<Filter>) -> ParquetResult<(Box<dyn Array>, Bitmap)> {
-        self.collect(filter)
-            .map(|(arr, ptm)| (arr.into_boxed(), ptm))
+    pub fn collect_boxed(
+        self,
+        filter: Option<Filter>,
+    ) -> ParquetResult<(Option<NestedState>, Box<dyn Array>, Bitmap)> {
+        use arrow::array::IntoBoxedArray;
+        let (nested, array, ptm) = self.collect(filter)?;
+        Ok((nested, array.into_boxed(), ptm))
     }
 }
 

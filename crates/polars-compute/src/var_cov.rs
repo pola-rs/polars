@@ -61,7 +61,21 @@ impl VarState {
         }
     }
 
-    pub fn add_one(&mut self, x: f64) {
+    fn clear_zero_weight_nan(&mut self) {
+        // Clear NaNs due to division by zero.
+        if self.weight == 0.0 {
+            self.mean = 0.0;
+            self.dp = 0.0;
+        }
+    }
+
+    pub(crate) fn new_single(x: f64) -> Self {
+        let mut out = Self::default();
+        out.insert_one(x);
+        out
+    }
+
+    pub fn insert_one(&mut self, x: f64) {
         // Just a specialized version of
         // self.combine(&Self { weight: 1.0, mean: x, dp: 0.0 })
         let new_weight = self.weight + 1.0;
@@ -70,6 +84,19 @@ impl VarState {
         self.dp += (new_mean - x) * delta_mean;
         self.weight = new_weight;
         self.mean = new_mean;
+        self.clear_zero_weight_nan();
+    }
+
+    pub fn remove_one(&mut self, x: f64) {
+        // Just a specialized version of
+        // self.combine(&Self { weight: -1.0, mean: x, dp: 0.0 })
+        let new_weight = self.weight - 1.0;
+        let delta_mean = self.mean - x;
+        let new_mean = self.mean + delta_mean / new_weight;
+        self.dp -= (new_mean - x) * delta_mean;
+        self.weight = new_weight;
+        self.mean = new_mean;
+        self.clear_zero_weight_nan();
     }
 
     pub fn combine(&mut self, other: &Self) {
@@ -84,13 +111,21 @@ impl VarState {
         self.dp += other.dp + other.weight * (new_mean - other.mean) * delta_mean;
         self.weight = new_weight;
         self.mean = new_mean;
+        self.clear_zero_weight_nan();
     }
 
     pub fn finalize(&self, ddof: u8) -> Option<f64> {
         if self.weight <= ddof as f64 {
             None
         } else {
-            Some(self.dp / (self.weight - ddof as f64))
+            let var = self.dp / (self.weight - ddof as f64);
+            Some(if var < 0.0 {
+                // Variance can't be negative, except through numerical instability.
+                // We don't use f64::max here so we propagate nans.
+                0.0
+            } else {
+                var
+            })
         }
     }
 }
@@ -193,11 +228,11 @@ impl PearsonState {
     }
 
     pub fn finalize(&self) -> f64 {
-        let denom = (self.dp_xx * self.dp_yy).sqrt();
-        if denom == 0.0 {
-            f64::NAN
+        let denom_sq = self.dp_xx * self.dp_yy;
+        if denom_sq > 0.0 {
+            self.dp_xy / denom_sq.sqrt()
         } else {
-            self.dp_xy / denom
+            f64::NAN
         }
     }
 }

@@ -17,6 +17,7 @@ _GREAT_TABLES_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
+_POLARS_CLOUD_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
 _PYICEBERG_AVAILABLE = True
@@ -39,6 +40,7 @@ class _LazyModule(ModuleType):
         "numpy": "np.",
         "pandas": "pd.",
         "pyarrow": "pa.",
+        "polars_cloud": "pc.",
     }
 
     def __init__(
@@ -158,6 +160,7 @@ if TYPE_CHECKING:
     import hypothesis
     import numpy
     import pandas
+    import polars_cloud
     import pyarrow
     import pydantic
     import pyiceberg
@@ -177,6 +180,7 @@ else:
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
+    polars_cloud, _POLARS_CLOUD_AVAILABLE = _lazy_import("polars_cloud")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
     pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
@@ -298,6 +302,7 @@ __all__ = [
     "great_tables",
     "numpy",
     "pandas",
+    "polars_cloud",
     "pydantic",
     "pyiceberg",
     "pyarrow",
@@ -315,5 +320,6 @@ __all__ = [
     "_HYPOTHESIS_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",
+    "_POLARS_CLOUD_AVAILABLE",
     "_PYARROW_AVAILABLE",
 ]

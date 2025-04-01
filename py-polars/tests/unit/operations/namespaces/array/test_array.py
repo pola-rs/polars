@@ -63,6 +63,33 @@ def test_arr_sum(
     assert s.arr.sum().to_list() == expected_sum
 
 
+def test_array_lengths() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [[1, 2, 3]], dtype=pl.Array(pl.Int64, 3)),
+            pl.Series("b", [[4, 5]], dtype=pl.Array(pl.Int64, 2)),
+        ]
+    )
+    out = df.select(pl.col("a").arr.len(), pl.col("b").arr.len())
+    expected_df = pl.DataFrame(
+        {"a": [3], "b": [2]}, schema={"a": pl.UInt32, "b": pl.UInt32}
+    )
+    assert_frame_equal(out, expected_df)
+
+    assert pl.Series("a", [[], []], pl.Array(pl.Null, 0)).arr.len().to_list() == [0, 0]
+    assert pl.Series("a", [None, []], pl.Array(pl.Null, 0)).arr.len().to_list() == [
+        None,
+        0,
+    ]
+    assert pl.Series("a", [None], pl.Array(pl.Null, 0)).arr.len().to_list() == [None]
+
+    assert pl.Series("a", [], pl.Array(pl.Null, 0)).arr.len().to_list() == []
+    assert pl.Series("a", [], pl.Array(pl.Null, 1)).arr.len().to_list() == []
+    assert pl.Series(
+        "a", [[1, 2, 3], None, [7, 8, 9]], pl.Array(pl.Int32, 3)
+    ).arr.len().to_list() == [3, None, 3]
+
+
 def test_arr_unique() -> None:
     df = pl.DataFrame(
         {"a": pl.Series("a", [[1, 1], [4, 3]], dtype=pl.Array(pl.Int64, 2))}

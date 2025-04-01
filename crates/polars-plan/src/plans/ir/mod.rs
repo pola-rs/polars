@@ -1,7 +1,6 @@
 mod dot;
 mod format;
 mod inputs;
-mod scan_sources;
 mod schema;
 pub(crate) mod tree_format;
 
@@ -10,15 +9,14 @@ use std::fmt;
 
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
-use hive::HivePartitions;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
-pub use scan_sources::{ScanSourceIter, ScanSourceRef, ScanSources};
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
+use self::hive::HivePartitionsDf;
 use crate::prelude::*;
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -57,13 +55,13 @@ pub enum IR {
     Scan {
         sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        hive_parts: Option<HivePartitionsDf>,
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
         /// generic options that can be used for all file types.
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -148,7 +146,12 @@ pub enum IR {
     },
     Sink {
         input: Node,
-        payload: SinkType,
+        payload: SinkTypeIR,
+    },
+    /// Node that allows for multiple plans to be executed in parallel with common subplan
+    /// elimination and everything.
+    SinkMultiple {
+        inputs: Vec<Node>,
     },
     #[cfg(feature = "merge_sorted")]
     MergeSorted {

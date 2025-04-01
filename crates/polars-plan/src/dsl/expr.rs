@@ -2,6 +2,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use bytes::Bytes;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
@@ -205,9 +206,9 @@ impl OpaqueColumnUdf {
     pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn ColumnsUdf>>> {
         match self {
             Self::Deserialized(t) => Ok(t),
-            Self::Bytes(b) => {
+            Self::Bytes(_b) => {
                 feature_gated!("serde";"python", {
-                    crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(b.as_ref()).map(SpecialEq::new)
+                    crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(_b.as_ref()).map(SpecialEq::new)
                 })
             },
         }
@@ -339,7 +340,7 @@ impl Eq for Expr {}
 
 impl Default for Expr {
     fn default() -> Self {
-        Expr::Literal(LiteralValue::Null)
+        Expr::Literal(LiteralValue::Scalar(Scalar::default()))
     }
 }
 
@@ -368,6 +369,24 @@ impl Expr {
         expr_arena
             .get(root)
             .to_field_and_validate(schema, ctxt, expr_arena)
+    }
+
+    /// Extract a constant usize from an expression.
+    pub fn extract_usize(&self) -> PolarsResult<usize> {
+        match self {
+            Expr::Literal(n) => n.extract_usize(),
+            Expr::Cast { expr, dtype, .. } => {
+                // lit(x, dtype=...) are Cast expressions. We verify the inner expression is literal.
+                if dtype.is_integer() {
+                    expr.extract_usize()
+                } else {
+                    polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+                }
+            },
+            _ => {
+                polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+            },
+        }
     }
 }
 
@@ -433,12 +452,17 @@ impl Operator {
                 | Self::LtEq
                 | Self::Gt
                 | Self::GtEq
-                | Self::And
-                | Self::Or
-                | Self::Xor
                 | Self::EqValidity
                 | Self::NotEqValidity
         )
+    }
+
+    pub fn is_bitwise(&self) -> bool {
+        matches!(self, Self::And | Self::Or | Self::Xor)
+    }
+
+    pub fn is_comparison_or_bitwise(&self) -> bool {
+        self.is_comparison() || self.is_bitwise()
     }
 
     pub fn swap_operands(self) -> Self {
@@ -465,6 +489,6 @@ impl Operator {
     }
 
     pub fn is_arithmetic(&self) -> bool {
-        !(self.is_comparison())
+        !(self.is_comparison_or_bitwise())
     }
 }

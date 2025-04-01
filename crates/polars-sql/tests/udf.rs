@@ -1,8 +1,8 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::IntoLazy;
 use polars_plan::prelude::{GetOutput, UserDefinedFunction};
-use polars_sql::function_registry::FunctionRegistry;
 use polars_sql::SQLContext;
+use polars_sql::function_registry::FunctionRegistry;
 
 struct MyFunctionRegistry {
     functions: PlHashMap<String, UserDefinedFunction>,
@@ -62,9 +62,10 @@ fn test_udfs() -> PolarsResult<()> {
     assert!(res.is_ok());
 
     // schema is invalid so it will fail
-    assert!(ctx
-        .execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo")
-        .is_err());
+    assert!(
+        ctx.execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo")
+            .is_err()
+    );
 
     // create a new UDF to be registered on the context
     let my_custom_divide = UserDefinedFunction::new(

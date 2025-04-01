@@ -1,3 +1,4 @@
+import warnings
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -5,6 +6,8 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars._typing import AsofJoinStrategy, PolarsIntegerType
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
@@ -1280,7 +1283,47 @@ def test_join_asof_no_exact_matches() -> None:
     }
 
 
-def test_join_asof_not_sorted_warning() -> None:
+def test_join_asof_not_sorted() -> None:
     df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [2, 1, 3, 1, 2, 3]})
-    with pytest.warns(UserWarning, match="asof join is not sorted"):
+    with pytest.raises(InvalidOperationError, match="is not sorted"):
+        df.join_asof(df, on="b")
+
+    # When 'by' is provided, we do not check sortedness, but a warning is received
+    with pytest.warns(
+        UserWarning,
+        match="Sortedness of columns cannot be checked when 'by' groups provided",
+    ):
         df.join_asof(df, on="b", by="a")
+
+    # When sortedness is False, we should get no warning
+    with warnings.catch_warnings(record=True) as w:
+        df.join_asof(df, on="b", check_sortedness=False)
+        df.join_asof(df, on="b", by="a", check_sortedness=False)
+        assert len(w) == 0  # no warnings caught
+
+
+@pytest.mark.parametrize("left_dtype", [pl.Int64, pl.UInt64])
+@pytest.mark.parametrize("right_dtype", [pl.Int64, pl.UInt64])
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+def test_join_asof_large_int_21276(
+    left_dtype: PolarsIntegerType,
+    right_dtype: PolarsIntegerType,
+    strategy: AsofJoinStrategy,
+) -> None:
+    large_int64 = 1608129000134000123  # it only happen when "on" column is large
+    left = pl.DataFrame({"ts": pl.Series([large_int64 + 2], dtype=left_dtype)})
+    right = pl.DataFrame(
+        {
+            "ts": pl.Series([large_int64 + 1, large_int64 + 3], dtype=right_dtype),
+            "value": [111, 333],
+        }
+    )
+    result = left.join_asof(right, on="ts", strategy=strategy)
+    idx = 0 if strategy == "backward" else 1
+    expected = pl.DataFrame(
+        {
+            "ts": left["ts"],
+            "value": right["value"].gather(idx),
+        }
+    )
+    assert_frame_equal(result, expected)

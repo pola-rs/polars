@@ -1,6 +1,6 @@
 use polars_core::prelude::{DataType, Field};
 use polars_core::schema::{Schema, SchemaRef};
-use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::error::TruncateErrorDetail;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -185,8 +185,8 @@ fn parse_type_json_type(type_json_type: &ColumnTypeJsonType) -> PolarsResult<Dat
 ///   the `type_text`, but from testing they aren't actually used - e.g. a decimal type would have a
 ///   `type_text` of `decimal(18, 2)`
 fn parse_type_text(type_text: &str) -> PolarsResult<DataType> {
-    use polars_core::prelude::TimeUnit;
     use DataType::*;
+    use polars_core::prelude::TimeUnit;
 
     let dtype = match type_text {
         "boolean" => Boolean,
@@ -200,7 +200,7 @@ fn parse_type_text(type_text: &str) -> PolarsResult<DataType> {
         "double" => Float64,
 
         "date" => Date,
-        "timestamp" | "timestamp_ntz" | "timestamp_ltz" => Datetime(TimeUnit::Nanoseconds, None),
+        "timestamp" | "timestamp_ntz" | "timestamp_ltz" => Datetime(TimeUnit::Microseconds, None),
 
         "string" => String,
         "binary" => Binary,
@@ -269,8 +269,8 @@ pub fn schema_to_column_info_list(schema: &Schema) -> PolarsResult<Vec<ColumnInf
 
 /// Creates the `type_text` field of the API. Opposite of [`parse_type_text`]
 fn dtype_to_type_text(dtype: &DataType) -> PolarsResult<PlSmallStr> {
-    use polars_core::prelude::TimeUnit;
     use DataType::*;
+    use polars_core::prelude::TimeUnit;
 
     macro_rules! S {
         ($e:expr) => {
@@ -290,7 +290,7 @@ fn dtype_to_type_text(dtype: &DataType) -> PolarsResult<PlSmallStr> {
         Float64 => S!("double"),
 
         Date => S!("date"),
-        Datetime(TimeUnit::Nanoseconds, None) => S!("timestamp_ntz"),
+        Datetime(TimeUnit::Microseconds, None) => S!("timestamp_ntz"),
 
         String => S!("string"),
         Binary => S!("binary"),
@@ -349,8 +349,8 @@ fn dtype_to_type_text(dtype: &DataType) -> PolarsResult<PlSmallStr> {
 
 /// Creates the `type_name` field, from testing this wasn't exactly the same as the `type_text` field.
 fn dtype_to_type_name(dtype: &DataType) -> PolarsResult<PlSmallStr> {
-    use polars_core::prelude::TimeUnit;
     use DataType::*;
+    use polars_core::prelude::TimeUnit;
 
     macro_rules! S {
         ($e:expr) => {
@@ -370,7 +370,7 @@ fn dtype_to_type_name(dtype: &DataType) -> PolarsResult<PlSmallStr> {
         Float64 => S!("DOUBLE"),
 
         Date => S!("DATE"),
-        Datetime(TimeUnit::Nanoseconds, None) => S!("TIMESTAMP_NTZ"),
+        Datetime(TimeUnit::Microseconds, None) => S!("TIMESTAMP_NTZ"),
         String => S!("STRING"),
         Binary => S!("BINARY"),
 
@@ -412,8 +412,8 @@ fn field_to_type_json(name: PlSmallStr, dtype: &DataType) -> PolarsResult<Column
 }
 
 fn dtype_to_type_json(dtype: &DataType) -> PolarsResult<ColumnTypeJsonType> {
-    use polars_core::prelude::TimeUnit;
     use DataType::*;
+    use polars_core::prelude::TimeUnit;
 
     macro_rules! S {
         ($e:expr) => {
@@ -433,7 +433,7 @@ fn dtype_to_type_json(dtype: &DataType) -> PolarsResult<ColumnTypeJsonType> {
         Float64 => S!("double"),
 
         Date => S!("date"),
-        Datetime(TimeUnit::Nanoseconds, None) => S!("timestamp_ntz"),
+        Datetime(TimeUnit::Microseconds, None) => S!("timestamp_ntz"),
 
         String => S!("string"),
         Binary => S!("binary"),

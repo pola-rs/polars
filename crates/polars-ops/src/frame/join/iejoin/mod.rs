@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 mod filtered_bit_array;
 mod l1_l2;
 
@@ -11,12 +12,12 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_set_partition_size, split};
-use polars_core::{with_match_physical_numeric_polars_type, POOL};
-use polars_error::{polars_err, PolarsResult};
+use polars_core::{POOL, with_match_physical_numeric_polars_type};
+use polars_error::{PolarsResult, polars_err};
+use polars_utils::IdxSize;
 use polars_utils::binary_search::ExponentialSearch;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
-use polars_utils::IdxSize;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -439,14 +440,12 @@ fn iejoin_tuples(
         .with_order_descending(l2_descending);
     // Get the indexes into l1, ordered by y values.
     // l2_order is the same as "p" from Khayyat et al.
-    let l2_order = y_ordered_by_x
-        .arg_sort(l2_sort_options)
-        .slice(
-            y_ordered_by_x.null_count() as i64,
-            y_ordered_by_x.len() - y_ordered_by_x.null_count(),
-        )
-        .rechunk();
-    let l2_order = l2_order.downcast_get(0).unwrap().values().as_slice();
+    let l2_order = y_ordered_by_x.arg_sort(l2_sort_options).slice(
+        y_ordered_by_x.null_count() as i64,
+        y_ordered_by_x.len() - y_ordered_by_x.null_count(),
+    );
+    let l2_order = l2_order.rechunk();
+    let l2_order = l2_order.downcast_as_array().values().as_slice();
 
     let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(x.dtype(), |$T| {
          ie_join_impl_t::<$T>(
@@ -528,30 +527,32 @@ fn piecewise_merge_join_tuples(
                 .with_order_descending(descending);
 
             // Get order and slice to ignore any null values, which cannot be match results
-            let order = series
-                .arg_sort(sort_options)
-                .slice(
-                    series.null_count() as i64,
-                    series.len() - series.null_count(),
-                )
-                .rechunk();
+            let mut order = series.arg_sort(sort_options).slice(
+                series.null_count() as i64,
+                series.len() - series.null_count(),
+            );
+            order.rechunk_mut();
             let ordered = unsafe { series.take_unchecked(&order) };
             (ordered, Some(order))
         }
     }
 
     let (left_ordered, left_order) = get_sorted(left, descending);
-    debug_assert!(left_order
-        .as_ref()
-        .is_none_or(|order| order.chunks().len() == 1));
+    debug_assert!(
+        left_order
+            .as_ref()
+            .is_none_or(|order| order.chunks().len() == 1)
+    );
     let left_order = left_order
         .as_ref()
         .map(|order| order.downcast_get(0).unwrap().values().as_slice());
 
     let (right_ordered, right_order) = get_sorted(right, descending);
-    debug_assert!(right_order
-        .as_ref()
-        .is_none_or(|order| order.chunks().len() == 1));
+    debug_assert!(
+        right_order
+            .as_ref()
+            .is_none_or(|order| order.chunks().len() == 1)
+    );
     let right_order = right_order
         .as_ref()
         .map(|order| order.downcast_get(0).unwrap().values().as_slice());

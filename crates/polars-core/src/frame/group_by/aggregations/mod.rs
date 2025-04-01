@@ -3,24 +3,26 @@ mod boolean;
 mod dispatch;
 mod string;
 
-use std::cmp::Ordering;
+use std::borrow::Cow;
 
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::kernels::rolling;
-use arrow::legacy::kernels::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
-};
-use arrow::legacy::kernels::rolling::nulls::RollingAggWindowNulls;
 use arrow::legacy::kernels::take_agg::*;
-use arrow::legacy::prelude::QuantileMethod;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
+use polars_compute::rolling::no_nulls::{
+    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
+};
+use polars_compute::rolling::nulls::RollingAggWindowNulls;
+use polars_compute::rolling::quantile_filter::SealedRolling;
+use polars_compute::rolling::{
+    self, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams, quantile_filter,
+};
 use polars_utils::float::IsFloat;
 use polars_utils::idx_vec::IdxVec;
-use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
+use polars_utils::min_max::MinMax;
 use rayon::prelude::*;
 
 use crate::chunked_array::cast::CastOptions;
@@ -30,10 +32,10 @@ use crate::frame::group_by::GroupsIdx;
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
+use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use crate::{apply_method_physical_integer, POOL};
+use crate::{POOL, apply_method_physical_integer};
 
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
@@ -222,75 +224,6 @@ where
     ca.into_inner().into_series()
 }
 
-pub trait TakeExtremum {
-    fn take_min(self, other: Self) -> Self;
-
-    fn take_max(self, other: Self) -> Self;
-}
-
-macro_rules! impl_take_extremum {
-    ($tp:ty) => {
-        impl TakeExtremum for $tp {
-            #[inline(always)]
-            fn take_min(self, other: Self) -> Self {
-                if self < other {
-                    self
-                } else {
-                    other
-                }
-            }
-
-            #[inline(always)]
-            fn take_max(self, other: Self) -> Self {
-                if self > other {
-                    self
-                } else {
-                    other
-                }
-            }
-        }
-    };
-
-    (float: $tp:ty) => {
-        impl TakeExtremum for $tp {
-            #[inline(always)]
-            fn take_min(self, other: Self) -> Self {
-                if matches!(compare_fn_nan_max(&self, &other), Ordering::Less) {
-                    self
-                } else {
-                    other
-                }
-            }
-
-            #[inline(always)]
-            fn take_max(self, other: Self) -> Self {
-                if matches!(compare_fn_nan_min(&self, &other), Ordering::Greater) {
-                    self
-                } else {
-                    other
-                }
-            }
-        }
-    };
-}
-
-#[cfg(feature = "dtype-u8")]
-impl_take_extremum!(u8);
-#[cfg(feature = "dtype-u16")]
-impl_take_extremum!(u16);
-impl_take_extremum!(u32);
-impl_take_extremum!(u64);
-#[cfg(feature = "dtype-i8")]
-impl_take_extremum!(i8);
-#[cfg(feature = "dtype-i16")]
-impl_take_extremum!(i16);
-impl_take_extremum!(i32);
-impl_take_extremum!(i64);
-#[cfg(any(feature = "dtype-decimal", feature = "dtype-i128"))]
-impl_take_extremum!(i128);
-impl_take_extremum!(float: f32);
-impl_take_extremum!(float: f64);
-
 /// Intermediate helper trait so we can have a single generic implementation
 /// This trait will ensure the specific dispatch works without complicating
 /// the trait bounds.
@@ -342,7 +275,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
 {
     let invalid_quantile = !(0.0..=1.0).contains(&quantile);
     if invalid_quantile {
@@ -422,7 +355,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + SealedRolling,
 {
     match groups {
         GroupsType::Idx(groups) => {
@@ -456,10 +389,11 @@ where
         ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native> + IntoSeries,
 {
     // Prevent a rechunk for every individual group.
+
     let s = if groups.len() > 1 {
         ca.rechunk()
     } else {
-        ca.clone()
+        Cow::Borrowed(ca)
     };
 
     match groups {
@@ -516,14 +450,7 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: NativeType
-        + PartialOrd
-        + Num
-        + NumCast
-        + Zero
-        + Bounded
-        + std::iter::Sum<T::Native>
-        + TakeExtremum,
+    T::Native: NativeType + PartialOrd + Num + NumCast + Zero + Bounded + std::iter::Sum<T::Native>,
     ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native>,
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
@@ -552,10 +479,12 @@ where
                         take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
-                            |a, b| a.take_min(b),
+                            |a, b| a.min_ignore_nan(b),
                         )
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a.take_min(b))
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| {
+                            a.min_ignore_nan(b)
+                        })
                     }
                 })
             },
@@ -626,10 +555,12 @@ where
                         take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
-                            |a, b| a.take_max(b),
+                            |a, b| a.max_ignore_nan(b),
                         )
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a.take_max(b))
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| {
+                            a.max_ignore_nan(b)
+                        })
                     }
                 })
             },

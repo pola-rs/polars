@@ -1,12 +1,13 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use either::Either;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
-use super::utils::{self, count_zeros, fmt, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
-use super::{chunk_iter_to_vec, intersects_with, num_intersections_with, IntoIter, MutableBitmap};
+use super::utils::{self, BitChunk, BitChunks, BitmapIter, count_zeros, fmt, get_bit_unchecked};
+use super::{IntoIter, MutableBitmap, chunk_iter_to_vec, intersects_with, num_intersections_with};
 use crate::array::Splitable;
 use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
@@ -50,6 +51,7 @@ const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
 /// // when sliced (or cloned), it is no longer possible to `into_mut`.
 /// let same: Bitmap = sliced.into_mut().left().unwrap();
 /// ```
+#[derive(Default)]
 pub struct Bitmap {
     storage: SharedStorage<u8>,
     // Both offset and length are measured in bits. They are used to bound the
@@ -86,12 +88,6 @@ impl std::fmt::Debug for Bitmap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (bytes, offset, len) = self.as_slice();
         fmt(bytes, offset, len, f)
-    }
-}
-
-impl Default for Bitmap {
-    fn default() -> Self {
-        MutableBitmap::new().into()
     }
 }
 
@@ -183,7 +179,7 @@ impl Bitmap {
     ///
     /// The returned tuple contains:
     /// * `.1`: The byte slice, truncated to the start of the first bit. So the start of the slice
-    ///       is within the first 8 bits.
+    ///   is within the first 8 bits.
     /// * `.2`: The start offset in bits on a range `0 <= offsets < 8`.
     /// * `.3`: The length in number of bits.
     #[inline]
@@ -402,8 +398,11 @@ impl Bitmap {
         // We intentionally leak 1MiB of zeroed memory once so we don't have to
         // refcount it.
         const GLOBAL_ZERO_SIZE: usize = 1024 * 1024;
-        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> =
-            LazyLock::new(|| SharedStorage::from_static(vec![0; GLOBAL_ZERO_SIZE].leak()));
+        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> = LazyLock::new(|| {
+            let mut ss = SharedStorage::from_vec(vec![0; GLOBAL_ZERO_SIZE]);
+            ss.leak();
+            ss
+        });
 
         let bytes_needed = length.div_ceil(8);
         let storage = if bytes_needed <= GLOBAL_ZERO_SIZE {
@@ -444,7 +443,7 @@ impl Bitmap {
 
     /// Creates a new [`Bitmap`] from a slice and length.
     /// # Panic
-    /// Panics iff `length <= bytes.len() * 8`
+    /// Panics iff `length > bytes.len() * 8`
     #[inline]
     pub fn from_u8_slice<T: AsRef<[u8]>>(slice: T, length: usize) -> Self {
         Bitmap::try_new(slice.as_ref().to_vec(), length).unwrap()

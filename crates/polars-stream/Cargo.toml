@@ -9,22 +9,29 @@ repository = { workspace = true }
 description = "Private crate for the streaming execution engine for the Polars DataFrame library"
 
 [dependencies]
+arrow = { workspace = true }
+async-trait = { workspace = true }
 atomic-waker = { workspace = true }
+bitflags = { workspace = true }
+crossbeam-channel = { workspace = true }
 crossbeam-deque = { workspace = true }
+crossbeam-queue = { workspace = true }
 crossbeam-utils = { workspace = true }
 futures = { workspace = true }
 memmap = { workspace = true }
 parking_lot = { workspace = true }
+percent-encoding = { workspace = true }
 pin-project-lite = { workspace = true }
 polars-io = { workspace = true, features = ["async"] }
 polars-utils = { workspace = true }
+pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 slotmap = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 
-polars-core = { workspace = true }
+polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
@@ -48,7 +55,7 @@ json = ["polars-mem-engine/json", "polars-plan/json", "polars-io/json"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 object = ["polars-ops/object"]
-python = ["polars-plan/python"]
+python = ["pyo3", "polars-plan/python"]
 
 # We need to specify default features here to match workspace defaults.
 # Otherwise we get warnings with cargo check/clippy.

@@ -1,6 +1,5 @@
 use arrow::temporal_conversions::{EPOCH_DAYS_FROM_CE, MILLISECONDS, SECONDS_IN_DAY};
 use chrono::{Datelike, NaiveDate};
-use polars_core::utils::CustomIterTools;
 
 use super::*;
 
@@ -84,20 +83,23 @@ pub trait DateMethods: AsDate {
         day: &Int8Chunked,
         name: PlSmallStr,
     ) -> PolarsResult<DateChunked> {
-        let mut ca: Int32Chunked = year
+        let ca: Int32Chunked = year
             .into_iter()
             .zip(month)
             .zip(day)
             .map(|((y, m), d)| {
                 if let (Some(y), Some(m), Some(d)) = (y, m, d) {
-                    NaiveDate::from_ymd_opt(y, m as u32, d as u32)
-                        .map(|t| t.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
+                    NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
+                        // We have an invalid date.
+                        || Err(polars_err!(ComputeError: format!("Invalid date components ({}, {}, {}) supplied", y, m, d))),
+                        // We have a valid date.
+                        |date| Ok(Some(date.num_days_from_ce() - EPOCH_DAYS_FROM_CE)),
+                    )
                 } else {
-                    None
+                    Ok(None)
                 }
             })
-            .collect_trusted();
-        ca.rename(name);
+            .try_collect_ca_with_dtype(name, DataType::Int32)?;
         Ok(ca.into_date())
     }
 }

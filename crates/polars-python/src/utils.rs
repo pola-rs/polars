@@ -2,8 +2,8 @@ use std::panic::AssertUnwindSafe;
 
 use polars::frame::DataFrame;
 use polars::series::IntoSeries;
-use polars_error::signals::{catch_keyboard_interrupt, KeyboardInterrupt};
 use polars_error::PolarsResult;
+use polars_error::signals::{KeyboardInterrupt, catch_keyboard_interrupt};
 use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::marker::Ungil;
 use pyo3::{PyErr, PyResult, Python};
@@ -11,6 +11,7 @@ use pyo3::{PyErr, PyResult, Python};
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::series::PySeries;
+use crate::timeout::{cancel_polars_timeout, schedule_polars_timeout};
 
 // was redefined because I could not get feature flags activated?
 #[macro_export]
@@ -101,7 +102,9 @@ impl EnterPolarsExt for Python<'_> {
         T: Ungil + Send,
         E: Ungil + Send + Into<PyPolarsErr>,
     {
+        let timeout = schedule_polars_timeout();
         let ret = self.allow_threads(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
+        cancel_polars_timeout(timeout);
         match ret {
             Ok(Ok(ret)) => Ok(ret),
             Ok(Err(err)) => Err(PyErr::from(err.into())),

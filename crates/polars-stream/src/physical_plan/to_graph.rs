@@ -1,29 +1,36 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::POOL;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
-use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
+use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
-use polars_plan::dsl::JoinOptions;
+use polars_plan::dsl::{JoinOptions, PartitionVariantIR};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
 use polars_plan::prelude::{FileType, FunctionFlags};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
+use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 use slotmap::{SecondaryMap, SlotMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
+use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
-use crate::morsel::MorselSeq;
+use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
+use crate::nodes::io_sinks::SinkComputeNode;
+use crate::nodes::io_sources::SourceComputeNode;
+use crate::nodes::io_sources::batch::BatchSourceNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -58,6 +65,7 @@ struct GraphConversionContext<'a> {
     graph: Graph,
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     expr_conversion_state: ExpressionConversionState,
+    num_pipelines: usize,
 }
 
 pub fn physical_plan_to_graph(
@@ -65,13 +73,15 @@ pub fn physical_plan_to_graph(
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
-    let expr_depth_limit = get_expr_depth_limit()?;
+    // Get the number of threads from the rayon thread-pool as that respects our config.
+    let num_pipelines = POOL.current_num_threads();
     let mut ctx = GraphConversionContext {
         phys_sm,
         expr_arena,
         graph: Graph::with_capacity(phys_sm.len()),
         phys_to_graph: SecondaryMap::with_capacity(phys_sm.len()),
-        expr_conversion_state: ExpressionConversionState::new(false, expr_depth_limit),
+        expr_conversion_state: ExpressionConversionState::new(false),
+        num_pipelines,
     };
 
     to_graph_rec(root, &mut ctx)?;
@@ -96,6 +106,15 @@ fn to_graph_rec<'a>(
             nodes::in_memory_source::InMemorySourceNode::new(df.clone(), MorselSeq::default()),
             [],
         ),
+        SinkMultiple { sinks } => {
+            // @NOTE: This is always the root node and gets ignored by the physical_plan anyway so
+            // we give one of the inputs back.
+            let node = to_graph_rec(sinks[0], ctx)?;
+            for sink in &sinks[1..] {
+                to_graph_rec(*sink, ctx)?;
+            }
+            return Ok(node);
+        },
 
         StreamingSlice {
             input,
@@ -221,35 +240,56 @@ fn to_graph_rec<'a>(
 
         FileSink {
             path,
+            sink_options,
             file_type,
             input,
+            cloud_options,
         } => {
+            let sink_options = sink_options.clone();
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
 
             match file_type {
                 #[cfg(feature = "ipc")]
                 FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
-                    nodes::io_sinks::ipc::IpcSinkNode::new(input_schema, path, ipc_writer_options)?,
+                    SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
+                        input_schema,
+                        path.to_path_buf(),
+                        sink_options,
+                        *ipc_writer_options,
+                        cloud_options.clone(),
+                    )),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "json")]
                 FileType::Json(_) => ctx.graph.add_node(
-                    nodes::io_sinks::json::NDJsonSinkNode::new(path)?,
+                    SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
+                        path.to_path_buf(),
+                        sink_options,
+                        cloud_options.clone(),
+                    )),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "parquet")]
                 FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
-                    nodes::io_sinks::parquet::ParquetSinkNode::new(
+                    SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
                         input_schema,
                         path,
+                        sink_options,
                         parquet_writer_options,
-                    )?,
+                        cloud_options.clone(),
+                    )?),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "csv")]
                 FileType::Csv(csv_writer_options) => ctx.graph.add_node(
-                    nodes::io_sinks::csv::CsvSinkNode::new(input_schema, path, csv_writer_options)?,
+                    SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
+                        path.to_path_buf(),
+                        input_schema,
+                        sink_options,
+                        csv_writer_options.clone(),
+                        cloud_options.clone(),
+                    )),
                     [(input_key, input.port)],
                 ),
                 #[cfg(not(any(
@@ -261,6 +301,81 @@ fn to_graph_rec<'a>(
                 _ => {
                     panic!("activate source feature")
                 },
+            }
+        },
+
+        PartitionSink {
+            base_path,
+            file_path_cb,
+            sink_options,
+            variant,
+            file_type,
+            input,
+            cloud_options,
+        } => {
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+
+            let base_path = base_path.clone();
+            let file_path_cb = file_path_cb.clone();
+            let ext = PlSmallStr::from_static(file_type.extension());
+            let create_new = nodes::io_sinks::partition::get_create_new_fn(
+                file_type.clone(),
+                sink_options.clone(),
+                cloud_options.clone(),
+            );
+
+            match variant {
+                PartitionVariantIR::MaxSize(max_size) => ctx.graph.add_node(
+                    SinkComputeNode::from(
+                        nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
+                            input_schema,
+                            *max_size,
+                            base_path,
+                            file_path_cb,
+                            create_new,
+                            ext,
+                            sink_options.clone(),
+                        ),
+                    ),
+                    [(input_key, input.port)],
+                ),
+                PartitionVariantIR::Parted {
+                    key_exprs,
+                    include_key,
+                } => ctx.graph.add_node(
+                    SinkComputeNode::from(
+                        nodes::io_sinks::partition::parted::PartedPartitionSinkNode::new(
+                            input_schema,
+                            key_exprs.iter().map(|e| e.output_name().clone()).collect(),
+                            base_path,
+                            file_path_cb,
+                            create_new,
+                            ext,
+                            sink_options.clone(),
+                            *include_key,
+                        ),
+                    ),
+                    [(input_key, input.port)],
+                ),
+                PartitionVariantIR::ByKey {
+                    key_exprs,
+                    include_key,
+                } => ctx.graph.add_node(
+                    SinkComputeNode::from(
+                        nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
+                            input_schema,
+                            key_exprs.iter().map(|e| e.output_name().clone()).collect(),
+                            base_path,
+                            file_path_cb,
+                            create_new,
+                            ext,
+                            sink_options.clone(),
+                            *include_key,
+                        ),
+                    ),
+                    [(input_key, input.port)],
+                ),
             }
         },
 
@@ -352,11 +467,125 @@ fn to_graph_rec<'a>(
             )
         },
 
+        MultiScan {
+            scan_sources,
+            hive_parts,
+            scan_type,
+            output_schema,
+            file_schema,
+            allow_missing_columns,
+            include_file_paths,
+            projection,
+            row_restriction,
+            predicate,
+            row_index,
+
+            pre_slice,
+            file_reader_builder,
+            projected_file_schema,
+            cloud_options,
+        } => {
+            let predicate = predicate
+                .as_ref()
+                .map(|pred| {
+                    create_scan_predicate(
+                        pred,
+                        ctx.expr_arena,
+                        file_schema,
+                        &mut ctx.expr_conversion_state,
+                        true,
+                        false,
+                    )
+                })
+                .transpose()?;
+            let predicate = predicate
+                .as_ref()
+                .map(|p| p.to_io(None, file_schema.clone()));
+
+            if let Some(file_reader_builder) = file_reader_builder {
+                let hive_parts = hive_parts.clone();
+
+                ctx.graph.add_node(
+                    nodes::io_sources::multi_file_reader::MultiFileReader::new(
+                        scan_sources.clone(),
+                        file_reader_builder.clone(),
+                        cloud_options.clone(),
+                        output_schema.clone(),
+                        projected_file_schema.clone(),
+                        file_schema.clone(),
+                        row_index.clone(),
+                        pre_slice.clone(),
+                        predicate,
+                        hive_parts.map(Arc::new),
+                        include_file_paths.clone(),
+                        *allow_missing_columns,
+                    ),
+                    [],
+                )
+            } else {
+                match &**scan_type {
+                    #[cfg(feature = "parquet")]
+                    polars_plan::dsl::FileScan::Parquet { .. } => unreachable!(),
+                    #[cfg(feature = "ipc")]
+                    polars_plan::dsl::FileScan::Ipc {
+                        options,
+                        cloud_options,
+                        ..
+                    } => ctx.graph.add_node(
+                        nodes::io_sources::SourceComputeNode::new(
+                            nodes::io_sources::multi_scan::MultiScanNode::<
+                                nodes::io_sources::ipc::IpcSourceNode,
+                            >::new(
+                                scan_sources.clone(),
+                                hive_parts.clone().map(Arc::new),
+                                *allow_missing_columns,
+                                include_file_paths.clone(),
+                                file_schema.clone(),
+                                projection.clone(),
+                                row_index.clone(),
+                                row_restriction.clone(),
+                                predicate,
+                                options.clone(),
+                                cloud_options.clone(),
+                            ),
+                        ),
+                        [],
+                    ),
+                    #[cfg(feature = "csv")]
+                    polars_plan::dsl::FileScan::Csv {
+                        options,
+                        cloud_options,
+                    } => ctx.graph.add_node(
+                        nodes::io_sources::SourceComputeNode::new(
+                            nodes::io_sources::multi_scan::MultiScanNode::<
+                                nodes::io_sources::csv::CsvSourceNode,
+                            >::new(
+                                scan_sources.clone(),
+                                hive_parts.clone().map(Arc::new),
+                                *allow_missing_columns,
+                                include_file_paths.clone(),
+                                file_schema.clone(),
+                                projection.clone(),
+                                row_index.clone(),
+                                row_restriction.clone(),
+                                predicate,
+                                options.clone(),
+                                cloud_options.clone(),
+                            ),
+                        ),
+                        [],
+                    ),
+                    #[cfg(feature = "json")]
+                    polars_plan::dsl::FileScan::NDJson { .. } => unreachable!(),
+                    _ => todo!(),
+                }
+            }
+        },
+
         v @ FileScan { .. } => {
             let FileScan {
-                scan_sources,
+                scan_source,
                 file_info,
-                hive_parts: _,
                 output_schema,
                 scan_type,
                 predicate,
@@ -366,7 +595,7 @@ fn to_graph_rec<'a>(
                 unreachable!()
             };
 
-            file_options.slice = if let Some((offset, len)) = file_options.slice {
+            file_options.pre_slice = if let Some((offset, len)) = file_options.pre_slice {
                 Some((offset, _set_n_rows_for_scan(Some(len)).unwrap()))
             } else {
                 _set_n_rows_for_scan(None).map(|x| (0, x))
@@ -376,7 +605,7 @@ fn to_graph_rec<'a>(
             #[cfg(feature = "parquet")]
             {
                 create_skip_batch_predicate |= matches!(
-                    scan_type,
+                    *scan_type,
                     polars_plan::prelude::FileScan::Parquet {
                         options: polars_io::prelude::ParquetOptions {
                             use_statistics: true,
@@ -386,6 +615,7 @@ fn to_graph_rec<'a>(
                     }
                 );
             }
+            let create_column_predicates = cfg!(feature = "parquet");
 
             let predicate = predicate
                 .map(|pred| {
@@ -395,32 +625,20 @@ fn to_graph_rec<'a>(
                         output_schema.as_ref().unwrap_or(&file_info.schema),
                         &mut ctx.expr_conversion_state,
                         create_skip_batch_predicate,
+                        create_column_predicates,
                     )
                 })
                 .transpose()?;
-            let predicate = predicate.as_ref().map(|p| p.to_io(None, &file_info.schema));
+            let predicate = predicate
+                .as_ref()
+                .map(|p| p.to_io(None, file_info.schema.clone()));
 
             {
                 use polars_plan::prelude::FileScan;
 
-                match scan_type {
+                match *scan_type {
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet {
-                        options,
-                        cloud_options,
-                        metadata: first_metadata,
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::parquet::ParquetSourceNode::new(
-                            scan_sources,
-                            file_info,
-                            predicate,
-                            options,
-                            cloud_options,
-                            file_options,
-                            first_metadata,
-                        ),
-                        [],
-                    ),
+                    FileScan::Parquet { .. } => unreachable!(),
                     #[cfg(feature = "ipc")]
                     FileScan::Ipc {
                         options,
@@ -431,14 +649,16 @@ fn to_graph_rec<'a>(
                         assert!(predicate.is_none());
 
                         ctx.graph.add_node(
-                            nodes::io_sources::ipc::IpcSourceNode::new(
-                                scan_sources,
-                                file_info,
-                                options,
-                                cloud_options,
-                                file_options,
-                                first_metadata,
-                            )?,
+                            nodes::io_sources::SourceComputeNode::new(
+                                nodes::io_sources::ipc::IpcSourceNode::new(
+                                    scan_source,
+                                    file_info,
+                                    options,
+                                    cloud_options,
+                                    *file_options,
+                                    first_metadata,
+                                )?,
+                            ),
                             [],
                         )
                     },
@@ -449,19 +669,23 @@ fn to_graph_rec<'a>(
                         if options.parse_options.comment_prefix.is_some() {
                             // Should have been re-written to separate streaming nodes
                             assert!(file_options.row_index.is_none());
-                            assert!(file_options.slice.is_none());
+                            assert!(file_options.pre_slice.is_none());
                         }
 
                         ctx.graph.add_node(
-                            nodes::io_sources::csv::CsvSourceNode::new(
-                                scan_sources,
-                                file_info,
-                                file_options,
-                                options,
+                            nodes::io_sources::SourceComputeNode::new(
+                                nodes::io_sources::csv::CsvSourceNode::new(
+                                    scan_source,
+                                    file_info,
+                                    file_options,
+                                    options,
+                                ),
                             ),
                             [],
                         )
                     },
+                    #[cfg(feature = "json")]
+                    FileScan::NDJson { .. } => unreachable!(),
                     _ => todo!(),
                 }
             }
@@ -500,7 +724,7 @@ fn to_graph_rec<'a>(
                     grouped_reductions,
                     grouper,
                     node.output_schema.clone(),
-                    PlRandomState::new(),
+                    PlRandomState::default(),
                 ),
                 [(input_key, input.port)],
             )
@@ -572,6 +796,14 @@ fn to_graph_rec<'a>(
             left_on,
             right_on,
             args,
+        }
+        | SemiAntiJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+            output_bool: _,
         } => {
             let args = args.clone();
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
@@ -584,30 +816,65 @@ fn to_graph_rec<'a>(
             let right_key_schema =
                 compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?;
 
-            let left_key_selectors = left_on
+            // We use key columns entirely by position, and allow duplicate names in key selectors,
+            // so just assign arbitrary unique names for the selectors.
+            let unique_left_on = left_on
+                .iter()
+                .enumerate()
+                .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{i}")))
+                .collect_vec();
+            let unique_right_on = right_on
+                .iter()
+                .enumerate()
+                .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{i}")))
+                .collect_vec();
+
+            let left_key_selectors = unique_left_on
                 .iter()
                 .map(|e| create_stream_expr(e, ctx, &left_input_schema))
                 .try_collect_vec()?;
-            let right_key_selectors = right_on
+            let right_key_selectors = unique_right_on
                 .iter()
                 .map(|e| create_stream_expr(e, ctx, &right_input_schema))
                 .try_collect_vec()?;
 
-            ctx.graph.add_node(
-                nodes::joins::equi_join::EquiJoinNode::new(
-                    left_input_schema,
-                    right_input_schema,
-                    left_key_schema,
-                    right_key_schema,
-                    left_key_selectors,
-                    right_key_selectors,
-                    args,
-                )?,
-                [
-                    (left_input_key, input_left.port),
-                    (right_input_key, input_right.port),
-                ],
-            )
+            let unique_key_schema =
+                compute_output_schema(&right_input_schema, &unique_left_on, ctx.expr_arena)?;
+
+            if let SemiAntiJoin { output_bool, .. } = node.kind {
+                ctx.graph.add_node(
+                    nodes::joins::semi_anti_join::SemiAntiJoinNode::new(
+                        unique_key_schema,
+                        left_key_selectors,
+                        right_key_selectors,
+                        args,
+                        output_bool,
+                        ctx.num_pipelines,
+                    )?,
+                    [
+                        (left_input_key, input_left.port),
+                        (right_input_key, input_right.port),
+                    ],
+                )
+            } else {
+                ctx.graph.add_node(
+                    nodes::joins::equi_join::EquiJoinNode::new(
+                        left_input_schema,
+                        right_input_schema,
+                        left_key_schema,
+                        right_key_schema,
+                        unique_key_schema,
+                        left_key_selectors,
+                        right_key_selectors,
+                        args,
+                        ctx.num_pipelines,
+                    )?,
+                    [
+                        (left_input_key, input_left.port),
+                        (right_input_key, input_right.port),
+                    ],
+                )
+            }
         },
 
         #[cfg(feature = "merge_sorted")]
@@ -627,6 +894,144 @@ fn to_graph_rec<'a>(
                     (left_input_key, input_left.port),
                     (right_input_key, input_right.port),
                 ],
+            )
+        },
+
+        #[cfg(feature = "python")]
+        PythonScan { options } => {
+            use polars_plan::dsl::python_dsl::PythonScanSource as S;
+            use polars_plan::plans::PythonPredicate;
+            use pyo3::exceptions::PyStopIteration;
+            use pyo3::prelude::*;
+            use pyo3::types::{PyBytes, PyNone};
+            use pyo3::{IntoPyObjectExt, PyTypeInfo, intern};
+
+            let mut options = options.clone();
+            let with_columns = options.with_columns.take();
+            let n_rows = options.n_rows.take();
+
+            let python_scan_function = options.scan_fn.take().unwrap().0;
+
+            let with_columns = with_columns.map(|cols| cols.iter().cloned().collect::<Vec<_>>());
+
+            let (pl_predicate, predicate_serialized) = polars_mem_engine::python_scan_predicate(
+                &mut options,
+                ctx.expr_arena,
+                &mut ctx.expr_conversion_state,
+            )?;
+
+            let output_schema = options.output_schema.unwrap_or(options.schema);
+            let validate_schema = options.validate_schema;
+
+            let (name, get_batch_fn) = match options.python_source {
+                S::Pyarrow => todo!(),
+                S::Cuda => todo!(),
+                S::IOPlugin => {
+                    let batch_size = Some(get_ideal_morsel_size());
+                    let output_schema = output_schema.clone();
+
+                    let with_columns = with_columns.map(|x| {
+                        x.into_iter()
+                            .map(|x| x.to_string())
+                            .collect::<Vec<String>>()
+                    });
+
+                    // Setup the IO plugin generator.
+                    let (generator, can_parse_predicate) = {
+                        Python::with_gil(|py| {
+                            let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
+                            let utils = pl.getattr(intern!(py, "_utils")).unwrap();
+                            let callable =
+                                utils.getattr(intern!(py, "_execute_from_rust")).unwrap();
+
+                            let mut could_serialize_predicate = true;
+                            let predicate = match &options.predicate {
+                                PythonPredicate::PyArrow(s) => s.into_bound_py_any(py).unwrap(),
+                                PythonPredicate::None => None::<()>.into_bound_py_any(py).unwrap(),
+                                PythonPredicate::Polars(_) => {
+                                    assert!(pl_predicate.is_some(), "should be set");
+                                    match &predicate_serialized {
+                                        None => {
+                                            could_serialize_predicate = false;
+                                            PyNone::get(py).to_owned().into_any()
+                                        },
+                                        Some(buf) => PyBytes::new(py, buf).into_any(),
+                                    }
+                                },
+                            };
+
+                            let args = (
+                                python_scan_function,
+                                with_columns,
+                                predicate,
+                                n_rows,
+                                batch_size,
+                            );
+
+                            let generator_init =
+                                callable.call1(args).map_err(polars_error::to_compute_err)?;
+                            let generator = generator_init.get_item(0).map_err(
+                                |_| polars_err!(ComputeError: "expected tuple got {generator_init}"),
+                            )?;
+                            let can_parse_predicate = generator_init.get_item(1).map_err(
+                                |_| polars_err!(ComputeError: "expected tuple got {generator}"),
+                            )?;
+                            let can_parse_predicate = can_parse_predicate.extract::<bool>().map_err(
+                                |_| polars_err!(ComputeError: "expected bool got {can_parse_predicate}"),
+                            )? && could_serialize_predicate;
+
+                            let generator = generator.into_py_any(py).map_err(
+                                |_| polars_err!(ComputeError: "unable to grab reference to IO plugin generator"),
+                            )?;
+
+                            PolarsResult::Ok((generator, can_parse_predicate))
+                        })
+                    }?;
+
+                    let get_batch_fn = Box::new(move |state: &StreamingExecutionState| {
+                        Python::with_gil(|py| {
+                            match generator.bind(py).call_method0(intern!(py, "__next__")) {
+                                Ok(out) => {
+                                    let mut df = polars_plan::plans::python_df_to_rust(py, out)?;
+                                    if let (Some(pred), false) =
+                                        (&pl_predicate, can_parse_predicate)
+                                    {
+                                        let mask =
+                                            pred.evaluate(&df, &state.in_memory_exec_state)?;
+                                        df = df.filter(mask.bool()?)?;
+                                    }
+                                    if validate_schema {
+                                        polars_ensure!(
+                                            df.schema() == &output_schema,
+                                            SchemaMismatch: "user provided schema: {:?} doesn't match the DataFrame schema: {:?}",
+                                            output_schema, df.schema()
+                                        );
+                                    }
+                                    Ok(Some(df))
+                                },
+                                Err(err)
+                                    if err.matches(py, PyStopIteration::type_object(py))? =>
+                                {
+                                    Ok(None)
+                                },
+                                Err(err) => polars_bail!(
+                                    ComputeError: "caught exception during execution of a Python source, exception: {err}"
+                                ),
+                            }
+                        })
+                    }) as Box<_>;
+
+                    ("io_plugin", get_batch_fn)
+                },
+            };
+
+            ctx.graph.add_node(
+                SourceComputeNode::new(BatchSourceNode::new(
+                    name,
+                    output_schema,
+                    Some(get_batch_fn),
+                )),
+                [],
             )
         },
     };

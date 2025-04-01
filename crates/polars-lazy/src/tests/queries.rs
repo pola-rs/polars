@@ -355,7 +355,7 @@ fn test_lazy_query_8() -> PolarsResult<()> {
     let mut selection = vec![];
 
     for &c in &["A", "B", "C", "D", "E"] {
-        let e = when(col(c).is_in(col("E")))
+        let e = when(col(c).is_in(col("E"), false))
             .then(col("A"))
             .otherwise(Null {}.lit())
             .alias(c);
@@ -484,10 +484,11 @@ fn test_lazy_query_10() {
         .select(&[(col("x") - col("y")).alias("z")])
         .collect()
         .unwrap();
-    assert!(out
-        .column("z")
-        .unwrap()
-        .equals(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap()));
+    assert!(
+        out.column("z")
+            .unwrap()
+            .equals(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap())
+    );
 }
 
 #[test]
@@ -586,7 +587,7 @@ fn test_simplify_expr() {
     .unwrap();
     let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
     assert!(
-        matches!(plan, DslPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float(2.0))))
+        matches!(plan, DslPlan::Select{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(2.0)))))
     );
 }
 
@@ -611,13 +612,14 @@ fn test_lazy_wildcard() {
 #[test]
 fn test_lazy_reverse() {
     let df = load_df();
-    assert!(df
-        .clone()
-        .lazy()
-        .reverse()
-        .collect()
-        .unwrap()
-        .equals_missing(&df.reverse()))
+    assert!(
+        df.clone()
+            .lazy()
+            .reverse()
+            .collect()
+            .unwrap()
+            .equals_missing(&df.reverse())
+    )
 }
 
 #[test]
@@ -1761,7 +1763,7 @@ fn test_is_in() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by_stable([col("fruits")])
-        .agg([col("cars").is_in(col("cars").filter(col("cars").eq(lit("beetle"))))])
+        .agg([col("cars").is_in(col("cars").filter(col("cars").eq(lit("beetle"))), false)])
         .collect()?;
     let out = out.column("cars").unwrap();
     let out = out.explode()?;
@@ -1775,7 +1777,7 @@ fn test_is_in() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by_stable([col("fruits")])
-        .agg([col("cars").is_in(lit(Series::new("a".into(), ["beetle", "vw"])))])
+        .agg([col("cars").is_in(lit(Series::new("a".into(), ["beetle", "vw"])), false)])
         .collect()?;
 
     let out = out.column("cars").unwrap();

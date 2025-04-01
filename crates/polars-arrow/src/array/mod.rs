@@ -17,6 +17,7 @@
 //!
 //! Most arrays contain a [`MutableArray`] counterpart that is neither cloneable nor sliceable, but
 //! can be operated in-place.
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::any::Any;
 use std::sync::Arc;
 
@@ -444,8 +445,11 @@ macro_rules! impl_sliced {
         #[inline]
         #[must_use]
         pub fn sliced(self, offset: usize, length: usize) -> Self {
+            let total = offset
+                .checked_add(length)
+                .expect("offset + length overflowed");
             assert!(
-                offset + length <= self.len(),
+                total <= self.len(),
                 "the offset of the new Buffer cannot exceed the existing length"
             );
             unsafe { Self::sliced_unchecked(self, offset, length) }
@@ -650,6 +654,7 @@ impl<'a> AsRef<(dyn Array + 'a)> for dyn Array {
 
 mod binary;
 mod boolean;
+pub mod builder;
 mod dictionary;
 mod fixed_size_binary;
 mod fixed_size_list;
@@ -673,35 +678,38 @@ pub mod indexable;
 pub mod iterator;
 
 mod binview;
-pub mod growable;
 mod values;
 
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
 pub use binview::{
-    validate_utf8_view, BinaryViewArray, BinaryViewArrayGeneric, MutableBinaryViewArray,
+    BinaryViewArray, BinaryViewArrayGeneric, BinaryViewArrayGenericBuilder, MutableBinaryViewArray,
     MutablePlBinary, MutablePlString, Utf8ViewArray, View, ViewType,
 };
-pub use boolean::{BooleanArray, MutableBooleanArray};
+pub use boolean::{BooleanArray, BooleanArrayBuilder, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
 pub use equal::equal;
-pub use fixed_size_binary::{FixedSizeBinaryArray, MutableFixedSizeBinaryArray};
-pub use fixed_size_list::{FixedSizeListArray, MutableFixedSizeListArray};
+pub use fixed_size_binary::{
+    FixedSizeBinaryArray, FixedSizeBinaryArrayBuilder, MutableFixedSizeBinaryArray,
+};
+pub use fixed_size_list::{
+    FixedSizeListArray, FixedSizeListArrayBuilder, MutableFixedSizeListArray,
+};
 pub use fmt::{get_display, get_value_display};
 pub(crate) use iterator::ArrayAccessor;
 pub use iterator::ArrayValuesIter;
-pub use list::{ListArray, ListValuesIter, MutableListArray};
+pub use list::{ListArray, ListArrayBuilder, ListValuesIter, MutableListArray};
 pub use map::MapArray;
-pub use null::{MutableNullArray, NullArray};
+pub use null::{MutableNullArray, NullArray, NullArrayBuilder};
 use polars_error::PolarsResult;
 pub use primitive::*;
 pub use static_array::{ParameterFreeDtypeStaticArray, StaticArray};
 pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};
-pub use struct_::StructArray;
+pub use struct_::{StructArray, StructArrayBuilder};
 pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
 pub use values::ValueSize;
 
-pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
+pub(crate) use self::ffi::{FromFfi, ToFfi, offset_buffers_children_dictionary};
 use crate::{match_integer_type, with_match_primitive_type_full};
 
 /// A trait describing the ability of a struct to create itself from a iterator.

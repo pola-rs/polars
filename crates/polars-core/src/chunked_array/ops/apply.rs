@@ -1,4 +1,5 @@
 //! Implementations of the ChunkApply Trait.
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
 use crate::chunked_array::arity::{unary_elementwise, unary_elementwise_values};

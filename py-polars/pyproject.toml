@@ -41,6 +41,7 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
+polars_cloud = ["polars_cloud >= 0.0.1a1"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
@@ -65,7 +66,7 @@ fsspec = ["fsspec"]
 
 # Other I/O
 deltalake = ["deltalake >= 0.19.0"]
-iceberg = ["pyiceberg >= 0.5.0"]
+iceberg = ["pyiceberg >= 0.7.1"]
 
 # Other
 async = ["gevent"]
@@ -107,6 +108,7 @@ module = [
   "arrow_odbc",
   "backports",
   "connectorx",
+  "dateutil.*",
   "deltalake.*",
   "fsspec.*",
   "gevent",
@@ -117,6 +119,7 @@ module = [
   "moto.server",
   "openpyxl",
   "polars.polars",
+  "polars_cloud",
   "pyarrow.*",
   "pydantic",
   "pyiceberg.*",

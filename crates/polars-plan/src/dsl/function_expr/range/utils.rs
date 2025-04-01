@@ -1,6 +1,6 @@
 use polars_core::prelude::{
-    polars_bail, polars_ensure, ChunkedArray, Column, Int64Chunked, IntoColumn, ListBuilderTrait,
-    ListPrimitiveChunkedBuilder, PolarsIntegerType, PolarsResult,
+    ChunkedArray, Column, Int64Chunked, IntoColumn, ListBuilderTrait, ListPrimitiveChunkedBuilder,
+    PolarsIntegerType, PolarsNumericType, PolarsResult, polars_bail, polars_ensure,
 };
 
 pub(super) fn temporal_series_to_i64_scalar(s: &Column) -> Option<i64> {
@@ -247,9 +247,9 @@ where
 }
 
 /// Add `n` nulls to the builder.
-fn build_nulls<U>(builder: &mut ListPrimitiveChunkedBuilder<U>, n: usize)
+pub fn build_nulls<U>(builder: &mut ListPrimitiveChunkedBuilder<U>, n: usize)
 where
-    U: PolarsIntegerType,
+    U: PolarsNumericType,
     ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
     for _ in 0..n {

@@ -34,4 +34,12 @@ impl StreamExpr {
             self.inner.evaluate(df, state)
         }
     }
+
+    pub fn evaluate_blocking(
+        &self,
+        df: &DataFrame,
+        state: &ExecutionState,
+    ) -> PolarsResult<Column> {
+        self.inner.evaluate(df, state)
+    }
 }

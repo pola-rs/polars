@@ -149,11 +149,19 @@ impl CategoricalChunked {
         };
         // Make a mapping from old idx to new idx
         let old_rev_map = self.get_rev_map();
+
+        // Create map of old category -> idx for fast lookup.
+        let old_categories = old_rev_map.get_categories();
+        let old_idx_map: PlHashMap<&str, u32> = old_categories
+            .values_iter()
+            .zip(0..old_categories.len() as u32)
+            .collect();
+
         #[allow(clippy::unnecessary_cast)]
         let idx_map: PlHashMap<u32, u32> = categories
             .values_iter()
             .enumerate_idx()
-            .filter_map(|(new_idx, s)| old_rev_map.find(s).map(|old_idx| (old_idx, new_idx as u32)))
+            .filter_map(|(new_idx, s)| old_idx_map.get(s).map(|old_idx| (*old_idx, new_idx as u32)))
             .collect();
 
         // Loop over the physicals and try get new idx
@@ -474,12 +482,24 @@ impl<'a> Iterator for CatIter<'a> {
     }
 }
 
+impl DoubleEndedIterator for CatIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back().map(|item| {
+            item.map(|idx| {
+                // SAFETY:
+                // all categories are in bound
+                unsafe { self.rev.get_unchecked(idx) }
+            })
+        })
+    }
+}
+
 impl ExactSizeIterator for CatIter<'_> {}
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
+    use crate::{SINGLE_LOCK, disable_string_cache, enable_string_cache};
 
     #[test]
     fn test_categorical_round_trip() -> PolarsResult<()> {

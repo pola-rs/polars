@@ -1,6 +1,6 @@
-use arrow::datatypes::Metadata;
 #[cfg(feature = "dtype-categorical")]
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::compute::concatenate::concatenate_unchecked;
+use arrow::datatypes::Metadata;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
@@ -12,9 +12,11 @@ use polars_compute::cast::cast_unchecked as cast;
 use polars_error::feature_gated;
 use polars_utils::itertools::Itertools;
 
-use crate::chunked_array::cast::{cast_chunks, CastOptions};
+use crate::chunked_array::cast::{CastOptions, cast_chunks};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
+#[cfg(feature = "object")]
+use crate::chunked_array::object::registry::get_object_builder;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::parse_fixed_offset;
 #[cfg(feature = "timezones")]
@@ -110,21 +112,21 @@ impl Series {
                 ca.into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => {
-                assert_eq!(chunks.len(), 1);
-                let arr = chunks[0]
-                    .as_any()
-                    .downcast_ref::<FixedSizeBinaryArray>()
-                    .unwrap();
-                // SAFETY:
-                // this is highly unsafe. it will dereference a raw ptr on the heap
-                // make sure the ptr is allocated and from this pid
-                // (the pid is checked before dereference)
-                {
-                    let pe = PolarsExtension::new(arr.clone());
-                    let s = pe.get_series(&name);
-                    pe.take_and_forget();
-                    s
+            Object(_) => {
+                if let Some(arr) = chunks[0].as_any().downcast_ref::<FixedSizeBinaryArray>() {
+                    assert_eq!(chunks.len(), 1);
+                    // SAFETY:
+                    // this is highly unsafe. it will dereference a raw ptr on the heap
+                    // make sure the ptr is allocated and from this pid
+                    // (the pid is checked before dereference)
+                    {
+                        let pe = PolarsExtension::new(arr.clone());
+                        let s = pe.get_series(&name);
+                        pe.take_and_forget();
+                        s
+                    }
+                } else {
+                    unsafe { get_object_builder(name, 0).from_chunks(chunks) }
                 }
             },
             Null => new_null(name, &chunks),
@@ -327,7 +329,7 @@ impl Series {
                 use arrow::datatypes::IntegerType;
                 // don't spuriously call this; triggers a read on mmapped data
                 let arr = if chunks.len() > 1 {
-                    concatenate_owned_unchecked(&chunks)?
+                    concatenate_unchecked(&chunks)?
                 } else {
                     chunks[0].clone()
                 };

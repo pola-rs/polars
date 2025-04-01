@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import re
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
+from polars._utils.various import parse_version
 from polars.convert import from_arrow
 from polars.dependencies import import_optional
 
@@ -16,39 +14,14 @@ if TYPE_CHECKING:
     from polars._typing import SchemaDict
 
 
-def _run_async(
-    coroutine: Coroutine[Any, Any, Any], *, timeout: float | None = None
-) -> Any:
-    """Run asynchronous code as if it were synchronous.
+def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
+    """Run asynchronous code as if it was synchronous."""
+    import asyncio
 
-    This is required for execution in Jupyter notebook environments.
-    """
-    # Implementation taken from StackOverflow answer here:
-    # https://stackoverflow.com/a/78911765/2344703
+    import polars._utils.nest_asyncio
 
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        # If there is no running loop, use `asyncio.run` normally
-        return asyncio.run(coroutine)
-
-    def run_in_new_loop() -> Any:
-        new_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(new_loop)
-        try:
-            return new_loop.run_until_complete(coroutine)
-        finally:
-            new_loop.close()
-
-    if threading.current_thread() is threading.main_thread():
-        if not loop.is_running():
-            return loop.run_until_complete(coroutine)
-        else:
-            with ThreadPoolExecutor() as pool:
-                future = pool.submit(run_in_new_loop)
-                return future.result(timeout=timeout)
-    else:
-        return asyncio.run_coroutine_threadsafe(coroutine, loop).result()
+    polars._utils.nest_asyncio.apply()  # type: ignore[attr-defined]
+    return asyncio.run(co)
 
 
 def _read_sql_connectorx(
@@ -62,10 +35,11 @@ def _read_sql_connectorx(
 ) -> DataFrame:
     cx = import_optional("connectorx")
     try:
+        return_type = "arrow2" if parse_version(cx.__version__) < (0, 4, 2) else "arrow"
         tbl = cx.read_sql(
             conn=connection_uri,
             query=query,
-            return_type="arrow2",
+            return_type=return_type,
             partition_on=partition_on,
             partition_range=partition_range,
             partition_num=partition_num,

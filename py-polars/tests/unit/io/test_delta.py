@@ -7,7 +7,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.fs
 import pytest
-from deltalake import DeltaTable
+from deltalake import DeltaTable, write_deltalake
 from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
@@ -497,3 +497,32 @@ def test_read_delta_empty(tmp_path: Path) -> None:
 
     DeltaTable.create(path, pl.DataFrame(schema={"x": pl.Int64}).to_arrow().schema)
     assert_frame_equal(pl.read_delta(path), pl.DataFrame(schema={"x": pl.Int64}))
+
+
+@pytest.mark.write_disk
+def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
+    payload = [
+        {"id": 1, "account_id": {17: "100.01.001 Cash"}},
+        {"id": 2, "account_id": {18: "180.01.001 Cash", 19: "foo"}},
+    ]
+
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("account_id", pa.map_(pa.int32(), pa.string())),
+        ]
+    )
+    table = pa.Table.from_pylist(payload, schema)
+
+    expect = pl.DataFrame(table)
+
+    table_path = str(tmp_path)
+    write_deltalake(
+        table_path,
+        table,
+        mode="overwrite",
+        engine="rust",
+    )
+
+    assert_frame_equal(pl.scan_delta(table_path).collect(), expect)
+    assert_frame_equal(pl.read_delta(table_path), expect)

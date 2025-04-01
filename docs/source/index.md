@@ -33,9 +33,9 @@ in Rust, and available for Python, R and NodeJS.
 - **Vectorized Query Engine**
 - **GPU Support**: Optionally run queries on NVIDIA GPUs for maximum performance for in-memory
   workloads.
-- **[Apache Arrow support](https://arrow.apache.org/)**: Polars consume and produce Arrow data often
-  zero-copy. Note that Polars is not build on a Pyarrow/Arrow implementation. Polars has written all
-  compute and buffer implementations.
+- **[Apache Arrow support](https://arrow.apache.org/)**: Polars can consume and produce Arrow data
+  often with zero-copy operations. Note that Polars is not built on a Pyarrow/Arrow implementation.
+  Instead, Polars has its own compute and buffer implementations.
 
 <!-- dprint-ignore-start -->
 

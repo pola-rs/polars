@@ -9,26 +9,27 @@ repository = { workspace = true }
 description = "Private utils for the Polars DataFrame library"
 
 [dependencies]
-polars-error = { workspace = true }
-
-ahash = { workspace = true }
 bincode = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
 compact_str = { workspace = true }
 flate2 = { workspace = true, default-features = true, optional = true }
+foldhash = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 libc = { workspace = true }
 memmap = { workspace = true, optional = true }
 num-traits = { workspace = true }
-once_cell = { workspace = true }
+polars-error = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 raw-cpuid = { workspace = true }
 rayon = { workspace = true }
+regex = { workspace = true }
+rmp-serde = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+slotmap = { workspace = true }
 stacker = { workspace = true }
 sysinfo = { version = "0.33", default-features = false, features = ["system"], optional = true }
 
@@ -43,5 +44,5 @@ mmap = ["memmap"]
 bigidx = []
 nightly = []
 ir_serde = ["serde"]
-serde = ["dep:serde", "serde/derive", "dep:bincode", "dep:flate2", "dep:serde_json"]
+serde = ["dep:serde", "serde/derive", "dep:rmp-serde", "dep:bincode", "dep:flate2", "dep:serde_json"]
 python = ["pyo3"]

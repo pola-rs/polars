@@ -172,7 +172,7 @@ class ExprDateTimeNameSpace:
 
         Notes
         -----
-        The `every` argument is created with the
+        The `every` argument is created with
         the following string language:
 
         - 1ns   (1 nanosecond)
@@ -306,7 +306,7 @@ class ExprDateTimeNameSpace:
 
         Notes
         -----
-        The `every` argument is created with the
+        The `every` argument is created with
         the following small string formatting language:
 
         - 1ns   (1 nanosecond)

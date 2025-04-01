@@ -15,6 +15,7 @@ pip
 # DEPENDENCIES
 # ------------
 
+polars-cloud
 # Interop
 numpy
 numba >= 0.54; python_version < '3.13'  # Numba can lag Python releases
@@ -61,7 +62,7 @@ orjson
 # -------
 
 pytest==8.3.2
-pytest-codspeed==3.0.0
+pytest-codspeed==3.2.0
 pytest-cov==6.0.0
 pytest-xdist==3.6.1
 

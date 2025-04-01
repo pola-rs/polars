@@ -4,11 +4,11 @@ use polars_core::config;
 use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_error::feature_gated;
+use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::predicates::{ScanIOPredicate, SkipBatchPredicate};
 use polars_io::utils::slice::split_slice_at_file;
-use polars_io::RowIndex;
 
 use super::*;
 use crate::ScanPredicate;
@@ -25,7 +25,7 @@ pub struct ParquetExec {
     pub(crate) options: ParquetOptions,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     #[allow(dead_code)]
     metadata: Option<FileMetadataRef>,
 }
@@ -39,7 +39,7 @@ impl ParquetExec {
         predicate: Option<ScanPredicate>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         metadata: Option<FileMetadataRef>,
     ) -> Self {
         ParquetExec {
@@ -81,14 +81,16 @@ impl ParquetExec {
                 None
             }
         };
-        let predicate = self
-            .predicate
-            .as_ref()
-            .map(|p| p.to_io(self.skip_batch_predicate.as_ref(), &self.file_info.schema));
+        let predicate = self.predicate.as_ref().map(|p| {
+            p.to_io(
+                self.skip_batch_predicate.as_ref(),
+                self.file_info.schema.clone(),
+            )
+        });
         let mut base_row_index = self.file_options.row_index.take();
 
         // (offset, end)
-        let (slice_offset, slice_end) = if let Some(slice) = self.file_options.slice {
+        let (slice_offset, slice_end) = if let Some(slice) = self.file_options.pre_slice {
             if slice.0 >= 0 {
                 (slice.0 as usize, slice.1.saturating_add(slice.0 as usize))
             } else {
@@ -263,7 +265,7 @@ impl ParquetExec {
 
     #[cfg(feature = "cloud")]
     async fn read_async(&mut self) -> PolarsResult<Vec<DataFrame>> {
-        use futures::{stream, StreamExt};
+        use futures::{StreamExt, stream};
         use polars_io::pl_async;
         use polars_io::utils::slice::split_slice_at_file;
 
@@ -294,7 +296,8 @@ impl ParquetExec {
             skip_batch_predicate: self
                 .skip_batch_predicate
                 .clone()
-                .or_else(|| p.to_dyn_skip_batch_predicate(self.file_info.schema.as_ref())),
+                .or_else(|| p.to_dyn_skip_batch_predicate(self.file_info.schema.clone())),
+            column_predicates: Arc::new(Default::default()),
         });
         let mut base_row_index = self.file_options.row_index.take();
 
@@ -302,7 +305,7 @@ impl ParquetExec {
         let mut first_file_idx = 0;
 
         // (offset, end)
-        let (slice_offset, slice_end) = if let Some(slice) = self.file_options.slice {
+        let (slice_offset, slice_end) = if let Some(slice) = self.file_options.pre_slice {
             if slice.0 >= 0 {
                 (slice.0 as usize, slice.1.saturating_add(slice.0 as usize))
             } else {
@@ -514,7 +517,7 @@ impl ParquetExec {
                     eprintln!("ASYNC READING FORCED");
                 }
 
-                polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
+                polars_io::pl_async::get_runtime().block_in_place_on(self.read_async())?
             })
         } else {
             self.read_par()?
@@ -563,8 +566,7 @@ impl ParquetExec {
 
         #[cfg(feature = "cloud")]
         if self.sources.is_cloud_url() {
-            return polars_io::pl_async::get_runtime()
-                .block_on_potential_spawn(self.metadata_async());
+            return polars_io::pl_async::get_runtime().block_in_place_on(self.metadata_async());
         }
 
         self.metadata_sync()
@@ -581,7 +583,7 @@ impl ScanExec for ParquetExec {
         row_index: Option<RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;
-        self.file_options.slice = slice.map(|(o, l)| (o as i64, l));
+        self.file_options.pre_slice = slice.map(|(o, l)| (o as i64, l));
         self.predicate = predicate;
         self.skip_batch_predicate = skip_batch_predicate;
         self.file_options.row_index = row_index;

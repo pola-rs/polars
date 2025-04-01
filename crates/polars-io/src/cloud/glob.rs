@@ -2,13 +2,13 @@ use futures::TryStreamExt;
 use object_store::path::Path;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::polars_ensure;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 use regex::Regex;
 use url::Url;
 
-use super::{parse_url, CloudOptions};
+use super::{CloudOptions, parse_url};
 
 const DELIMITER: char = '/';
 
@@ -156,7 +156,9 @@ impl Matcher {
     /// Build a Matcher for the given prefix and expansion.
     pub(crate) fn new(prefix: String, expansion: Option<&str>) -> PolarsResult<Matcher> {
         // Cloud APIs accept a prefix without any expansion, extract it.
-        let re = expansion.map(Regex::new).transpose()?;
+        let re = expansion
+            .map(polars_utils::regex_cache::compile_regex)
+            .transpose()?;
         Ok(Matcher { prefix, re })
     }
 

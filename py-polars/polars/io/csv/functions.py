@@ -24,7 +24,9 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
-from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 
@@ -37,6 +39,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
     from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
@@ -168,7 +171,7 @@ def read_csv(
         Stop reading from CSV file after reading `n_rows`.
         During multi-threaded parsing, an upper bound of `n_rows`
         rows cannot be guaranteed.
-    encoding : {'utf8', 'utf8-lossy', ...}
+    encoding : {'utf8', 'utf8-lossy', 'windows-1252', 'windows-1252-lossy', ...}
         Lossy means that invalid utf8 values are replaced with `�`
         characters. When using other encodings than `utf8` or
         `utf8-lossy`, the input is first decoded in memory with
@@ -225,16 +228,18 @@ def read_csv(
     --------
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
 
+    Warnings
+    --------
+    Calling `read_csv().lazy()` is an antipattern as this forces Polars to materialize
+    a full csv file and therefore cannot push any optimizations into the reader.
+    Therefore always prefer `scan_csv` if you want to work with `LazyFrame` s.
+
     Notes
     -----
     If the schema is inferred incorrectly (e.g. as `pl.Int64` instead of `pl.Float64`),
     try to increase the number of lines used to infer the schema with
     `infer_schema_length` or override the inferred dtype for those columns with
     `schema_overrides`.
-
-    This operation defaults to a `rechunk` operation at the end, meaning that all data
-    will be stored continuously in memory. Set `rechunk=False` if you are benchmarking
-    the csv-reader. A `rechunk` is an expensive operation.
 
     Examples
     --------
@@ -1311,9 +1316,10 @@ def scan_csv(
     if not infer_schema:
         infer_schema_length = 0
 
-    credential_provider = _maybe_init_credential_provider(
+    credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_csv"
     )
+    del credential_provider
 
     return _scan_csv_impl(
         source,
@@ -1346,7 +1352,7 @@ def scan_csv(
         glob=glob,
         retries=retries,
         storage_options=storage_options,
-        credential_provider=credential_provider,
+        credential_provider=credential_provider_builder,
         file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,
     )
@@ -1391,7 +1397,7 @@ def _scan_csv_impl(
     decimal_comma: bool = False,
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
-    credential_provider: CredentialProviderFunction | None = None,
+    credential_provider: CredentialProviderBuilder | None = None,
     retries: int = 2,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,

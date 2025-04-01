@@ -61,7 +61,7 @@ fn null() {
 
 #[test]
 fn from_iter() {
-    let iter = std::iter::repeat(vec![1u8, 2]).take(2).map(Some);
+    let iter = std::iter::repeat_n(vec![1u8, 2], 2).map(Some);
     let a = FixedSizeBinaryArray::from_iter(iter, 2);
     assert_eq!(a.len(), 2);
 }

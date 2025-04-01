@@ -2,16 +2,15 @@ use std::ops::Sub;
 
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
-    polars_bail, polars_err, DataType, PolarsResult, QuantileMethod, Schema, TimeUnit,
+    DataType, PolarsResult, QuantileMethod, Schema, TimeUnit, polars_bail, polars_err,
 };
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
 use polars_ops::chunked_array::UnicodeForm;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
-use polars_plan::plans::{typed_lit, LiteralValue};
-use polars_plan::prelude::LiteralValue::Null;
-use polars_plan::prelude::{col, cols, lit, StrptimeOptions};
+use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
+use polars_plan::prelude::{StrptimeOptions, col, cols, lit};
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
@@ -21,8 +20,8 @@ use sqlparser::ast::{
 };
 use sqlparser::tokenizer::Span;
 
-use crate::sql_expr::{adjust_one_indexed_param, parse_extract_date_part, parse_sql_expr};
 use crate::SQLContext;
+use crate::sql_expr::{adjust_one_indexed_param, parse_extract_date_part, parse_sql_expr};
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -978,7 +977,7 @@ impl SQLFunctionVisitor<'_> {
                     1 => self.visit_unary(|e| e.round(0)),
                     2 => self.try_visit_binary(|e, decimals| {
                         Ok(e.round(match decimals {
-                            Expr::Literal(LiteralValue::Int(n)) => {
+                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                                 if n >= 0 { n as u32 } else {
                                     polars_bail!(SQLInterface: "ROUND does not currently support negative decimals value ({})", args[1])
                                 }
@@ -1046,7 +1045,7 @@ impl SQLFunctionVisitor<'_> {
                 match args.len() {
                     2 => self.visit_binary(|l: Expr, r: Expr| {
                         when(l.clone().eq(r))
-                            .then(lit(LiteralValue::Null))
+                            .then(lit(LiteralValue::untyped_null()))
                             .otherwise(l)
                     }),
                     _ => {
@@ -1060,7 +1059,8 @@ impl SQLFunctionVisitor<'_> {
             // ----
             DatePart => self.try_visit_binary(|part, e| {
                 match part {
-                    Expr::Literal(LiteralValue::String(p)) => {
+                    Expr::Literal(p) if p.extract_str().is_some() => {
+                        let p = p.extract_str().unwrap();
                         // note: 'DATE_PART' and 'EXTRACT' are minor syntactic
                         // variations on otherwise identical functionality
                         parse_extract_date_part(
@@ -1106,7 +1106,7 @@ impl SQLFunctionVisitor<'_> {
                 } else {
                     self.try_visit_variadic(|exprs: &[Expr]| {
                         match &exprs[0] {
-                            Expr::Literal(LiteralValue::String(s)) => Ok(concat_str(&exprs[1..], s, true)),
+                            Expr::Literal(lv) if lv.extract_str().is_some() => Ok(concat_str(&exprs[1..], lv.extract_str().unwrap(), true)),
                             _ => polars_bail!(SQLSyntax: "CONCAT_WS 'separator' must be a literal string (found {:?})", exprs[0]),
                         }
                     })
@@ -1127,9 +1127,9 @@ impl SQLFunctionVisitor<'_> {
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
                 Ok(match length {
-                    Expr::Literal(Null) => lit(Null),
-                    Expr::Literal(LiteralValue::Int(0)) => lit(""),
-                    Expr::Literal(LiteralValue::Int(n)) => {
+                    Expr::Literal(lv) if lv.is_null() => lit(lv),
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => lit(""),
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                         let len = if n > 0 {
                             lit(n)
                         } else {
@@ -1153,7 +1153,9 @@ impl SQLFunctionVisitor<'_> {
             LTrim => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    1 => self.visit_unary(|e| e.str().strip_chars_start(lit(Null))),
+                    1 => self.visit_unary(|e| {
+                        e.str().strip_chars_start(lit(LiteralValue::untyped_null()))
+                    }),
                     2 => self.visit_binary(|e, s| e.str().strip_chars_start(s)),
                     _ => {
                         polars_bail!(SQLSyntax: "LTRIM expects 1-2 arguments (found {})", args.len())
@@ -1204,7 +1206,9 @@ impl SQLFunctionVisitor<'_> {
                     3 => self.try_visit_ternary(|e, pat, flags| {
                         Ok(e.str().contains(
                             match (pat, flags) {
-                                (Expr::Literal(LiteralValue::String(s)), Expr::Literal(LiteralValue::String(f))) => {
+                                (Expr::Literal(s_lv), Expr::Literal(f_lv)) if s_lv.extract_str().is_some() && f_lv.extract_str().is_some() => {
+                                    let s = s_lv.extract_str().unwrap();
+                                    let f = f_lv.extract_str().unwrap();
                                     if f.is_empty() {
                                         polars_bail!(SQLSyntax: "invalid/empty 'flags' for REGEXP_LIKE ({})", args[2]);
                                     };
@@ -1232,32 +1236,38 @@ impl SQLFunctionVisitor<'_> {
             Reverse => self.visit_unary(|e| e.str().reverse()),
             Right => self.try_visit_binary(|e, length| {
                 Ok(match length {
-                    Expr::Literal(Null) => lit(Null),
-                    Expr::Literal(LiteralValue::Int(0)) => typed_lit(""),
-                    Expr::Literal(LiteralValue::Int(n)) => {
+                    Expr::Literal(lv) if lv.is_null() => lit(lv),
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => typed_lit(""),
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                         let n: i64 = n.try_into().unwrap();
                         let offset = if n < 0 {
                             lit(n.abs())
                         } else {
                             e.clone().str().len_chars().cast(DataType::Int32) - lit(n)
                         };
-                        e.str().slice(offset, lit(Null))
+                        e.str().slice(offset, lit(LiteralValue::untyped_null()))
                     },
                     Expr::Literal(v) => {
                         polars_bail!(SQLSyntax: "invalid 'n_chars' for RIGHT ({:?})", v)
                     },
                     _ => when(length.clone().lt(lit(0)))
-                        .then(e.clone().str().slice(length.clone().abs(), lit(Null)))
+                        .then(
+                            e.clone()
+                                .str()
+                                .slice(length.clone().abs(), lit(LiteralValue::untyped_null())),
+                        )
                         .otherwise(e.clone().str().slice(
                             e.clone().str().len_chars().cast(DataType::Int32) - length.clone(),
-                            lit(Null),
+                            lit(LiteralValue::untyped_null()),
                         )),
                 })
             }),
             RTrim => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
+                    1 => self.visit_unary(|e| {
+                        e.str().strip_chars_end(lit(LiteralValue::untyped_null()))
+                    }),
                     2 => self.visit_binary(|e, s| e.str().strip_chars_end(s)),
                     _ => {
                         polars_bail!(SQLSyntax: "RTRIM expects 1-2 arguments (found {})", args.len())
@@ -1313,25 +1323,25 @@ impl SQLFunctionVisitor<'_> {
                     // note: SQL is 1-indexed, hence the need for adjustments
                     2 => self.try_visit_binary(|e, start| {
                         Ok(match start {
-                            Expr::Literal(Null) => lit(Null),
-                            Expr::Literal(LiteralValue::Int(n)) if n <= 0 => e,
-                            Expr::Literal(LiteralValue::Int(n)) => e.str().slice(lit(n - 1), lit(Null)),
+                            Expr::Literal(lv) if lv.is_null() => lit(lv),
+                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n <= 0 => e,
+                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => e.str().slice(lit(n - 1), lit(LiteralValue::untyped_null())),
                             Expr::Literal(_) => polars_bail!(SQLSyntax: "invalid 'start' for SUBSTR ({})", args[1]),
                             _ => start.clone() + lit(1),
                         })
                     }),
                     3 => self.try_visit_ternary(|e: Expr, start: Expr, length: Expr| {
                         Ok(match (start.clone(), length.clone()) {
-                            (Expr::Literal(Null), _) | (_, Expr::Literal(Null)) => lit(Null),
-                            (_, Expr::Literal(LiteralValue::Int(n))) if n < 0 => {
+                            (Expr::Literal(lv), _) | (_, Expr::Literal(lv)) if lv.is_null() => lit(lv),
+                            (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) if n < 0 => {
                                 polars_bail!(SQLSyntax: "SUBSTR does not support negative length ({})", args[2])
                             },
-                            (Expr::Literal(LiteralValue::Int(n)), _) if n > 0 => e.str().slice(lit(n - 1), length.clone()),
-                            (Expr::Literal(LiteralValue::Int(n)), _) => {
+                            (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), _) if n > 0 => e.str().slice(lit(n - 1), length.clone()),
+                            (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), _) => {
                                 e.str().slice(lit(0), (length.clone() + lit(n - 1)).clip_min(lit(0)))
                             },
                             (Expr::Literal(_), _) => polars_bail!(SQLSyntax: "invalid 'start' for SUBSTR ({})", args[1]),
-                            (_, Expr::Literal(LiteralValue::Float(_))) => {
+                            (_, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_)))) => {
                                 polars_bail!(SQLSyntax: "invalid 'length' for SUBSTR ({})", args[1])
                             },
                             _ => {
@@ -1361,14 +1371,14 @@ impl SQLFunctionVisitor<'_> {
                 match args.len() {
                     2 => self.try_visit_binary(|e, q| {
                         let value = match q {
-                            Expr::Literal(LiteralValue::Float(f)) => {
+                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) => {
                                 if (0.0..=1.0).contains(&f) {
                                     Expr::from(f)
                                 } else {
                                     polars_bail!(SQLSyntax: "QUANTILE_CONT value must be between 0 and 1 ({})", args[1])
                                 }
                             },
-                            Expr::Literal(LiteralValue::Int(n)) => {
+                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                                 if (0..=1).contains(&n) {
                                     Expr::from(n as f64)
                                 } else {
@@ -1387,14 +1397,14 @@ impl SQLFunctionVisitor<'_> {
                 match args.len() {
                     2 => self.try_visit_binary(|e, q| {
                         let value = match q {
-                            Expr::Literal(LiteralValue::Float(f)) => {
+                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) => {
                                 if (0.0..=1.0).contains(&f) {
                                     Expr::from(f)
                                 } else {
                                     polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
                                 }
                             },
-                            Expr::Literal(LiteralValue::Int(n)) => {
+                            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
                                 if (0..=1).contains(&n) {
                                     Expr::from(n as f64)
                                 } else {
@@ -1441,21 +1451,22 @@ impl SQLFunctionVisitor<'_> {
             Columns => {
                 let active_schema = self.active_schema;
                 self.try_visit_unary(|e: Expr| match e {
-                    Expr::Literal(LiteralValue::String(pat)) => {
+                    Expr::Literal(lv) if lv.extract_str().is_some() => {
+                        let pat = lv.extract_str().unwrap();
                         if pat == "*" {
                             polars_bail!(
                                 SQLSyntax: "COLUMNS('*') is not a valid regex; \
                                 did you mean COLUMNS(*)?"
                             )
                         };
-                        let pat = match pat.as_str() {
+                        let pat = match pat {
                             _ if pat.starts_with('^') && pat.ends_with('$') => pat.to_string(),
                             _ if pat.starts_with('^') => format!("{}.*$", pat),
                             _ if pat.ends_with('$') => format!("^.*{}", pat),
                             _ => format!("^.*{}.*$", pat),
                         };
                         if let Some(active_schema) = &active_schema {
-                            let rx = regex::Regex::new(&pat).unwrap();
+                            let rx = polars_utils::regex_cache::compile_regex(&pat).unwrap();
                             let col_names = active_schema
                                 .iter_names()
                                 .filter(|name| rx.is_match(name))
@@ -1608,7 +1619,10 @@ impl SQLFunctionVisitor<'_> {
     ) -> PolarsResult<Expr> {
         let args = extract_args(self.func)?;
         match args.as_slice() {
-            [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2)] => {
+            [
+                FunctionArgExpr::Expr(sql_expr1),
+                FunctionArgExpr::Expr(sql_expr2),
+            ] => {
                 let expr1 = parse_sql_expr(sql_expr1, self.ctx, self.active_schema)?;
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 f(expr1, expr2)
@@ -1643,8 +1657,11 @@ impl SQLFunctionVisitor<'_> {
     ) -> PolarsResult<Expr> {
         let args = extract_args(self.func)?;
         match args.as_slice() {
-            [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2), FunctionArgExpr::Expr(sql_expr3)] =>
-            {
+            [
+                FunctionArgExpr::Expr(sql_expr1),
+                FunctionArgExpr::Expr(sql_expr2),
+                FunctionArgExpr::Expr(sql_expr3),
+            ] => {
                 let expr1 = parse_sql_expr(sql_expr1, self.ctx, self.active_schema)?;
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 let expr3 = Arg::from_sql_expr(sql_expr3, self.ctx)?;
@@ -1678,7 +1695,9 @@ impl SQLFunctionVisitor<'_> {
                         FunctionArgumentClause::Limit(limit_expr) => {
                             let limit = parse_sql_expr(&limit_expr, self.ctx, self.active_schema)?;
                             match limit {
-                                Expr::Literal(LiteralValue::Int(n)) if n >= 0 => {
+                                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))
+                                    if n >= 0 =>
+                                {
                                     base = base.head(Some(n as usize))
                                 },
                                 _ => {
@@ -1707,17 +1726,19 @@ impl SQLFunctionVisitor<'_> {
             }),
             #[cfg(feature = "list_eval")]
             3 => self.try_visit_ternary(|e, sep, null_value| match null_value {
-                Expr::Literal(LiteralValue::String(v)) => Ok(if v.is_empty() {
-                    e.cast(DataType::List(Box::from(DataType::String)))
-                        .list()
-                        .join(sep, true)
-                } else {
-                    e.cast(DataType::List(Box::from(DataType::String)))
-                        .list()
-                        .eval(col("").fill_null(lit(v)), false)
-                        .list()
-                        .join(sep, false)
-                }),
+                Expr::Literal(lv) if lv.extract_str().is_some() => {
+                    Ok(if lv.extract_str().unwrap().is_empty() {
+                        e.cast(DataType::List(Box::from(DataType::String)))
+                            .list()
+                            .join(sep, true)
+                    } else {
+                        e.cast(DataType::List(Box::from(DataType::String)))
+                            .list()
+                            .eval(col("").fill_null(lit(lv.extract_str().unwrap())), false)
+                            .list()
+                            .join(sep, false)
+                    })
+                },
                 _ => {
                     polars_bail!(SQLSyntax: "invalid null value for ARRAY_TO_STRING ({})", args[2])
                 },

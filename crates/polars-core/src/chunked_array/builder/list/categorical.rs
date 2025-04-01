@@ -1,5 +1,7 @@
-use hashbrown::hash_table::Entry;
+use std::hash::BuildHasher;
+
 use hashbrown::HashTable;
+use hashbrown::hash_table::Entry;
 
 use super::*;
 
@@ -86,8 +88,8 @@ struct ListLocalCategoricalChunkedBuilder {
 
 impl ListLocalCategoricalChunkedBuilder {
     #[inline]
-    pub fn get_hash_builder() -> PlRandomState {
-        PlRandomState::with_seed(0)
+    pub fn get_hash_builder() -> PlFixedStateQuality {
+        PlFixedStateQuality::with_seed(0)
     }
 
     pub(super) fn new(

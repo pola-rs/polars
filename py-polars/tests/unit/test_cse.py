@@ -34,7 +34,7 @@ def test_cse_rename_cross_join_5405() -> None:
             "D": [5, None, None, 6],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_union_duplicates() -> None:
@@ -106,7 +106,7 @@ def test_cse_schema_6081() -> None:
             "min_value": [1, 1, 2],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_cse_9630() -> None:
@@ -670,6 +670,8 @@ def test_cse_manual_cache_15688() -> None:
     df2 = df.filter(id=1).join(df1, on=["a", "b"], how="semi")
     df2 = df2.cache()
     res = df2.group_by("b").agg(pl.all().sum())
+
+    print(res.cache().with_columns(foo=1).explain(comm_subplan_elim=True))
     assert res.cache().with_columns(foo=1).collect().to_dict(as_series=False) == {
         "b": [1],
         "a": [6],
@@ -830,3 +832,14 @@ def test_cse_union_19227() -> None:
     assert out.collect().schema == pl.Schema(
         [("C", pl.Int64), ("A", pl.Int64), ("B", pl.Int64)]
     )
+
+
+def test_cse_21115() -> None:
+    lf = pl.LazyFrame({"x": 1, "y": 5})
+
+    assert lf.with_columns(
+        pl.all().exp() + pl.min_horizontal(pl.all().exp())
+    ).collect().to_dict(as_series=False) == {
+        "x": [5.43656365691809],
+        "y": [151.13144093103566],
+    }

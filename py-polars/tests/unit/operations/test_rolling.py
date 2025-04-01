@@ -444,7 +444,7 @@ def test_rolling_group_by_empty_groups_by_take_6330() -> None:
     ).agg(pl.len())
 
     assert result.to_dict(as_series=False) == {
-        "Event": ["Rain", "Rain", "Rain", "Rain", "Sun", "Sun", "Sun", "Sun"],
+        "Event": ["Sun", "Sun", "Sun", "Sun", "Rain", "Rain", "Rain", "Rain"],
         "Date": [1, 2, 3, 4, 1, 2, 3, 4],
         "len": [0, 1, 2, 2, 0, 1, 2, 2],
     }
@@ -533,3 +533,41 @@ def test_rolling_by_ordering() -> None:
         ],
         "sum val": [2, 2, 1, 1, 2, 2, 1],
     }
+
+
+def test_rolling_bool() -> None:
+    dates = [
+        "2020-01-01 13:45:48",
+        "2020-01-01 16:42:13",
+        "2020-01-01 16:45:09",
+        "2020-01-02 18:12:48",
+        "2020-01-03 19:45:32",
+        "2020-01-08 23:16:43",
+    ]
+
+    df = (
+        pl.DataFrame({"dt": dates, "a": [True, False, None, None, True, False]})
+        .with_columns(pl.col("dt").str.strptime(pl.Datetime))
+        .set_sorted("dt")
+    )
+
+    period: str | timedelta
+    for period in ("2d", timedelta(days=2)):
+        out = df.rolling(index_column="dt", period=period).agg(
+            sum_a=pl.col.a.sum(),
+            min_a=pl.col.a.min(),
+            max_a=pl.col.a.max(),
+            sum_a_ref=pl.col.a.cast(pl.Int32).sum(),
+            min_a_ref=pl.col.a.cast(pl.Int32).min().cast(pl.Boolean),
+            max_a_ref=pl.col.a.cast(pl.Int32).max().cast(pl.Boolean),
+        )
+        assert out["sum_a"].to_list() == out["sum_a_ref"].to_list()
+        assert out["max_a"].to_list() == out["max_a_ref"].to_list()
+        assert out["min_a"].to_list() == out["min_a_ref"].to_list()
+
+
+def test_rolling_var_zero_weight() -> None:
+    assert_series_equal(
+        pl.Series([1.0, None, 1.0, 2.0]).rolling_var(2),
+        pl.Series([None, None, None, 0.5]),
+    )

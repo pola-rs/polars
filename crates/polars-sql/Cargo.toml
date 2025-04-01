@@ -17,6 +17,7 @@ polars-plan = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
+bitflags = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }

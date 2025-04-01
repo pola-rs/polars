@@ -12,8 +12,8 @@ use polars_plan::prelude::expr_ir::{ExprIR, OutputName};
 use polars_plan::prelude::*;
 
 use crate::executors::operators::{HstackOperator, PlaceHolder};
-use crate::executors::sinks::group_by::aggregates::convert_to_hash_agg;
 use crate::executors::sinks::group_by::GenericGroupby2;
+use crate::executors::sinks::group_by::aggregates::convert_to_hash_agg;
 use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
@@ -81,20 +81,20 @@ where
             // Add predicate to operators.
             // Except for parquet, as that format can use statistics to prune file/row-groups.
             #[cfg(feature = "parquet")]
-            let is_parquet = matches!(scan_type, FileScan::Parquet { .. });
+            let is_parquet = matches!(&*scan_type, FileScan::Parquet { .. });
             #[cfg(not(feature = "parquet"))]
             let is_parquet = false;
 
             if let (false, true, Some(predicate)) = (is_parquet, push_predicate, predicate.clone())
             {
                 #[cfg(feature = "parquet")]
-                debug_assert!(!matches!(scan_type, FileScan::Parquet { .. }));
+                debug_assert!(!matches!(&*scan_type, FileScan::Parquet { .. }));
                 let predicate = to_physical(&predicate, expr_arena, schema)?;
                 let op = operators::FilterOperator { predicate };
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            match scan_type {
+            match *scan_type {
                 #[cfg(feature = "csv")]
                 FileScan::Csv { options, .. } => {
                     let src = sources::CsvSource::new(
@@ -138,6 +138,7 @@ where
                                 predicate: Arc::new(Wrap { p }) as Arc<dyn PhysicalIoExpr>,
                                 live_columns,
                                 skip_batch_predicate: None,
+                                column_predicates: Arc::new(Default::default()),
                             })
                         })
                         .transpose()?;
@@ -148,7 +149,7 @@ where
                         metadata,
                         file_options,
                         file_info,
-                        hive_parts,
+                        hive_parts.map(|h| h.into_statistics()),
                         verbose,
                         predicate,
                     )?;
@@ -176,15 +177,16 @@ where
         Sink { input, payload } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             match payload {
-                SinkType::Memory => {
+                SinkTypeIR::Memory => {
                     Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn SinkTrait>
                 },
                 #[allow(unused_variables)]
-                SinkType::File {
+                SinkTypeIR::File(FileSinkType {
                     path,
                     file_type,
+                    sink_options: _,
                     cloud_options,
-                } => {
+                }) => {
                     let path = path.as_ref().as_path();
                     match &file_type {
                         #[cfg(feature = "parquet")]
@@ -220,6 +222,9 @@ where
                         #[allow(unreachable_patterns)]
                         _ => unreachable!(),
                     }
+                },
+                SinkTypeIR::Partition { .. } => {
+                    polars_bail!(InvalidOperation: "partitioning sink not supported in old streaming engine")
                 },
             }
         },
@@ -278,7 +283,7 @@ where
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,
-                                options.args.join_nulls,
+                                options.args.nulls_equal,
                                 node,
                                 // We don't need the key names for these joins.
                                 vec![].into(),
@@ -286,7 +291,7 @@ where
                                 placeholder,
                             )) as Box<dyn SinkTrait>
                         },
-                        JoinType::Full { .. } => {
+                        JoinType::Full => {
                             // First get the names before we (potentially) swap.
                             let key_names_left = join_columns_left
                                 .iter()
@@ -305,7 +310,7 @@ where
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,
-                                options.args.join_nulls,
+                                options.args.nulls_equal,
                                 node,
                                 key_names_left,
                                 key_names_right,

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use polars_core::POOL;
 use polars_core::prelude::{IntoColumn, PlRandomState};
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_core::POOL;
 use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::reduce::GroupedReduction;
@@ -12,10 +12,10 @@ use polars_utils::hashing::HashPartitioner;
 use rayon::prelude::*;
 
 use super::compute_node_prelude::*;
+use crate::GROUP_BY_MIN_ROWS_PER_PARTITION;
 use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
 use crate::nodes::in_memory_source::InMemorySourceNode;
-use crate::GROUP_BY_MIN_ROWS_PER_PARTITION;
 
 struct LocalGroupBySinkState {
     grouper: Box<dyn Grouper>,
@@ -49,7 +49,7 @@ impl GroupBySinkState {
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
         receivers: Vec<Receiver<Morsel>>,
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(receivers.len() >= self.local.len());
@@ -74,11 +74,12 @@ impl GroupBySinkState {
                     let df = morsel.into_df();
                     let mut key_columns = Vec::new();
                     for selector in key_selectors {
-                        let s = selector.evaluate(&df, state).await?;
+                        let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;
                         key_columns.push(s.into_column());
                     }
                     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
-                    let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, true);
+                    let hash_keys = HashKeys::from_df(&keys, *random_state, true, true);
+                    group_idxs.clear();
                     local.grouper.insert_keys(hash_keys, &mut group_idxs);
 
                     // Update reductions.
@@ -91,7 +92,7 @@ impl GroupBySinkState {
                             reduction.resize(local.grouper.num_groups());
                             reduction.update_groups(
                                 selector
-                                    .evaluate(&df, state)
+                                    .evaluate(&df, &state.in_memory_exec_state)
                                     .await?
                                     .as_materialized_series(),
                                 &group_idxs,
@@ -178,7 +179,7 @@ impl GroupBySinkState {
 
                         // Combine everything.
                         let mut group_idxs = Vec::new();
-                        for l in 0..num_partitions {
+                        for l in 0..locals.len() {
                             combined.grouper.gather_combine(
                                 &*locals[l].grouper,
                                 &l_partitions[l].0[p],
@@ -203,7 +204,6 @@ impl GroupBySinkState {
     }
 
     fn into_source(self, output_schema: &Schema) -> PolarsResult<InMemorySourceNode> {
-        let num_pipelines = self.local.len();
         let num_rows: usize = self
             .local
             .iter()
@@ -223,9 +223,7 @@ impl GroupBySinkState {
             Self::combine_locals_parallel(num_partitions, output_schema, self.local)
         };
 
-        let mut source_node = InMemorySourceNode::new(Arc::new(df?), MorselSeq::default());
-        source_node.initialize(num_pipelines);
-        Ok(source_node)
+        Ok(InMemorySourceNode::new(Arc::new(df?), MorselSeq::default()))
     }
 }
 
@@ -268,7 +266,12 @@ impl ComputeNode for GroupByNode {
         "group_by"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
         // State transitions.
@@ -288,7 +291,7 @@ impl ComputeNode for GroupByNode {
             },
             // Defer to source node implementation.
             GroupByState::Source(src) => {
-                src.update_state(&mut [], send)?;
+                src.update_state(&mut [], send, state)?;
                 if send[0] == PortState::Done {
                     self.state = GroupByState::Done;
                 }
@@ -320,7 +323,7 @@ impl ComputeNode for GroupByNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(send_ports.len() == 1 && recv_ports.len() == 1);

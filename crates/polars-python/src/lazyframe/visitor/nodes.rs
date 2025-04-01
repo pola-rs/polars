@@ -1,18 +1,17 @@
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
+use polars::prelude::python_dsl::PythonScanSource;
 use polars_core::prelude::IdxSize;
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
-use polars_plan::prelude::{
-    FileCount, FileScan, FileScanOptions, FunctionIR, PythonPredicate, PythonScanSource,
-};
+use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionIR, PythonPredicate};
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::IntoPyObjectExt;
 
 use super::expr_nodes::PyGroupbyOptions;
-use crate::lazyframe::visit::PyExprIR;
 use crate::PyDataFrame;
+use crate::lazyframe::visit::PyExprIR;
 
 #[pyclass]
 /// Scan a table with an optional predicate from a python function
@@ -51,7 +50,7 @@ pub struct PyFileOptions {
 impl PyFileOptions {
     #[getter]
     fn n_rows(&self) -> Option<(i64, usize)> {
-        self.inner.slice
+        self.inner.pre_slice
     }
     #[getter]
     fn with_columns(&self) -> Option<Vec<&str>> {
@@ -85,6 +84,10 @@ impl PyFileOptions {
     #[getter]
     fn hive_options(&self, _py: Python<'_>) -> PyResult<PyObject> {
         Err(PyNotImplementedError::new_err("hive options"))
+    }
+    #[getter]
+    fn include_file_paths(&self, _py: Python<'_>) -> Option<&str> {
+        self.inner.include_file_paths.as_deref()
     }
 }
 
@@ -339,9 +342,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             file_info: py.None(),
             predicate: predicate.as_ref().map(|e| e.into()),
             file_options: PyFileOptions {
-                inner: file_options.clone(),
+                inner: (**file_options).clone(),
             },
-            scan_type: match scan_type {
+            scan_type: match &**scan_type {
                 #[cfg(feature = "csv")]
                 FileScan::Csv {
                     options,
@@ -377,7 +380,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     ("ndjson", options).into_py_any(py)?
                 },
                 FileScan::Anonymous { .. } => {
-                    return Err(PyNotImplementedError::new_err("anonymous scan"))
+                    return Err(PyNotImplementedError::new_err("anonymous scan"));
                 },
             },
         }
@@ -481,7 +484,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     match how {
                         #[cfg(feature = "asof_join")]
                         JoinType::AsOf(_) => {
-                            return Err(PyNotImplementedError::new_err("asof join"))
+                            return Err(PyNotImplementedError::new_err("asof join"));
                         },
                         #[cfg(feature = "iejoin")]
                         JoinType::IEJoin => {
@@ -502,11 +505,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         // This is a cross join fused with a predicate. Shown in the IR::explain as
                         // NESTED LOOP JOIN
                         JoinType::Cross if options.options.is_some() => {
-                            return Err(PyNotImplementedError::new_err("nested loop join"))
+                            return Err(PyNotImplementedError::new_err("nested loop join"));
                         },
                         _ => name.into_any().unbind(),
                     },
-                    options.args.join_nulls,
+                    options.args.nulls_equal,
                     options.args.slice,
                     options.args.suffix().as_str(),
                     options.args.coalesce.coalesce(how),
@@ -550,7 +553,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input: input.0,
             function: match function {
                 FunctionIR::OpaquePython(_) => {
-                    return Err(PyNotImplementedError::new_err("opaque python mapfunction"))
+                    return Err(PyNotImplementedError::new_err("opaque python mapfunction"));
                 },
                 FunctionIR::Opaque {
                     function: _,
@@ -643,6 +646,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             payload: _,
         } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a Sink node",
+        )),
+        IR::SinkMultiple { .. } => Err(PyNotImplementedError::new_err(
+            "Not expecting to see a SinkMultiple node",
         )),
         #[cfg(feature = "merge_sorted")]
         IR::MergeSorted {

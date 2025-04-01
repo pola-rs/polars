@@ -6,11 +6,21 @@ use crate::prelude::*;
 #[derive(Copy, Clone, Debug)]
 pub struct IRNode {
     node: Node,
+    // Whether it may mutate the arena on rewrite.
+    // If set the Rewriting Treewalker will mutate the arena.
+    mutate: bool,
 }
 
 impl IRNode {
     pub fn new(node: Node) -> Self {
-        Self { node }
+        Self {
+            node,
+            mutate: false,
+        }
+    }
+
+    pub fn new_mutate(node: Node) -> Self {
+        Self { node, mutate: true }
     }
 
     pub fn node(&self) -> Node {
@@ -55,7 +65,8 @@ impl TreeWalker for IRNode {
 
         self.to_alp(&arena.0).copy_inputs(&mut scratch);
         for &node in scratch.as_slice() {
-            let lp_node = IRNode::new(node);
+            let mut lp_node = IRNode::new(node);
+            lp_node.mutate = self.mutate;
             match op(&lp_node, arena)? {
                 // let the recursion continue
                 VisitRecursion::Continue | VisitRecursion::Skip => {},
@@ -74,19 +85,25 @@ impl TreeWalker for IRNode {
         let mut inputs = vec![];
         let mut exprs = vec![];
 
-        let lp = arena.0.take(self.node);
+        let lp = arena.0.get(self.node);
         lp.copy_inputs(&mut inputs);
         lp.copy_exprs(&mut exprs);
 
         // rewrite the nodes
         for node in &mut inputs {
-            let lp_node = IRNode::new(*node);
+            let mut lp_node = IRNode::new(*node);
+            lp_node.mutate = self.mutate;
             *node = op(lp_node, arena)?.node;
         }
-
+        let lp = arena.0.get(self.node);
         let lp = lp.with_exprs_and_input(exprs, inputs);
-        arena.0.replace(self.node, lp);
-        Ok(self)
+        if self.mutate {
+            arena.0.replace(self.node, lp);
+            Ok(self)
+        } else {
+            let node = arena.0.add(lp);
+            Ok(IRNode::new_mutate(node))
+        }
     }
 }
 

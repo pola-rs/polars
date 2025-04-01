@@ -332,7 +332,7 @@ def _post_apply_columns(
             pydf = pydf.with_columns(column_casts)
         if column_subset:
             pydf = pydf.select([F.col(col)._pyexpr for col in column_subset])
-        pydf = pydf.collect()
+        pydf = pydf.collect(engine="in-memory")
 
     return pydf
 
@@ -452,6 +452,7 @@ def sequence_to_pydf(
     strict: bool = True,
     orient: Orientation | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    nan_to_null: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a sequence."""
     if not data:
@@ -465,6 +466,7 @@ def sequence_to_pydf(
         strict=strict,
         orient=orient,
         infer_schema_length=infer_schema_length,
+        nan_to_null=nan_to_null,
     )
 
 
@@ -478,6 +480,7 @@ def _sequence_to_pydf_dispatcher(
     strict: bool = True,
     orient: Orientation | None,
     infer_schema_length: int | None,
+    nan_to_null: bool = False,
 ) -> PyDataFrame:
     # note: ONLY python-native data should participate in singledispatch registration
     # via top-level decorators, otherwise we have to import the associated module.
@@ -491,6 +494,7 @@ def _sequence_to_pydf_dispatcher(
         "strict": strict,
         "orient": orient,
         "infer_schema_length": infer_schema_length,
+        "nan_to_null": nan_to_null,
     }
     to_pydf: Callable[..., PyDataFrame]
     register_with_singledispatch = True
@@ -543,6 +547,7 @@ def _sequence_of_sequence_to_pydf(
     strict: bool,
     orient: Orientation | None,
     infer_schema_length: int | None,
+    nan_to_null: bool = False,
 ) -> PyDataFrame:
     if orient is None:
         if schema is None:
@@ -607,6 +612,7 @@ def _sequence_of_sequence_to_pydf(
                 element,
                 dtype=schema_overrides.get(column_names[i]),
                 strict=strict,
+                nan_to_null=nan_to_null,
             )._s
             for i, element in enumerate(data)
         ]
@@ -655,6 +661,7 @@ def _sequence_of_tuple_to_pydf(
     strict: bool,
     orient: Orientation | None,
     infer_schema_length: int | None,
+    nan_to_null: bool = False,
 ) -> PyDataFrame:
     # infer additional meta information if namedtuple
     if is_namedtuple(first_element.__class__) or is_sqlalchemy(first_element):
@@ -678,6 +685,7 @@ def _sequence_of_tuple_to_pydf(
         strict=strict,
         orient=orient,
         infer_schema_length=infer_schema_length,
+        nan_to_null=nan_to_null,
     )
 
 
@@ -838,7 +846,9 @@ def _sequence_of_pydantic_models_to_pydf(
 
     old_pydantic = parse_version(pydantic.__version__) < (2, 0)
     model_fields = list(
-        first_element.__fields__ if old_pydantic else first_element.model_fields
+        first_element.__fields__
+        if old_pydantic
+        else first_element.__class__.model_fields
     )
     (
         unpack_nested,
@@ -952,6 +962,7 @@ def iterable_to_pydf(
     orient: Orientation | None = None,
     chunk_size: int | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    rechunk: bool = True,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an iterable/generator."""
     original_schema = schema
@@ -1028,7 +1039,7 @@ def iterable_to_pydf(
     if df is None:
         df = to_frame_chunk([], original_schema)
 
-    if n_chunks > 0:
+    if n_chunks > 0 and rechunk:
         df = df.rechunk()
 
     return df._df

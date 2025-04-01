@@ -3,7 +3,10 @@ use std::io::Read;
 #[cfg(feature = "aws")]
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use object_store::ClientOptions;
 #[cfg(feature = "aws")]
 use object_store::aws::AmazonS3Builder;
 #[cfg(feature = "aws")]
@@ -16,20 +19,13 @@ use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-use object_store::ClientOptions;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
-use once_cell::sync::Lazy;
 use polars_error::*;
 #[cfg(feature = "aws")]
-use polars_utils::cache::FastFixedCache;
-#[cfg(feature = "aws")]
-use regex::Regex;
+use polars_utils::cache::LruCache;
 #[cfg(feature = "http")]
 use reqwest::header::HeaderMap;
-#[cfg(feature = "serde")]
-use serde::Deserializer;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
@@ -43,11 +39,9 @@ use crate::file_cache::get_env_file_cache_ttl;
 use crate::pl_async::with_concurrency_budget;
 
 #[cfg(feature = "aws")]
-static BUCKET_REGION: Lazy<
-    std::sync::Mutex<
-        FastFixedCache<polars_utils::pl_str::PlSmallStr, polars_utils::pl_str::PlSmallStr>,
-    >,
-> = Lazy::new(|| std::sync::Mutex::new(FastFixedCache::new(32)));
+static BUCKET_REGION: LazyLock<
+    std::sync::Mutex<LruCache<polars_utils::pl_str::PlSmallStr, polars_utils::pl_str::PlSmallStr>>,
+> = LazyLock::new(|| std::sync::Mutex::new(LruCache::with_capacity(32)));
 
 /// The type of the config keys must satisfy the following requirements:
 /// 1. must be easily collected into a HashMap, the type required by the object_crate API.
@@ -80,17 +74,9 @@ pub struct CloudOptions {
     pub file_cache_ttl: u64,
     pub(crate) config: Option<CloudConfig>,
     #[cfg(feature = "cloud")]
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_or_default"))]
+    /// Note: In most cases you will want to access this via [`CloudOptions::initialized_credential_provider`]
+    /// rather than directly.
     pub(crate) credential_provider: Option<PlCredentialProvider>,
-}
-
-#[cfg(all(feature = "serde", feature = "cloud"))]
-fn deserialize_or_default<'de, D>(deserializer: D) -> Result<Option<PlCredentialProvider>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    type T = Option<PlCredentialProvider>;
-    T::deserialize(deserializer).or_else(|_| Ok(Default::default()))
 }
 
 impl Default for CloudOptions {
@@ -101,7 +87,7 @@ impl Default for CloudOptions {
 
 impl CloudOptions {
     pub fn default_static_ref() -> &'static Self {
-        static DEFAULT: Lazy<CloudOptions> = Lazy::new(|| CloudOptions {
+        static DEFAULT: LazyLock<CloudOptions> = LazyLock::new(|| CloudOptions {
             max_retries: 2,
             #[cfg(feature = "file_cache")]
             file_cache_ttl: get_env_file_cache_ttl(),
@@ -255,7 +241,7 @@ fn read_config(
 
         for (pattern, key) in keys.iter() {
             if builder.get_config_value(key).is_none() {
-                let reg = Regex::new(pattern).unwrap();
+                let reg = polars_utils::regex_cache::compile_regex(pattern).unwrap();
                 let cap = reg.captures(content)?;
                 let m = cap.get(1)?;
                 let parsed = m.as_str();
@@ -350,7 +336,7 @@ impl CloudOptions {
         {
             let bucket = crate::cloud::CloudLocation::new(url, false)?.bucket;
             let region = {
-                let bucket_region = BUCKET_REGION.lock().unwrap();
+                let mut bucket_region = BUCKET_REGION.lock().unwrap();
                 bucket_region.get(bucket.as_str()).cloned()
             };
 
@@ -367,7 +353,9 @@ impl CloudOptions {
                         // See: #13042
                         builder = builder.with_config(AmazonS3ConfigKey::Region, "us-east-1");
                     } else {
-                        polars_warn!("'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning.");
+                        polars_warn!(
+                            "'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning."
+                        );
                         let result = with_concurrency_budget(1, || async {
                             reqwest::Client::builder()
                                 .build()
@@ -392,7 +380,7 @@ impl CloudOptions {
 
         let builder = builder.with_retry(get_retry_config(self.max_retries));
 
-        let builder = if let Some(v) = self.credential_provider.clone() {
+        let builder = if let Some(v) = self.initialized_credential_provider()? {
             builder.with_credentials(v.into_aws_provider())
         } else {
             builder
@@ -438,7 +426,7 @@ impl CloudOptions {
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 
-        let builder = if let Some(v) = self.credential_provider.clone() {
+        let builder = if let Some(v) = self.initialized_credential_provider()? {
             if verbose {
                 eprintln!(
                     "[CloudOptions::build_azure]: Using credential provider {:?}",
@@ -470,7 +458,9 @@ impl CloudOptions {
     pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let builder = if self.credential_provider.is_none() {
+        let credential_provider = self.initialized_credential_provider()?;
+
+        let builder = if credential_provider.is_none() {
             GoogleCloudStorageBuilder::from_env()
         } else {
             GoogleCloudStorageBuilder::new()
@@ -491,7 +481,7 @@ impl CloudOptions {
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 
-        let builder = if let Some(v) = self.credential_provider.clone() {
+        let builder = if let Some(v) = credential_provider.clone() {
             builder.with_credentials(v.into_gcp_provider())
         } else {
             builder
@@ -627,6 +617,17 @@ impl CloudOptions {
                     polars_bail!(ComputeError: "'http' feature is not enabled");
                 }
             },
+        }
+    }
+
+    /// Python passes a credential provider builder that needs to be called to get the actual credential
+    /// provider.
+    #[cfg(feature = "cloud")]
+    fn initialized_credential_provider(&self) -> PolarsResult<Option<PlCredentialProvider>> {
+        if let Some(v) = self.credential_provider.clone() {
+            v.try_into_initialized()
+        } else {
+            Ok(None)
         }
     }
 }

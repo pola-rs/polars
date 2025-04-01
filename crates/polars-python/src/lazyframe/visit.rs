@@ -1,17 +1,18 @@
 use std::sync::{Arc, Mutex};
 
 use polars::prelude::PolarsError;
-use polars_plan::plans::{to_aexpr, Context, IR};
+use polars::prelude::python_dsl::PythonScanSource;
+use polars_plan::plans::{Context, IR, to_aexpr};
 use polars_plan::prelude::expr_ir::ExprIR;
-use polars_plan::prelude::{AExpr, PythonOptions, PythonScanSource};
+use polars_plan::prelude::{AExpr, PythonOptions};
 use polars_utils::arena::{Arena, Node};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use super::visitor::{expr_nodes, nodes};
 use super::PyLazyFrame;
+use super::visitor::{expr_nodes, nodes};
 use crate::error::PyPolarsErr;
-use crate::{raise_err, PyExpr, Wrap};
+use crate::{PyExpr, Wrap, raise_err};
 
 #[derive(Clone)]
 #[pyclass]
@@ -165,6 +166,7 @@ impl NodeTraverser {
                 python_source: PythonScanSource::Cuda,
                 predicate: Default::default(),
                 n_rows: None,
+                validate_schema: false,
             },
         };
         lp_arena.replace(self.root, ir);

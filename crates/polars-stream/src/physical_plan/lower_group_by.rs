@@ -3,22 +3,23 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, ArenaExprIter, DataFrameUdf, IRAggExpr, IR};
+use polars_plan::plans::{AExpr, ArenaExprIter, DataFrameUdf, IR, IRAggExpr};
 use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::unique_column_name;
 use recursive::recursive;
 use slotmap::SlotMap;
 
 use super::lower_expr::lower_exprs;
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
-    build_select_stream, compute_output_schema, is_input_independent, unique_column_name,
+    build_select_stream, compute_output_schema, is_fake_elementwise_function, is_input_independent,
 };
 use crate::physical_plan::lower_ir::build_slice_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -153,15 +154,30 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         node @ AExpr::Function { input, options, .. }
         | node @ AExpr::AnonymousFunction { input, options, .. }
-            if options.is_elementwise() =>
+            if options.is_elementwise() && !is_fake_elementwise_function(node) =>
         {
             let node = node.clone();
             let input = input.clone();
-            let new_inputs = input
+            let new_input = input
                 .into_iter()
-                .map(|i| lower_rec!(i.node(), inside_agg))
+                .map(|i| {
+                    // The function may be sensitive to names (e.g. pl.struct), so we restore them.
+                    let new_node = lower_rec!(i.node(), inside_agg)?;
+                    Some(ExprIR::new(
+                        new_node,
+                        OutputName::Alias(i.output_name().clone()),
+                    ))
+                })
                 .collect::<Option<Vec<_>>>()?;
-            Some(expr_arena.add(node.replace_inputs(&new_inputs)))
+
+            let mut new_node = node.clone();
+            match &mut new_node {
+                AExpr::Function { input, .. } | AExpr::AnonymousFunction { input, .. } => {
+                    *input = new_input;
+                },
+                _ => unreachable!(),
+            }
+            Some(expr_arena.add(new_node))
         },
 
         AExpr::Function { .. } | AExpr::AnonymousFunction { .. } => None,
@@ -193,7 +209,8 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Mean(input)
                 | IRAggExpr::Sum(input)
                 | IRAggExpr::Var(input, ..)
-                | IRAggExpr::Std(input, ..) => {
+                | IRAggExpr::Std(input, ..)
+                | IRAggExpr::Count(input, ..) => {
                     let orig_agg = agg.clone();
                     // Lower and replace input.
                     let trans_input = lower_rec!(*input, true)?;
@@ -216,7 +233,6 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::NUnique(..)
                 | IRAggExpr::Implode(..)
                 | IRAggExpr::Quantile { .. }
-                | IRAggExpr::Count(..)
                 | IRAggExpr::AggGroups(..) => None, // TODO: allow all aggregates,
             }
         },

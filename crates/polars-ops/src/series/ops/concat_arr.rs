@@ -3,7 +3,7 @@ use arrow::compute::utils::combine_validities_and;
 use polars_compute::horizontal_flatten::horizontal_flatten_unchecked;
 use polars_core::prelude::{ArrayChunked, Column, CompatLevel, DataType, IntoColumn};
 use polars_core::series::Series;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
 /// Note: The caller must ensure all columns in `args` have the same type.
@@ -65,7 +65,7 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
                         validities.push(v)
                     }
 
-                    (arr.rechunk().downcast_into_array().values().clone(), *width)
+                    (arr.downcast_as_array().values().clone(), *width)
                 },
                 dtype => {
                     debug_assert_eq!(dtype, inner_dtype);

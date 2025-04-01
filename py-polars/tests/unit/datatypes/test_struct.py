@@ -11,6 +11,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -923,7 +924,7 @@ def test_struct_wildcard_expansion_and_exclude() -> None:
         ),
     ]
 
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         df.lazy().select(
             pl.col("meta_data").struct.with_fields(pl.field("*").exclude("user_data"))
         ).collect()
@@ -1125,7 +1126,7 @@ def test_zfs_row_encoding(size: int) -> None:
 
     df = pl.DataFrame([a, pl.Series("x", list(range(size)), pl.Int8)])
 
-    gb = df.lazy().group_by(["a", "x"]).agg(pl.all().min()).collect(streaming=True)
+    gb = df.lazy().group_by(["a", "x"]).agg(pl.all().min()).collect(engine="streaming")
 
     # We need to ignore the order because the group_by is non-deterministic
     assert_frame_equal(gb, df, check_row_order=False)
@@ -1222,7 +1223,68 @@ def test_leaf_list_eq_19613(data: Any) -> None:
 def test_nested_object_raises_15237() -> None:
     obj = object()
     df = pl.DataFrame({"a": [obj]})
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError, match="nested objects are not allowed"
-    ):
+    with pytest.raises(InvalidOperationError, match="nested objects are not allowed"):
         df.select(pl.struct("a"))
+
+
+def test_empty_struct_with_fields_21095() -> None:
+    df = pl.DataFrame({"a": [{}, {}]})
+    assert_frame_equal(
+        df.select(pl.col("a").struct.with_fields(a=pl.lit(42, pl.Int64))),
+        pl.DataFrame({"a": [{"a": 42}, {"a": 42}]}),
+    )
+    assert_frame_equal(
+        df.select(pl.col("a").struct.with_fields(a=None)),
+        pl.DataFrame({"a": [{"a": None}, {"a": None}]}),
+    )
+
+
+def test_cast_to_struct_needs_field_14083() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="must specify one field in the struct"
+    ):
+        pl.Series([1], dtype=pl.Int32).cast(pl.Struct)
+
+    with pytest.raises(
+        InvalidOperationError, match="must specify one field in the struct"
+    ):
+        pl.Series([1], dtype=pl.Int32).cast(pl.Struct({"a": pl.UInt8, "b": pl.UInt8}))
+
+
+@pytest.mark.filterwarnings("ignore:Comparisons with None always result in null.")
+def test_zip_outer_validity_infinite_recursion_21267() -> None:
+    s = pl.Series("x", [None, None], pl.Struct({"f": pl.Null}))
+    assert_series_equal(
+        s.to_frame().select(pl.col.x.__eq__(None)).to_series(),
+        pl.Series("x", [None, None], pl.Boolean),
+    )
+
+
+def test_struct_arithmetic_broadcast_21376() -> None:
+    df = pl.DataFrame(
+        {
+            "struct1": [{"low": 1, "mid": 2, "up": 3}],
+            "list_struct": [
+                [{"low": 1, "mid": 2, "up": 3}, {"low": 1, "mid": 2, "up": 3}]
+            ],
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "add_struct": [{"low": 2, "mid": 4, "up": 6}] * 2,
+        }
+    )
+    out = (
+        df.with_row_index()
+        .explode("list_struct")
+        .select((pl.col("struct1") + pl.col("list_struct")).alias("add_struct"))
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_struct_cast_string_multiple_chunks_21650() -> None:
+    df = pl.DataFrame({"a": [{"a": 1, "b": 2}]})
+    df = pl.concat([df, df], rechunk=False)
+    result = df.select(pl.col("a").cast(pl.String))
+    expected = pl.DataFrame({"a": ["{1,2}", "{1,2}"]})
+    assert_frame_equal(result, expected)

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
 use arrow::types::PrimitiveType;
@@ -117,31 +118,83 @@ impl Serialize for AnyValue<'_> {
         let name = "AnyValue";
         match self {
             AnyValue::Null => serializer.serialize_unit_variant(name, 0, "Null"),
+
             AnyValue::Int8(v) => serializer.serialize_newtype_variant(name, 1, "Int8", v),
             AnyValue::Int16(v) => serializer.serialize_newtype_variant(name, 2, "Int16", v),
             AnyValue::Int32(v) => serializer.serialize_newtype_variant(name, 3, "Int32", v),
             AnyValue::Int64(v) => serializer.serialize_newtype_variant(name, 4, "Int64", v),
-            AnyValue::Int128(v) => serializer.serialize_newtype_variant(name, 4, "Int128", v),
-            AnyValue::UInt8(v) => serializer.serialize_newtype_variant(name, 5, "UInt8", v),
-            AnyValue::UInt16(v) => serializer.serialize_newtype_variant(name, 6, "UInt16", v),
-            AnyValue::UInt32(v) => serializer.serialize_newtype_variant(name, 7, "UInt32", v),
-            AnyValue::UInt64(v) => serializer.serialize_newtype_variant(name, 8, "UInt64", v),
-            AnyValue::Float32(v) => serializer.serialize_newtype_variant(name, 9, "Float32", v),
-            AnyValue::Float64(v) => serializer.serialize_newtype_variant(name, 10, "Float64", v),
-            AnyValue::List(v) => serializer.serialize_newtype_variant(name, 11, "List", v),
-            AnyValue::Boolean(v) => serializer.serialize_newtype_variant(name, 12, "Bool", v),
-            // both string variants same number
-            AnyValue::String(v) => serializer.serialize_newtype_variant(name, 13, "StringOwned", v),
+            AnyValue::Int128(v) => serializer.serialize_newtype_variant(name, 5, "Int128", v),
+            AnyValue::UInt8(v) => serializer.serialize_newtype_variant(name, 6, "UInt8", v),
+            AnyValue::UInt16(v) => serializer.serialize_newtype_variant(name, 7, "UInt16", v),
+            AnyValue::UInt32(v) => serializer.serialize_newtype_variant(name, 8, "UInt32", v),
+            AnyValue::UInt64(v) => serializer.serialize_newtype_variant(name, 9, "UInt64", v),
+            AnyValue::Float32(v) => serializer.serialize_newtype_variant(name, 10, "Float32", v),
+            AnyValue::Float64(v) => serializer.serialize_newtype_variant(name, 11, "Float64", v),
+            AnyValue::List(v) => serializer.serialize_newtype_variant(name, 12, "List", v),
+            AnyValue::Boolean(v) => serializer.serialize_newtype_variant(name, 13, "Bool", v),
+
+            // both variants same number
+            AnyValue::String(v) => serializer.serialize_newtype_variant(name, 14, "StringOwned", v),
             AnyValue::StringOwned(v) => {
-                serializer.serialize_newtype_variant(name, 13, "StringOwned", v.as_str())
+                serializer.serialize_newtype_variant(name, 14, "StringOwned", v.as_str())
             },
-            AnyValue::Binary(v) => serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v),
+
+            // both variants same number
+            AnyValue::Binary(v) => serializer.serialize_newtype_variant(name, 15, "BinaryOwned", v),
             AnyValue::BinaryOwned(v) => {
-                serializer.serialize_newtype_variant(name, 14, "BinaryOwned", v)
+                serializer.serialize_newtype_variant(name, 15, "BinaryOwned", v)
             },
-            _ => Err(serde::ser::Error::custom(
-                "Unknown data type. Cannot serialize",
-            )),
+
+            #[cfg(feature = "dtype-date")]
+            AnyValue::Date(v) => serializer.serialize_newtype_variant(name, 16, "Date", v),
+            // both variants same number
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::Datetime(v, tu, tz) => serializer.serialize_newtype_variant(
+                name,
+                17,
+                "DatetimeOwned",
+                &(*v, *tu, tz.map(|v| v.as_str())),
+            ),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::DatetimeOwned(v, tu, tz) => serializer.serialize_newtype_variant(
+                name,
+                17,
+                "DatetimeOwned",
+                &(*v, *tu, tz.as_deref().map(|v| v.as_str())),
+            ),
+            #[cfg(feature = "dtype-duration")]
+            AnyValue::Duration(v, tu) => {
+                serializer.serialize_newtype_variant(name, 18, "Duration", &(*v, *tu))
+            },
+            #[cfg(feature = "dtype-time")]
+            AnyValue::Time(v) => serializer.serialize_newtype_variant(name, 19, "Time", v),
+
+            // Not 100% sure how to deal with these.
+            #[cfg(feature = "dtype-categorical")]
+            AnyValue::Categorical(..) | AnyValue::CategoricalOwned(..) => Err(
+                serde::ser::Error::custom("Cannot serialize categorical value."),
+            ),
+            #[cfg(feature = "dtype-categorical")]
+            AnyValue::Enum(..) | AnyValue::EnumOwned(..) => {
+                Err(serde::ser::Error::custom("Cannot serialize enum value."))
+            },
+
+            #[cfg(feature = "dtype-array")]
+            AnyValue::Array(v, width) => {
+                serializer.serialize_newtype_variant(name, 22, "Array", &(v, *width))
+            },
+            #[cfg(feature = "object")]
+            AnyValue::Object(_) | AnyValue::ObjectOwned(_) => {
+                Err(serde::ser::Error::custom("Cannot serialize object value."))
+            },
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(_, _, _) | AnyValue::StructOwned(_) => {
+                Err(serde::ser::Error::custom("Cannot serialize struct value."))
+            },
+            #[cfg(feature = "dtype-decimal")]
+            AnyValue::Decimal(v, scale) => {
+                serializer.serialize_newtype_variant(name, 25, "Decimal", &(*v, *scale))
+            },
         }
     }
 }
@@ -152,8 +205,18 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
     where
         D: Deserializer<'a>,
     {
-        #[repr(u8)]
-        enum AvField {
+        macro_rules! define_av_field {
+            ($($variant:ident,)+) => {
+                #[derive(Deserialize, Serialize)]
+                enum AvField {
+                    $($variant,)+
+                }
+                const VARIANTS: &'static [&'static str] = &[
+                    $(stringify!($variant),)+
+                ];
+            };
+        }
+        define_av_field! {
             Null,
             Int8,
             Int16,
@@ -170,109 +233,17 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
             Bool,
             StringOwned,
             BinaryOwned,
-        }
-        const VARIANTS: &[&str] = &[
-            "Null",
-            "UInt8",
-            "UInt16",
-            "UInt32",
-            "UInt64",
-            "Int8",
-            "Int16",
-            "Int32",
-            "Int64",
-            "Int128",
-            "Float32",
-            "Float64",
-            "List",
-            "Boolean",
-            "StringOwned",
-            "BinaryOwned",
-        ];
-        const LAST: u8 = unsafe { std::mem::transmute::<_, u8>(AvField::BinaryOwned) };
-
-        struct FieldVisitor;
-
-        impl Visitor<'_> for FieldVisitor {
-            type Value = AvField;
-
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                write!(formatter, "an integer between 0-{LAST}")
-            }
-
-            fn visit_i64<E>(self, v: i64) -> std::result::Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                let field: u8 = NumCast::from(v).ok_or_else(|| {
-                    serde::de::Error::invalid_value(
-                        Unexpected::Signed(v),
-                        &"expected value that fits into u8",
-                    )
-                })?;
-
-                // SAFETY:
-                // we are repr: u8 and check last value that we are in bounds
-                let field = unsafe {
-                    if field <= LAST {
-                        std::mem::transmute::<u8, AvField>(field)
-                    } else {
-                        return Err(serde::de::Error::invalid_value(
-                            Unexpected::Signed(v),
-                            &"expected value that fits into AnyValue's number of fields",
-                        ));
-                    }
-                };
-                Ok(field)
-            }
-
-            fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                self.visit_bytes(v.as_bytes())
-            }
-
-            fn visit_bytes<E>(self, v: &[u8]) -> std::result::Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                let field = match v {
-                    b"Null" => AvField::Null,
-                    b"Int8" => AvField::Int8,
-                    b"Int16" => AvField::Int16,
-                    b"Int32" => AvField::Int32,
-                    b"Int64" => AvField::Int64,
-                    b"Int128" => AvField::Int128,
-                    b"UInt8" => AvField::UInt8,
-                    b"UInt16" => AvField::UInt16,
-                    b"UInt32" => AvField::UInt32,
-                    b"UInt64" => AvField::UInt64,
-                    b"Float32" => AvField::Float32,
-                    b"Float64" => AvField::Float64,
-                    b"List" => AvField::List,
-                    b"Bool" => AvField::Bool,
-                    b"StringOwned" | b"String" => AvField::StringOwned,
-                    b"BinaryOwned" | b"Binary" => AvField::BinaryOwned,
-                    _ => {
-                        return Err(serde::de::Error::unknown_variant(
-                            &String::from_utf8_lossy(v),
-                            VARIANTS,
-                        ))
-                    },
-                };
-                Ok(field)
-            }
-        }
-
-        impl<'a> Deserialize<'a> for AvField {
-            fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-            where
-                D: Deserializer<'a>,
-            {
-                deserializer.deserialize_identifier(FieldVisitor)
-            }
-        }
+            Date,
+            DatetimeOwned,
+            Duration,
+            Time,
+            CategoricalOwned,
+            EnumOwned,
+            Array,
+            Object,
+            Struct,
+            Decimal,
+        };
 
         struct OuterVisitor;
 
@@ -349,6 +320,44 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                         let value = variant.newtype_variant()?;
                         AnyValue::BinaryOwned(value)
                     },
+                    (AvField::Date, variant) => feature_gated!("dtype-date", {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::Date(value)
+                    }),
+                    (AvField::DatetimeOwned, variant) => feature_gated!("dtype-datetime", {
+                        let (value, time_unit, time_zone) = variant.newtype_variant()?;
+                        AnyValue::DatetimeOwned(value, time_unit, time_zone)
+                    }),
+                    (AvField::Duration, variant) => feature_gated!("dtype-duration", {
+                        let (value, time_unit) = variant.newtype_variant()?;
+                        AnyValue::Duration(value, time_unit)
+                    }),
+                    (AvField::Time, variant) => feature_gated!("dtype-time", {
+                        let value = variant.newtype_variant()?;
+                        AnyValue::Time(value)
+                    }),
+                    (AvField::CategoricalOwned, _) => feature_gated!("dtype-categorical", {
+                        return Err(serde::de::Error::custom(
+                            "unable to deserialize categorical",
+                        ));
+                    }),
+                    (AvField::EnumOwned, _) => feature_gated!("dtype-categorical", {
+                        return Err(serde::de::Error::custom("unable to deserialize enum"));
+                    }),
+                    (AvField::Array, variant) => feature_gated!("dtype-array", {
+                        let (s, width) = variant.newtype_variant()?;
+                        AnyValue::Array(s, width)
+                    }),
+                    (AvField::Object, _) => feature_gated!("object", {
+                        return Err(serde::de::Error::custom("unable to deserialize object"));
+                    }),
+                    (AvField::Struct, _) => feature_gated!("dtype-struct", {
+                        return Err(serde::de::Error::custom("unable to deserialize struct"));
+                    }),
+                    (AvField::Decimal, variant) => feature_gated!("dtype-decimal", {
+                        let (v, scale) = variant.newtype_variant()?;
+                        AnyValue::Decimal(v, scale)
+                    }),
                 };
                 Ok(out)
             }
@@ -436,9 +445,9 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
             #[cfg(feature = "object")]
-            Object(o) => DataType::Object(o.type_name(), None),
+            Object(o) => DataType::Object(o.type_name()),
             #[cfg(feature = "object")]
-            ObjectOwned(o) => DataType::Object(o.0.type_name(), None),
+            ObjectOwned(o) => DataType::Object(o.0.type_name()),
         }
     }
 

@@ -21,6 +21,29 @@ class ExprArrayNameSpace:
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
+    def len(self) -> Expr:
+        """
+        Return the number of elements in each array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.len())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 2   │
+        │ 2   │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.arr_len())
+
     def min(self) -> Expr:
         """
         Compute the min values of the sub-arrays.
@@ -348,7 +371,6 @@ class ExprArrayNameSpace:
         │ [3, 2, 1]     ┆ [3, 2, 1]     │
         │ [9, 1, 2]     ┆ [9, 2, 1]     │
         └───────────────┴───────────────┘
-
         """
         return wrap_expr(self._pyexpr.arr_sort(descending, nulls_last))
 
@@ -374,7 +396,6 @@ class ExprArrayNameSpace:
         │ [3, 2, 1]     ┆ [1, 2, 3]     │
         │ [9, 1, 2]     ┆ [2, 1, 9]     │
         └───────────────┴───────────────┘
-
         """
         return wrap_expr(self._pyexpr.arr_reverse())
 
@@ -406,7 +427,6 @@ class ExprArrayNameSpace:
         │ [1, 2]        ┆ 0       │
         │ [2, 1]        ┆ 1       │
         └───────────────┴─────────┘
-
         """
         return wrap_expr(self._pyexpr.arr_arg_min())
 
@@ -438,7 +458,6 @@ class ExprArrayNameSpace:
         │ [1, 2]        ┆ 1       │
         │ [2, 1]        ┆ 0       │
         └───────────────┴─────────┘
-
         """
         return wrap_expr(self._pyexpr.arr_arg_max())
 
@@ -476,7 +495,6 @@ class ExprArrayNameSpace:
         │ [4, 5, 6]     ┆ -2  ┆ 5   │
         │ [7, 8, 9]     ┆ 0   ┆ 7   │
         └───────────────┴─────┴─────┘
-
         """
         index = parse_into_expression(index)
         return wrap_expr(self._pyexpr.arr_get(index, null_on_oob))
@@ -502,7 +520,6 @@ class ExprArrayNameSpace:
         │ [4, 5, 6]     ┆ 4     │
         │ [7, 8, 9]     ┆ 7     │
         └───────────────┴───────┘
-
         """
         return self.get(0, null_on_oob=True)
 
@@ -527,7 +544,6 @@ class ExprArrayNameSpace:
         │ [4, 5, 6]     ┆ 6    │
         │ [7, 9, 8]     ┆ 8    │
         └───────────────┴──────┘
-
         """
         return self.get(-1, null_on_oob=True)
 
@@ -571,7 +587,6 @@ class ExprArrayNameSpace:
         │ ["a", "b"]    ┆ *         ┆ a*b  │
         │ ["x", "y"]    ┆ _         ┆ x_y  │
         └───────────────┴───────────┴──────┘
-
         """
         separator = parse_into_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_join(separator, ignore_nulls))
@@ -640,7 +655,6 @@ class ExprArrayNameSpace:
         │ ["x", "y"]    ┆ false    │
         │ ["a", "c"]    ┆ true     │
         └───────────────┴──────────┘
-
         """
         item = parse_into_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_contains(item))

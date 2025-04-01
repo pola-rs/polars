@@ -1,5 +1,5 @@
 use super::specification::try_check_offsets_bounds;
-use super::{new_empty_array, Array, Splitable};
+use super::{Array, Splitable, new_empty_array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::OffsetsBuffer;
@@ -8,7 +8,7 @@ mod ffi;
 pub(super) mod fmt;
 mod iterator;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 /// An array representing a (key, value), both of arbitrary logical types.
 #[derive(Clone)]
@@ -25,7 +25,7 @@ impl MapArray {
     /// Returns a new [`MapArray`].
     /// # Errors
     /// This function errors iff:
-    /// * The last offset is not equal to the field' length
+    /// * `offsets.last()` is greater than `field.len()`
     /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::Map`]
     /// * The fields' `dtype` is not equal to the inner field of `dtype`
     /// * The validity is not `None` and its length is different from `offsets.len() - 1`.
@@ -66,7 +66,7 @@ impl MapArray {
 
     /// Creates a new [`MapArray`].
     /// # Panics
-    /// * The last offset is not equal to the field' length.
+    /// * `offsets.last()` is greater than `field.len()`.
     /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::Map`],
     /// * The validity is not `None` and its length is different from `offsets.len() - 1`.
     pub fn new(

@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.21.0"
+version = "1.26.0"
 edition = "2021"
 
 [lib]
@@ -19,10 +19,11 @@ mimalloc = { version = "0.1", default-features = false }
 
 # Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
 [target.'cfg(all(target_family = "unix", not(target_os = "macos"), not(target_os = "emscripten"), not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
-jemallocator = { version = "0.5", features = ["disable_initial_exec_tls", "background_threads"] }
+tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls", "background_threads"] }
 
 [target.'cfg(all(target_family = "unix", target_os = "macos", not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
-jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
+tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls"] }
+either = { workspace = true }
 
 [features]
 # Features used in this crate

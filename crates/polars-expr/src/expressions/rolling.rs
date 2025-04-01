@@ -33,7 +33,7 @@ impl PhysicalExpr for RollingExpr {
         let groups = match groups {
             Some(groups) => groups,
             None => {
-                let (_time_key, _keys, groups) = df.rolling(vec![], &self.options)?;
+                let (_time_key, groups) = df.rolling(None, &self.options)?;
                 state.window_cache.insert_groups(groups_key, groups.clone());
                 groups
             },
@@ -57,16 +57,6 @@ impl PhysicalExpr for RollingExpr {
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_bail!(InvalidOperation: "rolling expression not allowed in aggregation");
-    }
-
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

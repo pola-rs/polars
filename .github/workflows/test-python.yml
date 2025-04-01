@@ -71,7 +71,6 @@ jobs:
           # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
           uv pip install -U typing-extensions
           uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose --index-strategy=unsafe-best-match
-
       - name: Set up Rust
         run: rustup show
 
@@ -92,19 +91,23 @@ jobs:
 
       - name: Run tests
         if: github.ref_name != 'main'
-        run: pytest -n auto --dist loadgroup -m "not release and not benchmark and not docs"
+        env:
+          POLARS_TIMEOUT_MS: 60000
+        run: pytest -n auto -m "not release and not benchmark and not docs"
 
       - name: Run tests with new streaming engine
         if: github.ref_name != 'main'
         env:
           POLARS_AUTO_NEW_STREAMING: 1
-        run: pytest -n auto --dist loadgroup -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
+          POLARS_TIMEOUT_MS: 60000
+        run: pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
 
       - name: Run tests async reader tests
         if: github.ref_name != 'main' && matrix.os != 'windows-latest'
         env:
           POLARS_FORCE_ASYNC: 1
-        run: pytest -m "not release and not benchmark and not docs" tests/unit/io/
+          POLARS_TIMEOUT_MS: 60000
+        run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'

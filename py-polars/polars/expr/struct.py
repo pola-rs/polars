@@ -143,7 +143,6 @@ class ExprStructNameSpace:
         │ ab  │
         │ cd  │
         └─────┘
-
         """
         if more_names:
             name = [*([name] if isinstance(name, str) else name), *more_names]

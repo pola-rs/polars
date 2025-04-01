@@ -1,6 +1,6 @@
 use polars_core::utils::flatten::flatten_df_iter;
-use polars_io::ipc::IpcReader;
 use polars_io::SerReader;
+use polars_io::ipc::IpcReader;
 
 use super::*;
 use crate::executors::sinks::group_by::generic::global::GlobalTable;

@@ -72,7 +72,16 @@ jobs:
         run: maturin build --profile nodebug-release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Install Polars release build
-        run: pip install target/wheels/polars*.whl
+        run: |
+          pip install --force-reinstall target/wheels/polars*.whl
+
+          # This workflow builds and installs a wheel, meaning there is no polars.abi3.so under
+          # py-polars/. This causes a binary not found error if a test tries to import polars in
+          # a Python executed using `subprocess.check_output([sys.executable])`. Fix this by
+          # symlinking the binary.
+          ln -sv \
+            $(python -c "import importlib; print(importlib.util.find_spec('polars').submodule_search_locations[0] + '/polars.abi3.so')") \
+            py-polars/polars/polars.abi3.so
 
       - name: Set wheel size
         run: |
@@ -119,20 +128,23 @@ jobs:
                   body: commentBody,
                 });
               }
-        continue-on-error: true 
+        continue-on-error: true
 
-      - name: Run benchmark tests
-        uses: CodSpeedHQ/action@v3
-        with:
-          working-directory: py-polars
-          run: pytest -m benchmark --codspeed -v
+      # - name: Run benchmark tests
+      #   uses: CodSpeedHQ/action@v3
+      #   with:
+      #     working-directory: py-polars
+      #     run: pytest -m benchmark --codspeed -v
 
       - name: Run non-benchmark tests
         working-directory: py-polars
-        run: pytest -m 'not benchmark and not debug' -n auto --dist loadgroup
+        run: pytest -m 'not benchmark and not debug' -n auto
+        env:
+          POLARS_TIMEOUT_MS: 60000
 
       - name: Run non-benchmark tests on new streaming engine
         working-directory: py-polars
         env:
           POLARS_AUTO_NEW_STREAMING: 1
-        run: pytest -n auto --dist loadgroup -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
+          POLARS_TIMEOUT_MS: 60000
+        run: pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"

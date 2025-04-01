@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Row encoding for Booleans
 //!
 //! Each Boolean value is encoded by one byte:

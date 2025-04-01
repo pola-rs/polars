@@ -61,13 +61,14 @@ impl FunctionExpr {
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
             Sign => mapper.with_dtype(DataType::Int64),
-            FillNull { .. } => mapper.map_to_supertype(),
+            FillNull  => mapper.map_to_supertype(),
             #[cfg(feature = "rolling_window")]
             RollingExpr(rolling_func, ..) => {
                 use RollingFunction::*;
                 match rolling_func {
-                    Min(_) | Max(_) | Sum(_) => mapper.with_same_dtype(),
+                    Min(_) | Max(_) => mapper.with_same_dtype(),
                     Mean(_) | Quantile(_) | Var(_) | Std(_) => mapper.map_to_float_dtype(),
+                    Sum(_) => mapper.sum_dtype(),
                     #[cfg(feature = "cov")]
                     CorrCov {..} => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
@@ -78,8 +79,9 @@ impl FunctionExpr {
             RollingExprBy(rolling_func, ..) => {
                 use RollingFunctionBy::*;
                 match rolling_func {
-                    MinBy(_) | MaxBy(_) | SumBy(_) => mapper.with_same_dtype(),
+                    MinBy(_) | MaxBy(_) => mapper.with_same_dtype(),
                     MeanBy(_) | QuantileBy(_) | VarBy(_) | StdBy(_) => mapper.map_to_float_dtype(),
+                    SumBy(_) => mapper.sum_dtype(),
                 }
             },
             ShiftAndFill => mapper.with_same_dtype(),
@@ -546,6 +548,14 @@ impl<'a> FieldsMapper<'a> {
         })
     }
 
+    pub fn sum_dtype(&self) -> PolarsResult<Field> {
+        use DataType::*;
+        self.map_dtype(|dtype| match dtype {
+            Int8 | UInt8 | Int16 | UInt16 => Int64,
+            dt => dt.clone(),
+        })
+    }
+
     pub fn nested_sum_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         use DataType::*;
@@ -560,6 +570,26 @@ impl<'a> FieldsMapper<'a> {
             UInt8 | Int8 | Int16 | UInt16 => first.coerce(Int64),
             _ => first.coerce(dt),
         }
+        Ok(first)
+    }
+
+    pub fn nested_mean_median_type(&self) -> PolarsResult<Field> {
+        let mut first = self.fields[0].clone();
+        use DataType::*;
+        let dt = first
+            .dtype()
+            .inner_dtype()
+            .cloned()
+            .unwrap_or_else(|| Unknown(Default::default()));
+
+        let new_dt = match dt {
+            #[cfg(feature = "dtype-datetime")]
+            Date => Datetime(TimeUnit::Milliseconds, None),
+            dt if dt.is_temporal() => dt,
+            Float32 => Float32,
+            _ => Float64,
+        };
+        first.coerce(new_dt);
         Ok(first)
     }
 

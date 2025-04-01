@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use core::arch::x86_64::*;
 
 // It's not possible to inline target_feature(enable = ...) functions into other

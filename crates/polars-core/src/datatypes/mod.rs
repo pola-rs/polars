@@ -26,9 +26,9 @@ mod schema;
 pub use aliases::*;
 pub use any_value::*;
 pub use arrow::array::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray};
-pub use arrow::datatypes::reshape::*;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
+pub use arrow::datatypes::reshape::*;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
@@ -42,9 +42,10 @@ use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
+use polars_utils::total_ord::TotalHash;
 pub use schema::SchemaExtPl;
 #[cfg(feature = "serde")]
-use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
+use serde::de::{EnumAccess, VariantAccess, Visitor};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
@@ -70,9 +71,9 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
     type OwnedPhysical: std::fmt::Debug + Send + Sync + Clone + PartialEq;
     type ZeroablePhysical<'a>: Zeroable + From<Self::Physical<'a>>;
     type Array: for<'a> StaticArray<
-        ValueT<'a> = Self::Physical<'a>,
-        ZeroableValueT<'a> = Self::ZeroablePhysical<'a>,
-    >;
+            ValueT<'a> = Self::Physical<'a>,
+            ZeroableValueT<'a> = Self::ZeroablePhysical<'a>,
+        >;
     type IsNested;
     type HasViews;
     type IsStruct;
@@ -87,16 +88,16 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
 pub trait PolarsNumericType: 'static
 where
     Self: for<'a> PolarsDataType<
-        OwnedPhysical = Self::Native,
-        Physical<'a> = Self::Native,
-        ZeroablePhysical<'a> = Self::Native,
-        Array = PrimitiveArray<Self::Native>,
-        IsNested = FalseT,
-        HasViews = FalseT,
-        IsStruct = FalseT,
-        IsObject = FalseT,
-        IsLogical = FalseT,
-    >,
+            OwnedPhysical = Self::Native,
+            Physical<'a> = Self::Native,
+            ZeroablePhysical<'a> = Self::Native,
+            Array = PrimitiveArray<Self::Native>,
+            IsNested = FalseT,
+            HasViews = FalseT,
+            IsStruct = FalseT,
+            IsObject = FalseT,
+            IsLogical = FalseT,
+        >,
 {
     type Native: NumericNative;
 }
@@ -296,7 +297,7 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type IsLogical = FalseT;
 
     fn get_dtype() -> DataType {
-        DataType::Object(T::type_name(), None)
+        DataType::Object(T::type_name())
     }
 }
 
@@ -325,6 +326,7 @@ pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 pub trait NumericNative:
     TotalOrd
     + PartialOrd
+    + TotalHash
     + NativeType
     + Num
     + NumCast

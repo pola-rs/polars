@@ -1,9 +1,12 @@
+use std::hash::BuildHasher;
+
 use hashbrown::hash_map::RawEntryMut;
 
 use super::*;
 use crate::prelude::visitor::IRNode;
 
 mod identifier_impl {
+    use polars_utils::aliases::PlFixedStateQuality;
     use polars_utils::hashing::_boost_hash_combine;
 
     use super::*;
@@ -16,7 +19,7 @@ mod identifier_impl {
     pub(super) struct Identifier {
         inner: Option<u64>,
         last_node: Option<IRNode>,
-        hb: PlRandomState,
+        hb: PlFixedStateQuality,
     }
 
     impl Identifier {
@@ -47,7 +50,7 @@ mod identifier_impl {
             Self {
                 inner: None,
                 last_node: None,
-                hb: PlRandomState::with_seed(0),
+                hb: PlFixedStateQuality::with_seed(0),
             }
         }
 
@@ -79,7 +82,7 @@ mod identifier_impl {
             Self {
                 inner,
                 last_node: Some(*alp),
-                hb: self.hb.clone(),
+                hb: self.hb,
             }
         }
     }
@@ -359,11 +362,12 @@ pub(crate) fn elim_cmn_subplans(
     let mut id_array = Default::default();
 
     with_ir_arena(lp_arena, expr_arena, |arena| {
-        let lp_node = IRNode::new(root);
+        let lp_node = IRNode::new_mutate(root);
         let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array);
 
         lp_node.visit(&mut visitor, arena).map(|_| ()).unwrap();
 
+        let lp_node = IRNode::new_mutate(root);
         let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
         lp_node.rewrite(&mut rewriter, arena).unwrap();
 

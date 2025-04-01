@@ -36,7 +36,7 @@ fn scatter(mut s: Series, idx: &Series, values: &Series) -> Result<Series, (Seri
         Err(err) => return Err((s, err)),
     };
     let idx = idx.rechunk();
-    let idx = idx.downcast_iter().next().unwrap();
+    let idx = idx.downcast_as_array();
 
     if idx.null_count() > 0 {
         return Err((

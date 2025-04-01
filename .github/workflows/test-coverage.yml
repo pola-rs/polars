@@ -133,9 +133,11 @@ jobs:
 
       - name: Run Python tests
         working-directory: py-polars
+        env:
+          POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
-          -n auto --dist loadgroup
+          -n auto
           -m "not release and not benchmark and not docs"
           -k 'not test_polars_import'
           --cov --cov-report xml:main.xml
@@ -144,9 +146,10 @@ jobs:
         working-directory: py-polars
         env:
           POLARS_FORCE_ASYNC: 1
+          POLARS_TIMEOUT_MS: 60000
         run: >
           pytest tests/unit/io/
-          -n auto --dist loadgroup
+          -n auto
           -m "not release and not benchmark and not docs"
           --cov --cov-report xml:async.xml --cov-fail-under=0
 

@@ -6,9 +6,9 @@ use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::utils::flatten::flatten_nullable;
 use polars_core::utils::split_and_flatten;
-use polars_core::{with_match_physical_float_polars_type, POOL};
+use polars_core::{POOL, with_match_physical_float_polars_type};
 use polars_utils::abs_diff::AbsDiff;
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use rayon::prelude::*;
@@ -89,8 +89,8 @@ where
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
-    let left_val_arr = left_asof.downcast_iter().next().unwrap();
-    let right_val_arr = right_asof.downcast_iter().next().unwrap();
+    let left_val_arr = left_asof.downcast_as_array();
+    let right_val_arr = right_asof.downcast_as_array();
 
     let n_threads = POOL.current_num_threads();
     // `strict` is false so that we always flatten. Even if there are more chunks than threads.
@@ -173,8 +173,8 @@ where
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
-    let left_val_arr = left_asof.downcast_iter().next().unwrap();
-    let right_val_arr = right_asof.downcast_iter().next().unwrap();
+    let left_val_arr = left_asof.downcast_as_array();
+    let right_val_arr = right_asof.downcast_as_array();
 
     let (prep_by_left, prep_by_right, _, _) = prepare_binary::<B>(by_left, by_right, false);
     let offsets = compute_len_offsets(prep_by_left.iter().map(|s| s.len()));
@@ -513,8 +513,8 @@ pub trait AsofJoinBy: IntoDf {
             &left_asof,
             &right_asof,
             tolerance.is_some(),
-            left_by.is_empty() && right_by.is_empty(),
             check_sortedness,
+            !(left_by.is_empty() && right_by.is_empty()),
         )?;
 
         let mut left_by = self_df.select(left_by)?;

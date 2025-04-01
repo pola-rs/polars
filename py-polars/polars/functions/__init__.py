@@ -45,6 +45,7 @@ from polars.functions.lazy import (
     cum_reduce,
     element,
     exclude,
+    explain_all,
     field,
     first,
     fold,
@@ -81,6 +82,7 @@ from polars.functions.range import (
     int_range,
     int_ranges,
     linear_space,
+    linear_spaces,
     time_range,
     time_ranges,
 )
@@ -139,6 +141,7 @@ __all__ = [
     "datetime",  # named datetime_, see import above
     "duration",
     "exclude",
+    "explain_all",
     "field",
     "first",
     "fold",
@@ -151,6 +154,7 @@ __all__ = [
     "int_ranges",
     "last",
     "linear_space",
+    "linear_spaces",
     "lit",
     "map_batches",
     "map_groups",

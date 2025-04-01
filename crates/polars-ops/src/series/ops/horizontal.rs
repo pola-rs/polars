@@ -4,7 +4,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::series::arithmetic::coerce_lhs_rhs;
 use polars_core::utils::dtypes_to_supertype;
-use polars_core::{with_match_physical_numeric_polars_type, POOL};
+use polars_core::{POOL, with_match_physical_numeric_polars_type};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 fn validate_column_lengths(cs: &[Column]) -> PolarsResult<()> {
@@ -67,11 +67,7 @@ where
     T::Native: PartialOrd,
 {
     let op = |l: T::Native, r: T::Native| {
-        if l < r {
-            l
-        } else {
-            r
-        }
+        if l < r { l } else { r }
     };
     arity::binary_elementwise_values(left, right, op)
 }
@@ -82,11 +78,7 @@ where
     T::Native: PartialOrd,
 {
     let op = |l: T::Native, r: T::Native| {
-        if l > r {
-            l
-        } else {
-            r
-        }
+        if l > r { l } else { r }
     };
     arity::binary_elementwise_values(left, right, op)
 }

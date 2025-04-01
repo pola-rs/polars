@@ -1,22 +1,22 @@
 use std::sync::Arc;
 
-use arrow::io::ipc::read::{get_row_count, FileMetadata, OutOfSpecKind};
-use object_store::path::Path;
+use arrow::io::ipc::read::{FileMetadata, OutOfSpecKind, get_row_count};
 use object_store::ObjectMeta;
+use object_store::path::Path;
 use polars_core::datatypes::IDX_DTYPE;
 use polars_core::frame::DataFrame;
 use polars_core::schema::{Schema, SchemaExt};
-use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::cloud::{
-    build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
-};
-use crate::file_cache::{init_entries_from_uri_list, FileCacheEntry};
-use crate::predicates::PhysicalIoExpr;
-use crate::prelude::{materialize_projection, IpcReader};
-use crate::shared::SerReader;
 use crate::RowIndex;
+use crate::cloud::{
+    CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
+};
+use crate::file_cache::{FileCacheEntry, init_entries_from_uri_list};
+use crate::predicates::PhysicalIoExpr;
+use crate::prelude::{IpcReader, materialize_projection};
+use crate::shared::SerReader;
 
 /// An Arrow IPC reader implemented on top of PolarsObjectStore.
 pub struct IpcReaderAsync {

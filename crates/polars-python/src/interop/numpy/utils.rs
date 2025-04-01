@@ -1,8 +1,9 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ffi::{c_int, c_void};
 
 use ndarray::{Dim, Dimension};
 use numpy::npyffi::PyArrayObject;
-use numpy::{npyffi, Element, PyArrayDescr, PyArrayDescrMethods, ToNpyDims, PY_ARRAY_API};
+use numpy::{Element, PY_ARRAY_API, PyArrayDescr, PyArrayDescrMethods, ToNpyDims, npyffi};
 use polars_core::prelude::*;
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -98,7 +99,7 @@ pub(super) fn polars_dtype_to_np_temporal_dtype<'a>(
     py: Python<'a>,
     dtype: &DataType,
 ) -> Bound<'a, PyArrayDescr> {
-    use numpy::datetime::{units, Datetime, Timedelta};
+    use numpy::datetime::{Datetime, Timedelta, units};
     match dtype {
         DataType::Datetime(TimeUnit::Milliseconds, _) => {
             Datetime::<units::Milliseconds>::get_dtype(py)

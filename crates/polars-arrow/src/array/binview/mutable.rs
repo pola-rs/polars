@@ -8,17 +8,16 @@ use polars_error::PolarsResult;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
-use crate::array::binview::view::validate_utf8_only;
-use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
+use crate::array::binview::view::validate_views_utf8_only;
+use crate::array::binview::{
+    BinaryViewArrayGeneric, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE, ViewType,
+};
 use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::trusted_len::TrustedLen;
-
-const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
-const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 
 // Invariants:
 //
@@ -341,7 +340,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             self.init_validity(false);
         }
         self.views
-            .extend(std::iter::repeat(View::default()).take(additional));
+            .extend(std::iter::repeat_n(View::default(), additional));
         if let Some(validity) = &mut self.validity {
             validity.extend_constant(additional, false);
         }
@@ -366,7 +365,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             })
             .unwrap_or_default();
         self.views
-            .extend(std::iter::repeat(view_value).take(additional));
+            .extend(std::iter::repeat_n(view_value, additional));
     }
 
     impl_mutable_array_mut_validity!();
@@ -633,10 +632,10 @@ impl MutableBinaryViewArray<[u8]> {
         let pushed = self.finish_in_progress();
         // views are correct
         unsafe {
-            validate_utf8_only(
+            validate_views_utf8_only(
                 &self.views[views_offset..],
-                &self.completed_buffers[buffer_offset..],
                 &self.completed_buffers,
+                buffer_offset,
             )?
         }
         // Restore in-progress buffer as we don't want to get too small buffers

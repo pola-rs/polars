@@ -298,3 +298,58 @@ def test_replace_preserve_tu_and_tz(tu: TimeUnit, tzinfo: str) -> None:
     result = s.dt.replace(year=2000)
     assert result.dtype.time_unit == tu  # type: ignore[attr-defined]
     assert result.dtype.time_zone == tzinfo  # type: ignore[attr-defined]
+
+
+def test_replace_date_invalid_components() -> None:
+    df = pl.DataFrame({"a": [date(2025, 1, 1)]})
+
+    with pytest.raises(
+        ComputeError, match=r"Invalid date components \(2025, 13, 1\) supplied"
+    ):
+        df.select(pl.col("a").dt.replace(month=13))
+    with pytest.raises(
+        ComputeError, match=r"Invalid date components \(2025, 1, 32\) supplied"
+    ):
+        df.select(pl.col("a").dt.replace(day=32))
+
+
+def test_replace_datetime_invalid_date_components() -> None:
+    df = pl.DataFrame({"a": [datetime(2025, 1, 1)]})
+
+    with pytest.raises(
+        ComputeError, match=r"Invalid date components \(2025, 13, 1\) supplied"
+    ):
+        df.select(pl.col("a").dt.replace(month=13))
+    with pytest.raises(
+        ComputeError, match=r"Invalid date components \(2025, 1, 32\) supplied"
+    ):
+        df.select(pl.col("a").dt.replace(day=32))
+
+
+def test_replace_datetime_invalid_time_components() -> None:
+    df = pl.DataFrame({"a": [datetime(2025, 1, 1)]})
+
+    # hour
+    with pytest.raises(
+        ComputeError, match=r"Invalid time components \(25, 0, 0, 0\) supplied"
+    ):
+        df.select(pl.col("a").dt.replace(hour=25))
+
+    # minute
+    with pytest.raises(
+        ComputeError, match=r"Invalid time components \(0, 61, 0, 0\) supplied"
+    ):
+        df.select(pl.col("a").dt.replace(minute=61))
+
+    # second
+    with pytest.raises(
+        ComputeError, match=r"Invalid time components \(0, 0, 61, 0\) supplied"
+    ):
+        df.select(pl.col("a").dt.replace(second=61))
+
+    # microsecond
+    with pytest.raises(
+        ComputeError,
+        match=r"Invalid time components \(0, 0, 0, 2000000000\) supplied",
+    ):
+        df.select(pl.col("a").dt.replace(microsecond=2_000_000))

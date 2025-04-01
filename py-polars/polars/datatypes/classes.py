@@ -646,11 +646,6 @@ class Enum(DataType):
     """
     A fixed categorical encoding of a unique set of strings.
 
-    .. warning::
-        This functionality is considered **unstable**.
-        It is a work-in-progress feature and may not always work as expected.
-        It may be changed at any point without it being considered a breaking change.
-
     Parameters
     ----------
     categories
@@ -674,15 +669,6 @@ class Enum(DataType):
     categories: Series
 
     def __init__(self, categories: Series | Iterable[str] | type[enum.Enum]) -> None:
-        # Issuing the warning on `__init__` does not trigger when the class is used
-        # without being instantiated, but it's better than nothing
-        from polars._utils.unstable import issue_unstable_warning
-
-        issue_unstable_warning(
-            "The Enum data type is considered unstable."
-            " It is a work-in-progress feature and may not always work as expected."
-        )
-
         if isclass(categories) and issubclass(categories, enum.Enum):
             for enum_subclass in (enum.Flag, enum.IntEnum):
                 if issubclass(categories, enum_subclass):

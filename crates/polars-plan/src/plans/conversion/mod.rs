@@ -23,6 +23,13 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv",
+    feature = "json"
+))]
+pub use scans::*;
 mod functions;
 mod join;
 pub(crate) mod type_check;
@@ -76,7 +83,9 @@ impl IR {
                 }
             },
             #[cfg(feature = "python")]
-            IR::PythonScan { options, .. } => DslPlan::PythonScan { options },
+            IR::PythonScan { .. } => DslPlan::PythonScan {
+                options: Default::default(),
+            },
             IR::Union { inputs, .. } => {
                 let inputs = inputs
                     .into_iter()
@@ -263,7 +272,44 @@ impl IR {
             },
             IR::Sink { input, payload } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
+                let payload = match payload {
+                    SinkTypeIR::Memory => SinkType::Memory,
+                    SinkTypeIR::File(f) => SinkType::File(f),
+                    SinkTypeIR::Partition(f) => SinkType::Partition(PartitionSinkType {
+                        base_path: f.base_path,
+                        file_path_cb: f.file_path_cb,
+                        file_type: f.file_type,
+                        sink_options: f.sink_options,
+                        variant: match f.variant {
+                            PartitionVariantIR::MaxSize(max_size) => {
+                                PartitionVariant::MaxSize(max_size)
+                            },
+                            PartitionVariantIR::Parted {
+                                key_exprs,
+                                include_key,
+                            } => PartitionVariant::Parted {
+                                key_exprs: expr_irs_to_exprs(key_exprs, expr_arena),
+                                include_key,
+                            },
+                            PartitionVariantIR::ByKey {
+                                key_exprs,
+                                include_key,
+                            } => PartitionVariant::ByKey {
+                                key_exprs: expr_irs_to_exprs(key_exprs, expr_arena),
+                                include_key,
+                            },
+                        },
+                        cloud_options: f.cloud_options,
+                    }),
+                };
                 DslPlan::Sink { input, payload }
+            },
+            IR::SinkMultiple { inputs } => {
+                let inputs = inputs
+                    .into_iter()
+                    .map(|node| convert_to_lp(node, lp_arena))
+                    .collect();
+                DslPlan::SinkMultiple { inputs }
             },
             #[cfg(feature = "merge_sorted")]
             IR::MergeSorted {

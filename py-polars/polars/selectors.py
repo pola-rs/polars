@@ -127,13 +127,13 @@ def expand_selector(
     Parameters
     ----------
     target
-        A polars DataFrame, LazyFrame or schema.
+        A Polars DataFrame, LazyFrame or Schema.
     selector
         An arbitrary polars selector (or compound selector).
     strict
-        Setting False will additionally allow for a broader range of column selection
-        expressions (such as bare columns or use of `.exclude()`) to be expanded, not
-        just the dedicated selectors.
+        Setting False additionally allows for a broader range of column selection
+        expressions (such as bare columns or use of `.exclude()`) to be expanded,
+        not just the dedicated selectors.
 
     Examples
     --------
@@ -158,7 +158,7 @@ def expand_selector(
     >>> cs.expand_selector(df.lazy(), ~(cs.first() | cs.last()))
     ('coly',)
 
-    Expand selector with respect to a standalone schema:
+    Expand selector with respect to a standalone `Schema` dict:
 
     >>> schema = {
     ...     "id": pl.Int64,
@@ -1850,7 +1850,7 @@ def exclude(
         | Collection[str | PolarsDataType | SelectorType | Expr]
     ),
     *more_columns: str | PolarsDataType | SelectorType | Expr,
-) -> Expr:
+) -> SelectorType:
     """
     Select all columns except those matching the given columns, datatypes, or selectors.
 

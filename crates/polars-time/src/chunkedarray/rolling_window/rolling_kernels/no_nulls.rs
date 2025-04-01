@@ -1,8 +1,13 @@
+use std::ops::{Add, Sub};
+
 use arrow::bitmap::MutableBitmap;
-use arrow::legacy::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use num_traits::{FromPrimitive, ToPrimitive};
+use polars_compute::rolling::RollingFnParams;
+use polars_compute::rolling::no_nulls::{self, RollingAggWindowNoNulls};
+use polars_compute::rolling::quantile_filter::SealedRolling;
 
 use super::*;
 
@@ -224,7 +229,15 @@ pub(crate) fn rolling_sum<T>(
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
+    T: NativeType
+        + std::iter::Sum
+        + NumCast
+        + Mul<Output = T>
+        + AddAssign
+        + SubAssign
+        + IsFloat
+        + Sub<Output = T>
+        + Add<Output = T>,
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
@@ -300,7 +313,7 @@ pub(crate) fn rolling_var<T>(
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
+    T: NativeType + Float + ToPrimitive + FromPrimitive + AddAssign + IsFloat,
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
@@ -338,7 +351,7 @@ pub(crate) fn rolling_quantile<T>(
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
+    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat + SealedRolling,
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]

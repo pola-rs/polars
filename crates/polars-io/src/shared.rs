@@ -71,10 +71,10 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     while let Some(batch) = reader.next_record_batch()? {
         let current_num_rows = num_rows as IdxSize;
         num_rows += batch.len();
-        let mut df = DataFrame::try_from((batch, arrow_schema))?;
+        let mut df = DataFrame::from(batch);
 
         if let Some(rc) = &row_index {
-            df.with_row_index_mut(rc.name.clone(), Some(current_num_rows + rc.offset));
+            unsafe { df.with_row_index_mut(rc.name.clone(), Some(current_num_rows + rc.offset)) };
         }
 
         if let Some(predicate) = &predicate {
@@ -90,7 +90,10 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                     .map(|df: &DataFrame| df.height())
                     .sum::<usize>();
                 if polars_core::config::verbose() {
-                    eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height().saturating_sub(n))
+                    eprintln!(
+                        "sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.",
+                        df.height().saturating_sub(n)
+                    )
                 }
                 parsed_dfs.push(df.slice(0, len));
                 break;
@@ -133,7 +136,7 @@ pub fn schema_to_arrow_checked(
             #[cfg(feature = "object")]
             {
                 polars_ensure!(
-                    !matches!(field.dtype(), DataType::Object(_, _)),
+                    !matches!(field.dtype(), DataType::Object(_)),
                     ComputeError: "cannot write 'Object' datatype to {}",
                     _file_name
                 );

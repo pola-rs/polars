@@ -204,16 +204,16 @@ impl SlicePushDown {
                 output_schema,
                 mut file_options,
                 predicate,
-                scan_type: FileScan::Csv { options, cloud_options },
-            }, Some(state)) if predicate.is_none() && self.new_streaming =>  {
-                file_options.slice = Some((state.offset, state.len as usize));
+                scan_type,
+            }, Some(state)) if matches!(&*scan_type, FileScan::Csv { .. }) && predicate.is_none() && self.new_streaming =>  {
+                file_options.pre_slice = Some((state.offset, state.len as usize));
 
                 let lp = Scan {
                     sources,
                     file_info,
                     hive_parts,
                     output_schema,
-                    scan_type: FileScan::Csv { options, cloud_options },
+                    scan_type,
                     file_options,
                     predicate,
                 };
@@ -228,21 +228,45 @@ impl SlicePushDown {
                 output_schema,
                 mut file_options,
                 predicate,
-                scan_type: FileScan::Csv { options, cloud_options },
-            }, Some(state)) if predicate.is_none() && state.offset >= 0 =>  {
-                file_options.slice = Some((0, state.offset as usize + state.len as usize));
+                scan_type,
+            }, Some(state)) if predicate.is_none() && state.offset >= 0 && matches!(&*scan_type, FileScan::Csv{..}) =>  {
+                file_options.pre_slice = Some((0, state.offset as usize + state.len as usize));
 
                 let lp = Scan {
                     sources,
                     file_info,
                     hive_parts,
                     output_schema,
-                    scan_type: FileScan::Csv { options, cloud_options },
+                    scan_type,
                     file_options,
                     predicate,
                 };
 
                 self.no_pushdown_finish_opt(lp, Some(state), lp_arena)
+            },
+            #[cfg(feature = "json")]
+            (Scan {
+                sources,
+                file_info,
+                hive_parts,
+                output_schema,
+                mut file_options,
+                predicate,
+                scan_type,
+            }, Some(state)) if predicate.is_none() && self.new_streaming && matches!(&*scan_type, FileScan::NDJson {.. }) =>  {
+                file_options.pre_slice = Some((state.offset, state.len as usize));
+
+                let lp = Scan {
+                    sources,
+                    file_info,
+                    hive_parts,
+                    output_schema,
+                    scan_type,
+                    file_options,
+                    predicate,
+                };
+
+                Ok(lp)
             },
             #[cfg(feature = "parquet")]
             (Scan {
@@ -252,9 +276,9 @@ impl SlicePushDown {
                 output_schema,
                 mut file_options,
                 predicate,
-                scan_type: scan_type @ FileScan::Parquet { .. },
-            }, Some(state)) if predicate.is_none() =>  {
-                file_options.slice = Some((state.offset, state.len as usize));
+                scan_type,
+            }, Some(state)) if predicate.is_none() && matches!(&*scan_type, FileScan::Parquet { .. }) =>  {
+                file_options.pre_slice = Some((state.offset, state.len as usize));
 
                 let lp = Scan {
                     sources,
@@ -277,9 +301,9 @@ impl SlicePushDown {
                 output_schema,
                 mut file_options,
                 predicate,
-                scan_type: scan_type @ FileScan::Ipc { .. },
-            }, Some(state)) if self.new_streaming && predicate.is_none() =>  {
-                file_options.slice = Some((state.offset, state.len as usize));
+                scan_type,
+            }, Some(state)) if self.new_streaming && predicate.is_none() && matches!(&*scan_type, FileScan::Ipc{..})=>  {
+                file_options.pre_slice = Some((state.offset, state.len as usize));
 
                 let lp = Scan {
                     sources,
@@ -304,7 +328,7 @@ impl SlicePushDown {
                 predicate,
                 scan_type
             }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-                options.slice = Some((0, state.len as usize));
+                options.pre_slice = Some((0, state.len as usize));
 
                 let lp = Scan {
                     sources,
@@ -535,6 +559,10 @@ impl SlicePushDown {
             (HConcat {inputs, schema, options}, _) => {
                 // Slice can always be pushed down for horizontal concatenation
                 let lp = HConcat {inputs, schema, options};
+                self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
+            }
+            (lp @ Sink { .. }, _) | (lp @ SinkMultiple { .. }, _) => {
+                // Slice can always be pushed down for sinks
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
             }
             (catch_all, state) => {

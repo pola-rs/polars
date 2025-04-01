@@ -1,3 +1,4 @@
+use polars_compute::rolling::QuantileMethod;
 use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 

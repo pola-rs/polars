@@ -9,7 +9,6 @@ from polars import functions as F
 from polars._utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
-    issue_deprecation_warning,
 )
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
@@ -2724,7 +2723,6 @@ class ExprStringNameSpace:
         │ ["disco"]       │
         │ ["rhap", "ody"] │
         └─────────────────┘
-
         """
         patterns = parse_into_expression(
             patterns, str_as_lit=False, list_as_series=True
@@ -2803,7 +2801,6 @@ class ExprStringNameSpace:
         │ [0]       │
         │ [0, 5]    │
         └───────────┘
-
         """
         patterns = parse_into_expression(
             patterns, str_as_lit=False, list_as_series=True
@@ -2854,6 +2851,11 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_join(delimiter, ignore_nulls=ignore_nulls))
 
+    @deprecate_function(
+        "Use `str.join` instead. Note that the default `delimiter` for `str.join`"
+        " is an empty string instead of a hyphen.",
+        version="1.0.0",
+    )
     def concat(
         self, delimiter: str | None = None, *, ignore_nulls: bool = True
     ) -> Expr:
@@ -2903,11 +2905,6 @@ class ExprStringNameSpace:
         └──────┘
         """
         if delimiter is None:
-            issue_deprecation_warning(
-                "The default `delimiter` for `str.concat` will change from '-' to an empty string."
-                " Pass a delimiter to silence this warning.",
-                version="0.20.5",
-            )
             delimiter = "-"
         return self.join(delimiter, ignore_nulls=ignore_nulls)
 

@@ -33,7 +33,7 @@ impl BinaryChunked {
         match groups {
             GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
-                let arr = ca_self.downcast_iter().next().unwrap();
+                let arr = ca_self.downcast_as_array();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_bin(groups, |(first, idx)| {
                     debug_assert!(idx.len() <= ca_self.len());
@@ -95,7 +95,7 @@ impl BinaryChunked {
         match groups {
             GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
-                let arr = ca_self.downcast_iter().next().unwrap();
+                let arr = ca_self.downcast_as_array();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_bin(groups, |(first, idx)| {
                     debug_assert!(idx.len() <= self.len());

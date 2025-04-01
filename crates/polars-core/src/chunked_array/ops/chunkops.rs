@@ -1,7 +1,8 @@
+use std::borrow::Cow;
 use std::cell::Cell;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::compute::concatenate::concatenate_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
@@ -158,29 +159,40 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             .sum::<usize>();
     }
 
-    pub fn rechunk(&self) -> Self {
+    /// Rechunks this ChunkedArray, returning a new Cow::Owned ChunkedArray if it was
+    /// rechunked or simply a Cow::Borrowed of itself if it was already a single chunk.
+    pub fn rechunk(&self) -> Cow<'_, Self> {
         match self.dtype() {
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 panic!("implementation error")
             },
             _ => {
-                fn inner_rechunk(chunks: &[ArrayRef]) -> Vec<ArrayRef> {
-                    vec![concatenate_owned_unchecked(chunks).unwrap()]
-                }
-
                 if self.chunks.len() == 1 {
-                    self.clone()
+                    Cow::Borrowed(self)
                 } else {
-                    let chunks = inner_rechunk(&self.chunks);
+                    let chunks = vec![concatenate_unchecked(&self.chunks).unwrap()];
 
                     let mut ca = unsafe { self.copy_with_chunks(chunks) };
-
                     use StatisticsFlags as F;
                     ca.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
-                    ca
+                    Cow::Owned(ca)
                 }
             },
+        }
+    }
+
+    /// Rechunks this ChunkedArray in-place.
+    pub fn rechunk_mut(&mut self) {
+        if self.chunks.len() > 1 {
+            let rechunked = concatenate_unchecked(&self.chunks).unwrap();
+            if self.chunks.capacity() <= 8 {
+                // Reuse chunk allocation if not excessive.
+                self.chunks.clear();
+                self.chunks.push(rechunked);
+            } else {
+                self.chunks = vec![rechunked];
+            }
         }
     }
 
@@ -202,6 +214,16 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             }
         }
         bm.into_opt_validity()
+    }
+
+    pub fn with_validities(&mut self, validities: &[Option<Bitmap>]) {
+        assert_eq!(validities.len(), self.chunks.len());
+
+        // SAFETY:
+        // We don't change the data type of the chunks, nor the length.
+        for (arr, validity) in unsafe { self.chunks_mut().iter_mut() }.zip(validities.iter()) {
+            *arr = arr.with_validity(validity.clone())
+        }
     }
 
     /// Split the array. The chunks are reallocated the underlying data slices are zero copy.
@@ -244,7 +266,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         match length {
             0 => match self.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => exec(),
+                DataType::Object(_) => exec(),
                 _ => self.clear(),
             },
             _ => exec(),
@@ -296,7 +318,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     true
                 } else {
                     // Remove the empty chunks
-                    arr.len() > 0
+                    !arr.is_empty()
                 }
             })
         }

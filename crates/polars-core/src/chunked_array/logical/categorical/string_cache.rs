@@ -1,11 +1,10 @@
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{LazyLock, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use hashbrown::hash_table::Entry;
 use hashbrown::HashTable;
-use once_cell::sync::Lazy;
-use polars_utils::aliases::PlRandomState;
+use hashbrown::hash_table::Entry;
+use polars_utils::aliases::PlFixedStateQuality;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::hashing::_HASHMAP_INIT_SIZE;
@@ -216,8 +215,14 @@ impl StringCache {
     /// The global `StringCache` will always use a predictable seed. This allows local builders to mimic
     /// the hashes in case of contention.
     #[inline]
-    pub(crate) fn get_hash_builder() -> PlRandomState {
-        PlRandomState::with_seed(0)
+    pub(crate) fn get_hash_builder() -> PlFixedStateQuality {
+        PlFixedStateQuality::with_seed(0)
+    }
+
+    pub(crate) fn active_cache_id() -> u32 {
+        STRING_CACHE_UUID_CTR
+            .load(Ordering::Relaxed)
+            .wrapping_sub(1)
     }
 
     /// Lock the string cache
@@ -250,4 +255,4 @@ impl StringCache {
     }
 }
 
-pub(crate) static STRING_CACHE: Lazy<StringCache> = Lazy::new(Default::default);
+pub(crate) static STRING_CACHE: LazyLock<StringCache> = LazyLock::new(Default::default);

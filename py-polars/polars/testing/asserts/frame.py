@@ -36,13 +36,13 @@ def assert_frame_equal(
     right
         The second DataFrame or LazyFrame to compare.
     check_row_order
-        Require row order to match.
+        Requires row order to match.
     check_column_order
-        Require column order to match.
+        Requires column order to match.
     check_dtypes
-        Require data types to match.
+        Requires data types to match.
     check_exact
-        Require float values to match exactly. If set to `False`, values are considered
+        Requires float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
         Only affects columns with a Float data type.
     rtol
@@ -218,13 +218,13 @@ def assert_frame_not_equal(
     right
         The second DataFrame or LazyFrame to compare.
     check_row_order
-        Require row order to match.
+        Requires row order to match.
     check_column_order
-        Require column order to match.
+        Requires column order to match.
     check_dtypes
-        Require data types to match.
+        Requires data types to match.
     check_exact
-        Require float values to match exactly. If set to `False`, values are considered
+        Requires float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
         Only affects columns with a Float data type.
     rtol

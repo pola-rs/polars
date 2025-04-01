@@ -595,6 +595,14 @@ fn get_arithmetic_field(
                         polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                     },
                 },
+                (Duration(_), r) if r.is_primitive_numeric() => match op {
+                    Operator::Multiply => {
+                        return Ok(left_field);
+                    },
+                    _ => {
+                        polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    },
+                },
                 #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, Some(scale_left)), Decimal(_, Some(scale_right))) => {
                     let scale = match op {
@@ -681,11 +689,17 @@ fn get_truediv_field(
 ) -> PolarsResult<Field> {
     let mut left_field = ctx.arena.get(left).to_field_impl(ctx, agg_list)?;
     let right_field = ctx.arena.get(right).to_field_impl(ctx, agg_list)?;
+    let out_type = get_truediv_dtype(left_field.dtype(), right_field.dtype())?;
+    left_field.coerce(out_type);
+    Ok(left_field)
+}
+
+fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsResult<DataType> {
     use DataType::*;
 
     // TODO: Re-investigate this. A lot of "_" is being used on the RHS match because this code
     // originally (mostly) only looked at the LHS dtype.
-    let out_type = match (left_field.dtype(), right_field.dtype()) {
+    let out_type = match (left_dtype, right_dtype) {
         (l @ List(a), r @ List(b))
             if ![a, b]
                 .into_iter()
@@ -698,21 +712,13 @@ fn get_truediv_field(
             )
         },
         (list_dtype @ List(_), other_dtype) | (other_dtype, list_dtype @ List(_)) => {
-            list_dtype.cast_leaf(match (list_dtype.leaf_dtype(), other_dtype.leaf_dtype()) {
-                (Float32, Float32) => Float32,
-                (Float32, Float64) | (Float64, Float32) => Float64,
-                // FIXME: We should properly recurse on the enclosing match block here.
-                (dt, _) => dt.clone(),
-            })
+            let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
+            list_dtype.cast_leaf(dtype)
         },
         #[cfg(feature = "dtype-array")]
         (list_dtype @ Array(..), other_dtype) | (other_dtype, list_dtype @ Array(..)) => {
-            list_dtype.cast_leaf(match (list_dtype.leaf_dtype(), other_dtype.leaf_dtype()) {
-                (Float32, Float32) => Float32,
-                (Float32, Float64) | (Float64, Float32) => Float64,
-                // FIXME: We should properly recurse on the enclosing match block here.
-                (dt, _) => dt.clone(),
-            })
+            let dtype = get_truediv_dtype(list_dtype.leaf_dtype(), other_dtype.leaf_dtype())?;
+            list_dtype.cast_leaf(dtype)
         },
         (Float32, _) => Float32,
         #[cfg(feature = "dtype-decimal")]
@@ -724,10 +730,10 @@ fn get_truediv_field(
         #[cfg(feature = "dtype-duration")]
         (Duration(_), Duration(_)) => Float64,
         #[cfg(feature = "dtype-duration")]
-        (Duration(_), dt) if dt.is_primitive_numeric() => return Ok(left_field),
+        (Duration(_), dt) if dt.is_primitive_numeric() => left_dtype.clone(),
         #[cfg(feature = "dtype-duration")]
         (Duration(_), dt) => {
-            polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_field.dtype(), dt)
+            polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_dtype, dt)
         },
         #[cfg(feature = "dtype-datetime")]
         (Datetime(_, _), _) => {
@@ -740,7 +746,5 @@ fn get_truediv_field(
         // we don't know what to do here, best return the dtype
         (dt, _) => dt.clone(),
     };
-
-    left_field.coerce(out_type);
-    Ok(left_field)
+    Ok(out_type)
 }

@@ -268,8 +268,8 @@ mod test {
         // Verify polyfill against naive implementation.
         let mut rng = StdRng::seed_from_u64(0xdeadbeef);
         for _ in 0..100 {
-            let x = rng.gen();
-            let y = rng.gen();
+            let x = rng.r#gen();
+            let y = rng.r#gen();
             assert_eq!(naive_pext64(x, y), pext64_polyfill(x, y, y.count_ones()));
 
             // Test all-zeros and all-ones.

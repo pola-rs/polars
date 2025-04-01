@@ -11,7 +11,7 @@ mod private {
     use polars_error::PolarsResult;
 
     use super::MMapSemaphore;
-    use crate::mem::prefetch_l2;
+    use crate::mem::prefetch::prefetch_l2;
 
     /// A read-only reference to a slice of memory that can potentially be memory-mapped.
     ///
@@ -150,9 +150,9 @@ mod private {
 }
 
 use memmap::MmapOptions;
+use polars_error::PolarsResult;
 #[cfg(target_family = "unix")]
 use polars_error::polars_bail;
-use polars_error::PolarsResult;
 pub use private::MemSlice;
 
 /// A cursor over a [`MemSlice`].
@@ -238,20 +238,14 @@ impl io::Seek for MemReader {
             io::SeekFrom::Start(position) => usize::min(position as usize, self.total_len()),
             io::SeekFrom::End(offset) => {
                 let Some(position) = self.total_len().checked_add_signed(offset as isize) else {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "Seek before to before buffer",
-                    ));
+                    return Err(io::Error::other("Seek before to before buffer"));
                 };
 
                 position
             },
             io::SeekFrom::Current(offset) => {
                 let Some(position) = self.position.checked_add_signed(offset as isize) else {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "Seek before to before buffer",
-                    ));
+                    return Err(io::Error::other("Seek before to before buffer"));
                 };
 
                 position
@@ -268,9 +262,9 @@ impl io::Seek for MemReader {
 // Use a btree as it uses less memory than a hashmap and this thing never shrinks.
 // Write handle in Windows is exclusive, so this is only necessary in Unix.
 #[cfg(target_family = "unix")]
-static MEMORY_MAPPED_FILES: once_cell::sync::Lazy<
+static MEMORY_MAPPED_FILES: std::sync::LazyLock<
     std::sync::Mutex<std::collections::BTreeMap<(u64, u64), u32>>,
-> = once_cell::sync::Lazy::new(|| std::sync::Mutex::new(Default::default()));
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(Default::default()));
 
 #[derive(Debug)]
 pub struct MMapSemaphore {

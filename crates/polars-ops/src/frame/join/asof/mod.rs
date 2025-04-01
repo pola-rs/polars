@@ -206,8 +206,8 @@ fn check_asof_columns(
     a: &Series,
     b: &Series,
     has_tolerance: bool,
-    sorted_err: bool,
     check_sortedness: bool,
+    by_groups_present: bool,
 ) -> PolarsResult<()> {
     let dtype_a = a.dtype();
     let dtype_b = b.dtype();
@@ -230,19 +230,11 @@ fn check_asof_columns(
         a.dtype(), b.dtype()
     );
     if check_sortedness {
-        if sorted_err {
+        if by_groups_present {
+            polars_warn!("Sortedness of columns cannot be checked when 'by' groups provided");
+        } else {
             a.ensure_sorted_arg("asof_join")?;
             b.ensure_sorted_arg("asof_join")?;
-        } else {
-            let msg = |side| {
-                format!("{side} key of asof join is not sorted.\n\nThis can lead to invalid results. Ensure the asof key is sorted")
-            };
-            if a.ensure_sorted_arg("asof_join").is_err() {
-                polars_warn!(msg("left"))
-            }
-            if b.ensure_sorted_arg("asof_join").is_err() {
-                polars_warn!(msg("right"))
-            }
         }
     }
     Ok(())
@@ -282,8 +274,8 @@ pub trait AsofJoin: IntoDf {
             left_key,
             right_key,
             tolerance.is_some(),
-            true,
             check_sortedness,
+            false,
         )?;
         let left_key = left_key.to_physical_repr();
         let right_key = right_key.to_physical_repr();
@@ -295,6 +287,11 @@ pub trait AsofJoin: IntoDf {
             },
             DataType::Int32 => {
                 let ca = left_key.i32().unwrap();
+                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            },
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => {
+                let ca = left_key.i128().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
             DataType::UInt64 => {

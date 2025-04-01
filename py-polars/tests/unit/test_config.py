@@ -160,15 +160,7 @@ def test_set_tbl_rows() -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t…\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t…\n\t5\n]"
 
     pl.Config.set_tbl_rows(3)
     assert (
@@ -184,16 +176,7 @@ def test_set_tbl_rows() -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t2\n"
-        "\t…\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t2\n\t…\n\t5\n]"
 
     pl.Config.set_tbl_rows(4)
     assert (
@@ -209,17 +192,7 @@ def test_set_tbl_rows() -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t2\n"
-        "\t…\n"
-        "\t4\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t2\n\t…\n\t4\n\t5\n]"
 
     df = pl.DataFrame(
         {
@@ -245,17 +218,7 @@ def test_set_tbl_rows() -> None:
     )
 
     pl.Config.set_tbl_rows(-1)
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t2\n"
-        "\t3\n"
-        "\t4\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t2\n\t3\n\t4\n\t5\n]"
 
     pl.Config.set_tbl_hide_dtype_separator(True)
     assert (
@@ -974,6 +937,7 @@ def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
 @pytest.mark.parametrize(
     ("environment_variable", "config_setting", "value", "expected"),
     [
+        ("POLARS_ENGINE_AFFINITY", "set_engine_affinity", "gpu", "gpu"),
         ("POLARS_AUTO_STRUCTIFY", "set_auto_structify", True, "1"),
         ("POLARS_FMT_MAX_COLS", "set_tbl_cols", 12, "12"),
         ("POLARS_FMT_MAX_ROWS", "set_tbl_rows", 3, "3"),

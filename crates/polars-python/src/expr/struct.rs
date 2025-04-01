@@ -1,8 +1,8 @@
 use pyo3::prelude::*;
 
+use crate::PyExpr;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
-use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {

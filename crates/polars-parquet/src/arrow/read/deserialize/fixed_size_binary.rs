@@ -4,19 +4,19 @@ use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::storage::SharedStorage;
 use arrow::types::{
-    Bytes12Alignment4, Bytes16Alignment16, Bytes1Alignment1, Bytes2Alignment2, Bytes32Alignment16,
-    Bytes4Alignment4, Bytes8Alignment8,
+    Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8, Bytes12Alignment4,
+    Bytes16Alignment16, Bytes32Alignment16,
 };
 use bytemuck::Zeroable;
 
 use super::dictionary_encoded::append_validity;
 use super::utils::array_chunks::ArrayChunks;
-use super::utils::{dict_indices_decoder, freeze_validity, Decoder};
+use super::utils::{Decoder, dict_indices_decoder, freeze_validity};
 use super::{Filter, PredicateFilter};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
-use crate::parquet::encoding::{hybrid_rle, Encoding};
+use crate::parquet::encoding::{Encoding, hybrid_rle};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::read::deserialize::dictionary_encoded::constrain_page_validity;
 use crate::read::deserialize::utils;
 

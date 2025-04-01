@@ -2,16 +2,17 @@
 //!
 //! It also provides utility functions for working with SQL datatypes.
 use polars_core::datatypes::{DataType, TimeUnit};
-use polars_error::{polars_bail, PolarsResult};
-use polars_plan::dsl::{lit, Expr};
-use regex::{Regex, RegexBuilder};
+use polars_error::{PolarsResult, polars_bail};
+use polars_plan::dsl::{Expr, lit};
 use sqlparser::ast::{
     ArrayElemTypeDef, DataType as SQLDataType, ExactNumberInfo, Ident, ObjectName, TimezoneInfo,
 };
 
-static DATETIME_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-static DATE_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-static TIME_LITERAL_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+polars_utils::regex_cache::cached_regex! {
+    static DATETIME_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$";
+    static DATE_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d$";
+    static TIME_LITERAL_RE = r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$";
+}
 
 pub fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
     let n_bits = b.len();
@@ -32,32 +33,15 @@ pub fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
 }
 
 pub fn is_iso_datetime(value: &str) -> bool {
-    let dtm_regex = DATETIME_LITERAL_RE.get_or_init(|| {
-        RegexBuilder::new(
-            r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$",
-        )
-        .build()
-        .unwrap()
-    });
-    dtm_regex.is_match(value)
+    DATETIME_LITERAL_RE.is_match(value)
 }
 
 pub fn is_iso_date(value: &str) -> bool {
-    let dt_regex = DATE_LITERAL_RE.get_or_init(|| {
-        RegexBuilder::new(r"^\d{4}-[01]\d-[0-3]\d$")
-            .build()
-            .unwrap()
-    });
-    dt_regex.is_match(value)
+    DATE_LITERAL_RE.is_match(value)
 }
 
 pub fn is_iso_time(value: &str) -> bool {
-    let tm_regex = TIME_LITERAL_RE.get_or_init(|| {
-        RegexBuilder::new(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$")
-            .build()
-            .unwrap()
-    });
-    tm_regex.is_match(value)
+    TIME_LITERAL_RE.is_match(value)
 }
 
 fn timeunit_from_precision(prec: &Option<u64>) -> PolarsResult<TimeUnit> {

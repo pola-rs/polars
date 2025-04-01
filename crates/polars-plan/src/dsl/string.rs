@@ -41,13 +41,13 @@ impl StringNameSpace {
     ///   ASCII letters (a-z and A-Z) only.
     #[cfg(feature = "find_many")]
     pub fn contains_any(self, patterns: Expr, ascii_case_insensitive: bool) -> Expr {
-        self.0.map_many_private(
+        self.0.apply_many_private(
             FunctionExpr::StringExpr(StringFunction::ContainsAny {
                 ascii_case_insensitive,
             }),
             &[patterns],
             false,
-            None,
+            false,
         )
     }
 
@@ -65,13 +65,13 @@ impl StringNameSpace {
         replace_with: Expr,
         ascii_case_insensitive: bool,
     ) -> Expr {
-        self.0.map_many_private(
+        self.0.apply_many_private(
             FunctionExpr::StringExpr(StringFunction::ReplaceMany {
                 ascii_case_insensitive,
             }),
             &[patterns, replace_with],
             false,
-            None,
+            false,
         )
     }
 
@@ -89,14 +89,14 @@ impl StringNameSpace {
         ascii_case_insensitive: bool,
         overlapping: bool,
     ) -> Expr {
-        self.0.map_many_private(
+        self.0.apply_many_private(
             FunctionExpr::StringExpr(StringFunction::ExtractMany {
                 ascii_case_insensitive,
                 overlapping,
             }),
             &[patterns],
             false,
-            None,
+            false,
         )
     }
 
@@ -114,14 +114,14 @@ impl StringNameSpace {
         ascii_case_insensitive: bool,
         overlapping: bool,
     ) -> Expr {
-        self.0.map_many_private(
+        self.0.apply_many_private(
             FunctionExpr::StringExpr(StringFunction::FindMany {
                 ascii_case_insensitive,
                 overlapping,
             }),
             &[patterns],
             false,
-            None,
+            false,
         )
     }
 
@@ -188,7 +188,7 @@ impl StringNameSpace {
         // and we need to compile it here to determine the output datatype
 
         use polars_utils::format_pl_smallstr;
-        let reg = regex::Regex::new(pat)?;
+        let reg = polars_utils::regex_cache::compile_regex(pat)?;
         let names = reg
             .capture_names()
             .enumerate()
@@ -297,12 +297,22 @@ impl StringNameSpace {
     /// Convert a String column into a Date/Datetime/Time column.
     #[cfg(feature = "temporal")]
     pub fn strptime(self, dtype: DataType, options: StrptimeOptions, ambiguous: Expr) -> Expr {
-        self.0.map_many_private(
-            StringFunction::Strptime(dtype, options).into(),
-            &[ambiguous],
-            false,
-            None,
-        )
+        // Only elementwise if the format is explicitly set, or we're constant.
+        if options.format.is_some() || is_column_independent(&self.0) {
+            self.0.map_many_private(
+                StringFunction::Strptime(dtype, options).into(),
+                &[ambiguous],
+                false,
+                None,
+            )
+        } else {
+            self.0.apply_many_private(
+                StringFunction::Strptime(dtype, options).into(),
+                &[ambiguous],
+                false,
+                false,
+            )
+        }
     }
 
     /// Convert a String column into a Date column.

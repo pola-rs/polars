@@ -1,6 +1,5 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
-use polars_plan::prelude::LiteralValue::Null;
 use polars_sql::*;
 
 #[test]
@@ -58,8 +57,14 @@ fn test_string_functions() {
                 .str()
                 .strip_chars_end(lit("x"))
                 .alias("trim_a_trailing"),
-            col("a").str().strip_chars_start(lit(Null)).alias("ltrim_a"),
-            col("a").str().strip_chars_end(lit(Null)).alias("rtrim_a"),
+            col("a")
+                .str()
+                .strip_chars_start(lit(LiteralValue::untyped_null()))
+                .alias("ltrim_a"),
+            col("a")
+                .str()
+                .strip_chars_end(lit(LiteralValue::untyped_null()))
+                .alias("rtrim_a"),
             col("a")
                 .str()
                 .strip_chars_start(lit("-"))

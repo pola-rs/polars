@@ -1,6 +1,7 @@
 mod evaluate;
 #[cfg(feature = "cse")]
 mod hash;
+mod minterm_iter;
 pub mod predicates;
 mod scalar;
 mod schema;
@@ -10,6 +11,8 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
+pub use minterm_iter::MintermIter;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};

@@ -4,10 +4,11 @@ use hive::HivePartitions;
 use polars_core::config;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_io::predicates::SkipBatchPredicate;
 use polars_io::RowIndex;
+use polars_io::predicates::SkipBatchPredicate;
 
 use super::Executor;
+use crate::ScanPredicate;
 #[cfg(feature = "csv")]
 use crate::executors::CsvExec;
 #[cfg(feature = "ipc")]
@@ -17,7 +18,6 @@ use crate::executors::JsonExec;
 #[cfg(feature = "parquet")]
 use crate::executors::ParquetExec;
 use crate::prelude::*;
-use crate::ScanPredicate;
 
 pub struct PhysicalExprWithConstCols {
     constants: Vec<(PlSmallStr, Scalar)>,
@@ -58,16 +58,6 @@ impl PhysicalExpr for PhysicalExprWithConstCols {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.child.to_field(input_schema)
-    }
-
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<polars_io::predicates::SpecializedColumnPredicateExpr>,
-    )> {
-        self.child.isolate_column_expr(name)
     }
 
     fn is_scalar(&self) -> bool {
@@ -142,7 +132,7 @@ fn source_to_exec(
                 None,
                 options,
                 cloud_options.clone(),
-                file_options.clone(),
+                Box::new(file_options.clone()),
                 metadata.cloned(),
             ))
         },
@@ -162,7 +152,7 @@ fn source_to_exec(
                 sources: source,
                 file_info,
                 options,
-                file_options,
+                file_options: Box::new(file_options),
                 predicate: None,
             })
         },
@@ -202,7 +192,7 @@ fn source_to_exec(
             Box::new(JsonExec::new(
                 source,
                 options,
-                file_options,
+                Box::new(file_options),
                 file_info,
                 None,
             ))
@@ -217,8 +207,8 @@ pub struct MultiScanExec {
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<ScanPredicate>,
-    file_options: FileScanOptions,
-    scan_type: FileScan,
+    file_options: Box<FileScanOptions>,
+    scan_type: Box<FileScan>,
 }
 
 impl MultiScanExec {
@@ -227,8 +217,8 @@ impl MultiScanExec {
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ScanPredicate>,
-        file_options: FileScanOptions,
-        scan_type: FileScan,
+        file_options: Box<FileScanOptions>,
+        scan_type: Box<FileScan>,
     ) -> Self {
         Self {
             sources,
@@ -301,7 +291,7 @@ impl MultiScanExec {
 
         let allow_missing_columns = self.file_options.allow_missing_columns;
         self.file_options.allow_missing_columns = false;
-        let slice = self.file_options.slice.take();
+        let slice = self.file_options.pre_slice.take();
 
         let mut first_slice_file = None;
         let mut slice = match slice {
@@ -353,7 +343,7 @@ impl MultiScanExec {
         let mut dfs = Vec::with_capacity(self.sources.len());
 
         // @TODO: This should be moved outside of the FileScan::Parquet
-        let use_statistics = match &self.scan_type {
+        let use_statistics = match &*self.scan_type {
             #[cfg(feature = "parquet")]
             FileScan::Parquet { options, .. } => options.use_statistics,
             _ => true,
@@ -423,10 +413,13 @@ impl MultiScanExec {
             let skip_batch_predicate = file_predicate
                 .as_ref()
                 .take_if(|_| use_statistics)
-                .and_then(|p| p.to_dyn_skip_batch_predicate(self.file_info.schema.as_ref()));
+                .and_then(|p| p.to_dyn_skip_batch_predicate(self.file_info.schema.clone()));
             if let Some(skip_batch_predicate) = &skip_batch_predicate {
-                let can_skip_batch = skip_batch_predicate
-                    .can_skip_batch(exec_source.num_unfiltered_rows()?, PlIndexMap::default())?;
+                let can_skip_batch = skip_batch_predicate.can_skip_batch(
+                    exec_source.num_unfiltered_rows()?,
+                    file_predicate.as_ref().unwrap().live_columns.as_ref(),
+                    PlIndexMap::default(),
+                )?;
                 if can_skip_batch && verbose {
                     eprintln!(
                         "File statistics allows skipping of '{}'",

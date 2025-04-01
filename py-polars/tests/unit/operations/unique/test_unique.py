@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import with_string_cache_if_auto_streaming
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -108,13 +109,15 @@ def test_struct_unique_df() -> None:
 
 
 def test_sorted_unique_dates() -> None:
-    assert (
+    out = (
         pl.DataFrame(
             [pl.Series("dt", [date(2015, 6, 24), date(2015, 6, 23)], dtype=pl.Date)]
         )
         .sort("dt")
         .unique(maintain_order=False)
-    ).to_dict(as_series=False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
+    )
+    expected = pl.DataFrame({"dt": [date(2015, 6, 23), date(2015, 6, 24)]})
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 @pytest.mark.parametrize("maintain_order", [True, False])
@@ -202,6 +205,7 @@ def test_unique_with_bad_subset(
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+@with_string_cache_if_auto_streaming
 def test_categorical_unique_19409() -> None:
     df = pl.DataFrame({"x": [str(n % 50) for n in range(127)]}).cast(pl.Categorical)
     uniq = df.unique()
@@ -277,3 +281,9 @@ def test_unique_nan_12950() -> None:
     df = pl.DataFrame({"x": float("nan")})
     result = df.unique()
     assert_frame_equal(result, df)
+
+
+def test_unique_lengths_21654() -> None:
+    for n in range(0, 1000, 37):
+        df = pl.DataFrame({"x": pl.int_range(n, eager=True)})
+        assert df.unique().height == n

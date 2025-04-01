@@ -760,3 +760,21 @@ def test_agg_scalar_empty_groups_20115() -> None:
         ),
         pl.select(key=pl.lit(123, pl.Int64), value=pl.lit(None, pl.Int64)),
     )
+
+
+def test_agg_expr_returns_list_type_15574() -> None:
+    assert (
+        pl.LazyFrame({"a": [1, None], "b": [1, 2]})
+        .group_by("b")
+        .agg(pl.col("a").drop_nulls())
+        .collect_schema()
+    ) == {"b": pl.Int64, "a": pl.List(pl.Int64)}
+
+
+def test_empty_agg_22005() -> None:
+    out = (
+        pl.concat([pl.LazyFrame({"a": [1, 2]}), pl.LazyFrame({"a": [1, 2]})])
+        .limit(0)
+        .select(pl.col("a").sum())
+    )
+    assert_frame_equal(out.collect(), pl.DataFrame({"a": 0}))

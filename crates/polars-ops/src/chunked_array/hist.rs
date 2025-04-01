@@ -57,15 +57,15 @@ where
             // User-supplied bin count, or 10 by default. Compute edges from the data.
             let bin_count = bin_count.unwrap_or(DEFAULT_BIN_COUNT);
             let n = ca.len() - ca.null_count();
-            let (offset, width) = if n == 0 {
+            let (offset, width, upper_limit) = if n == 0 {
                 // No non-null items; supply unit interval.
-                (0.0, 1.0 / bin_count as f64)
+                (0.0, 1.0 / bin_count as f64, 1.0)
             } else if n == 1 {
                 // Unit interval around single point
                 let idx = ca.first_non_null().unwrap();
                 // SAFETY: idx is guaranteed to contain an element.
                 let center = unsafe { ca.get_unchecked(idx) }.unwrap().to_f64().unwrap();
-                (center - 0.5, 1.0 / bin_count as f64)
+                (center - 0.5, 1.0 / bin_count as f64, center + 0.5)
             } else {
                 // Determine outer bin edges from the data itself
                 let min_value = ca.min().unwrap().to_f64().unwrap();
@@ -73,14 +73,21 @@ where
 
                 // All data points are identical--use unit interval.
                 if min_value == max_value {
-                    (min_value - 0.5, 1.0 / bin_count as f64)
+                    (min_value - 0.5, 1.0 / bin_count as f64, max_value + 0.5)
                 } else {
                     pad_lower = true;
-                    (min_value, (max_value - min_value) / bin_count as f64)
+                    (
+                        min_value,
+                        (max_value - min_value) / bin_count as f64,
+                        max_value,
+                    )
                 }
             };
-            let out = (0..bin_count + 1)
+            // Manually set the final value to the maximum value to ensure the final value isn't
+            // missed due to floating-point precision.
+            let out = (0..bin_count)
                 .map(|x| (x as f64 * width) + offset)
+                .chain(std::iter::once(upper_limit))
                 .collect::<Vec<f64>>();
             (out, true)
         },
@@ -134,16 +141,17 @@ where
     let mut breaks_iter = breaks.iter().skip(1); // Skip the first lower bound
     let (min_break, max_break) = (breaks[0], breaks[breaks.len() - 1]);
     let mut upper_bound = *breaks_iter.next().unwrap();
-    let sorted = ca.sort(false).rechunk();
+    let mut sorted = ca.sort(false);
+    sorted.rechunk_mut();
     let mut current_count: IdxSize = 0;
-    let chunk = sorted.downcast_iter().next().unwrap();
+    let chunk = sorted.downcast_as_array();
     let mut count: Vec<IdxSize> = Vec::with_capacity(num_bins);
 
     'item: for item in chunk.non_null_values_iter() {
         let item = item.to_f64().unwrap();
 
         // Cycle through items until we hit the first bucket.
-        if item < min_break || (exclude_lower && item == min_break) {
+        if item.is_nan() || item < min_break || (exclude_lower && item == min_break) {
             continue;
         }
 

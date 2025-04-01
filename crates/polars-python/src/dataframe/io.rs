@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 #[cfg(feature = "cloud")]
 use cloud::credential_provider::PlCredentialProvider;
+use polars::io::RowIndex;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-use polars::io::RowIndex;
 use polars::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
@@ -15,17 +15,17 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
 use super::PyDataFrame;
+use crate::conversion::Wrap;
 #[cfg(feature = "parquet")]
 use crate::conversion::parse_parquet_compression;
-use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::file::{
-    get_either_file, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
-    EitherRustPythonFile,
+    EitherRustPythonFile, get_either_file, get_file_like, get_mmap_bytes_reader,
+    get_mmap_bytes_reader_and_path,
 };
+use crate::prelude::PyCompatLevel;
 #[cfg(feature = "cloud")]
 use crate::prelude::parse_cloud_options;
-use crate::prelude::PyCompatLevel;
 use crate::utils::EnterPolarsExt;
 
 #[pymethods]
@@ -362,7 +362,7 @@ impl PyDataFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             )
         } else {
@@ -372,10 +372,10 @@ impl PyDataFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
+        let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
         py.enter_polars(|| {
-            CsvWriter::new(f)
+            CsvWriter::new(&mut f)
                 .include_bom(include_bom)
                 .include_header(include_header)
                 .with_separator(separator)
@@ -389,7 +389,9 @@ impl PyDataFrame {
                 .with_float_precision(float_precision)
                 .with_null_value(null)
                 .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
-                .finish(&mut self.df)
+                .finish(&mut self.df)?;
+
+            crate::file::close_file(f)
         })
     }
 
@@ -424,7 +426,7 @@ impl PyDataFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             )
         } else {
@@ -443,7 +445,6 @@ impl PyDataFrame {
                     statistics: statistics.0,
                     row_group_size,
                     data_page_size,
-                    maintain_order: true,
                 };
                 write_partitioned_dataset(
                     &mut self.df,
@@ -456,44 +457,46 @@ impl PyDataFrame {
             });
         };
 
-        let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
+        let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
         py.enter_polars(|| {
-            ParquetWriter::new(BufWriter::new(f))
+            ParquetWriter::new(BufWriter::new(&mut f))
                 .with_compression(compression)
                 .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)
                 .with_data_page_size(data_page_size)
-                .finish(&mut self.df)
-                .map(|_| ())
+                .finish(&mut self.df)?;
+
+            crate::file::close_file(f)
         })
     }
 
     #[cfg(feature = "json")]
-    pub fn write_json(&mut self, py_f: PyObject) -> PyResult<()> {
+    pub fn write_json(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
+        py.enter_polars(|| {
+            // TODO: Cloud support
 
-        // TODO: Cloud support
-
-        JsonWriter::new(file)
-            .with_json_format(JsonFormat::Json)
-            .finish(&mut self.df)
-            .map_err(PyPolarsErr::from)?;
-        Ok(())
+            JsonWriter::new(file)
+                .with_json_format(JsonFormat::Json)
+                .finish(&mut self.df)
+        })
     }
 
     #[cfg(feature = "json")]
-    pub fn write_ndjson(&mut self, py_f: PyObject) -> PyResult<()> {
+    pub fn write_ndjson(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
 
         // TODO: Cloud support
 
-        JsonWriter::new(file)
-            .with_json_format(JsonFormat::JsonLines)
-            .finish(&mut self.df)
-            .map_err(PyPolarsErr::from)?;
+        py.enter_polars(|| {
+            // TODO: Cloud support
 
-        Ok(())
+            JsonWriter::new(file)
+                .with_json_format(JsonFormat::JsonLines)
+                .finish(&mut self.df)
+                .map_err(PyPolarsErr::from)
+        })
     }
 
     #[cfg(feature = "ipc")]
@@ -517,7 +520,7 @@ impl PyDataFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             )
         } else {
@@ -527,13 +530,15 @@ impl PyDataFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
+        let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
         py.enter_polars(|| {
-            IpcWriter::new(f)
+            IpcWriter::new(&mut f)
                 .with_compression(compression.0)
                 .with_compat_level(compat_level.0)
-                .finish(&mut self.df)
+                .finish(&mut self.df)?;
+
+            crate::file::close_file(f)
         })
     }
 

@@ -8,7 +8,7 @@ use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics};
 use crate::read::schema::is_nullable;
 use crate::write::binary::encode_non_null_values;
 use crate::write::utils::invalid_encoding;
-use crate::write::{utils, EncodeNullability, Encoding, Page, StatisticsOptions, WriteOptions};
+use crate::write::{EncodeNullability, Encoding, Page, StatisticsOptions, WriteOptions, utils};
 
 pub(crate) fn encode_plain(
     array: &BinaryViewArray,

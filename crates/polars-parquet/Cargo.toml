@@ -13,7 +13,6 @@ repository = { workspace = true }
 description = "Apache Parquet I/O operations for Polars"
 
 [dependencies]
-ahash = { workspace = true }
 arrow = { workspace = true, features = ["io_ipc"] }
 base64 = { workspace = true }
 bytemuck = { workspace = true }

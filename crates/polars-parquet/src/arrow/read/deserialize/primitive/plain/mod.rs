@@ -431,7 +431,7 @@ fn decode_masked_optional<B: AlignedBytes>(
     let mut num_rows_left = num_rows;
     let mut value_offset = 0;
 
-    let mut iter = |mut f: u64, mut v: u64, len: usize| {
+    let mut iter = |mut f: u64, mut v: u64| {
         if num_rows_left == 0 {
             return false;
         }
@@ -483,7 +483,7 @@ fn decode_masked_optional<B: AlignedBytes>(
         unsafe {
             target_ptr = target_ptr.add(num_written);
         }
-        value_offset += len;
+        value_offset += num_chunk_values;
         num_rows_left -= num_written;
         num_values_left -= num_chunk_values;
 
@@ -491,17 +491,15 @@ fn decode_masked_optional<B: AlignedBytes>(
     };
 
     for (f, v) in mask_iter.by_ref().zip(validity_iter.by_ref()) {
-        if !iter(f, v, 56) {
+        if !iter(f, v) {
             break;
         }
     }
 
     let (f, fl) = mask_iter.remainder();
     let (v, vl) = validity_iter.remainder();
-
     assert_eq!(fl, vl);
-
-    iter(f, v, fl);
+    iter(f, v);
 
     unsafe { target.set_len(start_length + num_rows) };
 

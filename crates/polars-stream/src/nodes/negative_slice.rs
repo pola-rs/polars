@@ -25,7 +25,6 @@ pub struct NegativeSliceNode {
     state: NegativeSliceState,
     slice_offset: i64,
     length: usize,
-    num_pipelines: usize,
 }
 
 impl NegativeSliceNode {
@@ -35,7 +34,6 @@ impl NegativeSliceNode {
             state: NegativeSliceState::Buffering(Buffer::default()),
             slice_offset,
             length,
-            num_pipelines: 0,
         }
     }
 }
@@ -45,11 +43,12 @@ impl ComputeNode for NegativeSliceNode {
         "negative_slice"
     }
 
-    fn initialize(&mut self, num_pipelines: usize) {
-        self.num_pipelines = num_pipelines;
-    }
-
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         use NegativeSliceState::*;
 
         if send[0] == PortState::Done || self.length == 0 {
@@ -72,8 +71,9 @@ impl ComputeNode for NegativeSliceNode {
                     signed_start_offset -= len as i64;
                 }
 
-                while buffer.total_len as i64 - buffer.frames.back().unwrap().height() as i64
-                    > signed_stop_offset
+                while !buffer.frames.is_empty()
+                    && buffer.total_len as i64 - buffer.frames.back().unwrap().height() as i64
+                        > signed_stop_offset
                 {
                     buffer.total_len -= buffer.frames.pop_back().unwrap().height();
                 }
@@ -83,9 +83,8 @@ impl ComputeNode for NegativeSliceNode {
                 } else {
                     let mut df = accumulate_dataframes_vertical_unchecked(buffer.frames.drain(..));
                     df = df.slice(signed_start_offset, self.length);
-                    let mut node = InMemorySourceNode::new(Arc::new(df), MorselSeq::default());
-                    node.initialize(self.num_pipelines);
-                    self.state = Source(node);
+                    self.state =
+                        Source(InMemorySourceNode::new(Arc::new(df), MorselSeq::default()));
                 }
             }
         }
@@ -97,7 +96,7 @@ impl ComputeNode for NegativeSliceNode {
             },
             Source(node) => {
                 recv[0] = PortState::Done;
-                node.update_state(&mut [], send)?;
+                node.update_state(&mut [], send, state)?;
             },
             Done => {
                 recv[0] = PortState::Done;
@@ -112,7 +111,7 @@ impl ComputeNode for NegativeSliceNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);

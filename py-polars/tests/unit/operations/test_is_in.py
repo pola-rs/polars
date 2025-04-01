@@ -37,12 +37,88 @@ def test_struct_logical_is_in() -> None:
     assert s1.is_in(s2).to_list() == [False, False, True, True, True, True, True]
 
 
-def test_is_in_bool() -> None:
+def test_struct_logical_is_in_nonullpropagate() -> None:
+    s = pl.Series([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3), None])
+    df1 = pl.DataFrame(
+        {
+            "x": s,
+            "y": [0, 4, 6, None],
+        }
+    )
+    s = pl.Series([date(2022, 2, 1), date(2022, 1, 2), date(2022, 2, 3), None])
+    df2 = pl.DataFrame(
+        {
+            "x": s,
+            "y": [6, 4, 3, None],
+        }
+    )
+
+    # Left has no nulls, right has nulls
+    s1 = df1.select(pl.struct(["x", "y"])).to_series()
+    s1 = s1.extend_constant(s1[0], 1)
+    s2 = df2.select(pl.struct(["x", "y"])).to_series().extend_constant(None, 1)
+    assert s1.is_in(s2, nulls_equal=False).to_list() == [
+        False,
+        True,
+        False,
+        True,
+        False,
+    ]
+    assert s1.is_in(s2, nulls_equal=True).to_list() == [
+        False,
+        True,
+        False,
+        True,
+        False,
+    ]
+
+    # Left has nulls, right has no nulls
+    s1 = df1.select(pl.struct(["x", "y"])).to_series().extend_constant(None, 1)
+    s2 = df2.select(pl.struct(["x", "y"])).to_series()
+    s2 = s2.extend_constant(s2[0], 1)
+    assert s1.is_in(s2, nulls_equal=False).to_list() == [
+        False,
+        True,
+        False,
+        True,
+        None,
+    ]
+    assert s1.is_in(s2, nulls_equal=True).to_list() == [
+        False,
+        True,
+        False,
+        True,
+        False,
+    ]
+
+    # Both have nulls
+    # {None, None} is a valid element unaffected by the missing parameter.
+    s1 = df1.select(pl.struct(["x", "y"])).to_series().extend_constant(None, 1)
+    s2 = df2.select(pl.struct(["x", "y"])).to_series().extend_constant(None, 1)
+    assert s1.is_in(s2, nulls_equal=False).to_list() == [
+        False,
+        True,
+        False,
+        True,
+        None,
+    ]
+    assert s1.is_in(s2, nulls_equal=True).to_list() == [
+        False,
+        True,
+        False,
+        True,
+        True,
+    ]
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_bool(nulls_equal: bool) -> None:
     vals = [True, None]
     df = pl.DataFrame({"A": [True, False, None]})
-    assert df.select(pl.col("A").is_in(vals)).to_dict(as_series=False) == {
-        "A": [True, False, None]
-    }
+    missing_value = True if nulls_equal else None
+    assert df.select(pl.col("A").is_in(vals, nulls_equal=nulls_equal)).to_dict(
+        as_series=False
+    ) == {"A": [True, False, missing_value]}
 
 
 def test_is_in_bool_11216() -> None:
@@ -51,8 +127,9 @@ def test_is_in_bool_11216() -> None:
     assert_series_equal(s, expected)
 
 
-def test_is_in_empty_list_4559() -> None:
-    assert pl.Series(["a"]).is_in([]).to_list() == [False]
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_empty_list_4559(nulls_equal: bool) -> None:
+    assert pl.Series(["a"]).is_in([], nulls_equal=nulls_equal).to_list() == [False]
 
 
 def test_is_in_empty_list_4639() -> None:
@@ -152,10 +229,72 @@ def test_is_in_series() -> None:
     assert_series_equal(c, pl.Series("c", [True, False]))
 
 
-def test_is_in_null() -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_null(nulls_equal: bool) -> None:
+    # No nulls in right
     s = pl.Series([None, None], dtype=pl.Null)
-    result = s.is_in([1, 2, None])
-    expected = pl.Series([None, None], dtype=pl.Boolean)
+    result = s.is_in([1, 2], nulls_equal=nulls_equal)
+    missing_value = False if nulls_equal else None
+    expected = pl.Series([missing_value, missing_value], dtype=pl.Boolean)
+    assert_series_equal(result, expected)
+
+    # Nulls in right
+    s = pl.Series([None, None], dtype=pl.Null)
+    result = s.is_in([None, None], nulls_equal=nulls_equal)
+    missing_value = True if nulls_equal else None
+    expected = pl.Series([missing_value, missing_value], dtype=pl.Boolean)
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_boolean(nulls_equal: bool) -> None:
+    # Nulls in neither left nor right
+    s = pl.Series([True, False])
+    result = s.is_in([True, False], nulls_equal=nulls_equal)
+    expected = pl.Series([True, True])
+    assert_series_equal(result, expected)
+
+    # Nulls in left only
+    s = pl.Series([True, None])
+    result = s.is_in([False, False], nulls_equal=nulls_equal)
+    missing_value = False if nulls_equal else None
+    expected = pl.Series([False, missing_value])
+    assert_series_equal(result, expected)
+
+    # Nulls in right only
+    s = pl.Series([True, False])
+    result = s.is_in([True, None], nulls_equal=nulls_equal)
+    expected = pl.Series([True, False])
+    assert_series_equal(result, expected)
+
+    # Nulls in both
+    s = pl.Series([True, False, None])
+    result = s.is_in([True, None], nulls_equal=nulls_equal)
+    missing_value = True if nulls_equal else None
+    expected = pl.Series([True, False, missing_value])
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.List(pl.Boolean), pl.Array(pl.Boolean, 2)])
+def test_is_in_boolean_list(dtype: PolarsDataType) -> None:
+    # Note list is_in does not propagate nulls.
+    df = pl.DataFrame(
+        {
+            "a": [True, False, None, None, None],
+            "b": pl.Series(
+                [
+                    [True, False],
+                    [True, True],
+                    [None, True],
+                    [False, True],
+                    [True, True],
+                ],
+                dtype=dtype,
+            ),
+        }
+    )
+    result = df.select(pl.col("a").is_in("b"))["a"]
+    expected = pl.Series("a", [True, False, True, False, False])
     assert_series_equal(result, expected)
 
 
@@ -225,10 +364,46 @@ def test_is_in_expr_list_series(
             df.select(expr_is_in)
 
 
-def test_is_in_null_series() -> None:
+@pytest.mark.parametrize(
+    ("df", "matches"),
+    [
+        (
+            pl.DataFrame({"a": [1, None], "b": [[1.0, 2.5, 4.0], [3.0, 4.0, 5.0]]}),
+            [True, False],
+        ),
+        (
+            pl.DataFrame({"a": [1, None], "b": [[0.0, 2.5, None], [3.0, 4.0, None]]}),
+            [False, True],
+        ),
+        (
+            pl.DataFrame(
+                {"a": [None, None], "b": [[1, 2], [3, 4]]},
+                schema_overrides={"a": pl.Null},
+            ),
+            [False, False],
+        ),
+        (
+            pl.DataFrame(
+                {"a": [None, None], "b": [[1, 2], [3, None]]},
+                schema_overrides={"a": pl.Null},
+            ),
+            [False, True],
+        ),
+    ],
+)
+def test_is_in_expr_list_series_nonullpropagate(
+    df: pl.DataFrame, matches: list[bool]
+) -> None:
+    expr_is_in = pl.col("a").is_in(pl.col("b"), nulls_equal=True)
+    assert df.select(expr_is_in).to_series().to_list() == matches
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_null_series(nulls_equal: bool) -> None:
     df = pl.DataFrame({"a": ["a", "b", None]})
-    result = df.select(pl.col("a").is_in([None]))
-    expected = pl.DataFrame({"a": [False, False, None]})
+    result = df.select(pl.col("a").is_in([None], nulls_equal=nulls_equal))
+    missing_value = True if nulls_equal else None
+    expected = pl.DataFrame({"a": [False, False, missing_value]})
     assert_frame_equal(result, expected)
 
 
@@ -254,55 +429,67 @@ def test_is_in_date_range() -> None:
 
 @StringCache()
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
-def test_cat_is_in_series(dtype: pl.DataType) -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_cat_is_in_series(dtype: pl.DataType, nulls_equal: bool) -> None:
     s = pl.Series(["a", "b", "c", None], dtype=dtype)
     s2 = pl.Series(["b", "c"], dtype=dtype)
-    expected = pl.Series([False, True, True, None])
-    assert_series_equal(s.is_in(s2), expected)
+    missing_value = False if nulls_equal else None
+    expected = pl.Series([False, True, True, missing_value])
+    assert_series_equal(s.is_in(s2, nulls_equal=nulls_equal), expected)
 
     s2_str = s2.cast(pl.String)
-    assert_series_equal(s.is_in(s2_str), expected)
+    assert_series_equal(s.is_in(s2_str, nulls_equal=nulls_equal), expected)
 
 
 @StringCache()
-def test_cat_is_in_series_non_existent() -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_cat_is_in_series_non_existent(nulls_equal: bool) -> None:
     dtype = pl.Categorical
     s = pl.Series(["a", "b", "c", None], dtype=dtype)
     s2 = pl.Series(["a", "d", "e"], dtype=dtype)
-    expected = pl.Series([True, False, False, None])
-    assert_series_equal(s.is_in(s2), expected)
+    missing_value = False if nulls_equal else None
+    expected = pl.Series([True, False, False, missing_value])
+    assert_series_equal(s.is_in(s2, nulls_equal=nulls_equal), expected)
 
     s2_str = s2.cast(pl.String)
-    assert_series_equal(s.is_in(s2_str), expected)
+    assert_series_equal(s.is_in(s2_str, nulls_equal=nulls_equal), expected)
 
 
 @StringCache()
-def test_enum_is_in_series_non_existent() -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_enum_is_in_series_non_existent(nulls_equal: bool) -> None:
     dtype = pl.Enum(["a", "b", "c"])
+    missing_value = False if nulls_equal else None
     s = pl.Series(["a", "b", "c", None], dtype=dtype)
     s2_str = pl.Series(["a", "d", "e"])
-    expected = pl.Series([True, False, False, None])
-    assert_series_equal(s.is_in(s2_str), expected)
+    expected = pl.Series([True, False, False, missing_value])
+    assert_series_equal(s.is_in(s2_str, nulls_equal=nulls_equal), expected)
 
 
 @StringCache()
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
-def test_cat_is_in_with_lit_str(dtype: pl.DataType) -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_cat_is_in_with_lit_str(dtype: pl.DataType, nulls_equal: bool) -> None:
+    missing_value = False if nulls_equal else None
     s = pl.Series(["a", "b", "c", None], dtype=dtype)
     lit = ["b"]
-    expected = pl.Series([False, True, False, None])
+    expected = pl.Series([False, True, False, missing_value])
 
-    assert_series_equal(s.is_in(lit), expected)
+    assert_series_equal(s.is_in(lit, nulls_equal=nulls_equal), expected)
 
 
 @StringCache()
+@pytest.mark.parametrize("nulls_equal", [False, True])
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
-def test_cat_is_in_with_lit_str_non_existent(dtype: pl.DataType) -> None:
+def test_cat_is_in_with_lit_str_non_existent(
+    dtype: pl.DataType, nulls_equal: bool
+) -> None:
+    missing_value = False if nulls_equal else None
     s = pl.Series(["a", "b", "c", None], dtype=dtype)
     lit = ["d"]
-    expected = pl.Series([False, False, False, None])
+    expected = pl.Series([False, False, False, missing_value])
 
-    assert_series_equal(s.is_in(lit), expected)
+    assert_series_equal(s.is_in(lit, nulls_equal=nulls_equal), expected)
 
 
 @StringCache()
@@ -409,7 +596,8 @@ def test_cat_list_is_in_from_single_str(val: str | None, expected: list[bool]) -
     assert_frame_equal(res, expected_df)
 
 
-def test_is_in_struct_enum_17618() -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_struct_enum_17618(nulls_equal: bool) -> None:
     df = pl.DataFrame()
     dtype = pl.Enum(categories=["HBS"])
     df = df.insert_column(0, pl.Series("category", [], dtype=dtype))
@@ -418,21 +606,31 @@ def test_is_in_struct_enum_17618() -> None:
             pl.Series(
                 [{"category": "HBS"}],
                 dtype=pl.Struct({"category": df["category"].dtype}),
-            )
+            ),
+            nulls_equal=nulls_equal,
         )
     ).shape == (0, 1)
 
 
-def test_is_in_decimal() -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_decimal(nulls_equal: bool) -> None:
     assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
-        pl.col("a").is_in([0.0, 0.1])
+        pl.col("a").is_in([0.0, 0.1], nulls_equal=nulls_equal)
     )["a"].to_list() == [True, False, True]
     assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
-        pl.col("a").is_in([D("0.0"), D("0.1")])
+        pl.col("a").is_in([D("0.0"), D("0.1")], nulls_equal=nulls_equal)
     )["a"].to_list() == [True, False, True]
     assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
-        pl.col("a").is_in([1, 0, 2])
+        pl.col("a").is_in([1, 0, 2], nulls_equal=nulls_equal)
     )["a"].to_list() == [True, False, False]
+    missing_value = True if nulls_equal else None
+    assert pl.DataFrame({"a": [D("0.0"), D("0.2"), None]}).select(
+        pl.col("a").is_in([0.0, 0.1, None], nulls_equal=nulls_equal)
+    )["a"].to_list() == [True, False, missing_value]
+    missing_value = False if nulls_equal else None
+    assert pl.DataFrame({"a": [D("0.0"), D("0.2"), None]}).select(
+        pl.col("a").is_in([0.0, 0.1], nulls_equal=nulls_equal)
+    )["a"].to_list() == [True, False, missing_value]
 
 
 def test_is_in_collection() -> None:
@@ -464,3 +662,62 @@ def test_is_in_collection() -> None:
     ):
         res = df.filter(pl.col("val").is_in(constraint_values))
         assert set(res["lbl"]) == {"bb", "cc", "dd"}
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_null_propagate_all_paths(nulls_equal: bool) -> None:
+    # No nulls in either
+    s = pl.Series([1, 2, 3])
+    result = s.is_in([1, 3, 8], nulls_equal=nulls_equal)
+    expected = pl.Series([True, False, True])
+    assert_series_equal(result, expected)
+
+    # Nulls in left only
+    s = pl.Series([1, 2, None])
+    result = s.is_in([1, 3, 8], nulls_equal=nulls_equal)
+    missing_value = False if nulls_equal else None
+    expected = pl.Series([True, False, missing_value])
+    assert_series_equal(result, expected)
+
+    # Nulls in right only
+    s = pl.Series([1, 2, 3])
+    result = s.is_in([1, 3, None], nulls_equal=nulls_equal)
+    expected = pl.Series([True, False, True])
+    assert_series_equal(result, expected)
+
+    # Nulls in both
+    s = pl.Series([1, 2, None])
+    result = s.is_in([1, 3, None], nulls_equal=nulls_equal)
+    missing_value = True if nulls_equal else None
+    expected = pl.Series([True, False, missing_value])
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_null_propagate_all_paths_cat(nulls_equal: bool) -> None:
+    # No nulls in either
+    s = pl.Series(["1", "2", "3"])
+    result = s.is_in(["1", "3", "8"], nulls_equal=nulls_equal)
+    expected = pl.Series([True, False, True])
+    assert_series_equal(result, expected)
+
+    # Nulls in left only
+    s = pl.Series(["1", "2", None])
+    result = s.is_in(["1", "3", "8"], nulls_equal=nulls_equal)
+    missing_value = False if nulls_equal else None
+    expected = pl.Series([True, False, missing_value])
+    assert_series_equal(result, expected)
+
+    # Nulls in right only
+    s = pl.Series(["1", "2", "3"])
+    result = s.is_in(["1", "3", None], nulls_equal=nulls_equal)
+    expected = pl.Series([True, False, True])
+    assert_series_equal(result, expected)
+
+    # Nulls in both
+    s = pl.Series(["1", "2", None])
+    result = s.is_in(["1", "3", None], nulls_equal=nulls_equal)
+    missing_value = True if nulls_equal else None
+    expected = pl.Series([True, False, missing_value])
+    assert_series_equal(result, expected)

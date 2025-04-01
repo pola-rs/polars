@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::fmt::Debug;
 
 use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
@@ -15,17 +16,27 @@ use crate::frame::IntoDf;
 
 /// Gather by [`ChunkId`]
 pub trait TakeChunked {
+    /// Gathers elements from a ChunkedArray, specifying for each element a
+    /// chunk index and index within that chunk through ChunkId. If
+    /// avoid_sharing is true the returned data should not share references
+    /// with the original array (like shared buffers in views).
+    ///
     /// # Safety
     /// This function doesn't do any bound checks.
     unsafe fn take_chunked_unchecked<const B: u64>(
         &self,
         by: &[ChunkId<B>],
         sorted: IsSorted,
+        avoid_sharing: bool,
     ) -> Self;
 
     /// # Safety
     /// This function doesn't do any bound checks.
-    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self;
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
+        avoid_sharing: bool,
+    ) -> Self;
 }
 
 impl TakeChunked for DataFrame {
@@ -38,10 +49,11 @@ impl TakeChunked for DataFrame {
         &self,
         idx: &[ChunkId<B>],
         sorted: IsSorted,
+        avoid_sharing: bool,
     ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns(&|s| s.take_chunked_unchecked(idx, sorted));
+            ._apply_columns(&|s| s.take_chunked_unchecked(idx, sorted, avoid_sharing));
 
         unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
@@ -50,10 +62,14 @@ impl TakeChunked for DataFrame {
     ///
     /// # Safety
     /// Does not do any bound checks.
-    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, idx: &[ChunkId<B>]) -> DataFrame {
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(
+        &self,
+        idx: &[ChunkId<B>],
+        avoid_sharing: bool,
+    ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx));
+            ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx, avoid_sharing));
 
         unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
@@ -69,7 +85,7 @@ pub trait TakeChunkedHorPar: IntoDf {
     ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns_par(&|s| s.take_chunked_unchecked(idx, sorted));
+            ._apply_columns_par(&|s| s.take_chunked_unchecked(idx, sorted, false));
 
         unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
@@ -84,7 +100,7 @@ pub trait TakeChunkedHorPar: IntoDf {
     ) -> DataFrame {
         let cols = self
             .to_df()
-            ._apply_columns_par(&|s| s.take_opt_chunked_unchecked(idx));
+            ._apply_columns_par(&|s| s.take_opt_chunked_unchecked(idx, false));
 
         unsafe { DataFrame::new_no_checks_height_from_first(cols) }
     }
@@ -97,17 +113,22 @@ impl TakeChunked for Column {
         &self,
         by: &[ChunkId<B>],
         sorted: IsSorted,
+        avoid_sharing: bool,
     ) -> Self {
         // @scalar-opt
         let s = self.as_materialized_series();
-        let s = unsafe { s.take_chunked_unchecked(by, sorted) };
+        let s = unsafe { s.take_chunked_unchecked(by, sorted, avoid_sharing) };
         s.into_column()
     }
 
-    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self {
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
+        avoid_sharing: bool,
+    ) -> Self {
         // @scalar-opt
         let s = self.as_materialized_series();
-        let s = unsafe { s.take_opt_chunked_unchecked(by) };
+        let s = unsafe { s.take_opt_chunked_unchecked(by, avoid_sharing) };
         s.into_column()
     }
 }
@@ -117,49 +138,51 @@ impl TakeChunked for Series {
         &self,
         by: &[ChunkId<B>],
         sorted: IsSorted,
+        avoid_sharing: bool,
     ) -> Self {
         use DataType::*;
         match self.dtype() {
             dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(self.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
-                    ca.take_chunked_unchecked(by, sorted).into_series()
+                    ca.take_chunked_unchecked(by, sorted, avoid_sharing).into_series()
                 })
             },
             Boolean => {
                 let ca = self.bool().unwrap();
-                ca.take_chunked_unchecked(by, sorted).into_series()
+                ca.take_chunked_unchecked(by, sorted, avoid_sharing)
+                    .into_series()
             },
             Binary => {
                 let ca = self.binary().unwrap();
-                take_unchecked_binview(ca, by, sorted).into_series()
+                take_chunked_unchecked_binview(ca, by, sorted, avoid_sharing).into_series()
             },
             String => {
                 let ca = self.str().unwrap();
-                take_unchecked_binview(ca, by, sorted).into_series()
+                take_chunked_unchecked_binview(ca, by, sorted, avoid_sharing).into_series()
             },
             List(_) => {
                 let ca = self.list().unwrap();
-                ca.take_chunked_unchecked(by, sorted).into_series()
+                ca.take_chunked_unchecked(by, sorted, avoid_sharing)
+                    .into_series()
             },
             #[cfg(feature = "dtype-array")]
             Array(_, _) => {
                 let ca = self.array().unwrap();
-                ca.take_chunked_unchecked(by, sorted).into_series()
+                ca.take_chunked_unchecked(by, sorted, avoid_sharing)
+                    .into_series()
             },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let ca = self.struct_().unwrap();
-                ca._apply_fields(|s| s.take_chunked_unchecked(by, sorted))
-                    .expect("infallible")
-                    .into_series()
+                take_chunked_unchecked_struct(ca, by, sorted, avoid_sharing).into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => take_unchecked_object(self, by, sorted),
+            Object(_) => take_unchecked_object(self, by, sorted),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
                 let ca = self.decimal().unwrap();
-                let out = ca.0.take_chunked_unchecked(by, sorted);
+                let out = ca.0.take_chunked_unchecked(by, sorted, avoid_sharing);
                 out.into_decimal_unchecked(ca.precision(), ca.scale())
                     .into_series()
             },
@@ -167,7 +190,7 @@ impl TakeChunked for Series {
             Date => {
                 let ca = self.date().unwrap();
                 ca.physical()
-                    .take_chunked_unchecked(by, sorted)
+                    .take_chunked_unchecked(by, sorted, avoid_sharing)
                     .into_date()
                     .into_series()
             },
@@ -175,7 +198,7 @@ impl TakeChunked for Series {
             Datetime(u, z) => {
                 let ca = self.datetime().unwrap();
                 ca.physical()
-                    .take_chunked_unchecked(by, sorted)
+                    .take_chunked_unchecked(by, sorted, avoid_sharing)
                     .into_datetime(*u, z.clone())
                     .into_series()
             },
@@ -183,7 +206,7 @@ impl TakeChunked for Series {
             Duration(u) => {
                 let ca = self.duration().unwrap();
                 ca.physical()
-                    .take_chunked_unchecked(by, sorted)
+                    .take_chunked_unchecked(by, sorted, avoid_sharing)
                     .into_duration(*u)
                     .into_series()
             },
@@ -191,14 +214,16 @@ impl TakeChunked for Series {
             Time => {
                 let ca = self.time().unwrap();
                 ca.physical()
-                    .take_chunked_unchecked(by, sorted)
+                    .take_chunked_unchecked(by, sorted, avoid_sharing)
                     .into_time()
                     .into_series()
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(revmap, ord) | Enum(revmap, ord) => {
                 let ca = self.categorical().unwrap();
-                let t = ca.physical().take_chunked_unchecked(by, sorted);
+                let t = ca
+                    .physical()
+                    .take_chunked_unchecked(by, sorted, avoid_sharing);
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     t,
                     revmap.as_ref().unwrap().clone(),
@@ -213,49 +238,54 @@ impl TakeChunked for Series {
     }
 
     /// Take function that checks of null state in `ChunkIdx`.
-    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self {
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
+        avoid_sharing: bool,
+    ) -> Self {
         use DataType::*;
         match self.dtype() {
             dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(self.dtype(), |$T| {
                  let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
-                 ca.take_opt_chunked_unchecked(by).into_series()
+                 ca.take_opt_chunked_unchecked(by, avoid_sharing).into_series()
                 })
             },
             Boolean => {
                 let ca = self.bool().unwrap();
-                ca.take_opt_chunked_unchecked(by).into_series()
+                ca.take_opt_chunked_unchecked(by, avoid_sharing)
+                    .into_series()
             },
             Binary => {
                 let ca = self.binary().unwrap();
-                take_unchecked_binview_opt(ca, by).into_series()
+                take_opt_chunked_unchecked_binview(ca, by, avoid_sharing).into_series()
             },
             String => {
                 let ca = self.str().unwrap();
-                take_unchecked_binview_opt(ca, by).into_series()
+                take_opt_chunked_unchecked_binview(ca, by, avoid_sharing).into_series()
             },
             List(_) => {
                 let ca = self.list().unwrap();
-                ca.take_opt_chunked_unchecked(by).into_series()
+                ca.take_opt_chunked_unchecked(by, avoid_sharing)
+                    .into_series()
             },
             #[cfg(feature = "dtype-array")]
             Array(_, _) => {
                 let ca = self.array().unwrap();
-                ca.take_opt_chunked_unchecked(by).into_series()
+                ca.take_opt_chunked_unchecked(by, avoid_sharing)
+                    .into_series()
             },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let ca = self.struct_().unwrap();
-                ca._apply_fields(|s| s.take_opt_chunked_unchecked(by))
-                    .expect("infallible")
-                    .into_series()
+                take_opt_chunked_unchecked_struct(ca, by, avoid_sharing).into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => take_opt_unchecked_object(self, by),
+            Object(_) => take_opt_unchecked_object(self, by, avoid_sharing),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
                 let ca = self.decimal().unwrap();
-                let out = ca.0.take_opt_chunked_unchecked(by);
+                let out = ca.0.take_opt_chunked_unchecked(by, avoid_sharing);
                 out.into_decimal_unchecked(ca.precision(), ca.scale())
                     .into_series()
             },
@@ -263,7 +293,7 @@ impl TakeChunked for Series {
             Date => {
                 let ca = self.date().unwrap();
                 ca.physical()
-                    .take_opt_chunked_unchecked(by)
+                    .take_opt_chunked_unchecked(by, avoid_sharing)
                     .into_date()
                     .into_series()
             },
@@ -271,7 +301,7 @@ impl TakeChunked for Series {
             Datetime(u, z) => {
                 let ca = self.datetime().unwrap();
                 ca.physical()
-                    .take_opt_chunked_unchecked(by)
+                    .take_opt_chunked_unchecked(by, avoid_sharing)
                     .into_datetime(*u, z.clone())
                     .into_series()
             },
@@ -279,7 +309,7 @@ impl TakeChunked for Series {
             Duration(u) => {
                 let ca = self.duration().unwrap();
                 ca.physical()
-                    .take_opt_chunked_unchecked(by)
+                    .take_opt_chunked_unchecked(by, avoid_sharing)
                     .into_duration(*u)
                     .into_series()
             },
@@ -287,14 +317,14 @@ impl TakeChunked for Series {
             Time => {
                 let ca = self.time().unwrap();
                 ca.physical()
-                    .take_opt_chunked_unchecked(by)
+                    .take_opt_chunked_unchecked(by, avoid_sharing)
                     .into_time()
                     .into_series()
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(revmap, ord) | Enum(revmap, ord) => {
                 let ca = self.categorical().unwrap();
-                let ret = ca.physical().take_opt_chunked_unchecked(by);
+                let ret = ca.physical().take_opt_chunked_unchecked(by, avoid_sharing);
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     ret,
                     revmap.as_ref().unwrap().clone(),
@@ -318,6 +348,7 @@ where
         &self,
         by: &[ChunkId<B>],
         sorted: IsSorted,
+        _allow_sharing: bool,
     ) -> Self {
         let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
 
@@ -354,7 +385,11 @@ where
     }
 
     // Take function that checks of null state in `ChunkIdx`.
-    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self {
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
+        _allow_sharing: bool,
+    ) -> Self {
         let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
 
         if !self.has_nulls() {
@@ -397,11 +432,9 @@ unsafe fn take_unchecked_object<const B: u64>(
     by: &[ChunkId<B>],
     _sorted: IsSorted,
 ) -> Series {
-    let DataType::Object(_, reg) = s.dtype() else {
-        unreachable!()
-    };
-    let reg = reg.as_ref().unwrap();
-    let mut builder = (*reg.builder_constructor)(s.name().clone(), by.len());
+    use polars_core::chunked_array::object::registry::get_object_builder;
+
+    let mut builder = get_object_builder(s.name().clone(), by.len());
 
     by.iter().for_each(|chunk_id| {
         let (chunk_idx, array_idx) = chunk_id.extract();
@@ -412,12 +445,14 @@ unsafe fn take_unchecked_object<const B: u64>(
 }
 
 #[cfg(feature = "object")]
-unsafe fn take_opt_unchecked_object<const B: u64>(s: &Series, by: &[ChunkId<B>]) -> Series {
-    let DataType::Object(_, reg) = s.dtype() else {
-        unreachable!()
-    };
-    let reg = reg.as_ref().unwrap();
-    let mut builder = (*reg.builder_constructor)(s.name().clone(), by.len());
+unsafe fn take_opt_unchecked_object<const B: u64>(
+    s: &Series,
+    by: &[ChunkId<B>],
+    _allow_sharing: bool,
+) -> Series {
+    use polars_core::chunked_array::object::registry::get_object_builder;
+
+    let mut builder = get_object_builder(s.name().clone(), by.len());
 
     by.iter().for_each(|chunk_id| {
         if chunk_id.is_null() {
@@ -431,15 +466,21 @@ unsafe fn take_opt_unchecked_object<const B: u64>(s: &Series, by: &[ChunkId<B>])
     builder.to_series()
 }
 
-unsafe fn take_unchecked_binview<const B: u64, T, V>(
+unsafe fn take_chunked_unchecked_binview<const B: u64, T, V>(
     ca: &ChunkedArray<T>,
     by: &[ChunkId<B>],
     sorted: IsSorted,
+    avoid_sharing: bool,
 ) -> ChunkedArray<T>
 where
     T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
+    T::Array: Debug,
     V: ViewType + ?Sized,
 {
+    if avoid_sharing {
+        return ca.take_chunked_unchecked(by, sorted, avoid_sharing);
+    }
+
     let mut views = Vec::with_capacity(by.len());
     let (validity, arc_data_buffers);
 
@@ -630,14 +671,20 @@ where
     (buffers, buffer_offsets)
 }
 
-unsafe fn take_unchecked_binview_opt<const B: u64, T, V>(
+unsafe fn take_opt_chunked_unchecked_binview<const B: u64, T, V>(
     ca: &ChunkedArray<T>,
     by: &[ChunkId<B>],
+    avoid_sharing: bool,
 ) -> ChunkedArray<T>
 where
     T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
+    T::Array: Debug,
     V: ViewType + ?Sized,
 {
+    if avoid_sharing {
+        return ca.take_opt_chunked_unchecked(by, avoid_sharing);
+    }
+
     let mut views = Vec::with_capacity(by.len());
     let mut validity = BitmapBuilder::with_capacity(by.len());
 
@@ -782,6 +829,108 @@ where
     ChunkedArray::with_chunk(ca.name().clone(), arr.maybe_gc())
 }
 
+#[cfg(feature = "dtype-struct")]
+unsafe fn take_chunked_unchecked_struct<const B: u64>(
+    ca: &StructChunked,
+    by: &[ChunkId<B>],
+    sorted: IsSorted,
+    avoid_sharing: bool,
+) -> StructChunked {
+    let fields = ca
+        .fields_as_series()
+        .iter()
+        .map(|s| s.take_chunked_unchecked(by, sorted, avoid_sharing))
+        .collect::<Vec<_>>();
+    let mut out = StructChunked::from_series(ca.name().clone(), by.len(), fields.iter()).unwrap();
+
+    if !ca.has_nulls() {
+        return out;
+    }
+
+    let mut validity = BitmapBuilder::with_capacity(by.len());
+    if ca.n_chunks() == 1 {
+        let arr = ca.downcast_as_array();
+        let bitmap = arr.validity().unwrap();
+        for id in by.iter() {
+            let (chunk_idx, array_idx) = id.extract();
+            debug_assert!(chunk_idx == 0);
+            validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+        }
+    } else {
+        for id in by.iter() {
+            let (chunk_idx, array_idx) = id.extract();
+            let arr = ca.downcast_get_unchecked(chunk_idx as usize);
+            if let Some(bitmap) = arr.validity() {
+                validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+            } else {
+                validity.push_unchecked(true);
+            }
+        }
+    }
+
+    out.rechunk_mut(); // Should be a no-op.
+    out.downcast_iter_mut()
+        .next()
+        .unwrap()
+        .set_validity(validity.into_opt_validity());
+    out
+}
+
+#[cfg(feature = "dtype-struct")]
+unsafe fn take_opt_chunked_unchecked_struct<const B: u64>(
+    ca: &StructChunked,
+    by: &[ChunkId<B>],
+    avoid_sharing: bool,
+) -> StructChunked {
+    let fields = ca
+        .fields_as_series()
+        .iter()
+        .map(|s| s.take_opt_chunked_unchecked(by, avoid_sharing))
+        .collect::<Vec<_>>();
+    let mut out = StructChunked::from_series(ca.name().clone(), by.len(), fields.iter()).unwrap();
+
+    let mut validity = BitmapBuilder::with_capacity(by.len());
+    if ca.n_chunks() == 1 {
+        let arr = ca.downcast_as_array();
+        if let Some(bitmap) = arr.validity() {
+            for id in by.iter() {
+                if id.is_null() {
+                    validity.push_unchecked(false);
+                } else {
+                    let (chunk_idx, array_idx) = id.extract();
+                    debug_assert!(chunk_idx == 0);
+                    validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+                }
+            }
+        } else {
+            for id in by.iter() {
+                validity.push_unchecked(!id.is_null());
+            }
+        }
+    } else {
+        for id in by.iter() {
+            if id.is_null() {
+                validity.push_unchecked(false);
+            } else {
+                let (chunk_idx, array_idx) = id.extract();
+                let arr = ca.downcast_get_unchecked(chunk_idx as usize);
+                if let Some(bitmap) = arr.validity() {
+                    validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+                } else {
+                    validity.push_unchecked(true);
+                }
+            }
+        }
+    }
+
+    out.rechunk_mut(); // Should be a no-op.
+    out.downcast_iter_mut()
+        .next()
+        .unwrap()
+        .set_validity(validity.into_opt_validity());
+    out
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -822,7 +971,7 @@ mod test {
                 ChunkId::store(2, 2),
             ];
 
-            let out = s_1.take_chunked_unchecked(&by, IsSorted::Not);
+            let out = s_1.take_chunked_unchecked(&by, IsSorted::Not, true);
             let idx = IdxCa::new("".into(), [0, 1, 3, 2, 4, 5, 6]);
             let expected = s_1.rechunk().take(&idx).unwrap();
             assert!(out.equals(&expected));
@@ -834,7 +983,7 @@ mod test {
                 ChunkId::store(1, 1),
                 ChunkId::store(1, 0),
             ];
-            let out = s_1.take_opt_chunked_unchecked(&by);
+            let out = s_1.take_opt_chunked_unchecked(&by, true);
 
             let idx = IdxCa::new("".into(), [None, Some(1), Some(3), Some(2)]);
             let expected = s_1.rechunk().take(&idx).unwrap();
@@ -856,7 +1005,7 @@ mod test {
                 ChunkId::store(1, 0),
             ];
 
-            let out = s_1.take_chunked_unchecked(&by, IsSorted::Not);
+            let out = s_1.take_chunked_unchecked(&by, IsSorted::Not, true);
             let idx = IdxCa::new("".into(), [0, 1, 3, 2]);
             let expected = s_1.rechunk().take(&idx).unwrap();
             assert!(out.equals_missing(&expected));
@@ -868,7 +1017,7 @@ mod test {
                 ChunkId::store(1, 1),
                 ChunkId::store(1, 0),
             ];
-            let out = s_1.take_opt_chunked_unchecked(&by);
+            let out = s_1.take_opt_chunked_unchecked(&by, true);
 
             let idx = IdxCa::new("".into(), [None, Some(1), Some(3), Some(2)]);
             let expected = s_1.rechunk().take(&idx).unwrap();

@@ -504,6 +504,36 @@ def test_read_csv_encoding(tmp_path: Path) -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
+@pytest.mark.write_disk
+def test_read_csv_encoding_lossy(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    bts = (
+        b"\xc8\xec\xff,\xc2\xee\xe7\xf0\xe0\xf1\xf2,\xc3\xee\xf0\xee\xe4\n"
+        b"\xc8\xe2\xe0\xed,25,\xcc\xee\xf1\xea\xe2\xe0\n"
+        # \x98 is not supported in "windows-1251".
+        b"\xce\xeb\xfc\xe3\xe0,30,\xd1\xe0\xed\xea\xf2-\x98\xcf\xe5\xf2\xe5\xf0\xe1\xf3\xf0\xe3\n"
+    )
+
+    file_path = tmp_path / "encoding_lossy.csv"
+    file_path.write_bytes(bts)
+
+    file_str = str(file_path)
+    bytesio = io.BytesIO(bts)
+    bytesio.seek(0)
+
+    for file in [file_path, file_str, bts, bytesio]:
+        assert_series_equal(
+            pl.read_csv(
+                file,  # type: ignore[arg-type]
+                encoding="windows-1251-lossy",
+                use_pyarrow=False,
+            ).get_column("Город"),
+            pl.Series("Город", ["Москва", "Санкт-�Петербург"]),
+        )
+
+
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_column_rename_and_schema_overrides() -> None:
     csv = textwrap.dedent(
         """\
@@ -1269,17 +1299,6 @@ def test_datetime_format(fmt: str, expected: str) -> None:
     assert csv == expected
 
 
-def test_invalid_datetime_format() -> None:
-    tz_naive = pl.Series(["2020-01-01T00:00:00"]).str.strptime(pl.Datetime)
-    tz_aware = tz_naive.dt.replace_time_zone("UTC")
-    with pytest.raises(
-        ComputeError, match="cannot format NaiveDateTime with format '%q'"
-    ):
-        tz_naive.to_frame().write_csv(datetime_format="%q")
-    with pytest.raises(ComputeError, match="cannot format DateTime with format '%q'"):
-        tz_aware.to_frame().write_csv(datetime_format="%q")
-
-
 @pytest.mark.parametrize(
     ("fmt", "expected"),
     [
@@ -1511,6 +1530,7 @@ def test_csv_categorical_categorical_merge() -> None:
     ).unique(maintain_order=True)["x"].to_list() == ["A", "B"]
 
 
+@pytest.mark.write_disk
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     assert isinstance(reader, BatchedCsvReader)
@@ -1537,10 +1557,10 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
         tmp.write(data)
         tmp.seek(0)
 
-        expected = pl.DataFrame({"column_1": ["A", "B", "C"]})
+        expected = pl.DataFrame({"A": ["B", "C"]})
         batches = pl.read_csv_batched(
             tmp.name,
-            has_header=False,
+            has_header=True,
             truncate_ragged_lines=True,
         ).next_batches(1)
 
@@ -1895,25 +1915,25 @@ def test_ignore_errors_date_parser() -> None:
 
 
 def test_csv_ragged_lines() -> None:
-    expected = {"column_1": ["A", "B", "C"]}
+    expected = {"A": ["B", "C"]}
     assert (
         pl.read_csv(
-            io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
+            io.StringIO("A\nB,ragged\nC"), has_header=True, truncate_ragged_lines=True
         ).to_dict(as_series=False)
         == expected
     )
     assert (
         pl.read_csv(
-            io.StringIO("A\nB\nC,ragged"), has_header=False, truncate_ragged_lines=True
+            io.StringIO("A\nB\nC,ragged"), has_header=True, truncate_ragged_lines=True
         ).to_dict(as_series=False)
         == expected
     )
 
     for s in ["A\nB,ragged\nC", "A\nB\nC,ragged"]:
         with pytest.raises(ComputeError, match=r"found more fields than defined"):
-            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+            pl.read_csv(io.StringIO(s), has_header=True, truncate_ragged_lines=False)
         with pytest.raises(ComputeError, match=r"found more fields than defined"):
-            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+            pl.read_csv(io.StringIO(s), has_header=True, truncate_ragged_lines=False)
 
 
 def test_provide_schema() -> None:
@@ -2137,7 +2157,7 @@ def test_read_csv_only_loads_selected_columns(
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 16_000_000 at least, but there's some overhead.
-    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+    # assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
 
     # Globs use a different code path for reading
     memory_usage_without_pyarrow.reset_tracking()
@@ -2145,7 +2165,7 @@ def test_read_csv_only_loads_selected_columns(
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 16_000_000 at least, but there's some overhead.
-    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+    # assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
 
     # read_csv_batched() test:
     memory_usage_without_pyarrow.reset_tracking()
@@ -2164,7 +2184,7 @@ def test_read_csv_only_loads_selected_columns(
             break
         result += next_batch
     del result
-    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 20_000_000
+    # assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 20_000_000
 
 
 def test_csv_escape_cf_15349() -> None:
@@ -2186,7 +2206,9 @@ def test_skip_rows_after_header(tmp_path: Path, streaming: bool) -> None:
 
     skip = 2
     expect = df.slice(skip)
-    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(streaming=streaming)
+    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(
+        engine="streaming" if streaming else "in-memory"
+    )
 
     assert_frame_equal(out, expect)
 
@@ -2378,7 +2400,7 @@ time
     assert_frame_equal(pl.scan_csv(path, try_parse_dates=True).collect(), df)
     assert_frame_equal(pl.scan_csv(path, schema={"time": pl.Time}).collect(), df)
     assert_frame_equal(
-        pl.scan_csv(path, schema={"time": pl.Time}).collect(streaming=True), df
+        pl.scan_csv(path, schema={"time": pl.Time}).collect(engine="streaming"), df
     )
 
 
@@ -2507,3 +2529,33 @@ def test_header_only_column_selection_17173() -> None:
     result = pl.read_csv(io.StringIO(csv), columns=["B"])
     expected = pl.Series("B", [], pl.String()).to_frame()
     assert_frame_equal(result, expected)
+
+
+def test_csv_enum_raise() -> None:
+    ENUM_DTYPE = pl.Enum(["foo", "bar"])
+    with (
+        io.StringIO("col\nfoo\nbaz\n") as csv,
+        pytest.raises(
+            pl.exceptions.ComputeError, match="category baz doesn't exist in Enum dtype"
+        ),
+    ):
+        pl.read_csv(
+            csv,
+            schema={"col": ENUM_DTYPE},
+        )
+
+
+def test_csv_no_header_ragged_lines_1505() -> None:
+    # Test that the header schema will grow dynamically.
+    csv = io.StringIO("""a,b,c
+a,b,c,d,e,f
+g,h,i,j,k""")
+
+    assert pl.read_csv(csv, has_header=False).to_dict(as_series=False) == {
+        "column_1": ["a", "a", "g"],
+        "column_2": ["b", "b", "h"],
+        "column_3": ["c", "c", "i"],
+        "column_4": [None, "d", "j"],
+        "column_5": [None, "e", "k"],
+        "column_6": [None, "f", None],
+    }

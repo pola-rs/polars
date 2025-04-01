@@ -11,11 +11,11 @@ use std::ops::Div;
 
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
+use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::typed_lit;
-use polars_plan::prelude::LiteralValue::Null;
 use polars_time::Duration;
 use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -26,11 +26,11 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
+use crate::SQLContext;
 use crate::functions::SQLFunctionVisitor;
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
 };
-use crate::SQLContext;
 
 #[inline]
 #[cold]
@@ -124,7 +124,7 @@ impl SQLExprVisitor<'_> {
             } => {
                 let expr = self.visit_expr(expr)?;
                 let elems = self.visit_array_expr(list, false, Some(&expr))?;
-                let is_in = expr.is_in(elems);
+                let is_in = expr.is_in(elems, false);
                 Ok(if *negated { is_in.not() } else { is_in })
             },
             SQLExpr::InSubquery {
@@ -312,7 +312,9 @@ impl SQLExprVisitor<'_> {
             polars_bail!(SQLInterface: "ESCAPE char for LIKE/ILIKE is not currently supported; found '{}'", escape_char.clone().unwrap());
         }
         let pat = match self.visit_expr(pattern) {
-            Ok(Expr::Literal(LiteralValue::String(s))) => s,
+            Ok(Expr::Literal(lv)) if lv.extract_str().is_some() => {
+                PlSmallStr::from_str(lv.extract_str().unwrap())
+            },
             _ => {
                 polars_bail!(SQLSyntax: "LIKE/ILIKE pattern must be a string literal; found {}", pattern)
             },
@@ -362,11 +364,12 @@ impl SQLExprVisitor<'_> {
     fn convert_temporal_strings(&mut self, left: &Expr, right: &Expr) -> Expr {
         if let (Some(name), Some(s), expr_dtype) = match (left, right) {
             // identify "col <op> string" expressions
-            (Expr::Column(name), Expr::Literal(LiteralValue::String(s))) => {
-                (Some(name.clone()), Some(s), None)
+            (Expr::Column(name), Expr::Literal(lv)) if lv.extract_str().is_some() => {
+                (Some(name.clone()), Some(lv.extract_str().unwrap()), None)
             },
             // identify "CAST(expr AS type) <op> string" and/or "expr::type <op> string" expressions
-            (Expr::Cast { expr, dtype, .. }, Expr::Literal(LiteralValue::String(s))) => {
+            (Expr::Cast { expr, dtype, .. }, Expr::Literal(lv)) if lv.extract_str().is_some() => {
+                let s = lv.extract_str().unwrap();
                 match &**expr {
                     Expr::Column(name) => (Some(name.clone()), Some(s), Some(dtype)),
                     _ => (None, Some(s), Some(dtype)),
@@ -530,21 +533,23 @@ impl SQLExprVisitor<'_> {
             // Regular expression operators
             // ----
             SQLBinaryOperator::PGRegexMatch => match rhs {  // "x ~ y"
-                Expr::Literal(LiteralValue::String(_)) => lhs.str().contains(rhs, true),
+                Expr::Literal(ref lv) if lv.extract_str().is_some() => lhs.str().contains(rhs, true),
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '~' operator: {:?}", rhs),
             },
             SQLBinaryOperator::PGRegexNotMatch => match rhs {  // "x !~ y"
-                Expr::Literal(LiteralValue::String(_)) => lhs.str().contains(rhs, true).not(),
+                Expr::Literal(ref lv) if lv.extract_str().is_some() => lhs.str().contains(rhs, true).not(),
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '!~' operator: {:?}", rhs),
             },
             SQLBinaryOperator::PGRegexIMatch => match rhs {  // "x ~* y"
-                Expr::Literal(LiteralValue::String(pat)) => {
+                Expr::Literal(ref lv) if lv.extract_str().is_some() => {
+                    let pat = lv.extract_str().unwrap();
                     lhs.str().contains(lit(format!("(?i){}", pat)), true)
                 },
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '~*' operator: {:?}", rhs),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match rhs {  // "x !~* y"
-                Expr::Literal(LiteralValue::String(pat)) => {
+                Expr::Literal(ref lv) if lv.extract_str().is_some() => {
+                    let pat = lv.extract_str().unwrap();
                     lhs.str().contains(lit(format!("(?i){}", pat)), true).not()
                 },
                 _ => {
@@ -584,14 +589,15 @@ impl SQLExprVisitor<'_> {
             // JSON/Struct field access operators
             // ----
             SQLBinaryOperator::Arrow | SQLBinaryOperator::LongArrow => match rhs {  // "x -> y", "x ->> y"
-                Expr::Literal(LiteralValue::String(path)) => {
-                    let mut expr = self.struct_field_access_expr(&lhs, &path, false)?;
+                Expr::Literal(lv) if lv.extract_str().is_some() => {
+                    let path = lv.extract_str().unwrap();
+                    let mut expr = self.struct_field_access_expr(&lhs, path, false)?;
                     if let SQLBinaryOperator::LongArrow = op {
                         expr = expr.cast(DataType::String);
                     }
                     expr
                 },
-                Expr::Literal(LiteralValue::Int(idx)) => {
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(idx))) => {
                     let mut expr = self.struct_field_access_expr(&lhs, &idx.to_string(), true)?;
                     if let SQLBinaryOperator::LongArrow = op {
                         expr = expr.cast(DataType::String);
@@ -603,14 +609,18 @@ impl SQLExprVisitor<'_> {
                 },
             },
             SQLBinaryOperator::HashArrow | SQLBinaryOperator::HashLongArrow => {  // "x #> y", "x #>> y"
-                if let Expr::Literal(LiteralValue::String(path)) = rhs {
-                    let mut expr = self.struct_field_access_expr(&lhs, &path, true)?;
-                    if let SQLBinaryOperator::HashLongArrow = op {
-                        expr = expr.cast(DataType::String);
+                match rhs {
+                    Expr::Literal(lv) if lv.extract_str().is_some() => {
+                        let path = lv.extract_str().unwrap();
+                        let mut expr = self.struct_field_access_expr(&lhs, path, true)?;
+                        if let SQLBinaryOperator::HashLongArrow = op {
+                            expr = expr.cast(DataType::String);
+                        }
+                        expr
+                    },
+                    _ => {
+                        polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", rhs)
                     }
-                    expr
-                } else {
-                    polars_bail!(SQLSyntax: "invalid json/struct path-extract definition: {:?}", rhs)
                 }
             },
             other => {
@@ -626,10 +636,18 @@ impl SQLExprVisitor<'_> {
         let expr = self.visit_expr(expr)?;
         Ok(match (op, expr.clone()) {
             // simplify the parse tree by special-casing common unary +/- ops
-            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Int(n))) => lit(n),
-            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Float(n))) => lit(n),
-            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Int(n))) => lit(-n),
-            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Float(n))) => lit(-n),
+            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) => {
+                lit(n)
+            },
+            (UnaryOperator::Plus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(n)))) => {
+                lit(n)
+            },
+            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))) => {
+                lit(-n)
+            },
+            (UnaryOperator::Minus, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(n)))) => {
+                lit(-n)
+            },
             // general case
             (UnaryOperator::Plus, _) => lit(0) + expr,
             (UnaryOperator::Minus, _) => lit(0) - expr,
@@ -692,8 +710,8 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::Lt => Ok(left.lt(right.max())),
             SQLBinaryOperator::GtEq => Ok(left.gt_eq(right.min())),
             SQLBinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
-            SQLBinaryOperator::Eq => Ok(left.is_in(right)),
-            SQLBinaryOperator::NotEq => Ok(left.is_in(right).not()),
+            SQLBinaryOperator::Eq => Ok(left.is_in(right, false)),
+            SQLBinaryOperator::NotEq => Ok(left.is_in(right, false).not()),
             _ => polars_bail!(SQLInterface: "invalid comparison operator"),
         }
     }
@@ -779,7 +797,7 @@ impl SQLExprVisitor<'_> {
                 };
                 lit(hex::decode(x.clone()).unwrap())
             },
-            SQLValue::Null => Expr::Literal(LiteralValue::Null),
+            SQLValue::Null => Expr::Literal(LiteralValue::untyped_null()),
             SQLValue::Number(s, _) => {
                 // Check for existence of decimal separator dot
                 if s.contains('.') {
@@ -844,7 +862,9 @@ impl SQLExprVisitor<'_> {
                 // note: for PostgreSQL this represents a BIT literal (eg: b'10101') not BYTE
                 let bytes_literal = bitstring_to_bytes_literal(b)?;
                 match bytes_literal {
-                    Expr::Literal(LiteralValue::Binary(v)) => AnyValue::BinaryOwned(v.to_vec()),
+                    Expr::Literal(lv) if lv.extract_binary().is_some() => {
+                        AnyValue::BinaryOwned(lv.extract_binary().unwrap().to_vec())
+                    },
                     _ => {
                         polars_bail!(SQLInterface: "failed to parse bitstring literal: {:?}", b)
                     },
@@ -893,16 +913,24 @@ impl SQLExprVisitor<'_> {
         let expr = self.visit_expr(expr)?;
         let trim_what = trim_what.as_ref().map(|e| self.visit_expr(e)).transpose()?;
         let trim_what = match trim_what {
-            Some(Expr::Literal(LiteralValue::String(val))) => Some(val),
+            Some(Expr::Literal(lv)) if lv.extract_str().is_some() => {
+                Some(PlSmallStr::from_str(lv.extract_str().unwrap()))
+            },
             None => None,
             _ => return self.err(&expr),
         };
         Ok(match (trim_where, trim_what) {
-            (None | Some(TrimWhereField::Both), None) => expr.str().strip_chars(lit(Null)),
+            (None | Some(TrimWhereField::Both), None) => {
+                expr.str().strip_chars(lit(LiteralValue::untyped_null()))
+            },
             (None | Some(TrimWhereField::Both), Some(val)) => expr.str().strip_chars(lit(val)),
-            (Some(TrimWhereField::Leading), None) => expr.str().strip_chars_start(lit(Null)),
+            (Some(TrimWhereField::Leading), None) => expr
+                .str()
+                .strip_chars_start(lit(LiteralValue::untyped_null())),
             (Some(TrimWhereField::Leading), Some(val)) => expr.str().strip_chars_start(lit(val)),
-            (Some(TrimWhereField::Trailing), None) => expr.str().strip_chars_end(lit(Null)),
+            (Some(TrimWhereField::Trailing), None) => expr
+                .str()
+                .strip_chars_end(lit(LiteralValue::untyped_null())),
             (Some(TrimWhereField::Trailing), Some(val)) => expr.str().strip_chars_end(lit(val)),
         })
     }
@@ -917,9 +945,9 @@ impl SQLExprVisitor<'_> {
         let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
         let expr = self.visit_expr(expr)?;
         Ok(if negated {
-            expr.is_in(subquery_result).not()
+            expr.is_in(subquery_result, false).not()
         } else {
-            expr.is_in(subquery_result)
+            expr.is_in(subquery_result, false)
         })
     }
 
@@ -948,7 +976,7 @@ impl SQLExprVisitor<'_> {
             }
             let else_res = match else_result {
                 Some(else_res) => self.visit_expr(else_res)?,
-                None => lit(Null), // ELSE clause is optional; when omitted, it is implicitly NULL
+                None => lit(LiteralValue::untyped_null()), // ELSE clause is optional; when omitted, it is implicitly NULL
             };
             if let Some(operand_expr) = operand {
                 let first_operand_expr = self.visit_expr(operand_expr)?;
@@ -1193,23 +1221,23 @@ pub(crate) fn parse_extract_date_part(expr: Expr, field: &DateTimeField) -> Pola
 /// be adjusted from 1-indexed (SQL) to 0-indexed (Rust/Polars)
 pub(crate) fn adjust_one_indexed_param(idx: Expr, null_if_zero: bool) -> Expr {
     match idx {
-        Expr::Literal(Null) => lit(Null),
-        Expr::Literal(LiteralValue::Int(0)) => {
+        Expr::Literal(sc) if sc.is_null() => lit(LiteralValue::untyped_null()),
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(0))) => {
             if null_if_zero {
-                lit(Null)
+                lit(LiteralValue::untyped_null())
             } else {
                 idx
             }
         },
-        Expr::Literal(LiteralValue::Int(n)) if n < 0 => idx,
-        Expr::Literal(LiteralValue::Int(n)) => lit(n - 1),
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n < 0 => idx,
+        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => lit(n - 1),
         // TODO: when 'saturating_sub' is available, should be able
         //  to streamline the when/then/otherwise block below -
         _ => when(idx.clone().gt(lit(0)))
             .then(idx.clone() - lit(1))
             .otherwise(if null_if_zero {
                 when(idx.clone().eq(lit(0)))
-                    .then(lit(Null))
+                    .then(lit(LiteralValue::untyped_null()))
                     .otherwise(idx.clone())
             } else {
                 idx.clone()
@@ -1290,7 +1318,7 @@ pub(crate) fn resolve_compound_identifier(
                 return Ok(fields
                     .iter()
                     .map(|fld| column.clone().struct_().field_by_name(&fld.name))
-                    .collect())
+                    .collect());
             },
             Some(DataType::Struct(fields)) => {
                 dtype = fields

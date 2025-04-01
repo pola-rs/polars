@@ -714,3 +714,29 @@ def test_overflowing_cast_literals_21023() -> None:
             ),
             pl.Series([-128], dtype=pl.Int8).to_frame(),
         )
+
+
+def test_invalid_empty_cast_to_empty_enum() -> None:
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot cast / initialize Enum without categories present",
+    ):
+        pl.Series([], dtype=pl.Enum)
+
+
+@pytest.mark.parametrize("value", [True, False])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Enum(["a", "b"]),
+        pl.Series(["a", "b"], dtype=pl.Categorical).dtype,
+    ],
+)
+@pytest.mark.usefixtures("test_global_and_local")
+def test_invalid_bool_to_cat(value: bool, dtype: PolarsDataType) -> None:
+    # Enum
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot cast Boolean to Categorical",
+    ):
+        pl.Series([value]).cast(dtype)

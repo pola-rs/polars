@@ -3,7 +3,8 @@ from __future__ import annotations
 import typing
 import warnings
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Literal
+from time import perf_counter
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import numpy as np
 import pandas as pd
@@ -18,9 +19,10 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import with_string_cache_if_auto_streaming
 
 if TYPE_CHECKING:
-    from polars._typing import JoinStrategy
+    from polars._typing import JoinStrategy, PolarsDataType
 
 
 def test_semi_anti_join() -> None:
@@ -156,11 +158,26 @@ def test_deprecated() -> None:
     other = pl.DataFrame({"a": [1, 2], "c": [3, 4]})
     result = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [3, 4]})
 
-    np.testing.assert_equal(df.join(other=other, on="a").to_numpy(), result.to_numpy())
     np.testing.assert_equal(
-        df.lazy().join(other=other.lazy(), on="a").collect().to_numpy(),
+        df.join(other=other, on="a", maintain_order="left").to_numpy(),
         result.to_numpy(),
     )
+    np.testing.assert_equal(
+        df.lazy()
+        .join(other=other.lazy(), on="a", maintain_order="left")
+        .collect()
+        .to_numpy(),
+        result.to_numpy(),
+    )
+
+
+def test_deprecated_parameter_join_nulls() -> None:
+    df = pl.DataFrame({"a": [1, None]})
+    with pytest.deprecated_call(
+        match=r"The argument `join_nulls` for `DataFrame.join` is deprecated. It has been renamed to `nulls_equal`"
+    ):
+        result = df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
+    assert_frame_equal(result, df, check_row_order=False)
 
 
 def test_join_on_expressions() -> None:
@@ -332,29 +349,37 @@ def test_join_chunks_alignment_4720() -> None:
             "index3": pl.arange(100, 102, eager=True),
         }
     )
-    assert (
+    assert_frame_equal(
         df1.join(df2, how="cross").join(
             df3,
             on=["index1", "index2", "index3"],
             how="left",
-        )
-    ).to_dict(as_series=False) == {
-        "index1": [0, 0, 1, 1],
-        "index2": [10, 10, 11, 11],
-        "index3": [100, 101, 100, 101],
-    }
+        ),
+        pl.DataFrame(
+            {
+                "index1": [0, 0, 1, 1],
+                "index2": [10, 10, 11, 11],
+                "index3": [100, 101, 100, 101],
+            }
+        ),
+        check_row_order=False,
+    )
 
-    assert (
+    assert_frame_equal(
         df1.join(df2, how="cross").join(
             df3,
             on=["index3", "index1", "index2"],
             how="left",
-        )
-    ).to_dict(as_series=False) == {
-        "index1": [0, 0, 1, 1],
-        "index2": [10, 10, 11, 11],
-        "index3": [100, 101, 100, 101],
-    }
+        ),
+        pl.DataFrame(
+            {
+                "index1": [0, 0, 1, 1],
+                "index2": [10, 10, 11, 11],
+                "index3": [100, 101, 100, 101],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_jit_sort_joins() -> None:
@@ -653,15 +678,20 @@ def test_join_sorted_fast_paths_null() -> None:
 
 def test_full_outer_join_list_() -> None:
     schema = {"id": pl.Int64, "vals": pl.List(pl.Float64)}
-
+    join_schema = {**schema, **{k + "_right": t for (k, t) in schema.items()}}
     df1 = pl.DataFrame({"id": [1], "vals": [[]]}, schema=schema)  # type: ignore[arg-type]
     df2 = pl.DataFrame({"id": [2, 3], "vals": [[], [4]]}, schema=schema)  # type: ignore[arg-type]
-    assert df1.join(df2, on="id", how="full").to_dict(as_series=False) == {
-        "id": [None, None, 1],
-        "vals": [None, None, []],
-        "id_right": [2, 3, None],
-        "vals_right": [[], [4.0], None],
-    }
+    expected = pl.DataFrame(
+        {
+            "id": [None, None, 1],
+            "vals": [None, None, []],
+            "id_right": [2, 3, None],
+            "vals_right": [[], [4.0], None],
+        },
+        schema=join_schema,  # type: ignore[arg-type]
+    )
+    out = df1.join(df2, on="id", how="full", maintain_order="right_left")
+    assert_frame_equal(out, expected)
 
 
 @pytest.mark.slow
@@ -804,7 +834,9 @@ def test_join_validation_many_keys() -> None:
 def test_full_outer_join_bool() -> None:
     df1 = pl.DataFrame({"id": [True, False], "val": [1, 2]})
     df2 = pl.DataFrame({"id": [True, False], "val": [0, -1]})
-    assert df1.join(df2, on="id", how="full").to_dict(as_series=False) == {
+    assert df1.join(df2, on="id", how="full", maintain_order="right").to_dict(
+        as_series=False
+    ) == {
         "id": [True, False],
         "val": [1, 2],
         "id_right": [True, False],
@@ -826,7 +858,7 @@ def test_full_outer_join_coalesce_different_names_13450() -> None:
     )
 
     out = df1.join(df2, left_on="L1", right_on="L3", how="full", coalesce=True)
-    assert_frame_equal(out, expected)
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 # https://github.com/pola-rs/polars/issues/10663
@@ -849,7 +881,7 @@ def test_join_on_nth_error() -> None:
 
 
 def test_join_results_in_duplicate_names() -> None:
-    lhs = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "a": [1, 2, 3],
             "b": [4, 5, 6],
@@ -857,9 +889,42 @@ def test_join_results_in_duplicate_names() -> None:
             "c_right": [1, 2, 3],
         }
     )
-    rhs = lhs.clone()
-    with pytest.raises(DuplicateError, match="'c_right' already exists"):
-        lhs.join(rhs, on=["a", "b"], how="left")
+
+    def f(x: Any) -> Any:
+        return x.join(x, on=["a", "b"], how="left")
+
+    # Ensure it also contains the hint
+    match_str = "(?s)column with name 'c_right' already exists.*You may want to try"
+
+    # Ensure it fails immediately when resolving schema.
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df.lazy()).collect_schema()
+
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df.lazy()).collect()
+
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df).collect()
+
+
+def test_join_duplicate_suffixed_columns_from_join_key_column_21048() -> None:
+    df = pl.DataFrame({"a": 1, "b": 1, "b_right": 1})
+
+    def f(x: Any) -> Any:
+        return x.join(x, on="a")
+
+    # Ensure it also contains the hint
+    match_str = "(?s)column with name 'b_right' already exists.*You may want to try"
+
+    # Ensure it fails immediately when resolving schema.
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df.lazy()).collect_schema()
+
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df.lazy()).collect()
+
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df)
 
 
 def test_join_projection_invalid_name_contains_suffix_15243() -> None:
@@ -906,11 +971,11 @@ def test_join_4_columns_with_validity() -> None:
         d=pl.col("a"),
     )
 
-    assert a.join(a, on=["a", "b", "c", "d"], how="inner", join_nulls=True).shape == (
+    assert a.join(a, on=["a", "b", "c", "d"], how="inner", nulls_equal=True).shape == (
         644,
         4,
     )
-    assert a.join(a, on=["a", "b", "c", "d"], how="inner", join_nulls=False).shape == (
+    assert a.join(a, on=["a", "b", "c", "d"], how="inner", nulls_equal=False).shape == (
         115,
         4,
     )
@@ -1035,14 +1100,14 @@ def test_join_empty_literal_17027() -> None:
     assert (
         df1.lazy()
         .join(df2.lazy(), on=pl.lit(0), how="inner")
-        .collect(streaming=True)
+        .collect(engine="streaming")
         .height
         == 0
     )
     assert (
         df1.lazy()
         .join(df2.lazy(), on=pl.lit(0), how="left")
-        .collect(streaming=True)
+        .collect(engine="streaming")
         .height
         == 1
     )
@@ -1178,14 +1243,16 @@ def test_array_explode_join_19763() -> None:
     assert_frame_equal(q.collect().sort("k"), pl.DataFrame({"k": [1, 2]}))
 
 
+@with_string_cache_if_auto_streaming
 def test_join_full_19814() -> None:
-    a = pl.LazyFrame(
-        {"a": [1], "c": [None]}, schema={"a": pl.Int64, "c": pl.Categorical}
-    )
+    schema = {"a": pl.Int64, "c": pl.Categorical}
+    a = pl.LazyFrame({"a": [1], "c": [None]}, schema=schema)
     b = pl.LazyFrame({"a": [1, 3, 4]})
-    assert a.join(b, on="a", how="full", coalesce=True).collect().to_dict(
-        as_series=False
-    ) == {"a": [1, 3, 4], "c": [None, None, None]}
+    assert_frame_equal(
+        a.join(b, on="a", how="full", coalesce=True).collect(),
+        pl.DataFrame({"a": [1, 3, 4], "c": [None, None, None]}, schema=schema),
+        check_row_order=False,
+    )
 
 
 def test_join_preserve_order_inner() -> None:
@@ -1211,6 +1278,10 @@ def test_join_preserve_order_inner() -> None:
     assert inner_right.get_column("a").equals(inner_right_left.get_column("a"))
 
 
+# The new streaming engine does not provide the same maintain_order="none"
+# ordering guarantee that is currently kept for compatibility on the in-memory
+# engine.
+@pytest.mark.may_fail_auto_streaming
 def test_join_preserve_order_left() -> None:
     left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
     right = pl.LazyFrame({"a": [1, None, 2, 6], "b": [6, 7, 8, 9]})
@@ -1374,7 +1445,7 @@ def test_join_preserve_order_full() -> None:
     ],
 )  # fmt: skip
 @pytest.mark.parametrize("swap", [True, False])
-def test_join_numeric_type_upcast_15338(
+def test_join_numeric_key_upcast_15338(
     dtypes: tuple[str, str, str], swap: bool
 ) -> None:
     supertype, ltype, rtype = (getattr(pl, x) for x in dtypes)
@@ -1386,11 +1457,13 @@ def test_join_numeric_type_upcast_15338(
     assert_frame_equal(
         left.join(right, on="a", how="left").collect(),
         pl.select(a=pl.Series([1, 1, 3]).cast(ltype), b=pl.Series(["A", "A", None])),
+        check_row_order=False,
     )
 
     assert_frame_equal(
         left.join(right, on="a", how="left", coalesce=False).drop("a_right").collect(),
         pl.select(a=pl.Series([1, 1, 3]).cast(ltype), b=pl.Series(["A", "A", None])),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -1400,6 +1473,7 @@ def test_join_numeric_type_upcast_15338(
             a_right=pl.Series([1, 1, None]).cast(rtype),
             b=pl.Series(["A", "A", None]),
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -1408,6 +1482,7 @@ def test_join_numeric_type_upcast_15338(
             a=pl.Series([1, 1, 3]).cast(supertype),
             b=pl.Series(["A", "A", None]),
         ),
+        check_row_order=False,
     )
 
     assert_frame_equal(
@@ -1415,16 +1490,111 @@ def test_join_numeric_type_upcast_15338(
         pl.select(a=pl.Series([1, 1]).cast(ltype)),
     )
 
+    # join_where
+    for no_optimization in [True, False]:
+        assert_frame_equal(
+            left.join_where(right, pl.col("a") == pl.col("a_right")).collect(
+                no_optimization=no_optimization
+            ),
+            pl.select(
+                a=pl.Series([1, 1]).cast(ltype),
+                a_right=pl.lit(1, dtype=rtype),
+                b=pl.Series(["A", "A"]),
+            ),
+        )
 
-def test_join_numeric_type_upcast_forbid_float_int() -> None:
+
+def test_join_numeric_key_upcast_forbid_float_int() -> None:
     ltype = pl.Float64
-    rtype = pl.Int32
+    rtype = pl.Int128
 
-    left = pl.LazyFrame(schema={"a": ltype})
-    right = pl.LazyFrame(schema={"a": rtype})
+    left = pl.LazyFrame({"a": [1.0, 0.0]}, schema={"a": ltype})
+    right = pl.LazyFrame({"a": [1, 2]}, schema={"a": rtype})
+
+    # Establish baseline: In a non-join context, comparisons between ltype and
+    # rtype succeed even if the upcast is lossy.
+    assert_frame_equal(
+        left.with_columns(right.collect()["a"].alias("a_right"))
+        .select(pl.col("a") == pl.col("a_right"))
+        .collect(),
+        pl.DataFrame({"a": [True, False]}),
+    )
 
     with pytest.raises(SchemaError, match="datatypes of join keys don't match"):
         left.join(right, on="a", how="left").collect()
+
+    for no_optimization in [True, False]:
+        with pytest.raises(
+            SchemaError, match="datatypes of join_where comparison don't match"
+        ):
+            left.join_where(right, pl.col("a") == pl.col("a_right")).collect(
+                no_optimization=no_optimization
+            )
+
+        with pytest.raises(
+            SchemaError, match="datatypes of join_where comparison don't match"
+        ):
+            left.join_where(
+                right, pl.col("a") == (pl.col("a") == pl.col("a_right"))
+            ).collect(no_optimization=no_optimization)
+
+
+def test_join_numeric_key_upcast_order() -> None:
+    # E.g. when we are joining on this expression:
+    # * col('a') + 127
+    #
+    # and we want to upcast, ensure that we upcast like this:
+    # * ( col('a') + 127 ) .cast(<type>)
+    #
+    # and *not* like this:
+    # * ( col('a').cast(<type>) + lit(127).cast(<type>) )
+    #
+    # as otherwise the results would be different.
+
+    left = pl.select(pl.Series("a", [1], dtype=pl.Int8)).lazy()
+    right = pl.select(
+        pl.Series("a", [1, 128, -128], dtype=pl.Int64), b=pl.lit("A")
+    ).lazy()
+
+    # col('a') in `left` is Int8, the result will overflow to become -128
+    left_expr = pl.col("a") + 127
+
+    assert_frame_equal(
+        left.join(right, left_on=left_expr, right_on="a", how="inner").collect(),
+        pl.DataFrame(
+            {
+                "a": pl.Series([1], dtype=pl.Int8),
+                "a_right": pl.Series([-128], dtype=pl.Int64),
+                "b": "A",
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        left.join_where(right, left_expr == pl.col("a_right")).collect(),
+        pl.DataFrame(
+            {
+                "a": pl.Series([1], dtype=pl.Int8),
+                "a_right": pl.Series([-128], dtype=pl.Int64),
+                "b": "A",
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        (
+            left.join(right, left_on=left_expr, right_on="a", how="full")
+            .collect()
+            .sort(pl.all())
+        ),
+        pl.DataFrame(
+            {
+                "a": pl.Series([1, None, None], dtype=pl.Int8),
+                "a_right": pl.Series([-128, 1, 128], dtype=pl.Int64),
+                "b": ["A", "A", "A"],
+            }
+        ).sort(pl.all()),
+    )
 
 
 def test_no_collapse_join_when_maintain_order_20725() -> None:
@@ -1467,7 +1637,8 @@ def test_join_where_predicate_type_coercion_21009() -> None:
 
     plan = q1.explain().splitlines()
     assert plan[0].strip().startswith("FILTER")
-    assert plan[1].strip().startswith("INNER JOIN")
+    assert plan[1] == "FROM"
+    assert plan[2].strip().startswith("INNER JOIN")
 
     q2 = left_frame.join_where(
         right_frame,
@@ -1477,9 +1648,35 @@ def test_join_where_predicate_type_coercion_21009() -> None:
 
     plan = q2.explain().splitlines()
     assert plan[0].strip().startswith("FILTER")
-    assert plan[1].strip().startswith("INNER JOIN")
+    assert plan[1] == "FROM"
+    assert plan[2].strip().startswith("INNER JOIN")
 
     assert_frame_equal(q1.collect(), q2.collect())
+
+
+def test_join_right_predicate_pushdown_21142() -> None:
+    left = pl.LazyFrame({"key": [1, 2, 4], "values": ["a", "b", "c"]})
+    right = pl.LazyFrame({"key": [1, 2, 3], "values": ["d", "e", "f"]})
+
+    rjoin = left.join(right, on="key", how="right")
+
+    q = rjoin.filter(pl.col("values").is_null())
+
+    expect = pl.select(
+        pl.Series("values", [None], pl.String),
+        pl.Series("key", [3], pl.Int64),
+        pl.Series("values_right", ["f"], pl.String),
+    )
+
+    assert_frame_equal(q.collect(), expect)
+
+    # Ensure for right join, filter on RHS key-columns are pushed down.
+    q = rjoin.filter(pl.col("values_right").is_null())
+
+    plan = q.explain()
+    assert plan.index("FILTER") > plan.index("RIGHT PLAN ON")
+
+    assert_frame_equal(q.collect(), expect.clear())
 
 
 def test_join_where_nested_expr_21066() -> None:
@@ -1531,3 +1728,265 @@ def test_select_after_join_where_20831() -> None:
     )
 
     assert q.select(pl.len()).collect().item() == 6
+
+
+@pytest.mark.parametrize(
+    ("dtype", "data"),
+    [
+        (pl.Struct, [{"x": 1}, {"x": 2}, {"x": 3}, {"x": 4}]),
+        (pl.List, [[1], [2, 2], [3, 3, 3], [4, 4, 4, 4]]),
+        (pl.Array(pl.Int64, 2), [[1, 1], [2, 2], [3, 3], [4, 4]]),
+    ],
+)
+def test_join_on_nested(dtype: PolarsDataType, data: list[Any]) -> None:
+    lhs = pl.DataFrame(
+        {
+            "a": data[:3],
+            "b": [1, 2, 3],
+        }
+    )
+    rhs = pl.DataFrame(
+        {
+            "a": [data[3], data[1]],
+            "c": [4, 2],
+        }
+    )
+
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="left", maintain_order="left"),
+        pl.select(
+            a=pl.Series(data[:3]),
+            b=pl.Series([1, 2, 3]),
+            c=pl.Series([None, 2, None]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="right", maintain_order="right"),
+        pl.select(
+            b=pl.Series([None, 2]),
+            a=pl.Series([data[3], data[1]]),
+            c=pl.Series([4, 2]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="inner"),
+        pl.select(
+            a=pl.Series([data[1]]),
+            b=pl.Series([2]),
+            c=pl.Series([2]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="full", maintain_order="left_right"),
+        pl.select(
+            a=pl.Series(data[:3] + [None]),
+            b=pl.Series([1, 2, 3, None]),
+            a_right=pl.Series([None, data[1], None, data[3]]),
+            c=pl.Series([None, 2, None, 4]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="semi"),
+        pl.select(
+            a=pl.Series([data[1]]),
+            b=pl.Series([2]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="anti", maintain_order="left"),
+        pl.select(
+            a=pl.Series([data[0], data[2]]),
+            b=pl.Series([1, 3]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, how="cross", maintain_order="left_right"),
+        pl.select(
+            a=pl.Series([data[0], data[0], data[1], data[1], data[2], data[2]]),
+            b=pl.Series([1, 1, 2, 2, 3, 3]),
+            a_right=pl.Series([data[3], data[1], data[3], data[1], data[3], data[1]]),
+            c=pl.Series([4, 2, 4, 2, 4, 2]),
+        ),
+    )
+
+
+def test_empty_join_result_with_array_15474() -> None:
+    lhs = pl.DataFrame(
+        {
+            "x": [1, 2],
+            "y": pl.Series([[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3)),
+        }
+    )
+    rhs = pl.DataFrame({"x": [0]})
+    result = lhs.join(rhs, on="x")
+    expected = pl.DataFrame(schema={"x": pl.Int64, "y": pl.Array(pl.Int64, 3)})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.slow
+def test_join_where_eager_perf_21145() -> None:
+    left = pl.Series("left", range(3_000)).to_frame()
+    right = pl.Series("right", range(1_000)).to_frame()
+
+    def time_func(func: Callable[[], Any]) -> float:
+        times = []
+        for _ in range(3):
+            t = perf_counter()
+            func()
+            times.append(perf_counter() - t)
+
+        return min(times)
+
+    p = pl.col("left").is_between(pl.lit(0, dtype=pl.Int64), pl.col("right"))
+    runtime_eager = time_func(lambda: left.join_where(right, p))
+    runtime_lazy = time_func(lambda: left.lazy().join_where(right.lazy(), p).collect())
+    runtime_ratio = runtime_eager / runtime_lazy
+
+    # Pick as high as reasonably possible for CI stability
+    # * Was observed to be >=5 seconds on the bugged version, so 3 is a safe bet.
+    threshold = 3
+
+    if runtime_ratio > threshold:
+        msg = f"runtime_ratio ({runtime_ratio}) > {threshold}x ({runtime_eager = }, {runtime_lazy = })"
+        raise ValueError(msg)
+
+
+def test_select_len_after_semi_anti_join_21343() -> None:
+    lhs = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    rhs = pl.LazyFrame({"a": [1, 2, 3]})
+
+    q = lhs.join(rhs, on="a", how="anti").select(pl.len())
+
+    assert q.collect().item() == 0
+
+
+def test_multi_leftjoin_empty_right_21701() -> None:
+    parent_data = {
+        "id": [1, 30, 80],
+        "parent_field1": [3, 20, 17],
+    }
+    parent_df = pl.LazyFrame(parent_data)
+    child_df = pl.LazyFrame(
+        [],
+        schema={"id": pl.Int32(), "parent_id": pl.Int32(), "child_field1": pl.Int32()},
+    )
+    subchild_df = pl.LazyFrame(
+        [], schema={"child_id": pl.Int32(), "subchild_field1": pl.Int32()}
+    )
+
+    joined_df = parent_df.join(
+        child_df.join(
+            subchild_df, left_on=pl.col("id"), right_on=pl.col("child_id"), how="left"
+        ),
+        left_on=pl.col("id"),
+        right_on=pl.col("parent_id"),
+        how="left",
+    )
+    joined_df = joined_df.select("id", "parent_field1")
+    assert_frame_equal(joined_df.collect(), parent_df.collect(), check_row_order=False)
+
+
+@pytest.mark.parametrize("order", ["none", "left_right", "right_left"])
+def test_join_null_equal(order: Literal["none", "left_right", "right_left"]) -> None:
+    lhs = pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3]})
+    with_null = pl.DataFrame({"x": [1, None], "z": [1, 2]})
+    without_null = pl.DataFrame({"x": [1, 3], "z": [1, 3]})
+    check_row_order = order != "none"
+
+    # Inner join.
+    assert_frame_equal(
+        lhs.join(with_null, on="x", nulls_equal=True, maintain_order=order),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
+        check_row_order=check_row_order,
+    )
+    assert_frame_equal(
+        lhs.join(without_null, on="x", nulls_equal=True),
+        pl.DataFrame({"x": [1], "y": [1], "z": [1]}),
+    )
+
+    # Left join.
+    assert_frame_equal(
+        lhs.join(with_null, on="x", how="left", nulls_equal=True, maintain_order=order),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
+        check_row_order=check_row_order,
+    )
+    assert_frame_equal(
+        lhs.join(
+            without_null, on="x", how="left", nulls_equal=True, maintain_order=order
+        ),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, None, None]}),
+        check_row_order=check_row_order,
+    )
+
+    # Full join.
+    assert_frame_equal(
+        lhs.join(
+            with_null,
+            on="x",
+            how="full",
+            nulls_equal=True,
+            coalesce=True,
+            maintain_order=order,
+        ),
+        pl.DataFrame({"x": [1, None, None], "y": [1, 2, 3], "z": [1, 2, 2]}),
+        check_row_order=check_row_order,
+    )
+    if order == "left_right":
+        expected = pl.DataFrame(
+            {
+                "x": [1, None, None, None],
+                "x_right": [1, None, None, 3],
+                "y": [1, 2, 3, None],
+                "z": [1, None, None, 3],
+            }
+        )
+    else:
+        expected = pl.DataFrame(
+            {
+                "x": [1, None, None, None],
+                "x_right": [1, 3, None, None],
+                "y": [1, None, 2, 3],
+                "z": [1, 3, None, None],
+            }
+        )
+    assert_frame_equal(
+        lhs.join(
+            without_null, on="x", how="full", nulls_equal=True, maintain_order=order
+        ),
+        expected,
+        check_row_order=check_row_order,
+        check_column_order=False,
+    )
+
+
+def test_join_categorical_21815() -> None:
+    with pl.StringCache():
+        left = pl.DataFrame({"x": ["a", "b", "c", "d"]}).with_columns(
+            xc=pl.col.x.cast(pl.Categorical)
+        )
+        right = pl.DataFrame({"x": ["c", "d", "e", "f"]}).with_columns(
+            xc=pl.col.x.cast(pl.Categorical)
+        )
+
+        # As key.
+        cat_key = left.join(right, on="xc", how="full")
+
+        # As payload.
+        cat_payload = left.join(right, on="x", how="full")
+
+        expected = pl.DataFrame(
+            {
+                "x": ["a", "b", "c", "d", None, None],
+                "x_right": [None, None, "c", "d", "e", "f"],
+            }
+        ).with_columns(
+            xc=pl.col.x.cast(pl.Categorical),
+            xc_right=pl.col.x_right.cast(pl.Categorical),
+        )
+
+        assert_frame_equal(
+            cat_key, expected, check_row_order=False, check_column_order=False
+        )
+        assert_frame_equal(
+            cat_payload, expected, check_row_order=False, check_column_order=False
+        )

@@ -3,14 +3,14 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
 
 use crossbeam_queue::SegQueue;
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{
     accumulate_dataframes_vertical_unchecked, accumulate_dataframes_vertical_unchecked_optional,
 };
-use polars_core::POOL;
-use polars_io::ipc::IpcReader;
 use polars_io::SerReader;
+use polars_io::ipc::IpcReader;
 use polars_ops::prelude::*;
 use rayon::prelude::*;
 

@@ -8,10 +8,10 @@ use super::{
     AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, IntoDecoderFunction,
     PrimitiveDecoder, UnitDecoderFunction,
 };
-use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, hybrid_rle, Encoding};
+use crate::parquet::encoding::{Encoding, byte_stream_split, delta_bitpacked, hybrid_rle};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::types::{decode, NativeType as ParquetNativeType};
+use crate::parquet::page::{DataPage, DictPage, split_buffer};
+use crate::parquet::types::{NativeType as ParquetNativeType, decode};
 use crate::read::deserialize::dictionary_encoded;
 use crate::read::deserialize::utils::{
     dict_indices_decoder, freeze_validity, unspecialized_decode,

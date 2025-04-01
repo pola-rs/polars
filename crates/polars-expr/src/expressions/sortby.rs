@@ -1,13 +1,13 @@
+use polars_core::POOL;
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::prelude::*;
-use polars_core::POOL;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
 use super::*;
 use crate::expressions::{
-    map_sorted_indices_to_group_idx, map_sorted_indices_to_group_slice, AggregationContext,
-    PhysicalExpr, UpdateGroups,
+    AggregationContext, PhysicalExpr, UpdateGroups, map_sorted_indices_to_group_idx,
+    map_sorted_indices_to_group_slice,
 };
 
 pub struct SortByExpr {
@@ -398,16 +398,6 @@ impl PhysicalExpr for SortByExpr {
 
         ac_in.with_groups(groups.into_sliceable());
         Ok(ac_in)
-    }
-
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

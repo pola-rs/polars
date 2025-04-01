@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crossbeam_utils::CachePadded;
 use rand::prelude::*;
@@ -127,7 +127,7 @@ impl<T: Send> Sender<T> {
             let mut hungriest_idx = self.round_robin_idx;
             let mut shortest_len = self.upper_bound_len(self.round_robin_idx);
             for _ in 0..4 {
-                let idx = ((self.rng.gen::<u32>() as u64 * num_receivers as u64) >> 32) as usize;
+                let idx = ((self.rng.r#gen::<u32>() as u64 * num_receivers as u64) >> 32) as usize;
                 let len = self.upper_bound_len(idx);
                 if len < shortest_len {
                     shortest_len = len;
@@ -145,7 +145,7 @@ impl<T: Send> Sender<T> {
             let park = self.inner.send_parker.park();
 
             // Try all receivers, starting at a random index.
-            let mut idx = ((self.rng.gen::<u32>() as u64 * num_receivers as u64) >> 32) as usize;
+            let mut idx = ((self.rng.r#gen::<u32>() as u64 * num_receivers as u64) >> 32) as usize;
             let mut all_closed = true;
             for _ in 0..num_receivers {
                 match unsafe { self.try_send(idx, value) } {

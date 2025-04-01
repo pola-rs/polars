@@ -6,11 +6,11 @@ use polars_core::schema::Schema;
 use polars_ops::frame::_merge_sorted_dfs;
 use polars_utils::pl_str::PlSmallStr;
 
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::morsel::{get_ideal_morsel_size, SourceToken};
+use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
 pub struct MergeSortedNode {
     key_column_idx: usize,
@@ -56,7 +56,7 @@ fn find_mergeable(
 ) -> PolarsResult<Option<(DataFrame, DataFrame)>> {
     fn first_non_empty(vd: &mut VecDeque<DataFrame>) -> Option<DataFrame> {
         let mut df = vd.pop_front()?;
-        while df.is_empty() {
+        while df.height() == 0 {
             df = vd.pop_front()?;
         }
         Some(df)
@@ -144,13 +144,13 @@ fn find_mergeable(
         } else if left_key_last.lt(&right_key_last)?.all() {
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
-            let gt_mask = right_key.gt(&left_key_last)?.downcast_into_array();
-            right_cutoff = gt_mask.values().leading_zeros();
+            let gt_mask = right_key.gt(&left_key_last)?;
+            right_cutoff = gt_mask.downcast_as_array().values().leading_zeros();
         } else if left_key_last.gt(&right_key_last)?.all() {
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
-            let gt_mask = left_key.gt(&right_key_last)?.downcast_into_array();
-            left_cutoff = gt_mask.values().leading_zeros();
+            let gt_mask = left_key.gt(&right_key_last)?;
+            left_cutoff = gt_mask.downcast_as_array().values().leading_zeros();
         }
 
         let left_mergeable: DataFrame;
@@ -174,7 +174,12 @@ impl ComputeNode for MergeSortedNode {
         "merge_sorted"
     }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         assert_eq!(send.len(), 1);
         assert_eq!(recv.len(), 2);
 
@@ -226,7 +231,7 @@ impl ComputeNode for MergeSortedNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert_eq!(recv_ports.len(), 2);
@@ -304,7 +309,7 @@ impl ComputeNode for MergeSortedNode {
                 }
 
                 let (mut distributor, dist_recv) =
-                    distributor_channel(send.len(), DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+                    distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
                 let mut left = left.map(|p| p.serial());
                 let mut right = right.map(|p| p.serial());

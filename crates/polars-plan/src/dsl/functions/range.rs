@@ -175,3 +175,37 @@ pub fn linear_space(start: Expr, end: Expr, num_samples: Expr, closed: ClosedInt
         },
     }
 }
+
+/// Create a column of linearly-spaced sequences from 'start', 'end', and 'num_samples' expressions.
+pub fn linear_spaces(
+    start: Expr,
+    end: Expr,
+    num_samples: Expr,
+    closed: ClosedInterval,
+    as_array: bool,
+) -> PolarsResult<Expr> {
+    let mut input = Vec::<Expr>::with_capacity(3);
+    input.push(start);
+    input.push(end);
+    let array_width = if as_array {
+        Some(num_samples.extract_usize().map_err(|_| {
+            polars_err!(InvalidOperation: "'as_array' is only valid when 'num_samples' is a constant integer")
+        })?)
+    } else {
+        input.push(num_samples);
+        None
+    };
+
+    Ok(Expr::Function {
+        input,
+        function: FunctionExpr::Range(RangeFunction::LinearSpaces {
+            closed,
+            array_width,
+        }),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::GroupWise,
+            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
+            ..Default::default()
+        },
+    })
+}

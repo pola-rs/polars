@@ -19,12 +19,16 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from datetime import datetime
 
+    import deltalake
+
     from polars._typing import SchemaDict
     from polars.catalog.unity.models import DataSourceFormat, TableType
+    from polars.dataframe.frame import DataFrame
     from polars.io.cloud import (
         CredentialProviderFunction,
         CredentialProviderFunctionReturn,
     )
+    from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
     from polars.lazyframe import LazyFrame
 
 with contextlib.suppress(ImportError):
@@ -52,6 +56,7 @@ class Catalog:
         workspace_url: str,
         *,
         bearer_token: str | None = "auto",
+        require_https: bool = True,
     ) -> None:
         """
         Initialize a catalog client.
@@ -67,11 +72,21 @@ class Catalog:
             API endpoint.
         bearer_token
             Bearer token to authenticate with. This can also be set to:
+
             * "auto": Automatically retrieve bearer tokens from the environment.
             * "databricks-sdk": Use the Databricks SDK to retrieve and use the
-            bearer token from the environment.
+              bearer token from the environment.
+        require_https
+            Require the `workspace_url` to use HTTPS.
         """
         issue_unstable_warning("`Catalog` functionality is considered unstable.")
+
+        if require_https and not workspace_url.startswith("https://"):
+            msg = (
+                f"a non-HTTPS workspace_url was given ({workspace_url}). To "
+                "allow non-HTTPS URLs, pass require_https=False."
+            )
+            raise ValueError(msg)
 
         if bearer_token == "databricks-sdk" or (
             bearer_token == "auto"
@@ -225,7 +240,7 @@ class Catalog:
             table_info, "scan table"
         )
 
-        credential_provider, storage_options = self._init_credentials(
+        credential_provider, storage_options = self._init_credentials(  # type: ignore[assignment]
             credential_provider,
             storage_options,
             table_info,
@@ -274,6 +289,111 @@ class Catalog:
                 retries=retries,
             )
         )
+
+    def write_table(
+        self,
+        df: DataFrame,
+        catalog_name: str,
+        namespace: str,
+        table_name: str,
+        *,
+        delta_mode: Literal[
+            "error", "append", "overwrite", "ignore", "merge"
+        ] = "error",
+        delta_write_options: dict[str, Any] | None = None,
+        delta_merge_options: dict[str, Any] | None = None,
+        storage_options: dict[str, str] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+    ) -> None | deltalake.table.TableMerger:
+        """
+        Write a DataFrame to a catalog table.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        df
+            DataFrame to write.
+        catalog_name
+            Name of the catalog.
+        namespace
+            Name of the namespace (unity schema).
+        table_name
+            Name of the table.
+        delta_mode : {'error', 'append', 'overwrite', 'ignore', 'merge'}
+            (For delta tables) How to handle existing data.
+
+            - If 'error', throw an error if the table already exists (default).
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+            - If 'ignore', will not write anything if table already exists.
+            - If 'merge', return a `TableMerger` object to merge data from the DataFrame
+              with the existing data.
+        delta_write_options
+            (For delta tables) Additional keyword arguments while writing a
+            Delta lake Table.
+            See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
+        delta_merge_options
+            (For delta tables) Keyword arguments which are required to `MERGE` a
+            Delta lake Table.
+            See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        """
+        table_info = self.get_table_info(catalog_name, namespace, table_name)
+        storage_location, data_source_format = _extract_location_and_data_format(
+            table_info, "scan table"
+        )
+
+        credential_provider, storage_options = self._init_credentials(  # type: ignore[assignment]
+            credential_provider,
+            storage_options,
+            table_info,
+            write=True,
+            caller_name="Catalog.write_table",
+        )
+
+        if data_source_format in ["DELTA", "DELTASHARING"]:
+            return df.write_delta(  # type: ignore[misc]
+                storage_location,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                mode=delta_mode,
+                delta_write_options=delta_write_options,
+                delta_merge_options=delta_merge_options,
+            )  # type: ignore[call-overload]
+
+        else:
+            msg = (
+                "write_table: table format of "
+                f"{catalog_name}.{namespace}.{table_name} "
+                f"({data_source_format}) is unsupported."
+            )
+            raise NotImplementedError(msg)
 
     def create_catalog(
         self,
@@ -482,15 +602,27 @@ class Catalog:
 
     def _init_credentials(
         self,
-        credential_provider: (CredentialProviderFunction | Literal["auto"] | None),
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None,
         storage_options: dict[str, Any] | None,
         table_info: TableInfo,
         *,
         write: bool,
         caller_name: str,
-    ) -> tuple[CredentialProviderFunction | None, dict[str, Any] | None]:
+    ) -> tuple[
+        CredentialProviderBuilder | None,
+        dict[str, Any] | None,
+    ]:
+        from polars.io.cloud.credential_provider._builder import (
+            CredentialProviderBuilder,
+        )
+
         if credential_provider != "auto":
-            return credential_provider, storage_options
+            if credential_provider:
+                return CredentialProviderBuilder.from_initialized_provider(
+                    credential_provider
+                ), storage_options
+            else:
+                return None, storage_options
 
         verbose = os.getenv("POLARS_VERBOSE") == "1"
 
@@ -514,7 +646,7 @@ class Catalog:
                 table_id = table_info.table_id
                 msg = (
                     f"error auto-initializing CatalogCredentialProvider: {e!r} "
-                    f"{table_name = } ({table_id = })"
+                    f"{table_name = } ({table_id = }) ({write = })"
                 )
                 print(msg, file=sys.stderr)
         else:
@@ -527,15 +659,19 @@ class Catalog:
                 )
                 print(msg, file=sys.stderr)
 
-            return catalog_credential_provider, storage_options
+            return CredentialProviderBuilder.from_initialized_provider(
+                catalog_credential_provider
+            ), storage_options
 
         # This should generally not happen, but if using the temporary
         # credentials API fails for whatever reason, we fallback to our built-in
         # credential provider resolution.
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        return _maybe_init_credential_provider(
+        return _init_credential_provider_builder(
             "auto", table_info.storage_location, storage_options, caller_name
         ), storage_options
 

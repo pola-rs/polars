@@ -109,8 +109,8 @@ fn expand_regex(
     pattern: &str,
     exclude: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<()> {
-    let re =
-        regex::Regex::new(pattern).map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
+    let re = polars_utils::regex_cache::compile_regex(pattern)
+        .map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
     for name in schema.iter_names() {
         if re.is_match(name) && !exclude.contains(name.as_str()) {
             let mut new_expr = remove_exclude(expr.clone());
@@ -177,7 +177,7 @@ fn expand_columns(
 ) -> PolarsResult<()> {
     if !expr.into_iter().all(|e| match e {
         // check for invalid expansions such as `col([a, b]) + col([c, d])`
-        Expr::Columns(ref members) => members.as_ref() == names,
+        Expr::Columns(members) => members.as_ref() == names,
         _ => true,
     }) {
         polars_bail!(ComputeError: "expanding more than one `col` is not allowed");
@@ -395,7 +395,7 @@ Hint: set 'upper_bound' for 'list.to_struct'.",
         else {
             #[cfg(feature = "regex")]
             {
-                let re = regex::Regex::new(first_name)
+                let re = polars_utils::regex_cache::compile_regex(first_name)
                     .map_err(|e| polars_err!(ComputeError: "invalid regex {}", e))?;
 
                 fields
@@ -565,7 +565,9 @@ fn expand_function_inputs(
             *input = rewrite_projections(core::mem::take(input), schema, &[], opt_flags)?;
             if input.is_empty() && !options.flags.contains(FunctionFlags::ALLOW_EMPTY_INPUTS) {
                 // Needed to visualize the error
-                *input = vec![Expr::Literal(LiteralValue::Null)];
+                *input = vec![Expr::Literal(LiteralValue::Scalar(Scalar::null(
+                    DataType::Null,
+                )))];
                 polars_bail!(InvalidOperation: "expected at least 1 input in {}", e)
             }
             Ok(e)

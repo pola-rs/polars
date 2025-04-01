@@ -2,14 +2,12 @@ use std::borrow::Cow;
 
 use arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "timezones")]
-use once_cell::sync::Lazy;
-#[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::validate_time_zone;
 use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "regex")]
-use regex::{escape, NoExpand, Regex};
+use regex::{NoExpand, escape};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -17,8 +15,9 @@ use super::*;
 use crate::{map, map_as_slice};
 
 #[cfg(all(feature = "regex", feature = "timezones"))]
-static TZ_AWARE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
+polars_utils::regex_cache::cached_regex! {
+    static TZ_AWARE_RE = r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)";
+}
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -225,7 +224,7 @@ impl Display for StringFunction {
             #[cfg(feature = "regex")]
             Contains { .. } => "contains",
             CountMatches(_) => "count_matches",
-            EndsWith { .. } => "ends_with",
+            EndsWith => "ends_with",
             Extract(_) => "extract",
             #[cfg(feature = "concat_str")]
             ConcatHorizontal { .. } => "concat_horizontal",
@@ -238,8 +237,8 @@ impl Display for StringFunction {
             ToInteger { .. } => "to_integer",
             #[cfg(feature = "regex")]
             Find { .. } => "find",
-            Head { .. } => "head",
-            Tail { .. } => "tail",
+            Head => "head",
+            Tail => "tail",
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { .. } => "json_decode",
             #[cfg(feature = "extract_jsonpath")]
@@ -266,7 +265,7 @@ impl Display for StringFunction {
             #[cfg(feature = "binary_encoding")]
             Base64Decode(_) => "base64_decode",
             Slice => "slice",
-            StartsWith { .. } => "starts_with",
+            StartsWith => "starts_with",
             StripChars => "strip_chars",
             StripCharsStart => "strip_chars_start",
             StripCharsEnd => "strip_chars_end",
@@ -322,8 +321,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             CountMatches(literal) => {
                 map_as_slice!(strings::count_matches, literal)
             },
-            EndsWith { .. } => map_as_slice!(strings::ends_with),
-            StartsWith { .. } => map_as_slice!(strings::starts_with),
+            EndsWith => map_as_slice!(strings::ends_with),
+            StartsWith => map_as_slice!(strings::starts_with),
             Extract(group_index) => map_as_slice!(strings::extract, group_index),
             ExtractAll => {
                 map_as_slice!(strings::extract_all)
@@ -904,7 +903,7 @@ fn replace_n<'a>(
                 pat = escape(&pat)
             }
 
-            let reg = Regex::new(&pat)?;
+            let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
             let f = |s: &'a str, val: &'a str| {
                 if lit && (s.len() <= 32) {
@@ -962,7 +961,7 @@ fn replace_all<'a>(
                 pat = escape(&pat)
             }
 
-            let reg = Regex::new(&pat)?;
+            let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
             let f = |s: &'a str, val: &'a str| {
                 // According to the docs for replace_all
@@ -1036,7 +1035,7 @@ fn _ensure_lengths(s: &[Column]) -> bool {
 fn _check_same_length(s: &[Column], fn_name: &str) -> Result<(), PolarsError> {
     polars_ensure!(
         _ensure_lengths(s),
-        ComputeError: "all series in `str.{}()` should have equal or unit length",
+        ShapeMismatch: "all series in `str.{}()` should have equal or unit length",
         fn_name
     );
     Ok(())

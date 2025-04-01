@@ -23,13 +23,11 @@ mod pages;
 mod primitive;
 mod row_group;
 mod schema;
-#[cfg(feature = "async")]
-mod sink;
 mod utils;
 
 use arrow::array::*;
 use arrow::datatypes::*;
-use arrow::types::{days_ms, i256, NativeType};
+use arrow::types::{NativeType, days_ms, i256};
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
 use polars_utils::pl_str::PlSmallStr;
@@ -46,10 +44,10 @@ pub use crate::parquet::schema::types::{
     FieldInfo, ParquetType, PhysicalType as ParquetPhysicalType,
 };
 pub use crate::parquet::write::{
-    compress, write_metadata_sidecar, Compressor, DynIter, DynStreamingIterator,
-    RowGroupIterColumns, Version,
+    Compressor, DynIter, DynStreamingIterator, RowGroupIterColumns, Version, compress,
+    write_metadata_sidecar,
 };
-pub use crate::parquet::{fallible_streaming_iterator, FallibleStreamingIterator};
+pub use crate::parquet::{FallibleStreamingIterator, fallible_streaming_iterator};
 
 /// The statistics to write
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -95,12 +93,10 @@ pub struct WriteOptions {
 use arrow::compute::aggregate::estimated_bytes_size;
 use arrow::match_integer_type;
 pub use file::FileWriter;
-pub use pages::{array_to_columns, arrays_to_columns, Nested};
-use polars_error::{polars_bail, PolarsResult};
-pub use row_group::{row_group_iter, RowGroupIterator};
+pub use pages::{Nested, array_to_columns, arrays_to_columns};
+use polars_error::{PolarsResult, polars_bail};
+pub use row_group::{RowGroupIterator, row_group_iter};
 pub use schema::to_parquet_type;
-#[cfg(feature = "async")]
-pub use sink::FileSink;
 
 use self::pages::{FixedSizeListNested, PrimitiveNested, StructNested};
 use crate::write::dictionary::encode_as_dictionary_optional;
@@ -397,7 +393,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::UInt16 => {
             return primitive::array_to_page_integer::<u16, i32>(
@@ -405,7 +401,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::UInt32 => {
             return primitive::array_to_page_integer::<u32, i32>(
@@ -413,7 +409,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::UInt64 => {
             return primitive::array_to_page_integer::<u64, i64>(
@@ -421,7 +417,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Int8 => {
             return primitive::array_to_page_integer::<i8, i32>(
@@ -429,7 +425,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Int16 => {
             return primitive::array_to_page_integer::<i16, i32>(
@@ -437,7 +433,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Int32 | ArrowDataType::Date32 | ArrowDataType::Time32(_) => {
             return primitive::array_to_page_integer::<i32, i32>(
@@ -445,7 +441,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Int64
         | ArrowDataType::Date64
@@ -457,7 +453,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Float32 => primitive::array_to_page_plain::<f32, f32>(
             array.as_any().downcast_ref().unwrap(),
@@ -486,7 +482,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::BinaryView => {
             return binview::array_to_page(
@@ -494,7 +490,7 @@ pub fn array_to_page_simple(
                 options,
                 type_,
                 encoding,
-            )
+            );
         },
         ArrowDataType::Utf8View => {
             let array =

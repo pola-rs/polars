@@ -1,3 +1,5 @@
+use std::hash::BuildHasher;
+
 use super::*;
 
 // Utility to cheaply check if we have duplicate sources.
@@ -24,6 +26,7 @@ impl UniqueScans {
 
 pub(super) struct MemberCollector {
     pub(crate) has_joins_or_unions: bool,
+    pub(crate) has_sink_multiple: bool,
     pub(crate) has_cache: bool,
     pub(crate) has_ext_context: bool,
     pub(crate) has_filter_with_join_input: bool,
@@ -38,6 +41,7 @@ impl MemberCollector {
     pub(super) fn new() -> Self {
         Self {
             has_joins_or_unions: false,
+            has_sink_multiple: false,
             has_cache: false,
             has_ext_context: false,
             has_filter_with_join_input: false,
@@ -52,6 +56,7 @@ impl MemberCollector {
         use IR::*;
         for (_node, alp) in lp_arena.iter(root) {
             match alp {
+                SinkMultiple { .. } => self.has_sink_multiple = true,
                 Join { .. } | Union { .. } => self.has_joins_or_unions = true,
                 Filter { input, .. } => {
                     self.has_filter_with_join_input |= matches!(lp_arena.get(*input), Join { options, .. } if options.args.how.is_cross())

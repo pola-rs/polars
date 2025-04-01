@@ -22,45 +22,67 @@ macro_rules! eval_binary_same_type {
     ($lhs:expr, $rhs:expr, |$l: ident, $r: ident| $ret: expr) => {{
         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
             match (lit_left, lit_right) {
-                (LiteralValue::Float32($l), LiteralValue::Float32($r)) => {
-                    Some(AExpr::Literal(LiteralValue::Float32($ret)))
+                (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => {
+                    match (l.as_any_value(), r.as_any_value()) {
+                        (AnyValue::Float32($l), AnyValue::Float32($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<f32>>::from($ret).into()))
+                        },
+                        (AnyValue::Float64($l), AnyValue::Float64($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<f64>>::from($ret).into()))
+                        },
+
+                        (AnyValue::Int8($l), AnyValue::Int8($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<i8>>::from($ret).into()))
+                        },
+                        (AnyValue::Int16($l), AnyValue::Int16($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<i16>>::from($ret).into()))
+                        },
+                        (AnyValue::Int32($l), AnyValue::Int32($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<i32>>::from($ret).into()))
+                        },
+                        (AnyValue::Int64($l), AnyValue::Int64($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<i64>>::from($ret).into()))
+                        },
+                        (AnyValue::Int128($l), AnyValue::Int128($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<i128>>::from($ret).into()))
+                        },
+
+                        (AnyValue::UInt8($l), AnyValue::UInt8($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<u8>>::from($ret).into()))
+                        },
+                        (AnyValue::UInt16($l), AnyValue::UInt16($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<u16>>::from($ret).into()))
+                        },
+                        (AnyValue::UInt32($l), AnyValue::UInt32($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<u32>>::from($ret).into()))
+                        },
+                        (AnyValue::UInt64($l), AnyValue::UInt64($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<u64>>::from($ret).into()))
+                        },
+
+                        _ => None,
+                    }
+                    .into()
                 },
-                (LiteralValue::Float64($l), LiteralValue::Float64($r)) => {
-                    Some(AExpr::Literal(LiteralValue::Float64($ret)))
+                (
+                    LiteralValue::Dyn(DynLiteralValue::Float($l)),
+                    LiteralValue::Dyn(DynLiteralValue::Float($r)),
+                ) => {
+                    let $l = *$l;
+                    let $r = *$r;
+                    Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(
+                        $ret,
+                    ))))
                 },
-                #[cfg(feature = "dtype-i8")]
-                (LiteralValue::Int8($l), LiteralValue::Int8($r)) => {
-                    Some(AExpr::Literal(LiteralValue::Int8($ret)))
-                },
-                #[cfg(feature = "dtype-i16")]
-                (LiteralValue::Int16($l), LiteralValue::Int16($r)) => {
-                    Some(AExpr::Literal(LiteralValue::Int16($ret)))
-                },
-                (LiteralValue::Int32($l), LiteralValue::Int32($r)) => {
-                    Some(AExpr::Literal(LiteralValue::Int32($ret)))
-                },
-                (LiteralValue::Int64($l), LiteralValue::Int64($r)) => {
-                    Some(AExpr::Literal(LiteralValue::Int64($ret)))
-                },
-                #[cfg(feature = "dtype-u8")]
-                (LiteralValue::UInt8($l), LiteralValue::UInt8($r)) => {
-                    Some(AExpr::Literal(LiteralValue::UInt8($ret)))
-                },
-                #[cfg(feature = "dtype-u16")]
-                (LiteralValue::UInt16($l), LiteralValue::UInt16($r)) => {
-                    Some(AExpr::Literal(LiteralValue::UInt16($ret)))
-                },
-                (LiteralValue::UInt32($l), LiteralValue::UInt32($r)) => {
-                    Some(AExpr::Literal(LiteralValue::UInt32($ret)))
-                },
-                (LiteralValue::UInt64($l), LiteralValue::UInt64($r)) => {
-                    Some(AExpr::Literal(LiteralValue::UInt64($ret)))
-                },
-                (LiteralValue::Float($l), LiteralValue::Float($r)) => {
-                    Some(AExpr::Literal(LiteralValue::Float($ret)))
-                },
-                (LiteralValue::Int($l), LiteralValue::Int($r)) => {
-                    Some(AExpr::Literal(LiteralValue::Int($ret)))
+                (
+                    LiteralValue::Dyn(DynLiteralValue::Int($l)),
+                    LiteralValue::Dyn(DynLiteralValue::Int($r)),
+                ) => {
+                    let $l = *$l;
+                    let $r = *$r;
+                    Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(
+                        $ret,
+                    ))))
                 },
                 _ => None,
             }
@@ -74,49 +96,33 @@ macro_rules! eval_binary_cmp_same_type {
     ($lhs:expr, $operand: tt, $rhs:expr) => {{
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
         match (lit_left, lit_right) {
-            (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x.to_total_ord() $operand y.to_total_ord())))
-            }
-            (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x.to_total_ord() $operand y.to_total_ord())))
-            }
-            #[cfg(feature = "dtype-i8")]
-            (LiteralValue::Int8(x), LiteralValue::Int8(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
-            }
-            #[cfg(feature = "dtype-i16")]
-            (LiteralValue::Int16(x), LiteralValue::Int16(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
-            }
-            (LiteralValue::Int32(x), LiteralValue::Int32(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
-            }
-            (LiteralValue::Int64(x), LiteralValue::Int64(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
-            }
-            #[cfg(feature = "dtype-u8")]
-            (LiteralValue::UInt8(x), LiteralValue::UInt8(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
-            }
-            #[cfg(feature = "dtype-u16")]
-            (LiteralValue::UInt16(x), LiteralValue::UInt16(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
-            }
-            (LiteralValue::UInt32(x), LiteralValue::UInt32(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
-            }
-            (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
-            }
-            (LiteralValue::Boolean(x), LiteralValue::Boolean(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
+            (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => match (l.as_any_value(), r.as_any_value()) {
+                (AnyValue::Float32(l), AnyValue::Float32(r)) => Some(AExpr::Literal({ let x: bool = l.to_total_ord() $operand r.to_total_ord(); Scalar::from(x) }.into())),
+                (AnyValue::Float64(l), AnyValue::Float64(r)) => Some(AExpr::Literal({ let x: bool = l.to_total_ord() $operand r.to_total_ord(); Scalar::from(x) }.into())),
+
+                (AnyValue::Boolean(l), AnyValue::Boolean(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+
+                (AnyValue::Int8(l), AnyValue::Int8(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+                (AnyValue::Int16(l), AnyValue::Int16(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+                (AnyValue::Int32(l), AnyValue::Int32(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+                (AnyValue::Int64(l), AnyValue::Int64(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+                (AnyValue::Int128(l), AnyValue::Int128(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+
+                (AnyValue::UInt8(l), AnyValue::UInt8(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+                (AnyValue::UInt16(l), AnyValue::UInt16(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+                (AnyValue::UInt32(l), AnyValue::UInt32(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+                (AnyValue::UInt64(l), AnyValue::UInt64(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+
+                _ => None,
+            }.into(),
+            (LiteralValue::Dyn(DynLiteralValue::Float(l)), LiteralValue::Dyn(DynLiteralValue::Float(r))) => {
+                let x: bool = l.to_total_ord() $operand r.to_total_ord();
+                Some(AExpr::Literal(Scalar::from(x).into()))
             },
-            (LiteralValue::Int(x), LiteralValue::Int(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
-            }
-            (LiteralValue::Float(x), LiteralValue::Float(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(x $operand y)))
-            }
+            (LiteralValue::Dyn(DynLiteralValue::Int(l)), LiteralValue::Dyn(DynLiteralValue::Int(r))) => {
+                let x: bool = l $operand r;
+                Some(AExpr::Literal(Scalar::from(x).into()))
+            },
             _ => None,
         }
     } else {
@@ -147,7 +153,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 right,
             } if matches!(
                 expr_arena.get(*left),
-                AExpr::Literal(LiteralValue::Boolean(true))
+                AExpr::Literal(lv) if lv.bool() == Some(true)
             ) && in_filter =>
             {
                 // Only in filter as we might change the name from "literal"
@@ -161,7 +167,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 right,
             } if matches!(
                 expr_arena.get(*right),
-                AExpr::Literal(LiteralValue::Boolean(true))
+                AExpr::Literal(lv) if lv.bool() == Some(true)
             ) =>
             {
                 Some(expr_arena.get(*left).clone())
@@ -177,10 +183,10 @@ impl OptimizationRule for SimplifyBooleanRule {
             } if matches!(expr_arena.get(*left), AExpr::Literal(_))
                 && matches!(
                     expr_arena.get(*right),
-                    AExpr::Literal(LiteralValue::Boolean(false))
+                    AExpr::Literal(lv) if lv.bool() == Some(false)
                 ) =>
             {
-                Some(AExpr::Literal(LiteralValue::Boolean(false)))
+                Some(AExpr::Literal(Scalar::from(false).into()))
             },
 
             // false AND x -> false
@@ -192,10 +198,10 @@ impl OptimizationRule for SimplifyBooleanRule {
                 right,
             } if matches!(
                 expr_arena.get(*left),
-                AExpr::Literal(LiteralValue::Boolean(false))
+                AExpr::Literal(lv) if lv.bool() == Some(false)
             ) && matches!(expr_arena.get(*right), AExpr::Literal(_)) =>
             {
-                Some(AExpr::Literal(LiteralValue::Boolean(false)))
+                Some(AExpr::Literal(Scalar::from(false).into()))
             },
 
             // false or x => x
@@ -205,7 +211,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 right,
             } if matches!(
                 expr_arena.get(*left),
-                AExpr::Literal(LiteralValue::Boolean(false))
+                AExpr::Literal(lv) if lv.bool() == Some(false)
             ) && in_filter =>
             {
                 // Only in filter as we might change the name from "literal"
@@ -220,7 +226,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 ..
             } if matches!(
                 expr_arena.get(*right),
-                AExpr::Literal(LiteralValue::Boolean(false))
+                AExpr::Literal(lv) if lv.bool() == Some(false)
             ) =>
             {
                 Some(expr_arena.get(*left).clone())
@@ -236,10 +242,10 @@ impl OptimizationRule for SimplifyBooleanRule {
             } if matches!(expr_arena.get(*left), AExpr::Literal(_))
                 && matches!(
                     expr_arena.get(*right),
-                    AExpr::Literal(LiteralValue::Boolean(true))
+                    AExpr::Literal(lv) if lv.bool() == Some(true)
                 ) =>
             {
-                Some(AExpr::Literal(LiteralValue::Boolean(true)))
+                Some(AExpr::Literal(Scalar::from(true).into()))
             },
 
             // x OR true => true
@@ -251,10 +257,10 @@ impl OptimizationRule for SimplifyBooleanRule {
                 right,
             } if matches!(
                 expr_arena.get(*left),
-                AExpr::Literal(LiteralValue::Boolean(true))
+                    AExpr::Literal(lv) if lv.bool() == Some(true)
             ) && matches!(expr_arena.get(*right), AExpr::Literal(_)) =>
             {
-                Some(AExpr::Literal(LiteralValue::Boolean(true)))
+                Some(AExpr::Literal(Scalar::from(true).into()))
             },
             AExpr::Function {
                 input,
@@ -272,18 +278,24 @@ impl OptimizationRule for SimplifyBooleanRule {
 }
 
 fn eval_negate(ae: &AExpr) -> Option<AExpr> {
+    use std::ops::Neg;
     let out = match ae {
         AExpr::Literal(lv) => match lv {
-            #[cfg(feature = "dtype-i8")]
-            LiteralValue::Int8(v) => LiteralValue::Int8(-*v),
-            #[cfg(feature = "dtype-i16")]
-            LiteralValue::Int16(v) => LiteralValue::Int16(-*v),
-            LiteralValue::Int32(v) => LiteralValue::Int32(-*v),
-            LiteralValue::Int64(v) => LiteralValue::Int64(-*v),
-            LiteralValue::Float32(v) => LiteralValue::Float32(-*v),
-            LiteralValue::Float64(v) => LiteralValue::Float64(-*v),
-            LiteralValue::Float(v) => LiteralValue::Float(-*v),
-            LiteralValue::Int(v) => LiteralValue::Int(-*v),
+            LiteralValue::Scalar(sc) => match sc.as_any_value() {
+                AnyValue::Int8(v) => Scalar::from(v.checked_neg()?),
+                AnyValue::Int16(v) => Scalar::from(v.checked_neg()?),
+                AnyValue::Int32(v) => Scalar::from(v.checked_neg()?),
+                AnyValue::Int64(v) => Scalar::from(v.checked_neg()?),
+                AnyValue::Float32(v) => Scalar::from(v.neg()),
+                AnyValue::Float64(v) => Scalar::from(v.neg()),
+                _ => return None,
+            }
+            .into(),
+            LiteralValue::Dyn(d) => LiteralValue::Dyn(match d {
+                DynLiteralValue::Int(v) => DynLiteralValue::Int(v.checked_neg()?),
+                DynLiteralValue::Float(v) => DynLiteralValue::Float(v.neg()),
+                _ => return None,
+            }),
             _ => return None,
         },
         _ => return None,
@@ -296,10 +308,8 @@ where
     F: Fn(bool, bool) -> bool,
 {
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = (left, right) {
-        return match (lit_left, lit_right) {
-            (LiteralValue::Boolean(x), LiteralValue::Boolean(y)) => {
-                Some(AExpr::Literal(LiteralValue::Boolean(operation(*x, *y))))
-            },
+        return match (lit_left.bool(), lit_right.bool()) {
+            (Some(x), Some(y)) => Some(AExpr::Literal(Scalar::from(operation(x, y)).into())),
             _ => None,
         };
     }
@@ -338,7 +348,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_left,
                         function:
-                            ref fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun_l @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
                                 delimiter: sep_l,
                                 ignore_nulls: ignore_nulls_l,
                             }),
@@ -372,7 +382,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input,
                         function:
-                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
                                 delimiter: sep,
                                 ignore_nulls,
                             }),
@@ -398,7 +408,7 @@ fn string_addition_to_linear_concat(
                     AExpr::Function {
                         input: input_right,
                         function:
-                            ref fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
+                            fun @ FunctionExpr::StringExpr(StringFunction::ConcatHorizontal {
                                 delimiter: sep,
                                 ignore_nulls,
                             }),
@@ -564,56 +574,97 @@ impl OptimizationRule for SimplifyExprRule {
                             (left_aexpr, right_aexpr)
                         {
                             match (lit_left, lit_right) {
-                                (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Float32(x / y)))
+                                (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => {
+                                    match (l.as_any_value(), r.as_any_value()) {
+                                        (AnyValue::Float32(x), AnyValue::Float32(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<f32>>::from(x / y).into(),
+                                            ))
+                                        },
+                                        (AnyValue::Float64(x), AnyValue::Float64(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<f64>>::from(x / y).into(),
+                                            ))
+                                        },
+
+                                        (AnyValue::Int8(x), AnyValue::Int8(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<i8>>::from(
+                                                    x.wrapping_floor_div_mod(y).0,
+                                                )
+                                                .into(),
+                                            ))
+                                        },
+                                        (AnyValue::Int16(x), AnyValue::Int16(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<i16>>::from(
+                                                    x.wrapping_floor_div_mod(y).0,
+                                                )
+                                                .into(),
+                                            ))
+                                        },
+                                        (AnyValue::Int32(x), AnyValue::Int32(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<i32>>::from(
+                                                    x.wrapping_floor_div_mod(y).0,
+                                                )
+                                                .into(),
+                                            ))
+                                        },
+                                        (AnyValue::Int64(x), AnyValue::Int64(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<i64>>::from(
+                                                    x.wrapping_floor_div_mod(y).0,
+                                                )
+                                                .into(),
+                                            ))
+                                        },
+                                        (AnyValue::Int128(x), AnyValue::Int128(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<i128>>::from(
+                                                    x.wrapping_floor_div_mod(y).0,
+                                                )
+                                                .into(),
+                                            ))
+                                        },
+
+                                        (AnyValue::UInt8(x), AnyValue::UInt8(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<u8>>::from(x / y).into(),
+                                            ))
+                                        },
+                                        (AnyValue::UInt16(x), AnyValue::UInt16(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<u16>>::from(x / y).into(),
+                                            ))
+                                        },
+                                        (AnyValue::UInt32(x), AnyValue::UInt32(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<u32>>::from(x / y).into(),
+                                            ))
+                                        },
+                                        (AnyValue::UInt64(x), AnyValue::UInt64(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<u64>>::from(x / y).into(),
+                                            ))
+                                        },
+
+                                        _ => None,
+                                    }
                                 },
-                                (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Float64(x / y)))
+
+                                (
+                                    LiteralValue::Dyn(DynLiteralValue::Float(x)),
+                                    LiteralValue::Dyn(DynLiteralValue::Float(y)),
+                                ) => {
+                                    Some(AExpr::Literal(<Scalar as From<f64>>::from(x / y).into()))
                                 },
-                                (LiteralValue::Float(x), LiteralValue::Float(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Float64(x / y)))
-                                },
-                                #[cfg(feature = "dtype-i8")]
-                                (LiteralValue::Int8(x), LiteralValue::Int8(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Int8(
-                                        x.wrapping_floor_div_mod(*y).0,
-                                    )))
-                                },
-                                #[cfg(feature = "dtype-i16")]
-                                (LiteralValue::Int16(x), LiteralValue::Int16(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Int16(
-                                        x.wrapping_floor_div_mod(*y).0,
-                                    )))
-                                },
-                                (LiteralValue::Int32(x), LiteralValue::Int32(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Int32(
-                                        x.wrapping_floor_div_mod(*y).0,
-                                    )))
-                                },
-                                (LiteralValue::Int64(x), LiteralValue::Int64(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Int64(
-                                        x.wrapping_floor_div_mod(*y).0,
-                                    )))
-                                },
-                                (LiteralValue::Int(x), LiteralValue::Int(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Int(
-                                        x.wrapping_floor_div_mod(*y).0,
-                                    )))
-                                },
-                                #[cfg(feature = "dtype-u8")]
-                                (LiteralValue::UInt8(x), LiteralValue::UInt8(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::UInt8(x / y)))
-                                },
-                                #[cfg(feature = "dtype-u16")]
-                                (LiteralValue::UInt16(x), LiteralValue::UInt16(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::UInt16(x / y)))
-                                },
-                                (LiteralValue::UInt32(x), LiteralValue::UInt32(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::UInt32(x / y)))
-                                },
-                                (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::UInt64(x / y)))
-                                },
+                                (
+                                    LiteralValue::Dyn(DynLiteralValue::Int(x)),
+                                    LiteralValue::Dyn(DynLiteralValue::Int(y)),
+                                ) => Some(AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(
+                                    x.wrapping_floor_div_mod(*y).0,
+                                )))),
                                 _ => None,
                             }
                         } else {
@@ -625,45 +676,75 @@ impl OptimizationRule for SimplifyExprRule {
                             (left_aexpr, right_aexpr)
                         {
                             match (lit_left, lit_right) {
-                                (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Float32(x / y)))
+                                (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => {
+                                    match (l.as_any_value(), r.as_any_value()) {
+                                        (AnyValue::Float32(x), AnyValue::Float32(y)) => {
+                                            Some(AExpr::Literal(Scalar::from(x / y).into()))
+                                        },
+                                        (AnyValue::Float64(x), AnyValue::Float64(y)) => {
+                                            Some(AExpr::Literal(Scalar::from(x / y).into()))
+                                        },
+
+                                        (AnyValue::Int8(x), AnyValue::Int8(y)) => {
+                                            Some(AExpr::Literal(
+                                                Scalar::from(x as f64 / y as f64).into(),
+                                            ))
+                                        },
+                                        (AnyValue::Int16(x), AnyValue::Int16(y)) => {
+                                            Some(AExpr::Literal(
+                                                Scalar::from(x as f64 / y as f64).into(),
+                                            ))
+                                        },
+                                        (AnyValue::Int32(x), AnyValue::Int32(y)) => {
+                                            Some(AExpr::Literal(
+                                                Scalar::from(x as f64 / y as f64).into(),
+                                            ))
+                                        },
+                                        (AnyValue::Int64(x), AnyValue::Int64(y)) => {
+                                            Some(AExpr::Literal(
+                                                Scalar::from(x as f64 / y as f64).into(),
+                                            ))
+                                        },
+                                        (AnyValue::Int128(x), AnyValue::Int128(y)) => {
+                                            Some(AExpr::Literal(
+                                                Scalar::from(x as f64 / y as f64).into(),
+                                            ))
+                                        },
+
+                                        (AnyValue::UInt8(x), AnyValue::UInt8(y)) => {
+                                            Some(AExpr::Literal(
+                                                Scalar::from(x as f64 / y as f64).into(),
+                                            ))
+                                        },
+                                        (AnyValue::UInt16(x), AnyValue::UInt16(y)) => {
+                                            Some(AExpr::Literal(
+                                                Scalar::from(x as f64 / y as f64).into(),
+                                            ))
+                                        },
+                                        (AnyValue::UInt32(x), AnyValue::UInt32(y)) => {
+                                            Some(AExpr::Literal(
+                                                Scalar::from(x as f64 / y as f64).into(),
+                                            ))
+                                        },
+                                        (AnyValue::UInt64(x), AnyValue::UInt64(y)) => {
+                                            Some(AExpr::Literal(
+                                                Scalar::from(x as f64 / y as f64).into(),
+                                            ))
+                                        },
+
+                                        _ => None,
+                                    }
                                 },
-                                (LiteralValue::Float64(x), LiteralValue::Float64(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Float64(x / y)))
-                                },
-                                (LiteralValue::Float(x), LiteralValue::Float(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Float(x / y)))
-                                },
-                                #[cfg(feature = "dtype-i8")]
-                                (LiteralValue::Int8(x), LiteralValue::Int8(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
-                                ),
-                                #[cfg(feature = "dtype-i16")]
-                                (LiteralValue::Int16(x), LiteralValue::Int16(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
-                                ),
-                                (LiteralValue::Int32(x), LiteralValue::Int32(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
-                                ),
-                                (LiteralValue::Int64(x), LiteralValue::Int64(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
-                                ),
-                                #[cfg(feature = "dtype-u8")]
-                                (LiteralValue::UInt8(x), LiteralValue::UInt8(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
-                                ),
-                                #[cfg(feature = "dtype-u16")]
-                                (LiteralValue::UInt16(x), LiteralValue::UInt16(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
-                                ),
-                                (LiteralValue::UInt32(x), LiteralValue::UInt32(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
-                                ),
-                                (LiteralValue::UInt64(x), LiteralValue::UInt64(y)) => Some(
-                                    AExpr::Literal(LiteralValue::Float64(*x as f64 / *y as f64)),
-                                ),
-                                (LiteralValue::Int(x), LiteralValue::Int(y)) => {
-                                    Some(AExpr::Literal(LiteralValue::Float(*x as f64 / *y as f64)))
+
+                                (
+                                    LiteralValue::Dyn(DynLiteralValue::Float(x)),
+                                    LiteralValue::Dyn(DynLiteralValue::Float(y)),
+                                ) => Some(AExpr::Literal(Scalar::from(*x / *y).into())),
+                                (
+                                    LiteralValue::Dyn(DynLiteralValue::Int(x)),
+                                    LiteralValue::Dyn(DynLiteralValue::Int(y)),
+                                ) => {
+                                    Some(AExpr::Literal(Scalar::from(*x as f64 / *y as f64).into()))
                                 },
                                 _ => None,
                             }
@@ -672,7 +753,7 @@ impl OptimizationRule for SimplifyExprRule {
                         }
                     },
                     Modulus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l
-                        .wrapping_floor_div_mod(*r)
+                        .wrapping_floor_div_mod(r)
                         .1),
                     Lt => eval_binary_cmp_same_type!(left_aexpr, <, right_aexpr),
                     Gt => eval_binary_cmp_same_type!(left_aexpr, >, right_aexpr),
@@ -686,7 +767,7 @@ impl OptimizationRule for SimplifyExprRule {
                     Or | LogicalOr => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
                     Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
                     FloorDivide => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l
-                        .wrapping_floor_div_mod(*r)
+                        .wrapping_floor_div_mod(r)
                         .0),
                 };
                 if out.is_some() {
@@ -705,19 +786,4 @@ impl OptimizationRule for SimplifyExprRule {
         };
         Ok(out)
     }
-}
-
-#[test]
-#[cfg(feature = "dtype-i8")]
-fn test_expr_to_aexp() {
-    use super::*;
-
-    let expr = Expr::Literal(LiteralValue::Int8(0));
-    let mut arena = Arena::new();
-    let aexpr = to_aexpr(expr, &mut arena).unwrap();
-    assert_eq!(aexpr, Node(0));
-    assert!(matches!(
-        arena.get(aexpr),
-        AExpr::Literal(LiteralValue::Int8(0))
-    ))
 }

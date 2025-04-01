@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::rc::Rc;
 
 use polars_core::series::amortized_iter::AmortSeries;

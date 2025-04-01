@@ -83,14 +83,28 @@ impl ListFunction {
             Sum => mapper.nested_sum_type(),
             Min => mapper.map_to_list_and_array_inner_dtype(),
             Max => mapper.map_to_list_and_array_inner_dtype(),
-            Mean => mapper.with_dtype(DataType::Float64),
-            Median => mapper.map_to_float_dtype(),
+            Mean => mapper.nested_mean_median_type(),
+            Median => mapper.nested_mean_median_type(),
             Std(_) => mapper.map_to_float_dtype(), // Need to also have this sometimes marked as float32 or duration..
             Var(_) => mapper.map_to_float_dtype(),
             ArgMin => mapper.with_dtype(IDX_DTYPE),
             ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
-            Diff { .. } => mapper.with_same_dtype(),
+            Diff { .. } => mapper.map_dtype(|dt| {
+                let inner_dt = match dt.inner_dtype().unwrap() {
+                    #[cfg(feature = "dtype-datetime")]
+                    DataType::Datetime(tu, _) => DataType::Duration(*tu),
+                    #[cfg(feature = "dtype-date")]
+                    DataType::Date => DataType::Duration(TimeUnit::Milliseconds),
+                    #[cfg(feature = "dtype-time")]
+                    DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
+                    DataType::UInt64 | DataType::UInt32 => DataType::Int64,
+                    DataType::UInt16 => DataType::Int32,
+                    DataType::UInt8 => DataType::Int16,
+                    inner_dt => inner_dt.clone(),
+                };
+                DataType::List(Box::new(inner_dt))
+            }),
             Sort(_) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),
             Unique(_) => mapper.with_same_dtype(),
@@ -254,12 +268,15 @@ pub(super) fn contains(args: &mut [Column]) -> PolarsResult<Option<Column>> {
     polars_ensure!(matches!(list.dtype(), DataType::List(_)),
         SchemaMismatch: "invalid series dtype: expected `List`, got `{}`", list.dtype(),
     );
-    polars_ops::prelude::is_in(item.as_materialized_series(), list.as_materialized_series()).map(
-        |mut ca| {
-            ca.rename(list.name().clone());
-            Some(ca.into_column())
-        },
+    polars_ops::prelude::is_in(
+        item.as_materialized_series(),
+        list.as_materialized_series(),
+        true,
     )
+    .map(|mut ca| {
+        ca.rename(list.name().clone());
+        Some(ca.into_column())
+    })
 }
 
 #[cfg(feature = "list_drop_nulls")]
@@ -440,8 +457,8 @@ pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Option<Co
             }
         },
         len if len == ca.len() => {
-            let ca = ca.rechunk();
-            let arr = ca.downcast_iter().next().unwrap();
+            let tmp = ca.rechunk();
+            let arr = tmp.downcast_as_array();
             let offsets = arr.offsets().as_slice();
             let take_by = if ca.null_count() == 0 {
                 index

@@ -26,9 +26,10 @@ technique.
 
 ### Polars adheres to the Apache Arrow memory format to represent data in memory while pandas uses NumPy arrays
 
-Polars represents data in memory according to the Arrow memory spec while pandas represents data in
-memory with NumPy arrays. Apache Arrow is an emerging standard for in-memory columnar analytics that
-can accelerate data load times, reduce memory usage and accelerate calculations.
+Polars represents data in memory according to the Arrow memory spec while pandas by default
+represents data in memory with NumPy arrays. Apache Arrow is an emerging standard for in-memory
+columnar analytics that can accelerate data load times, reduce memory usage and accelerate
+calculations.
 
 Polars can convert data to NumPy format with the `to_numpy` method.
 
@@ -36,7 +37,17 @@ Polars can convert data to NumPy format with the `to_numpy` method.
 
 Polars exploits the strong support for concurrency in Rust to run many operations in parallel. While
 some operations in pandas are multi-threaded the core of the library is single-threaded and an
-additional library such as `Dask` must be used to parallelize operations.
+additional library such as `Dask` must be used to parallelize operations. Polars is faster than all
+open source solutions that parallelize pandas code.
+
+### Polars has support for different engines
+
+Polars has native support for an engine optimized for in-memory processing and a streaming engine
+optimized for large scale data processing. Furthermore Polars has native integration with a CuDF
+supported engine. All these engines benefit from Polars' query optimizer and Polars ensures semantic
+correctness between all those engines. In pandas the implementation can dispatch between numpy and
+Pyarrow, but because of pandas' loose strictness guarantees, the data-type outputs and semantics
+between those backends can differ. This can lead to subtle bugs.
 
 ### Polars can lazily evaluate queries and apply query optimization
 
@@ -49,6 +60,20 @@ The lazy evaluation mode is powerful because Polars carries out automatic query 
 examines the query plan and looks for ways to accelerate the query or reduce memory usage.
 
 `Dask` also supports lazy evaluation when it generates a query plan.
+
+### Polars is strict
+
+Polars is strict about data types. Data type resolution in Polars is dependent on the operation
+graph, whereas pandas converts types loosely (e.g. new missing data can lead to integer columns
+being converted to floats). This strictness leads to fewer bugs and more predictable behavior.
+
+### Polars has a more verstatile API
+
+Polars is built on expressions and allows expression inputs in almost all operations. This means
+that when you understand how expressions work, your knowledge in Polars extrapolates. Pandas doesn't
+have an expression system and often requires Python `lambda`s to express the complexity you want.
+Polars sees the requirement of a Python `lambda` as a lack of expressiveness of its API, and tries
+to give you native support whenever possible.
 
 ## Key syntax differences
 

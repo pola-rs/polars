@@ -4,10 +4,11 @@ use arrow::array::*;
 use arrow::compute::concatenate::concatenate;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::Offsets;
+use polars_compute::rolling::QuantileMethod;
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::{NoNull, _split_offsets};
-use polars_core::POOL;
+use polars_core::utils::{_split_offsets, NoNull};
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
 use rayon::prelude::*;
@@ -442,16 +443,6 @@ impl PhysicalExpr for AggregationExpr {
         }
     }
 
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
-    }
-
     fn is_scalar(&self) -> bool {
         true
     }
@@ -576,6 +567,12 @@ impl PartitionedAggregation for AggregationExpr {
                         let count = &fields[1];
                         let (agg_count, agg_s) =
                             unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
+
+                        // Ensure that we don't divide by zero by masking out zeros.
+                        let agg_count = agg_count.idx().unwrap();
+                        let mask = agg_count.equal(0 as IdxSize);
+                        let agg_count = agg_count.set(&mask, None).unwrap().into_series();
+
                         let agg_s = &agg_s / &agg_count;
                         Ok(agg_s?.with_name(new_name).into_column())
                     },
@@ -605,7 +602,7 @@ impl PartitionedAggregation for AggregationExpr {
                     offsets.push(length_so_far);
                     values.push(s.chunks()[0].clone());
 
-                    if s.len() == 0 {
+                    if s.is_empty() {
                         can_fast_explode = false;
                     }
                     Ok(())
@@ -741,16 +738,6 @@ impl PhysicalExpr for AggQuantileExpr {
         ))
     }
 
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
-    }
-
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
     }
@@ -774,10 +761,17 @@ where
     #[cfg(not(debug_assertions))]
     let thread_boundary = 100_000;
 
+    // Temporary until categorical min/max multithreading implementation is corrected.
+    #[cfg(feature = "dtype-categorical")]
+    let is_categorical = matches!(s.dtype(), &DataType::Categorical(_, _));
+    #[cfg(not(feature = "dtype-categorical"))]
+    let is_categorical = false;
     // threading overhead/ splitting work stealing is costly..
-    if allow_threading
+
+    if !allow_threading
         || s.len() < thread_boundary
         || POOL.current_thread_has_pending_tasks().unwrap_or(false)
+        || is_categorical
     {
         return f(s);
     }

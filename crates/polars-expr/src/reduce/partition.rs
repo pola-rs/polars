@@ -1,7 +1,7 @@
 use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_utils::IdxSize;
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
-use polars_utils::IdxSize;
 
 /// Partitions this Vec into multiple Vecs.
 ///

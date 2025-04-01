@@ -3,7 +3,7 @@ use std::io::Read;
 
 use avro_schema::file::FileMetadata;
 use avro_schema::read::fallible_streaming_iterator::FallibleStreamingIterator;
-use avro_schema::read::{block_iterator, BlockStreamingIterator};
+use avro_schema::read::{BlockStreamingIterator, block_iterator};
 use avro_schema::schema::Field as AvroField;
 
 mod deserialize;

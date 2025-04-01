@@ -2,6 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_compute::rolling::QuantileMethod;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +36,8 @@ pub enum BitRepr {
 }
 
 pub(crate) mod private {
+    use polars_utils::aliases::PlSeedableRandomStateQuality;
+
     use super::*;
     use crate::chunked_array::flags::StatisticsFlags;
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
@@ -81,12 +84,16 @@ pub(crate) mod private {
         #[expect(clippy::wrong_self_convention)]
         fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a>;
 
-        fn vec_hash(&self, _build_hasher: PlRandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
+        fn vec_hash(
+            &self,
+            _build_hasher: PlSeedableRandomStateQuality,
+            _buf: &mut Vec<u64>,
+        ) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash, self._dtype());
         }
         fn vec_hash_combine(
             &self,
-            _build_hasher: PlRandomState,
+            _build_hasher: PlSeedableRandomStateQuality,
             _hashes: &mut [u64],
         ) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash_combine, self._dtype());
@@ -570,6 +577,10 @@ pub trait SeriesTrait:
     /// Get a hold of the [`ChunkedArray`], [`Logical`] or `NullChunked` as an `Any` trait mutable
     /// reference.
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    /// Get a hold of the [`ChunkedArray`] or `NullChunked` as an `Any` trait reference. This
+    /// pierces through `Logical` types to get the underlying physical array.
+    fn as_phys_any(&self) -> &dyn Any;
 
     fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 

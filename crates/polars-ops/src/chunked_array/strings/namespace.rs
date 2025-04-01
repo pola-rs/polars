@@ -1,14 +1,13 @@
 use arrow::array::{Array, ValueSize};
 use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
-use base64::engine::general_purpose;
-#[cfg(feature = "string_encoding")]
 use base64::Engine as _;
+#[cfg(feature = "string_encoding")]
+use base64::engine::general_purpose;
 #[cfg(feature = "string_to_integer")]
 use num_traits::Num;
 use polars_core::prelude::arity::*;
-use polars_utils::cache::FastFixedCache;
-use regex::{escape, Regex};
+use polars_utils::regex_cache::{compile_regex, with_regex_cache};
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
@@ -147,29 +146,28 @@ pub trait StringNameSpaceImpl: AsString {
                         src.contains(pat)
                     }))
                 } else if strict {
-                    // A sqrt(n) regex cache is not too small, not too large.
-                    let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-                    broadcast_try_binary_elementwise(ca, pat, |opt_src, opt_pat| {
-                        match (opt_src, opt_pat) {
-                            (Some(src), Some(pat)) => {
-                                let reg =
-                                    reg_cache.try_get_or_insert_with(pat, |p| Regex::new(p))?;
-                                Ok(Some(reg.is_match(src)))
-                            },
-                            _ => Ok(None),
-                        }
+                    with_regex_cache(|reg_cache| {
+                        broadcast_try_binary_elementwise(ca, pat, |opt_src, opt_pat| {
+                            match (opt_src, opt_pat) {
+                                (Some(src), Some(pat)) => {
+                                    let reg = reg_cache.compile(pat)?;
+                                    Ok(Some(reg.is_match(src)))
+                                },
+                                _ => Ok(None),
+                            }
+                        })
                     })
                 } else {
-                    // A sqrt(n) regex cache is not too small, not too large.
-                    let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-                    Ok(broadcast_binary_elementwise(
-                        ca,
-                        pat,
-                        infer_re_match(|src, pat| {
-                            let reg = reg_cache.try_get_or_insert_with(pat?, |p| Regex::new(p));
-                            Some(reg.ok()?.is_match(src?))
-                        }),
-                    ))
+                    with_regex_cache(|reg_cache| {
+                        Ok(broadcast_binary_elementwise(
+                            ca,
+                            pat,
+                            infer_re_match(|src, pat| {
+                                let reg = reg_cache.compile(pat?).ok()?;
+                                Some(reg.is_match(src?))
+                            }),
+                        ))
+                    })
                 }
             },
         }
@@ -205,16 +203,16 @@ pub trait StringNameSpaceImpl: AsString {
                 |src: Option<&str>, pat: Option<&str>| src?.find(pat?).map(|idx| idx as u32),
             ))
         } else {
-            // note: sqrt(n) regex cache is not too small, not too large.
-            let mut rx_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-            let matcher = |src: Option<&str>, pat: Option<&str>| -> PolarsResult<Option<u32>> {
-                if let (Some(src), Some(pat)) = (src, pat) {
-                    let rx = rx_cache.try_get_or_insert_with(pat, |p| Regex::new(p))?;
-                    return Ok(rx.find(src).map(|m| m.start() as u32));
-                }
-                Ok(None)
-            };
-            broadcast_try_binary_elementwise(ca, pat, matcher)
+            with_regex_cache(|reg_cache| {
+                let matcher = |src: Option<&str>, pat: Option<&str>| -> PolarsResult<Option<u32>> {
+                    if let (Some(src), Some(pat)) = (src, pat) {
+                        let re = reg_cache.compile(pat)?;
+                        return Ok(re.find(src).map(|m| m.start() as u32));
+                    }
+                    Ok(None)
+                };
+                broadcast_try_binary_elementwise(ca, pat, matcher)
+            })
         }
     }
 
@@ -296,7 +294,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Check if strings contain a regex pattern.
     fn contains(&self, pat: &str, strict: bool) -> PolarsResult<BooleanChunked> {
         let ca = self.as_string();
-        let res_reg = Regex::new(pat);
+        let res_reg = polars_utils::regex_cache::compile_regex(pat);
         let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
         let out: BooleanChunked = if let Some(reg) = opt_reg {
             unary_elementwise_values(ca, |s| reg.is_match(s))
@@ -322,7 +320,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Return the index position of a regular expression substring in the target string.
     fn find(&self, pat: &str, strict: bool) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_string();
-        match Regex::new(pat) {
+        match polars_utils::regex_cache::compile_regex(pat) {
             Ok(rx) => Ok(unary_elementwise(ca, |opt_s| {
                 opt_s.and_then(|s| rx.find(s)).map(|m| m.start() as u32)
             })),
@@ -335,7 +333,7 @@ pub trait StringNameSpaceImpl: AsString {
 
     /// Replace the leftmost regex-matched (sub)string with another string
     fn replace<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<StringChunked> {
-        let reg = Regex::new(pat)?;
+        let reg = polars_utils::regex_cache::compile_regex(pat)?;
         let f = |s: &'a str| reg.replace(s, val);
         let ca = self.as_string();
         Ok(ca.apply_values(f))
@@ -385,7 +383,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Replace all regex-matched (sub)strings with another string
     fn replace_all(&self, pat: &str, val: &str) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
-        let reg = Regex::new(pat)?;
+        let reg = polars_utils::regex_cache::compile_regex(pat)?;
         Ok(ca.apply_values(|s| reg.replace_all(s, val)))
     }
 
@@ -434,7 +432,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Extract each successive non-overlapping regex match in an individual string as an array.
     fn extract_all(&self, pat: &str) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-        let reg = Regex::new(pat)?;
+        let reg = polars_utils::regex_cache::compile_regex(pat)?;
 
         let mut builder =
             ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
@@ -528,16 +526,16 @@ pub trait StringNameSpaceImpl: AsString {
             pat.len(), ca.len(),
         );
 
-        // A sqrt(n) regex cache is not too small, not too large.
-        let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
         let mut builder =
             ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
-        binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
-            (_, None) | (None, _) => builder.append_null(),
-            (Some(s), Some(pat)) => {
-                let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
-                builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
-            },
+        with_regex_cache(|re_cache| {
+            binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
+                (_, None) | (None, _) => builder.append_null(),
+                (Some(s), Some(pat)) => {
+                    let re = re_cache.compile(pat).unwrap();
+                    builder.append_values_iter(re.find_iter(s).map(|m| m.as_str()));
+                },
+            });
         });
         Ok(builder.finish())
     }
@@ -552,15 +550,16 @@ pub trait StringNameSpaceImpl: AsString {
     /// Count all successive non-overlapping regex matches.
     fn count_matches(&self, pat: &str, literal: bool) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_string();
-        let reg = if literal {
-            Regex::new(escape(pat).as_str())?
+        if literal {
+            Ok(unary_elementwise(ca, |opt_s| {
+                opt_s.map(|s| s.matches(pat).count() as u32)
+            }))
         } else {
-            Regex::new(pat)?
-        };
-
-        Ok(unary_elementwise(ca, |opt_s| {
-            opt_s.map(|s| reg.find_iter(s).count() as u32)
-        }))
+            let re = compile_regex(pat)?;
+            Ok(unary_elementwise(ca, |opt_s| {
+                opt_s.map(|s| re.find_iter(s).count() as u32)
+            }))
+        }
     }
 
     /// Count all successive non-overlapping regex matches.
@@ -576,25 +575,26 @@ pub trait StringNameSpaceImpl: AsString {
             pat.len(), ca.len(),
         );
 
-        // A sqrt(n) regex cache is not too small, not too large.
-        let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-        let op = move |opt_s: Option<&str>, opt_pat: Option<&str>| -> PolarsResult<Option<u32>> {
-            match (opt_s, opt_pat) {
-                (Some(s), Some(pat)) => {
-                    let reg = reg_cache.get_or_insert_with(pat, |p| {
-                        if literal {
-                            Regex::new(escape(p).as_str()).unwrap()
-                        } else {
-                            Regex::new(p).unwrap()
-                        }
-                    });
-                    Ok(Some(reg.find_iter(s).count() as u32))
-                },
-                _ => Ok(None),
-            }
+        let out: UInt32Chunked = if literal {
+            broadcast_binary_elementwise(ca, pat, |s: Option<&str>, p: Option<&str>| {
+                Some(s?.matches(p?).count() as u32)
+            })
+        } else {
+            with_regex_cache(|re_cache| {
+                let op = move |opt_s: Option<&str>,
+                               opt_pat: Option<&str>|
+                      -> PolarsResult<Option<u32>> {
+                    match (opt_s, opt_pat) {
+                        (Some(s), Some(pat)) => {
+                            let reg = re_cache.compile(pat)?;
+                            Ok(Some(reg.find_iter(s).count() as u32))
+                        },
+                        _ => Ok(None),
+                    }
+                };
+                broadcast_try_binary_elementwise(ca, pat, op)
+            })?
         };
-
-        let out: UInt32Chunked = broadcast_try_binary_elementwise(ca, pat, op)?;
 
         Ok(out.with_name(ca.name().clone()))
     }

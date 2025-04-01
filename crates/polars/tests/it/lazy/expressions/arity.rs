@@ -65,7 +65,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
             .then(lit("unexpected"))
             .when(col("a").eq(lit("a1".to_string())))
             .then(lit("good hit"))
-            .otherwise(Expr::Literal(LiteralValue::Null))
+            .otherwise(Expr::Literal(LiteralValue::untyped_null()))
             .alias("b"),
         )
         .collect()?;
@@ -99,7 +99,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
             .then(lit("ok2"))
             .when(lit(true))
             .then(lit("ft"))
-            .otherwise(Expr::Literal(LiteralValue::Null))
+            .otherwise(Expr::Literal(LiteralValue::untyped_null()))
             .alias("c"),
         )
         .collect()?;
@@ -146,7 +146,9 @@ fn test_when_then_otherwise_cats() -> PolarsResult<()> {
             .iter_str()
             .flatten()
             .collect::<Vec<_>>(),
-        &["bookA", "bob", "bookB", "tim", "bookA", "bookC", "bookC", "bookC"]
+        &[
+            "bookA", "bob", "bookB", "tim", "bookA", "bookC", "bookC", "bookC"
+        ]
     );
 
     Ok(())
@@ -217,7 +219,7 @@ fn test_when_then_otherwise_sum_in_agg() -> PolarsResult<()> {
         .group_by([col("groups")])
         .agg([when(all().exclude(["groups"]).sum().eq(lit(1)))
             .then(all().exclude(["groups"]).sum())
-            .otherwise(lit(NULL))])
+            .otherwise(lit(LiteralValue::untyped_null()))])
         .sort(["groups"], Default::default());
 
     let expected = df![

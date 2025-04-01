@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 use polars::prelude::*;
-use polars_ops::pivot::{pivot, pivot_stable, PivotAgg};
+use polars_ops::pivot::{PivotAgg, pivot, pivot_stable};
 
 #[test]
 #[cfg(feature = "dtype-date")]

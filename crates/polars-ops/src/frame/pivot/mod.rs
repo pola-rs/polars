@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
-use polars_core::{downcast_as_macro_arg_physical, POOL};
+use polars_core::{POOL, downcast_as_macro_arg_physical};
 use polars_utils::format_pl_smallstr;
 use rayon::prelude::*;
 pub use unpivot::UnpivotDF;
@@ -75,6 +75,10 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
         (DataType::Date, DataType::UInt32) => {
             let ca = s.u32().unwrap();
             ca.reinterpret_signed().cast(logical_type).unwrap()
+        },
+        (dt, DataType::Null) => {
+            let ca = Series::full_null(s.name().clone(), s.len(), dt);
+            ca.into_series()
         },
         _ => unsafe { s.from_physical_unchecked(logical_type).unwrap() },
     }
@@ -308,7 +312,7 @@ fn pivot_impl_single_column(
                         Mean => value_col.agg_mean(&groups),
                         Median => value_col.agg_median(&groups),
                         Count => groups.group_count().into_column(),
-                        Expr(ref expr) => {
+                        Expr(expr) => {
                             let name = expr.root_name()?.clone();
                             let mut value_col = value_col.clone();
                             value_col.rename(name);
@@ -379,6 +383,5 @@ fn pivot_impl_single_column(
     });
     out?;
 
-    // SAFETY: length has already been checked.
-    unsafe { DataFrame::new_no_length_checks(final_cols) }
+    DataFrame::new(final_cols)
 }

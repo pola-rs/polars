@@ -144,8 +144,7 @@ where
         let mut arr =
             T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(CompatLevel::newest()));
         if indices.null_count() > 0 {
-            let array_refs: Vec<&dyn Array> = indices.chunks().iter().map(|x| &**x).collect();
-            arr = arr.with_validity_typed(concatenate_validities(&array_refs));
+            arr = arr.with_validity_typed(concatenate_validities(indices.chunks()));
         }
         Ok(ChunkedArray::from_chunk_iter_like(self, [arr]))
     }
@@ -171,7 +170,7 @@ mod test {
 
     fn random_filter<T: Clone, R: Rng>(rng: &mut R, v: &[T], pr: Range<f64>) -> Vec<Option<T>> {
         let p = rng.gen_range(pr);
-        let rand_filter = |x| Some(x).filter(|_| rng.gen::<f64>() < p);
+        let rand_filter = |x| Some(x).filter(|_| rng.r#gen::<f64>() < p);
         v.iter().cloned().map(rand_filter).collect()
     }
 

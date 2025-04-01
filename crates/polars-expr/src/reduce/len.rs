@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;

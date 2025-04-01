@@ -4,7 +4,7 @@ use arrow::datatypes::ArrowSchema;
 use polars_error::{PolarsError, PolarsResult};
 
 use super::schema::schema_to_metadata_key;
-use super::{to_parquet_schema, ThriftFileMetadata, WriteOptions};
+use super::{ThriftFileMetadata, WriteOptions, to_parquet_schema};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
 use crate::parquet::write::{RowGroupIterColumns, WriteOptions as FileWriteOptions};
 
