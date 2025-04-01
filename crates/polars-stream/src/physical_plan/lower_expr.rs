@@ -541,6 +541,35 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
+                function: FunctionExpr::ConcatExpr(_rechunk),
+                options: _,
+            } => {
+                // We have to lower each expression separately as they might have different lengths.
+                let mut concat_streams = Vec::new();
+                let out_name = unique_column_name();
+                for inner_expr in inner_exprs {
+                    let (trans_input, trans_expr) =
+                        lower_exprs_with_ctx(input, &[inner_expr.node()], ctx)?;
+                    let select_expr =
+                        ExprIR::new(trans_expr[0], OutputName::Alias(out_name.clone()));
+                    concat_streams.push(build_select_stream_with_ctx(
+                        trans_input,
+                        &[select_expr],
+                        ctx,
+                    )?);
+                }
+
+                let output_schema = ctx.phys_sm[concat_streams[0].node].output_schema.clone();
+                let node_kind = PhysNodeKind::OrderedUnion {
+                    inputs: concat_streams,
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
                 function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
                 options: _,
             } if {
