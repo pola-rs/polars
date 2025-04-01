@@ -31,7 +31,7 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
 stacker = { workspace = true }
-sysinfo = { version = "0.33", default-features = false, features = ["system"], optional = true }
+sysinfo = { version = "0.34", default-features = false, features = ["system"], optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }
