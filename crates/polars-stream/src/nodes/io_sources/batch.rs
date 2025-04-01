@@ -1,4 +1,4 @@
-//! Batched oneshot reader
+//! Reads batches from a `dyn Fn`
 
 use std::sync::Arc;
 
