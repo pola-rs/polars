@@ -637,7 +637,7 @@ impl LazyFrame {
                     Context::Default,
                     expr_arena,
                     schema,
-                    &mut ExpressionConversionState::new(true, 0),
+                    &mut ExpressionConversionState::new(true),
                 )
                 .ok()?;
                 let io_expr = phys_expr_to_io_expr(phys_expr);
