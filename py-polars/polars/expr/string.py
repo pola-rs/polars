@@ -1633,6 +1633,9 @@ class ExprStringNameSpace:
         │ http://vote.com/ballon_dor?err… ┆ {null,null}           ┆ null     │
         └─────────────────────────────────┴───────────────────────┴──────────┘
         """
+        if not isinstance(pattern, str):
+            msg = f"extract_groups expects a `str`, given a `{type(pattern)}`"
+            raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
     def count_matches(self, pattern: str | Expr, *, literal: bool = False) -> Expr:
