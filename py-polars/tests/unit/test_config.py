@@ -919,6 +919,23 @@ def test_truncated_rows_cols_values_ascii() -> None:
         )
 
 
+def test_default_time_unit() -> None:
+    ser = pl.Series(["2025-01-01"])
+    assert ser.str.to_datetime().dtype == pl.Datetime("us")
+
+    pl.Config.set_default_time_unit("ms")
+    assert ser.str.to_datetime().dtype == pl.Datetime("ms")
+
+    pl.Config.set_default_time_unit("ns")
+    assert ser.str.to_datetime().dtype == pl.Datetime("ns")
+
+    with (
+        pytest.raises(ValueError, match="invalid time unit: 'abc'"),
+        pl.Config(set_default_time_unit="abc"),  # type: ignore[arg-type]
+    ):
+        pass
+
+
 def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
     issue_unstable_warning()
     assert len(recwarn) == 0
@@ -996,6 +1013,7 @@ def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
         ("POLARS_TABLE_WIDTH", "set_tbl_width_chars", 80, "80"),
         ("POLARS_VERBOSE", "set_verbose", True, "1"),
         ("POLARS_WARN_UNSTABLE", "warn_unstable", True, "1"),
+        ("POLARS_DEFAULT_TIME_UNIT", "set_default_time_unit", "ms", "ms"),
     ],
 )
 def test_unset_config_env_vars(

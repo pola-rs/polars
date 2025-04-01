@@ -74,6 +74,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_VERBOSE",
     "POLARS_MAX_EXPR_DEPTH",
     "POLARS_ENGINE_AFFINITY",
+    "POLARS_DEFAULT_TIME_UNIT",
 }
 
 # vars that set the rust env directly should declare themselves here as the Config
@@ -118,6 +119,7 @@ class ConfigParameters(TypedDict, total=False):
     trim_decimal_zeros: bool | None
     verbose: bool | None
     expr_depth_warning: int
+    default_time_unit: Literal["ns", "us", "ms"] | None
 
     set_ascii_tables: bool | None
     set_auto_structify: bool | None
@@ -144,6 +146,7 @@ class ConfigParameters(TypedDict, total=False):
     set_verbose: bool | None
     set_expr_depth_warning: int
     set_engine_affinity: EngineType | None
+    set_default_time_unit: Literal["ns", "us", "ms"] | None
 
 
 class Config(contextlib.ContextDecorator):
@@ -1511,4 +1514,40 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)
         else:
             os.environ["POLARS_ENGINE_AFFINITY"] = engine
+        return cls
+
+    @classmethod
+    def set_default_time_unit(
+        cls, unit: Literal["ns", "us", "ms"] | None = None
+    ) -> type[Config]:
+        """
+        Set the default time unit for `to_datetime` and `strptime`.
+
+        Parameters
+        ----------
+        unit : {None, 'ns', 'us', 'ms'}
+            The default time unit to use for `to_datetime` and `strptime`.
+
+        Examples
+        --------
+        >>> ser = pl.Series(["2025-01-01"])
+        >>> pl.Config.set_default_time_unit("ms")
+        >>> ser.str.to_datetime()
+        shape: (1,)
+        Series: '' [datetime[ms]]
+        [
+                2025-01-01 00:00:00
+        ]
+
+        Raises
+        ------
+        ValueError: if unit is not one of 'ns', 'us', 'ms'
+        """
+        if unit is None:
+            os.environ.pop("POLARS_DEFAULT_TIME_UNIT", None)
+        else:
+            if unit not in {"ns", "us", "ms"}:
+                msg = f"invalid time unit: {unit!r}. Expected one of: ns, us, ms"
+                raise ValueError(msg)
+            os.environ["POLARS_DEFAULT_TIME_UNIT"] = unit
         return cls
