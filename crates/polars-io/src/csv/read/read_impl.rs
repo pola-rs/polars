@@ -92,6 +92,8 @@ pub fn cast_columns(
                 df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
             }
         }
+
+        df.clear_schema();
     }
     Ok(())
 }

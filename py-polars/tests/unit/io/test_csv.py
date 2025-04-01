@@ -1936,6 +1936,7 @@ def test_csv_ragged_lines() -> None:
             pl.read_csv(io.StringIO(s), has_header=True, truncate_ragged_lines=False)
 
 
+@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_provide_schema() -> None:
     # can be used to overload schema with ragged csv files
     assert pl.read_csv(
@@ -2489,6 +2490,7 @@ def test_csv_invalid_quoted_comment_line() -> None:
     ).to_dict(as_series=False) == {"ColA": [1], "ColB": [2]}
 
 
+@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_csv_compressed_new_columns_19916() -> None:
     n_rows = 100
 
