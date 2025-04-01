@@ -463,7 +463,7 @@ def test_str_to_integer_invalid_base() -> None:
     with pytest.raises(ComputeError):
         numbers.str.to_integer(base=100)
 
-    df = pl.DataFrame({"str": numbers, "base": [0, 1, 100, 1000]})
+    df = pl.DataFrame({"str": numbers, "base": [0, 1, 100, None]})
 
     assert_frame_equal(
         df.select(
