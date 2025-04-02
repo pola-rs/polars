@@ -33,6 +33,7 @@ pub fn int_ranges(start: Expr, end: Expr, step: Expr) -> Expr {
         input,
         function: FunctionExpr::Range(RangeFunction::IntRanges),
         options: FunctionOptions {
+            collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
@@ -64,7 +65,7 @@ pub fn date_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWin
         input,
         function: FunctionExpr::Range(RangeFunction::DateRanges { interval, closed }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
+            collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
@@ -121,7 +122,7 @@ pub fn datetime_ranges(
             time_zone,
         }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
+            collect_groups: ApplyOptions::ElementWise,
             cast_options: Some(CastingRules::cast_to_supertypes()),
             flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
@@ -154,7 +155,7 @@ pub fn time_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWin
         input,
         function: FunctionExpr::Range(RangeFunction::TimeRanges { interval, closed }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
+            collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
@@ -203,7 +204,7 @@ pub fn linear_spaces(
             array_width,
         }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
+            collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
