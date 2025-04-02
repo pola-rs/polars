@@ -72,7 +72,7 @@ pub trait StringNameSpaceImpl: AsString {
                 polars_bail!(ComputeError: "`to_integer` called with invalid base '{base}'");
             }
 
-            Num::from_str_radix(s, base)
+            <i64 as Num>::from_str_radix(s, base)
                 .map_err(|err| polars_err!(ComputeError: "failed to parse int: {err}"))
         };
 
@@ -108,7 +108,7 @@ pub trait StringNameSpaceImpl: AsString {
                     some_failures
                         .get(0)
                         .zip(base_failures.get(0))
-                        .and_then(|(s, base)| Num::from_str_radix(s, base).err())
+                        .and_then(|(s, base)| <i64 as Num>::from_str_radix(s, base).err())
                         .map_or_else(
                             || unreachable!("failed to extract ParseIntError"),
                             |e| format!("{}", e),
