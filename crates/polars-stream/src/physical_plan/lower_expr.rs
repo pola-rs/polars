@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{DataType, Field, InitHashMaps, PlHashMap, PlHashSet};
+use polars_core::prelude::{DataType, Field, FillNullStrategy, InitHashMaps, PlHashMap, PlHashSet};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;

@@ -67,33 +67,22 @@ pub trait StringNameSpaceImpl: AsString {
     fn to_integer(&self, base: &UInt32Chunked, strict: bool) -> PolarsResult<Int64Chunked> {
         let ca = self.as_string();
 
-        let parse = |opt_s: Option<&str>, opt_base: Option<u32>| -> PolarsResult<i64> {
-            match (opt_s, opt_base) {
-                (Some(s), Some(base)) if (2..=36).contains(&base) => {
-                    match <i64 as Num>::from_str_radix(s, base) {
-                        Ok(t) => Ok(t),
-                        Err(parse_int_error) => Err(PolarsError::ComputeError(
-                            format!("parse int error: {}", parse_int_error).into(),
-                        )),
-                    }
-                },
-                (Some(_), Some(_)) => Err(PolarsError::ComputeError("invalid base".into())),
-                (None, Some(_)) => Err(PolarsError::ComputeError(
-                    "Cannot parse string without a numeric string".into(),
-                )),
-                (Some(_), None) => Err(PolarsError::ComputeError(
-                    "Cannot parse string without a base".into(),
-                )),
-                (None, None) => Err(PolarsError::ComputeError(
-                    "Cannot parse string without a numeric string and base".into(),
-                )),
+        let parse = |s: &str, base: u32| -> PolarsResult<i64> {
+            if !(2..=36).contains(&base) {
+                polars_bail!(ComputeError: "`to_integer` called with invalid base '{base}'");
             }
+
+            Num::from_str_radix(s, base)
+                .map_err(|err| polars_err!(ComputeError: "failed to parse int: {err}"))
         };
 
-        let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> Option<i64> {
-            parse(opt_s, opt_base).ok()
+        let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> PolarsResult<Option<i64>> {
+            let (Some(s), Some(base)) = (opt_s, opt_base) else {
+                return Ok(None);
+            };
+            parse(s, base).map(Some)
         };
-        let out = broadcast_binary_elementwise(ca, base, f);
+        let out = broadcast_try_binary_elementwise(ca, base, f)?;
         if strict && ca.null_count() != out.null_count() {
             let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
             let all_failures = ca.filter(&failure_mask)?;
@@ -104,10 +93,11 @@ pub trait StringNameSpaceImpl: AsString {
             let some_failures = all_failures.unique()?.slice(0, 10).sort(false);
             let some_error_msg = match base.len() {
                 1 => {
-                    let base = base.get(0);
+                    // we can ensure that base is not null.
+                    let base = base.get(0).unwrap();
                     some_failures
                         .get(0)
-                        .and_then(|s| parse(Some(s), base).err())
+                        .and_then(|s| <i64 as Num>::from_str_radix(s, base).err())
                         .map_or_else(
                             || unreachable!("failed to extract ParseIntError"),
                             |e| format!("{}", e),
@@ -118,7 +108,7 @@ pub trait StringNameSpaceImpl: AsString {
                     some_failures
                         .get(0)
                         .zip(base_failures.get(0))
-                        .and_then(|(s, base)| parse(Some(s), Some(base)).err())
+                        .and_then(|(s, base)| Num::from_str_radix(s, base).err())
                         .map_or_else(
                             || unreachable!("failed to extract ParseIntError"),
                             |e| format!("{}", e),
