@@ -2008,23 +2008,28 @@ def test_fill_nan() -> None:
     assert df.fill_nan(2.0).dtypes == [pl.Float64, pl.Datetime]
 
 
+#
 def test_forward_fill() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
-    fill = df.select(pl.col("a").forward_fill())["a"]
+    with pytest.deprecated_call():
+        fill = df.select(pl.col("a").forward_fill())["a"]
     assert_series_equal(fill, pl.Series("a", [1, 1, 3]).cast(pl.Float64))
 
     df = pl.DataFrame({"a": [None, 1, None]})
-    fill = df.select(pl.col("a").forward_fill())["a"]
+    with pytest.deprecated_call():
+        fill = df.select(pl.col("a").forward_fill())["a"]
     assert_series_equal(fill, pl.Series("a", [None, 1, 1]).cast(pl.Int64))
 
 
 def test_backward_fill() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
-    fill = df.select(pl.col("a").fill_null(strategy="backward"))["a"]
+    with pytest.deprecated_call():
+        fill = df.select(pl.col("a").backward_fill())["a"]
     assert_series_equal(fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
     df = pl.DataFrame({"a": [None, 1, None]})
-    fill = df.select(pl.col("a").fill_null(strategy="backward"))["a"]
+    with pytest.deprecated_call():
+        fill = df.select(pl.col("a").backward_fill())["a"]
     assert_series_equal(fill, pl.Series("a", [1, 1, None]).cast(pl.Int64))
 
 

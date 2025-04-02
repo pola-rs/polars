@@ -1406,14 +1406,15 @@ class Expr:
         │ 4   ┆ 10      ┆ 4               │
         └─────┴─────────┴─────────────────┘
 
-        Null values are excluded, but can also be filled by calling `forward_fill`.
+        Null values are excluded, but can also be filled by calling
+        `fill_null(strategy="forward")`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
         ...     pl.col("values").cum_sum().alias("value_cum_sum"),
         ...     pl.col("values")
         ...     .cum_sum()
-        ...     .forward_fill()
+        ...     .fill_null(strategy="forward")
         ...     .alias("value_cum_sum_all_filled"),
         ... )
         shape: (8, 3)
@@ -1526,12 +1527,16 @@ class Expr:
         └─────┴─────────┴─────────────────┘
 
 
-        Null values are excluded, but can also be filled by calling `forward_fill`.
+        Null values are excluded, but can also be filled by calling
+        `fill_null(strategy="forward")`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
         ...     pl.col("values").cum_max().alias("cum_max"),
-        ...     pl.col("values").cum_max().forward_fill().alias("cum_max_all_filled"),
+        ...     pl.col("values")
+        ...     .cum_max()
+        ...     .fill_null(strategy="forward")
+        ...     .alias("cum_max_all_filled"),
         ... )
         shape: (8, 3)
         ┌────────┬─────────┬────────────────────┐

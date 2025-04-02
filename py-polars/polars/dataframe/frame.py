@@ -7158,7 +7158,7 @@ class DataFrame:
         ... ).set_sorted("time")
         >>> df.upsample(
         ...     time_column="time", every="1mo", group_by="groups", maintain_order=True
-        ... ).select(pl.all().forward_fill())
+        ... ).select(pl.all().fill_null(strategy="forward"))
         shape: (7, 3)
         ┌─────────────────────┬────────┬────────┐
         │ time                ┆ groups ┆ values │
