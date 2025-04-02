@@ -1379,6 +1379,13 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
         y = F.col(y)
     if isinstance(x, str):
         x = F.col(x)
+    if not hasattr(x, '_pyexpr'):
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{type(x).__name__}`"
+        raise TypeError(msg)
+    if not hasattr(y, '_pyexpr'):
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{type(y).__name__}`"
+        raise TypeError(msg)
+
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
 
 
