@@ -1262,12 +1262,7 @@ impl Expr {
 
     #[cfg(feature = "repeat_by")]
     fn repeat_by_impl(self, by: Expr) -> Expr {
-        self.map_many_private(
-            FunctionExpr::RepeatBy,
-            &[by],
-            false,
-            Some(Default::default()),
-        )
+        self.map_many_private(FunctionExpr::RepeatBy, &[by], false, None)
     }
 
     #[cfg(feature = "repeat_by")]
