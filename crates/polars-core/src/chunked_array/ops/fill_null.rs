@@ -19,8 +19,6 @@ impl Series {
     /// * Max fill (replace None with the maximum of the whole array)
     /// * Zero fill (replace None with the value zero)
     /// * One fill (replace None with the value one)
-    /// * MinBound fill (replace with the minimum of that data type)
-    /// * MaxBound fill (replace with the maximum of that data type)
     ///
     /// *NOTE: If you want to fill the Nones with a value use the
     /// [`fill_null` operation on `ChunkedArray<T>`](crate::chunked_array::ops::ChunkFillNullValue)*.
@@ -52,12 +50,6 @@ impl Series {
     ///
     ///     let filled = s.fill_null(FillNullStrategy::One)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
-    ///
-    ///     let filled = s.fill_null(FillNullStrategy::MinBound)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(-2147483648), Some(2)]);
-    ///
-    ///     let filled = s.fill_null(FillNullStrategy::MaxBound)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2147483647), Some(2)]);
     ///
     ///     Ok(())
     /// }
