@@ -89,14 +89,6 @@ pub(super) fn repeat_by(s: &[Column]) -> PolarsResult<Column> {
         .map(|ok| ok.into_column())
 }
 
-pub(super) fn backward_fill(s: &Column, limit: FillNullLimit) -> PolarsResult<Column> {
-    s.fill_null(FillNullStrategy::Backward(limit))
-}
-
-pub(super) fn forward_fill(s: &Column, limit: FillNullLimit) -> PolarsResult<Column> {
-    s.fill_null(FillNullStrategy::Forward(limit))
-}
-
 pub(super) fn max_horizontal(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     polars_ops::prelude::max_horizontal(s)
 }

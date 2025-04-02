@@ -9,7 +9,6 @@ Manipulation/selection
     Expr.append
     Expr.arg_sort
     Expr.arg_true
-    Expr.backward_fill
     Expr.bottom_k
     Expr.bottom_k_by
     Expr.cast
@@ -25,7 +24,6 @@ Manipulation/selection
     Expr.filter
     Expr.flatten
     Expr.floor
-    Expr.forward_fill
     Expr.gather
     Expr.gather_every
     Expr.get

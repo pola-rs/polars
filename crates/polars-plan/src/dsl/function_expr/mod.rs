@@ -328,12 +328,6 @@ pub enum FunctionExpr {
         /// Pickle serialized keyword arguments.
         kwargs: Arc<[u8]>,
     },
-    BackwardFill {
-        limit: FillNullLimit,
-    },
-    ForwardFill {
-        limit: FillNullLimit,
-    },
     MaxHorizontal,
     MinHorizontal,
     SumHorizontal {
@@ -579,7 +573,6 @@ impl Hash for FunctionExpr {
             RLEID => {},
             ToPhysical => {},
             SetSortedFlag(is_sorted) => is_sorted.hash(state),
-            BackwardFill { limit } | ForwardFill { limit } => limit.hash(state),
             #[cfg(feature = "ewma")]
             EwmMean { options } => options.hash(state),
             #[cfg(feature = "ewma_by")]
@@ -775,8 +768,6 @@ impl Display for FunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
-            BackwardFill { .. } => "backward_fill",
-            ForwardFill { .. } => "forward_fill",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
             SumHorizontal { .. } => "sum_horizontal",
@@ -1189,8 +1180,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     kwargs.as_ref()
                 )
             },
-            BackwardFill { limit } => map!(dispatch::backward_fill, limit),
-            ForwardFill { limit } => map!(dispatch::forward_fill, limit),
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
             SumHorizontal { ignore_nulls } => wrap!(dispatch::sum_horizontal, ignore_nulls),

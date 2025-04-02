@@ -1959,8 +1959,8 @@ def test_fill_null() -> None:
     )
 
     assert df.select(
-        pl.all().forward_fill().name.suffix("_forward"),
-        pl.all().backward_fill().name.suffix("_backward"),
+        pl.all().fill_null(strategy="forward").name.suffix("_forward"),
+        pl.all().fill_null(strategy="backward").name.suffix("_backward"),
     ).to_dict(as_series=False) == {
         "c_forward": [
             ["Apple", "Orange"],
@@ -2020,11 +2020,11 @@ def test_forward_fill() -> None:
 
 def test_backward_fill() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
-    fill = df.select(pl.col("a").backward_fill())["a"]
+    fill = df.select(pl.col("a").fill_null(strategy="backward"))["a"]
     assert_series_equal(fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
     df = pl.DataFrame({"a": [None, 1, None]})
-    fill = df.select(pl.col("a").backward_fill())["a"]
+    fill = df.select(pl.col("a").fill_null(strategy="backward"))["a"]
     assert_series_equal(fill, pl.Series("a", [1, 1, None]).cast(pl.Int64))
 
 

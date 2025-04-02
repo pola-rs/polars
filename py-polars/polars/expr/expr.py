@@ -2647,8 +2647,7 @@ class Expr:
 
         See Also
         --------
-        backward_fill
-        forward_fill
+        fill_null
 
         Examples
         --------
@@ -2852,9 +2851,15 @@ class Expr:
         fill_value = parse_into_expression(value, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.fill_nan(fill_value))
 
+    @deprecate_function(
+        'Use `.fill_null(strategy="forward")` instead.', version="1.27.0"
+    )
     def forward_fill(self, limit: int | None = None) -> Expr:
         """
         Fill missing values with the last non-null value.
+
+        .. deprecated:: 1.27.0
+            Use :meth:`fill_null` with `strategy="forward"`.
 
         Parameters
         ----------
@@ -2863,34 +2868,20 @@ class Expr:
 
         See Also
         --------
-        backward_fill
+        fill_null
         shift
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, None],
-        ...         "b": [4, None, 6],
-        ...     }
-        ... )
-        >>> df.select(pl.all().forward_fill())
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 4   │
-        │ 2   ┆ 4   │
-        │ 2   ┆ 6   │
-        └─────┴─────┘
         """
-        return self._from_pyexpr(self._pyexpr.forward_fill(limit))
+        return self.fill_null(strategy="forward", limit=limit)
 
+    @deprecate_function(
+        'Use `.fill_null(strategy="backward")` instead.', version="1.27.0"
+    )
     def backward_fill(self, limit: int | None = None) -> Expr:
         """
         Fill missing values with the next non-null value.
+
+        .. deprecated:: 1.27.0
+            Use :meth:`fill_null` with `strategy="backward"`.
 
         Parameters
         ----------
@@ -2899,42 +2890,10 @@ class Expr:
 
         See Also
         --------
-        forward_fill
+        fill_null
         shift
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, None],
-        ...         "b": [4, None, 6],
-        ...         "c": [None, None, 2],
-        ...     }
-        ... )
-        >>> df.select(pl.all().backward_fill())
-        shape: (3, 3)
-        ┌──────┬─────┬─────┐
-        │ a    ┆ b   ┆ c   │
-        │ ---  ┆ --- ┆ --- │
-        │ i64  ┆ i64 ┆ i64 │
-        ╞══════╪═════╪═════╡
-        │ 1    ┆ 4   ┆ 2   │
-        │ 2    ┆ 6   ┆ 2   │
-        │ null ┆ 6   ┆ 2   │
-        └──────┴─────┴─────┘
-        >>> df.select(pl.all().backward_fill(limit=1))
-        shape: (3, 3)
-        ┌──────┬─────┬──────┐
-        │ a    ┆ b   ┆ c    │
-        │ ---  ┆ --- ┆ ---  │
-        │ i64  ┆ i64 ┆ i64  │
-        ╞══════╪═════╪══════╡
-        │ 1    ┆ 4   ┆ null │
-        │ 2    ┆ 6   ┆ 2    │
-        │ null ┆ 6   ┆ 2    │
-        └──────┴─────┴──────┘
         """
-        return self._from_pyexpr(self._pyexpr.backward_fill(limit))
+        return self.fill_null(strategy="backward", limit=limit)
 
     def reverse(self) -> Expr:
         """

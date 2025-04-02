@@ -707,7 +707,9 @@ def test_fill_null() -> None:
 
 def test_backward_fill() -> None:
     ldf = pl.LazyFrame({"a": [1.0, None, 3.0]})
-    col_a_backward_fill = ldf.select([pl.col("a").backward_fill()]).collect()["a"]
+    col_a_backward_fill = ldf.select(
+        [pl.col("a").fill_null(strategy="backward")]
+    ).collect()["a"]
     assert_series_equal(col_a_backward_fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
 
