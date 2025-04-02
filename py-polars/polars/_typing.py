@@ -15,6 +15,7 @@ from typing import (
 )
 
 if TYPE_CHECKING:
+    import contextlib
     import sys
     from datetime import date, datetime, time, timedelta
     from decimal import Decimal
@@ -29,6 +30,9 @@ if TYPE_CHECKING:
     from polars.dependencies import pyarrow as pa
     from polars.lazyframe.engine_config import GPUEngine
     from polars.selectors import _selector_proxy_
+
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        from polars.polars import PyPartitioning
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -320,3 +324,15 @@ FileSource: TypeAlias = Union[
 ]
 
 JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
+
+
+class PartitioningScheme:
+    def __init__(
+        self,
+        py_partitioning: PyPartitioning,
+    ) -> None:
+        self._py_partitioning = py_partitioning
+
+    @property
+    def _base_path(self) -> str | None:
+        return self._py_partitioning.base_path

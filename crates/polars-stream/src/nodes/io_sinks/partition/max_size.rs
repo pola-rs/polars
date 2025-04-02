@@ -25,7 +25,7 @@ pub struct MaxSizePartitionSinkNode {
     input_schema: SchemaRef,
     max_size: IdxSize,
 
-    base_path: PathBuf,
+    base_path: Arc<PathBuf>,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -47,7 +47,7 @@ impl MaxSizePartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         max_size: IdxSize,
-        base_path: PathBuf,
+        base_path: Arc<PathBuf>,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,

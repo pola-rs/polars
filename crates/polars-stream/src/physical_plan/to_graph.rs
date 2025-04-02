@@ -239,7 +239,7 @@ fn to_graph_rec<'a>(
         },
 
         FileSink {
-            path,
+            target,
             sink_options,
             file_type,
             input,
@@ -254,7 +254,7 @@ fn to_graph_rec<'a>(
                 FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
                         input_schema,
-                        path.to_path_buf(),
+                        target.clone(),
                         sink_options,
                         *ipc_writer_options,
                         cloud_options.clone(),
@@ -264,7 +264,7 @@ fn to_graph_rec<'a>(
                 #[cfg(feature = "json")]
                 FileType::Json(_) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
-                        path.to_path_buf(),
+                        target.clone(),
                         sink_options,
                         cloud_options.clone(),
                     )),
@@ -274,7 +274,7 @@ fn to_graph_rec<'a>(
                 FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
                         input_schema,
-                        path,
+                        target.clone(),
                         sink_options,
                         parquet_writer_options,
                         cloud_options.clone(),
@@ -284,7 +284,7 @@ fn to_graph_rec<'a>(
                 #[cfg(feature = "csv")]
                 FileType::Csv(csv_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
-                        path.to_path_buf(),
+                        target.clone(),
                         input_schema,
                         sink_options,
                         csv_writer_options.clone(),
