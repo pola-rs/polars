@@ -242,6 +242,7 @@ fn create_physical_plan_impl(
                         FileType::Csv(_) => "csv",
                         #[cfg(feature = "json")]
                         FileType::Json(_) => "json",
+                        #[allow(unreachable_patterns)]
                         _ => panic!("enable filetype feature"),
                     };
 
@@ -315,6 +316,8 @@ fn create_physical_plan_impl(
                                         .with_json_format(JsonFormat::JsonLines)
                                         .finish(&mut df)?;
                                 },
+                                #[allow(unreachable_patterns)]
+                                _ => panic!("enable filetype feature"),
                             }
 
                             file.sync_on_close(sink_options.sync_on_close)?;
