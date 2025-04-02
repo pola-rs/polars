@@ -752,7 +752,10 @@ impl LazyFrame {
         if engine == Engine::Auto {
             engine = match payload {
                 SinkType::Memory => Engine::InMemory,
+                #[cfg(feature = "new_streaming")]
                 SinkType::File { .. } | SinkType::Partition { .. } => Engine::Streaming,
+                #[cfg(not(feature = "new_streaming"))]
+                _ => Engine::InMemory,
             };
         }
         // Gpu uses some hacks to dispatch.
