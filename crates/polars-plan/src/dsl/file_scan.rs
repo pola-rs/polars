@@ -23,6 +23,7 @@ bitflags::bitflags! {
 
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+// TODO: Arc<> some of the options and the cloud options.
 pub enum FileScan {
     #[cfg(feature = "csv")]
     Csv {

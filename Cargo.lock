@@ -3145,6 +3145,7 @@ dependencies = [
  "polars-utils",
  "rand",
  "rayon",
+ "recursive",
 ]
 
 [[package]]
@@ -3425,6 +3426,7 @@ dependencies = [
  "chrono-tz",
  "either",
  "flate2",
+ "hashbrown 0.15.2",
  "itoa",
  "libc",
  "ndarray",

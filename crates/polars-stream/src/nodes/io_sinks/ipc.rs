@@ -1,6 +1,5 @@
 use std::cmp::Reverse;
 use std::io::BufWriter;
-use std::path::PathBuf;
 
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_core::utils::arrow;
@@ -13,8 +12,7 @@ use polars_error::PolarsResult;
 use polars_io::SerWriter;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::{IpcWriter, IpcWriterOptions};
-use polars_io::utils::file::Writeable;
-use polars_plan::dsl::SinkOptions;
+use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
 
 use super::{
@@ -29,7 +27,7 @@ use crate::execute::StreamingExecutionState;
 use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
 
 pub struct IpcSinkNode {
-    path: PathBuf,
+    target: SinkTarget,
 
     input_schema: SchemaRef,
     write_options: IpcWriterOptions,
@@ -40,13 +38,13 @@ pub struct IpcSinkNode {
 impl IpcSinkNode {
     pub fn new(
         input_schema: SchemaRef,
-        path: PathBuf,
+        target: SinkTarget,
         sink_options: SinkOptions,
         write_options: IpcWriterOptions,
         cloud_options: Option<CloudOptions>,
     ) -> Self {
         Self {
-            path,
+            target,
 
             input_schema,
             write_options,
@@ -294,20 +292,15 @@ impl SinkNode for IpcSinkNode {
         // IO task.
         //
         // Task that will actually do write to the target file.
-        let path = self.path.clone();
+        let target = self.target.clone();
         let sink_options = self.sink_options.clone();
         let write_options = self.write_options;
         let cloud_options = self.cloud_options.clone();
         let input_schema = self.input_schema.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
-            if sink_options.mkdir {
-                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
-            }
-
-            let mut file = polars_io::utils::file::Writeable::try_new(
-                path.to_str().unwrap(),
-                cloud_options.as_ref(),
-            )?;
+            let mut file = target
+                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .await?;
             let writer = BufWriter::new(&mut *file);
             let mut writer = IpcWriter::new(writer)
                 .with_compression(write_options.compression)
@@ -323,10 +316,7 @@ impl SinkNode for IpcSinkNode {
             writer.finish()?;
             drop(writer);
 
-            if let Writeable::Local(file) = &mut file {
-                polars_io::utils::sync_on_close::sync_on_close(sink_options.sync_on_close, file)?;
-            }
-
+            file.sync_on_close(sink_options.sync_on_close)?;
             file.close()?;
 
             PolarsResult::Ok(())

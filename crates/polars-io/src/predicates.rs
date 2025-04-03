@@ -471,6 +471,10 @@ pub struct ScanIOPredicate {
 }
 impl ScanIOPredicate {
     pub fn set_external_constant_columns(&mut self, constant_columns: Vec<(PlSmallStr, Scalar)>) {
+        if constant_columns.is_empty() {
+            return;
+        }
+
         let mut live_columns = self.live_columns.as_ref().clone();
         for (c, _) in constant_columns.iter() {
             live_columns.swap_remove(c);

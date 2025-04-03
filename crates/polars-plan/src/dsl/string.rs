@@ -358,7 +358,7 @@ impl StringNameSpace {
     #[cfg(feature = "dtype-decimal")]
     pub fn to_decimal(self, infer_length: usize) -> Expr {
         self.0
-            .map_private(StringFunction::ToDecimal(infer_length).into())
+            .apply_private(StringFunction::ToDecimal(infer_length).into())
     }
 
     /// Concat the values into a string array.

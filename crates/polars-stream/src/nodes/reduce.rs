@@ -134,6 +134,7 @@ impl ComputeNode for ReduceNode {
                     .iter_mut()
                     .zip(self.output_schema.iter_fields())
                     .map(|(r, field)| {
+                        r.resize(1);
                         r.finalize().map(|s| {
                             let s = s.with_name(field.name.clone()).cast(&field.dtype).unwrap();
                             Column::Scalar(ScalarColumn::unit_scalar_from_series(s))

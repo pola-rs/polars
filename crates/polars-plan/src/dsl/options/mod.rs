@@ -1,9 +1,10 @@
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+
+mod sink;
 
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
@@ -15,8 +16,7 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
-use polars_io::utils::sync_on_close::SyncOnCloseType;
-use polars_io::{HiveOptions, RowIndex, is_cloud_url};
+use polars_io::{HiveOptions, RowIndex};
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::IEJoinOptions;
 use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinTypeOptions};
@@ -26,13 +26,13 @@ use polars_time::DynamicGroupOptions;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::RollingGroupOptions;
 use polars_utils::IdxSize;
-use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+pub use sink::*;
 use strum_macros::IntoStaticStr;
 
-use super::{AExpr, Expr, ExprIR};
+use super::ExprIR;
 use crate::dsl::Selector;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
@@ -333,163 +333,6 @@ pub struct AnonymousScanOptions {
     pub fmt_str: &'static str,
 }
 
-/// Options that apply to all sinks.
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct SinkOptions {
-    /// Call sync when closing the file.
-    pub sync_on_close: SyncOnCloseType,
-
-    /// The output file needs to maintain order of the data that comes in.
-    pub maintain_order: bool,
-
-    /// Recursively create all the directories in the path.
-    pub mkdir: bool,
-}
-
-impl Default for SinkOptions {
-    fn default() -> Self {
-        Self {
-            sync_on_close: Default::default(),
-            maintain_order: true,
-            mkdir: false,
-        }
-    }
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FileSinkType {
-    pub path: Arc<PathBuf>,
-    pub file_type: FileType,
-    pub sink_options: SinkOptions,
-    pub cloud_options: Option<polars_io::cloud::CloudOptions>,
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SinkTypeIR {
-    Memory,
-    File(FileSinkType),
-    Partition(PartitionSinkTypeIR),
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct PartitionSinkType {
-    pub path_f_string: Arc<PathBuf>,
-    pub file_type: FileType,
-    pub sink_options: SinkOptions,
-    pub variant: PartitionVariant,
-    pub cloud_options: Option<polars_io::cloud::CloudOptions>,
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PartitionSinkTypeIR {
-    pub path_f_string: Arc<PathBuf>,
-    pub file_type: FileType,
-    pub sink_options: SinkOptions,
-    pub variant: PartitionVariantIR,
-    pub cloud_options: Option<polars_io::cloud::CloudOptions>,
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SinkType {
-    Memory,
-    File(FileSinkType),
-    Partition(PartitionSinkType),
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum PartitionVariant {
-    MaxSize(IdxSize),
-    Parted {
-        key_exprs: Vec<Expr>,
-        include_key: bool,
-    },
-    ByKey {
-        key_exprs: Vec<Expr>,
-        include_key: bool,
-    },
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PartitionVariantIR {
-    MaxSize(IdxSize),
-    Parted {
-        key_exprs: Vec<ExprIR>,
-        include_key: bool,
-    },
-    ByKey {
-        key_exprs: Vec<ExprIR>,
-        include_key: bool,
-    },
-}
-
-impl SinkTypeIR {
-    #[cfg(feature = "cse")]
-    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
-        std::mem::discriminant(self).hash(state);
-        match self {
-            Self::Memory => {},
-            Self::File(f) => f.hash(state),
-            Self::Partition(f) => {
-                f.path_f_string.hash(state);
-                f.file_type.hash(state);
-                f.sink_options.hash(state);
-                f.variant.traverse_and_hash(expr_arena, state);
-                f.cloud_options.hash(state);
-            },
-        }
-    }
-}
-
-impl PartitionVariantIR {
-    #[cfg(feature = "cse")]
-    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
-        std::mem::discriminant(self).hash(state);
-        match self {
-            Self::MaxSize(size) => size.hash(state),
-            Self::Parted {
-                key_exprs,
-                include_key,
-            }
-            | Self::ByKey {
-                key_exprs,
-                include_key,
-            } => {
-                include_key.hash(state);
-                for key_expr in key_exprs.as_slice() {
-                    key_expr.traverse_and_hash(expr_arena, state);
-                }
-            },
-        }
-    }
-}
-
-impl SinkType {
-    pub(crate) fn is_cloud_destination(&self) -> bool {
-        if let Self::File(f) = self {
-            if is_cloud_url(f.path.as_ref()) {
-                return true;
-            }
-        }
-
-        false
-    }
-}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
-pub struct FileSinkOptions {
-    pub path: Arc<PathBuf>,
-    pub file_type: FileType,
-}
-
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FileType {
@@ -502,6 +345,25 @@ pub enum FileType {
     #[cfg(feature = "json")]
     Json(JsonWriterOptions),
 }
+
+impl FileType {
+    pub fn extension(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "parquet")]
+            Self::Parquet(_) => "parquet",
+            #[cfg(feature = "ipc")]
+            Self::Ipc(_) => "ipc",
+            #[cfg(feature = "csv")]
+            Self::Csv(_) => "csv",
+            #[cfg(feature = "json")]
+            Self::Json(_) => "jsonl",
+
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("enable file type features"),
+        }
+    }
+}
+
 //
 // Arguments given to `concat`. Differs from `UnionOptions` as the latter is IR state.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
