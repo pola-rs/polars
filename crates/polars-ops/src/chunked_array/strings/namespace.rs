@@ -66,13 +66,19 @@ pub trait StringNameSpaceImpl: AsString {
     // Parse a string number with base _radix_ into a decimal (i64)
     fn to_integer(&self, base: &UInt32Chunked, strict: bool) -> PolarsResult<Int64Chunked> {
         let ca = self.as_string();
-        let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> Option<i64> {
-            match (opt_s, opt_base) {
-                (Some(s), Some(base)) => <i64 as Num>::from_str_radix(s, base).ok(),
-                _ => None,
+
+        let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> PolarsResult<Option<i64>> {
+            let (Some(s), Some(base)) = (opt_s, opt_base) else {
+                return Ok(None);
+            };
+
+            if !(2..=36).contains(&base) {
+                polars_bail!(ComputeError: "`to_integer` called with invalid base '{base}'");
             }
+
+            Ok(<i64 as Num>::from_str_radix(s, base).ok())
         };
-        let out = broadcast_binary_elementwise(ca, base, f);
+        let out = broadcast_try_binary_elementwise(ca, base, f)?;
         if strict && ca.null_count() != out.null_count() {
             let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
             let all_failures = ca.filter(&failure_mask)?;
@@ -94,10 +100,10 @@ pub trait StringNameSpaceImpl: AsString {
                         )
                 },
                 _ => {
-                    let base_filures = base.filter(&failure_mask)?;
+                    let base_failures = base.filter(&failure_mask)?;
                     some_failures
                         .get(0)
-                        .zip(base_filures.get(0))
+                        .zip(base_failures.get(0))
                         .and_then(|(s, base)| <i64 as Num>::from_str_radix(s, base).err())
                         .map_or_else(
                             || unreachable!("failed to extract ParseIntError"),
