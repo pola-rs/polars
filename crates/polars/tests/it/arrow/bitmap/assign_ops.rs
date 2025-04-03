@@ -12,10 +12,7 @@ fn basics() {
     let mut b = MutableBitmap::from_iter(std::iter::repeat_n(true, 10));
     let c = Bitmap::from_iter(std::iter::repeat_n(true, 10));
     binary_assign(&mut b, &c, |x: u8, y| x | y);
-    assert_eq!(
-        b,
-        MutableBitmap::from_iter(std::iter::repeat(true).take(10))
-    );
+    assert_eq!(b, MutableBitmap::from_iter(std::iter::repeat_n(true, 10)));
 }
 
 #[test]
