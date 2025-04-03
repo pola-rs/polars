@@ -124,8 +124,7 @@ fn from_trusted_len_iter() {
 
 #[test]
 fn try_from_trusted_len_iter() {
-    let iter = std::iter::repeat(true)
-        .take(2)
+    let iter = std::iter::repeat_n(true, 2)
         .map(Some)
         .map(PolarsResult::Ok);
     let a = BooleanArray::try_from_trusted_len_iter(iter.clone()).unwrap();
