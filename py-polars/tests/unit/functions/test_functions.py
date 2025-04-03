@@ -454,41 +454,52 @@ def test_coalesce() -> None:
             "c": [5, None, 3, None],
         }
     )
-
-    # List inputs
+    # list inputs
     expected = pl.Series("d", [1, 2, 3, 10]).to_frame()
     result = df.select(pl.coalesce(["a", "b", "c", 10]).alias("d"))
     assert_frame_equal(expected, result)
 
-    # Positional inputs
+    # positional inputs
     expected = pl.Series("d", [1.0, 2.0, 3.0, 10.0]).to_frame()
     result = df.select(pl.coalesce(pl.col(["a", "b", "c"]), 10.0).alias("d"))
     assert_frame_equal(result, expected)
 
 
+def test_coalesce_eager() -> None:
+    # eager/series inputs
+    s1 = pl.Series("colx", [None, 2, None])
+    s2 = pl.Series("coly", [1, None, None])
+    s3 = pl.Series("colz", [None, None, 3])
+
+    res = pl.coalesce(s1, s2, s3, eager=True)
+    expected = pl.Series("colx", [1, 2, 3])
+    assert_series_equal(expected, res)
+
+    for zero in (0, pl.lit(0)):
+        res = pl.coalesce(s1, zero, eager=True)
+        expected = pl.Series("colx", [0, 2, 0])
+        assert_series_equal(expected, res)
+
+        res = pl.coalesce(zero, s1, eager=True)
+        expected = pl.Series("literal", [0, 0, 0])
+        assert_series_equal(expected, res)
+
+    with pytest.raises(
+        ValueError,
+        match="expected at least one Series in 'coalesce' if 'eager=True'",
+    ):
+        pl.coalesce("x", "y", eager=True)
+
+
 def test_overflow_diff() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [20, 10, 30],
-        }
-    )
+    df = pl.DataFrame({"a": [20, 10, 30]})
     assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(as_series=False) == {
         "a": [None, -10, 20]
     }
 
 
 def test_fill_null_unknown_output_type() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [
-                None,
-                2,
-                3,
-                4,
-                5,
-            ]
-        }
-    )
+    df = pl.DataFrame({"a": [None, 2, 3, 4, 5]})
     assert df.with_columns(
         np.exp(pl.col("a")).fill_null(pl.lit(1, pl.Float64))
     ).to_dict(as_series=False) == {

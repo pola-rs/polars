@@ -2101,8 +2101,9 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     condition
         Boolean expression to evaluate
     eager
-        Evaluate immediately and return a `Series`. If set to `False` (default),
-        return an expression instead.
+        Evaluate immediately and return a `Series`; this requires that the given
+        condition is itself a `Series`. If set to `False` (default), return
+        an expression instead.
 
     See Also
     --------
@@ -2126,7 +2127,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     if eager:
         if not isinstance(condition, pl.Series):
             msg = (
-                "expected 'Series' in 'arg_where' if 'eager=True', got"
+                "expected Series in 'arg_where' if 'eager=True', got"
                 f" {type(condition).__name__!r}"
             )
             raise ValueError(msg)
@@ -2136,7 +2137,35 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         return wrap_expr(plr.arg_where(condition))
 
 
-def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: Literal[True],
+) -> Series: ...
+
+
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: bool,
+) -> Expr | Series: ...
+
+
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: bool = False,
+) -> Expr | Series:
     """
     Folds the columns from left to right, keeping the first non-null value.
 
@@ -2147,6 +2176,10 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
         names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to coalesce, specified as positional arguments.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
 
     Examples
     --------
@@ -2157,7 +2190,8 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     ...         "c": [5, None, 3, None],
     ...     }
     ... )
-    >>> df.with_columns(pl.coalesce(["a", "b", "c", 10]).alias("d"))
+
+    >>> df.with_columns(pl.coalesce("a", "b", "c", 10).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬─────┐
     │ a    ┆ b    ┆ c    ┆ d   │
@@ -2169,6 +2203,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ 3    ┆ 3   │
     │ null ┆ null ┆ null ┆ 10  │
     └──────┴──────┴──────┴─────┘
+
     >>> df.with_columns(pl.coalesce(pl.col(["a", "b", "c"]), 10.0).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬──────┐
@@ -2181,9 +2216,29 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ 3    ┆ 3.0  │
     │ null ┆ null ┆ null ┆ 10.0 │
     └──────┴──────┴──────┴──────┘
+
+    >>> s1 = pl.Series("a", [None, 2, None])
+    >>> s2 = pl.Series("b", [1, None, 3])
+    >>> pl.coalesce(s1, s2, eager=True)
+    shape: (3,)
+    Series: 'a' [i64]
+    [
+        1
+        2
+        3
+    ]
     """
-    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
-    return wrap_expr(plr.coalesce(exprs))
+    if eager:
+        exprs = [exprs, *more_exprs]
+        if not (series := [e for e in exprs if isinstance(e, pl.Series)]):
+            msg = "expected at least one Series in 'coalesce' if 'eager=True'"
+            raise ValueError(msg)
+
+        exprs = [(e.name if isinstance(e, pl.Series) else e) for e in exprs]
+        return pl.DataFrame(series).select(coalesce(exprs, eager=False)).to_series()
+    else:
+        exprs = parse_into_list_of_expressions(exprs, *more_exprs)
+        return wrap_expr(plr.coalesce(exprs))
 
 
 @overload
