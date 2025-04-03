@@ -216,6 +216,29 @@ def test_concat_vertical() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_corr() -> None:
+    s1 = pl.Series("a", [10, 37, -40])
+    s2 = pl.Series("b", [70, -10, 35])
+
+    # lazy/expression
+    lf = pl.LazyFrame([s1, s2])
+    res1 = lf.select(
+        x=pl.corr("a", "b"),
+        y=pl.corr("a", "b", method="spearman"),
+    ).collect()
+
+    # eager/series
+    res2 = (
+        pl.corr(s1, s2, eager=True).alias("x"),
+        pl.corr(s1, s2, method="spearman", eager=True).alias("y"),
+    )
+
+    # expect same result from both approaches
+    for idx, (r1, r2) in enumerate(zip(res1, res2)):
+        assert pytest.approx(-0.412199756 if idx == 0 else -0.5) == r1.item()
+        assert_series_equal(r1, r2)
+
+
 def test_extend_ints() -> None:
     a = pl.DataFrame({"a": [1 for _ in range(1)]}, schema={"a": pl.Int64})
     with pytest.raises(pl.exceptions.SchemaError):

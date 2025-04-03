@@ -783,6 +783,30 @@ def tail(column: str, n: int = 10) -> Expr:
     return F.col(column).tail(n)
 
 
+@overload
+def corr(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    method: CorrelationMethod = ...,
+    ddof: int | None = ...,
+    propagate_nans: bool = ...,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def corr(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    method: CorrelationMethod = ...,
+    ddof: int | None = ...,
+    propagate_nans: bool = ...,
+    eager: Literal[True],
+) -> Series: ...
+
+
 def corr(
     a: IntoExpr,
     b: IntoExpr,
@@ -790,7 +814,8 @@ def corr(
     method: CorrelationMethod = "pearson",
     ddof: int | None = None,
     propagate_nans: bool = False,
-) -> Expr:
+    eager: bool = False,
+) -> Expr | Series:
     """
     Compute the Pearson's or Spearman rank correlation between two columns.
 
@@ -811,6 +836,10 @@ def corr(
         If `True` any `NaN` encountered will lead to `NaN` in the output.
         Defaults to `False` where `NaN` are regarded as larger than any finite number
         and thus lead to the highest rank.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
 
     Examples
     --------
@@ -835,13 +864,6 @@ def corr(
 
     Spearman rank correlation:
 
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "a": [1, 8, 3],
-    ...         "b": [4, 5, 2],
-    ...         "c": ["foo", "bar", "foo"],
-    ...     }
-    ... )
     >>> df.select(pl.corr("a", "b", method="spearman"))
     shape: (1, 1)
     ┌─────┐
@@ -851,6 +873,23 @@ def corr(
     ╞═════╡
     │ 0.5 │
     └─────┘
+
+    Eager evaluation:
+
+    >>> s1 = pl.Series("a", [1, 8, 3])
+    >>> s2 = pl.Series("b", [4, 5, 2])
+    >>> pl.corr(s1, s2, eager=True)
+    shape: (1,)
+    Series: 'a' [f64]
+    [
+        0.544705
+    ]
+    >>> pl.corr(s1, s2, method="spearman", eager=True)
+    shape: (1,)
+    Series: 'a' [f64]
+    [
+        0.5
+    ]
     """
     if ddof is not None:
         issue_deprecation_warning(
@@ -858,16 +897,27 @@ def corr(
             version="1.17.0",
         )
 
-    a = parse_into_expression(a)
-    b = parse_into_expression(b)
+    if eager:
+        if not (isinstance(a, pl.Series) or isinstance(b, pl.Series)):
+            msg = "expected at least one Series in 'corr' inputs if 'eager=True'"
+            raise ValueError(msg)
 
-    if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a, b))
-    elif method == "spearman":
-        return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
+        frame = pl.DataFrame([e for e in (a, b) if isinstance(e, pl.Series)])
+        exprs = ((e.name if isinstance(e, pl.Series) else e) for e in (a, b))
+        return frame.select(
+            corr(*exprs, eager=False, method=method, propagate_nans=propagate_nans)
+        ).to_series()
     else:
-        msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
-        raise ValueError(msg)
+        a = parse_into_expression(a)
+        b = parse_into_expression(b)
+
+        if method == "pearson":
+            return wrap_expr(plr.pearson_corr(a, b))
+        elif method == "spearman":
+            return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
+        else:
+            msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
+            raise ValueError(msg)
 
 
 def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
@@ -1223,7 +1273,6 @@ def reduce(
     │ 5   │
     └─────┘
     """
-    # in case of col("*")
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
@@ -2041,10 +2090,6 @@ def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr:
 
 @overload
 def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series: ...
-
-
-@overload
-def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series: ...
 
 
 def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series:
