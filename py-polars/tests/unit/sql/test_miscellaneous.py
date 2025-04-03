@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ColumnNotFoundError, SQLInterfaceError, SQLSyntaxError, InvalidOperationError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    InvalidOperationError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -519,32 +524,34 @@ def test_select_explode_height_filter_order_by() -> None:
         pl.Series("list", [2, 1, 3, 4, 5, 6]).to_frame(),
     )
 
-def test_sqlcontext_frames_type_check():
+def test_sqlcontext_frames_type_check() -> None:
+    """Test proper error messages when SQLContext is initialized with invalid args."""
     # Test the issue #21891
     # To ensure that when you pass a DataFrame directly, without key name,
     # it raises an error shows proper instructions on how to fix it.
     df = pl.DataFrame({"a": [1, 2, 3]})
-    
+
     # Test that passing a DataFrame directly raises the correct error
+    # Use non-typed call to test runtime behavior
     with pytest.raises(InvalidOperationError, match="All values must be named"):
-        pl.SQLContext(df)
-    
+        pl.SQLContext(df)  # type: ignore
+
     # Test other non-dict values also raise the same error
     with pytest.raises(InvalidOperationError, match="All values must be named"):
-        pl.SQLContext(frames=[df])
-    
+        pl.SQLContext(frames=[df])  # type: ignore
+
     with pytest.raises(InvalidOperationError, match="All values must be named"):
-        pl.SQLContext(frames=123)
-    
+        pl.SQLContext(frames=123)  # type: ignore
+
     # Test that proper usage works correctly
     # 1. Using named parameters
     ctx1 = pl.SQLContext(df=df)
     assert "df" in ctx1.tables()
-    
+
     # 2. Using dictionary as frames parameter
     ctx2 = pl.SQLContext(frames={"df": df})
     assert "df" in ctx2.tables()
-    
+
     # 3. Using None as frames parameter (should not raise)
     ctx3 = pl.SQLContext(frames=None)
     assert len(ctx3.tables()) == 0
