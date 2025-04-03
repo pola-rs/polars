@@ -1292,14 +1292,21 @@ pub(crate) fn resolve_compound_identifier(
                 .iter_names_and_dtypes()
                 .map(|(name, dtype)| resolve_column(ctx, ident_root, name, dtype).unwrap().0)
                 .collect::<Vec<_>>());
-        } else if let Some((_, name, dtype)) = schema.get_full(name) {
-            resolve_column(ctx, ident_root, name, dtype)
-        } else if lf.is_none() {
+        };
+        let root_is_field = schema.get(&ident_root.value).is_some();
+        if lf.is_none() && root_is_field {
             remaining_idents = idents.iter().skip(1);
             Ok((
                 col(ident_root.value.as_str()),
                 schema.get(&ident_root.value),
             ))
+        } else if lf.is_none() && !root_is_field {
+            polars_bail!(
+                SQLInterface: "no table or struct column named '{}' found",
+                ident_root
+            )
+        } else if let Some((_, name, dtype)) = schema.get_full(name) {
+            resolve_column(ctx, ident_root, name, dtype)
         } else {
             polars_bail!(
                 SQLInterface: "no column named '{}' found in table '{}'",
