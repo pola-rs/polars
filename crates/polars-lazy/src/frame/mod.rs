@@ -751,8 +751,9 @@ impl LazyFrame {
         // Default engine for collect is InMemory, sink_* is Streaming
         if engine == Engine::Auto {
             engine = match payload {
-                SinkType::Memory => Engine::InMemory,
+                #[cfg(feature = "new_streaming")]
                 SinkType::File { .. } | SinkType::Partition { .. } => Engine::Streaming,
+                _ => Engine::InMemory,
             };
         }
         // Gpu uses some hacks to dispatch.
