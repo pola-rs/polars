@@ -1967,7 +1967,7 @@ def test_string_normalize_wrong_input() -> None:
 def test_to_integer_unequal_lengths_22034() -> None:
     s = pl.Series("a", ["1", "2", "3"], pl.String)
     with pytest.raises(pl.exceptions.ShapeError):
-        s.str.to_integer(base=pl.Series([2, 2, 3, 4]))
+        s.str.to_integer(base=pl.Series([4, 5, 5, 4]))
 
 
 def test_broadcast_self() -> None:
