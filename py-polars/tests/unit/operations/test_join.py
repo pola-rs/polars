@@ -2108,3 +2108,12 @@ def test_join_where_categorical_string_compare() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_join_where_nonboolean_predicate() -> None:
+    df1 = pl.DataFrame({"a": [1, 2, 3]})
+    df2 = pl.DataFrame({"b": [1, 2, 3]})
+    with pytest.raises(
+        ComputeError, match="'join_where' predicates must resolve to boolean"
+    ):
+        df1.join_where(df2, pl.col("a") * 2)
