@@ -67,6 +67,13 @@ pub trait StringNameSpaceImpl: AsString {
     fn to_integer(&self, base: &UInt32Chunked, strict: bool) -> PolarsResult<Int64Chunked> {
         let ca = self.as_string();
 
+        polars_ensure!(
+            ca.len() == base.len() || ca.len() == 1 || base.len() == 1,
+            length_mismatch = "str.to_integer",
+            ca.len(),
+            base.len()
+        );
+
         let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> PolarsResult<Option<i64>> {
             let (Some(s), Some(base)) = (opt_s, opt_base) else {
                 return Ok(None);
@@ -81,12 +88,17 @@ pub trait StringNameSpaceImpl: AsString {
         let out = broadcast_try_binary_elementwise(ca, base, f)?;
         if strict && ca.null_count() != out.null_count() {
             let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
-            let all_failures = ca.filter(&failure_mask)?;
-            if all_failures.is_empty() {
+            let n_failures = failure_mask.num_trues();
+            if n_failures == 0 {
                 return Ok(out);
             }
-            let n_failures = all_failures.len();
-            let some_failures = all_failures.unique()?.slice(0, 10).sort(false);
+
+            let some_failures = if ca.len() == 1 {
+                ca.clone()
+            } else {
+                let all_failures = ca.filter(&failure_mask)?;
+                all_failures.unique()?.slice(0, 10).sort(false)
+            };
             let some_error_msg = match base.len() {
                 1 => {
                     // we can ensure that base is not null.

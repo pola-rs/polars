@@ -1962,3 +1962,17 @@ def test_string_normalize(form: Any, expected_data: list[str | None]) -> None:
 def test_string_normalize_wrong_input() -> None:
     with pytest.raises(ValueError, match="`form` must be one of"):
         pl.Series(["01²"], dtype=pl.String).str.normalize("foobar")  # type: ignore[arg-type]
+
+
+def test_to_integer_unequal_lengths_22034() -> None:
+    s = pl.Series("a", ["1", "2", "3"], pl.String)
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.str.to_integer(base=pl.Series([2, 2, 3, 4]))
+
+
+def test_broadcast_self() -> None:
+    s = pl.Series("a", ["3"], pl.String)
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="strict integer parsing failed"
+    ):
+        s.str.to_integer(base=pl.Series([2, 2, 3, 4]))
