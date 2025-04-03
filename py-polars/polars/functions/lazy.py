@@ -807,18 +807,6 @@ def corr(
 ) -> Series: ...
 
 
-@overload
-def corr(
-    a: IntoExpr,
-    b: IntoExpr,
-    *,
-    method: CorrelationMethod = ...,
-    ddof: int | None = ...,
-    propagate_nans: bool = ...,
-    eager: bool,
-) -> Expr | Series: ...
-
-
 def corr(
     a: IntoExpr,
     b: IntoExpr,
@@ -2102,10 +2090,6 @@ def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr:
 
 @overload
 def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series: ...
-
-
-@overload
-def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series: ...
 
 
 def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series:
