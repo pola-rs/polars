@@ -3,8 +3,11 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLSyntaxError, StructFieldNotFoundError
-from polars.polars import SQLInterfaceError
+from polars.exceptions import (
+    SQLInterfaceError,
+    SQLSyntaxError,
+    StructFieldNotFoundError,
+)
 from polars.testing import assert_frame_equal
 
 
