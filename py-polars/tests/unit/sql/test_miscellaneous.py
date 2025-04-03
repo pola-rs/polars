@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ColumnNotFoundError, SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import ColumnNotFoundError, SQLInterfaceError, SQLSyntaxError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -518,3 +518,47 @@ def test_select_explode_height_filter_order_by() -> None:
         ),
         pl.Series("list", [2, 1, 3, 4, 5, 6]).to_frame(),
     )
+
+def test_sqlcontext_frames_type_check():
+    # Test the issue #21891
+    # To ensure that when you pass a DataFrame directly, without key name,
+    # it raises an error shows proper instructions on how to fix it.
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    
+    # Test that passing a DataFrame directly raises the correct error
+    with pytest.raises(InvalidOperationError, match="All values must be named"):
+        pl.SQLContext(df)
+    
+    # Test other non-dict values also raise the same error
+    with pytest.raises(InvalidOperationError, match="All values must be named"):
+        pl.SQLContext(frames=[df])
+    
+    with pytest.raises(InvalidOperationError, match="All values must be named"):
+        pl.SQLContext(frames=123)
+    
+    # Test that proper usage works correctly
+    # 1. Using named parameters
+    ctx1 = pl.SQLContext(df=df)
+    assert "df" in ctx1.tables()
+    
+    # 2. Using dictionary as frames parameter
+    ctx2 = pl.SQLContext(frames={"df": df})
+    assert "df" in ctx2.tables()
+    
+    # 3. Using None as frames parameter (should not raise)
+    ctx3 = pl.SQLContext(frames=None)
+    assert len(ctx3.tables()) == 0
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    lf = pl.LazyFrame({"b": [4, 5, 6]})
+
+    # 4. Register an explicit mapping of identifier name to frame
+    ctx5 = pl.SQLContext(frames={"table_one": df, "table_two": lf})
+    assert "table_one" in ctx5.tables()
+    assert "table_two" in ctx5.tables()
+
+    # 5. Register frames using kwargs; dataframe df as "df" and lazyframe lf as "lf"
+    ctx6 = pl.SQLContext(df=df, lf=lf)
+    assert "df" in ctx6.tables()
+    assert "lf" in ctx6.tables()
+
