@@ -920,7 +920,33 @@ def corr(
             raise ValueError(msg)
 
 
-def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
+@overload
+def cov(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    ddof: int = ...,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def cov(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    ddof: int = ...,
+    eager: Literal[True],
+) -> Series: ...
+
+
+def cov(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    ddof: int = 1,
+    eager: bool = False,
+) -> Expr | Series:
     """
     Compute the covariance between two columns/ expressions.
 
@@ -934,6 +960,10 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
         "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
         where N represents the number of elements.
         By default ddof is 1.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
 
     Examples
     --------
@@ -944,19 +974,43 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
     ...         "c": ["foo", "bar", "foo"],
     ...     },
     ... )
-    >>> df.select(pl.cov("a", "b"))
-    shape: (1, 1)
-    ┌─────┐
-    │ a   │
-    │ --- │
-    │ f64 │
-    ╞═════╡
-    │ 3.0 │
-    └─────┘
+
+    >>> df.select(
+    ...     x=pl.cov("a", "b"),
+    ...     y=pl.cov("a", "b", ddof=2),
+    ... )
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ x   ┆ y   │
+    │ --- ┆ --- │
+    │ f64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 3.0 ┆ 6.0 │
+    └─────┴─────┘
+
+    Eager evaluation:
+
+    >>> s1 = pl.Series("a", [1, 8, 3])
+    >>> s2 = pl.Series("b", [4, 5, 2])
+    >>> pl.cov(s1, s2, eager=True)
+    shape: (1,)
+    Series: 'a' [f64]
+    [
+        3.0
+    ]
     """
-    a = parse_into_expression(a)
-    b = parse_into_expression(b)
-    return wrap_expr(plr.cov(a, b, ddof))
+    if eager:
+        if not (isinstance(a, pl.Series) or isinstance(b, pl.Series)):
+            msg = "expected at least one Series in 'cov' inputs if 'eager=True'"
+            raise ValueError(msg)
+
+        frame = pl.DataFrame([e for e in (a, b) if isinstance(e, pl.Series)])
+        exprs = ((e.name if isinstance(e, pl.Series) else e) for e in (a, b))
+        return frame.select(cov(*exprs, eager=False, ddof=ddof)).to_series()
+    else:
+        a = parse_into_expression(a)
+        b = parse_into_expression(b)
+        return wrap_expr(plr.cov(a, b, ddof))
 
 
 def map_batches(

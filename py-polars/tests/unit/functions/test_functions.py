@@ -216,6 +216,30 @@ def test_concat_vertical() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_cov() -> None:
+    s1 = pl.Series("a", [10, 37, -40])
+    s2 = pl.Series("b", [70, -10, 35])
+
+    # lazy/expression
+    lf = pl.LazyFrame([s1, s2])
+    res1 = lf.select(
+        x=pl.cov("a", "b"),
+        y=pl.cov("a", "b", ddof=2),
+    ).collect()
+
+    # eager/series
+    res2 = (
+        pl.cov(s1, s2, eager=True).alias("x"),
+        pl.cov(s1, s2, eager=True, ddof=2).alias("y"),
+    )
+
+    # expect same result from both approaches
+    for idx, (r1, r2) in enumerate(zip(res1, res2)):
+        expected_value = -645.8333333333 if idx == 0 else -1291.6666666666
+        assert pytest.approx(expected_value) == r1.item()
+        assert_series_equal(r1, r2)
+
+
 def test_corr() -> None:
     s1 = pl.Series("a", [10, 37, -40])
     s2 = pl.Series("b", [70, -10, 35])
