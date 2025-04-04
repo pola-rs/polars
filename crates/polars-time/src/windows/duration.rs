@@ -232,7 +232,6 @@ impl Duration {
                         ' ' | ',' if as_interval => {},
                         _ => break,
                     }
-
                     match iter.next() {
                         Some((i, ch_)) => {
                             ch = ch_;
@@ -241,7 +240,6 @@ impl Duration {
                         None => break,
                     }
                 }
-
                 if unit.is_empty() {
                     polars_bail!(InvalidOperation:
                         "expected a unit to follow integer in the {} string '{}'",
