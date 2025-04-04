@@ -10,8 +10,10 @@ significantly reduced, allowing users to process at scale.
 
 <!-- dprint-ignore-start -->
 
-!!! info "Distributed engine is in early stage"
-    The distributed engine is in its very early development. It currently runs all [PDS-H benchmarks](https://github.com/pola-rs/polars-benchmark). Major performance improvements will be introduced in the near future. When a operation is not available in a distributed manner, Polars Cloud will run that operation on single node.
+!!! info "Distributed engine is early stage"
+    The distributed engine is still in the very early stages of development. Major performance improvements are planned for the near future. When an operation is not yet available in a distributed manner, Polars Cloud will execute it on a single node.
+    
+    Find out which operations are [currently supported in the distributed engine](https://github.com/pola-rs/polars/issues/21487) in this tracking issue.
 
 <!-- dprint-ignore-end-->
 
@@ -53,3 +55,9 @@ result = (
     .sink_parquet("s3://output/result.parquet")
 )
 ```
+
+## Working with large datasets in the distributed engine
+
+The distributed engine can only read sources partitioned with direct scan_<file> methods such as
+scan_parquet, scan_csv. Open table formats like `scan_iceberg` are not yet supported in a
+distributed fashion and will run on a single node when utilized.
