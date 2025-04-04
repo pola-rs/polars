@@ -54,26 +54,42 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         ca.apply_nonnull_values_generic(DataType::Boolean, f)
     }
 
-    fn starts_with_chunked(&self, prefix: &BinaryChunked) -> BooleanChunked {
+    fn starts_with_chunked(&self, prefix: &BinaryChunked) -> PolarsResult<BooleanChunked> {
         let ca = self.as_binary();
-        match prefix.len() {
+        Ok(match prefix.len() {
             1 => match prefix.get(0) {
                 Some(s) => self.starts_with(s),
                 None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
             },
-            _ => broadcast_binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub)),
-        }
+            _ => {
+                polars_ensure!(
+                    ca.len() == prefix.len(),
+                    length_mismatch = "bin.starts_with",
+                    ca.len(),
+                    prefix.len()
+                );
+                broadcast_binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub))
+            },
+        })
     }
 
-    fn ends_with_chunked(&self, suffix: &BinaryChunked) -> BooleanChunked {
+    fn ends_with_chunked(&self, suffix: &BinaryChunked) -> PolarsResult<BooleanChunked> {
         let ca = self.as_binary();
-        match suffix.len() {
+        Ok(match suffix.len() {
             1 => match suffix.get(0) {
                 Some(s) => self.ends_with(s),
                 None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
             },
-            _ => broadcast_binary_elementwise_values(ca, suffix, |s, sub| s.ends_with(sub)),
-        }
+            _ => {
+                polars_ensure!(
+                    ca.len() == suffix.len(),
+                    length_mismatch = "bin.ends_with",
+                    ca.len(),
+                    suffix.len()
+                );
+                broadcast_binary_elementwise_values(ca, suffix, |s, sub| s.ends_with(sub))
+            },
+        })
     }
 
     /// Get the size of the binary values in bytes.

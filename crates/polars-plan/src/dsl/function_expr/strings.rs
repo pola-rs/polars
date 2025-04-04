@@ -541,17 +541,17 @@ pub(super) fn find(s: &[Column], literal: bool, strict: bool) -> PolarsResult<Co
 
 pub(super) fn ends_with(s: &[Column]) -> PolarsResult<Column> {
     _check_same_length(s, "ends_with")?;
-    let ca = &s[0].str()?.as_binary();
-    let suffix = &s[1].str()?.as_binary();
+    let ca = s[0].str()?.as_binary();
+    let suffix = s[1].str()?.as_binary();
 
-    Ok(ca.ends_with_chunked(suffix).into_column())
+    Ok(ca.ends_with_chunked(&suffix)?.into_column())
 }
 
 pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
     _check_same_length(s, "starts_with")?;
-    let ca = s[0].str()?;
-    let prefix = s[1].str()?;
-    Ok(ca.starts_with_chunked(prefix).into_column())
+    let ca = s[0].str()?.as_binary();
+    let prefix = s[1].str()?.as_binary();
+    Ok(ca.starts_with_chunked(&prefix)?.into_column())
 }
 
 /// Extract a regex pattern from the a string value.

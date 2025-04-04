@@ -105,7 +105,7 @@ pub(super) fn ends_with(s: &[Column]) -> PolarsResult<Column> {
     let suffix = s[1].binary()?;
 
     Ok(ca
-        .ends_with_chunked(suffix)
+        .ends_with_chunked(suffix)?
         .with_name(ca.name().clone())
         .into_column())
 }
@@ -115,7 +115,7 @@ pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
     let prefix = s[1].binary()?;
 
     Ok(ca
-        .starts_with_chunked(prefix)
+        .starts_with_chunked(prefix)?
         .with_name(ca.name().clone())
         .into_column())
 }
