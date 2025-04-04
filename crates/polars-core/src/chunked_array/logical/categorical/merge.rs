@@ -97,8 +97,8 @@ fn merge_local_rhs_categorical<'a>(
     polars_warn!(
         CategoricalRemappingWarning,
         "Local categoricals have different encodings, expensive re-encoding is done \
-    to perform this merge operation. Consider using a StringCache or an Enum type \
-    if the categories are known in advance"
+        to perform this merge operation. Consider using a StringCache or an Enum type \
+        if the categories are known in advance"
     );
 
     let RevMapping::Local(cats_right, _) = &**ca_right.get_rev_map() else {
@@ -201,7 +201,7 @@ impl CategoricalMergeOperation for DoNothing {
 }
 
 // Make the right categorical compatible with the left
-pub fn make_categoricals_compatible(
+pub fn make_rhs_categoricals_compatible(
     ca_left: &CategoricalChunked,
     ca_right: &CategoricalChunked,
 ) -> PolarsResult<(CategoricalChunked, CategoricalChunked)> {
@@ -220,7 +220,7 @@ pub fn make_categoricals_compatible(
     Ok((new_ca_left, new_ca_right))
 }
 
-pub fn make_list_categoricals_compatible(
+pub fn make_rhs_list_categoricals_compatible(
     mut list_ca_left: ListChunked,
     list_ca_right: ListChunked,
 ) -> PolarsResult<(ListChunked, ListChunked)> {
@@ -229,7 +229,7 @@ pub fn make_list_categoricals_compatible(
     let cat_left = list_ca_left.get_inner();
     let cat_right = list_ca_right.get_inner();
     let (cat_left, cat_right) =
-        make_categoricals_compatible(cat_left.categorical()?, cat_right.categorical()?)?;
+        make_rhs_categoricals_compatible(cat_left.categorical()?, cat_right.categorical()?)?;
 
     // we only appended categories to the rev_map at the end, so only change the inner dtype
     list_ca_left.set_inner_dtype(cat_left.dtype().clone());
