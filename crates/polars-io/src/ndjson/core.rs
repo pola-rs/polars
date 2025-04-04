@@ -421,8 +421,15 @@ pub fn parse_ndjson(
     DataFrame::new(
         buffers
             .into_values()
-            .map(|buf| buf.into_series().into_column())
-            .collect::<_>(),
+            .map(|buf| Ok(buf.into_series()?.into_column()))
+            .collect::<PolarsResult<_>>()
+            .map_err(|e| match e {
+                // Nested types raise SchemaMismatch instead of ComputeError, we map it back here to
+                // be consistent.
+                PolarsError::ComputeError(..) => e,
+                PolarsError::SchemaMismatch(e) => PolarsError::ComputeError(e),
+                e => e,
+            })?,
     )
 }
 

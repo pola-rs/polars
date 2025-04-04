@@ -36,6 +36,7 @@ chrono = { workspace = true }
 chrono-tz = { workspace = true }
 either = { workspace = true }
 flate2 = { workspace = true }
+hashbrown = { workspace = true }
 itoa = { workspace = true }
 libc = { workspace = true }
 ndarray = { workspace = true }

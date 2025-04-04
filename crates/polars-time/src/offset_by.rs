@@ -72,7 +72,7 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
     let preserve_sortedness = match offsets.len() {
         1 => match offsets.get(0) {
             Some(offset) => {
-                let offset = Duration::parse(offset);
+                let offset = Duration::try_parse(offset)?;
                 offset.is_constant_duration(tz.as_deref())
             },
             None => false,

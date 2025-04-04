@@ -534,6 +534,9 @@ impl DataType {
     pub fn is_date(&self) -> bool {
         matches!(self, DataType::Date)
     }
+    pub fn is_datetime(&self) -> bool {
+        matches!(self, DataType::Datetime(..))
+    }
 
     pub fn is_object(&self) -> bool {
         #[cfg(feature = "object")]

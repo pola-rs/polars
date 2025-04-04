@@ -97,7 +97,7 @@ impl MetaNameSpace {
                 expr,
                 dtype: DataType::Datetime(_, _),
                 options: CastOptions::Strict,
-            } if matches!(&**expr, Expr::Literal(LiteralValue::DateTime(_, _, _))) => true,
+            } if matches!(&**expr, Expr::Literal(LiteralValue::Scalar(sc)) if matches!(sc.as_any_value(), AnyValue::Datetime(..))) => true,
             _ => false,
         })
     }

@@ -2,6 +2,7 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "temporal")]
 use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
 use polars_utils::hashing::hash_to_partition;
@@ -13,65 +14,190 @@ use crate::prelude::*;
 
 #[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum LiteralValue {
-    Null,
-    /// A binary true or false.
-    Boolean(bool),
-    /// A UTF8 encoded string type.
-    String(PlSmallStr),
-    /// A raw binary array
-    Binary(Vec<u8>),
-    /// An unsigned 8-bit integer number.
-    #[cfg(feature = "dtype-u8")]
-    UInt8(u8),
-    /// An unsigned 16-bit integer number.
-    #[cfg(feature = "dtype-u16")]
-    UInt16(u16),
-    /// An unsigned 32-bit integer number.
-    UInt32(u32),
-    /// An unsigned 64-bit integer number.
-    UInt64(u64),
-    /// An 8-bit integer number.
-    #[cfg(feature = "dtype-i8")]
-    Int8(i8),
-    /// A 16-bit integer number.
-    #[cfg(feature = "dtype-i16")]
-    Int16(i16),
-    /// A 32-bit integer number.
-    Int32(i32),
-    /// A 64-bit integer number.
-    Int64(i64),
-    #[cfg(feature = "dtype-i128")]
-    /// A 128-bit integer number.
-    Int128(i128),
-    /// A 32-bit floating point number.
-    Float32(f32),
-    /// A 64-bit floating point number.
-    Float64(f64),
-    /// A 128-bit decimal number with a maximum scale of 38.
-    #[cfg(feature = "dtype-decimal")]
-    Decimal(i128, usize),
-    Range {
-        low: i64,
-        high: i64,
-        dtype: DataType,
-    },
-    #[cfg(feature = "dtype-date")]
-    Date(i32),
-    #[cfg(feature = "dtype-datetime")]
-    DateTime(i64, TimeUnit, Option<TimeZone>),
-    #[cfg(feature = "dtype-duration")]
-    Duration(i64, TimeUnit),
-    #[cfg(feature = "dtype-time")]
-    Time(i64),
-    Series(SpecialEq<Series>),
-    OtherScalar(Scalar),
-    // Used for dynamic languages
-    Float(f64),
-    // Used for dynamic languages
+pub enum DynLiteralValue {
+    Str(PlSmallStr),
     Int(i128),
-    // Dynamic string, still needs to be made concrete.
-    StrCat(PlSmallStr),
+    Float(f64),
+    List(DynListLiteralValue),
+}
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum DynListLiteralValue {
+    Str(Box<[Option<PlSmallStr>]>),
+    Int(Box<[Option<i128>]>),
+    Float(Box<[Option<f64>]>),
+    List(Box<[Option<DynListLiteralValue>]>),
+}
+
+impl Hash for DynLiteralValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Str(i) => i.hash(state),
+            Self::Int(i) => i.hash(state),
+            Self::Float(i) => i.to_ne_bytes().hash(state),
+            Self::List(i) => i.hash(state),
+        }
+    }
+}
+
+impl Hash for DynListLiteralValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Str(i) => i.hash(state),
+            Self::Int(i) => i.hash(state),
+            Self::Float(i) => i
+                .iter()
+                .for_each(|i| i.map(|i| i.to_ne_bytes()).hash(state)),
+            Self::List(i) => i.hash(state),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct RangeLiteralValue {
+    pub low: i128,
+    pub high: i128,
+    pub dtype: DataType,
+}
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum LiteralValue {
+    /// A dynamically inferred literal value. This needs to be materialized into a specific type.
+    Dyn(DynLiteralValue),
+    Scalar(Scalar),
+    Series(SpecialEq<Series>),
+    Range(RangeLiteralValue),
+}
+
+pub enum MaterializedLiteralValue {
+    Scalar(Scalar),
+    Series(Series),
+}
+
+impl DynListLiteralValue {
+    pub fn try_materialize_to_dtype(self, dtype: &DataType) -> PolarsResult<Scalar> {
+        let Some(inner_dtype) = dtype.inner_dtype() else {
+            polars_bail!(InvalidOperation: "conversion from list literal to `{dtype}` failed.");
+        };
+
+        let s = match self {
+            DynListLiteralValue::Str(vs) => {
+                StringChunked::from_iter_options(PlSmallStr::from_static("literal"), vs.into_iter())
+                    .into_series()
+            },
+            DynListLiteralValue::Int(vs) => {
+                #[cfg(feature = "dtype-i128")]
+                {
+                    Int128Chunked::from_iter_options(
+                        PlSmallStr::from_static("literal"),
+                        vs.into_iter(),
+                    )
+                    .into_series()
+                }
+
+                #[cfg(not(feature = "dtype-i128"))]
+                {
+                    Int64Chunked::from_iter_options(
+                        PlSmallStr::from_static("literal"),
+                        vs.into_iter().map(|v| v.map(|v| v as i64)),
+                    )
+                    .into_series()
+                }
+            },
+            DynListLiteralValue::Float(vs) => Float64Chunked::from_iter_options(
+                PlSmallStr::from_static("literal"),
+                vs.into_iter(),
+            )
+            .into_series(),
+            DynListLiteralValue::List(_) => todo!("nested lists"),
+        };
+
+        let s = s.cast_with_options(inner_dtype, CastOptions::Strict)?;
+        let value = match dtype {
+            DataType::List(_) => AnyValue::List(s),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, size) => AnyValue::Array(s, *size),
+            _ => unreachable!(),
+        };
+
+        Ok(Scalar::new(dtype.clone(), value))
+    }
+}
+
+impl DynLiteralValue {
+    pub fn try_materialize_to_dtype(self, dtype: &DataType) -> PolarsResult<Scalar> {
+        match self {
+            DynLiteralValue::Str(s) => {
+                Ok(Scalar::from(s).cast_with_options(dtype, CastOptions::Strict)?)
+            },
+            DynLiteralValue::Int(i) => {
+                Ok(Scalar::from(i).cast_with_options(dtype, CastOptions::Strict)?)
+            },
+            DynLiteralValue::Float(f) => {
+                Ok(Scalar::from(f).cast_with_options(dtype, CastOptions::Strict)?)
+            },
+            DynLiteralValue::List(dyn_list_value) => dyn_list_value.try_materialize_to_dtype(dtype),
+        }
+    }
+}
+
+impl RangeLiteralValue {
+    pub fn try_materialize_to_series(self, dtype: &DataType) -> PolarsResult<Series> {
+        fn handle_range_oob(range: &RangeLiteralValue, to_dtype: &DataType) -> PolarsResult<()> {
+            polars_bail!(
+                InvalidOperation:
+                "conversion from `{}` to `{to_dtype}` failed for range({}, {})",
+                range.dtype, range.low, range.high,
+            )
+        }
+
+        let s = match dtype {
+            DataType::Int32 => {
+                if self.low < i32::MIN as i128 || self.high > i32::MAX as i128 {
+                    handle_range_oob(&self, dtype)?;
+                }
+
+                new_int_range::<Int32Type>(
+                    self.low as i32,
+                    self.high as i32,
+                    1,
+                    PlSmallStr::from_static("range"),
+                )
+                .unwrap()
+            },
+            DataType::Int64 => {
+                if self.low < i64::MIN as i128 || self.high > i64::MAX as i128 {
+                    handle_range_oob(&self, dtype)?;
+                }
+
+                new_int_range::<Int64Type>(
+                    self.low as i64,
+                    self.high as i64,
+                    1,
+                    PlSmallStr::from_static("range"),
+                )
+                .unwrap()
+            },
+            DataType::UInt32 => {
+                if self.low < u32::MIN as i128 || self.high > u32::MAX as i128 {
+                    handle_range_oob(&self, dtype)?;
+                }
+                new_int_range::<UInt32Type>(
+                    self.low as u32,
+                    self.high as u32,
+                    1,
+                    PlSmallStr::from_static("range"),
+                )
+                .unwrap()
+            },
+            _ => polars_bail!(InvalidOperation: "unsupported range datatype `{dtype}`"),
+        };
+
+        Ok(s)
+    }
 }
 
 impl LiteralValue {
@@ -91,9 +217,77 @@ impl LiteralValue {
         }
     }
 
+    pub fn try_materialize_to_dtype(
+        self,
+        dtype: &DataType,
+    ) -> PolarsResult<MaterializedLiteralValue> {
+        use LiteralValue as L;
+        match self {
+            L::Dyn(dyn_value) => dyn_value
+                .try_materialize_to_dtype(dtype)
+                .map(MaterializedLiteralValue::Scalar),
+            L::Scalar(sc) => Ok(MaterializedLiteralValue::Scalar(
+                sc.cast_with_options(dtype, CastOptions::Strict)?,
+            )),
+            L::Range(range) => {
+                let Some(inner_dtype) = dtype.inner_dtype() else {
+                    polars_bail!(
+                        InvalidOperation: "cannot turn `{}` range into `{dtype}`",
+                        range.dtype
+                    );
+                };
+
+                let s = range.try_materialize_to_series(inner_dtype)?;
+                let value = match dtype {
+                    DataType::List(_) => AnyValue::List(s),
+                    #[cfg(feature = "dtype-array")]
+                    DataType::Array(_, size) => AnyValue::Array(s, *size),
+                    _ => unreachable!(),
+                };
+                Ok(MaterializedLiteralValue::Scalar(Scalar::new(
+                    dtype.clone(),
+                    value,
+                )))
+            },
+            L::Series(s) => Ok(MaterializedLiteralValue::Series(
+                s.cast_with_options(dtype, CastOptions::Strict)?,
+            )),
+        }
+    }
+
+    pub fn extract_usize(&self) -> PolarsResult<usize> {
+        macro_rules! cast_usize {
+            ($v:expr) => {
+                usize::try_from($v).map_err(
+                    |_| polars_err!(InvalidOperation: "cannot convert value {} to usize", $v)
+                )
+            }
+        }
+        match &self {
+            Self::Dyn(DynLiteralValue::Int(v)) => cast_usize!(*v),
+            Self::Scalar(sc) => match sc.as_any_value() {
+                AnyValue::UInt8(v) => Ok(v as usize),
+                AnyValue::UInt16(v) => Ok(v as usize),
+                AnyValue::UInt32(v) => cast_usize!(v),
+                AnyValue::UInt64(v) => cast_usize!(v),
+                AnyValue::Int8(v) => cast_usize!(v),
+                AnyValue::Int16(v) => cast_usize!(v),
+                AnyValue::Int32(v) => cast_usize!(v),
+                AnyValue::Int64(v) => cast_usize!(v),
+                AnyValue::Int128(v) => cast_usize!(v),
+                _ => {
+                    polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+                },
+            },
+            _ => {
+                polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+            },
+        }
+    }
+
     pub fn materialize(self) -> Self {
         match self {
-            LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_) => {
+            LiteralValue::Dyn(_) => {
                 let av = self.to_any_value().unwrap();
                 av.into()
             },
@@ -106,77 +300,19 @@ impl LiteralValue {
     }
 
     pub fn to_any_value(&self) -> Option<AnyValue> {
-        use LiteralValue::*;
         let av = match self {
-            Null => AnyValue::Null,
-            Boolean(v) => AnyValue::Boolean(*v),
-            #[cfg(feature = "dtype-u8")]
-            UInt8(v) => AnyValue::UInt8(*v),
-            #[cfg(feature = "dtype-u16")]
-            UInt16(v) => AnyValue::UInt16(*v),
-            UInt32(v) => AnyValue::UInt32(*v),
-            UInt64(v) => AnyValue::UInt64(*v),
-            #[cfg(feature = "dtype-i8")]
-            Int8(v) => AnyValue::Int8(*v),
-            #[cfg(feature = "dtype-i16")]
-            Int16(v) => AnyValue::Int16(*v),
-            Int32(v) => AnyValue::Int32(*v),
-            Int64(v) => AnyValue::Int64(*v),
-            #[cfg(feature = "dtype-i128")]
-            Int128(v) => AnyValue::Int128(*v),
-            Float32(v) => AnyValue::Float32(*v),
-            Float64(v) => AnyValue::Float64(*v),
-            #[cfg(feature = "dtype-decimal")]
-            Decimal(v, scale) => AnyValue::Decimal(*v, *scale),
-            String(v) => AnyValue::String(v),
-            #[cfg(feature = "dtype-duration")]
-            Duration(v, tu) => AnyValue::Duration(*v, *tu),
-            #[cfg(feature = "dtype-date")]
-            Date(v) => AnyValue::Date(*v),
-            #[cfg(feature = "dtype-datetime")]
-            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz.as_ref()),
-            #[cfg(feature = "dtype-time")]
-            Time(v) => AnyValue::Time(*v),
-            Series(_) => return None,
-            Int(v) => materialize_dyn_int(*v),
-            Float(v) => AnyValue::Float64(*v),
-            StrCat(v) => AnyValue::String(v),
-            Range { low, high, dtype } => {
-                let opt_s = match dtype {
-                    DataType::Int32 => {
-                        if *low < i32::MIN as i64 || *high > i32::MAX as i64 {
-                            return None;
-                        }
-
-                        let low = *low as i32;
-                        let high = *high as i32;
-                        new_int_range::<Int32Type>(low, high, 1, PlSmallStr::from_static("range"))
-                            .ok()
-                    },
-                    DataType::Int64 => {
-                        let low = *low;
-                        let high = *high;
-                        new_int_range::<Int64Type>(low, high, 1, PlSmallStr::from_static("range"))
-                            .ok()
-                    },
-                    DataType::UInt32 => {
-                        if *low < 0 || *high > u32::MAX as i64 {
-                            return None;
-                        }
-                        let low = *low as u32;
-                        let high = *high as u32;
-                        new_int_range::<UInt32Type>(low, high, 1, PlSmallStr::from_static("range"))
-                            .ok()
-                    },
-                    _ => return None,
-                };
-                match opt_s {
-                    Some(s) => AnyValue::List(s),
-                    None => return None,
-                }
+            Self::Scalar(sc) => sc.value().clone(),
+            Self::Range(range) => {
+                let s = range.clone().try_materialize_to_series(&range.dtype).ok()?;
+                AnyValue::List(s)
             },
-            Binary(v) => AnyValue::Binary(v),
-            OtherScalar(s) => s.value().clone(),
+            Self::Series(_) => return None,
+            Self::Dyn(d) => match d {
+                DynLiteralValue::Int(v) => materialize_dyn_int(*v),
+                DynLiteralValue::Float(v) => AnyValue::Float64(*v),
+                DynLiteralValue::Str(v) => AnyValue::String(v),
+                DynLiteralValue::List(_) => todo!(),
+            },
         };
         Some(av)
     }
@@ -184,63 +320,71 @@ impl LiteralValue {
     /// Getter for the `DataType` of the value
     pub fn get_datatype(&self) -> DataType {
         match self {
-            LiteralValue::Boolean(_) => DataType::Boolean,
-            #[cfg(feature = "dtype-u8")]
-            LiteralValue::UInt8(_) => DataType::UInt8,
-            #[cfg(feature = "dtype-u16")]
-            LiteralValue::UInt16(_) => DataType::UInt16,
-            LiteralValue::UInt32(_) => DataType::UInt32,
-            LiteralValue::UInt64(_) => DataType::UInt64,
-            #[cfg(feature = "dtype-i8")]
-            LiteralValue::Int8(_) => DataType::Int8,
-            #[cfg(feature = "dtype-i16")]
-            LiteralValue::Int16(_) => DataType::Int16,
-            LiteralValue::Int32(_) => DataType::Int32,
-            LiteralValue::Int64(_) => DataType::Int64,
-            #[cfg(feature = "dtype-i128")]
-            LiteralValue::Int128(_) => DataType::Int128,
-            LiteralValue::Float32(_) => DataType::Float32,
-            LiteralValue::Float64(_) => DataType::Float64,
-            #[cfg(feature = "dtype-decimal")]
-            LiteralValue::Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
-            LiteralValue::String(_) => DataType::String,
-            LiteralValue::Binary(_) => DataType::Binary,
-            LiteralValue::Range { dtype, .. } => dtype.clone(),
-            #[cfg(feature = "dtype-date")]
-            LiteralValue::Date(_) => DataType::Date,
-            #[cfg(feature = "dtype-datetime")]
-            LiteralValue::DateTime(_, tu, tz) => DataType::Datetime(*tu, tz.clone()),
-            #[cfg(feature = "dtype-duration")]
-            LiteralValue::Duration(_, tu) => DataType::Duration(*tu),
-            LiteralValue::Series(s) => s.dtype().clone(),
-            LiteralValue::Null => DataType::Null,
-            #[cfg(feature = "dtype-time")]
-            LiteralValue::Time(_) => DataType::Time,
-            LiteralValue::Int(v) => DataType::Unknown(UnknownKind::Int(*v)),
-            LiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
-            LiteralValue::StrCat(_) => DataType::Unknown(UnknownKind::Str),
-            LiteralValue::OtherScalar(s) => s.dtype().clone(),
+            Self::Dyn(d) => match d {
+                DynLiteralValue::Int(v) => DataType::Unknown(UnknownKind::Int(*v)),
+                DynLiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
+                DynLiteralValue::Str(_) => DataType::Unknown(UnknownKind::Str),
+                DynLiteralValue::List(_) => todo!(),
+            },
+            Self::Scalar(sc) => sc.dtype().clone(),
+            Self::Series(s) => s.dtype().clone(),
+            Self::Range(s) => s.dtype.clone(),
         }
     }
 
     pub fn new_idxsize(value: IdxSize) -> Self {
-        #[cfg(feature = "bigidx")]
-        {
-            LiteralValue::UInt64(value)
+        LiteralValue::Scalar(value.into())
+    }
+
+    pub fn extract_str(&self) -> Option<&str> {
+        match self {
+            LiteralValue::Dyn(DynLiteralValue::Str(s)) => Some(s.as_str()),
+            LiteralValue::Scalar(sc) => match sc.value() {
+                AnyValue::String(s) => Some(s),
+                AnyValue::StringOwned(s) => Some(s),
+                _ => None,
+            },
+            _ => None,
         }
-        #[cfg(not(feature = "bigidx"))]
-        {
-            LiteralValue::UInt32(value)
+    }
+
+    pub fn extract_binary(&self) -> Option<&[u8]> {
+        match self {
+            LiteralValue::Scalar(sc) => match sc.value() {
+                AnyValue::Binary(s) => Some(s),
+                AnyValue::BinaryOwned(s) => Some(s),
+                _ => None,
+            },
+            _ => None,
         }
     }
 
     pub fn is_null(&self) -> bool {
         match self {
-            Self::Null => true,
-            Self::OtherScalar(sc) => sc.is_null(),
+            Self::Scalar(sc) => sc.is_null(),
             Self::Series(s) => s.len() == 1 && s.null_count() == 1,
             _ => false,
         }
+    }
+
+    pub fn bool(&self) -> Option<bool> {
+        match self {
+            LiteralValue::Scalar(s) => match s.as_any_value() {
+                AnyValue::Boolean(b) => Some(b),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub const fn untyped_null() -> Self {
+        Self::Scalar(Scalar::null(DataType::Null))
+    }
+}
+
+impl From<Scalar> for LiteralValue {
+    fn from(value: Scalar) -> Self {
+        Self::Scalar(value)
     }
 }
 
@@ -264,85 +408,37 @@ impl TypedLiteral for &str {}
 
 impl Literal for PlSmallStr {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::String(self))
+        Expr::Literal(Scalar::from(self).into())
     }
 }
 
 impl Literal for String {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::String(PlSmallStr::from_string(self)))
+        Expr::Literal(Scalar::from(PlSmallStr::from_string(self)).into())
     }
 }
 
 impl Literal for &str {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::String(PlSmallStr::from_str(self)))
+        Expr::Literal(Scalar::from(PlSmallStr::from_str(self)).into())
     }
 }
 
 impl Literal for Vec<u8> {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Binary(self))
+        Expr::Literal(Scalar::from(self).into())
     }
 }
 
 impl Literal for &[u8] {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Binary(self.to_vec()))
+        Expr::Literal(Scalar::from(self.to_vec()).into())
     }
 }
 
 impl From<AnyValue<'_>> for LiteralValue {
-    fn from(value: AnyValue) -> Self {
-        match value {
-            AnyValue::Null => Self::Null,
-            AnyValue::Boolean(b) => Self::Boolean(b),
-            AnyValue::String(s) => Self::String(PlSmallStr::from_str(s)),
-            AnyValue::Binary(b) => Self::Binary(b.to_vec()),
-            #[cfg(feature = "dtype-u8")]
-            AnyValue::UInt8(u) => Self::UInt8(u),
-            #[cfg(feature = "dtype-u16")]
-            AnyValue::UInt16(u) => Self::UInt16(u),
-            AnyValue::UInt32(u) => Self::UInt32(u),
-            AnyValue::UInt64(u) => Self::UInt64(u),
-            #[cfg(feature = "dtype-i8")]
-            AnyValue::Int8(i) => Self::Int8(i),
-            #[cfg(feature = "dtype-i16")]
-            AnyValue::Int16(i) => Self::Int16(i),
-            AnyValue::Int32(i) => Self::Int32(i),
-            AnyValue::Int64(i) => Self::Int64(i),
-            AnyValue::Float32(f) => Self::Float32(f),
-            AnyValue::Float64(f) => Self::Float64(f),
-            #[cfg(feature = "dtype-decimal")]
-            AnyValue::Decimal(v, scale) => Self::Decimal(v, scale),
-            #[cfg(feature = "dtype-date")]
-            AnyValue::Date(v) => LiteralValue::Date(v),
-            #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(value, tu, tz) => LiteralValue::DateTime(value, tu, tz.cloned()),
-            #[cfg(feature = "dtype-datetime")]
-            AnyValue::DatetimeOwned(value, tu, tz) => {
-                LiteralValue::DateTime(value, tu, tz.as_ref().map(AsRef::as_ref).cloned())
-            },
-            #[cfg(feature = "dtype-duration")]
-            AnyValue::Duration(value, tu) => LiteralValue::Duration(value, tu),
-            #[cfg(feature = "dtype-time")]
-            AnyValue::Time(v) => LiteralValue::Time(v),
-            AnyValue::List(l) => Self::Series(SpecialEq::new(l)),
-            AnyValue::StringOwned(o) => Self::String(o),
-            #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(c, rev_mapping, arr) | AnyValue::Enum(c, rev_mapping, arr) => {
-                if arr.is_null() {
-                    Self::String(PlSmallStr::from_str(rev_mapping.get(c)))
-                } else {
-                    unsafe {
-                        Self::String(PlSmallStr::from_str(
-                            arr.deref_unchecked().value(c as usize),
-                        ))
-                    }
-                }
-            },
-            _ => LiteralValue::OtherScalar(Scalar::new(value.dtype(), value.into_static())),
-        }
+    fn from(value: AnyValue<'_>) -> Self {
+        Self::Scalar(Scalar::new(value.dtype(), value.into_static()))
     }
 }
 
@@ -350,7 +446,7 @@ macro_rules! make_literal {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
             fn lit(self) -> Expr {
-                Expr::Literal(LiteralValue::$SCALAR(self))
+                Expr::Literal(Scalar::from(self).into())
             }
         }
     };
@@ -360,7 +456,7 @@ macro_rules! make_literal_typed {
     ($TYPE:ty, $SCALAR:ident) => {
         impl TypedLiteral for $TYPE {
             fn typed_lit(self) -> Expr {
-                Expr::Literal(LiteralValue::$SCALAR(self))
+                Expr::Literal(Scalar::from(self).into())
             }
         }
     };
@@ -370,7 +466,9 @@ macro_rules! make_dyn_lit {
     ($TYPE:ty, $SCALAR:ident) => {
         impl Literal for $TYPE {
             fn lit(self) -> Expr {
-                Expr::Literal(LiteralValue::$SCALAR(self.try_into().unwrap()))
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::$SCALAR(
+                    self.try_into().unwrap(),
+                )))
             }
         }
     };
@@ -379,30 +477,23 @@ macro_rules! make_dyn_lit {
 make_literal!(bool, Boolean);
 make_literal_typed!(f32, Float32);
 make_literal_typed!(f64, Float64);
-#[cfg(feature = "dtype-i8")]
 make_literal_typed!(i8, Int8);
-#[cfg(feature = "dtype-i16")]
 make_literal_typed!(i16, Int16);
 make_literal_typed!(i32, Int32);
 make_literal_typed!(i64, Int64);
-#[cfg(feature = "dtype-u8")]
+make_literal_typed!(i128, Int128);
 make_literal_typed!(u8, UInt8);
-#[cfg(feature = "dtype-u16")]
 make_literal_typed!(u16, UInt16);
 make_literal_typed!(u32, UInt32);
 make_literal_typed!(u64, UInt64);
 
 make_dyn_lit!(f32, Float);
 make_dyn_lit!(f64, Float);
-#[cfg(feature = "dtype-i8")]
 make_dyn_lit!(i8, Int);
-#[cfg(feature = "dtype-i16")]
 make_dyn_lit!(i16, Int);
 make_dyn_lit!(i32, Int);
 make_dyn_lit!(i64, Int);
-#[cfg(feature = "dtype-u8")]
 make_dyn_lit!(u8, Int);
-#[cfg(feature = "dtype-u16")]
 make_dyn_lit!(u16, Int);
 make_dyn_lit!(u32, Int);
 make_dyn_lit!(u64, Int);
@@ -414,7 +505,7 @@ pub const NULL: Null = Null {};
 
 impl Literal for Null {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Null)
+        Expr::Literal(LiteralValue::Scalar(Scalar::null(DataType::Null)))
     }
 }
 
@@ -422,17 +513,23 @@ impl Literal for Null {
 impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
         if in_nanoseconds_window(&self) {
-            Expr::Literal(LiteralValue::DateTime(
-                self.and_utc().timestamp_nanos_opt().unwrap(),
-                TimeUnit::Nanoseconds,
-                None,
-            ))
+            Expr::Literal(
+                Scalar::new_datetime(
+                    self.and_utc().timestamp_nanos_opt().unwrap(),
+                    TimeUnit::Nanoseconds,
+                    None,
+                )
+                .into(),
+            )
         } else {
-            Expr::Literal(LiteralValue::DateTime(
-                self.and_utc().timestamp_micros(),
-                TimeUnit::Microseconds,
-                None,
-            ))
+            Expr::Literal(
+                Scalar::new_datetime(
+                    self.and_utc().timestamp_micros(),
+                    TimeUnit::Microseconds,
+                    None,
+                )
+                .into(),
+            )
         }
     }
 }
@@ -441,12 +538,12 @@ impl Literal for NaiveDateTime {
 impl Literal for ChronoDuration {
     fn lit(self) -> Expr {
         if let Some(value) = self.num_nanoseconds() {
-            Expr::Literal(LiteralValue::Duration(value, TimeUnit::Nanoseconds))
+            Expr::Literal(Scalar::new_duration(value, TimeUnit::Nanoseconds).into())
         } else {
-            Expr::Literal(LiteralValue::Duration(
-                self.num_microseconds().unwrap(),
-                TimeUnit::Microseconds,
-            ))
+            Expr::Literal(
+                Scalar::new_duration(self.num_microseconds().unwrap(), TimeUnit::Microseconds)
+                    .into(),
+            )
         }
     }
 }
@@ -460,10 +557,13 @@ impl Literal for Duration {
             self
         );
         let ns = self.duration_ns();
-        Expr::Literal(LiteralValue::Duration(
-            if self.negative() { -ns } else { ns },
-            TimeUnit::Nanoseconds,
-        ))
+        Expr::Literal(
+            Scalar::new_duration(
+                if self.negative() { -ns } else { ns },
+                TimeUnit::Nanoseconds,
+            )
+            .into(),
+        )
     }
 }
 
@@ -488,7 +588,7 @@ impl Literal for LiteralValue {
 
 impl Literal for Scalar {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::OtherScalar(self))
+        Expr::Literal(self.into())
     }
 }
 
@@ -525,16 +625,9 @@ impl Hash for LiteralValue {
                     rng = rng.rotate_right(17).wrapping_add(RANDOM);
                 }
             },
-            LiteralValue::Range { low, high, dtype } => {
-                low.hash(state);
-                high.hash(state);
-                dtype.hash(state)
-            },
-            _ => {
-                if let Some(v) = self.to_any_value() {
-                    v.hash_impl(state, true)
-                }
-            },
+            LiteralValue::Range(range) => range.hash(state),
+            LiteralValue::Scalar(sc) => sc.hash(state),
+            LiteralValue::Dyn(d) => d.hash(state),
         }
     }
 }

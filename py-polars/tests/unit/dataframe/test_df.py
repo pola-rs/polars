@@ -1832,31 +1832,45 @@ def test_extension() -> None:
             return f"foo({self.value})"
 
     foos = [Foo(1), Foo(2), Foo(3)]
-    # foos and sys.getrefcount have a reference.
+
+    # foos and sys.getrefcount both have a reference.
     base_count = 2
-    assert sys.getrefcount(foos[0]) == base_count
+
+    # We compute the refcount on a separate line otherwise pytest's assert magic
+    # might add reference counts.
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count
 
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
-    assert sys.getrefcount(foos[0]) == base_count + 1
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 1
     del df
-    assert sys.getrefcount(foos[0]) == base_count
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count
 
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
-    assert sys.getrefcount(foos[0]) == base_count + 1
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 1
 
     out = df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
-    assert sys.getrefcount(foos[0]) == base_count + 2
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 2
     s = out["a"].list.explode()
-    assert sys.getrefcount(foos[0]) == base_count + 3
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 3
     del s
-    assert sys.getrefcount(foos[0]) == base_count + 2
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 2
 
     assert out["a"].list.explode().to_list() == foos
-    assert sys.getrefcount(foos[0]) == base_count + 2
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 2
     del out
-    assert sys.getrefcount(foos[0]) == base_count + 1
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count + 1
     del df
-    assert sys.getrefcount(foos[0]) == base_count
+    rc = sys.getrefcount(foos[0])
+    assert rc == base_count
 
 
 @pytest.mark.parametrize("name", [None, "n", ""])
@@ -3034,3 +3048,15 @@ def test_select_oob_element_20775_too_large(idx: int) -> None:
         match=f"index {idx} is out of bounds for sequence of length 3",
     ):
         df[idx, "a"]
+
+
+def test_nan_to_null() -> None:
+    a = np.array([np.nan, 1])
+
+    df1 = pl.DataFrame(a, nan_to_null=True)
+    df2 = pl.DataFrame(
+        (a,),
+        nan_to_null=True,
+    )
+
+    assert_frame_equal(df1, df2)

@@ -1,5 +1,6 @@
 use polars::lazy::dsl;
 use polars::prelude::*;
+use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::UnionArgs;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -455,10 +456,10 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
             .extract::<i128>()
             .map_err(|e| polars_err!(InvalidOperation: "integer too large for Polars: {e}"))
             .map_err(PyPolarsErr::from)?;
-        Ok(Expr::Literal(LiteralValue::Int(v)).into())
+        Ok(Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(v))).into())
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>()?;
-        Ok(Expr::Literal(LiteralValue::Float(val)).into())
+        Ok(Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(val))).into())
     } else if let Ok(pystr) = value.downcast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
     } else if let Ok(series) = value.extract::<PySeries>() {

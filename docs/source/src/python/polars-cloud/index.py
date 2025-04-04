@@ -16,7 +16,7 @@ query = (
 )
 
 (
-    query.remote(ctx)
+    query.remote(context=ctx)
     .sink_parquet("s3://my-dst/")
 )
 # --8<-- [end:index]

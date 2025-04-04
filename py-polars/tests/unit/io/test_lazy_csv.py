@@ -204,7 +204,7 @@ def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
     # related to row count is not pushed.
     assert 'FILTER [(col("index")) == (1)]\nFROM' in plan
     # unrelated to row count is pushed.
-    assert 'SELECTION: [(col("category")) == (String(vegetables))]' in plan
+    assert 'SELECTION: [(col("category")) == ("vegetables")]' in plan
 
 
 @pytest.mark.write_disk

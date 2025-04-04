@@ -1,18 +1,20 @@
 use std::borrow::{Borrow, Cow};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use chrono::{
     DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike,
 };
 use chrono_tz::Tz;
+use hashbrown::HashMap;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
 use polars::datatypes::OwnedObject;
-use polars::datatypes::{DataType, Field, PlHashMap, TimeUnit};
+use polars::datatypes::{DataType, Field, TimeUnit};
 use polars::prelude::{AnyValue, PlSmallStr, Series};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
+use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
@@ -186,8 +188,8 @@ impl std::hash::Hash for TypeObjectKey {
 }
 
 type InitFn = for<'py> fn(&Bound<'py, PyAny>, bool) -> PyResult<AnyValue<'py>>;
-pub(crate) static LUT: crate::gil_once_cell::GILOnceCell<PlHashMap<TypeObjectKey, InitFn>> =
-    crate::gil_once_cell::GILOnceCell::new();
+pub(crate) static LUT: Mutex<HashMap<TypeObjectKey, InitFn, PlFixedStateQuality>> =
+    Mutex::new(HashMap::with_hasher(PlFixedStateQuality::with_seed(0)));
 
 /// Convert a Python object to an [`AnyValue`].
 pub(crate) fn py_object_to_any_value<'py>(
@@ -474,11 +476,8 @@ pub(crate) fn py_object_to_any_value<'py>(
     ///
     /// Note: This function is only ran if the object's type is not already in the
     /// lookup table.
-    fn get_conversion_function(
-        ob: &Bound<'_, PyAny>,
-        py: Python<'_>,
-        allow_object: bool,
-    ) -> PyResult<InitFn> {
+    fn get_conversion_function(ob: &Bound<'_, PyAny>, allow_object: bool) -> PyResult<InitFn> {
+        let py = ob.py();
         if ob.is_none() {
             Ok(get_null)
         }
@@ -549,20 +548,18 @@ pub(crate) fn py_object_to_any_value<'py>(
     let py_type = ob.get_type();
     let py_type_address = py_type.as_ptr() as usize;
 
-    Python::with_gil(move |py| {
-        LUT.with_gil(py, move |lut| {
-            if !lut.contains_key(&py_type_address) {
-                let k = TypeObjectKey::new(py_type.clone().unbind());
+    let conversion_func = {
+        if let Some(cached_func) = LUT.lock().unwrap().get(&py_type_address) {
+            *cached_func
+        } else {
+            let k = TypeObjectKey::new(py_type.clone().unbind());
+            assert_eq!(k.address, py_type_address);
 
-                assert_eq!(k.address, py_type_address);
+            let func = get_conversion_function(ob, allow_object)?;
+            LUT.lock().unwrap().insert(k, func);
+            func
+        }
+    };
 
-                unsafe {
-                    lut.insert_unique_unchecked(k, get_conversion_function(ob, py, allow_object)?);
-                }
-            }
-
-            let conversion_func = lut.get(&py_type_address).unwrap();
-            conversion_func(ob, strict)
-        })
-    })
+    conversion_func(ob, strict)
 }

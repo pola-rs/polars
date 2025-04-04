@@ -1,6 +1,4 @@
 use std::borrow::Cow;
-#[cfg(feature = "timezones")]
-use std::sync::LazyLock;
 
 use arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "timezones")]
@@ -9,7 +7,7 @@ use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "regex")]
-use regex::{NoExpand, Regex, escape};
+use regex::{NoExpand, escape};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -17,8 +15,9 @@ use super::*;
 use crate::{map, map_as_slice};
 
 #[cfg(all(feature = "regex", feature = "timezones"))]
-static TZ_AWARE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
+polars_utils::regex_cache::cached_regex! {
+    static TZ_AWARE_RE = r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)";
+}
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -904,7 +903,7 @@ fn replace_n<'a>(
                 pat = escape(&pat)
             }
 
-            let reg = Regex::new(&pat)?;
+            let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
             let f = |s: &'a str, val: &'a str| {
                 if lit && (s.len() <= 32) {
@@ -962,7 +961,7 @@ fn replace_all<'a>(
                 pat = escape(&pat)
             }
 
-            let reg = Regex::new(&pat)?;
+            let reg = polars_utils::regex_cache::compile_regex(&pat)?;
 
             let f = |s: &'a str, val: &'a str| {
                 // According to the docs for replace_all

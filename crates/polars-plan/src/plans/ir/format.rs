@@ -1,6 +1,5 @@
 use std::fmt::{self, Display, Formatter};
 
-use polars_core::datatypes::AnyValue;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_utils::format_list_truncated;
@@ -558,17 +557,7 @@ impl Display for ExprIRDisplay<'_> {
                 write!(f, "{expr}.alias(\"{name}\")")
             },
             Column(name) => write!(f, "col(\"{name}\")"),
-            Literal(v) => {
-                match v {
-                    LiteralValue::String(v) => {
-                        // dot breaks with debug fmt due to \"
-                        write!(f, "String({v})")
-                    },
-                    _ => {
-                        write!(f, "{v:?}")
-                    },
-                }
-            },
+            Literal(v) => write!(f, "{v:?}"),
             BinaryExpr { left, op, right } => {
                 let left = self.with_root(left);
                 let right = self.with_root(right);
@@ -775,9 +764,8 @@ impl fmt::Debug for LiteralValue {
         use LiteralValue::*;
 
         match self {
-            Binary(_) => write!(f, "[binary value]"),
-            Range { low, high, .. } => write!(f, "range({low}, {high})"),
-            Series(s) => {
+            Self::Scalar(sc) => write!(f, "{}", sc.value()),
+            Self::Series(s) => {
                 let name = s.name();
                 if name.is_empty() {
                     write!(f, "Series")
@@ -785,15 +773,25 @@ impl fmt::Debug for LiteralValue {
                     write!(f, "Series[{name}]")
                 }
             },
-            Float(v) => {
-                let av = AnyValue::Float64(*v);
-                write!(f, "dyn float: {}", av)
-            },
-            Int(v) => write!(f, "dyn int: {}", v),
-            _ => {
-                let av = self.to_any_value().unwrap();
-                write!(f, "{av}")
-            },
+            Range(range) => fmt::Debug::fmt(range, f),
+            Dyn(d) => fmt::Debug::fmt(d, f),
         }
+    }
+}
+
+impl fmt::Debug for DynLiteralValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Int(v) => write!(f, "dyn int: {v}"),
+            Self::Float(v) => write!(f, "dyn float: {}", v),
+            Self::Str(v) => write!(f, "dyn str: {v}"),
+            Self::List(_) => todo!(),
+        }
+    }
+}
+
+impl fmt::Debug for RangeLiteralValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "range({}, {})", self.low, self.high)
     }
 }

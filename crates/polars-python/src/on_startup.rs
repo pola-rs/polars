@@ -99,10 +99,19 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             });
             Box::new(object) as Box<dyn Any>
         });
+        let pyobject_converter = Arc::new(|av: AnyValue| {
+            let object = Python::with_gil(|py| Wrap(av).into_py_any(py).unwrap());
+            Box::new(object) as Box<dyn Any>
+        });
 
         let object_size = size_of::<ObjectValue>();
         let physical_dtype = ArrowDataType::FixedSizeBinary(object_size);
-        registry::register_object_builder(object_builder, object_converter, physical_dtype);
+        registry::register_object_builder(
+            object_builder,
+            object_converter,
+            pyobject_converter,
+            physical_dtype,
+        );
         // Register SERIES UDF.
         python_dsl::CALL_COLUMNS_UDF_PYTHON = Some(python_function_caller_series);
         // Register DATAFRAME UDF.
@@ -113,12 +122,5 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
         if catch_keyboard_interrupt {
             register_polars_keyboard_interrupt_hook();
         }
-
-        Python::with_gil(|py| {
-            // Init AnyValue LUT.
-            crate::conversion::any_value::LUT
-                .set(py, Default::default())
-                .unwrap();
-        });
     });
 }

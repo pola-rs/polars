@@ -12,6 +12,17 @@ use slotmap::{SecondaryMap, SlotMap};
 
 use crate::physical_plan::PhysNodeKind;
 
+/// Executes the IR with the streaming engine.
+///
+/// Unsupported operations can fall back to the in-memory engine.
+///
+/// Returns:
+/// - `Ok(Ok(DataFrame))` when collecting to a single sink.
+/// - `Ok(Err(Vec<DataFrame>))` when collecting to multiple sinks.
+/// - `Err` if the IR can't be executed.
+///
+/// Returned `DataFrame`s contain data only for memory sinks,
+/// `DataFrame`s corresponding to file sinks are empty.
 pub fn run_query(
     node: Node,
     ir_arena: &mut Arena<IR>,

@@ -40,6 +40,7 @@ pub enum DslPlan {
         scan_type: Box<FileScan>,
         /// Local use cases often repeatedly collect the same `LazyFrame` (e.g. in interactive notebook use-cases),
         /// so we cache the IR conversion here, as the path expansion can be quite slow (especially for cloud paths).
+        /// We don't have the arena, as this is always a source node.
         #[cfg_attr(feature = "serde", serde(skip))]
         cached_ir: Arc<Mutex<Option<IR>>>,
     },
