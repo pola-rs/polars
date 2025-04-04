@@ -167,7 +167,7 @@ impl FunctionExpr {
                 }
             },
             #[cfg(feature = "diff")]
-            Diff(_, _) => mapper.map_dtype(|dt| match dt {
+            Diff(_) => mapper.map_dtype(|dt| match dt {
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(tu, _) => DataType::Duration(*tu),
                 #[cfg(feature = "dtype-date")]

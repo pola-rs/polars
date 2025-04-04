@@ -756,8 +756,8 @@ impl PyExpr {
         self.inner.clone().rank(options, seed).into()
     }
 
-    fn diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> Self {
-        self.inner.clone().diff(n, null_behavior.0).into()
+    fn diff(&self, n: PyExpr, null_behavior: Wrap<NullBehavior>) -> Self {
+        self.inner.clone().diff(n.inner, null_behavior.0).into()
     }
 
     #[cfg(feature = "pct_change")]

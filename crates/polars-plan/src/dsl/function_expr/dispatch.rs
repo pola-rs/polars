@@ -13,8 +13,19 @@ pub(super) fn approx_n_unique(s: &Column) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "diff")]
-pub(super) fn diff(s: &Column, n: i64, null_behavior: NullBehavior) -> PolarsResult<Column> {
-    polars_ops::prelude::diff(s.as_materialized_series(), n, null_behavior).map(Column::from)
+pub(super) fn diff(s: &[Column], null_behavior: NullBehavior) -> PolarsResult<Column> {
+    let s1 = s[0].as_materialized_series();
+    let n = &s[1];
+
+    polars_ensure!(
+        n.len() == 1,
+        ComputeError: "n must be a single value."
+    );
+    let n = n.strict_cast(&DataType::Int64)?;
+    match n.i64()?.get(0) {
+        Some(n) => polars_ops::prelude::diff(s1, n, null_behavior).map(Column::from),
+        None => polars_bail!(ComputeError: "'n' can not be None for diff"),
+    }
 }
 
 #[cfg(feature = "pct_change")]
