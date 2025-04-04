@@ -6,20 +6,20 @@ enables users to horizontally scale workloads across multiple machines.
 Polars has always been optimized for fast and efficient performance on a single machine. However,
 when querying large datasets from cloud storage, performance is often constrained by the I/O
 limitations of a single node. By scaling horizontally, these download limitations can be
-significantly reduced, allowing users to process at scale.
+significantly reduced, allowing users to process data at scale.
 
 <!-- dprint-ignore-start -->
 
 !!! info "Distributed engine is early stage"
     The distributed engine is still in the very early stages of development. Major performance improvements are planned for the near future. When an operation is not yet available in a distributed manner, Polars Cloud will execute it on a single node.
     
-    Find out which operations are [currently supported in the distributed engine](https://github.com/pola-rs/polars/issues/21487) in this tracking issue.
+    Find out which operations are [currently supported in the distributed engine](https://github.com/pola-rs/polars/issues/21487).
 
 <!-- dprint-ignore-end-->
 
 ## Using distributed engine
 
-To execute queries using the distributed engine, you can call `distributed()`.
+To execute queries using the distributed engine, you can call the `distributed()` method.
 
 ```python
 lf: LazyFrame
@@ -59,5 +59,5 @@ result = (
 ## Working with large datasets in the distributed engine
 
 The distributed engine can only read sources partitioned with direct scan_<file> methods such as
-scan_parquet, scan_csv. Open table formats like `scan_iceberg` are not yet supported in a
+`scan_parquet` and `scan_csv`. Open table formats like `scan_iceberg` are not yet supported in a
 distributed fashion and will run on a single node when utilized.
