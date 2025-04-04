@@ -1,5 +1,6 @@
 // Hugging Face path resolution support
 
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
@@ -256,10 +257,10 @@ pub(super) async fn expand_paths_hf(
         let (prefix, expansion) = if glob {
             extract_prefix_expansion(rel_path)?
         } else {
-            (path_parts.path.clone(), None)
+            (Cow::Owned(path_parts.path.clone()), None)
         };
         let expansion_matcher = &if expansion.is_some() {
-            Some(Matcher::new(prefix.as_str().into(), expansion.as_deref())?)
+            Some(Matcher::new(prefix.to_string(), expansion.as_deref())?)
         } else {
             None
         };
@@ -284,7 +285,7 @@ pub(super) async fn expand_paths_hf(
         hive_idx_tracker.update(repo_location.get_file_uri(rel_path).len(), path_idx)?;
 
         assert!(stack.is_empty());
-        stack.push_back(prefix.to_string());
+        stack.push_back(prefix.into_owned());
 
         while let Some(rel_path) = stack.pop_front() {
             assert!(entries.is_empty());
