@@ -1721,7 +1721,7 @@ fn empty_df() -> PolarsResult<()> {
             col("A").shift_and_fill(lit(-1), lit(1)).alias("3"),
             col("A").fill_null(lit(1)).alias("4"),
             col("A").cum_count(false).alias("5"),
-            col("A").diff(1, NullBehavior::Ignore).alias("6"),
+            col("A").diff(lit(1), NullBehavior::Ignore).alias("6"),
             col("A").cum_max(false).alias("7"),
             col("A").cum_min(false).alias("8"),
         ])
