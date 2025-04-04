@@ -917,6 +917,11 @@ impl DataType {
             },
         }
     }
+
+    #[inline]
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, DataType::Unknown(_))
+    }
 }
 
 impl Display for DataType {

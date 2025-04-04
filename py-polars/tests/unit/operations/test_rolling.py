@@ -571,3 +571,16 @@ def test_rolling_var_zero_weight() -> None:
         pl.Series([1.0, None, 1.0, 2.0]).rolling_var(2),
         pl.Series([None, None, None, 0.5]),
     )
+
+
+def test_rolling_unsupported_22065() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series("a", [[]]).rolling_sum(10)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series("a", ["1.0"], pl.Decimal).rolling_min(1)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series("a", [None]).rolling_sum(10)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series("a", []).rolling_sum(10)
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series("a", [[None]], pl.List(pl.Null)).rolling_sum(10)
