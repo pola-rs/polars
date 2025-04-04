@@ -1701,8 +1701,8 @@ impl Expr {
 
     #[cfg(feature = "diff")]
     /// Calculate the n-th discrete difference between values.
-    pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
-        self.apply_private(FunctionExpr::Diff(n, null_behavior))
+    pub fn diff(self, n: Expr, null_behavior: NullBehavior) -> Expr {
+        self.apply_many_private(FunctionExpr::Diff(null_behavior), &[n], false, false)
     }
 
     #[cfg(feature = "pct_change")]

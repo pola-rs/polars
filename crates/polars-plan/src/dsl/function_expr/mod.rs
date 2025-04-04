@@ -245,7 +245,7 @@ pub enum FunctionExpr {
     Coalesce,
     ShrinkType,
     #[cfg(feature = "diff")]
-    Diff(i64, NullBehavior),
+    Diff(NullBehavior),
     #[cfg(feature = "pct_change")]
     PctChange,
     #[cfg(feature = "interpolate")]
@@ -408,7 +408,7 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "fused")]
             Fused(f) => f.hash(state),
             #[cfg(feature = "diff")]
-            Diff(_, null_behavior) => null_behavior.hash(state),
+            Diff(null_behavior) => null_behavior.hash(state),
             #[cfg(feature = "interpolate")]
             Interpolate(f) => f.hash(state),
             #[cfg(feature = "interpolate_by")]
@@ -709,7 +709,7 @@ impl Display for FunctionExpr {
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
-            Diff(_, _) => "diff",
+            Diff(_) => "diff",
             #[cfg(feature = "pct_change")]
             PctChange => "pct_change",
             #[cfg(feature = "interpolate")]
@@ -1072,7 +1072,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
-            Diff(n, null_behavior) => map!(dispatch::diff, n, null_behavior),
+            Diff(null_behavior) => map_as_slice!(dispatch::diff, null_behavior),
             #[cfg(feature = "pct_change")]
             PctChange => map_as_slice!(dispatch::pct_change),
             #[cfg(feature = "interpolate")]
