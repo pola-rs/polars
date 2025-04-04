@@ -234,11 +234,17 @@ def test_offset_by_missing_unit() -> None:
 
     with pytest.raises(
         InvalidOperationError,
+        match="expected a unit to follow integer in the duration string '-2d1'",
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("-2d1")
+
+    with pytest.raises(
+        InvalidOperationError,
         match="expected a unit to follow integer in the duration string '1d2'",
     ):
-        pl.Series([datetime(2022, 3, 20, 5, 7)] * 2).dt.offset_by(
-            pl.Series(["1d", "1d2"])
-        )
+        pl.DataFrame(
+            {"a": [datetime(2022, 3, 20, 5, 7)] * 2, "b": ["1d", "1d2"]}
+        ).select(pl.col("a").dt.offset_by(pl.col("b")))
 
 
 def test_dt_datetime_date_time_invalid() -> None:
