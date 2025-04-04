@@ -30,7 +30,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             },
             _ => {
                 polars_ensure!(
-                    ca.len() == lit.len(),
+                    ca.len() == lit.len() || ca.len() == 1,
                     length_mismatch = "bin.contains",
                     ca.len(),
                     lit.len()
@@ -63,7 +63,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             },
             _ => {
                 polars_ensure!(
-                    ca.len() == prefix.len(),
+                    ca.len() == prefix.len() || ca.len() == 1,
                     length_mismatch = "bin.starts_with",
                     ca.len(),
                     prefix.len()
@@ -82,7 +82,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             },
             _ => {
                 polars_ensure!(
-                    ca.len() == suffix.len(),
+                    ca.len() == suffix.len() || ca.len() == 1,
                     length_mismatch = "bin.ends_with",
                     ca.len(),
                     suffix.len()
