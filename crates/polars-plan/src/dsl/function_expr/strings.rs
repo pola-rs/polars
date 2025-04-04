@@ -215,6 +215,76 @@ impl StringFunction {
             EscapeRegex => mapper.with_same_dtype(),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use StringFunction as S;
+        match self {
+            #[cfg(feature = "concat_str")]
+            S::ConcatHorizontal { .. } => FunctionOptions::new_nparams_elementwise(),
+            #[cfg(feature = "concat_str")]
+            S::ConcatVertical { .. } => FunctionOptions::new_aggregation(),
+            #[cfg(feature = "regex")]
+            S::Contains { .. } => {
+                FunctionOptions::new_binary_elementwise().with_supertyping(Default::default())
+            },
+            S::CountMatches(_) => FunctionOptions::new_binary_elementwise(),
+            S::EndsWith => todo!(),
+            S::Extract(_) => todo!(),
+            S::ExtractAll => todo!(),
+            S::ExtractGroups { dtype, pat } => todo!(),
+            S::Find { literal, strict } => todo!(),
+            S::ToInteger(_) => todo!(),
+            S::LenBytes => todo!(),
+            S::LenChars => todo!(),
+            S::Lowercase => todo!(),
+            S::JsonDecode {
+                dtype,
+                infer_schema_len,
+            } => todo!(),
+            S::JsonPathMatch => todo!(),
+            S::Replace { n, literal } => todo!(),
+            S::Normalize { form } => todo!(),
+            S::Reverse => todo!(),
+            S::PadStart { length, fill_char } => todo!(),
+            S::PadEnd { length, fill_char } => todo!(),
+            S::Slice => todo!(),
+            S::Head => todo!(),
+            S::Tail => todo!(),
+            S::HexEncode => todo!(),
+            S::HexDecode(_) => todo!(),
+            S::Base64Encode => todo!(),
+            S::Base64Decode(_) => todo!(),
+            S::StartsWith => todo!(),
+            S::StripChars => todo!(),
+            S::StripCharsStart => todo!(),
+            S::StripCharsEnd => todo!(),
+            S::StripPrefix => todo!(),
+            S::StripSuffix => todo!(),
+            S::SplitExact { n, inclusive } => todo!(),
+            S::SplitN(_) => todo!(),
+            S::Strptime(data_type, strptime_options) => todo!(),
+            S::Split(_) => todo!(),
+            S::ToDecimal(_) => todo!(),
+            S::Titlecase => todo!(),
+            S::Uppercase => todo!(),
+            S::ZFill => todo!(),
+            S::ContainsAny {
+                ascii_case_insensitive,
+            } => todo!(),
+            S::ReplaceMany {
+                ascii_case_insensitive,
+            } => todo!(),
+            S::ExtractMany {
+                ascii_case_insensitive,
+                overlapping,
+            } => todo!(),
+            S::FindMany {
+                ascii_case_insensitive,
+                overlapping,
+            } => todo!(),
+            S::EscapeRegex => todo!(),
+        }
+    }
 }
 
 impl Display for StringFunction {
