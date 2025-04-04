@@ -72,6 +72,33 @@ impl ArrayFunction {
             Explode => mapper.try_map_to_array_inner_dtype(),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use ArrayFunction as A;
+        match self {
+            A::Length
+            | A::Min
+            | A::Max
+            | A::Sum
+            | A::ToList
+            | A::Unique(_)
+            | A::NUnique
+            | A::Std(_)
+            | A::Var(_)
+            | A::Median
+            | A::Any
+            | A::All
+            | A::Sort(_)
+            | A::Reverse
+            | A::ArgMin
+            | A::ArgMax
+            | A::Concat => FunctionOptions::new_unary_elementwise(),
+            A::Contains | A::Get(_) | A::Join(_) | A::CountMatches | A::Shift => {
+                FunctionOptions::new_binary_elementwise()
+            },
+            A::Explode => FunctionOptions::new_unary_row_separable(),
+        }
+    }
 }
 
 fn map_array_dtype_to_list_dtype(datatype: &DataType) -> PolarsResult<DataType> {

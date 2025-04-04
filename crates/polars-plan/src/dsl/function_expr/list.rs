@@ -123,6 +123,54 @@ impl ListFunction {
             ToStruct(args) => mapper.try_map_dtype(|x| args.get_output_dtype(x)),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use ListFunction as L;
+        match self {
+            L::Concat => FunctionOptions::new_nparams_elementwise(),
+            L::Contains
+            | L::Sample { .. }
+            | L::Shift
+            | L::Get(_)
+            | L::GatherEvery
+            | L::CountMatches => FunctionOptions::new_binary_elementwise(),
+            L::Slice => FunctionOptions::new_ternary_elementwise(),
+            L::Gather(_) => FunctionOptions::new_groupwise(),
+            L::SetOperation(_) => FunctionOptions {
+                collect_groups: ApplyOptions::ElementWise,
+                cast_options: Some(CastingRules::Supertype(SuperTypeOptions {
+                    flags: SuperTypeFlags::default() | SuperTypeFlags::ALLOW_IMPLODE_LIST,
+                })),
+
+                flags: FunctionFlags::default() & !FunctionFlags::RETURNS_SCALAR,
+                ..Default::default()
+            },
+            L::DropNulls
+            | L::Diff { .. }
+            | L::Sum
+            | L::Length
+            | L::Max
+            | L::Min
+            | L::Mean
+            | L::Median
+            | L::Std(_)
+            | L::Var(_)
+            | L::ArgMin
+            | L::ArgMax
+            | L::Sort(_)
+            | L::Reverse
+            | L::Unique(_)
+            | L::NUnique
+            | L::Any
+            | L::All
+            | L::ToArray(_)
+            | L::ToStruct(ListToStructArgs::FixedWidth(_)) => {
+                FunctionOptions::new_unary_elementwise()
+            },
+            L::Join(_) => FunctionOptions::new_binary_elementwise(),
+            L::ToStruct(ListToStructArgs::InferWidth { .. }) => FunctionOptions::new_groupwise(),
+        }
+    }
 }
 
 #[cfg(feature = "dtype-array")]

@@ -38,6 +38,19 @@ impl BinaryFunction {
             FromBuffer(dtype, _) => mapper.with_dtype(dtype.clone()),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use BinaryFunction as B;
+        match self {
+            B::Contains | B::StartsWith | B::EndsWith => FunctionOptions::new_binary_elementwise(),
+            B::HexDecode(_)
+            | B::HexEncode
+            | B::Base64Decode(_)
+            | B::Base64Encode
+            | B::Size
+            | B::FromBuffer(_, _) => FunctionOptions::new_unary_elementwise(),
+        }
+    }
 }
 
 impl Display for BinaryFunction {

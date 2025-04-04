@@ -34,6 +34,16 @@ impl CategoricalFunction {
             Slice(_, _) => mapper.with_dtype(DataType::String),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use CategoricalFunction as C;
+        match self {
+            C::GetCategories => FunctionOptions::new_groupwise(),
+            C::LenBytes | C::LenChars | C::StartsWith(_) | C::EndsWith(_) | C::Slice(_, _) => {
+                FunctionOptions::new_unary_elementwise()
+            },
+        }
+    }
 }
 
 impl Display for CategoricalFunction {
