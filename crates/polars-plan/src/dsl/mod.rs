@@ -785,6 +785,34 @@ impl Expr {
         }
     }
 
+    pub fn map_many_private_cast(
+        self,
+        function_expr: FunctionExpr,
+        arguments: &[Expr],
+        returns_scalar: bool,
+        cast_options: Option<CastingRules>,
+    ) -> Self {
+        let mut input = Vec::with_capacity(arguments.len() + 1);
+        input.push(self);
+        input.extend_from_slice(arguments);
+
+        let mut flags = FunctionFlags::default();
+        if returns_scalar {
+            flags |= FunctionFlags::RETURNS_SCALAR;
+        }
+
+        Expr::Function {
+            input,
+            function: function_expr,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ElementWise,
+                flags,
+                cast_options,
+                ..Default::default()
+            },
+        }
+    }
+
     /// Get mask of finite values if dtype is Float.
     #[allow(clippy::wrong_self_convention)]
     pub fn is_finite(self) -> Self {
@@ -1198,27 +1226,15 @@ impl Expr {
     #[cfg(feature = "is_in")]
     pub fn is_in<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Self {
         let other = other.into();
-        let other_constant = is_column_independent(&other);
         let returns_scalar = all_return_scalar(&self);
 
         let arguments = &[other];
-        // we don't have to apply on groups, so this is faster
-        // TODO: this optimization should be done during conversion to IR.
-        if other_constant {
-            self.map_many_private(
-                BooleanFunction::IsIn { nulls_equal }.into(),
-                arguments,
-                returns_scalar,
-                Some(Default::default()),
-            )
-        } else {
-            self.apply_many_private(
-                BooleanFunction::IsIn { nulls_equal }.into(),
-                arguments,
-                returns_scalar,
-                true,
-            )
-        }
+        self.map_many_private_cast(
+            BooleanFunction::IsIn { nulls_equal }.into(),
+            arguments,
+            returns_scalar,
+            Some(CastingRules::ListToSelfLossless),
+        )
     }
 
     /// Sort this column by the ordering of another column evaluated from given expr.

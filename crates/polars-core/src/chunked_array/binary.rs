@@ -6,7 +6,7 @@ use rayon::prelude::*;
 
 use crate::POOL;
 use crate::prelude::*;
-use crate::utils::{_set_partition_size, _split_offsets};
+use crate::utils::{Container, _set_partition_size, _split_offsets};
 
 #[inline]
 fn fill_bytes_hashes<'a, T>(
