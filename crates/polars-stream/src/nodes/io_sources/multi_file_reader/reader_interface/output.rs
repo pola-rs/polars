@@ -46,7 +46,7 @@ impl FileReaderOutputSend {
         )
     }
 
-    pub async fn send_morsel(&mut self, morsel: Morsel) -> Result<(), Morsel> {
+    pub async fn send_morsel(&mut self, mut morsel: Morsel) -> Result<(), Morsel> {
         use FileReaderOutputSend::*;
 
         // We order to wait first, then send. This is intended to allow the producer create the
