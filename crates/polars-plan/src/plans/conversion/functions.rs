@@ -54,6 +54,7 @@ pub(super) fn convert_functions(
     let e = to_expr_irs(input, arena)?;
 
     match function {
+        #[cfg(feature = "diff")]
         F::Diff(_) => {
             polars_ensure!(&e[1].is_scalar(arena), ComputeError: "'n' must be scalar value");
         },
