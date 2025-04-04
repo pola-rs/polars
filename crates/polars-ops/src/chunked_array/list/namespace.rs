@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
@@ -300,6 +301,22 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
         let periods_s = periods.cast(&DataType::Int64)?;
         let periods = periods_s.i64()?;
+
+        polars_ensure!(
+            ca.len() == periods.len() || ca.len() == 1 || periods.len() == 1,
+            length_mismatch = "list.shift",
+            ca.len(),
+            periods.len()
+        );
+
+        // Broadcast `self`
+        let mut ca = Cow::Borrowed(ca);
+        if ca.len() == 1 && periods.len() != 1 {
+            // Optimize: Don't broadcast and instead have a special path.
+            ca = Cow::Owned(ca.new_from_index(0, periods.len()));
+        }
+        let ca = ca.as_ref();
+
         let out = match periods.len() {
             1 => {
                 if let Some(periods) = periods.get(0) {
