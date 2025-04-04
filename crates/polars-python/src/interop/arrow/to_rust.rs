@@ -98,13 +98,12 @@ pub fn to_rust_df(py: Python, rb: &[Bound<PyAny>], schema: Bound<PyAny>) -> PyRe
         return Err(PyPolarsErr::Other("invalid top-level schema".into()).into());
     };
 
-    {
-        // Verify that field names are not duplicated. Arrow permits duplicate field names, we do not.
-        // Required to uphold safety invariants for unsafe block below.
-        // Uses std HashMap for DOS resistance
-        use std::collections::HashMap;
+    let schema = ArrowSchema::from_iter(fields.iter().cloned());
 
-        let mut field_map: HashMap<PlSmallStr, u64> = HashMap::new();
+    // Verify that field names are not duplicated. Arrow permits duplicate field names, we do not.
+    // Required to uphold safety invariants for unsafe block below.
+    if schema.len() != fields.len() {
+        let mut field_map: PlHashMap<PlSmallStr, u64> = PlHashMap::with_capacity(fields.len());
         fields.iter().for_each(|field| {
             field_map
                 .entry(field.name.clone())
@@ -117,19 +116,16 @@ pub fn to_rust_df(py: Python, rb: &[Bound<PyAny>], schema: Bound<PyAny>) -> PyRe
             .into_iter()
             .filter_map(|(k, v)| (v > 1).then_some(k))
             .collect();
-        if !duplicate_fields.is_empty() {
-            return Err(PyPolarsErr::Polars(PolarsError::Duplicate(
-                format!(
-                    "column appears more than once; names must be unique: {:?}",
-                    duplicate_fields
-                )
-                .into(),
-            ))
-            .into());
-        }
-    }
 
-    let schema = ArrowSchema::from_iter(fields);
+        return Err(PyPolarsErr::Polars(PolarsError::Duplicate(
+            format!(
+                "column appears more than once; names must be unique: {:?}",
+                duplicate_fields
+            )
+            .into(),
+        ))
+        .into());
+    }
 
     if rb.is_empty() {
         let columns = schema
