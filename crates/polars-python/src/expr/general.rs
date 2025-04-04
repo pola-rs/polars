@@ -367,14 +367,6 @@ impl PyExpr {
             .into()
     }
 
-    fn backward_fill(&self, limit: FillNullLimit) -> Self {
-        self.inner.clone().backward_fill(limit).into()
-    }
-
-    fn forward_fill(&self, limit: FillNullLimit) -> Self {
-        self.inner.clone().forward_fill(limit).into()
-    }
-
     #[pyo3(signature = (n, fill_value=None))]
     fn shift(&self, n: Self, fill_value: Option<Self>) -> Self {
         let expr = self.inner.clone();

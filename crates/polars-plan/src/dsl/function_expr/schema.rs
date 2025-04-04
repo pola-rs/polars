@@ -329,8 +329,6 @@ impl FunctionExpr {
                 symbol,
                 kwargs,
             } => unsafe { plugin::plugin_field(fields, lib, symbol.as_ref(), kwargs) },
-            BackwardFill { .. } => mapper.with_same_dtype(),
-            ForwardFill { .. } => mapper.with_same_dtype(),
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => {

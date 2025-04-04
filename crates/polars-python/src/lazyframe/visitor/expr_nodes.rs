@@ -1243,8 +1243,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::FfiPlugin { .. } => {
                     return Err(PyNotImplementedError::new_err("ffi plugin"));
                 },
-                FunctionExpr::BackwardFill { limit } => ("backward_fill", limit).into_py_any(py),
-                FunctionExpr::ForwardFill { limit } => ("forward_fill", limit).into_py_any(py),
                 FunctionExpr::SumHorizontal { ignore_nulls } => {
                     ("sum_horizontal", ignore_nulls).into_py_any(py)
                 },
