@@ -2484,11 +2484,10 @@ class Series:
         Parameters
         ----------
         bins
-            Discretizations to make.
-            If None given, we determine the boundaries based on the data.
+            Bin edges. If None given, we determine the edges based on the data.
         bin_count
-            If no bins provided, this will be used to determine
-            the distance of the bins.
+            If `bins` is not provided, `bin_count` uniform bins are created that fully
+            encompass the data.
         include_breakpoint
             Include a column that indicates the upper breakpoint.
         include_category
@@ -2503,16 +2502,16 @@ class Series:
         >>> a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
         >>> a.hist(bin_count=4)
         shape: (4, 3)
-        ┌────────────┬───────────────┬───────┐
-        │ breakpoint ┆ category      ┆ count │
-        │ ---        ┆ ---           ┆ ---   │
-        │ f64        ┆ cat           ┆ u32   │
-        ╞════════════╪═══════════════╪═══════╡
-        │ 2.75       ┆ (0.993, 2.75] ┆ 3     │
-        │ 4.5        ┆ (2.75, 4.5]   ┆ 2     │
-        │ 6.25       ┆ (4.5, 6.25]   ┆ 0     │
-        │ 8.0        ┆ (6.25, 8.0]   ┆ 2     │
-        └────────────┴───────────────┴───────┘
+        ┌────────────┬─────────────┬───────┐
+        │ breakpoint ┆ category    ┆ count │
+        │ ---        ┆ ---         ┆ ---   │
+        │ f64        ┆ cat         ┆ u32   │
+        ╞════════════╪═════════════╪═══════╡
+        │ 2.75       ┆ [1.0, 2.75] ┆ 3     │
+        │ 4.5        ┆ (2.75, 4.5] ┆ 2     │
+        │ 6.25       ┆ (4.5, 6.25] ┆ 0     │
+        │ 8.0        ┆ (6.25, 8.0] ┆ 2     │
+        └────────────┴─────────────┴───────┘
         """
         out = (
             self.to_frame()

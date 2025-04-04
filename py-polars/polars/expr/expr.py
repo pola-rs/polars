@@ -10107,11 +10107,10 @@ class Expr:
         Parameters
         ----------
         bins
-            Discretizations to make.
-            If None given, we determine the boundaries based on the data.
+            Bin edges. If None given, we determine the edges based on the data.
         bin_count
-            If no bins provided, this will be used to determine
-            the distance of the bins
+            If `bins` is not provided, `bin_count` uniform bins are created that fully
+            encompass the data.
         include_breakpoint
             Include a column that indicates the upper breakpoint.
         include_category
@@ -10131,7 +10130,7 @@ class Expr:
         │ --- │
         │ u32 │
         ╞═════╡
-        │ 1   │
+        │ 3   │
         │ 2   │
         └─────┘
         >>> df.select(
@@ -10145,7 +10144,7 @@ class Expr:
         │ ---                  │
         │ struct[3]            │
         ╞══════════════════════╡
-        │ {2.0,"(1.0, 2.0]",1} │
+        │ {2.0,"[1.0, 2.0]",3} │
         │ {3.0,"(2.0, 3.0]",2} │
         └──────────────────────┘
         """

@@ -11,12 +11,11 @@ fn get_breaks<T>(
     ca: &ChunkedArray<T>,
     bin_count: Option<usize>,
     bins: Option<&[f64]>,
-) -> PolarsResult<(Vec<f64>, bool, bool)>
+) -> PolarsResult<(Vec<f64>, bool)>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
-    let mut pad_lower = false;
     let (bins, uniform) = match (bin_count, bins) {
         (Some(_), Some(_)) => {
             return Err(PolarsError::ComputeError(
@@ -75,7 +74,6 @@ where
                 if min_value == max_value {
                     (min_value - 0.5, 1.0 / bin_count as f64, max_value + 0.5)
                 } else {
-                    pad_lower = true;
                     (
                         min_value,
                         (max_value - min_value) / bin_count as f64,
@@ -92,12 +90,12 @@ where
             (out, true)
         },
     };
-    Ok((bins, uniform, pad_lower))
+    Ok((bins, uniform))
 }
 
 // O(n) implementation when buckets are fixed-size.
 // We deposit items directly into their buckets.
-fn uniform_hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>, include_lower: bool) -> Vec<IdxSize>
+fn uniform_hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
@@ -122,7 +120,7 @@ where
                 /* idx > (num_bins - 1) may happen due to floating point representation imprecision */
                 let idx = cmp::min(idx as usize, num_bins - 1);
                 count[idx] += 1;
-            } else if include_lower && item == min_break {
+            } else if item == min_break {
                 count[0] += 1;
             }
         }
@@ -131,12 +129,11 @@ where
 }
 
 // Variable-width bucketing. We sort the items and then move linearly through buckets.
-fn hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>, include_lower: bool) -> Vec<IdxSize>
+fn hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
-    let exclude_lower = !include_lower;
     let num_bins = breaks.len() - 1;
     let mut breaks_iter = breaks.iter().skip(1); // Skip the first lower bound
     let (min_break, max_break) = (breaks[0], breaks[breaks.len() - 1]);
@@ -151,7 +148,7 @@ where
         let item = item.to_f64().unwrap();
 
         // Cycle through items until we hit the first bucket.
-        if item.is_nan() || item < min_break || (exclude_lower && item == min_break) {
+        if item.is_nan() || item < min_break {
             continue;
         }
 
@@ -186,13 +183,13 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
-    let (breaks, uniform, pad_lower) = get_breaks(ca, bin_count, bins)?;
+    let (breaks, uniform) = get_breaks(ca, bin_count, bins)?;
     let num_bins = std::cmp::max(breaks.len(), 1) - 1;
     let count = if num_bins > 0 && ca.len() > ca.null_count() {
         if uniform {
-            uniform_hist_count(&breaks, ca, pad_lower)
+            uniform_hist_count(&breaks, ca)
         } else {
-            hist_count(&breaks, ca, pad_lower)
+            hist_count(&breaks, ca)
         }
     } else {
         vec![0; num_bins]
@@ -215,16 +212,14 @@ where
         let mut categories =
             StringChunkedBuilder::new(PlSmallStr::from_static("category"), breaks.len());
         if num_bins > 0 {
-            let mut lower = AnyValue::Float64(if pad_lower {
-                breaks[0] - (breaks[num_bins] - breaks[0]) * 0.001
-            } else {
-                breaks[0]
-            });
+            let mut lower = AnyValue::Float64(breaks[0]);
             let mut buf = String::new();
+            let mut open_bracket = "[";
             for br in &breaks[1..] {
                 let br = AnyValue::Float64(*br);
                 buf.clear();
-                write!(buf, "({lower}, {br}]").unwrap();
+                write!(buf, "{open_bracket}{lower}, {br}]").unwrap();
+                open_bracket = "(";
                 categories.append_value(buf.as_str());
                 lower = br;
             }
