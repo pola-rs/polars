@@ -212,8 +212,7 @@ pub(super) fn fill_null_with_strategy(
 }
 
 pub(super) fn gather_every(s: &Column, n: usize, offset: usize) -> PolarsResult<Column> {
-    polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n should be positive");
-    Ok(s.gather_every(n, offset))
+    s.gather_every(n, offset)
 }
 
 #[cfg(feature = "reinterpret")]
