@@ -193,6 +193,22 @@ impl HashKeys {
         }
     }
 
+    pub fn null_is_valid(&self) -> bool {
+        match self {
+            HashKeys::RowEncoded(_) => false,
+            HashKeys::Single(s) => s.null_is_valid,
+            HashKeys::Binview(s) => s.null_is_valid,
+        }
+    }
+
+    pub fn for_each_hash<F: FnMut(Option<u64>)>(&self, f: F) {
+        match self {
+            HashKeys::RowEncoded(s) => s.for_each_hash(f),
+            HashKeys::Single(s) => s.for_each_hash(f),
+            HashKeys::Binview(s) => s.for_each_hash(f),
+        }
+    }
+
     /// After this call partitions will be extended with the partition for each
     /// hash. Nulls are assigned IdxSize::MAX or a specific partition depending
     /// on whether partition_nulls is true.
@@ -202,10 +218,21 @@ impl HashKeys {
         partitions: &mut Vec<IdxSize>,
         partition_nulls: bool,
     ) {
-        match self {
-            Self::RowEncoded(s) => s.gen_partitions(partitioner, partitions, partition_nulls),
-            Self::Single(s) => s.gen_partitions(partitioner, partitions, partition_nulls),
-            Self::Binview(s) => s.gen_partitions(partitioner, partitions, partition_nulls),
+        unsafe {
+            // Arbitrarily put nulls in partition 0.
+            let null_p = if partition_nulls | self.null_is_valid() {
+                0
+            } else {
+                IdxSize::MAX
+            };
+            partitions.reserve(self.len());
+            self.for_each_hash(|opt_h| {
+                partitions.push_unchecked(
+                    opt_h
+                        .map(|h| partitioner.hash_to_partition(h) as IdxSize)
+                        .unwrap_or(null_p),
+                );
+            });
         }
     }
 
@@ -220,368 +247,23 @@ impl HashKeys {
         partition_nulls: bool,
     ) {
         if sketches.is_empty() {
-            match self {
-                Self::RowEncoded(s) => s.gen_idxs_per_partition::<false>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-                Self::Single(s) => s.gen_idxs_per_partition::<false>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-                Self::Binview(s) => s.gen_idxs_per_partition::<false>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-            }
-        } else {
-            match self {
-                Self::RowEncoded(s) => s.gen_idxs_per_partition::<true>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-                Self::Single(s) => s.gen_idxs_per_partition::<true>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-                Self::Binview(s) => s.gen_idxs_per_partition::<true>(
-                    partitioner,
-                    partition_idxs,
-                    sketches,
-                    partition_nulls,
-                ),
-            }
-        }
-    }
-
-    pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
-        match self {
-            HashKeys::RowEncoded(s) => s.sketch_cardinality(sketch),
-            HashKeys::Single(s) => s.sketch_cardinality(sketch),
-            HashKeys::Binview(s) => s.sketch_cardinality(sketch),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct RowEncodedKeys {
-    pub hashes: UInt64Array, // Always non-null, we use the validity of keys.
-    pub keys: BinaryArray<i64>,
-}
-
-impl RowEncodedKeys {
-    pub fn gen_partitions(
-        &self,
-        partitioner: &HashPartitioner,
-        partitions: &mut Vec<IdxSize>,
-        partition_nulls: bool,
-    ) {
-        partitions.reserve(self.hashes.len());
-        if let Some(validity) = self.keys.validity() {
-            // Arbitrarily put nulls in partition 0.
-            let null_p = if partition_nulls { 0 } else { IdxSize::MAX };
-            partitions.extend(self.hashes.values_iter().zip(validity).map(|(h, is_v)| {
-                if is_v {
-                    partitioner.hash_to_partition(*h) as IdxSize
-                } else {
-                    null_p
-                }
-            }))
-        } else {
-            partitions.extend(
-                self.hashes
-                    .values_iter()
-                    .map(|h| partitioner.hash_to_partition(*h) as IdxSize),
-            )
-        }
-    }
-
-    pub fn gen_idxs_per_partition<const BUILD_SKETCHES: bool>(
-        &self,
-        partitioner: &HashPartitioner,
-        partition_idxs: &mut [Vec<IdxSize>],
-        sketches: &mut [CardinalitySketch],
-        partition_nulls: bool,
-    ) {
-        assert!(partition_idxs.len() == partitioner.num_partitions());
-        assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
-
-        if let Some(validity) = self.keys.validity() {
-            for (i, (h, is_v)) in self.hashes.values_iter().zip(validity).enumerate() {
-                if is_v {
-                    unsafe {
-                        // SAFETY: we assured the number of partitions matches.
-                        let p = partitioner.hash_to_partition(*h);
-                        partition_idxs.get_unchecked_mut(p).push(i as IdxSize);
-                        if BUILD_SKETCHES {
-                            sketches.get_unchecked_mut(p).insert(*h);
-                        }
-                    }
-                } else if partition_nulls {
-                    // Arbitrarily put nulls in partition 0.
-                    unsafe {
-                        partition_idxs.get_unchecked_mut(0).push(i as IdxSize);
-                    }
-                }
-            }
-        } else {
-            for (i, h) in self.hashes.values_iter().enumerate() {
-                unsafe {
-                    // SAFETY: we assured the number of partitions matches.
-                    let p = partitioner.hash_to_partition(*h);
-                    partition_idxs.get_unchecked_mut(p).push(i as IdxSize);
-                    if BUILD_SKETCHES {
-                        sketches.get_unchecked_mut(p).insert(*h);
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
-        if let Some(validity) = self.keys.validity() {
-            for (h, is_v) in self.hashes.values_iter().zip(validity) {
-                if is_v {
-                    sketch.insert(*h);
-                }
-            }
-        } else {
-            for h in self.hashes.values_iter() {
-                sketch.insert(*h);
-            }
-        }
-    }
-}
-
-/// Single keys without prehashing.
-#[derive(Clone, Debug)]
-pub struct SingleKeys {
-    pub random_state: PlRandomState,
-    pub keys: Series,
-    pub null_is_valid: bool,
-}
-
-impl SingleKeys {
-    pub fn gen_partitions(
-        &self,
-        partitioner: &HashPartitioner,
-        partitions: &mut Vec<IdxSize>,
-        partition_nulls: bool,
-    ) {
-        downcast_single_key_ca!(self.keys, |keys| {
-            gen_partitions(
-                keys,
-                &self.random_state,
-                partitioner,
-                partitions,
-                partition_nulls | self.null_is_valid,
-            );
-        });
-    }
-
-    pub fn gen_idxs_per_partition<const BUILD_SKETCHES: bool>(
-        &self,
-        partitioner: &HashPartitioner,
-        partition_idxs: &mut [Vec<IdxSize>],
-        sketches: &mut [CardinalitySketch],
-        partition_nulls: bool,
-    ) {
-        downcast_single_key_ca!(self.keys, |keys| {
-            gen_idxs_per_partition::<_, BUILD_SKETCHES>(
-                keys,
-                &self.random_state,
+            self.gen_idxs_per_partition_impl::<false>(
                 partitioner,
                 partition_idxs,
                 sketches,
-                partition_nulls | self.null_is_valid,
+                partition_nulls | self.null_is_valid(),
             );
-        });
-    }
-
-    pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
-        downcast_single_key_ca!(self.keys, |keys| {
-            sketch_cardinality(keys, &self.random_state, sketch);
-        });
-    }
-}
-
-fn gen_partitions<T>(
-    ca: &ChunkedArray<T>,
-    random_state: &PlRandomState,
-    partitioner: &HashPartitioner,
-    partitions: &mut Vec<IdxSize>,
-    partition_nulls: bool,
-) where
-    T: PolarsDataType,
-    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
-{
-    partitions.reserve(ca.len());
-    if ca.has_nulls() {
-        // Arbitrarily put nulls in partition 0.
-        let null_p = if partition_nulls { 0 } else { IdxSize::MAX };
-        for arr in ca.downcast_iter() {
-            partitions.extend(arr.iter().map(|opt_k| {
-                if let Some(k) = opt_k {
-                    let h = random_state.tot_hash_one(k);
-                    partitioner.hash_to_partition(h) as IdxSize
-                } else {
-                    null_p
-                }
-            }))
-        }
-    } else {
-        for arr in ca.downcast_iter() {
-            partitions.extend(arr.values_iter().map(|k| {
-                let h = random_state.tot_hash_one(k);
-                partitioner.hash_to_partition(h) as IdxSize
-            }));
-        }
-    }
-}
-
-fn gen_idxs_per_partition<T, const BUILD_SKETCHES: bool>(
-    ca: &ChunkedArray<T>,
-    random_state: &PlRandomState,
-    partitioner: &HashPartitioner,
-    partition_idxs: &mut [Vec<IdxSize>],
-    sketches: &mut [CardinalitySketch],
-    partition_nulls: bool,
-) where
-    T: PolarsDataType,
-    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
-{
-    assert!(partition_idxs.len() == partitioner.num_partitions());
-    assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
-
-    let mut idx = 0;
-    if ca.has_nulls() {
-        for arr in ca.downcast_iter() {
-            for opt_k in arr.iter() {
-                if let Some(k) = opt_k {
-                    unsafe {
-                        // SAFETY: we assured the number of partitions matches.
-                        let h = random_state.tot_hash_one(k);
-                        let p = partitioner.hash_to_partition(h);
-                        partition_idxs.get_unchecked_mut(p).push(idx as IdxSize);
-                        if BUILD_SKETCHES {
-                            sketches.get_unchecked_mut(p).insert(h);
-                        }
-                    }
-                } else if partition_nulls {
-                    // Arbitrarily put nulls in partition 0.
-                    unsafe {
-                        partition_idxs.get_unchecked_mut(0).push(idx as IdxSize);
-                    }
-                }
-
-                idx += 1;
-            }
-        }
-    } else {
-        for arr in ca.downcast_iter() {
-            for k in arr.values_iter() {
-                unsafe {
-                    // SAFETY: we assured the number of partitions matches.
-                    let h = random_state.tot_hash_one(k);
-                    let p = partitioner.hash_to_partition(h);
-                    partition_idxs.get_unchecked_mut(p).push(idx as IdxSize);
-                    if BUILD_SKETCHES {
-                        sketches.get_unchecked_mut(p).insert(h);
-                    }
-                }
-
-                idx += 1;
-            }
-        }
-    }
-}
-
-fn sketch_cardinality<T>(
-    ca: &ChunkedArray<T>,
-    random_state: &PlRandomState,
-    sketch: &mut CardinalitySketch,
-) where
-    T: PolarsDataType,
-    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
-{
-    if ca.has_nulls() {
-        for arr in ca.downcast_iter() {
-            for k in arr.iter().flatten() {
-                sketch.insert(random_state.tot_hash_one(k));
-            }
-        }
-    } else {
-        for arr in ca.downcast_iter() {
-            for k in arr.values_iter() {
-                sketch.insert(random_state.tot_hash_one(k));
-            }
-        }
-    }
-}
-
-/// Pre-hashed binary view keys with prehashing.
-#[derive(Clone, Debug)]
-pub struct BinviewKeys {
-    pub hashes: UInt64Array,
-    pub keys: BinaryViewArray,
-    pub null_is_valid: bool,
-}
-
-impl BinviewKeys {
-    fn for_each_hash<F: FnMut(Option<u64>)>(&self, mut f: F) {
-        if self.keys.has_nulls() {
-            let hash_slice = self.hashes.values().as_slice();
-            if let Some(validity) = self.keys.validity() {
-                for (i, v) in validity.iter().enumerate() {
-                    if v {
-                        f(Some(unsafe { *hash_slice.get_unchecked(i) }));
-                    } else {
-                        f(None);
-                    }
-                }
-            } else {
-                for h in self.hashes.values_iter() {
-                    f(Some(*h))
-                }
-            }
         } else {
-            for h in self.hashes.values_iter() {
-                f(Some(*h));
-            }
+            self.gen_idxs_per_partition_impl::<true>(
+                partitioner,
+                partition_idxs,
+                sketches,
+                partition_nulls | self.null_is_valid(),
+            );
         }
     }
 
-    pub fn gen_partitions(
-        &self,
-        partitioner: &HashPartitioner,
-        partitions: &mut Vec<IdxSize>,
-        partition_nulls: bool,
-    ) {
-        unsafe {
-            // Arbitrarily put nulls in partition 0.
-            let null_p = if partition_nulls { 0 } else { IdxSize::MAX };
-            partitions.reserve(self.hashes.len());
-            self.for_each_hash(|opt_h| {
-                partitions.push_unchecked(
-                    opt_h
-                        .map(|h| partitioner.hash_to_partition(h) as IdxSize)
-                        .unwrap_or(null_p),
-                );
-            });
-        }
-    }
-
-    pub fn gen_idxs_per_partition<const BUILD_SKETCHES: bool>(
+    fn gen_idxs_per_partition_impl<const BUILD_SKETCHES: bool>(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
@@ -614,9 +296,98 @@ impl BinviewKeys {
 
     pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
         self.for_each_hash(|opt_h| {
-            if let Some(h) = opt_h {
-                sketch.insert(h);
-            }
+            sketch.insert(opt_h.unwrap_or(0));
         })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RowEncodedKeys {
+    pub hashes: UInt64Array, // Always non-null, we use the validity of keys.
+    pub keys: BinaryArray<i64>,
+}
+
+impl RowEncodedKeys {
+    pub fn for_each_hash<F: FnMut(Option<u64>)>(&self, mut f: F) {
+        if self.keys.has_nulls() {
+            let validity = self.keys.validity().unwrap();
+            for (hash, is_v) in self.hashes.values_iter().zip(validity) {
+                if is_v { f(Some(*hash)) } else { f(None) }
+            }
+        } else {
+            for hash in self.hashes.values_iter() {
+                f(Some(*hash))
+            }
+        }
+    }
+}
+
+/// Single keys without prehashing.
+#[derive(Clone, Debug)]
+pub struct SingleKeys {
+    pub random_state: PlRandomState,
+    pub keys: Series,
+    pub null_is_valid: bool,
+}
+
+impl SingleKeys {
+    pub fn for_each_hash<F: FnMut(Option<u64>)>(&self, f: F) {
+        downcast_single_key_ca!(self.keys, |keys| {
+            for_each_hash(keys, f, &self.random_state);
+        })
+    }
+}
+
+fn for_each_hash<T, F>(keys: &ChunkedArray<T>, mut f: F, random_state: &PlRandomState)
+where
+    T: PolarsDataType,
+    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
+    F: FnMut(Option<u64>),
+{
+    if keys.has_nulls() {
+        for arr in keys.downcast_iter() {
+            for opt_k in arr.iter() {
+                f(opt_k.map(|k| random_state.tot_hash_one(k)))
+            }
+        }
+    } else {
+        for arr in keys.downcast_iter() {
+            for k in arr.values_iter() {
+                f(Some(random_state.tot_hash_one(k)))
+            }
+        }
+    }
+}
+
+/// Pre-hashed binary view keys with prehashing.
+#[derive(Clone, Debug)]
+pub struct BinviewKeys {
+    pub hashes: UInt64Array,
+    pub keys: BinaryViewArray,
+    pub null_is_valid: bool,
+}
+
+impl BinviewKeys {
+    pub fn for_each_hash<F: FnMut(Option<u64>)>(&self, mut f: F) {
+        if self.keys.has_nulls() {
+            let hash_slice = self.hashes.values().as_slice();
+            if let Some(validity) = self.keys.validity() {
+                for (i, v) in validity.iter().enumerate() {
+                    if v {
+                        f(Some(unsafe { *hash_slice.get_unchecked(i) }));
+                    } else {
+                        f(None);
+                    }
+                }
+            } else {
+                for h in self.hashes.values_iter() {
+                    f(Some(*h))
+                }
+            }
+        } else {
+            for h in self.hashes.values_iter() {
+                f(Some(*h));
+            }
+        }
     }
 }

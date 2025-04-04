@@ -56,7 +56,7 @@ fn to_physical_piped_expr(
         Context::Default,
         expr_arena,
         schema,
-        &mut ExpressionConversionState::new(false, 0),
+        &mut ExpressionConversionState::new(false),
     )
     .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
 }

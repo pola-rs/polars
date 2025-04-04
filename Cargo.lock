@@ -3145,6 +3145,7 @@ dependencies = [
  "polars-utils",
  "rand",
  "rayon",
+ "recursive",
 ]
 
 [[package]]

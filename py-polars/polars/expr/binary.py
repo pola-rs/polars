@@ -184,7 +184,7 @@ class ExprBinaryNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`String`.
+            Expression of data type :class:`Binary`.
 
         Examples
         --------
@@ -228,7 +228,7 @@ class ExprBinaryNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`String`.
+            Expression of data type :class:`Binary`.
 
         Examples
         --------

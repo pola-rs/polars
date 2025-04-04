@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
+use polars::prelude::file::DynWriteable;
+use polars::prelude::sync_on_close::SyncOnCloseType;
 use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_utils::create_file;
@@ -28,6 +30,20 @@ pub(crate) struct PyFileLikeObject {
 }
 
 impl WriteClose for PyFileLikeObject {}
+impl DynWriteable for PyFileLikeObject {
+    fn as_dyn_write(&self) -> &(dyn io::Write + Send + 'static) {
+        self as _
+    }
+    fn as_mut_dyn_write(&mut self) -> &mut (dyn io::Write + Send + 'static) {
+        self as _
+    }
+    fn close(self: Box<Self>) -> io::Result<()> {
+        Ok(())
+    }
+    fn sync_on_close(&mut self, _sync_on_close: SyncOnCloseType) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 impl Clone for PyFileLikeObject {
     fn clone(&self) -> Self {
@@ -215,6 +231,13 @@ impl EitherRustPythonFile {
         }
     }
 
+    pub(crate) fn into_writeable(self) -> Box<dyn DynWriteable> {
+        match self {
+            Self::Py(f) => Box::new(f),
+            Self::Rust(f) => Box::new(f),
+        }
+    }
+
     pub(crate) fn into_dyn_writeable(self) -> Box<dyn WriteClose + Send> {
         match self {
             EitherRustPythonFile::Py(f) => Box::new(f),
@@ -229,7 +252,7 @@ pub(crate) enum PythonScanSourceInput {
     File(ClosableFile),
 }
 
-fn try_get_pyfile(
+pub(crate) fn try_get_pyfile(
     py: Python,
     py_f: Bound<'_, PyAny>,
     write: bool,

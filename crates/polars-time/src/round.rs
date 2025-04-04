@@ -26,7 +26,7 @@ impl PolarsRound for DatetimeChunked {
         // Let's check if we can use a fastpath...
         if every.len() == 1 {
             if let Some(every) = every.get(0) {
-                let every_parsed = Duration::parse(every);
+                let every_parsed = Duration::try_parse(every)?;
                 if every_parsed.negative {
                     polars_bail!(ComputeError: "cannot round a Datetime to a negative duration")
                 }
@@ -99,7 +99,7 @@ impl PolarsRound for DateChunked {
         let out = match every.len() {
             1 => {
                 if let Some(every) = every.get(0) {
-                    let every = Duration::parse(every);
+                    let every = Duration::try_parse(every)?;
                     if every.negative {
                         polars_bail!(ComputeError: "cannot round a Date to a negative duration")
                     }

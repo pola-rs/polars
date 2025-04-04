@@ -168,6 +168,9 @@ from polars.functions import (
 )
 from polars.interchange import CompatLevel
 from polars.io import (
+    BasePartitionContext,
+    KeyedPartition,
+    KeyedPartitionContext,
     PartitionByKey,
     PartitionMaxSize,
     PartitionParted,
@@ -273,6 +276,9 @@ __all__ = [
     "Utf8",
     # polars.io
     "defer",
+    "KeyedPartition",
+    "BasePartitionContext",
+    "KeyedPartitionContext",
     "PartitionByKey",
     "PartitionMaxSize",
     "PartitionParted",

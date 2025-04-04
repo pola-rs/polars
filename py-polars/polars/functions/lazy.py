@@ -783,6 +783,30 @@ def tail(column: str, n: int = 10) -> Expr:
     return F.col(column).tail(n)
 
 
+@overload
+def corr(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    method: CorrelationMethod = ...,
+    ddof: int | None = ...,
+    propagate_nans: bool = ...,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def corr(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    method: CorrelationMethod = ...,
+    ddof: int | None = ...,
+    propagate_nans: bool = ...,
+    eager: Literal[True],
+) -> Series: ...
+
+
 def corr(
     a: IntoExpr,
     b: IntoExpr,
@@ -790,7 +814,8 @@ def corr(
     method: CorrelationMethod = "pearson",
     ddof: int | None = None,
     propagate_nans: bool = False,
-) -> Expr:
+    eager: bool = False,
+) -> Expr | Series:
     """
     Compute the Pearson's or Spearman rank correlation between two columns.
 
@@ -811,6 +836,10 @@ def corr(
         If `True` any `NaN` encountered will lead to `NaN` in the output.
         Defaults to `False` where `NaN` are regarded as larger than any finite number
         and thus lead to the highest rank.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
 
     Examples
     --------
@@ -835,13 +864,6 @@ def corr(
 
     Spearman rank correlation:
 
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "a": [1, 8, 3],
-    ...         "b": [4, 5, 2],
-    ...         "c": ["foo", "bar", "foo"],
-    ...     }
-    ... )
     >>> df.select(pl.corr("a", "b", method="spearman"))
     shape: (1, 1)
     ┌─────┐
@@ -851,6 +873,23 @@ def corr(
     ╞═════╡
     │ 0.5 │
     └─────┘
+
+    Eager evaluation:
+
+    >>> s1 = pl.Series("a", [1, 8, 3])
+    >>> s2 = pl.Series("b", [4, 5, 2])
+    >>> pl.corr(s1, s2, eager=True)
+    shape: (1,)
+    Series: 'a' [f64]
+    [
+        0.544705
+    ]
+    >>> pl.corr(s1, s2, method="spearman", eager=True)
+    shape: (1,)
+    Series: 'a' [f64]
+    [
+        0.5
+    ]
     """
     if ddof is not None:
         issue_deprecation_warning(
@@ -858,16 +897,27 @@ def corr(
             version="1.17.0",
         )
 
-    a = parse_into_expression(a)
-    b = parse_into_expression(b)
+    if eager:
+        if not (isinstance(a, pl.Series) or isinstance(b, pl.Series)):
+            msg = "expected at least one Series in 'corr' inputs if 'eager=True'"
+            raise ValueError(msg)
 
-    if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a, b))
-    elif method == "spearman":
-        return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
+        frame = pl.DataFrame([e for e in (a, b) if isinstance(e, pl.Series)])
+        exprs = ((e.name if isinstance(e, pl.Series) else e) for e in (a, b))
+        return frame.select(
+            corr(*exprs, eager=False, method=method, propagate_nans=propagate_nans)
+        ).to_series()
     else:
-        msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
-        raise ValueError(msg)
+        a = parse_into_expression(a)
+        b = parse_into_expression(b)
+
+        if method == "pearson":
+            return wrap_expr(plr.pearson_corr(a, b))
+        elif method == "spearman":
+            return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
+        else:
+            msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
+            raise ValueError(msg)
 
 
 def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
@@ -1223,7 +1273,6 @@ def reduce(
     │ 5   │
     └─────┘
     """
-    # in case of col("*")
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
@@ -1379,6 +1428,13 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
         y = F.col(y)
     if isinstance(x, str):
         x = F.col(x)
+    if not hasattr(x, "_pyexpr"):
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{type(x).__name__}`"
+        raise TypeError(msg)
+    if not hasattr(y, "_pyexpr"):
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{type(y).__name__}`"
+        raise TypeError(msg)
+
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
 
 
@@ -2036,10 +2092,6 @@ def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr:
 def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series: ...
 
 
-@overload
-def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series: ...
-
-
 def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series:
     """
     Return indices where `condition` evaluates `True`.
@@ -2049,8 +2101,9 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     condition
         Boolean expression to evaluate
     eager
-        Evaluate immediately and return a `Series`. If set to `False` (default),
-        return an expression instead.
+        Evaluate immediately and return a `Series`; this requires that the given
+        condition is itself a `Series`. If set to `False` (default), return
+        an expression instead.
 
     See Also
     --------
@@ -2074,7 +2127,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     if eager:
         if not isinstance(condition, pl.Series):
             msg = (
-                "expected 'Series' in 'arg_where' if 'eager=True', got"
+                "expected Series in 'arg_where' if 'eager=True', got"
                 f" {type(condition).__name__!r}"
             )
             raise ValueError(msg)
@@ -2084,7 +2137,35 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         return wrap_expr(plr.arg_where(condition))
 
 
-def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: Literal[True],
+) -> Series: ...
+
+
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: bool,
+) -> Expr | Series: ...
+
+
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: bool = False,
+) -> Expr | Series:
     """
     Folds the columns from left to right, keeping the first non-null value.
 
@@ -2095,6 +2176,10 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
         names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to coalesce, specified as positional arguments.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
 
     Examples
     --------
@@ -2105,7 +2190,8 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     ...         "c": [5, None, 3, None],
     ...     }
     ... )
-    >>> df.with_columns(pl.coalesce(["a", "b", "c", 10]).alias("d"))
+
+    >>> df.with_columns(pl.coalesce("a", "b", "c", 10).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬─────┐
     │ a    ┆ b    ┆ c    ┆ d   │
@@ -2117,6 +2203,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ 3    ┆ 3   │
     │ null ┆ null ┆ null ┆ 10  │
     └──────┴──────┴──────┴─────┘
+
     >>> df.with_columns(pl.coalesce(pl.col(["a", "b", "c"]), 10.0).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬──────┐
@@ -2129,9 +2216,29 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ 3    ┆ 3.0  │
     │ null ┆ null ┆ null ┆ 10.0 │
     └──────┴──────┴──────┴──────┘
+
+    >>> s1 = pl.Series("a", [None, 2, None])
+    >>> s2 = pl.Series("b", [1, None, 3])
+    >>> pl.coalesce(s1, s2, eager=True)
+    shape: (3,)
+    Series: 'a' [i64]
+    [
+        1
+        2
+        3
+    ]
     """
-    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
-    return wrap_expr(plr.coalesce(exprs))
+    if eager:
+        exprs = [exprs, *more_exprs]
+        if not (series := [e for e in exprs if isinstance(e, pl.Series)]):
+            msg = "expected at least one Series in 'coalesce' if 'eager=True'"
+            raise ValueError(msg)
+
+        exprs = [(e.name if isinstance(e, pl.Series) else e) for e in exprs]
+        return pl.DataFrame(series).select(coalesce(exprs, eager=False)).to_series()
+    else:
+        exprs = parse_into_list_of_expressions(exprs, *more_exprs)
+        return wrap_expr(plr.coalesce(exprs))
 
 
 @overload

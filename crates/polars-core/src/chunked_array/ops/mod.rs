@@ -421,10 +421,6 @@ pub enum FillNullStrategy {
     Zero,
     /// replace with the value one
     One,
-    /// replace with the maximum value of that data type
-    MaxBound,
-    /// replace with the minimal value of that data type
-    MinBound,
 }
 
 impl FillNullStrategy {

@@ -16,6 +16,7 @@ pub fn business_day_count(
             holidays,
         }),
         options: FunctionOptions {
+            collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },

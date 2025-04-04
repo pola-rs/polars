@@ -6,11 +6,10 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca_unordered;
-use polars_core::prelude::{AnyValue, InitHashMaps, IntoColumn, PlHashMap, PlHashSet};
+use polars_core::prelude::{AnyValue, IntoColumn, PlHashSet};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_plan::dsl::SinkOptions;
-use polars_utils::format_pl_smallstr;
+use polars_plan::dsl::{PartitionTargetCallback, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::CreateNewSinkFn;
@@ -18,9 +17,7 @@ use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::execute::StreamingExecutionState;
-use crate::nodes::io_sinks::partition::{
-    SinkSender, insert_key_value_into_format_args, open_new_sink,
-};
+use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode};
 use crate::nodes::{JoinHandle, Morsel, PhaseOutcome, TaskPriority};
 
@@ -30,8 +27,10 @@ pub struct PartedPartitionSinkNode {
     sink_input_schema: SchemaRef,
 
     key_cols: Arc<[PlSmallStr]>,
-    path_f_string: Arc<PathBuf>,
+    base_path: Arc<PathBuf>,
+    file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
+    ext: PlSmallStr,
 
     sink_options: SinkOptions,
     include_key: bool,
@@ -48,11 +47,14 @@ pub struct PartedPartitionSinkNode {
 
 const DEFAULT_RETIRE_TASKS: usize = 1;
 impl PartedPartitionSinkNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         input_schema: SchemaRef,
         key_cols: Arc<[PlSmallStr]>,
-        path_f_string: Arc<PathBuf>,
+        base_path: Arc<PathBuf>,
+        file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
+        ext: PlSmallStr,
         sink_options: SinkOptions,
         include_key: bool,
     ) -> Self {
@@ -83,8 +85,10 @@ impl PartedPartitionSinkNode {
         Self {
             sink_input_schema,
             key_cols,
-            path_f_string,
+            base_path,
+            file_path_cb,
             create_new,
+            ext,
             sink_options,
             num_retire_tasks,
             include_key,
@@ -122,19 +126,13 @@ impl SinkNode for PartedPartitionSinkNode {
         let state = state.clone();
         let sink_input_schema = self.sink_input_schema.clone();
         let key_cols = self.key_cols.clone();
-        let path_f_string = self.path_f_string.clone();
+        let base_path = self.base_path.clone();
+        let file_path_cb = self.file_path_cb.clone();
         let create_new = self.create_new.clone();
+        let ext = self.ext.clone();
         let include_key = self.include_key;
         let retire_error = has_error_occurred.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
-            let part_str = PlSmallStr::from_static("part");
-            let mut format_args = PlHashMap::with_capacity(1);
-            format_args.insert(part_str.clone(), PlSmallStr::EMPTY);
-            for (i, name) in key_cols.iter().enumerate() {
-                format_args.insert(format_pl_smallstr!("key[{i}].name"), name.clone());
-                format_args.insert(format_pl_smallstr!("key[{i}].value"), PlSmallStr::EMPTY);
-            }
-
             struct CurrentSink {
                 sender: SinkSender,
                 join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
@@ -142,7 +140,7 @@ impl SinkNode for PartedPartitionSinkNode {
             }
 
             let verbose = config::verbose();
-            let mut part = 0;
+            let mut file_idx = 0;
             let mut current_sink_opt: Option<CurrentSink> = None;
             let mut lengths = Vec::new();
 
@@ -193,22 +191,27 @@ impl SinkNode for PartedPartitionSinkNode {
                         let current_sink = match current_sink_opt.as_mut() {
                             Some(c) => c,
                             None => {
-                                *format_args.get_mut(&part_str).unwrap() =
-                                    format_pl_smallstr!("{part}");
-                                part += 1;
-                                let keys = parted_df.select_columns(key_cols.iter().cloned())?;
-                                insert_key_value_into_format_args(&mut format_args, &keys);
-
                                 let result = open_new_sink(
-                                    path_f_string.as_path(),
+                                    base_path.as_path(),
+                                    file_path_cb.as_ref(),
+                                    super::default_by_key_file_path_cb,
+                                    file_idx,
+                                    file_idx,
+                                    0,
+                                    Some(
+                                        parted_df
+                                            .select_columns(key_cols.iter().cloned())?
+                                            .as_slice(),
+                                    ),
                                     &create_new,
-                                    &format_args,
                                     sink_input_schema.clone(),
                                     "parted",
+                                    ext.as_str(),
                                     verbose,
                                     &state,
                                 )
                                 .await?;
+                                file_idx += 1;
                                 let Some((join_handles, sender)) = result else {
                                     return Ok(());
                                 };

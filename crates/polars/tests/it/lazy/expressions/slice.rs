@@ -4,8 +4,7 @@ use super::*;
 
 #[test]
 fn test_slice_args() -> PolarsResult<()> {
-    let groups: StringChunked = std::iter::repeat("a")
-        .take(10)
+    let groups: StringChunked = std::iter::repeat_n("a", 10)
         .chain(std::iter::repeat_n("b", 20))
         .collect();
 

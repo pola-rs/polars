@@ -87,7 +87,7 @@ fn empty() {
         ),
         ArrowDataType::Struct(vec![Field::new("a".into(), ArrowDataType::Int32, true)]),
     ];
-    let a = datatypes.into_iter().all(|x| new_empty_array(x).len() == 0);
+    let a = datatypes.into_iter().all(|x| new_empty_array(x).is_empty());
     assert!(a);
 }
 
@@ -126,7 +126,7 @@ fn empty_extension() {
         })
         .all(|x| {
             let a = new_empty_array(x);
-            a.len() == 0 && matches!(a.dtype(), ArrowDataType::Extension(_))
+            a.is_empty() && matches!(a.dtype(), ArrowDataType::Extension(_))
         });
     assert!(a);
 }

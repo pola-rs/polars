@@ -2,7 +2,6 @@ pub mod bridge;
 pub mod extra_ops;
 pub mod initialization;
 pub mod post_apply_pipeline;
-#[expect(unused)]
 pub mod reader_interface;
 pub mod reader_pipelines;
 
@@ -98,7 +97,6 @@ pub struct MultiFileReader {
 
 impl MultiFileReader {
     #[expect(clippy::too_many_arguments)]
-    #[expect(unused)]
     pub fn new(
         sources: ScanSources,
         file_reader_builder: Arc<dyn FileReaderBuilder>,

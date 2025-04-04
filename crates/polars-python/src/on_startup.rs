@@ -9,6 +9,7 @@ use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
 use polars_core::error::PolarsError::ComputeError;
 use polars_error::PolarsWarning;
 use polars_error::signals::register_polars_keyboard_interrupt_hook;
+use polars_utils::python_convert_registry::{FromPythonConvertRegistry, PythonConvertRegistry};
 use pyo3::prelude::*;
 use pyo3::{IntoPyObjectExt, intern};
 
@@ -99,10 +100,32 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
             });
             Box::new(object) as Box<dyn Any>
         });
+        let pyobject_converter = Arc::new(|av: AnyValue| {
+            let object = Python::with_gil(|py| Wrap(av).into_py_any(py).unwrap());
+            Box::new(object) as Box<dyn Any>
+        });
+
+        polars_utils::python_convert_registry::register_converters(PythonConvertRegistry {
+            from_py: FromPythonConvertRegistry {
+                sink_target: Arc::new(|py_f| {
+                    Python::with_gil(|py| {
+                        Ok(
+                            Box::new(py_f.extract::<Wrap<polars_plan::dsl::SinkTarget>>(py)?.0)
+                                as _,
+                        )
+                    })
+                }),
+            },
+        });
 
         let object_size = size_of::<ObjectValue>();
         let physical_dtype = ArrowDataType::FixedSizeBinary(object_size);
-        registry::register_object_builder(object_builder, object_converter, physical_dtype);
+        registry::register_object_builder(
+            object_builder,
+            object_converter,
+            pyobject_converter,
+            physical_dtype,
+        );
         // Register SERIES UDF.
         python_dsl::CALL_COLUMNS_UDF_PYTHON = Some(python_function_caller_series);
         // Register DATAFRAME UDF.

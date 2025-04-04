@@ -1162,7 +1162,7 @@ impl ChunkEqualElement for ArrayChunked {}
 #[cfg(test)]
 #[cfg_attr(feature = "nightly", allow(clippy::manual_repeat_n))] // remove once stable
 mod test {
-    use std::iter::repeat;
+    use std::iter::repeat_n;
 
     use super::super::test::get_chunked_array;
     use crate::prelude::*;
@@ -1193,51 +1193,51 @@ mod test {
 
         assert_eq!(
             a1.equal(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.equal(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.not_equal(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.gt(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.gt(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.gt_eq(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.lt_eq(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.lt(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.lt(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(6).collect::<Vec<_>>()
+            repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
     }
 
@@ -1248,51 +1248,51 @@ mod test {
 
         assert_eq!(
             a1.equal(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.equal(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.not_equal(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.gt(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.gt(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.gt_eq(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.lt_eq(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(true)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a1.lt(&a2).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
             a2.lt(&a1).into_iter().collect::<Vec<_>>(),
-            repeat(Some(false)).take(3).collect::<Vec<_>>()
+            repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
     }
 

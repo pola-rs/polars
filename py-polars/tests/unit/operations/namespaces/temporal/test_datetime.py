@@ -212,6 +212,13 @@ def test_offset_by_sortedness(
     assert not result.flags["SORTED_DESC"]
 
 
+def test_offset_by_invalid_duration() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="expected leading integer in the duration string"
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("P")
+
+
 def test_dt_datetime_date_time_invalid() -> None:
     with pytest.raises(ComputeError, match="expected Datetime or Date"):
         pl.Series([time(23)]).dt.date()
@@ -626,6 +633,13 @@ def test_round_negative() -> None:
         ComputeError, match="cannot round a Datetime to a negative duration"
     ):
         pl.Series([datetime(1895, 5, 7)]).dt.round("-1m")
+
+
+def test_round_invalid_duration() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="expected leading integer in the duration string"
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.round("P")
 
 
 @pytest.mark.parametrize(

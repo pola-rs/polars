@@ -4,7 +4,7 @@ use self::type_check::TypeCheckRule;
 use super::*;
 
 /// Applies expression simplification and type coercion during conversion to IR.
-pub(super) struct ConversionOptimizer {
+pub struct ConversionOptimizer {
     scratch: Vec<Node>,
 
     simplify: Option<SimplifyExprRule>,
@@ -19,7 +19,7 @@ pub(super) struct ConversionOptimizer {
 }
 
 impl ConversionOptimizer {
-    pub(super) fn new(simplify: bool, type_coercion: bool, type_check: bool) -> Self {
+    pub fn new(simplify: bool, type_coercion: bool, type_check: bool) -> Self {
         let simplify = if simplify {
             Some(SimplifyExprRule {})
         } else {
@@ -47,14 +47,14 @@ impl ConversionOptimizer {
         }
     }
 
-    pub(super) fn push_scratch(&mut self, expr: Node, expr_arena: &Arena<AExpr>) {
+    pub fn push_scratch(&mut self, expr: Node, expr_arena: &Arena<AExpr>) {
         self.scratch.push(expr);
         // traverse all subexpressions and add to the stack
         let expr = unsafe { expr_arena.get_unchecked(expr) };
         expr.inputs_rev(&mut self.scratch);
     }
 
-    pub(super) fn fill_scratch<N: Borrow<Node>>(&mut self, exprs: &[N], expr_arena: &Arena<AExpr>) {
+    pub fn fill_scratch<N: Borrow<Node>>(&mut self, exprs: &[N], expr_arena: &Arena<AExpr>) {
         for e in exprs {
             let node = *e.borrow();
             self.push_scratch(node, expr_arena);
@@ -63,7 +63,7 @@ impl ConversionOptimizer {
 
     /// Optimizes the expressions in the scratch space. This should be called after filling the
     /// scratch space with the expressions that you want to optimize.
-    pub(super) fn optimize_exprs(
+    pub fn optimize_exprs(
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         ir_arena: &mut Arena<IR>,

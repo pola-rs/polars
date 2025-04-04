@@ -91,8 +91,7 @@ fn from_trusted_len_iter() {
 
 #[test]
 fn try_from_trusted_len_iter() {
-    let iter = std::iter::repeat(b"hello".as_ref())
-        .take(2)
+    let iter = std::iter::repeat_n(b"hello".as_ref(), 2)
         .map(Some)
         .map(PolarsResult::Ok);
     let a = BinaryArray::<i32>::try_from_trusted_len_iter(iter).unwrap();
