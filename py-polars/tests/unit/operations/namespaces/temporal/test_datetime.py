@@ -236,7 +236,9 @@ def test_offset_by_missing_unit() -> None:
         InvalidOperationError,
         match="expected a unit to follow integer in the duration string '1d2'",
     ):
-        pl.Series([datetime(2022, 3, 20, 5, 7)] * 2).dt.offset_by(pl.Series(["1d", "1d2"]))
+        pl.Series([datetime(2022, 3, 20, 5, 7)] * 2).dt.offset_by(
+            pl.Series(["1d", "1d2"])
+        )
 
 
 def test_dt_datetime_date_time_invalid() -> None:
