@@ -21,15 +21,23 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         unary_elementwise_values(ca, f)
     }
 
-    fn contains_chunked(&self, lit: &BinaryChunked) -> BooleanChunked {
+    fn contains_chunked(&self, lit: &BinaryChunked) -> PolarsResult<BooleanChunked> {
         let ca = self.as_binary();
-        match lit.len() {
+        Ok(match lit.len() {
             1 => match lit.get(0) {
                 Some(lit) => ca.contains(lit),
                 None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
             },
-            _ => broadcast_binary_elementwise_values(ca, lit, |src, lit| find(src, lit).is_some()),
-        }
+            _ => {
+                polars_ensure!(
+                    ca.len() == lit.len(),
+                    length_mismatch = "bin.contains",
+                    ca.len(),
+                    lit.len()
+                );
+                broadcast_binary_elementwise_values(ca, lit, |src, lit| find(src, lit).is_some())
+            },
+        })
     }
 
     /// Check if strings ends with a substring

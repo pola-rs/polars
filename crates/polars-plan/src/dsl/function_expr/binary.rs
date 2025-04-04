@@ -95,7 +95,7 @@ pub(super) fn contains(s: &[Column]) -> PolarsResult<Column> {
     let ca = s[0].binary()?;
     let lit = s[1].binary()?;
     Ok(ca
-        .contains_chunked(lit)
+        .contains_chunked(lit)?
         .with_name(ca.name().clone())
         .into_column())
 }
