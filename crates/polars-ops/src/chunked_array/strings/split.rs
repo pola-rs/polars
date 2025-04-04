@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
 use arrow::array::{MutableArray, MutableUtf8Array};
