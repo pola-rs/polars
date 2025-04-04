@@ -1,7 +1,7 @@
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::legacy::kernels::set::set_at_nulls;
 use bytemuck::Zeroable;
-use num_traits::{Bounded, NumCast, One, Zero};
+use num_traits::{NumCast, One, Zero};
 use polars_utils::itertools::Itertools;
 
 use crate::prelude::*;
@@ -19,8 +19,6 @@ impl Series {
     /// * Max fill (replace None with the maximum of the whole array)
     /// * Zero fill (replace None with the value zero)
     /// * One fill (replace None with the value one)
-    /// * MinBound fill (replace with the minimum of that data type)
-    /// * MaxBound fill (replace with the maximum of that data type)
     ///
     /// *NOTE: If you want to fill the Nones with a value use the
     /// [`fill_null` operation on `ChunkedArray<T>`](crate::chunked_array::ops::ChunkFillNullValue)*.
@@ -53,12 +51,6 @@ impl Series {
     ///     let filled = s.fill_null(FillNullStrategy::One)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
     ///
-    ///     let filled = s.fill_null(FillNullStrategy::MinBound)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(-2147483648), Some(2)]);
-    ///
-    ///     let filled = s.fill_null(FillNullStrategy::MaxBound)?;
-    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2147483647), Some(2)]);
-    ///
     ///     Ok(())
     /// }
     /// example();
@@ -74,8 +66,6 @@ impl Series {
                         | FillNullStrategy::Backward(_)
                         | FillNullStrategy::Max
                         | FillNullStrategy::Min
-                        | FillNullStrategy::MaxBound
-                        | FillNullStrategy::MinBound
                         | FillNullStrategy::Mean
                 ))
         {
@@ -220,8 +210,6 @@ where
         )?,
         FillNullStrategy::One => return ca.fill_null_with_values(One::one()),
         FillNullStrategy::Zero => return ca.fill_null_with_values(Zero::zero()),
-        FillNullStrategy::MinBound => return ca.fill_null_with_values(Bounded::min_value()),
-        FillNullStrategy::MaxBound => return ca.fill_null_with_values(Bounded::max_value()),
         FillNullStrategy::Forward(None) => fill_forward_numeric(ca),
         FillNullStrategy::Backward(None) => fill_backward_numeric(ca),
         // Handled earlier
@@ -346,12 +334,8 @@ fn fill_null_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResu
             .fill_null_with_values(ca.max().ok_or_else(err_fill_null)?)
             .map(|ca| ca.into_series()),
         FillNullStrategy::Mean => polars_bail!(opq = mean, "Boolean"),
-        FillNullStrategy::One | FillNullStrategy::MaxBound => {
-            ca.fill_null_with_values(true).map(|ca| ca.into_series())
-        },
-        FillNullStrategy::Zero | FillNullStrategy::MinBound => {
-            ca.fill_null_with_values(false).map(|ca| ca.into_series())
-        },
+        FillNullStrategy::One => ca.fill_null_with_values(true).map(|ca| ca.into_series()),
+        FillNullStrategy::Zero => ca.fill_null_with_values(false).map(|ca| ca.into_series()),
         FillNullStrategy::Forward(_) => unreachable!(),
         FillNullStrategy::Backward(_) => unreachable!(),
     }

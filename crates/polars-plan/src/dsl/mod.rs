@@ -884,16 +884,6 @@ impl Expr {
         )
     }
 
-    /// Fill missing value with next non-null.
-    pub fn backward_fill(self, limit: FillNullLimit) -> Self {
-        self.apply_private(FunctionExpr::BackwardFill { limit })
-    }
-
-    /// Fill missing value with previous non-null.
-    pub fn forward_fill(self, limit: FillNullLimit) -> Self {
-        self.apply_private(FunctionExpr::ForwardFill { limit })
-    }
-
     /// Round underlying floating point array to given decimal numbers.
     #[cfg(feature = "round_series")]
     pub fn round(self, decimals: u32) -> Self {

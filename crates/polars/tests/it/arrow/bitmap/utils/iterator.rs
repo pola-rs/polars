@@ -11,8 +11,7 @@ fn basic() {
 #[test]
 fn large() {
     let values = &[0b01011011u8];
-    let values = std::iter::repeat(values)
-        .take(63)
+    let values = std::iter::repeat_n(values, 63)
         .flatten()
         .copied()
         .collect::<Vec<_>>();

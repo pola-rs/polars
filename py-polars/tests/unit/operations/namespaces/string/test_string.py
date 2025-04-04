@@ -452,6 +452,17 @@ def test_str_to_integer() -> None:
         hex.str.to_integer(base=16)
 
 
+@pytest.mark.parametrize("strict", [False, True])
+def test_str_to_integer_invalid_base(strict: bool) -> None:
+    numbers = pl.Series(["1", "ZZZ", "-ABCZZZ", None])
+    with pytest.raises(ComputeError):
+        numbers.str.to_integer(base=100, strict=strict)
+
+    df = pl.DataFrame({"str": numbers, "base": [0, 1, 100, None]})
+    with pytest.raises(ComputeError):
+        df.select(pl.col("str").str.to_integer(base=pl.col("base"), strict=strict))
+
+
 def test_str_to_integer_base_expr() -> None:
     df = pl.DataFrame(
         {"str": ["110", "ff00", "234", None, "130"], "base": [2, 16, 10, 8, None]}
@@ -1951,3 +1962,17 @@ def test_string_normalize(form: Any, expected_data: list[str | None]) -> None:
 def test_string_normalize_wrong_input() -> None:
     with pytest.raises(ValueError, match="`form` must be one of"):
         pl.Series(["01²"], dtype=pl.String).str.normalize("foobar")  # type: ignore[arg-type]
+
+
+def test_to_integer_unequal_lengths_22034() -> None:
+    s = pl.Series("a", ["1", "2", "3"], pl.String)
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.str.to_integer(base=pl.Series([4, 5, 5, 4]))
+
+
+def test_broadcast_self() -> None:
+    s = pl.Series("a", ["3"], pl.String)
+    with pytest.raises(
+        pl.exceptions.ComputeError, match="strict integer parsing failed"
+    ):
+        s.str.to_integer(base=pl.Series([2, 2, 3, 4]))

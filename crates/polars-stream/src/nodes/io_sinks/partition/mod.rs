@@ -8,7 +8,9 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
-use polars_plan::dsl::{FileType, PartitionTargetCallback, PartitionTargetContext, SinkOptions};
+use polars_plan::dsl::{
+    FileType, PartitionTargetCallback, PartitionTargetContext, SinkOptions, SinkTarget,
+};
 
 use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -21,8 +23,9 @@ pub mod by_key;
 pub mod max_size;
 pub mod parted;
 
-pub type CreateNewSinkFn =
-    Arc<dyn Send + Sync + Fn(SchemaRef, PathBuf) -> PolarsResult<Box<dyn SinkNode + Send + Sync>>>;
+pub type CreateNewSinkFn = Arc<
+    dyn Send + Sync + Fn(SchemaRef, SinkTarget) -> PolarsResult<Box<dyn SinkNode + Send + Sync>>,
+>;
 
 pub fn get_create_new_fn(
     file_type: FileType,
@@ -31,10 +34,10 @@ pub fn get_create_new_fn(
 ) -> CreateNewSinkFn {
     match file_type {
         #[cfg(feature = "ipc")]
-        FileType::Ipc(ipc_writer_options) => Arc::new(move |input_schema, path| {
+        FileType::Ipc(ipc_writer_options) => Arc::new(move |input_schema, target| {
             let sink = Box::new(super::ipc::IpcSinkNode::new(
                 input_schema,
-                path,
+                target,
                 sink_options.clone(),
                 ipc_writer_options,
                 cloud_options.clone(),
@@ -42,29 +45,31 @@ pub fn get_create_new_fn(
             Ok(sink)
         }) as _,
         #[cfg(feature = "json")]
-        FileType::Json(_ndjson_writer_options) => Arc::new(move |_input_schema, path| {
+        FileType::Json(_ndjson_writer_options) => Arc::new(move |_input_schema, target| {
             let sink = Box::new(super::json::NDJsonSinkNode::new(
-                path,
+                target,
                 sink_options.clone(),
                 cloud_options.clone(),
             )) as Box<dyn SinkNode + Send + Sync>;
             Ok(sink)
         }) as _,
         #[cfg(feature = "parquet")]
-        FileType::Parquet(parquet_writer_options) => Arc::new(move |input_schema, path: PathBuf| {
-            let sink = Box::new(super::parquet::ParquetSinkNode::new(
-                input_schema,
-                path.as_path(),
-                sink_options.clone(),
-                &parquet_writer_options,
-                cloud_options.clone(),
-            )?) as Box<dyn SinkNode + Send + Sync>;
-            Ok(sink)
-        }) as _,
+        FileType::Parquet(parquet_writer_options) => {
+            Arc::new(move |input_schema, target: SinkTarget| {
+                let sink = Box::new(super::parquet::ParquetSinkNode::new(
+                    input_schema,
+                    target,
+                    sink_options.clone(),
+                    &parquet_writer_options,
+                    cloud_options.clone(),
+                )?) as Box<dyn SinkNode + Send + Sync>;
+                Ok(sink)
+            }) as _
+        },
         #[cfg(feature = "csv")]
-        FileType::Csv(csv_writer_options) => Arc::new(move |input_schema, path| {
+        FileType::Csv(csv_writer_options) => Arc::new(move |input_schema, target| {
             let sink = Box::new(super::csv::CsvSinkNode::new(
-                path,
+                target,
                 input_schema,
                 sink_options.clone(),
                 csv_writer_options.clone(),
@@ -144,11 +149,11 @@ async fn open_new_sink(
         SinkSender,
     )>,
 > {
-    let mut file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys)?;
-    let mut path = base_path.join(file_path.as_path());
+    let file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys)?;
+    let path = base_path.join(file_path.as_path());
 
     // If the user provided their own callback, modify the path to that.
-    if let Some(file_path_cb) = file_path_cb {
+    let target = if let Some(file_path_cb) = file_path_cb {
         let keys = keys.map_or(Vec::new(), |keys| {
             keys.iter()
                 .map(|k| polars_plan::dsl::PartitionTargetContextKey {
@@ -158,7 +163,7 @@ async fn open_new_sink(
                 .collect()
         });
 
-        file_path = file_path_cb.call(PartitionTargetContext {
+        let target = file_path_cb.call(PartitionTargetContext {
             file_idx,
             part_idx,
             in_part_idx,
@@ -166,17 +171,26 @@ async fn open_new_sink(
             file_path,
             full_path: path,
         })?;
-        path = base_path.join(file_path);
-    }
+        // Offset the given path by the base_path.
+        match target {
+            SinkTarget::Path(p) => SinkTarget::Path(Arc::new(base_path.join(p.as_path()))),
+            target => target,
+        }
+    } else {
+        SinkTarget::Path(Arc::new(path))
+    };
 
     if verbose {
-        eprintln!(
-            "[partition[{partition_name}]]: Start on new file '{}'",
-            path.display()
-        );
+        match &target {
+            SinkTarget::Path(p) => eprintln!(
+                "[partition[{partition_name}]]: Start on new file '{}'",
+                p.display(),
+            ),
+            SinkTarget::Dyn(_) => eprintln!("[partition[{partition_name}]]: Start on new file",),
+        }
     }
 
-    let mut node = (create_new_sink)(sink_input_schema.clone(), path)?;
+    let mut node = (create_new_sink)(sink_input_schema.clone(), target)?;
     let mut join_handles = Vec::new();
     let (sink_input, sender) = if node.is_sink_input_parallel() {
         let (tx, dist_rxs) = distributor_channel::distributor_channel(

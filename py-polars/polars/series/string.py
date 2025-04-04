@@ -1827,7 +1827,9 @@ class StringNameSpace:
         ]
         """
 
-    def to_integer(self, *, base: int = 10, strict: bool = True) -> Series:
+    def to_integer(
+        self, *, base: int | IntoExprColumn = 10, strict: bool = True
+    ) -> Series:
         """
         Convert an String column into an Int64 column with base radix.
 

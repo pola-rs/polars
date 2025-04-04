@@ -295,12 +295,11 @@ impl RuntimeManager {
         Self { rt }
     }
 
-    /// Shorthand for `tokio::task::block_in_place(|| block_on(f))`. This is a variant of `block_on`
-    /// that is safe to call from if the current thread has already entered the async runtime, or
-    /// is a rayon thread.
-    ///
-    /// # Safety
-    /// The tokio runtime flavor is multi-threaded.
+    /// Forcibly blocks this thread to evaluate the given future. This can be
+    /// dangerous and lead to deadlocks if called re-entrantly on an async
+    /// worker thread as the entire thread pool can end up blocking, leading to
+    /// a deadlock. If you want to prevent this use block_on, which will panic
+    /// if called from an async thread.
     pub fn block_in_place_on<F>(&self, future: F) -> F::Output
     where
         F: Future,
@@ -308,8 +307,8 @@ impl RuntimeManager {
         tokio::task::block_in_place(|| self.rt.block_on(future))
     }
 
-    /// Note: `block_in_place_on` should be used instead if the current thread is a rayon thread or
-    /// has already entered the async runtime.
+    /// Blocks this thread to evaluate the given future. Panics if the current
+    /// thread is an async runtime worker thread.
     pub fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,

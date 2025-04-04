@@ -1027,3 +1027,20 @@ def test_list_diff_schema(
     expected = {"a": pl.List(expected_inner_dtype)}
     assert lf.collect_schema() == expected
     assert lf.collect().schema == expected
+
+
+def test_gather_every_nzero_22027() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [
+                    ["a"],
+                    ["eb", "d"],
+                ],
+                pl.List(pl.String),
+            ),
+        ]
+    )
+    with pytest.raises(pl.exceptions.ComputeError):
+        df.select(pl.col.a.list.gather_every(pl.Series([0, 0])))

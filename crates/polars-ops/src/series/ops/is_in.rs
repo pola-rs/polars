@@ -657,7 +657,7 @@ fn is_in_cat(
     match other.dtype() {
         DataType::Categorical(_, _) | DataType::Enum(_, _) => {
             let (ca_in, other_in) =
-                make_categoricals_compatible(ca_in, other.categorical().unwrap())?;
+                make_rhs_categoricals_compatible(ca_in, other.categorical().unwrap())?;
             is_in_helper_ca(ca_in.physical(), other_in.physical(), nulls_equal)
         },
         DataType::String => {
@@ -756,7 +756,7 @@ fn is_in_cat_list(ca_in: &CategoricalChunked, other: &Series) -> PolarsResult<Bo
         let list_chunked_inner = list_chunked.get_inner();
         let inner_cat = list_chunked_inner.categorical()?;
         // Make physicals compatible of ca_in with those of the list
-        let (_, ca_in) = make_categoricals_compatible(inner_cat, ca_in)?;
+        let (_, ca_in) = make_rhs_categoricals_compatible(inner_cat, ca_in)?;
 
         {
             ca_in

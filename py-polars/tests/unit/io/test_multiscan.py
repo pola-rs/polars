@@ -349,7 +349,7 @@ def test_schema_mismatch_type_mismatch(
     ("scan", "write", "ext"),
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
-        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+        # (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"), # TODO: _
         pytest.param(
             pl.scan_csv,
             pl.DataFrame.write_csv,

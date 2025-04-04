@@ -1,20 +1,21 @@
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use polars::prelude::sync_on_close::SyncOnCloseType;
-use polars::prelude::{PartitionVariant, SinkOptions};
+use polars::prelude::{PartitionVariant, SinkOptions, SpecialEq};
 use polars_utils::IdxSize;
 use polars_utils::python_function::{PythonFunction, PythonObject};
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
-use pyo3::{Bound, FromPyObject, PyAny, PyObject, PyResult, pyclass, pymethods};
+use pyo3::{Bound, FromPyObject, PyAny, PyObject, PyResult, Python, pyclass, pymethods};
 
 use crate::expr::PyExpr;
 use crate::prelude::Wrap;
 
 #[derive(Clone)]
 pub enum SinkTarget {
-    Path(PathBuf),
+    File(polars_plan::dsl::SinkTarget),
     Partition(PyPartitioning),
 }
 
@@ -84,21 +85,47 @@ impl PyPartitioning {
     }
 }
 
+impl<'py> FromPyObject<'py> for Wrap<polars_plan::dsl::SinkTarget> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(v) = ob.extract::<PathBuf>() {
+            Ok(Wrap(polars::prelude::SinkTarget::Path(Arc::new(v))))
+        } else {
+            let writer = Python::with_gil(|py| {
+                let py_f = ob.clone();
+                PyResult::Ok(
+                    crate::file::try_get_pyfile(py, py_f, true)?
+                        .0
+                        .into_writeable(),
+                )
+            })?;
+
+            Ok(Wrap(polars_plan::prelude::SinkTarget::Dyn(SpecialEq::new(
+                Arc::new(Mutex::new(Some(writer))),
+            ))))
+        }
+    }
+}
+
 impl<'py> FromPyObject<'py> for SinkTarget {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if let Ok(v) = ob.extract::<PyPartitioning>() {
-            return Ok(Self::Partition(v));
+            Ok(Self::Partition(v))
+        } else {
+            Ok(Self::File(
+                <Wrap<polars_plan::dsl::SinkTarget>>::extract_bound(ob)?.0,
+            ))
         }
-
-        Ok(Self::Path(ob.extract::<PathBuf>()?))
     }
 }
 
 impl SinkTarget {
-    pub fn base_path(&self) -> &Path {
+    pub fn base_path(&self) -> Option<&Path> {
         match self {
-            Self::Path(path) => path.as_path(),
-            Self::Partition(partition) => partition.base_path.as_path(),
+            Self::File(t) => match t {
+                polars::prelude::SinkTarget::Path(p) => Some(p.as_path()),
+                polars::prelude::SinkTarget::Dyn(_) => None,
+            },
+            Self::Partition(p) => Some(&p.base_path),
         }
     }
 }

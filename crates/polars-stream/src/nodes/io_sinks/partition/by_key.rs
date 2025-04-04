@@ -34,7 +34,7 @@ pub struct PartitionByKeySinkNode {
     max_open_partitions: usize,
     include_key: bool,
 
-    base_path: PathBuf,
+    base_path: Arc<PathBuf>,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -47,7 +47,7 @@ impl PartitionByKeySinkNode {
     pub fn new(
         input_schema: SchemaRef,
         key_cols: Arc<[PlSmallStr]>,
-        base_path: PathBuf,
+        base_path: Arc<PathBuf>,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,

@@ -35,6 +35,7 @@ impl FunctionExpr {
             Business(func) => match func {
                 BusinessFunction::BusinessDayCount { .. } => mapper.with_dtype(DataType::Int32),
                 BusinessFunction::AddBusinessDay { .. } => mapper.with_same_dtype(),
+                BusinessFunction::IsBusinessDay { .. } => mapper.with_dtype(DataType::Boolean),
             },
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),
@@ -329,8 +330,6 @@ impl FunctionExpr {
                 symbol,
                 kwargs,
             } => unsafe { plugin::plugin_field(fields, lib, symbol.as_ref(), kwargs) },
-            BackwardFill { .. } => mapper.with_same_dtype(),
-            ForwardFill { .. } => mapper.with_same_dtype(),
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => {

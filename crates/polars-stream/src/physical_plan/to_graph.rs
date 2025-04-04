@@ -6,7 +6,7 @@ use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
-use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
+use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
@@ -31,6 +31,7 @@ use crate::nodes;
 use crate::nodes::io_sinks::SinkComputeNode;
 use crate::nodes::io_sources::SourceComputeNode;
 use crate::nodes::io_sources::batch::BatchSourceNode;
+use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -75,13 +76,12 @@ pub fn physical_plan_to_graph(
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
     // Get the number of threads from the rayon thread-pool as that respects our config.
     let num_pipelines = POOL.current_num_threads();
-    let expr_depth_limit = get_expr_depth_limit()?;
     let mut ctx = GraphConversionContext {
         phys_sm,
         expr_arena,
         graph: Graph::with_capacity(phys_sm.len()),
         phys_to_graph: SecondaryMap::with_capacity(phys_sm.len()),
-        expr_conversion_state: ExpressionConversionState::new(false, expr_depth_limit),
+        expr_conversion_state: ExpressionConversionState::new(false),
         num_pipelines,
     };
 
@@ -240,7 +240,7 @@ fn to_graph_rec<'a>(
         },
 
         FileSink {
-            path,
+            target,
             sink_options,
             file_type,
             input,
@@ -255,7 +255,7 @@ fn to_graph_rec<'a>(
                 FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
                         input_schema,
-                        path.to_path_buf(),
+                        target.clone(),
                         sink_options,
                         *ipc_writer_options,
                         cloud_options.clone(),
@@ -265,7 +265,7 @@ fn to_graph_rec<'a>(
                 #[cfg(feature = "json")]
                 FileType::Json(_) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
-                        path.to_path_buf(),
+                        target.clone(),
                         sink_options,
                         cloud_options.clone(),
                     )),
@@ -275,7 +275,7 @@ fn to_graph_rec<'a>(
                 FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
                         input_schema,
-                        path,
+                        target.clone(),
                         sink_options,
                         parquet_writer_options,
                         cloud_options.clone(),
@@ -285,7 +285,7 @@ fn to_graph_rec<'a>(
                 #[cfg(feature = "csv")]
                 FileType::Csv(csv_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
-                        path.to_path_buf(),
+                        target.clone(),
                         input_schema,
                         sink_options,
                         csv_writer_options.clone(),
@@ -486,25 +486,25 @@ fn to_graph_rec<'a>(
             projected_file_schema,
             cloud_options,
         } => {
-            let predicate = predicate
-                .as_ref()
-                .map(|pred| {
-                    create_scan_predicate(
-                        pred,
-                        ctx.expr_arena,
-                        file_schema,
-                        &mut ctx.expr_conversion_state,
-                        true,
-                        false,
-                    )
-                })
-                .transpose()?;
-            let predicate = predicate
-                .as_ref()
-                .map(|p| p.to_io(None, file_schema.clone()));
-
             if let Some(file_reader_builder) = file_reader_builder {
                 let hive_parts = hive_parts.clone();
+
+                let predicate = predicate
+                    .as_ref()
+                    .map(|pred| {
+                        create_scan_predicate(
+                            pred,
+                            ctx.expr_arena,
+                            output_schema,
+                            &mut ctx.expr_conversion_state,
+                            true, // create_skip_batch_predicate
+                            file_reader_builder
+                                .reader_capabilities()
+                                .contains(ReaderCapabilities::SPECIALIZED_FILTER), // create_column_predicates
+                        )
+                    })
+                    .transpose()?
+                    .map(|p| p.to_io(None, file_schema.clone()));
 
                 ctx.graph.add_node(
                     nodes::io_sources::multi_file_reader::MultiFileReader::new(
@@ -524,32 +524,24 @@ fn to_graph_rec<'a>(
                     [],
                 )
             } else {
+                let predicate = predicate
+                    .as_ref()
+                    .map(|pred| {
+                        create_scan_predicate(
+                            pred,
+                            ctx.expr_arena,
+                            file_schema,
+                            &mut ctx.expr_conversion_state,
+                            true,  // create_skip_batch_predicate
+                            false, // create_column_predicates
+                        )
+                    })
+                    .transpose()?
+                    .map(|p| p.to_io(None, file_schema.clone()));
+
                 match &**scan_type {
                     #[cfg(feature = "parquet")]
-                    polars_plan::dsl::FileScan::Parquet {
-                        options,
-                        cloud_options,
-                        ..
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::SourceComputeNode::new(
-                            nodes::io_sources::multi_scan::MultiScanNode::<
-                                nodes::io_sources::parquet::ParquetSourceNode,
-                            >::new(
-                                scan_sources.clone(),
-                                hive_parts.clone().map(Arc::new),
-                                *allow_missing_columns,
-                                include_file_paths.clone(),
-                                file_schema.clone(),
-                                projection.clone(),
-                                row_index.clone(),
-                                row_restriction.clone(),
-                                predicate,
-                                options.clone(),
-                                cloud_options.clone(),
-                            ),
-                        ),
-                        [],
-                    ),
+                    polars_plan::dsl::FileScan::Parquet { .. } => unreachable!(),
                     #[cfg(feature = "ipc")]
                     polars_plan::dsl::FileScan::Ipc {
                         options,
@@ -662,24 +654,7 @@ fn to_graph_rec<'a>(
 
                 match *scan_type {
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet {
-                        options,
-                        cloud_options,
-                        metadata: first_metadata,
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::SourceComputeNode::new(
-                            nodes::io_sources::parquet::ParquetSourceNode::new(
-                                scan_source.into_sources(),
-                                file_info,
-                                predicate,
-                                options,
-                                cloud_options,
-                                file_options,
-                                first_metadata.unwrap(),
-                            ),
-                        ),
-                        [],
-                    ),
+                    FileScan::Parquet { .. } => unreachable!(),
                     #[cfg(feature = "ipc")]
                     FileScan::Ipc {
                         options,

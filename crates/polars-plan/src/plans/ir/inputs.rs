@@ -191,8 +191,19 @@ impl IR {
             DataFrameScan { .. } => {},
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
+            Sink { payload, .. } => {
+                if let SinkTypeIR::Partition(p) = payload {
+                    match &p.variant {
+                        PartitionVariantIR::Parted { key_exprs, .. }
+                        | PartitionVariantIR::ByKey { key_exprs, .. } => {
+                            container.extend_from_slice(key_exprs)
+                        },
+                        _ => (),
+                    }
+                }
+            },
             HConcat { .. } => {},
-            ExtContext { .. } | Sink { .. } | SimpleProjection { .. } => {},
+            ExtContext { .. } | SimpleProjection { .. } => {},
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => {},
             Invalid => unreachable!(),

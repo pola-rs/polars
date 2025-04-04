@@ -282,6 +282,52 @@ impl ListChunked {
         out
     }
 
+    pub fn try_binary_zip_and_apply_amortized<'a, T, U, F>(
+        &'a self,
+        ca1: &'a ChunkedArray<T>,
+        ca2: &'a ChunkedArray<U>,
+        mut f: F,
+    ) -> PolarsResult<Self>
+    where
+        T: PolarsDataType,
+        U: PolarsDataType,
+        F: FnMut(
+            Option<AmortSeries>,
+            Option<T::Physical<'a>>,
+            Option<U::Physical<'a>>,
+        ) -> PolarsResult<Option<Series>>,
+    {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
+        let mut fast_explode = self.null_count() == 0;
+        let mut out: ListChunked = {
+            self.amortized_iter()
+                .zip(ca1.iter())
+                .zip(ca2.iter())
+                .map(|((opt_s, opt_u), opt_v)| {
+                    let out = f(opt_s, opt_u, opt_v)?;
+                    match out {
+                        Some(out) => {
+                            fast_explode &= !out.is_empty();
+                            Ok(Some(out))
+                        },
+                        None => {
+                            fast_explode = false;
+                            Ok(out)
+                        },
+                    }
+                })
+                .collect::<PolarsResult<_>>()?
+        };
+
+        out.rename(self.name().clone());
+        if fast_explode {
+            out.set_fast_explode();
+        }
+        Ok(out)
+    }
+
     pub fn try_zip_and_apply_amortized<'a, T, I, F>(
         &'a self,
         ca: &'a ChunkedArray<T>,

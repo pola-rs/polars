@@ -97,7 +97,7 @@ pub fn concat_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         input: s,
         function: FunctionExpr::ConcatExpr(rechunk),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
+            collect_groups: ApplyOptions::GroupWise,
             flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
             cast_options: Some(CastingRules::cast_to_supertypes()),
             ..Default::default()

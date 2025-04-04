@@ -1324,17 +1324,20 @@ impl Column {
             .map(Self::from)
     }
 
-    pub fn gather_every(&self, n: usize, offset: usize) -> Column {
+    pub fn gather_every(&self, n: usize, offset: usize) -> PolarsResult<Column> {
+        polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n should be positive");
         if self.len().saturating_sub(offset) == 0 {
-            return self.clear();
+            return Ok(self.clear());
         }
 
         match self {
-            Column::Series(s) => s.gather_every(n, offset).into(),
-            Column::Partitioned(s) => s.as_materialized_series().gather_every(n, offset).into(),
+            Column::Series(s) => Ok(s.gather_every(n, offset)?.into()),
+            Column::Partitioned(s) => {
+                Ok(s.as_materialized_series().gather_every(n, offset)?.into())
+            },
             Column::Scalar(s) => {
                 let total = s.len() - offset;
-                s.resize(1 + (total - 1) / n).into()
+                Ok(s.resize(1 + (total - 1) / n).into())
             },
         }
     }
