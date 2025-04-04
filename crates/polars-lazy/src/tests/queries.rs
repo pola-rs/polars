@@ -1511,7 +1511,7 @@ fn test_round_after_agg() -> PolarsResult<()> {
         .agg([col("A")
             .cast(DataType::Float32)
             .mean()
-            .round(2)
+            .round(2, polars_ops::series::RoundMode::default())
             .alias("foo")])
         .collect()?;
 
@@ -1545,7 +1545,7 @@ fn test_round_after_agg() -> PolarsResult<()> {
         .lazy()
         .group_by_stable([col("groups")])
         .agg([((col("b") * col("c")).sum() / col("b").sum())
-            .round(2)
+            .round(2, polars_ops::series::RoundMode::default())
             .alias("foo")])
         .collect()?;
 
