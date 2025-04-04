@@ -1,3 +1,4 @@
+mod builder;
 mod evaluate;
 #[cfg(feature = "cse")]
 mod hash;
@@ -12,6 +13,7 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
+pub use builder::AExprBuilder;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;

@@ -107,6 +107,7 @@ pub enum CastingRules {
     /// Overflowing is not considered in this flag, that's handled in `strict` casting
     FirstArgLossless,
     Supertype(SuperTypeOptions),
+    IsIn,
 }
 
 impl CastingRules {

@@ -5823,7 +5823,7 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
                 other = list(other)  # eg: set, frozenset, etc
-            other = F.lit(pl.Series(other))._pyexpr
+            other = F.lit(other)._pyexpr
         else:
             other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other, nulls_equal))

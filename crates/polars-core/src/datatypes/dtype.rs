@@ -51,7 +51,7 @@ impl IntoMetadata for Metadata {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(
     any(feature = "serde", feature = "serde-lazy"),
     derive(Serialize, Deserialize)
@@ -62,6 +62,7 @@ pub enum UnknownKind {
     Float,
     // Can be Categorical or String
     Str,
+    List(Box<UnknownKind>),
     #[default]
     Any,
 }
@@ -72,6 +73,7 @@ impl UnknownKind {
             UnknownKind::Int(v) => materialize_dyn_int(*v).dtype(),
             UnknownKind::Float => DataType::Float64,
             UnknownKind::Str => DataType::String,
+            UnknownKind::List(uk) => DataType::List(Box::new(uk.materialize()?)),
             UnknownKind::Any => return None,
         };
         Some(dtype)
@@ -857,17 +859,7 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
-            Unknown(kind) => {
-                let dt = match kind {
-                    UnknownKind::Any => ArrowDataType::Unknown,
-                    UnknownKind::Float => ArrowDataType::Float64,
-                    UnknownKind::Str => ArrowDataType::Utf8View,
-                    UnknownKind::Int(v) => {
-                        return materialize_dyn_int(*v).dtype().try_to_arrow(compat_level);
-                    },
-                };
-                Ok(dt)
-            },
+            Unknown(kind) => kind.try_to_arrow(compat_level),
         }
     }
 
@@ -915,6 +907,94 @@ impl DataType {
             (l, r) => {
                 polars_bail!(SchemaMismatch: "type {:?} is incompatible with expected type {:?}", l, r)
             },
+        }
+    }
+
+    pub fn list_nesting_level(&self) -> usize {
+        let mut nesting_level = 0;
+        let mut dtype = self;
+        loop {
+            match dtype {
+                DataType::List(inner) | DataType::Array(inner, _) => {
+                    dtype = inner.as_ref();
+                    nesting_level += 1;
+                },
+                DataType::Unknown(UnknownKind::List(uk)) => {
+                    nesting_level += 1;
+                    let mut uk = uk.as_ref();
+                    while let UnknownKind::List(inner) = uk {
+                        uk = inner.as_ref();
+                        nesting_level += 1;
+                    }
+                    break;
+                },
+                _ => break,
+            }
+        }
+
+        nesting_level
+    }
+
+    /// A unknown aware `.leaf_dtype().is_integer()`.
+    pub fn is_leaf_integer(&self) -> bool {
+        let mut dtype = self;
+        loop {
+            match dtype {
+                dt if dt.is_integer() => return true,
+                DataType::List(inner) | DataType::Array(inner, _) => {
+                    dtype = inner.as_ref();
+                },
+                DataType::Unknown(UnknownKind::List(uk)) => {
+                    let mut uk = uk.as_ref();
+                    while let UnknownKind::List(inner) = uk {
+                        uk = inner.as_ref();
+                    }
+                    return matches!(uk, UnknownKind::Int(_));
+                },
+                _ => break,
+            }
+        }
+
+        false
+    }
+
+    /// A unknown aware `.leaf_dtype().is_float()`.
+    pub fn is_leaf_float(&self) -> bool {
+        let mut dtype = self;
+        loop {
+            match dtype {
+                dt if dt.is_float() => return true,
+                DataType::List(inner) | DataType::Array(inner, _) => {
+                    dtype = inner.as_ref();
+                },
+                DataType::Unknown(UnknownKind::List(uk)) => {
+                    let mut uk = uk.as_ref();
+                    while let UnknownKind::List(inner) = uk {
+                        uk = inner.as_ref();
+                    }
+                    return matches!(uk, UnknownKind::Int(_));
+                },
+                _ => break,
+            }
+        }
+
+        false
+    }
+}
+
+impl UnknownKind {
+    #[inline]
+    pub fn try_to_arrow(&self, compat_level: CompatLevel) -> PolarsResult<ArrowDataType> {
+        match self {
+            UnknownKind::Any => Ok(ArrowDataType::Unknown),
+            UnknownKind::Float => Ok(ArrowDataType::Float64),
+            UnknownKind::Str => Ok(ArrowDataType::Utf8View),
+            UnknownKind::List(uk) => Ok(ArrowDataType::LargeList(Box::new(ArrowField::new(
+                PlSmallStr::from_static("item"),
+                uk.try_to_arrow(compat_level)?,
+                true,
+            )))),
+            UnknownKind::Int(v) => materialize_dyn_int(*v).dtype().try_to_arrow(compat_level),
         }
     }
 }
@@ -982,6 +1062,29 @@ impl Display for DataType {
                 UnknownKind::Any => "unknown",
                 UnknownKind::Int(_) => "dyn int",
                 UnknownKind::Float => "dyn float",
+                UnknownKind::List(v) => {
+                    let mut list_depth = 1;
+                    let mut uk = v.as_ref();
+                    while let UnknownKind::List(inner) = &uk {
+                        uk = inner.as_ref();
+                        list_depth += 1;
+                    }
+                    f.write_str("dyn ")?;
+                    for _ in 0..list_depth {
+                        f.write_str("list[")?;
+                    }
+                    f.write_str(match uk {
+                        UnknownKind::Int(_) => "int",
+                        UnknownKind::Float => "float",
+                        UnknownKind::Str => "str",
+                        UnknownKind::List(_) => unreachable!(),
+                        UnknownKind::Any => "unknown",
+                    })?;
+                    for _ in 0..list_depth {
+                        f.write_str("]")?;
+                    }
+                    return Ok(());
+                },
                 UnknownKind::Str => "dyn str",
             },
             DataType::BinaryOffset => "binary[offset]",

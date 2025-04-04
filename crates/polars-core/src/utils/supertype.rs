@@ -416,7 +416,7 @@ pub fn get_supertype_with_options(
                         Some(Categorical(None, *ord))
                     },
                     // Keep unknown
-                    dynam if dt.is_null() => Some(Unknown(*dynam)),
+                    dynam if dt.is_null() => Some(Unknown(dynam.clone())),
                     // Find integers sizes
                     UnknownKind::Int(v) if dt.is_primitive_numeric() => {
                         // Both dyn int

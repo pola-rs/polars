@@ -18,15 +18,14 @@ pub enum DynLiteralValue {
     Str(PlSmallStr),
     Int(i128),
     Float(f64),
-    List(DynListLiteralValue),
-}
-#[derive(Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum DynListLiteralValue {
-    Str(Box<[Option<PlSmallStr>]>),
-    Int(Box<[Option<i128>]>),
-    Float(Box<[Option<f64>]>),
-    List(Box<[Option<DynListLiteralValue>]>),
+    /// **Invariant**
+    /// The type of this series has to be either
+    /// - `Null`
+    /// - `String`
+    /// - `Int128`
+    /// - `Float64`
+    /// - `List` of one these types (including nested lists).
+    List(SpecialEq<Series>),
 }
 
 impl Hash for DynLiteralValue {
@@ -36,21 +35,7 @@ impl Hash for DynLiteralValue {
             Self::Str(i) => i.hash(state),
             Self::Int(i) => i.hash(state),
             Self::Float(i) => i.to_ne_bytes().hash(state),
-            Self::List(i) => i.hash(state),
-        }
-    }
-}
-
-impl Hash for DynListLiteralValue {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        std::mem::discriminant(self).hash(state);
-        match self {
-            Self::Str(i) => i.hash(state),
-            Self::Int(i) => i.hash(state),
-            Self::Float(i) => i
-                .iter()
-                .for_each(|i| i.map(|i| i.to_ne_bytes()).hash(state)),
-            Self::List(i) => i.hash(state),
+            Self::List(i) => hash_series(i, state),
         }
     }
 }
@@ -77,56 +62,6 @@ pub enum MaterializedLiteralValue {
     Series(Series),
 }
 
-impl DynListLiteralValue {
-    pub fn try_materialize_to_dtype(self, dtype: &DataType) -> PolarsResult<Scalar> {
-        let Some(inner_dtype) = dtype.inner_dtype() else {
-            polars_bail!(InvalidOperation: "conversion from list literal to `{dtype}` failed.");
-        };
-
-        let s = match self {
-            DynListLiteralValue::Str(vs) => {
-                StringChunked::from_iter_options(PlSmallStr::from_static("literal"), vs.into_iter())
-                    .into_series()
-            },
-            DynListLiteralValue::Int(vs) => {
-                #[cfg(feature = "dtype-i128")]
-                {
-                    Int128Chunked::from_iter_options(
-                        PlSmallStr::from_static("literal"),
-                        vs.into_iter(),
-                    )
-                    .into_series()
-                }
-
-                #[cfg(not(feature = "dtype-i128"))]
-                {
-                    Int64Chunked::from_iter_options(
-                        PlSmallStr::from_static("literal"),
-                        vs.into_iter().map(|v| v.map(|v| v as i64)),
-                    )
-                    .into_series()
-                }
-            },
-            DynListLiteralValue::Float(vs) => Float64Chunked::from_iter_options(
-                PlSmallStr::from_static("literal"),
-                vs.into_iter(),
-            )
-            .into_series(),
-            DynListLiteralValue::List(_) => todo!("nested lists"),
-        };
-
-        let s = s.cast_with_options(inner_dtype, CastOptions::Strict)?;
-        let value = match dtype {
-            DataType::List(_) => AnyValue::List(s),
-            #[cfg(feature = "dtype-array")]
-            DataType::Array(_, size) => AnyValue::Array(s, *size),
-            _ => unreachable!(),
-        };
-
-        Ok(Scalar::new(dtype.clone(), value))
-    }
-}
-
 impl DynLiteralValue {
     pub fn try_materialize_to_dtype(self, dtype: &DataType) -> PolarsResult<Scalar> {
         match self {
@@ -139,7 +74,24 @@ impl DynLiteralValue {
             DynLiteralValue::Float(f) => {
                 Ok(Scalar::from(f).cast_with_options(dtype, CastOptions::Strict)?)
             },
-            DynLiteralValue::List(dyn_list_value) => dyn_list_value.try_materialize_to_dtype(dtype),
+            DynLiteralValue::List(s) => {
+                let value = match dtype {
+                    DataType::List(inner) => {
+                        AnyValue::List(s.cast_with_options(inner, CastOptions::Strict)?)
+                    },
+                    #[cfg(feature = "dtype-array")]
+                    DataType::Array(inner, size) => {
+                        AnyValue::Array(s.cast_with_options(inner, CastOptions::Strict)?, *size)
+                    },
+                    _ => polars_bail!(
+                        InvalidOperation:
+                        "unable to materialize list of values of type `{}` to type `{dtype}`",
+                        s.dtype()
+                    ),
+                };
+
+                Ok(Scalar::new(dtype.clone(), value))
+            },
         }
     }
 }
@@ -324,7 +276,24 @@ impl LiteralValue {
                 DynLiteralValue::Int(v) => DataType::Unknown(UnknownKind::Int(*v)),
                 DynLiteralValue::Float(_) => DataType::Unknown(UnknownKind::Float),
                 DynLiteralValue::Str(_) => DataType::Unknown(UnknownKind::Str),
-                DynLiteralValue::List(_) => todo!(),
+                DynLiteralValue::List(s) => {
+                    let mut list_depth = 1;
+                    let mut dtype = s.dtype();
+                    while let Some(inner) = dtype.inner_dtype() {
+                        dtype = inner;
+                        list_depth += 1;
+                    }
+                    let mut uk = match dtype {
+                        DataType::Int128 => UnknownKind::Int(0),
+                        DataType::Float64 => UnknownKind::Float,
+                        DataType::String => UnknownKind::Str,
+                        _ => unreachable!(),
+                    };
+                    for _ in 0..list_depth {
+                        uk = UnknownKind::List(Box::new(uk));
+                    }
+                    DataType::Unknown(uk)
+                },
             },
             Self::Scalar(sc) => sc.dtype().clone(),
             Self::Series(s) => s.dtype().clone(),
@@ -607,24 +576,26 @@ pub fn typed_lit<L: TypedLiteral>(t: L) -> Expr {
     t.typed_lit()
 }
 
+fn hash_series<H: Hasher>(s: &Series, state: &mut H) {
+    // Free stats
+    s.dtype().hash(state);
+    let len = s.len();
+    len.hash(state);
+    s.null_count().hash(state);
+    const RANDOM: u64 = 0x2c194fa5df32a367;
+    let mut rng = (len as u64) ^ RANDOM;
+    for _ in 0..std::cmp::min(5, len) {
+        let idx = hash_to_partition(rng, len);
+        s.get(idx).unwrap().hash(state);
+        rng = rng.rotate_right(17).wrapping_add(RANDOM);
+    }
+}
+
 impl Hash for LiteralValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
-            LiteralValue::Series(s) => {
-                // Free stats
-                s.dtype().hash(state);
-                let len = s.len();
-                len.hash(state);
-                s.null_count().hash(state);
-                const RANDOM: u64 = 0x2c194fa5df32a367;
-                let mut rng = (len as u64) ^ RANDOM;
-                for _ in 0..std::cmp::min(5, len) {
-                    let idx = hash_to_partition(rng, len);
-                    s.get(idx).unwrap().hash(state);
-                    rng = rng.rotate_right(17).wrapping_add(RANDOM);
-                }
-            },
+            LiteralValue::Series(s) => hash_series(s, state),
             LiteralValue::Range(range) => range.hash(state),
             LiteralValue::Scalar(sc) => sc.hash(state),
             LiteralValue::Dyn(d) => d.hash(state),

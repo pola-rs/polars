@@ -156,27 +156,27 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
-            #[cfg(feature = "is_in")]
-            AExpr::Function {
-                function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
-                ref input,
-                options,
-            } => {
-                let Some(casted_expr) = is_in::resolve_is_in(input, expr_arena, lp_arena, lp_node)?
-                else {
-                    return Ok(None);
-                };
-
-                let mut input = input.to_vec();
-                let other_input = expr_arena.add(casted_expr);
-                input[1].set_node(other_input);
-
-                Some(AExpr::Function {
-                    function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
-                    input,
-                    options,
-                })
-            },
+            // #[cfg(feature = "is_in")]
+            // AExpr::Function {
+            //     function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
+            //     ref input,
+            //     options,
+            // } => {
+            //     let Some(casted_expr) = is_in::resolve_is_in(input, expr_arena, lp_arena, lp_node)?
+            //     else {
+            //         return Ok(None);
+            //     };
+            //
+            //     let mut input = input.to_vec();
+            //     let other_input = expr_arena.add(casted_expr);
+            //     input[1].set_node(other_input);
+            //
+            //     Some(AExpr::Function {
+            //         function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
+            //         input,
+            //         options,
+            //     })
+            // },
             // shift and fill should only cast left and fill value to super type.
             AExpr::Function {
                 function: FunctionExpr::ShiftAndFill,
@@ -230,6 +230,110 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+
+            // generic type coercion of any function.
+            AExpr::Function {
+                // only for `DataType::Unknown` as it still has to be set.
+                ref function,
+                ref input,
+                mut options,
+            } if options.cast_options == Some(CastingRules::IsIn) => {
+                assert_eq!(input.len(), 2);
+
+                let function = function.clone();
+                let mut input = input.clone();
+
+                let input_schema = get_schema(lp_arena, lp_node);
+                let self_e = input[0].clone();
+                let (_, type_self) =
+                    unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
+                let other_e: &ExprIR = &input[1];
+                let (_, type_other) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    other_e.node(),
+                    &input_schema
+                ));
+
+                let self_nesting_level = type_self.list_nesting_level();
+                let other_nesting_level = type_other.list_nesting_level();
+
+                if type_self.is_leaf_integer() && type_other.is_leaf_float() {
+                    polars_bail!(op = function.to_string(), type_self, type_other);
+                }
+
+                // The second argument is given as zero or more values of the datatype first
+                // argument. This is given in one of two possible ways.
+                // 1. The second argument is given as a scalar (i.e. the datatype is "equal" to the
+                //    datatype first argument). In this case, implode the scalar as a list.
+                // 2. The second argument is given as a list version of the first argument. In this
+                //    case, pass the argument as is.
+                if self_nesting_level == other_nesting_level {
+                    // @HACK: Local categoricals are fundamentally broken with this. Please nuke
+                    // this hack when local categoricals are finally removed.
+                    let mut to_dtype = &type_self;
+                    if matches!(&type_self, DataType::Categorical(Some(rm), _) if rm.is_local()) {
+                        to_dtype = &DataType::String;
+                    }
+
+                    // Cast the second argument to the self argument. This allows dealing with
+                    // supertypes and categoricals.
+                    cast_expr_ir(
+                        &mut input[1],
+                        &type_other,
+                        to_dtype,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+
+                    let imploded = AExprBuilder::new(input[1].node(), expr_arena)
+                        .implode()
+                        .build_node();
+                    input[1].set_node(imploded);
+                    input[1].set_dtype(DataType::List(Box::new(type_self.clone())));
+                } else {
+                    use DataType as D;
+                    let list_dtype = match &type_other {
+                        D::List(dt) | D::Array(dt, _)
+                            if dt.can_cast_to(&type_self) == Some(false) =>
+                        {
+                            None
+                        },
+                        D::List(_) | D::Unknown(UnknownKind::List(_)) => {
+                            Some(D::List(Box::new(type_self.clone())))
+                        },
+                        D::Array(_, size) => Some(D::Array(Box::new(type_self.clone()), *size)),
+                        _ => None,
+                    };
+
+                    let Some(list_dtype) = list_dtype else {
+                        polars_bail!(op = function.to_string(), type_self, type_other);
+                    };
+
+                    // @HACK: Local categoricals are fundamentally broken with this. Please nuke
+                    // this hack when local categoricals are finally removed.
+                    let mut to_dtype = &list_dtype;
+                    if matches!(&type_self, DataType::Categorical(Some(rm), _) if rm.is_local()) {
+                        to_dtype = &DataType::String;
+                    }
+
+                    cast_expr_ir(
+                        &mut input[1],
+                        &type_other,
+                        to_dtype,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+                };
+
+                // Ensure we don't go through this on next iteration.
+                options.cast_options = None;
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
+
             // generic type coercion of any function.
             AExpr::Function {
                 // only for `DataType::Unknown` as it still has to be set.
@@ -251,6 +355,7 @@ impl OptimizationRule for TypeCoercionRule {
                         unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
                     let mut super_type = type_self.clone();
                     match casting_rules {
+                        CastingRules::IsIn => unreachable!(),
                         CastingRules::Supertype(super_type_opts) => {
                             for other in &input[1..] {
                                 let (other, type_other) = unpack!(get_aexpr_and_type(
@@ -465,6 +570,15 @@ fn cast_expr_ir(
     }
 
     check_cast(from_dtype, to_dtype)?;
+
+    let mut to_dtype = Cow::Borrowed(to_dtype);
+    #[cfg(feature = "dtype-categorical")]
+    {
+        if let DataType::Categorical(Some(_), ordering) = to_dtype.as_ref() {
+            to_dtype = Cow::Owned(DataType::Categorical(None, *ordering));
+        }
+    }
+    let to_dtype = to_dtype.as_ref();
 
     if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
         if let Some(literal) = try_inline_literal_cast(lv, to_dtype, options)? {

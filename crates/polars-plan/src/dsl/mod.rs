@@ -730,15 +730,29 @@ impl Expr {
         returns_scalar: bool,
         cast_to_supertypes: bool,
     ) -> Self {
-        let mut input = Vec::with_capacity(arguments.len() + 1);
-        input.push(self);
-        input.extend_from_slice(arguments);
-
         let supertype = if cast_to_supertypes {
             Some(CastingRules::cast_to_supertypes())
         } else {
             None
         };
+        self.apply_many_private_with_casting_rules(
+            function_expr,
+            arguments,
+            returns_scalar,
+            supertype,
+        )
+    }
+
+    pub fn apply_many_private_with_casting_rules(
+        self,
+        function_expr: FunctionExpr,
+        arguments: &[Expr],
+        returns_scalar: bool,
+        casting_rules: Option<CastingRules>,
+    ) -> Self {
+        let mut input = Vec::with_capacity(arguments.len() + 1);
+        input.push(self);
+        input.extend_from_slice(arguments);
 
         let mut flags = FunctionFlags::default();
         if returns_scalar {
@@ -751,7 +765,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
                 flags,
-                cast_options: supertype,
+                cast_options: casting_rules,
                 ..Default::default()
             },
         }
@@ -763,6 +777,21 @@ impl Expr {
         arguments: &[Expr],
         returns_scalar: bool,
         cast_to_supertypes: Option<SuperTypeOptions>,
+    ) -> Self {
+        self.map_many_private_with_casting_rules(
+            function_expr,
+            arguments,
+            returns_scalar,
+            cast_to_supertypes.map(CastingRules::Supertype),
+        )
+    }
+
+    pub fn map_many_private_with_casting_rules(
+        self,
+        function_expr: FunctionExpr,
+        arguments: &[Expr],
+        returns_scalar: bool,
+        cast_options: Option<CastingRules>,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
         input.push(self);
@@ -779,7 +808,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
                 flags,
-                cast_options: cast_to_supertypes.map(CastingRules::Supertype),
+                cast_options,
                 ..Default::default()
             },
         }
@@ -1205,18 +1234,18 @@ impl Expr {
         // we don't have to apply on groups, so this is faster
         // TODO: this optimization should be done during conversion to IR.
         if other_constant {
-            self.map_many_private(
+            self.map_many_private_with_casting_rules(
                 BooleanFunction::IsIn { nulls_equal }.into(),
                 arguments,
                 returns_scalar,
-                Some(Default::default()),
+                Some(CastingRules::IsIn),
             )
         } else {
-            self.apply_many_private(
+            self.apply_many_private_with_casting_rules(
                 BooleanFunction::IsIn { nulls_equal }.into(),
                 arguments,
                 returns_scalar,
-                true,
+                Some(CastingRules::IsIn),
             )
         }
     }
