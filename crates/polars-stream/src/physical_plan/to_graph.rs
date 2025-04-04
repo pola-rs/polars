@@ -31,6 +31,7 @@ use crate::nodes;
 use crate::nodes::io_sinks::SinkComputeNode;
 use crate::nodes::io_sources::SourceComputeNode;
 use crate::nodes::io_sources::batch::BatchSourceNode;
+use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -485,25 +486,25 @@ fn to_graph_rec<'a>(
             projected_file_schema,
             cloud_options,
         } => {
-            let predicate = predicate
-                .as_ref()
-                .map(|pred| {
-                    create_scan_predicate(
-                        pred,
-                        ctx.expr_arena,
-                        file_schema,
-                        &mut ctx.expr_conversion_state,
-                        true,
-                        false,
-                    )
-                })
-                .transpose()?;
-            let predicate = predicate
-                .as_ref()
-                .map(|p| p.to_io(None, file_schema.clone()));
-
             if let Some(file_reader_builder) = file_reader_builder {
                 let hive_parts = hive_parts.clone();
+
+                let predicate = predicate
+                    .as_ref()
+                    .map(|pred| {
+                        create_scan_predicate(
+                            pred,
+                            ctx.expr_arena,
+                            output_schema,
+                            &mut ctx.expr_conversion_state,
+                            true, // create_skip_batch_predicate
+                            file_reader_builder
+                                .reader_capabilities()
+                                .contains(ReaderCapabilities::SPECIALIZED_FILTER), // create_column_predicates
+                        )
+                    })
+                    .transpose()?
+                    .map(|p| p.to_io(None, file_schema.clone()));
 
                 ctx.graph.add_node(
                     nodes::io_sources::multi_file_reader::MultiFileReader::new(
@@ -523,6 +524,21 @@ fn to_graph_rec<'a>(
                     [],
                 )
             } else {
+                let predicate = predicate
+                    .as_ref()
+                    .map(|pred| {
+                        create_scan_predicate(
+                            pred,
+                            ctx.expr_arena,
+                            file_schema,
+                            &mut ctx.expr_conversion_state,
+                            true,  // create_skip_batch_predicate
+                            false, // create_column_predicates
+                        )
+                    })
+                    .transpose()?
+                    .map(|p| p.to_io(None, file_schema.clone()));
+
                 match &**scan_type {
                     #[cfg(feature = "parquet")]
                     polars_plan::dsl::FileScan::Parquet { .. } => unreachable!(),
