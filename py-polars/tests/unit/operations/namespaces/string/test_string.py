@@ -1976,3 +1976,11 @@ def test_broadcast_self() -> None:
         pl.exceptions.ComputeError, match="strict integer parsing failed"
     ):
         s.str.to_integer(base=pl.Series([2, 2, 3, 4]))
+
+
+def test_strptime_unequal_length_22018() -> None:
+    s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.str.strptime(
+            pl.Datetime, "%Y-%m-%d %H:%M%#z", ambiguous=pl.Series(["a", "b", "d"])
+        )

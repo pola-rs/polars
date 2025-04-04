@@ -746,6 +746,16 @@ fn to_datetime(
 ) -> PolarsResult<Column> {
     let datetime_strings = &s[0].str()?;
     let ambiguous = &s[1].str()?;
+
+    polars_ensure!(
+        datetime_strings.len() == ambiguous.len()
+            || datetime_strings.len() == 1
+            || ambiguous.len() == 1,
+        length_mismatch = "str.strptime",
+        datetime_strings.len(),
+        ambiguous.len()
+    );
+
     let tz_aware = match &options.format {
         #[cfg(all(feature = "regex", feature = "timezones"))]
         Some(format) => TZ_AWARE_RE.is_match(format),
