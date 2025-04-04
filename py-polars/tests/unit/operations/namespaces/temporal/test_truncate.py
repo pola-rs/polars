@@ -119,3 +119,12 @@ def test_fast_path_vs_slow_path(datetimes: list[datetime], every: str) -> None:
     # Definitely uses slowpath:
     expected = s.dt.truncate(pl.Series([every] * len(datetimes)))
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("as_date", [False, True])
+def test_truncate_unequal_length_22018(as_date: bool) -> None:
+    s = pl.Series([datetime(2088, 8, 8, 8, 8, 8, 8)] * 2)
+    if as_date:
+        s = s.dt.date()
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.dt.truncate(pl.Series(["1y"] * 3))
