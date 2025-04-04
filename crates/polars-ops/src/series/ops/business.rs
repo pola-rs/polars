@@ -74,15 +74,23 @@ pub fn business_day_count(
                 Int32Chunked::full_null(start_dates.name().clone(), end_dates.len())
             }
         },
-        _ => binary_elementwise_values(start_dates, end_dates, |start_date, end_date| {
-            business_day_count_impl(
-                start_date,
-                end_date,
-                &week_mask,
-                n_business_days_in_week_mask,
-                &holidays,
-            )
-        }),
+        _ => {
+            polars_ensure!(
+                start_dates.len() == end_dates.len(),
+                length_mismatch = "business_day_count",
+                start_dates.len(),
+                end_dates.len()
+            );
+            binary_elementwise_values(start_dates, end_dates, |start_date, end_date| {
+                business_day_count_impl(
+                    start_date,
+                    end_date,
+                    &week_mask,
+                    n_business_days_in_week_mask,
+                    &holidays,
+                )
+            })
+        },
     };
     Ok(out.into_series())
 }
