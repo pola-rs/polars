@@ -205,6 +205,13 @@ pub trait SeriesOpsTime: AsSeries {
         ) {
             s = s.cast(&DataType::Int64).unwrap();
         }
+
+        polars_ensure!(
+            s.dtype().is_primitive_numeric() && !s.dtype().is_unknown(),
+            op = "rolling_sum_by",
+            s.dtype()
+        );
+
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             rolling_agg_by(
@@ -230,6 +237,12 @@ pub trait SeriesOpsTime: AsSeries {
         ) {
             s = s.cast(&DataType::Int64).unwrap();
         }
+
+        polars_ensure!(
+            s.dtype().is_primitive_numeric() && !s.dtype().is_unknown(),
+            op = "rolling_sum",
+            s.dtype()
+        );
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
@@ -293,6 +306,12 @@ pub trait SeriesOpsTime: AsSeries {
                 .cast(&DataType::Boolean);
         }
 
+        polars_ensure!(
+            s.dtype().is_primitive_numeric() && !s.dtype().is_unknown(),
+            op = "rolling_min_by",
+            s.dtype()
+        );
+
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             rolling_agg_by(
@@ -319,6 +338,12 @@ pub trait SeriesOpsTime: AsSeries {
                 .rolling_min(options)?
                 .cast(&DataType::Boolean);
         }
+
+        polars_ensure!(
+            s.dtype().is_primitive_numeric() && !s.dtype().is_unknown(),
+            op = "rolling_min",
+            s.dtype()
+        );
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
@@ -348,6 +373,12 @@ pub trait SeriesOpsTime: AsSeries {
                 .cast(&DataType::Boolean);
         }
 
+        polars_ensure!(
+            s.dtype().is_primitive_numeric() && !s.dtype().is_unknown(),
+            op = "rolling_max_by",
+            s.dtype()
+        );
+
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             rolling_agg_by(
@@ -374,6 +405,12 @@ pub trait SeriesOpsTime: AsSeries {
                 .rolling_max(options)?
                 .cast(&DataType::Boolean);
         }
+
+        polars_ensure!(
+            s.dtype().is_primitive_numeric() && !s.dtype().is_unknown(),
+            op = "rolling_max",
+            s.dtype()
+        );
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
