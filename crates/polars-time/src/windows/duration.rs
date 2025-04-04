@@ -215,16 +215,10 @@ impl Duration {
         // reserve capacity for the longest valid unit ("microseconds")
         let mut unit = String::with_capacity(12);
         let mut parsed_int = false;
+        let mut last_ch_opt: Option<char> = None;
 
         while let Some((i, mut ch)) = iter.next() {
-            if ch.is_ascii_digit() {
-                if iter.peek().is_none() {
-                    polars_bail!(InvalidOperation:
-                        "expected a unit to follow integer in the {} string '{}'",
-                        parse_type, s
-                    );
-                }
-            } else {
+            if !ch.is_ascii_digit() {
                 let Ok(n) = s[start..i].parse::<i64>() else {
                     polars_bail!(InvalidOperation:
                         "expected leading integer in the {} string, found {}",
@@ -238,20 +232,16 @@ impl Duration {
                         ' ' | ',' if as_interval => {},
                         _ => break,
                     }
-                    // If next character is a digit, we don't want to consume
-                    // it so that we can run the check above that the string
-                    // doesn't end up with a number without unit.
-                    if let Some(&(next_i, next_ch)) = iter.peek() {
-                        if next_ch.is_ascii_digit() {
-                            start = next_i;
-                            break;
-                        }
-                        let (_, ch_) = iter.next().unwrap();
-                        ch = ch_;
-                    } else {
-                        break;
+
+                    match iter.next() {
+                        Some((i, ch_)) => {
+                            ch = ch_;
+                            start = i
+                        },
+                        None => break,
                     }
                 }
+
                 if unit.is_empty() {
                     polars_bail!(InvalidOperation:
                         "expected a unit to follow integer in the {} string '{}'",
@@ -299,7 +289,16 @@ impl Duration {
                 }
                 unit.clear();
             }
+            last_ch_opt = Some(ch);
         }
+        if let Some(last_ch) = last_ch_opt {
+            if last_ch.is_ascii_digit() {
+                polars_bail!(InvalidOperation:
+                    "expected a unit to follow integer in the {} string '{}'",
+                    parse_type, s
+                );
+            }
+        };
 
         Ok(Duration {
             months: months.abs(),
