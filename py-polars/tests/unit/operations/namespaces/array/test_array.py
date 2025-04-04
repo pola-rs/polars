@@ -516,3 +516,36 @@ def test_array_join_unequal_lengths_22018() -> None:
     )
     with pytest.raises(pl.exceptions.ShapeError):
         df.select(pl.col.a.arr.join(pl.Series([",", "-"])))
+
+
+def test_array_shift_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series(
+            "a",
+            [
+                ["a", "b", "d"],
+                ["a", "b", "d"],
+                ["a", "b", "d"],
+            ],
+            pl.Array(pl.String, 3),
+        ).arr.shift(pl.Series([1, 2]))
+
+
+def test_array_shift_self_broadcast_22124() -> None:
+    assert_series_equal(
+        pl.Series(
+            "a",
+            [
+                ["a", "b", "d"],
+            ],
+            pl.Array(pl.String, 3),
+        ).arr.shift(pl.Series([1, 2])),
+        pl.Series(
+            "a",
+            [
+                [None, "a", "b"],
+                [None, None, "a"],
+            ],
+            pl.Array(pl.String, 3),
+        ),
+    )
