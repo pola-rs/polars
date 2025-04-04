@@ -809,6 +809,28 @@ def test_df_stats(df: pl.DataFrame) -> None:
     df.quantile(0.4, "nearest")
 
 
+def test_df_horizontal() -> None:
+    # check horizontal numeric aggregations
+    df = pl.DataFrame({"a": [3, 2, 1], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
+
+    assert_series_equal(df.sum_horizontal(), pl.Series("sum", [5.0, 6.0, 7.0]))
+    assert_series_equal(df.mean_horizontal(), pl.Series("mean", [5 / 3, 6 / 3, 7 / 3]))
+    assert_series_equal(df.min_horizontal(), pl.Series("min", [1.0, 2.0, 1.0]))
+    assert_series_equal(df.max_horizontal(), pl.Series("max", [3.0, 2.0, 3.0]))
+
+    # check horizontal boolean aggregations
+    df = pl.DataFrame(
+        {
+            "a": [True, False, None],
+            "b": [True, True, False],
+            "c": [True, True, False],
+        }
+    )
+
+    assert_series_equal(df.all_horizontal(), pl.Series("all", [True, False, False]))
+    assert_series_equal(df.any_horizontal(), pl.Series("any", [True, True, None]))
+
+
 def test_df_fold() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
 
@@ -823,13 +845,6 @@ def test_df_fold() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.fold(lambda s1, s2: s1 + s2)
     assert_series_equal(out, pl.Series("a", ["foo11.0", "bar22.0", "233.0"]))
-
-    df = pl.DataFrame({"a": [3, 2, 1], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    # just check dispatch. values are tested on rust side.
-    assert len(df.sum_horizontal()) == 3
-    assert len(df.mean_horizontal()) == 3
-    assert len(df.min_horizontal()) == 3
-    assert len(df.max_horizontal()) == 3
 
     df_width_one = df[["a"]]
     assert_series_equal(df_width_one.fold(lambda s1, s2: s1), df["a"])
