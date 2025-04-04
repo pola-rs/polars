@@ -55,10 +55,12 @@ impl FileReaderOutputSend {
         match self {
             Connector(tx, wait_group) => {
                 wait_group.wait().await;
+                morsel.set_consume_token(wait_group.token());
                 tx.send(morsel).await
             },
             Linearized(tx, wait_group) => {
                 wait_group.wait().await;
+                morsel.set_consume_token(wait_group.token());
                 tx.insert(morsel).await
             },
         }
