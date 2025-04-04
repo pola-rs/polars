@@ -43,7 +43,9 @@ String
      - Strips whitespaces from the right.
    * - :ref:`STARTS_WITH <starts_with>`
      - Returns True if the value starts with the second argument.
-   * - :ref:`STRPOST <strpos>`
+   * - :ref:`STRING_TO_ARRAY <string_to_array>`
+     - Splits a string by another substring/delimiter, returning an array of strings.
+   * - :ref:`STRPOS <strpos>`
      - Returns the index of the given substring in the target string.
    * - :ref:`STRPTIME <strptime>`
      - Converts a string to a Datetime using a strftime-compatible formatting string.
@@ -590,6 +592,30 @@ Returns True if the value starts with the second argument.
     # │ avocado ┆ true     │
     # │ grape   ┆ false    │
     # └─────────┴──────────┘
+
+.. _string_to_array:
+
+STRING_TO_ARRAY
+---------------
+Splits a string by another substring/delimiter, returning an array of strings.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": ["aa,bb,cc", "x,y"]})
+    df.sql("""
+      SELECT foo, STRING_TO_ARRAY(foo, ',') AS arr FROM self
+    """)
+    # shape: (2, 2)
+    # ┌──────────┬────────────────────┐
+    # │ foo      ┆ arr                │
+    # │ ---      ┆ ---                │
+    # │ str      ┆ list[str]          │
+    # ╞══════════╪════════════════════╡
+    # │ aa,bb,cc ┆ ["aa", "bb", "cc"] │
+    # │ x,y      ┆ ["x", "y"]         │
+    # └──────────┴────────────────────┘
 
 .. _strpos:
 
