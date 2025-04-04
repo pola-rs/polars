@@ -1984,3 +1984,18 @@ def test_strptime_unequal_length_22018() -> None:
         s.str.strptime(
             pl.Datetime, "%Y-%m-%d %H:%M%#z", ambiguous=pl.Series(["a", "b", "d"])
         )
+
+
+@pytest.mark.parametrize("inclusive", [False, True])
+def test_str_split_unequal_length_22018(inclusive: bool) -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series(["a-c", "x-y"]).str.split(
+            pl.Series(["-", "/", "+"]), inclusive=inclusive
+        )
+
+
+def test_str_split_self_broadcast() -> None:
+    assert_series_equal(
+        pl.Series(["a-/c"]).str.split(pl.Series(["-", "/", "+"])),
+        pl.Series([["a", "/c"], ["a-", "c"], ["a-/c"]]),
+    )

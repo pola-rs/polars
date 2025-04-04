@@ -493,15 +493,13 @@ pub trait StringNameSpaceImpl: AsString {
         split_to_struct(ca, by, n, |s, by| s.splitn(n, by), true)
     }
 
-    fn split(&self, by: &StringChunked) -> ListChunked {
+    fn split(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-
         split_helper(ca, by, str::split)
     }
 
-    fn split_inclusive(&self, by: &StringChunked) -> ListChunked {
+    fn split_inclusive(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-
         split_helper(ca, by, str::split_inclusive)
     }
 

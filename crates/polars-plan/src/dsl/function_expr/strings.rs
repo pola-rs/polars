@@ -712,9 +712,9 @@ pub(super) fn split(s: &[Column], inclusive: bool) -> PolarsResult<Column> {
     let by = s[1].str()?;
 
     if inclusive {
-        Ok(ca.split_inclusive(by).into_column())
+        Ok(ca.split_inclusive(by)?.into_column())
     } else {
-        Ok(ca.split(by).into_column())
+        Ok(ca.split(by)?.into_column())
     }
 }
 
