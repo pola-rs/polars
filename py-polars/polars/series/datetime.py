@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     import datetime as dt
     from collections.abc import Iterable
 
-    from polars import Expr, Series
+    from polars import Series
     from polars._typing import (
         Ambiguous,
         EpochTimeUnit,
