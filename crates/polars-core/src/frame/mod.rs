@@ -562,8 +562,14 @@ impl DataFrame {
     pub fn as_single_chunk(&mut self) -> &mut Self {
         // Don't parallelize this. Memory overhead
         for s in &mut self.columns {
-            if let Column::Series(s) = s {
-                *s = s.rechunk().into();
+            match s {
+                Column::Series(s) => {
+                    *s = s.rechunk().into();
+                },
+                Column::Scalar(_) => {
+                    *s = s.rechunk();
+                },
+                Column::Partitioned(_) => {},
             }
         }
         self

@@ -2559,3 +2559,28 @@ g,h,i,j,k""")
         "column_5": [None, "e", "k"],
         "column_6": [None, "f", None],
     }
+
+
+@pytest.mark.parametrize(
+    ("filter_value", "expected"),
+    [
+        (10, "a,b,c\n10,20,99\n"),
+        (11, "a,b,c\n11,21,99\n"),
+        (12, "a,b,c\n12,22,99\n12,23,99\n"),
+    ],
+)
+def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) -> None:
+    # df and filter expression are designed to test different
+    # Column variants (Series, Scalar) and different number of chunks:
+    # 10 > single row, ScalarColumn, multiple chunks, first is non-empty
+    # 11 > single row, ScalarColumn, multiple chunks, first is empty
+    # 12 > multiple rows, SeriesColumn, multiple chunks, some empty
+    df1 = pl.DataFrame(
+        {
+            "a": [10, 11, 12, 12],  # (12, 12 is intentional)
+            "b": [20, 21, 22, 23],
+        },
+    )
+    df2 = pl.DataFrame({"c": [99]})
+    df3 = df1.join(df2, how="cross").filter(pl.col("a").eq(filter_value))
+    assert df3.write_csv() == expected
