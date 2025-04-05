@@ -470,12 +470,11 @@ pub fn array_to_pages<K: DictionaryKey>(
 
                     let mut buffer = vec![];
                     binary_encode_plain::<i64>(array, EncodeNullability::Required, &mut buffer);
-                    let stats = if options.has_statistics() {
-                        Some(binary_build_statistics(
-                            array,
-                            type_.clone(),
-                            &options.statistics,
-                        ))
+                    let stats = if options.has_page_statistics() {
+                        Some(
+                            binary_build_statistics(array, type_.clone(), &options.statistics)
+                                .serialize(),
+                        )
                     } else {
                         None
                     };
@@ -493,12 +492,11 @@ pub fn array_to_pages<K: DictionaryKey>(
                     let mut buffer = vec![];
                     binview::encode_plain(array, EncodeNullability::Required, &mut buffer);
 
-                    let stats = if options.has_statistics() {
-                        Some(binview::build_statistics(
-                            array,
-                            type_.clone(),
-                            &options.statistics,
-                        ))
+                    let stats = if options.has_page_statistics() {
+                        Some(
+                            binview::build_statistics(array, type_.clone(), &options.statistics)
+                                .serialize(),
+                        )
                     } else {
                         None
                     };
@@ -517,12 +515,11 @@ pub fn array_to_pages<K: DictionaryKey>(
                     let mut buffer = vec![];
                     binview::encode_plain(&array, EncodeNullability::Required, &mut buffer);
 
-                    let stats = if options.has_statistics() {
-                        Some(binview::build_statistics(
-                            &array,
-                            type_.clone(),
-                            &options.statistics,
-                        ))
+                    let stats = if options.has_page_statistics() {
+                        Some(
+                            binview::build_statistics(&array, type_.clone(), &options.statistics)
+                                .serialize(),
+                        )
                     } else {
                         None
                     };
@@ -536,12 +533,11 @@ pub fn array_to_pages<K: DictionaryKey>(
 
                     let mut buffer = vec![];
                     binary_encode_plain::<i64>(values, EncodeNullability::Required, &mut buffer);
-                    let stats = if options.has_statistics() {
-                        Some(binary_build_statistics(
-                            values,
-                            type_.clone(),
-                            &options.statistics,
-                        ))
+                    let stats = if options.has_page_statistics() {
+                        Some(
+                            binary_build_statistics(values, type_.clone(), &options.statistics)
+                                .serialize(),
+                        )
                     } else {
                         None
                     };
@@ -554,7 +550,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                     let mut buffer = vec![];
                     let array = array.values().as_any().downcast_ref().unwrap();
                     fixed_binary_encode_plain(array, EncodeNullability::Required, &mut buffer);
-                    let stats = if options.has_statistics() {
+                    let stats = if options.has_page_statistics() {
                         let stats = fixed_binary_build_statistics(
                             array,
                             type_.clone(),

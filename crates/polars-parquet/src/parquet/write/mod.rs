@@ -25,15 +25,6 @@ pub type RowGroupIterColumns<'a, E> =
 
 pub type RowGroupIter<'a, E> = DynIter<'a, RowGroupIterColumns<'a, E>>;
 
-/// Write options of different interfaces on this crate
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct WriteOptions {
-    /// Whether to write statistics, including indexes
-    pub write_statistics: bool,
-    /// Which Parquet version to use
-    pub version: Version,
-}
-
 /// The parquet version to use
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Version {
