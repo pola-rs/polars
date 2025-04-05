@@ -1531,8 +1531,8 @@ class Config(contextlib.ContextDecorator):
         Examples
         --------
         >>> ser = pl.Series(["2025-01-01"])
-        >>> pl.Config.set_default_time_unit("ms")
-        >>> ser.str.to_datetime()
+        >>> with pl.Config(default_time_unit="ms"):
+        ...     ser.str.to_datetime()
         shape: (1,)
         Series: '' [datetime[ms]]
         [
