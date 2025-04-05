@@ -34,7 +34,7 @@ kuzu
 # Cloud
 cloudpickle
 fsspec
-#s3fs[boto3] # TODO aiohttp is not supported on free-threaded python -> cython does not support free-threaded python
+s3fs[boto3]
 # Spreadsheet
 fastexcel>=0.11.5
 openpyxl
@@ -62,7 +62,7 @@ hypothesis
 # -------
 
 pytest==8.3.2
-#pytest-codspeed==3.2.0 TODO cffi is not supported on free-threaded python: following fork can be useful 'cffi @ git+https://github.com/quansight-labs/cffi'
+pytest-codspeed==3.2.0
 pytest-cov==6.0.0
 pytest-xdist==3.6.1
 
@@ -74,4 +74,4 @@ flask-cors
 # Stub files
 pandas-stubs
 boto3-stubs
-# google-auth-stubs # TODO depends on grpcio which is not supported on free-threaded python -> cython does not support free-threaded python
+google-auth-stubs

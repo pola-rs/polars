@@ -67,6 +67,7 @@ jobs:
 
       - name: Install Python dependencies
         env:
+          AIOHTTP_NO_EXTENSIONS: ${{ matrix.python-version == '3.13t' && '1' || '' }} # TODO aiohttp does not support free-threading yet
           UV_CONSTRAINT: ${{ matrix.python-version == '3.13t' && 'requirements-nogil-constraints.txt' || '' }}
           UV_BUILD_CONSTRAINT: ${{ matrix.python-version == '3.13t' && 'requirements-nogil-constraints.txt' || '' }}
         run: |
