@@ -8131,8 +8131,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Returns `True` if the DataFrame contains no rows.
 
-        `is_empty` must materialize the DataFrame and will potentially trigger I/O
-        if that is part of the query.
+        `is_empty` must materialize the DataFrame and might trigger I/O
+        that is part of the query.
 
         Examples
         --------
