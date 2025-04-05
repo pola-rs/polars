@@ -59,6 +59,14 @@ fn apply_offsets_to_datetime(
 
 pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
     let offsets = offsets.str()?;
+
+    polars_ensure!(
+        ts.len() == offsets.len() || offsets.len() == 1 || ts.len() == 1,
+        length_mismatch = "dt.offset_by",
+        ts.len(),
+        offsets.len()
+    );
+
     let dtype = ts.dtype();
 
     // Sortedness may not be preserved for non-constant durations,

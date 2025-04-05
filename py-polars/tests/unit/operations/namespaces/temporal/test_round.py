@@ -232,3 +232,15 @@ def test_round_positive_away_from_epoch_18239(
         .item()
     )
     assert result == expected
+
+
+@pytest.mark.parametrize("as_date", [False, True])
+def test_round_unequal_length_22018(as_date: bool) -> None:
+    start = datetime(2001, 1, 1)
+    stop = datetime(2001, 1, 1, 1)
+    s = pl.datetime_range(start, stop, "10m", eager=True).alias("datetime")
+    if as_date:
+        s = s.dt.date()
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.dt.round(pl.Series(["30m", "20m"]))

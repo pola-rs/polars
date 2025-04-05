@@ -233,7 +233,7 @@ fn run_subgraph(
         if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
             async_executor::track_task_wait_statistics(true);
         }
-        let ret = polars_io::pl_async::get_runtime().block_in_place_on(async move {
+        let ret = polars_io::pl_async::get_runtime().block_on(async move {
             for handle in join_handles {
                 handle.await?;
             }

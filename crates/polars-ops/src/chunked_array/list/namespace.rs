@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
@@ -300,6 +301,22 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
         let periods_s = periods.cast(&DataType::Int64)?;
         let periods = periods_s.i64()?;
+
+        polars_ensure!(
+            ca.len() == periods.len() || ca.len() == 1 || periods.len() == 1,
+            length_mismatch = "list.shift",
+            ca.len(),
+            periods.len()
+        );
+
+        // Broadcast `self`
+        let mut ca = Cow::Borrowed(ca);
+        if ca.len() == 1 && periods.len() != 1 {
+            // Optimize: Don't broadcast and instead have a special path.
+            ca = Cow::Owned(ca.new_from_index(0, periods.len()));
+        }
+        let ca = ca.as_ref();
+
         let out = match periods.len() {
             1 => {
                 if let Some(periods) = periods.get(0) {
@@ -372,8 +389,9 @@ pub trait ListNameSpaceImpl: AsList {
         let list_ca = self.as_list();
         let out = match (n.len(), offset.len()) {
             (1, 1) => match (n.get(0), offset.get(0)) {
-                (Some(n), Some(offset)) => list_ca
-                    .apply_amortized(|s| s.as_ref().gather_every(n as usize, offset as usize)),
+                (Some(n), Some(offset)) => list_ca.try_apply_amortized(|s| {
+                    s.as_ref().gather_every(n as usize, offset as usize)
+                })?,
                 _ => ListChunked::full_null_with_dtype(
                     list_ca.name().clone(),
                     list_ca.len(),
@@ -382,14 +400,14 @@ pub trait ListNameSpaceImpl: AsList {
             },
             (1, len_offset) if len_offset == list_ca.len() => {
                 if let Some(n) = n.get(0) {
-                    list_ca.zip_and_apply_amortized(offset, |opt_s, opt_offset| {
+                    list_ca.try_zip_and_apply_amortized(offset, |opt_s, opt_offset| {
                         match (opt_s, opt_offset) {
                             (Some(s), Some(offset)) => {
-                                Some(s.as_ref().gather_every(n as usize, offset as usize))
+                                Ok(Some(s.as_ref().gather_every(n as usize, offset as usize)?))
                             },
-                            _ => None,
+                            _ => Ok(None),
                         }
-                    })
+                    })?
                 } else {
                     ListChunked::full_null_with_dtype(
                         list_ca.name().clone(),
@@ -400,12 +418,12 @@ pub trait ListNameSpaceImpl: AsList {
             },
             (len_n, 1) if len_n == list_ca.len() => {
                 if let Some(offset) = offset.get(0) {
-                    list_ca.zip_and_apply_amortized(n, |opt_s, opt_n| match (opt_s, opt_n) {
+                    list_ca.try_zip_and_apply_amortized(n, |opt_s, opt_n| match (opt_s, opt_n) {
                         (Some(s), Some(n)) => {
-                            Some(s.as_ref().gather_every(n as usize, offset as usize))
+                            Ok(Some(s.as_ref().gather_every(n as usize, offset as usize)?))
                         },
-                        _ => None,
-                    })
+                        _ => Ok(None),
+                    })?
                 } else {
                     ListChunked::full_null_with_dtype(
                         list_ca.name().clone(),
@@ -415,14 +433,16 @@ pub trait ListNameSpaceImpl: AsList {
                 }
             },
             (len_n, len_offset) if len_n == len_offset && len_n == list_ca.len() => list_ca
-                .binary_zip_and_apply_amortized(n, offset, |opt_s, opt_n, opt_offset| {
-                    match (opt_s, opt_n, opt_offset) {
+                .try_binary_zip_and_apply_amortized(
+                    n,
+                    offset,
+                    |opt_s, opt_n, opt_offset| match (opt_s, opt_n, opt_offset) {
                         (Some(s), Some(n), Some(offset)) => {
-                            Some(s.as_ref().gather_every(n as usize, offset as usize))
+                            Ok(Some(s.as_ref().gather_every(n as usize, offset as usize)?))
                         },
-                        _ => None,
-                    }
-                }),
+                        _ => Ok(None),
+                    },
+                )?,
             _ => {
                 polars_bail!(ComputeError: "The lengths of `n` and `offset` should be 1 or equal to the length of list.")
             },
@@ -521,10 +541,27 @@ pub trait ListNameSpaceImpl: AsList {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PolarsResult<ListChunked> {
+        use std::borrow::Cow;
+
         let ca = self.as_list();
 
         let n_s = n.cast(&IDX_DTYPE)?;
         let n = n_s.idx()?;
+
+        polars_ensure!(
+            ca.len() == n.len() || ca.len() == 1 || n.len() == 1,
+            length_mismatch = "list.sample(n)",
+            ca.len(),
+            n.len()
+        );
+
+        // Broadcast `self`
+        let mut ca = Cow::Borrowed(ca);
+        if ca.len() == 1 && n.len() != 1 {
+            // Optimize: Don't broadcast and instead have a special path.
+            ca = Cow::Owned(ca.new_from_index(0, n.len()));
+        }
+        let ca = ca.as_ref();
 
         let out = match n.len() {
             1 => {
@@ -560,10 +597,27 @@ pub trait ListNameSpaceImpl: AsList {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PolarsResult<ListChunked> {
+        use std::borrow::Cow;
+
         let ca = self.as_list();
 
         let fraction_s = fraction.cast(&DataType::Float64)?;
         let fraction = fraction_s.f64()?;
+
+        polars_ensure!(
+            ca.len() == fraction.len() || ca.len() == 1 || fraction.len() == 1,
+            length_mismatch = "list.sample(fraction)",
+            ca.len(),
+            fraction.len()
+        );
+
+        // Broadcast `self`
+        let mut ca = Cow::Borrowed(ca);
+        if ca.len() == 1 && fraction.len() != 1 {
+            // Optimize: Don't broadcast and instead have a special path.
+            ca = Cow::Owned(ca.new_from_index(0, fraction.len()));
+        }
+        let ca = ca.as_ref();
 
         let out = match fraction.len() {
             1 => {

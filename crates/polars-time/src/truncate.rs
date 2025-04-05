@@ -20,6 +20,13 @@ pub(crate) fn fast_truncate(t: i64, every: i64) -> i64 {
 
 impl PolarsTruncate for DatetimeChunked {
     fn truncate(&self, tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self> {
+        polars_ensure!(
+            self.len() == every.len() || self.len() == 1 || every.len() == 1,
+            length_mismatch = "dt.truncate",
+            self.len(),
+            every.len()
+        );
+
         let time_zone = self.time_zone();
         let offset = Duration::new(0);
 
@@ -95,6 +102,13 @@ impl PolarsTruncate for DatetimeChunked {
 
 impl PolarsTruncate for DateChunked {
     fn truncate(&self, _tz: Option<&Tz>, every: &StringChunked) -> PolarsResult<Self> {
+        polars_ensure!(
+            self.len() == every.len() || self.len() == 1 || every.len() == 1,
+            length_mismatch = "dt.truncate",
+            self.len(),
+            every.len()
+        );
+
         let offset = Duration::new(0);
         let out = match every.len() {
             1 => {

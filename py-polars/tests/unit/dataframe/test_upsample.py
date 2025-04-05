@@ -42,7 +42,7 @@ def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> 
         every="1mo",
         group_by="admin",
         maintain_order=True,
-    ).select(pl.all().forward_fill())
+    ).select(pl.all().fill_null(strategy="forward"))
 
     # this print will panic if timezones feature is not activated
     # don't remove
@@ -234,7 +234,7 @@ def test_upsample_sorted_only_within_group() -> None:
         every="1mo",
         group_by="admin",
         maintain_order=True,
-    ).select(pl.all().forward_fill())
+    ).select(pl.all().fill_null(strategy="forward"))
 
     expected = pl.DataFrame(
         {

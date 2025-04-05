@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import deprecate_function
+from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -10,7 +11,7 @@ if TYPE_CHECKING:
     import datetime as dt
     from collections.abc import Iterable
 
-    from polars import Expr, Series
+    from polars import Series
     from polars._typing import (
         Ambiguous,
         EpochTimeUnit,
@@ -37,6 +38,8 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         return s[item]
 
+    @unstable()
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.27.0")
     def add_business_days(
         self,
         n: int | IntoExpr,
@@ -46,6 +49,10 @@ class DateTimeNameSpace:
     ) -> Series:
         """
         Offset by `n` business days.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -68,7 +75,7 @@ class DateTimeNameSpace:
 
                 my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
 
-            and pass `holidays=my_holidays` when you call `business_day_count`.
+            and pass `holidays=my_holidays` when you call `add_business_days`.
         roll
             What to do when the start date lands on a non-business day. Options are:
 
@@ -471,6 +478,81 @@ class DateTimeNameSpace:
         [
                 2001
                 2002
+        ]
+        """
+
+    @unstable()
+    def is_business_day(
+        self,
+        *,
+        week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
+        holidays: Iterable[dt.date] = (),
+    ) -> Series:
+        """
+        Determine whether each day lands on a business day.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        week_mask
+            Which days of the week to count. The default is Monday to Friday.
+            If you wanted to count only Monday to Thursday, you would pass
+            `(True, True, True, True, False, False, False)`.
+        holidays
+            Holidays to exclude from the count. The Python package
+            `python-holidays <https://github.com/vacanza/python-holidays>`_
+            may come in handy here. You can install it with ``pip install holidays``,
+            and then, to get all Dutch holidays for years 2020-2024:
+
+            .. code-block:: python
+
+                import holidays
+
+                my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
+
+            and pass `holidays=my_holidays` when you call `is_business_day`.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series([date(2020, 1, 3), date(2020, 1, 5)])
+        >>> s.dt.is_business_day()
+        shape: (2,)
+        Series: '' [bool]
+        [
+            true
+            false
+        ]
+
+        You can pass a custom weekend - for example, if you only take Sunday off:
+
+        >>> week_mask = (True, True, True, True, True, True, False)
+        >>> s.dt.is_business_day(week_mask=week_mask)
+        shape: (2,)
+        Series: '' [bool]
+        [
+            true
+            false
+        ]
+
+        You can also pass a list of holidays:
+
+        >>> from datetime import date
+        >>> holidays = [date(2020, 1, 3), date(2020, 1, 6)]
+        >>> s.dt.is_business_day(holidays=holidays)
+        shape: (2,)
+        Series: '' [bool]
+        [
+            false
+            false
         ]
         """
 
@@ -1621,7 +1703,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def offset_by(self, by: str | Expr) -> Series:
+    def offset_by(self, by: str | IntoExprColumn) -> Series:
         """
         Offset this date by a relative time offset.
 

@@ -544,6 +544,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         }
         .into_py_any(py),
         AExpr::Literal(lit) => {
+            use polars_core::prelude::AnyValue;
             let dtype: PyObject = Wrap(lit.get_datatype()).into_py_any(py)?;
             let py_value = match lit {
                 LiteralValue::Dyn(d) => match d {
@@ -552,7 +553,16 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     DynLiteralValue::Str(v) => v.into_py_any(py)?,
                     DynLiteralValue::List(_) => todo!(),
                 },
-                LiteralValue::Scalar(sc) => Wrap(sc.as_any_value()).into_py_any(py)?,
+                LiteralValue::Scalar(sc) => {
+                    match sc.as_any_value() {
+                        // AnyValue conversion of duration to python's
+                        // datetime.timedelta drops nanoseconds because
+                        // there is no support for them. See
+                        // https://github.com/python/cpython/issues/59648
+                        AnyValue::Duration(delta, _) => delta.into_py_any(py)?,
+                        any => Wrap(any).into_py_any(py)?,
+                    }
+                },
                 LiteralValue::Range(_) => {
                     return Err(PyNotImplementedError::new_err("range literal"));
                 },
@@ -1243,8 +1253,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::FfiPlugin { .. } => {
                     return Err(PyNotImplementedError::new_err("ffi plugin"));
                 },
-                FunctionExpr::BackwardFill { limit } => ("backward_fill", limit).into_py_any(py),
-                FunctionExpr::ForwardFill { limit } => ("forward_fill", limit).into_py_any(py),
                 FunctionExpr::SumHorizontal { ignore_nulls } => {
                     ("sum_horizontal", ignore_nulls).into_py_any(py)
                 },

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, OutOfBoundsError, SchemaError
+from polars.exceptions import ComputeError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -59,7 +59,7 @@ def test_repeat_expr_input_eager() -> None:
 
 def test_repeat_expr_input_lazy() -> None:
     df = pl.DataFrame({"a": [3, 2, 1]})
-    result = df.select(pl.repeat(1, n=pl.col("a"))).to_series()
+    result = df.select(pl.repeat(1, n=pl.col("a").first())).to_series()
     expected = pl.Series("repeat", [1, 1, 1], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
@@ -82,7 +82,7 @@ def test_repeat_n_non_integer(n: Any) -> None:
 
 def test_repeat_n_empty() -> None:
     df = pl.DataFrame(schema={"a": pl.Int32})
-    with pytest.raises(OutOfBoundsError, match="index 0 is out of bounds"):
+    with pytest.raises(ComputeError, match="'n' must be scalar value"):
         df.select(pl.repeat(1, n=pl.col("a")))
 
 
@@ -419,3 +419,23 @@ def test_repeat_by_literal_none_20268() -> None:
 
     res = df.select(repeat=pl.col("x").repeat_by(None))  # type: ignore[arg-type]
     assert_series_equal(res.to_series(), expected)
+
+
+@pytest.mark.parametrize("value", [pl.Series([]), pl.Series([1, 2])])
+def test_repeat_nonscalar_value(value: pl.Series) -> None:
+    with pytest.raises(ComputeError, match="'value' must be scalar value"):
+        pl.select(pl.repeat(pl.Series(value), n=1))
+
+
+@pytest.mark.parametrize("n", [[], [1, 2]])
+def test_repeat_nonscalar_n(n: list[int]) -> None:
+    df = pl.DataFrame({"n": n})
+    with pytest.raises(ComputeError, match="'n' must be scalar value"):
+        df.select(pl.repeat("a", pl.col("n")))
+
+
+def test_repeat_value_first() -> None:
+    df = pl.DataFrame({"a": ["a", "b", "c"], "n": [4, 5, 6]})
+    result = df.select(rep=pl.repeat(pl.col("a").first(), n=pl.col("n").first()))
+    expected = pl.DataFrame({"rep": ["a", "a", "a", "a"]})
+    assert_frame_equal(result, expected)

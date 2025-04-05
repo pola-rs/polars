@@ -27,7 +27,7 @@ pub struct PartedPartitionSinkNode {
     sink_input_schema: SchemaRef,
 
     key_cols: Arc<[PlSmallStr]>,
-    base_path: PathBuf,
+    base_path: Arc<PathBuf>,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -51,7 +51,7 @@ impl PartedPartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         key_cols: Arc<[PlSmallStr]>,
-        base_path: PathBuf,
+        base_path: Arc<PathBuf>,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,

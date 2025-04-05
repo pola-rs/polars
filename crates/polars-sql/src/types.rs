@@ -83,17 +83,23 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         // ---------------------------------
         // signed integer
         // ---------------------------------
-        SQLDataType::Int(_) | SQLDataType::Integer(_) => DataType::Int32,
-        SQLDataType::Int2(_) | SQLDataType::SmallInt(_) => DataType::Int16,
-        SQLDataType::Int4(_) | SQLDataType::MediumInt(_) => DataType::Int32,
-        SQLDataType::Int8(_) | SQLDataType::BigInt(_) => DataType::Int64,
+        SQLDataType::Int16 | SQLDataType::Int2(_) => DataType::Int16,
+        SQLDataType::Int32 | SQLDataType::Int4(_) => DataType::Int32,
+        SQLDataType::Int64 | SQLDataType::Int8(_) => DataType::Int64,
+        SQLDataType::Int128 => DataType::Int128,
+        SQLDataType::Integer(_) | SQLDataType::Int(_) => DataType::Int32,
+        SQLDataType::SmallInt(_) => DataType::Int16,
+        SQLDataType::MediumInt(_) => DataType::Int32,
+        SQLDataType::BigInt(_) => DataType::Int64,
         SQLDataType::TinyInt(_) => DataType::Int8,
 
         // ---------------------------------
-        // unsigned integer: the following do not map to PostgreSQL types/syntax, but
-        // are enabled for wider compatibility (eg: "CAST(col AS BIGINT UNSIGNED)").
+        // unsigned integer
         // ---------------------------------
-        SQLDataType::UnsignedTinyInt(_) => DataType::UInt8, // see also: "custom" types below
+        SQLDataType::UInt16 => DataType::UInt16,
+        SQLDataType::UInt32 => DataType::UInt32,
+        SQLDataType::UInt64 => DataType::UInt64,
+        SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
         SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) => DataType::UInt32,
         SQLDataType::UnsignedInt2(_) | SQLDataType::UnsignedSmallInt(_) => DataType::UInt16,
         SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => DataType::UInt32,
@@ -104,6 +110,7 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         // ---------------------------------
         // float
         // ---------------------------------
+        SQLDataType::Float4 | SQLDataType::Real => DataType::Float32,
         SQLDataType::Double | SQLDataType::DoublePrecision | SQLDataType::Float8 => {
             DataType::Float64
         },
@@ -115,20 +122,20 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
             },
             None => DataType::Float64,
         },
-        SQLDataType::Float4 | SQLDataType::Real => DataType::Float32,
 
         // ---------------------------------
         // decimal
         // ---------------------------------
         #[cfg(feature = "dtype-decimal")]
-        SQLDataType::Dec(info) | SQLDataType::Decimal(info) | SQLDataType::Numeric(info) => {
-            match *info {
-                ExactNumberInfo::PrecisionAndScale(p, s) => {
-                    DataType::Decimal(Some(p as usize), Some(s as usize))
-                },
-                ExactNumberInfo::Precision(p) => DataType::Decimal(Some(p as usize), Some(0)),
-                ExactNumberInfo::None => DataType::Decimal(Some(38), Some(9)),
-            }
+        SQLDataType::Dec(info)
+        | SQLDataType::Decimal(info)
+        | SQLDataType::BigDecimal(info)
+        | SQLDataType::Numeric(info) => match *info {
+            ExactNumberInfo::PrecisionAndScale(p, s) => {
+                DataType::Decimal(Some(p as usize), Some(s as usize))
+            },
+            ExactNumberInfo::Precision(p) => DataType::Decimal(Some(p as usize), Some(0)),
+            ExactNumberInfo::None => DataType::Decimal(Some(38), Some(9)),
         },
 
         // ---------------------------------
@@ -168,15 +175,16 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         // ---------------------------------
         SQLDataType::Custom(ObjectName(idents), _) => match idents.as_slice() {
             [Ident { value, .. }] => match value.to_lowercase().as_str() {
+                // common alias for 128bit int type (duckdb, etc.)
+                "hugeint" => DataType::Int128,
                 // these integer types are not supported by the PostgreSQL core distribution,
                 // but they ARE available via `pguint` (https://github.com/petere/pguint), an
                 // extension maintained by one of the PostgreSQL core developers.
+                "int1" => DataType::Int8,
                 "uint1" => DataType::UInt8,
                 "uint2" => DataType::UInt16,
                 "uint4" | "uint" => DataType::UInt32,
                 "uint8" => DataType::UInt64,
-                // `pguint` also provides a 1 byte (8bit) integer type alias
-                "int1" => DataType::Int8,
                 _ => {
                     polars_bail!(SQLInterface: "datatype {:?} is not currently supported", value)
                 },

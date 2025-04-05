@@ -44,6 +44,13 @@ fn join_many(
     separator: &StringChunked,
     ignore_nulls: bool,
 ) -> PolarsResult<StringChunked> {
+    polars_ensure!(
+        ca.len() == separator.len(),
+        length_mismatch = "arr.join",
+        ca.len(),
+        separator.len()
+    );
+
     let mut buf = String::new();
     let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
 

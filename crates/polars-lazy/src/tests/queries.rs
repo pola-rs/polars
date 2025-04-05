@@ -1173,11 +1173,9 @@ fn test_fill_forward() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("b").forward_fill(None).over_with_options(
-            [col("a")],
-            None,
-            WindowMapping::Join,
-        )])
+        .select([col("b")
+            .fill_null_with_strategy(FillNullStrategy::Forward(FillNullLimit::None))
+            .over_with_options([col("a")], None, WindowMapping::Join)])
         .collect()?;
     let agg = out.column("b")?.list()?;
 

@@ -138,6 +138,9 @@ def repeat(
     """
     if isinstance(n, int):
         n = F.lit(n)
+    if not hasattr(n, "_pyexpr"):
+        msg = f"`n` parameter of `repeat expected a `int` or `Expr` got a `{type(n).__name__}`"
+        raise TypeError(msg)
     value = parse_into_expression(value, str_as_lit=True, dtype=dtype)
     expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))
     if eager:
