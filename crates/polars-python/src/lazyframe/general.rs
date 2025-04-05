@@ -1449,4 +1449,8 @@ impl PyLazyFrame {
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
+
+    fn is_empty(&self, py: Python) -> PyResult<bool> {
+        py.enter_polars(|| self.ldf.clone().is_empty())
+    }
 }

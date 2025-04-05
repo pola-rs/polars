@@ -1489,3 +1489,15 @@ def test_unique_length_multiple_columns() -> None:
         }
     )
     assert lf.unique().select(pl.len()).collect().item() == 4
+
+
+def test_is_empty() -> None:
+    not_empty = pl.LazyFrame(
+        {
+            "a": [1, 1, 1, 2, 3],
+            "b": [100, 100, 200, 100, 300],
+        }
+    )
+    assert not not_empty.is_empty()
+    empty = not_empty.filter(pl.col("a")>3)
+    assert empty.is_empty()

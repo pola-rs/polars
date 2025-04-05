@@ -2,7 +2,7 @@
 //!
 //! Polars lazy does not implement a pivot because it is impossible to know the schema without
 //! materializing the whole dataset. This makes a pivot quite a terrible operation for performant
-//! workflows. An optimization can never be pushed down passed a pivot.
+//! workflows. An optimization can never be pushed down past a pivot.
 //!
 //! We can do a pivot on an eager `DataFrame` as that is already materialized. The code for the
 //! pivot is here, because we want to be able to pass expressions to the pivot operation.
