@@ -16,25 +16,25 @@ use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 /// Table functions that are supported by Polars
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum PolarsTableFunctions {
-    /// SQL 'read_csv' function
+    /// SQL 'read_csv' function.
     /// ```sql
     /// SELECT * FROM read_csv('path/to/file.csv')
     /// ```
     #[cfg(feature = "csv")]
     ReadCsv,
-    /// SQL 'read_parquet' function
+    /// SQL 'read_parquet' function.
     /// ```sql
     /// SELECT * FROM read_parquet('path/to/file.parquet')
     /// ```
     #[cfg(feature = "parquet")]
     ReadParquet,
-    /// SQL 'read_ipc' function
+    /// SQL 'read_ipc' function.
     /// ```sql
     /// SELECT * FROM read_ipc('path/to/file.ipc')
     /// ```
     #[cfg(feature = "ipc")]
     ReadIpc,
-    /// SQL 'read_json' function. *Only ndjson is currently supported.*
+    /// SQL 'read_json' function (*only ndjson is currently supported*).
     /// ```sql
     /// SELECT * FROM read_json('path/to/file.json')
     /// ```
