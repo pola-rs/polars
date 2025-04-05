@@ -1184,9 +1184,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::ApproxNUnique => ("approx_n_unique",).into_py_any(py),
                 FunctionExpr::Coalesce => ("coalesce",).into_py_any(py),
                 FunctionExpr::ShrinkType => ("shrink_dtype",).into_py_any(py),
-                FunctionExpr::Diff(n, null_behaviour) => (
+                FunctionExpr::Diff(null_behaviour) => (
                     "diff",
-                    n,
                     match null_behaviour {
                         NullBehavior::Drop => "drop",
                         NullBehavior::Ignore => "ignore",
