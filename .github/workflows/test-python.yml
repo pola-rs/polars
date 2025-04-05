@@ -50,8 +50,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        # TODO requires main: https://github.com/actions/setup-python/issues/771#issuecomment-2708960882
-        uses: actions/setup-python@main
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -67,6 +66,9 @@ jobs:
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/py-polars/.venv" >> $GITHUB_ENV
 
       - name: Install Python dependencies
+        env:
+          UV_CONSTRAINT: ${{ matrix.python-version == '3.13t' && 'requirements-nogil-constraints.txt' || '' }}
+          UV_BUILD_CONSTRAINT: ${{ matrix.python-version == '3.13t' && 'requirements-nogil-constraints.txt' || '' }}
         run: |
           pip install uv
           # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`

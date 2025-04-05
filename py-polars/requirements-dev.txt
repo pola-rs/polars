@@ -21,11 +21,11 @@ numpy
 numba >= 0.54; python_version < '3.13'  # Numba can lag Python releases
 pandas
 pyarrow
-pydantic
+pydantic>=2.0.0
 # Datetime / time zones
 tzdata; platform_system == 'Windows'
 # Database
-#sqlalchemy # TODO sqlalchemy is not supported on free-threaded python
+sqlalchemy
 #adbc-driver-manager; platform_system != 'Windows' # TODO is not supported on free-threaded python
 #adbc-driver-sqlite; platform_system != 'Windows' # TODO is not supported on free-threaded python
 aiosqlite
@@ -34,14 +34,14 @@ kuzu
 # Cloud
 cloudpickle
 fsspec
-s3fs[boto3]
+#s3fs[boto3] # TODO aiohttp is not supported on free-threaded python -> cython does not support free-threaded python
 # Spreadsheet
 fastexcel>=0.11.5
 openpyxl
 xlsx2csv
 xlsxwriter
 # Other I/O
-#deltalake>=0.15.0 # TODO deltalake is not supported on free-threaded python
+deltalake>=0.15.0
 # Csv
 zstandard
 # Plotting
@@ -74,4 +74,4 @@ flask-cors
 # Stub files
 pandas-stubs
 boto3-stubs
-google-auth-stubs
+# google-auth-stubs # TODO depends on grpcio which is not supported on free-threaded python -> cython does not support free-threaded python

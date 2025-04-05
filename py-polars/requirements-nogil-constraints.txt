@@ -1,0 +1,5 @@
+cffi @ git+https://github.com/quansight-labs/cffi
+Cython==3.1.0b1
+zstandard @ git+https://github.com/indygreg/python-zstandard.git@pull/243/head
+pydantic>=2.11
+cryptography @ git+https://github.com/pyca/cryptography.git@pull/12555/head
