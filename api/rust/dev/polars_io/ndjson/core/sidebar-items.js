@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["estimate_n_lines_in_chunk","estimate_n_lines_in_file","json_lines","parse_ndjson"],"struct":["JsonLineReader","StructArray"]};
