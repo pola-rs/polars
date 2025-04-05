@@ -8126,7 +8126,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return lf.collect()._to_metadata(stats=stats)
 
-
     def is_empty(self) -> bool:
         """
         Returns `True` if the DataFrame contains no rows.

@@ -1499,5 +1499,5 @@ def test_is_empty() -> None:
         }
     )
     assert not not_empty.is_empty()
-    empty = not_empty.filter(pl.col("a")>3)
+    empty = not_empty.filter(pl.col("a") > 3)
     assert empty.is_empty()
