@@ -195,9 +195,11 @@ pub fn get_supertype_with_options(
 
 
             #[cfg(feature = "dtype-i128")]
-            (a, Int128) if a.is_integer() => Some(Int128),
+            (a, Int128) if a.is_integer() | a.is_bool() => Some(Int128),
             #[cfg(feature = "dtype-i128")]
             (a, Int128) if a.is_float() => Some(Float64),
+            #[cfg(feature = "dtype-i128")]
+
 
             (Int32, Boolean) => Some(Int32),
             #[cfg(feature = "dtype-i8")]
