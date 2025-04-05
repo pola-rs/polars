@@ -62,6 +62,52 @@ def test_rolling_group_by_overlapping_groups(dtype: PolarsIntegerType) -> None:
     )
 
 
+# TODO: This test requires the environment variable to be set prior to starting
+# the thread pool, which implies prior to import. The test is only valid when
+# run in isolation, and invalid otherwise because of xdist import caching.
+# See GH issue #22070
+def test_rolling_group_by_overlapping_groups_21859_a(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
+    df = pl.select(
+        pl.date_range(pl.date(2023, 1, 1), pl.date(2023, 1, 5))
+    ).with_row_index()
+
+    out = df.rolling(index_column="date", period="1y").agg(
+        a1=pl.when(pl.col("date") >= pl.col("date"))
+        .then(pl.col("index").cast(pl.Int64).cum_sum())
+        .last(),
+        a2=pl.when(pl.col("date") >= pl.col("date"))
+        .then(pl.col("index").cast(pl.Int64).cum_sum())
+        .last(),
+    )["a1", "a2"]
+    expected = pl.DataFrame({"a1": [0, 1, 3, 6, 10], "a2": [0, 1, 3, 6, 10]})
+    assert_frame_equal(out, expected)
+
+
+# TODO: This test requires the environment variable to be set prior to starting
+# the thread pool, which implies prior to import. The test is only valid when
+# run in isolation, and invalid otherwise because of xdist import caching.
+# See GH issue #22070
+def test_rolling_group_by_overlapping_groups_21859_b(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
+    df = pl.DataFrame({"a": [20, 30, 40]})
+    out = (
+        df.with_row_index()
+        .with_columns(pl.col("index"))
+        .cast(pl.Int64)
+        .rolling(index_column="index", period="3i")
+        .agg(
+            # trigger the apply on the expression engine
+            pl.col("a").map_elements(lambda x: x).sum().alias("a1"),
+            pl.col("a").map_elements(lambda x: x).sum().alias("a2"),
+        )["a1", "a2"]
+    )
+    expected = pl.DataFrame({"a1": [20, 50, 90], "a2": [20, 50, 90]})
+    assert_frame_equal(out, expected)
+
+
 @pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
 @pytest.mark.parametrize("dtype", [pl.UInt32, pl.UInt64, pl.Int32, pl.Int64])
 def test_rolling_agg_input_types(input: Any, dtype: PolarsIntegerType) -> None:
