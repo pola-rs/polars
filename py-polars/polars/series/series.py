@@ -7610,6 +7610,26 @@ class Series:
         return pl.DataFrame._from_pydf(self._s._row_decode(list(dtypes), list(fields)))
 
 
+    def repeat_by(self, by: int | IntoExprColumn) -> Self:
+        """
+        Repeat the elements in this Series as specified in the given expression.
+
+        The repeated elements are expanded into a List.
+
+        Parameters
+        ----------
+        by
+            Numeric column that determines how often the values will be repeated.
+            The column will be coerced to UInt32. Give this dtype to make the coercion
+            a no-op.
+
+        Returns
+        -------
+        Expr
+            Expression of data type List, where the inner data type is equal to the
+            original data type.
+        """
+
 def _resolve_temporal_dtype(
     dtype: PolarsDataType | None,
     ndtype: np.dtype[np.datetime64] | np.dtype[np.timedelta64],
