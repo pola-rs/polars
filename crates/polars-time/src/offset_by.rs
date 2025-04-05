@@ -49,7 +49,7 @@ fn apply_offsets_to_datetime(
                 offset_opt,
             ) {
                 (Some(timestamp), Some(offset)) => {
-                    offset_fn(&Duration::parse(offset), timestamp, time_zone).map(Some)
+                    offset_fn(&Duration::try_parse(offset)?, timestamp, time_zone).map(Some)
                 },
                 _ => Ok(None),
             })
