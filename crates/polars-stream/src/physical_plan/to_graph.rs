@@ -543,30 +543,7 @@ fn to_graph_rec<'a>(
                     #[cfg(feature = "parquet")]
                     polars_plan::dsl::FileScan::Parquet { .. } => unreachable!(),
                     #[cfg(feature = "ipc")]
-                    polars_plan::dsl::FileScan::Ipc {
-                        options,
-                        cloud_options,
-                        ..
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::SourceComputeNode::new(
-                            nodes::io_sources::multi_scan::MultiScanNode::<
-                                nodes::io_sources::ipc::IpcSourceNode,
-                            >::new(
-                                scan_sources.clone(),
-                                hive_parts.clone().map(Arc::new),
-                                *allow_missing_columns,
-                                include_file_paths.clone(),
-                                file_schema.clone(),
-                                projection.clone(),
-                                row_index.clone(),
-                                row_restriction.clone(),
-                                predicate,
-                                options.clone(),
-                                cloud_options.clone(),
-                            ),
-                        ),
-                        [],
-                    ),
+                    polars_plan::dsl::FileScan::Ipc { .. } => unreachable!(),
                     #[cfg(feature = "csv")]
                     polars_plan::dsl::FileScan::Csv {
                         options,
@@ -656,28 +633,7 @@ fn to_graph_rec<'a>(
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => unreachable!(),
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc {
-                        options,
-                        cloud_options,
-                        metadata: first_metadata,
-                    } => {
-                        // Should have been rewritten in terms of separate streaming nodes.
-                        assert!(predicate.is_none());
-
-                        ctx.graph.add_node(
-                            nodes::io_sources::SourceComputeNode::new(
-                                nodes::io_sources::ipc::IpcSourceNode::new(
-                                    scan_source,
-                                    file_info,
-                                    options,
-                                    cloud_options,
-                                    *file_options,
-                                    first_metadata,
-                                )?,
-                            ),
-                            [],
-                        )
-                    },
+                    FileScan::Ipc { .. } => unreachable!(),
                     #[cfg(feature = "csv")]
                     FileScan::Csv { options, .. } => {
                         assert!(predicate.is_none());
