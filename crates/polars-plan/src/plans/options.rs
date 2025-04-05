@@ -163,6 +163,64 @@ impl FunctionOptions {
     pub fn returns_scalar(&self) -> bool {
         self.flags.contains(FunctionFlags::RETURNS_SCALAR)
     }
+
+    pub fn new_unary_elementwise() -> FunctionOptions {
+        FunctionOptions {
+            collect_groups: ApplyOptions::ElementWise,
+            ..Default::default()
+        }
+    }
+
+    pub fn new_binary_elementwise() -> FunctionOptions {
+        FunctionOptions {
+            collect_groups: ApplyOptions::ElementWise,
+            ..Default::default()
+        }
+    }
+
+    pub fn new_ternary_elementwise() -> FunctionOptions {
+        FunctionOptions {
+            collect_groups: ApplyOptions::ElementWise,
+            ..Default::default()
+        }
+    }
+
+    pub fn new_unary_row_separable() -> FunctionOptions {
+        FunctionOptions {
+            collect_groups: ApplyOptions::GroupWise,
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn new_nparams_elementwise() -> FunctionOptions {
+        FunctionOptions {
+            collect_groups: ApplyOptions::ElementWise,
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn new_groupwise() -> FunctionOptions {
+        FunctionOptions {
+            collect_groups: ApplyOptions::GroupWise,
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn new_aggregation() -> FunctionOptions {
+        FunctionOptions {
+            collect_groups: ApplyOptions::GroupWise,
+            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
+            ..Default::default()
+        }
+    }
+
+    pub fn with_supertyping(
+        mut self,
+        supertype_options: SuperTypeOptions,
+    ) -> FunctionOptions {
+        self.cast_options = Some(CastingRules::Supertype(supertype_options));
+        self
+    }
 }
 
 impl Default for FunctionOptions {
