@@ -2229,10 +2229,6 @@ def test_construction_large_nested_u64_17231() -> None:
 
 
 def test_repeat_by() -> None:
-    calculated=pl.select(
-        a = pl.Series('a', [1, 2]).repeat_by(2)
-    )
-    expected=pl.select(
-        a = pl.Series('a', [[1,1], [2,2]])
-    )
+    calculated=pl.select(a=pl.Series('a', [1, 2]).repeat_by(2))
+    expected=pl.select(a=pl.Series('a', [[1, 1], [2, 2]]))
     assert calculated.equals(expected)

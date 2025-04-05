@@ -7609,7 +7609,6 @@ class Series:
         """
         return pl.DataFrame._from_pydf(self._s._row_decode(list(dtypes), list(fields)))
 
-
     def repeat_by(self, by: int | IntoExprColumn) -> Self:
         """
         Repeat the elements in this Series as specified in the given expression.
@@ -7629,6 +7628,7 @@ class Series:
             Expression of data type List, where the inner data type is equal to the
             original data type.
         """
+
 
 def _resolve_temporal_dtype(
     dtype: PolarsDataType | None,
