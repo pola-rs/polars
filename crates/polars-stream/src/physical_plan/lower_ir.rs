@@ -466,6 +466,15 @@ pub fn lower_ir(
                     ) as Arc<dyn FileReaderBuilder>,
                     cloud_options,
                 )),
+                #[cfg(feature = "csv")]
+                FileScan::Csv {
+                    options,
+                    cloud_options,
+                } => Some((
+                    Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>,
+                    cloud_options,
+                )),
+
                 #[cfg(feature = "json")]
                 FileScan::NDJson {
                     options,
