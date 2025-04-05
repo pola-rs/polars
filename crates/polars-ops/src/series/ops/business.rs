@@ -74,15 +74,23 @@ pub fn business_day_count(
                 Int32Chunked::full_null(start_dates.name().clone(), end_dates.len())
             }
         },
-        _ => binary_elementwise_values(start_dates, end_dates, |start_date, end_date| {
-            business_day_count_impl(
-                start_date,
-                end_date,
-                &week_mask,
-                n_business_days_in_week_mask,
-                &holidays,
-            )
-        }),
+        _ => {
+            polars_ensure!(
+                start_dates.len() == end_dates.len(),
+                length_mismatch = "business_day_count",
+                start_dates.len(),
+                end_dates.len()
+            );
+            binary_elementwise_values(start_dates, end_dates, |start_date, end_date| {
+                business_day_count_impl(
+                    start_date,
+                    end_date,
+                    &week_mask,
+                    n_business_days_in_week_mask,
+                    &holidays,
+                )
+            })
+        },
     };
     Ok(out.into_series())
 }
@@ -242,23 +250,31 @@ pub fn add_business_days(
                 Int32Chunked::full_null(start_dates.name().clone(), n.len())
             }
         },
-        _ => try_binary_elementwise(start_dates, n, |opt_start_date, opt_n| {
-            match (opt_start_date, opt_n) {
-                (Some(start_date), Some(n)) => {
-                    let (start_date, day_of_week) =
-                        roll_start_date(start_date, roll, &week_mask, &holidays)?;
-                    Ok::<Option<i32>, PolarsError>(Some(add_business_days_impl(
-                        start_date,
-                        day_of_week,
-                        n,
-                        &week_mask,
-                        n_business_days_in_week_mask,
-                        &holidays,
-                    )))
-                },
-                _ => Ok(None),
-            }
-        })?,
+        _ => {
+            polars_ensure!(
+                start_dates.len() == n.len(),
+                length_mismatch = "dt.add_business_days",
+                start_dates.len(),
+                n.len()
+            );
+            try_binary_elementwise(start_dates, n, |opt_start_date, opt_n| {
+                match (opt_start_date, opt_n) {
+                    (Some(start_date), Some(n)) => {
+                        let (start_date, day_of_week) =
+                            roll_start_date(start_date, roll, &week_mask, &holidays)?;
+                        Ok::<Option<i32>, PolarsError>(Some(add_business_days_impl(
+                            start_date,
+                            day_of_week,
+                            n,
+                            &week_mask,
+                            n_business_days_in_week_mask,
+                            &holidays,
+                        )))
+                    },
+                    _ => Ok(None),
+                }
+            })?
+        },
     };
     Ok(out.into_date().into_series())
 }

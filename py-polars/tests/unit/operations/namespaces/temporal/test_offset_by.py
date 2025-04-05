@@ -164,3 +164,10 @@ def test_month_then_day_21283() -> None:
     result = series_utc.dt.offset_by("2y1mo1q1h1d")[0]
     expected = datetime.strptime("2026-09-16 09:00:00+00:00", "%Y-%m-%d %H:%M:%S%z")
     assert result == expected
+
+
+def test_offset_by_unequal_length_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([datetime(2088, 8, 8, 8, 8, 8, 8)] * 2).dt.offset_by(
+            pl.Series([f"{h}y" for h in range(3)])
+        )
