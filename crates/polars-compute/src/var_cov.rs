@@ -17,6 +17,7 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
+use polars_error::{PolarsError, PolarsResult};
 use polars_utils::algebraic_ops::*;
 
 const CHUNK_SIZE: usize = 128;
@@ -44,6 +45,19 @@ pub struct PearsonState {
     dp_xx: f64,
     dp_xy: f64,
     dp_yy: f64,
+}
+
+fn validate_input_length(len_x: usize, len_y: usize) -> PolarsResult<()> {
+    if len_x != len_y {
+        return Err(PolarsError::ComputeError(
+            format!(
+                "Input Series must have the same length but got {} and {}.",
+                len_x, len_y
+            )
+            .into(),
+        ));
+    }
+    Ok(())
 }
 
 impl VarState {
@@ -132,7 +146,6 @@ impl VarState {
 
 impl CovState {
     fn new(x: &[f64], y: &[f64]) -> Self {
-        assert!(x.len() == y.len());
         if x.is_empty() {
             return Self::default();
         }
@@ -181,7 +194,6 @@ impl CovState {
 
 impl PearsonState {
     fn new(x: &[f64], y: &[f64]) -> Self {
-        assert!(x.len() == y.len());
         if x.is_empty() {
             return Self::default();
         }
@@ -299,12 +311,12 @@ where
     out
 }
 
-pub fn cov<T, U>(x: &PrimitiveArray<T>, y: &PrimitiveArray<U>) -> CovState
+pub fn cov<T, U>(x: &PrimitiveArray<T>, y: &PrimitiveArray<U>) -> PolarsResult<CovState>
 where
     T: NativeType + AsPrimitive<f64>,
     U: NativeType + AsPrimitive<f64>,
 {
-    assert!(x.len() == y.len());
+    validate_input_length(x.len(), y.len())?;
     let mut out = CovState::default();
     if x.has_nulls() || y.has_nulls() {
         chunk_as_float_binary(
@@ -319,15 +331,18 @@ where
             |l, r| out.combine(&CovState::new(l, r)),
         );
     }
-    out
+    Ok(out)
 }
 
-pub fn pearson_corr<T, U>(x: &PrimitiveArray<T>, y: &PrimitiveArray<U>) -> PearsonState
+pub fn pearson_corr<T, U>(
+    x: &PrimitiveArray<T>,
+    y: &PrimitiveArray<U>,
+) -> PolarsResult<PearsonState>
 where
     T: NativeType + AsPrimitive<f64>,
     U: NativeType + AsPrimitive<f64>,
 {
-    assert!(x.len() == y.len());
+    validate_input_length(x.len(), y.len())?;
     let mut out = PearsonState::default();
     if x.has_nulls() || y.has_nulls() {
         chunk_as_float_binary(
@@ -342,5 +357,5 @@ where
             |l, r| out.combine(&PearsonState::new(l, r)),
         );
     }
-    out
+    Ok(out)
 }
