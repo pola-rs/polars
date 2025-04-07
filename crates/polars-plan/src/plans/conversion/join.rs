@@ -429,26 +429,23 @@ fn resolve_join_where(
         .get(last_node)
         .schema(ctxt.lp_arena)
         .into_owned();
-    let schema_merged = schema_merged.as_ref();
+    // let schema_merged = schema_merged.as_ref();
 
     // Perform predicate validation.
     for e in predicates {
-        let predicate = to_expr_ir_ignore_alias(e, ctxt.expr_arena)?;
+        let arena = &mut ctxt.expr_arena;
+        let predicate = to_expr_ir_ignore_alias(e, arena)?;
+        let node = predicate.node();
 
         // Ensure the predicate dtype output of the root node is Boolean
-        let ae = ctxt.expr_arena.get(predicate.node());
-        let dt_out = ae.to_dtype(schema_merged, Context::Default, ctxt.expr_arena)?;
+        let ae = arena.get(node);
+        let dt_out = ae.to_dtype(&schema_merged, Context::Default, arena)?;
         polars_ensure!(
             dt_out == DataType::Boolean,
             ComputeError: "'join_where' predicates must resolve to boolean"
         );
 
-        validate_lossless_table_comparison(
-            predicate.node(),
-            schema_left.as_ref(),
-            schema_merged,
-            ctxt.expr_arena,
-        )?;
+        ensure_lossless_binary_comparisons(&node, &schema_left, &schema_merged, arena)?;
 
         ctxt.conversion_optimizer
             .push_scratch(predicate.node(), ctxt.expr_arena);
@@ -468,71 +465,49 @@ fn resolve_join_where(
     Ok((last_node, join_node))
 }
 
-fn ensure_lossless_comparison(
-    left_node: Node,
-    right_node: Node,
-    expr_arena: &mut Arena<AExpr>,
+/// Locate nodes that are operands in a binary comparison involving both tables, and ensure that
+/// these nodes are losslessly upcast to a safe dtype.
+fn ensure_lossless_binary_comparisons(
+    node: &Node,
+    schema_left: &Schema,
     schema_merged: &Schema,
+    expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<()> {
-    // Ensure our dtype casts are lossless
-    let left = expr_arena.get(left_node);
-    let right = expr_arena.get(right_node);
-    let dtype_left = left.to_dtype(schema_merged, Context::Default, expr_arena)?;
-    let dtype_right = right.to_dtype(schema_merged, Context::Default, expr_arena)?;
-    if dtype_left != dtype_right {
-        // Ensure that we have a lossless cast between the two types.
-        let dt = if dtype_left.is_primitive_numeric() || dtype_right.is_primitive_numeric() {
-            get_numeric_upcast_supertype_lossless(&dtype_left, &dtype_right).ok_or(
-                PolarsError::SchemaMismatch(
-                    format!(
-                        "'join_where' cannot compare {:?} with {:?}",
-                        dtype_left, dtype_right
-                    )
-                    .into(),
-                ),
-            )
-        } else {
-            try_get_supertype(&dtype_left, &dtype_right)
-        }?;
-
-        // We have unique references to these nodes, so we can mutate in-place.
-        let expr = expr_arena.add(expr_arena.get(left_node).clone());
-        expr_arena.replace(
-            left_node,
-            AExpr::Cast {
-                expr,
-                dtype: dt.clone(),
-                options: CastOptions::Overflowing,
-            },
-        );
-        let expr = expr_arena.add(expr_arena.get(right_node).clone());
-        expr_arena.replace(
-            right_node,
-            AExpr::Cast {
-                expr,
-                dtype: dt,
-                options: CastOptions::Overflowing,
-            },
-        );
+    // Ensure that all binary comparisons that use both tables are lossles.
+    let mut to_replace = Vec::<(Node, DataType)>::with_capacity(expr_arena.len());
+    upcast_comparison_nodes(
+        node,
+        schema_left,
+        schema_merged,
+        expr_arena,
+        &mut to_replace,
+    )?;
+    // Replace each node with its casted counterpart
+    for (expr, dtype) in to_replace {
+        let old_expr = expr_arena.duplicate(expr);
+        let new_aexpr = AExpr::Cast {
+            expr: old_expr,
+            dtype,
+            options: CastOptions::Overflowing,
+        };
+        expr_arena.replace(expr, new_aexpr);
     }
     Ok(())
 }
 
-/// Performs validation and type-coercion on join_where predicates.
-///
 /// If we are dealing with a binary comparison involving columns from exclusively the left table
 /// on the LHS and the right table on the RHS side, ensure that the cast is lossless.
 /// Expressions involving binaries using either table alone we leave up to the user to verify
 /// that they are valid, as they could theoretically be pushed outside of the join.
-fn validate_lossless_table_comparison(
-    predicate: Node,
+fn upcast_comparison_nodes(
+    node: &Node,
     schema_left: &Schema,
     schema_merged: &Schema,
-    expr_arena: &mut Arena<AExpr>,
+    expr_arena: &Arena<AExpr>,
+    to_replace: &mut Vec<(Node, DataType)>,
 ) -> PolarsResult<ExprOrigin> {
-    let ae = expr_arena.get(predicate).clone();
-    let expr_origin = match ae {
-        AExpr::Column(ref name) => {
+    let expr_origin = match expr_arena.get(*node) {
+        AExpr::Column(name) => {
             if schema_left.contains(name) {
                 ExprOrigin::Left
             } else if schema_merged.contains(name) {
@@ -543,7 +518,7 @@ fn validate_lossless_table_comparison(
         },
         AExpr::Literal(..) => ExprOrigin::None,
         AExpr::Cast { expr: node, .. } => {
-            validate_lossless_table_comparison(node, schema_left, schema_merged, expr_arena)?
+            upcast_comparison_nodes(node, schema_left, schema_merged, expr_arena, to_replace)?
         },
         AExpr::BinaryExpr {
             left: left_node,
@@ -551,29 +526,61 @@ fn validate_lossless_table_comparison(
             right: right_node,
         } => {
             // If left and right node has both, ensure the dtypes are valid.
-            let left_origin = validate_lossless_table_comparison(
+            let left_origin = upcast_comparison_nodes(
                 left_node,
                 schema_left,
                 schema_merged,
                 expr_arena,
+                to_replace,
             )?;
-            let right_origin = validate_lossless_table_comparison(
+            let right_origin = upcast_comparison_nodes(
                 right_node,
                 schema_left,
                 schema_merged,
                 expr_arena,
+                to_replace,
             )?;
             // We only update casts during comparisons if the operands are from different tables.
             if op.is_comparison() {
                 match (left_origin, right_origin) {
                     (ExprOrigin::Left, ExprOrigin::Right)
                     | (ExprOrigin::Right, ExprOrigin::Left) => {
-                        ensure_lossless_comparison(
-                            left_node,
-                            right_node,
-                            expr_arena,
-                            schema_merged,
-                        )?;
+                        // Ensure our dtype casts are lossless
+                        let left = expr_arena.get(*left_node);
+                        let right = expr_arena.get(*right_node);
+                        let dtype_left =
+                            left.to_dtype(schema_merged, Context::Default, expr_arena)?;
+                        let dtype_right =
+                            right.to_dtype(schema_merged, Context::Default, expr_arena)?;
+                        if dtype_left != dtype_right {
+                            // Ensure that we have a lossless cast between the two types.
+                            let dt = if dtype_left.is_primitive_numeric()
+                                || dtype_right.is_primitive_numeric()
+                            {
+                                get_numeric_upcast_supertype_lossless(&dtype_left, &dtype_right)
+                                    .ok_or(PolarsError::SchemaMismatch(
+                                        format!(
+                                            "'join_where' cannot compare {:?} with {:?}",
+                                            dtype_left, dtype_right
+                                        )
+                                        .into(),
+                                    ))
+                            } else {
+                                try_get_supertype(&dtype_left, &dtype_right)
+                            }?;
+
+                            // Store the nodes and their replacements if a cast is required.
+                            let replace_left = dt != dtype_left;
+                            let replace_right = dt != dtype_right;
+                            if replace_left && replace_right {
+                                to_replace.push((*left_node, dt.clone()));
+                                to_replace.push((*right_node, dt));
+                            } else if replace_left {
+                                to_replace.push((*left_node, dt));
+                            } else if replace_right {
+                                to_replace.push((*right_node, dt));
+                            }
+                        }
                     },
                     _ => (),
                 }
