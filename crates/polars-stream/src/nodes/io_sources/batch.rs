@@ -140,7 +140,7 @@ impl FileReader for BatchFnReader {
 
         // Must send this first before we `take()` the GetBatchState.
         if let Some(mut file_schema_tx) = file_schema_tx {
-            _ = file_schema_tx.try_send(self._file_schema());
+            _ = file_schema_tx.try_send(self._file_schema()?);
         }
 
         let mut get_batch_state = self
