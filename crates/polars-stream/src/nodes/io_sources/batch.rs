@@ -153,8 +153,8 @@ impl FileReader for BatchFnReader {
             eprintln!("[BatchFnReader]: name: {}", self.name);
         }
 
-        if let Some(_) = file_schema_tx {
-            unimplemented!()
+        if let Some(mut file_schema_tx) = file_schema_tx {
+            _ = file_schema_tx.try_send(self._file_schema());
         }
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
