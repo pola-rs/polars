@@ -473,7 +473,7 @@ fn ensure_lossless_binary_comparisons(
     schema_merged: &Schema,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<()> {
-    // Ensure that all binary comparisons that use both tables are lossles.
+    // Ensure that all binary comparisons that use both tables are lossless.
     let mut to_replace = Vec::<(Node, DataType)>::with_capacity(expr_arena.len());
     upcast_comparison_nodes(
         node,
