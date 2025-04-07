@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
-use polars_core::prelude::{AnyValue, ArrowSchema};
-use polars_core::scalar::Scalar;
-use polars_core::schema::{Schema, SchemaExt};
+use polars_core::prelude::ArrowSchema;
+use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::pl_async;
@@ -20,7 +19,6 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 
 use super::multi_file_reader::extra_ops::cast_columns::{CastColumns, CastColumnsPolicy};
-use super::multi_file_reader::extra_ops::missing_columns::MissingColumnsPolicy;
 use super::multi_file_reader::reader_interface::output::{
     FileReaderOutputRecv, FileReaderOutputSend,
 };
@@ -51,9 +49,11 @@ pub struct ParquetFileReader {
     init_data: Option<InitializedState>,
 }
 
+#[derive(Clone)]
 struct InitializedState {
     file_metadata: Arc<FileMetadata>,
     file_schema: Arc<ArrowSchema>,
+    file_schema_pl: Option<SchemaRef>,
     byte_source: Arc<DynByteSource>,
 }
 
@@ -111,6 +111,7 @@ impl FileReader for ParquetFileReader {
         self.init_data = Some(InitializedState {
             file_metadata,
             file_schema,
+            file_schema_pl: None,
             byte_source,
         });
 
@@ -126,8 +127,9 @@ impl FileReader for ParquetFileReader {
         let InitializedState {
             file_metadata,
             file_schema,
+            file_schema_pl: _,
             byte_source,
-        } = self.init_data.as_ref().unwrap();
+        } = self.init_data.clone().unwrap();
 
         let BeginReadArgs {
             projected_schema,
@@ -135,7 +137,6 @@ impl FileReader for ParquetFileReader {
             pre_slice: pre_slice_arg,
             mut predicate,
             cast_columns_policy,
-            missing_columns_policy,
             num_pipelines,
             callbacks:
                 FileReaderCallbacks {
@@ -150,9 +151,6 @@ impl FileReader for ParquetFileReader {
         let normalized_pre_slice = pre_slice_arg
             .clone()
             .map(|x| x.restrict_to_bounds(usize::try_from(n_rows_in_file).unwrap()));
-
-        let file_schema_pl =
-            std::cell::LazyCell::new(|| Arc::new(Schema::from_arrow_schema(file_schema.as_ref())));
 
         // Send all callbacks to unblock the next reader. We can do this immediately as we know
         // the total row count upfront.
@@ -169,7 +167,7 @@ impl FileReader for ParquetFileReader {
         }
 
         if let Some(mut file_schema_tx) = file_schema_tx {
-            _ = file_schema_tx.try_send(file_schema_pl.clone());
+            _ = file_schema_tx.try_send(self._file_schema());
         }
 
         if normalized_pre_slice.as_ref().is_some_and(|x| x.len() == 0) {
@@ -231,31 +229,6 @@ impl FileReader for ParquetFileReader {
         // If are handling predicates we apply missing / cast columns policy here as those need to
         // happen before filtering. Otherwise we leave it to post.
         if let Some(predicate) = predicate.as_mut() {
-            // Missing columns we just set external columns from predicate. The multiscan post apply
-            // will handle attaching them to the morsel.
-            match missing_columns_policy {
-                MissingColumnsPolicy::Raise => {
-                    missing_columns_policy.initialize_policy(
-                        projected_schema.as_ref(),
-                        &file_schema_pl,
-                        &mut vec![],
-                    )?;
-                },
-                MissingColumnsPolicy::Insert => {
-                    let v = projected_schema
-                        .iter()
-                        .filter(|(name, _)| !file_schema.contains(name))
-                        .map(|(name, dtype)| {
-                            (name.clone(), Scalar::new(dtype.clone(), AnyValue::Null))
-                        })
-                        .collect::<Vec<_>>();
-
-                    if !v.is_empty() {
-                        predicate.set_external_constant_columns(v);
-                    }
-                },
-            }
-
             if !matches!(cast_columns_policy, CastColumnsPolicy::ErrorOnMismatch) {
                 unimplemented!("column casting w/ predicate in parquet")
             }
@@ -263,7 +236,8 @@ impl FileReader for ParquetFileReader {
             CastColumns::try_init_from_policy_from_iter(
                 cast_columns_policy,
                 &projected_schema,
-                &mut file_schema_pl
+                &mut self
+                    ._file_schema()
                     .iter()
                     .filter(|(name, _)| predicate.live_columns.contains(*name))
                     .map(|(name, dtype)| (name.as_ref(), dtype)),
@@ -299,6 +273,10 @@ impl FileReader for ParquetFileReader {
         ))
     }
 
+    async fn file_schema(&mut self) -> PolarsResult<SchemaRef> {
+        Ok(self._file_schema())
+    }
+
     async fn n_rows_in_file(&mut self) -> PolarsResult<IdxSize> {
         self._n_rows_in_file()
     }
@@ -312,6 +290,20 @@ impl FileReader for ParquetFileReader {
 }
 
 impl ParquetFileReader {
+    fn _file_schema(&mut self) -> SchemaRef {
+        let InitializedState {
+            file_schema,
+            file_schema_pl,
+            ..
+        } = self.init_data.as_mut().unwrap();
+
+        if file_schema_pl.is_none() {
+            *file_schema_pl = Some(Arc::new(Schema::from_arrow_schema(file_schema.as_ref())))
+        }
+
+        file_schema_pl.clone().unwrap()
+    }
+
     fn _n_rows_in_file(&self) -> PolarsResult<IdxSize> {
         let n = self.init_data.as_ref().unwrap().file_metadata.num_rows;
         IdxSize::try_from(n).map_err(|_| polars_err!(bigidx, ctx = "parquet file", size = n))
