@@ -541,17 +541,17 @@ pub(super) fn find(s: &[Column], literal: bool, strict: bool) -> PolarsResult<Co
 
 pub(super) fn ends_with(s: &[Column]) -> PolarsResult<Column> {
     _check_same_length(s, "ends_with")?;
-    let ca = &s[0].str()?.as_binary();
-    let suffix = &s[1].str()?.as_binary();
+    let ca = s[0].str()?.as_binary();
+    let suffix = s[1].str()?.as_binary();
 
-    Ok(ca.ends_with_chunked(suffix).into_column())
+    Ok(ca.ends_with_chunked(&suffix)?.into_column())
 }
 
 pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
     _check_same_length(s, "starts_with")?;
-    let ca = s[0].str()?;
-    let prefix = s[1].str()?;
-    Ok(ca.starts_with_chunked(prefix).into_column())
+    let ca = s[0].str()?.as_binary();
+    let prefix = s[1].str()?.as_binary();
+    Ok(ca.starts_with_chunked(&prefix)?.into_column())
 }
 
 /// Extract a regex pattern from the a string value.
@@ -712,9 +712,9 @@ pub(super) fn split(s: &[Column], inclusive: bool) -> PolarsResult<Column> {
     let by = s[1].str()?;
 
     if inclusive {
-        Ok(ca.split_inclusive(by).into_column())
+        Ok(ca.split_inclusive(by)?.into_column())
     } else {
-        Ok(ca.split(by).into_column())
+        Ok(ca.split(by)?.into_column())
     }
 }
 
@@ -746,6 +746,16 @@ fn to_datetime(
 ) -> PolarsResult<Column> {
     let datetime_strings = &s[0].str()?;
     let ambiguous = &s[1].str()?;
+
+    polars_ensure!(
+        datetime_strings.len() == ambiguous.len()
+            || datetime_strings.len() == 1
+            || ambiguous.len() == 1,
+        length_mismatch = "str.strptime",
+        datetime_strings.len(),
+        ambiguous.len()
+    );
+
     let tz_aware = match &options.format {
         #[cfg(all(feature = "regex", feature = "timezones"))]
         Some(format) => TZ_AWARE_RE.is_match(format),

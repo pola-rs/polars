@@ -353,3 +353,53 @@ def test_replace_datetime_invalid_time_components() -> None:
         match=r"Invalid time components \(0, 0, 0, 2000000000\) supplied",
     ):
         df.select(pl.col("a").dt.replace(microsecond=2_000_000))
+
+
+def test_replace_unequal_length_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([datetime(2088, 8, 8, 8, 8, 8, 8)] * 2).dt.replace(
+            year=pl.Series([2000, 2001, 2002])
+        )
+
+
+def test_replace_broadcast_self() -> None:
+    df = pl.DataFrame(
+        {
+            "year": [None, 2, 3, 4, 5, 6, 7, 8],
+            "month": [1, None, 3, 4, 5, 6, 7, 8],
+            "day": [1, 2, None, 4, 5, 6, 7, 8],
+            "hour": [1, 2, 3, None, 5, 6, 7, 8],
+            "minute": [1, 2, 3, 4, None, 6, 7, 8],
+            "second": [1, 2, 3, 4, 5, None, 7, 8],
+            "microsecond": [1, 2, 3, 4, 5, 6, None, 8],
+        }
+    )
+
+    result = df.select(
+        pl.lit(pl.Series("dates", [datetime(2088, 8, 8, 8, 8, 8, 8)])).dt.replace(
+            year="year",
+            month="month",
+            day="day",
+            hour="hour",
+            minute="minute",
+            second="second",
+            microsecond="microsecond",
+        )
+    )
+
+    expected = pl.DataFrame(
+        {
+            "dates": [
+                datetime(2088, 1, 1, 1, 1, 1, 1),
+                datetime(2, 8, 2, 2, 2, 2, 2),
+                datetime(3, 3, 8, 3, 3, 3, 3),
+                datetime(4, 4, 4, 8, 4, 4, 4),
+                datetime(5, 5, 5, 5, 8, 5, 5),
+                datetime(6, 6, 6, 6, 6, 8, 6),
+                datetime(7, 7, 7, 7, 7, 7, 8),
+                datetime(8, 8, 8, 8, 8, 8, 8),
+            ]
+        }
+    )
+
+    assert_frame_equal(result, expected)

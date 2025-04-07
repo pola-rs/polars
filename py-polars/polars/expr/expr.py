@@ -2856,15 +2856,11 @@ class Expr:
         fill_value = parse_into_expression(value, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.fill_nan(fill_value))
 
-    @deprecate_function(
-        'Use `.fill_null(strategy="forward")` instead.', version="1.27.0"
-    )
     def forward_fill(self, limit: int | None = None) -> Expr:
         """
         Fill missing values with the last non-null value.
 
-        .. deprecated:: 1.27.0
-            Use :meth:`fill_null` with `strategy="forward"`.
+        This is an alias of `.fill_null(strategy="forward")`.
 
         Parameters
         ----------
@@ -2878,15 +2874,11 @@ class Expr:
         """
         return self.fill_null(strategy="forward", limit=limit)
 
-    @deprecate_function(
-        'Use `.fill_null(strategy="backward")` instead.', version="1.27.0"
-    )
     def backward_fill(self, limit: int | None = None) -> Expr:
         """
         Fill missing values with the next non-null value.
 
-        .. deprecated:: 1.27.0
-            Use :meth:`fill_null` with `strategy="backward"`.
+        This is an alias of `.fill_null(strategy="backward")`.
 
         Parameters
         ----------
