@@ -94,14 +94,16 @@ impl MultiScanTaskInitializer {
             },
         };
 
+        let missing_columns_policy = if self.config.allow_missing_columns {
+            MissingColumnsPolicy::Insert
+        } else {
+            MissingColumnsPolicy::Raise
+        };
+
         let extra_ops = ExtraOperations {
             row_index,
             pre_slice,
-            missing_columns_policy: if self.config.allow_missing_columns {
-                MissingColumnsPolicy::Insert
-            } else {
-                MissingColumnsPolicy::Raise
-            },
+            missing_columns_policy: missing_columns_policy.clone(),
             // TODO: Expose config for this
             cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
             include_file_paths: self.config.include_file_paths.clone(),
@@ -239,6 +241,7 @@ impl MultiScanTaskInitializer {
                     hive_parts,
                     final_output_schema,
                     projected_file_schema,
+                    missing_columns_policy,
                     full_file_schema,
                     check_schema_names: None,
                 },
@@ -466,7 +469,6 @@ impl ReaderStarter {
                 pre_slice,
                 predicate,
                 cast_columns_policy: extra_ops_post.cast_columns_policy.clone(),
-                missing_columns_policy: extra_ops_post.missing_columns_policy.clone(),
                 num_pipelines,
                 callbacks,
             };
@@ -528,6 +530,7 @@ struct StartReaderArgsConstant {
     hive_parts: Option<Arc<HivePartitionsDf>>,
     final_output_schema: SchemaRef,
     projected_file_schema: SchemaRef,
+    missing_columns_policy: MissingColumnsPolicy,
     full_file_schema: SchemaRef,
     check_schema_names: Option<SchemaNamesMatchPolicy>,
 }
@@ -548,6 +551,7 @@ async fn start_reader_impl(
         hive_parts,
         final_output_schema,
         projected_file_schema,
+        missing_columns_policy,
         full_file_schema,
         check_schema_names,
     } = constant_args;
@@ -571,6 +575,18 @@ async fn start_reader_impl(
     } else {
         None
     };
+
+    let mut _file_schema: Option<SchemaRef> = None;
+
+    macro_rules! get_file_schema {
+        () => {{
+            if _file_schema.is_none() {
+                _file_schema = Some(reader.file_schema().await?)
+            }
+
+            _file_schema.clone().unwrap()
+        }};
+    }
 
     // Should not have both of these set, as the `n_rows_in_file` will cause the `row_position_on_end`
     // callback to be unnecessarily blocked in CSV and NDJSON.
@@ -617,6 +633,18 @@ async fn start_reader_impl(
                 ),
             ))
         }
+
+        let mut extra_cols = vec![];
+        missing_columns_policy.initialize_policy(
+            &projected_file_schema,
+            get_file_schema!().as_ref(),
+            &mut extra_cols,
+        )?;
+        external_predicate_cols.extend(
+            extra_cols
+                .into_iter()
+                .map(|c| (c.name().clone(), c.scalar().clone())),
+        );
 
         predicate.set_external_constant_columns(external_predicate_cols);
     }
