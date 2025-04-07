@@ -1209,7 +1209,7 @@ impl SQLFunctionVisitor<'_> {
             },
             OctetLength => self.visit_unary(|e| e.str().len_bytes()),
             StrPos => {
-                // // note: SQL is 1-indexed; returns zero if no match found
+                // note: SQL is 1-indexed; returns zero if no match found
                 self.visit_binary(|expr, substring| {
                     (expr.str().find(substring, true) + typed_lit(1u32)).fill_null(typed_lit(0u32))
                 })
