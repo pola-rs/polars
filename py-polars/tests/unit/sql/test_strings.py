@@ -381,6 +381,24 @@ def test_string_split() -> None:
     }
 
 
+def test_string_split_part() -> None:
+    df = pl.DataFrame({"s": ["xx,yy,zz", "abc,,xyz,???,hmm", "", None]})
+    res = df.sql(
+        """
+        SELECT
+          SPLIT_PART(s,',',1) AS "s+1",
+          SPLIT_PART(s,',',3) AS "s+3",
+          SPLIT_PART(s,',',-2) AS "s-2",
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "s+1": ["xx", "abc", "", None],
+        "s+3": ["zz", "xyz", "", None],
+        "s-2": ["yy", "???", "", None],
+    }
+
+
 def test_string_substr() -> None:
     df = pl.DataFrame(
         {"scol": ["abcdefg", "abcde", "abc", None], "n": [-2, 3, 2, None]}
