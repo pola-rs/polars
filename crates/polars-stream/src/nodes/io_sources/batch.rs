@@ -120,6 +120,11 @@ impl FileReader for BatchFnReader {
         &mut self,
         args: BeginReadArgs,
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)> {
+        // Must send this first before we `take()` the GetBatchState.
+        if let Some(mut file_schema_tx) = file_schema_tx {
+            _ = file_schema_tx.try_send(self._file_schema());
+        }
+
         let mut get_batch_state = self
             .get_batch_state
             .take()
@@ -151,10 +156,6 @@ impl FileReader for BatchFnReader {
 
         if verbose {
             eprintln!("[BatchFnReader]: name: {}", self.name);
-        }
-
-        if let Some(mut file_schema_tx) = file_schema_tx {
-            _ = file_schema_tx.try_send(self._file_schema());
         }
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
