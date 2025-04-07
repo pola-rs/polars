@@ -429,7 +429,6 @@ fn resolve_join_where(
         .get(last_node)
         .schema(ctxt.lp_arena)
         .into_owned();
-    // let schema_merged = schema_merged.as_ref();
 
     // Perform predicate validation.
     for e in predicates {
