@@ -120,17 +120,6 @@ impl FileReader for BatchFnReader {
         &mut self,
         args: BeginReadArgs,
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)> {
-        // Must send this first before we `take()` the GetBatchState.
-        if let Some(mut file_schema_tx) = file_schema_tx {
-            _ = file_schema_tx.try_send(self._file_schema());
-        }
-
-        let mut get_batch_state = self
-            .get_batch_state
-            .take()
-            // If this is ever needed we can buffer
-            .expect("unimplemented: BatchFnReader called more than once");
-
         let BeginReadArgs {
             projected_schema: _,
             row_index: None,
@@ -148,6 +137,17 @@ impl FileReader for BatchFnReader {
         else {
             panic!("unsupported args: {:?}", &args)
         };
+
+        // Must send this first before we `take()` the GetBatchState.
+        if let Some(mut file_schema_tx) = file_schema_tx {
+            _ = file_schema_tx.try_send(self._file_schema());
+        }
+
+        let mut get_batch_state = self
+            .get_batch_state
+            .take()
+            // If this is ever needed we can buffer
+            .expect("unimplemented: BatchFnReader called more than once");
 
         // FIXME: Propagate this from BeginReadArgs.
         let exec_state = StreamingExecutionState::default();
