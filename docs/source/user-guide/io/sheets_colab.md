@@ -1,6 +1,6 @@
 # Google Sheets (via Colab)
 
-Google Colab provides a utlity class to read from and write to Google Sheets.
+Google Colab provides a utility class to read from and write to Google Sheets.
 
 ## Opening and reading from a sheet
 
