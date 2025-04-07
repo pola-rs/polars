@@ -1392,11 +1392,7 @@ def test_repeat_by_unequal_lengths_panic() -> None:
             "a": ["x", "y", "z"],
         }
     )
-    with pytest.raises(
-        ComputeError,
-        match="repeat_by argument and the Series should have equal length, "
-        "or at least one of them should have length 1",
-    ):
+    with pytest.raises(ShapeError):
         df.select(pl.col("a").repeat_by(pl.Series([2, 2])))
 
 
@@ -2011,25 +2007,21 @@ def test_fill_nan() -> None:
 #
 def test_forward_fill() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
-    with pytest.deprecated_call():
-        fill = df.select(pl.col("a").forward_fill())["a"]
+    fill = df.select(pl.col("a").forward_fill())["a"]
     assert_series_equal(fill, pl.Series("a", [1, 1, 3]).cast(pl.Float64))
 
     df = pl.DataFrame({"a": [None, 1, None]})
-    with pytest.deprecated_call():
-        fill = df.select(pl.col("a").forward_fill())["a"]
+    fill = df.select(pl.col("a").forward_fill())["a"]
     assert_series_equal(fill, pl.Series("a", [None, 1, 1]).cast(pl.Int64))
 
 
 def test_backward_fill() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
-    with pytest.deprecated_call():
-        fill = df.select(pl.col("a").backward_fill())["a"]
+    fill = df.select(pl.col("a").backward_fill())["a"]
     assert_series_equal(fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
     df = pl.DataFrame({"a": [None, 1, None]})
-    with pytest.deprecated_call():
-        fill = df.select(pl.col("a").backward_fill())["a"]
+    fill = df.select(pl.col("a").backward_fill())["a"]
     assert_series_equal(fill, pl.Series("a", [1, 1, None]).cast(pl.Int64))
 
 

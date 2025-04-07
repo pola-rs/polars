@@ -152,12 +152,12 @@ fn len_chars(c: &Column) -> PolarsResult<Column> {
 
 #[cfg(feature = "strings")]
 fn starts_with(c: &Column, prefix: &str) -> PolarsResult<Column> {
-    apply_to_cats(c, |s| s.starts_with(prefix))
+    apply_to_cats_binary(c, |s| s.starts_with(prefix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]
 fn ends_with(c: &Column, suffix: &str) -> PolarsResult<Column> {
-    apply_to_cats_binary(c, |s| s.as_binary().ends_with(suffix.as_bytes()))
+    apply_to_cats_binary(c, |s| s.ends_with(suffix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]

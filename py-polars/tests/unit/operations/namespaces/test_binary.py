@@ -272,3 +272,11 @@ def test_reinterpret_invalid() -> None:
     # Fails because dtype is invalid
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.select(pl.col("x").bin.reinterpret(dtype=pl.String))
+
+
+@pytest.mark.parametrize("func", ["contains", "starts_with", "ends_with"])
+def test_bin_contains_unequal_lengths_22018(func: str) -> None:
+    s = pl.Series("a", [b"a", b"xyz"], pl.Binary).bin
+    f = getattr(s, func)
+    with pytest.raises(pl.exceptions.ShapeError):
+        f(pl.Series([b"x", b"y", b"z"]))

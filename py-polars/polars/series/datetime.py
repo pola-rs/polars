@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     import datetime as dt
     from collections.abc import Iterable
 
-    from polars import Expr, Series
+    from polars import Series
     from polars._typing import (
         Ambiguous,
         EpochTimeUnit,
@@ -1703,7 +1703,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def offset_by(self, by: str | Expr) -> Series:
+    def offset_by(self, by: str | IntoExprColumn) -> Series:
         """
         Offset this date by a relative time offset.
 

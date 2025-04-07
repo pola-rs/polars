@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
@@ -300,6 +301,22 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
         let periods_s = periods.cast(&DataType::Int64)?;
         let periods = periods_s.i64()?;
+
+        polars_ensure!(
+            ca.len() == periods.len() || ca.len() == 1 || periods.len() == 1,
+            length_mismatch = "list.shift",
+            ca.len(),
+            periods.len()
+        );
+
+        // Broadcast `self`
+        let mut ca = Cow::Borrowed(ca);
+        if ca.len() == 1 && periods.len() != 1 {
+            // Optimize: Don't broadcast and instead have a special path.
+            ca = Cow::Owned(ca.new_from_index(0, periods.len()));
+        }
+        let ca = ca.as_ref();
+
         let out = match periods.len() {
             1 => {
                 if let Some(periods) = periods.get(0) {
@@ -524,10 +541,27 @@ pub trait ListNameSpaceImpl: AsList {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PolarsResult<ListChunked> {
+        use std::borrow::Cow;
+
         let ca = self.as_list();
 
         let n_s = n.cast(&IDX_DTYPE)?;
         let n = n_s.idx()?;
+
+        polars_ensure!(
+            ca.len() == n.len() || ca.len() == 1 || n.len() == 1,
+            length_mismatch = "list.sample(n)",
+            ca.len(),
+            n.len()
+        );
+
+        // Broadcast `self`
+        let mut ca = Cow::Borrowed(ca);
+        if ca.len() == 1 && n.len() != 1 {
+            // Optimize: Don't broadcast and instead have a special path.
+            ca = Cow::Owned(ca.new_from_index(0, n.len()));
+        }
+        let ca = ca.as_ref();
 
         let out = match n.len() {
             1 => {
@@ -563,10 +597,27 @@ pub trait ListNameSpaceImpl: AsList {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PolarsResult<ListChunked> {
+        use std::borrow::Cow;
+
         let ca = self.as_list();
 
         let fraction_s = fraction.cast(&DataType::Float64)?;
         let fraction = fraction_s.f64()?;
+
+        polars_ensure!(
+            ca.len() == fraction.len() || ca.len() == 1 || fraction.len() == 1,
+            length_mismatch = "list.sample(fraction)",
+            ca.len(),
+            fraction.len()
+        );
+
+        // Broadcast `self`
+        let mut ca = Cow::Borrowed(ca);
+        if ca.len() == 1 && fraction.len() != 1 {
+            // Optimize: Don't broadcast and instead have a special path.
+            ca = Cow::Owned(ca.new_from_index(0, fraction.len()));
+        }
+        let ca = ca.as_ref();
 
         let out = match fraction.len() {
             1 => {

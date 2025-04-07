@@ -14,7 +14,6 @@ use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
 use super::extra_ops::cast_columns::CastColumnsPolicy;
-use super::extra_ops::missing_columns::MissingColumnsPolicy;
 use crate::async_executor::JoinHandle;
 use crate::async_primitives::connector;
 
@@ -31,6 +30,12 @@ pub trait FileReader: Send + Sync {
         &mut self,
         args: BeginReadArgs,
     ) -> PolarsResult<(FileReaderOutputRecv, JoinHandle<PolarsResult<()>>)>;
+
+    /// Schema of the file.
+    async fn file_schema(&mut self) -> PolarsResult<SchemaRef> {
+        // Currently only gets called if the reader is taking predicates.
+        unimplemented!()
+    }
 
     /// This FileReader must be initialized before calling this.
     ///
@@ -113,12 +118,6 @@ pub struct BeginReadArgs {
     ///
     /// This can be ignored by the reader, as the policy is also applied in post.
     pub cast_columns_policy: CastColumnsPolicy,
-    /// User-configured policy for when columns are not found in the file.
-    ///
-    /// A reader may wish to use this if it is applying predicates.
-    ///
-    /// This can be ignored by the reader, as the policy is also applied in post.
-    pub missing_columns_policy: MissingColumnsPolicy,
 
     pub num_pipelines: usize,
     pub callbacks: FileReaderCallbacks,
@@ -137,7 +136,6 @@ impl Default for BeginReadArgs {
             predicate: None,
             // TODO: Use less restrictive default
             cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
-            missing_columns_policy: MissingColumnsPolicy::Insert,
             num_pipelines: 1,
             callbacks: FileReaderCallbacks::default(),
         }

@@ -1,16 +1,17 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use polars_core::POOL;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
+use polars_core::{POOL, config};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
-use polars_plan::dsl::{JoinOptions, PartitionVariantIR};
+use polars_plan::dsl::{JoinOptions, PartitionVariantIR, ScanSources};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
@@ -29,8 +30,7 @@ use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
 use crate::nodes::io_sinks::SinkComputeNode;
-use crate::nodes::io_sources::SourceComputeNode;
-use crate::nodes::io_sources::batch::BatchSourceNode;
+use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -543,30 +543,7 @@ fn to_graph_rec<'a>(
                     #[cfg(feature = "parquet")]
                     polars_plan::dsl::FileScan::Parquet { .. } => unreachable!(),
                     #[cfg(feature = "ipc")]
-                    polars_plan::dsl::FileScan::Ipc {
-                        options,
-                        cloud_options,
-                        ..
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::SourceComputeNode::new(
-                            nodes::io_sources::multi_scan::MultiScanNode::<
-                                nodes::io_sources::ipc::IpcSourceNode,
-                            >::new(
-                                scan_sources.clone(),
-                                hive_parts.clone().map(Arc::new),
-                                *allow_missing_columns,
-                                include_file_paths.clone(),
-                                file_schema.clone(),
-                                projection.clone(),
-                                row_index.clone(),
-                                row_restriction.clone(),
-                                predicate,
-                                options.clone(),
-                                cloud_options.clone(),
-                            ),
-                        ),
-                        [],
-                    ),
+                    polars_plan::dsl::FileScan::Ipc { .. } => unreachable!(),
                     #[cfg(feature = "csv")]
                     polars_plan::dsl::FileScan::Csv {
                         options,
@@ -656,28 +633,7 @@ fn to_graph_rec<'a>(
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => unreachable!(),
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc {
-                        options,
-                        cloud_options,
-                        metadata: first_metadata,
-                    } => {
-                        // Should have been rewritten in terms of separate streaming nodes.
-                        assert!(predicate.is_none());
-
-                        ctx.graph.add_node(
-                            nodes::io_sources::SourceComputeNode::new(
-                                nodes::io_sources::ipc::IpcSourceNode::new(
-                                    scan_source,
-                                    file_info,
-                                    options,
-                                    cloud_options,
-                                    *file_options,
-                                    first_metadata,
-                                )?,
-                            ),
-                            [],
-                        )
-                    },
+                    FileScan::Ipc { .. } => unreachable!(),
                     #[cfg(feature = "csv")]
                     FileScan::Csv { options, .. } => {
                         assert!(predicate.is_none());
@@ -1037,16 +993,58 @@ fn to_graph_rec<'a>(
                         })
                     }) as Box<_>;
 
-                    ("io_plugin", get_batch_fn)
+                    (PlSmallStr::from_static("io_plugin"), get_batch_fn)
                 },
             };
 
+            use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
+            use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
+
+            let mut reader = BatchFnReader {
+                name: name.clone(),
+                // If validate_schema is false, the schema of the morsels may not match the
+                // configured schema. In this case we set this to `None` and the reader will
+                // retrieve the schema from the first morsel.
+                output_schema: validate_schema.then(|| output_schema.clone()),
+                get_batch_state: Some(GetBatchState::from(get_batch_fn)),
+                verbose: config::verbose(),
+            };
+
+            // Note: This will potentially override the output schema if `validate_schema` is `false`.
+            let output_schema = reader._file_schema()?;
+
+            let file_reader_builder = Arc::new(BatchFnReaderBuilder {
+                name,
+                reader: std::sync::Mutex::new(Some(reader)),
+            }) as Arc<dyn FileReaderBuilder>;
+
+            // Give multiscan a single scan source. (It doesn't actually read from this).
+            let scan_sources = ScanSources::Paths(Arc::from([PathBuf::from("python-scan-0")]));
+            let cloud_options = None;
+            let projected_file_schema = output_schema.clone();
+            let file_schema = output_schema.clone();
+            let row_index = None;
+            let pre_slice = None;
+            let predicate = None;
+            let hive_parts = None;
+            let include_file_paths = None;
+            let allow_missing_columns = false;
+
             ctx.graph.add_node(
-                SourceComputeNode::new(BatchSourceNode::new(
-                    name,
+                nodes::io_sources::multi_file_reader::MultiFileReader::new(
+                    scan_sources.clone(),
+                    file_reader_builder,
+                    cloud_options,
                     output_schema,
-                    Some(get_batch_fn),
-                )),
+                    projected_file_schema.clone(),
+                    file_schema.clone(),
+                    row_index,
+                    pre_slice,
+                    predicate,
+                    hive_parts,
+                    include_file_paths,
+                    allow_missing_columns,
+                ),
                 [],
             )
         },

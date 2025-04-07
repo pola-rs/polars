@@ -175,16 +175,15 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         // ---------------------------------
         SQLDataType::Custom(ObjectName(idents), _) => match idents.as_slice() {
             [Ident { value, .. }] => match value.to_lowercase().as_str() {
-                // common alias for 128bit int type (duckdb, etc.)
-                "hugeint" => DataType::Int128,
                 // these integer types are not supported by the PostgreSQL core distribution,
                 // but they ARE available via `pguint` (https://github.com/petere/pguint), an
-                // extension maintained by one of the PostgreSQL core developers.
+                // extension maintained by one of the PostgreSQL core developers, and/or DuckDB.
+                "hugeint" => DataType::Int128,
                 "int1" => DataType::Int8,
-                "uint1" => DataType::UInt8,
-                "uint2" => DataType::UInt16,
-                "uint4" | "uint" => DataType::UInt32,
-                "uint8" => DataType::UInt64,
+                "uint1" | "utinyint" => DataType::UInt8,
+                "uint2" | "usmallint" => DataType::UInt16,
+                "uint4" | "uinteger" | "uint" => DataType::UInt32,
+                "uint8" | "ubigint" => DataType::UInt64,
                 _ => {
                     polars_bail!(SQLInterface: "datatype {:?} is not currently supported", value)
                 },

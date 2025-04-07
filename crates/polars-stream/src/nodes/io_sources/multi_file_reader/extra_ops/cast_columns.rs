@@ -37,9 +37,9 @@ impl CastColumns {
         match policy {
             CastColumnsPolicy::ErrorOnMismatch => {
                 for (name, dtype) in incoming_schema_iter {
-                    let target_dtype = target_schema
-                        .get(name)
-                        .expect("impl error: column should exist in casting map");
+                    let Some(target_dtype) = target_schema.get(name) else {
+                        panic!("impl error: column '{}' should exist in casting map", name)
+                    };
 
                     if dtype != target_dtype {
                         polars_bail!(
