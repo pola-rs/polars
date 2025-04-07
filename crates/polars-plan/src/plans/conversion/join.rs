@@ -475,7 +475,7 @@ fn ensure_lossless_binary_comparisons(
 ) -> PolarsResult<()> {
     // Ensure that all binary comparisons that use both tables are lossless.
     let mut to_replace = Vec::<(Node, DataType)>::with_capacity(expr_arena.len());
-    upcast_comparison_nodes(
+    build_upcast_node_list(
         node,
         schema_left,
         schema_merged,
@@ -499,7 +499,7 @@ fn ensure_lossless_binary_comparisons(
 /// on the LHS and the right table on the RHS side, ensure that the cast is lossless.
 /// Expressions involving binaries using either table alone we leave up to the user to verify
 /// that they are valid, as they could theoretically be pushed outside of the join.
-fn upcast_comparison_nodes(
+fn build_upcast_node_list(
     node: &Node,
     schema_left: &Schema,
     schema_merged: &Schema,
@@ -518,7 +518,7 @@ fn upcast_comparison_nodes(
         },
         AExpr::Literal(..) => ExprOrigin::None,
         AExpr::Cast { expr: node, .. } => {
-            upcast_comparison_nodes(node, schema_left, schema_merged, expr_arena, to_replace)?
+            build_upcast_node_list(node, schema_left, schema_merged, expr_arena, to_replace)?
         },
         AExpr::BinaryExpr {
             left: left_node,
@@ -526,14 +526,14 @@ fn upcast_comparison_nodes(
             right: right_node,
         } => {
             // If left and right node has both, ensure the dtypes are valid.
-            let left_origin = upcast_comparison_nodes(
+            let left_origin = build_upcast_node_list(
                 left_node,
                 schema_left,
                 schema_merged,
                 expr_arena,
                 to_replace,
             )?;
-            let right_origin = upcast_comparison_nodes(
+            let right_origin = build_upcast_node_list(
                 right_node,
                 schema_left,
                 schema_merged,
