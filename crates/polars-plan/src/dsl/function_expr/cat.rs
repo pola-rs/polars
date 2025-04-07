@@ -38,9 +38,9 @@ impl CategoricalFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use CategoricalFunction as C;
         match self {
-            C::GetCategories => FunctionOptions::new_groupwise(),
+            C::GetCategories => FunctionOptions::groupwise(),
             C::LenBytes | C::LenChars | C::StartsWith(_) | C::EndsWith(_) | C::Slice(_, _) => {
-                FunctionOptions::new_unary_elementwise()
+                FunctionOptions::elementwise()
             },
         }
     }

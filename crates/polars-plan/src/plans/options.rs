@@ -164,61 +164,78 @@ impl FunctionOptions {
         self.flags.contains(FunctionFlags::RETURNS_SCALAR)
     }
 
-    pub fn new_unary_elementwise() -> FunctionOptions {
+    pub fn elementwise() -> FunctionOptions {
         FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             ..Default::default()
         }
     }
 
-    pub fn new_binary_elementwise() -> FunctionOptions {
-        FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            ..Default::default()
-        }
+    pub fn elementwise_with_infer() -> FunctionOptions {
+        Self::groupwise()
     }
 
-    pub fn new_ternary_elementwise() -> FunctionOptions {
-        FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            ..Default::default()
-        }
+    pub fn row_separable() -> FunctionOptions {
+        Self::groupwise()
     }
 
-    pub fn new_unary_row_separable() -> FunctionOptions {
+    pub fn length_preserving() -> FunctionOptions {
+        Self::groupwise()
+    }
+
+    pub fn groupwise() -> FunctionOptions {
         FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
             ..Default::default()
         }
     }
 
-    pub(crate) fn new_nparams_elementwise() -> FunctionOptions {
-        FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            ..Default::default()
-        }
+    pub fn aggregation() -> FunctionOptions {
+        let mut options = Self::groupwise();
+        options.flags |= FunctionFlags::RETURNS_SCALAR;
+        options
     }
 
-    pub(crate) fn new_groupwise() -> FunctionOptions {
-        FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            ..Default::default()
-        }
+    pub fn with_supertyping(self, supertype_options: SuperTypeOptions) -> FunctionOptions {
+        self.with_casting_rules(CastingRules::Supertype(supertype_options))
     }
 
-    pub(crate) fn new_aggregation() -> FunctionOptions {
-        FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
-            ..Default::default()
-        }
+    pub fn with_casting_rules(mut self, casting_rules: CastingRules) -> FunctionOptions {
+        self.cast_options = Some(casting_rules);
+        self
     }
 
-    pub fn with_supertyping(
+    pub fn with_allow_rename(mut self, allow_rename: bool) -> FunctionOptions {
+        self.flags.set(FunctionFlags::ALLOW_RENAME, allow_rename);
+        self
+    }
+
+    pub fn with_pass_name_to_apply(mut self, pass_name_to_apply: bool) -> Self {
+        self.flags
+            .set(FunctionFlags::PASS_NAME_TO_APPLY, pass_name_to_apply);
+        self
+    }
+
+    pub fn with_input_wildcard_expansion(
         mut self,
-        supertype_options: SuperTypeOptions,
+        input_wildcard_expansion: bool,
     ) -> FunctionOptions {
-        self.cast_options = Some(CastingRules::Supertype(supertype_options));
+        self.flags.set(
+            FunctionFlags::INPUT_WILDCARD_EXPANSION,
+            input_wildcard_expansion,
+        );
+        self
+    }
+
+    pub fn with_allow_empty_inputs(mut self, allow_empty_inputs: bool) -> FunctionOptions {
+        self.flags
+            .set(FunctionFlags::ALLOW_EMPTY_INPUTS, allow_empty_inputs);
+        self
+    }
+
+    pub fn with_changes_length(mut self, changes_length: bool) -> FunctionOptions {
+        self.flags
+            .set(FunctionFlags::ALLOW_EMPTY_INPUTS, changes_length);
         self
     }
 }

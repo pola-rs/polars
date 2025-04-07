@@ -127,15 +127,16 @@ impl ListFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use ListFunction as L;
         match self {
-            L::Concat => FunctionOptions::new_nparams_elementwise(),
-            L::Contains
-            | L::Sample { .. }
-            | L::Shift
-            | L::Get(_)
-            | L::GatherEvery
-            | L::CountMatches => FunctionOptions::new_binary_elementwise(),
-            L::Slice => FunctionOptions::new_ternary_elementwise(),
-            L::Gather(_) => FunctionOptions::new_groupwise(),
+            L::Concat => FunctionOptions::elementwise(),
+            #[cfg(feature = "is_in")]
+            L::Contains => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_sample")]
+            L::Sample { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_gather")]
+            L::Gather(_) => FunctionOptions::groupwise(),
+            #[cfg(feature = "list_gather")]
+            L::GatherEvery => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_sets")]
             L::SetOperation(_) => FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
                 cast_options: Some(CastingRules::Supertype(SuperTypeOptions {
@@ -145,9 +146,15 @@ impl ListFunction {
                 flags: FunctionFlags::default() & !FunctionFlags::RETURNS_SCALAR,
                 ..Default::default()
             },
-            L::DropNulls
-            | L::Diff { .. }
-            | L::Sum
+            #[cfg(feature = "diff")]
+            L::Diff { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_drop_nulls")]
+            L::DropNulls => FunctionOptions::elementwise(),
+            L::Sum
+            | L::Slice
+            | L::Shift
+            | L::Get(_)
+            | L::CountMatches
             | L::Length
             | L::Max
             | L::Min
@@ -160,15 +167,16 @@ impl ListFunction {
             | L::Sort(_)
             | L::Reverse
             | L::Unique(_)
-            | L::NUnique
-            | L::Any
-            | L::All
-            | L::ToArray(_)
-            | L::ToStruct(ListToStructArgs::FixedWidth(_)) => {
-                FunctionOptions::new_unary_elementwise()
-            },
-            L::Join(_) => FunctionOptions::new_binary_elementwise(),
-            L::ToStruct(ListToStructArgs::InferWidth { .. }) => FunctionOptions::new_groupwise(),
+            | L::Join(_)
+            | L::NUnique => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_any_all")]
+            L::Any | L::All => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-array")]
+            L::ToArray(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_to_struct")]
+            L::ToStruct(ListToStructArgs::FixedWidth(_)) => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_to_struct")]
+            L::ToStruct(ListToStructArgs::InferWidth { .. }) => FunctionOptions::groupwise(),
         }
     }
 }

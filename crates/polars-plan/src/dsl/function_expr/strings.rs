@@ -220,69 +220,77 @@ impl StringFunction {
         use StringFunction as S;
         match self {
             #[cfg(feature = "concat_str")]
-            S::ConcatHorizontal { .. } => FunctionOptions::new_nparams_elementwise(),
+            S::ConcatHorizontal { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "concat_str")]
-            S::ConcatVertical { .. } => FunctionOptions::new_aggregation(),
+            S::ConcatVertical { .. } => FunctionOptions::aggregation(),
             #[cfg(feature = "regex")]
             S::Contains { .. } => {
-                FunctionOptions::new_binary_elementwise().with_supertyping(Default::default())
+                FunctionOptions::elementwise().with_supertyping(Default::default())
             },
-            S::CountMatches(_) => FunctionOptions::new_binary_elementwise(),
-            S::EndsWith => todo!(),
-            S::Extract(_) => todo!(),
-            S::ExtractAll => todo!(),
-            S::ExtractGroups { dtype, pat } => todo!(),
-            S::Find { literal, strict } => todo!(),
-            S::ToInteger(_) => todo!(),
-            S::LenBytes => todo!(),
-            S::LenChars => todo!(),
-            S::Lowercase => todo!(),
-            S::JsonDecode {
-                dtype,
-                infer_schema_len,
-            } => todo!(),
-            S::JsonPathMatch => todo!(),
-            S::Replace { n, literal } => todo!(),
-            S::Normalize { form } => todo!(),
-            S::Reverse => todo!(),
-            S::PadStart { length, fill_char } => todo!(),
-            S::PadEnd { length, fill_char } => todo!(),
-            S::Slice => todo!(),
-            S::Head => todo!(),
-            S::Tail => todo!(),
-            S::HexEncode => todo!(),
-            S::HexDecode(_) => todo!(),
-            S::Base64Encode => todo!(),
-            S::Base64Decode(_) => todo!(),
-            S::StartsWith => todo!(),
-            S::StripChars => todo!(),
-            S::StripCharsStart => todo!(),
-            S::StripCharsEnd => todo!(),
-            S::StripPrefix => todo!(),
-            S::StripSuffix => todo!(),
-            S::SplitExact { n, inclusive } => todo!(),
-            S::SplitN(_) => todo!(),
-            S::Strptime(data_type, strptime_options) => todo!(),
-            S::Split(_) => todo!(),
-            S::ToDecimal(_) => todo!(),
-            S::Titlecase => todo!(),
-            S::Uppercase => todo!(),
-            S::ZFill => todo!(),
-            S::ContainsAny {
-                ascii_case_insensitive,
-            } => todo!(),
-            S::ReplaceMany {
-                ascii_case_insensitive,
-            } => todo!(),
-            S::ExtractMany {
-                ascii_case_insensitive,
-                overlapping,
-            } => todo!(),
-            S::FindMany {
-                ascii_case_insensitive,
-                overlapping,
-            } => todo!(),
-            S::EscapeRegex => todo!(),
+            S::CountMatches(_) => FunctionOptions::elementwise(),
+            S::EndsWith | S::StartsWith | S::Extract(_) => {
+                FunctionOptions::elementwise().with_supertyping(Default::default())
+            },
+            S::ExtractAll => FunctionOptions::elementwise(),
+            #[cfg(feature = "extract_groups")]
+            S::ExtractGroups { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "string_to_integer")]
+            S::ToInteger { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "regex")]
+            S::Find { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
+            #[cfg(feature = "extract_jsonpath")]
+            S::JsonDecode { dtype: Some(_), .. } => FunctionOptions::elementwise(),
+            // because dtype should be inferred only once and be consistent over chunks/morsels.
+            #[cfg(feature = "extract_jsonpath")]
+            S::JsonDecode { dtype: None, .. } => FunctionOptions::elementwise_with_infer(),
+            #[cfg(feature = "extract_jsonpath")]
+            S::JsonPathMatch => FunctionOptions::elementwise(),
+            S::LenBytes | S::LenChars => FunctionOptions::elementwise(),
+            #[cfg(feature = "regex")]
+            S::Replace { .. } => {
+                FunctionOptions::elementwise().with_supertyping(Default::default())
+            },
+            #[cfg(feature = "string_normalize")]
+            S::Normalize { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "string_reverse")]
+            S::Reverse => FunctionOptions::elementwise(),
+            #[cfg(feature = "temporal")]
+            S::Strptime(_, options) if options.format.is_some() => FunctionOptions::elementwise(),
+            S::Strptime(_, _) => FunctionOptions::elementwise_with_infer(),
+            S::Split(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "nightly")]
+            S::Titlecase => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-decimal")]
+            S::ToDecimal(_) => FunctionOptions::elementwise_with_infer(),
+            #[cfg(feature = "string_encoding")]
+            S::HexEncode | S::Base64Encode => FunctionOptions::elementwise(),
+            #[cfg(feature = "binary_encoding")]
+            S::HexDecode(_) | S::Base64Decode(_) => FunctionOptions::elementwise(),
+            S::Uppercase | S::Lowercase => FunctionOptions::elementwise(),
+            S::StripChars
+            | S::StripCharsStart
+            | S::StripCharsEnd
+            | S::StripPrefix
+            | S::StripSuffix
+            | S::Head
+            | S::Tail => FunctionOptions::elementwise(),
+            S::Slice => FunctionOptions::elementwise(),
+            #[cfg(feature = "string_pad")]
+            S::PadStart { .. } | S::PadEnd { .. } | S::ZFill => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-struct")]
+            S::SplitExact { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-struct")]
+            S::SplitN(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "find_many")]
+            S::ContainsAny { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "find_many")]
+            S::ReplaceMany { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "find_many")]
+            S::ExtractMany { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "find_many")]
+            S::FindMany { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "regex")]
+            S::EscapeRegex => FunctionOptions::elementwise(),
         }
     }
 }

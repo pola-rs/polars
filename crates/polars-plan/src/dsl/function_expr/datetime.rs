@@ -139,6 +139,61 @@ impl TemporalFunction {
             }),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use TemporalFunction as T;
+        match self {
+            T::Millennium
+            | T::Century
+            | T::Year
+            | T::IsLeapYear
+            | T::IsoYear
+            | T::Quarter
+            | T::Month
+            | T::Week
+            | T::WeekDay
+            | T::Day
+            | T::OrdinalDay
+            | T::Time
+            | T::Date
+            | T::Datetime
+            | T::Hour
+            | T::Minute
+            | T::Second
+            | T::Millisecond
+            | T::Microsecond
+            | T::Nanosecond
+            | T::TotalDays
+            | T::TotalHours
+            | T::TotalMinutes
+            | T::TotalSeconds
+            | T::TotalMilliseconds
+            | T::TotalMicroseconds
+            | T::TotalNanoseconds
+            | T::ToString(_)
+            | T::TimeStamp(_)
+            | T::CastTimeUnit(_)
+            | T::WithTimeUnit(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "timezones")]
+            T::ConvertTimeZone(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "month_start")]
+            T::MonthStart => FunctionOptions::elementwise(),
+            #[cfg(feature = "month_end")]
+            T::MonthEnd => FunctionOptions::elementwise(),
+            #[cfg(feature = "timezones")]
+            T::BaseUtcOffset | T::DSTOffset => FunctionOptions::elementwise(),
+            T::Truncate => FunctionOptions::elementwise(),
+            #[cfg(feature = "offset_by")]
+            T::OffsetBy => FunctionOptions::elementwise(),
+            T::Round => FunctionOptions::elementwise(),
+            T::Replace => FunctionOptions::elementwise(),
+            T::Duration(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "timezones")]
+            T::ReplaceTimeZone(_, _) => FunctionOptions::elementwise(),
+            T::Combine(_) => FunctionOptions::elementwise(),
+            T::DatetimeFunction { .. } => FunctionOptions::elementwise().with_allow_rename(true),
+        }
+    }
 }
 
 impl Display for TemporalFunction {

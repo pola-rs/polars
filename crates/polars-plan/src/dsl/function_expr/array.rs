@@ -76,6 +76,12 @@ impl ArrayFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use ArrayFunction as A;
         match self {
+            #[cfg(feature = "array_any_all")]
+            A::Any | A::All => FunctionOptions::elementwise(),
+            #[cfg(feature = "is_in")]
+            A::Contains => FunctionOptions::elementwise(),
+            #[cfg(feature = "array_count")]
+            A::CountMatches => FunctionOptions::elementwise(),
             A::Length
             | A::Min
             | A::Max
@@ -86,17 +92,15 @@ impl ArrayFunction {
             | A::Std(_)
             | A::Var(_)
             | A::Median
-            | A::Any
-            | A::All
             | A::Sort(_)
             | A::Reverse
             | A::ArgMin
             | A::ArgMax
-            | A::Concat => FunctionOptions::new_unary_elementwise(),
-            A::Contains | A::Get(_) | A::Join(_) | A::CountMatches | A::Shift => {
-                FunctionOptions::new_binary_elementwise()
-            },
-            A::Explode => FunctionOptions::new_unary_row_separable(),
+            | A::Concat
+            | A::Get(_)
+            | A::Join(_)
+            | A::Shift => FunctionOptions::elementwise(),
+            A::Explode => FunctionOptions::row_separable(),
         }
     }
 }
