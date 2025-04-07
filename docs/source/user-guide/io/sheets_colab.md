@@ -6,8 +6,9 @@ Google Colab provides a utility class to read from and write to Google Sheets.
 
 We can open existing sheets by initializing `sheets.InteractiveSheet` with either:
 
-- the `url` parameter
-- the `sheet_id` parameter (https://docs.google.com/spreadsheets/d/${sheet_id})
+- the `url` parameter, for example
+  https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/
+- the `sheet_id` parameter for example 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms
 
 By default the left-most worksheets will be used, we can change this by providing either
 `worksheet_id` or `worksheet_name`.
