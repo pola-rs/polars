@@ -846,6 +846,18 @@ def test_sliced_dict_with_nulls_14904() -> None:
     test_round_trip(df)
 
 
+@pytest.fixture
+def empty_compressed_datapage_v2_path(io_files_path: Path) -> Path:
+    return io_files_path / "empty_datapage_v2.snappy.parquet"
+
+
+def test_read_empty_compressed_datapage_v2_22170(
+    empty_compressed_datapage_v2_path: Path,
+) -> None:
+    df = pl.DataFrame({"value": [None]}, schema={"value": pl.Float32})
+    assert_frame_equal(df, pl.read_parquet(empty_compressed_datapage_v2_path))
+
+
 def test_parquet_array_dtype() -> None:
     df = pl.DataFrame({"x": []})
     df = df.cast({"x": pl.Array(pl.Int64, shape=3)})
