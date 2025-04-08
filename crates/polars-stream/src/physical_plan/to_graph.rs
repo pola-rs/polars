@@ -12,7 +12,6 @@ use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
 use polars_plan::dsl::{JoinOptions, PartitionVariantIR, ScanSources};
-use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
 use polars_plan::prelude::{FileType, FunctionFlags};
@@ -468,6 +467,7 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[expect(unused)]
         MultiScan {
             scan_sources,
             hive_parts,
@@ -545,29 +545,7 @@ fn to_graph_rec<'a>(
                     #[cfg(feature = "ipc")]
                     polars_plan::dsl::FileScan::Ipc { .. } => unreachable!(),
                     #[cfg(feature = "csv")]
-                    polars_plan::dsl::FileScan::Csv {
-                        options,
-                        cloud_options,
-                    } => ctx.graph.add_node(
-                        nodes::io_sources::SourceComputeNode::new(
-                            nodes::io_sources::multi_scan::MultiScanNode::<
-                                nodes::io_sources::csv::CsvSourceNode,
-                            >::new(
-                                scan_sources.clone(),
-                                hive_parts.clone().map(Arc::new),
-                                *allow_missing_columns,
-                                include_file_paths.clone(),
-                                file_schema.clone(),
-                                projection.clone(),
-                                row_index.clone(),
-                                row_restriction.clone(),
-                                predicate,
-                                options.clone(),
-                                cloud_options.clone(),
-                            ),
-                        ),
-                        [],
-                    ),
+                    polars_plan::dsl::FileScan::Csv { .. } => unreachable!(),
                     #[cfg(feature = "json")]
                     polars_plan::dsl::FileScan::NDJson { .. } => unreachable!(),
                     _ => todo!(),
@@ -575,91 +553,19 @@ fn to_graph_rec<'a>(
             }
         },
 
-        v @ FileScan { .. } => {
-            let FileScan {
-                scan_source,
-                file_info,
-                output_schema,
-                scan_type,
-                predicate,
-                mut file_options,
-            } = v.clone()
-            else {
-                unreachable!()
-            };
+        FileScan { scan_type, .. } => {
+            use polars_plan::prelude::FileScan;
 
-            file_options.pre_slice = if let Some((offset, len)) = file_options.pre_slice {
-                Some((offset, _set_n_rows_for_scan(Some(len)).unwrap()))
-            } else {
-                _set_n_rows_for_scan(None).map(|x| (0, x))
-            };
-
-            let mut create_skip_batch_predicate = false;
-            #[cfg(feature = "parquet")]
-            {
-                create_skip_batch_predicate |= matches!(
-                    *scan_type,
-                    polars_plan::prelude::FileScan::Parquet {
-                        options: polars_io::prelude::ParquetOptions {
-                            use_statistics: true,
-                            ..
-                        },
-                        ..
-                    }
-                );
-            }
-            let create_column_predicates = cfg!(feature = "parquet");
-
-            let predicate = predicate
-                .map(|pred| {
-                    create_scan_predicate(
-                        &pred,
-                        ctx.expr_arena,
-                        output_schema.as_ref().unwrap_or(&file_info.schema),
-                        &mut ctx.expr_conversion_state,
-                        create_skip_batch_predicate,
-                        create_column_predicates,
-                    )
-                })
-                .transpose()?;
-            let predicate = predicate
-                .as_ref()
-                .map(|p| p.to_io(None, file_info.schema.clone()));
-
-            {
-                use polars_plan::prelude::FileScan;
-
-                match *scan_type {
-                    #[cfg(feature = "parquet")]
-                    FileScan::Parquet { .. } => unreachable!(),
-                    #[cfg(feature = "ipc")]
-                    FileScan::Ipc { .. } => unreachable!(),
-                    #[cfg(feature = "csv")]
-                    FileScan::Csv { options, .. } => {
-                        assert!(predicate.is_none());
-
-                        if options.parse_options.comment_prefix.is_some() {
-                            // Should have been re-written to separate streaming nodes
-                            assert!(file_options.row_index.is_none());
-                            assert!(file_options.pre_slice.is_none());
-                        }
-
-                        ctx.graph.add_node(
-                            nodes::io_sources::SourceComputeNode::new(
-                                nodes::io_sources::csv::CsvSourceNode::new(
-                                    scan_source,
-                                    file_info,
-                                    file_options,
-                                    options,
-                                ),
-                            ),
-                            [],
-                        )
-                    },
-                    #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => unreachable!(),
-                    _ => todo!(),
-                }
+            match scan_type.as_ref() {
+                #[cfg(feature = "parquet")]
+                FileScan::Parquet { .. } => unreachable!(),
+                #[cfg(feature = "ipc")]
+                FileScan::Ipc { .. } => unreachable!(),
+                #[cfg(feature = "csv")]
+                FileScan::Csv { .. } => unreachable!(),
+                #[cfg(feature = "json")]
+                FileScan::NDJson { .. } => unreachable!(),
+                FileScan::Anonymous { .. } => todo!(),
             }
         },
 

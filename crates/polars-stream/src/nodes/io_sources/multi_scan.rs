@@ -75,6 +75,7 @@ pub struct MultiScanNode<T: MultiScanable> {
 
 impl<T: MultiScanable> MultiScanNode<T> {
     #[allow(clippy::too_many_arguments)]
+    #[expect(unused)]
     pub fn new(
         sources: ScanSources,
 

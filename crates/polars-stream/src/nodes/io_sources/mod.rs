@@ -47,6 +47,7 @@ pub struct SourceComputeNode<T: SourceNode + Send + Sync> {
 }
 
 impl<T: SourceNode + Send + Sync> SourceComputeNode<T> {
+    #[expect(unused)]
     pub fn new(source: T) -> Self {
         Self {
             source,
@@ -191,6 +192,7 @@ pub struct SourceOutput {
 }
 
 /// Output for a single morsel sender in a phase.
+#[expect(unused)]
 pub struct MorselOutput {
     pub outcome: PhaseOutcomeToken,
     pub port: Sender<Morsel>,
@@ -216,6 +218,7 @@ impl SourceOutput {
 }
 
 impl MorselOutput {
+    #[expect(unused)]
     pub fn from_port(
         port: Sender<Morsel>,
         source_token: SourceToken,
@@ -249,6 +252,7 @@ impl SourceOutputPort {
         }
     }
 
+    #[expect(unused)]
     pub fn parallel(self) -> Vec<Sender<Morsel>> {
         match self {
             Self::Parallel(s) => s,
