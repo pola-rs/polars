@@ -2,7 +2,6 @@
 mod convert;
 mod count;
 mod first_last;
-mod len;
 mod mean;
 mod min_max;
 mod partition;
