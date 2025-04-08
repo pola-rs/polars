@@ -431,6 +431,7 @@ fn resolve_join_where(
         .into_owned();
 
     // Perform predicate validation.
+    let mut upcast_exprs = Vec::<(Node, DataType)>::new();
     for e in predicates {
         let arena = &mut ctxt.expr_arena;
         let predicate = to_expr_ir_ignore_alias(e, arena)?;
@@ -444,7 +445,13 @@ fn resolve_join_where(
             ComputeError: "'join_where' predicates must resolve to boolean"
         );
 
-        ensure_lossless_binary_comparisons(&node, &schema_left, &schema_merged, arena)?;
+        ensure_lossless_binary_comparisons(
+            &node,
+            &schema_left,
+            &schema_merged,
+            arena,
+            &mut upcast_exprs,
+        )?;
 
         ctxt.conversion_optimizer
             .push_scratch(predicate.node(), ctxt.expr_arena);
@@ -471,18 +478,13 @@ fn ensure_lossless_binary_comparisons(
     schema_left: &Schema,
     schema_merged: &Schema,
     expr_arena: &mut Arena<AExpr>,
+    upcast_exprs: &mut Vec<(Node, DataType)>,
 ) -> PolarsResult<()> {
+    // let mut upcast_exprs = Vec::<(Node, DataType)>::new();
     // Ensure that all binary comparisons that use both tables are lossless.
-    let mut to_replace = Vec::<(Node, DataType)>::with_capacity(expr_arena.len());
-    build_upcast_node_list(
-        node,
-        schema_left,
-        schema_merged,
-        expr_arena,
-        &mut to_replace,
-    )?;
+    build_upcast_node_list(node, schema_left, schema_merged, expr_arena, upcast_exprs)?;
     // Replace each node with its casted counterpart
-    for (expr, dtype) in to_replace {
+    for (expr, dtype) in upcast_exprs.drain(..) {
         let old_expr = expr_arena.duplicate(expr);
         let new_aexpr = AExpr::Cast {
             expr: old_expr,
@@ -498,6 +500,7 @@ fn ensure_lossless_binary_comparisons(
 /// on the LHS and the right table on the RHS side, ensure that the cast is lossless.
 /// Expressions involving binaries using either table alone we leave up to the user to verify
 /// that they are valid, as they could theoretically be pushed outside of the join.
+#[recursive]
 fn build_upcast_node_list(
     node: &Node,
     schema_left: &Schema,
