@@ -5,7 +5,6 @@ use polars_utils::arena::{Arena, Node};
 use super::*;
 use crate::reduce::count::CountReduce;
 use crate::reduce::first_last::{new_first_reduction, new_last_reduction};
-use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
 use crate::reduce::sum::new_sum_reduction;
@@ -54,16 +53,8 @@ pub fn into_reduction(
             IRAggExpr::AggGroups(_) => todo!(),
         },
         AExpr::Len => {
-            let Some(first_column) = schema.iter_names().next() else {
-                // Support len aggregation on 0-width morsels.
-                let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::new_idxsize());
-                let expr = expr_arena.add(AExpr::Len);
-                return Ok((out, expr));
-            };
-
-            let out: Box<dyn GroupedReduction> = Box::new(LenReduce::default());
-            let expr = expr_arena.add(AExpr::Column(first_column.as_str().into()));
-
+            let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::new_idxsize());
+            let expr = expr_arena.add(AExpr::Len);
             (out, expr)
         },
         _ => unreachable!(),
