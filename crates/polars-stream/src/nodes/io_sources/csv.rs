@@ -670,7 +670,7 @@ impl ChunkReader {
                     ri.name.clone(),
                     ri.offset.clone(),
                     df.height(),
-                )?)
+                )?);
             }
         }
 
