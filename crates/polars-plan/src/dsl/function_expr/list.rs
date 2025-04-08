@@ -150,11 +150,12 @@ impl ListFunction {
             L::Diff { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_drop_nulls")]
             L::DropNulls => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_count")]
+            L::CountMatches => FunctionOptions::elementwise(),
             L::Sum
             | L::Slice
             | L::Shift
             | L::Get(_)
-            | L::CountMatches
             | L::Length
             | L::Max
             | L::Min

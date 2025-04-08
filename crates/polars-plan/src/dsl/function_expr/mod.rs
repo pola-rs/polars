@@ -1329,6 +1329,7 @@ impl FunctionExpr {
             F::InterpolateBy => FunctionOptions::length_preserving(),
             #[cfg(feature = "log")]
             F::Log { .. } | F::Log1p | F::Exp => FunctionOptions::elementwise(),
+            #[cfg(feature = "log")]
             F::Entropy { .. } => FunctionOptions::aggregation(),
             F::Unique(_) => FunctionOptions::groupwise(),
             #[cfg(feature = "round_series")]
