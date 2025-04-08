@@ -440,8 +440,28 @@ impl ProjectionPushDown {
                 mut output_schema,
             } => {
                 if self.is_count_star {
+                    // New-streaming has optimizations to project empty morsels with the correct height
+                    // for empty projections.
+                    if self.in_new_streaming_engine {
+                        file_options.with_columns = Some(Arc::from([]));
+                        output_schema = Some(Default::default());
+
+                        let lp = Scan {
+                            sources,
+                            file_info,
+                            hive_parts,
+                            output_schema,
+                            scan_type,
+                            predicate,
+                            file_options,
+                        };
+
+                        return Ok(lp);
+                    }
+
                     ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
                 }
+
                 let do_optimization = match &*scan_type {
                     FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
@@ -469,6 +489,9 @@ impl ProjectionPushDown {
                                 FileScan::Parquet { .. } => {},
                                 #[cfg(feature = "ipc")]
                                 FileScan::Ipc { .. } => {},
+                                // All nodes in new-streaming support projecting empty morsels with the correct height
+                                // from the file.
+                                _ if self.in_new_streaming_engine => {},
                                 // Other scan types do not yet support projection of e.g. only the row index or file path
                                 // column - ensure at least 1 column is projected from the file.
                                 _ => {

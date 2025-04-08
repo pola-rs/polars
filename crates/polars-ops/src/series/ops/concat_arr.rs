@@ -45,10 +45,7 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
             }
 
             // Don't expand scalars to height, this is handled by the `horizontal_flatten` kernel.
-            let s = match c {
-                Column::Scalar(s) => s.as_single_value_series(),
-                v => v.as_materialized_series().clone(),
-            };
+            let s = c.as_materialized_series_maintain_scalar();
 
             match s.dtype() {
                 DataType::Array(inner, width) => {
