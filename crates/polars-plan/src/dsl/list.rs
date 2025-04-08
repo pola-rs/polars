@@ -1,10 +1,6 @@
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-#[cfg(feature = "list_sets")]
-use polars_core::utils::SuperTypeFlags;
-#[cfg(feature = "list_sets")]
-use polars_core::utils::SuperTypeOptions;
 
 use crate::prelude::function_expr::ListFunction;
 use crate::prelude::*;
@@ -15,22 +11,18 @@ pub struct ListNameSpace(pub Expr);
 impl ListNameSpace {
     #[cfg(feature = "list_any_all")]
     pub fn any(self) -> Expr {
-        self.0
-            .apply_private(FunctionExpr::ListExpr(ListFunction::Any))
-            .with_fmt("list.any")
+        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Any))
     }
 
     #[cfg(feature = "list_any_all")]
     pub fn all(self) -> Expr {
-        self.0
-            .apply_private(FunctionExpr::ListExpr(ListFunction::All))
-            .with_fmt("list.all")
+        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::All))
     }
 
     #[cfg(feature = "list_drop_nulls")]
     pub fn drop_nulls(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::DropNulls))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::DropNulls))
     }
 
     #[cfg(feature = "list_sample")]
@@ -41,16 +33,14 @@ impl ListNameSpace {
         shuffle: bool,
         seed: Option<u64>,
     ) -> Expr {
-        self.0.map_many_private(
+        self.0.map_binary(
             FunctionExpr::ListExpr(ListFunction::Sample {
                 is_fraction: false,
                 with_replacement,
                 shuffle,
                 seed,
             }),
-            &[n],
-            false,
-            None,
+            n,
         )
     }
 
@@ -62,16 +52,14 @@ impl ListNameSpace {
         shuffle: bool,
         seed: Option<u64>,
     ) -> Expr {
-        self.0.map_many_private(
+        self.0.map_binary(
             FunctionExpr::ListExpr(ListFunction::Sample {
                 is_fraction: true,
                 with_replacement,
                 shuffle,
                 seed,
             }),
-            &[fraction],
-            false,
-            None,
+            fraction,
         )
     }
 
@@ -80,84 +68,78 @@ impl ListNameSpace {
     /// Null values are treated like regular elements in this context.
     pub fn len(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Length))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::Length))
     }
 
     /// Compute the maximum of the items in every sublist.
     pub fn max(self) -> Expr {
-        self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Max))
+        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Max))
     }
 
     /// Compute the minimum of the items in every sublist.
     pub fn min(self) -> Expr {
-        self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Min))
+        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Min))
     }
 
     /// Compute the sum the items in every sublist.
     pub fn sum(self) -> Expr {
-        self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Sum))
+        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Sum))
     }
 
     /// Compute the mean of every sublist and return a `Series` of dtype `Float64`
     pub fn mean(self) -> Expr {
-        self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Mean))
+        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Mean))
     }
 
     pub fn median(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Median))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::Median))
     }
 
     pub fn std(self, ddof: u8) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Std(ddof)))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::Std(ddof)))
     }
 
     pub fn var(self, ddof: u8) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Var(ddof)))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::Var(ddof)))
     }
 
     /// Sort every sublist.
     pub fn sort(self, options: SortOptions) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Sort(options)))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::Sort(options)))
     }
 
     /// Reverse every sublist
     pub fn reverse(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Reverse))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::Reverse))
     }
 
     /// Keep only the unique values in every sublist.
     pub fn unique(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Unique(false)))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::Unique(false)))
     }
 
     /// Keep only the unique values in every sublist.
     pub fn unique_stable(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Unique(true)))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::Unique(true)))
     }
 
     pub fn n_unique(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::NUnique))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::NUnique))
     }
 
     /// Get items in every sublist by index.
     pub fn get(self, index: Expr, null_on_oob: bool) -> Expr {
-        self.0.map_many_private(
+        self.0.map_binary(
             FunctionExpr::ListExpr(ListFunction::Get(null_on_oob)),
-            &[index],
-            false,
-            None,
+            index,
         )
     }
 
@@ -168,22 +150,16 @@ impl ListNameSpace {
     ///   This behavior is more expensive than defaulting to returning an `Error`.
     #[cfg(feature = "list_gather")]
     pub fn gather(self, index: Expr, null_on_oob: bool) -> Expr {
-        self.0.apply_many_private(
+        self.0.map_binary(
             FunctionExpr::ListExpr(ListFunction::Gather(null_on_oob)),
-            &[index],
-            false,
-            false,
+            index,
         )
     }
 
     #[cfg(feature = "list_gather")]
     pub fn gather_every(self, n: Expr, offset: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::ListExpr(ListFunction::GatherEvery),
-            &[n, offset],
-            false,
-            None,
-        )
+        self.0
+            .map_ternary(FunctionExpr::ListExpr(ListFunction::GatherEvery), n, offset)
     }
 
     /// Get first item of every sublist.
@@ -200,54 +176,43 @@ impl ListNameSpace {
     /// # Error
     /// This errors if inner type of list `!= DataType::String`.
     pub fn join(self, separator: Expr, ignore_nulls: bool) -> Expr {
-        self.0.map_many_private(
+        self.0.map_binary(
             FunctionExpr::ListExpr(ListFunction::Join(ignore_nulls)),
-            &[separator],
-            false,
-            None,
+            separator,
         )
     }
 
     /// Return the index of the minimal value of every sublist
     pub fn arg_min(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::ArgMin))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::ArgMin))
     }
 
     /// Return the index of the maximum value of every sublist
     pub fn arg_max(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::ArgMax))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::ArgMax))
     }
 
     /// Diff every sublist.
     #[cfg(feature = "diff")]
     pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
-        self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Diff {
-                n,
-                null_behavior,
-            }))
+        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Diff {
+            n,
+            null_behavior,
+        }))
     }
 
     /// Shift every sublist.
     pub fn shift(self, periods: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::ListExpr(ListFunction::Shift),
-            &[periods],
-            false,
-            None,
-        )
+        self.0
+            .map_binary(FunctionExpr::ListExpr(ListFunction::Shift), periods)
     }
 
     /// Slice every sublist.
     pub fn slice(self, offset: Expr, length: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::ListExpr(ListFunction::Slice),
-            &[offset, length],
-            false,
-            None,
-        )
+        self.0
+            .map_ternary(FunctionExpr::ListExpr(ListFunction::Slice), offset, length)
     }
 
     /// Get the head of every sublist
@@ -264,7 +229,7 @@ impl ListNameSpace {
     /// Convert a List column into an Array column with the same inner data type.
     pub fn to_array(self, width: usize) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::ToArray(width)))
+            .map_unary(FunctionExpr::ListExpr(ListFunction::ToArray(width)))
     }
 
     #[cfg(feature = "list_to_struct")]
@@ -279,92 +244,55 @@ impl ListNameSpace {
     /// If this is incorrectly downstream operation may fail. For instance an `all().sum()` expression
     /// will look in the current schema to determine which columns to select.
     pub fn to_struct(self, args: ListToStructArgs) -> Expr {
-        let collect_groups = match &args {
-            ListToStructArgs::FixedWidth(_) => ApplyOptions::ElementWise,
-
-            // If we have to infer the dtype it is not elementwise anymore, since different parts
-            // could infer to different widths.
-            ListToStructArgs::InferWidth { .. } => ApplyOptions::GroupWise,
-        };
-
-        Expr::Function {
-            input: vec![self.0],
-            function: FunctionExpr::ListExpr(ListFunction::ToStruct(args)),
-            options: FunctionOptions {
-                collect_groups,
-                ..Default::default()
-            },
-        }
+        self.0
+            .map_unary(FunctionExpr::ListExpr(ListFunction::ToStruct(args)))
     }
 
     #[cfg(feature = "is_in")]
     /// Check if the list array contain an element
     pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
-        let other = other.into();
-
-        self.0.map_many_private(
-            FunctionExpr::ListExpr(ListFunction::Contains),
-            &[other],
-            false,
-            None,
-        )
+        self.0
+            .map_binary(FunctionExpr::ListExpr(ListFunction::Contains), other.into())
     }
 
     #[cfg(feature = "list_count")]
     /// Count how often the value produced by ``element`` occurs.
     pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {
-        let other = element.into();
-
-        self.0.map_many_private(
+        self.0.map_binary(
             FunctionExpr::ListExpr(ListFunction::CountMatches),
-            &[other],
-            false,
-            None,
+            element.into(),
         )
     }
 
     #[cfg(feature = "list_sets")]
     fn set_operation(self, other: Expr, set_operation: SetOperation) -> Expr {
-        Expr::Function {
-            input: vec![self.0, other],
-            function: FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                cast_options: Some(CastingRules::Supertype(SuperTypeOptions {
-                    flags: SuperTypeFlags::default() | SuperTypeFlags::ALLOW_IMPLODE_LIST,
-                })),
-
-                flags: FunctionFlags::default() & !FunctionFlags::RETURNS_SCALAR,
-                ..Default::default()
-            },
-        }
+        self.0.map_binary(
+            FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
+            other,
+        )
     }
 
     /// Return the SET UNION between both list arrays.
     #[cfg(feature = "list_sets")]
     pub fn union<E: Into<Expr>>(self, other: E) -> Expr {
-        let other = other.into();
-        self.set_operation(other, SetOperation::Union)
+        self.set_operation(other.into(), SetOperation::Union)
     }
 
     /// Return the SET DIFFERENCE between both list arrays.
     #[cfg(feature = "list_sets")]
     pub fn set_difference<E: Into<Expr>>(self, other: E) -> Expr {
-        let other = other.into();
-        self.set_operation(other, SetOperation::Difference)
+        self.set_operation(other.into(), SetOperation::Difference)
     }
 
     /// Return the SET INTERSECTION between both list arrays.
     #[cfg(feature = "list_sets")]
     pub fn set_intersection<E: Into<Expr>>(self, other: E) -> Expr {
-        let other = other.into();
-        self.set_operation(other, SetOperation::Intersection)
+        self.set_operation(other.into(), SetOperation::Intersection)
     }
 
     /// Return the SET SYMMETRIC DIFFERENCE between both list arrays.
     #[cfg(feature = "list_sets")]
     pub fn set_symmetric_difference<E: Into<Expr>>(self, other: E) -> Expr {
-        let other = other.into();
-        self.set_operation(other, SetOperation::SymmetricDifference)
+        self.set_operation(other.into(), SetOperation::SymmetricDifference)
     }
 }

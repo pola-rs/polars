@@ -38,6 +38,22 @@ impl BinaryFunction {
             FromBuffer(dtype, _) => mapper.with_dtype(dtype.clone()),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use BinaryFunction as B;
+        match self {
+            B::Contains | B::StartsWith | B::EndsWith => {
+                FunctionOptions::elementwise().with_supertyping(Default::default())
+            },
+            B::Size => FunctionOptions::elementwise(),
+            #[cfg(feature = "binary_encoding")]
+            B::HexDecode(_)
+            | B::HexEncode
+            | B::Base64Decode(_)
+            | B::Base64Encode
+            | B::FromBuffer(_, _) => FunctionOptions::elementwise(),
+        }
+    }
 }
 
 impl Display for BinaryFunction {

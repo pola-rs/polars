@@ -215,6 +215,84 @@ impl StringFunction {
             EscapeRegex => mapper.with_same_dtype(),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use StringFunction as S;
+        match self {
+            #[cfg(feature = "concat_str")]
+            S::ConcatHorizontal { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "concat_str")]
+            S::ConcatVertical { .. } => FunctionOptions::aggregation(),
+            #[cfg(feature = "regex")]
+            S::Contains { .. } => {
+                FunctionOptions::elementwise().with_supertyping(Default::default())
+            },
+            S::CountMatches(_) => FunctionOptions::elementwise(),
+            S::EndsWith | S::StartsWith | S::Extract(_) => {
+                FunctionOptions::elementwise().with_supertyping(Default::default())
+            },
+            S::ExtractAll => FunctionOptions::elementwise(),
+            #[cfg(feature = "extract_groups")]
+            S::ExtractGroups { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "string_to_integer")]
+            S::ToInteger { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "regex")]
+            S::Find { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
+            #[cfg(feature = "extract_jsonpath")]
+            S::JsonDecode { dtype: Some(_), .. } => FunctionOptions::elementwise(),
+            // because dtype should be inferred only once and be consistent over chunks/morsels.
+            #[cfg(feature = "extract_jsonpath")]
+            S::JsonDecode { dtype: None, .. } => FunctionOptions::elementwise_with_infer(),
+            #[cfg(feature = "extract_jsonpath")]
+            S::JsonPathMatch => FunctionOptions::elementwise(),
+            S::LenBytes | S::LenChars => FunctionOptions::elementwise(),
+            #[cfg(feature = "regex")]
+            S::Replace { .. } => {
+                FunctionOptions::elementwise().with_supertyping(Default::default())
+            },
+            #[cfg(feature = "string_normalize")]
+            S::Normalize { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "string_reverse")]
+            S::Reverse => FunctionOptions::elementwise(),
+            #[cfg(feature = "temporal")]
+            S::Strptime(_, options) if options.format.is_some() => FunctionOptions::elementwise(),
+            S::Strptime(_, _) => FunctionOptions::elementwise_with_infer(),
+            S::Split(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "nightly")]
+            S::Titlecase => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-decimal")]
+            S::ToDecimal(_) => FunctionOptions::elementwise_with_infer(),
+            #[cfg(feature = "string_encoding")]
+            S::HexEncode | S::Base64Encode => FunctionOptions::elementwise(),
+            #[cfg(feature = "binary_encoding")]
+            S::HexDecode(_) | S::Base64Decode(_) => FunctionOptions::elementwise(),
+            S::Uppercase | S::Lowercase => FunctionOptions::elementwise(),
+            S::StripChars
+            | S::StripCharsStart
+            | S::StripCharsEnd
+            | S::StripPrefix
+            | S::StripSuffix
+            | S::Head
+            | S::Tail => FunctionOptions::elementwise(),
+            S::Slice => FunctionOptions::elementwise(),
+            #[cfg(feature = "string_pad")]
+            S::PadStart { .. } | S::PadEnd { .. } | S::ZFill => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-struct")]
+            S::SplitExact { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-struct")]
+            S::SplitN(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "find_many")]
+            S::ContainsAny { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "find_many")]
+            S::ReplaceMany { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "find_many")]
+            S::ExtractMany { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "find_many")]
+            S::FindMany { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "regex")]
+            S::EscapeRegex => FunctionOptions::elementwise(),
+        }
+    }
 }
 
 impl Display for StringFunction {

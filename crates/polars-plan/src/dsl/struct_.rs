@@ -7,13 +7,9 @@ pub struct StructNameSpace(pub(crate) Expr);
 impl StructNameSpace {
     pub fn field_by_index(self, index: i64) -> Expr {
         self.0
-            .map_private(FunctionExpr::StructExpr(StructFunction::FieldByIndex(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::FieldByIndex(
                 index,
             )))
-            .with_function_options(|mut options| {
-                options.flags |= FunctionFlags::ALLOW_RENAME;
-                options
-            })
     }
 
     /// Retrieve one or multiple of the fields of this [`StructChunked`] as a new Series.
@@ -28,13 +24,9 @@ impl StructNameSpace {
 
     fn field_by_names_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
         self.0
-            .map_private(FunctionExpr::StructExpr(StructFunction::MultipleFields(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::MultipleFields(
                 names,
             )))
-            .with_function_options(|mut options| {
-                options.flags |= FunctionFlags::ALLOW_RENAME;
-                options
-            })
     }
 
     /// Retrieve one of the fields of this [`StructChunked`] as a new Series.
@@ -44,13 +36,9 @@ impl StructNameSpace {
             return self.field_by_names([name]);
         }
         self.0
-            .map_private(FunctionExpr::StructExpr(StructFunction::FieldByName(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::FieldByName(
                 name.into(),
             )))
-            .with_function_options(|mut options| {
-                options.flags |= FunctionFlags::ALLOW_RENAME;
-                options
-            })
     }
 
     /// Rename the fields of the [`StructChunked`].
@@ -64,7 +52,7 @@ impl StructNameSpace {
 
     pub fn _rename_fields_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
         self.0
-            .map_private(FunctionExpr::StructExpr(StructFunction::RenameFields(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::RenameFields(
                 names,
             )))
     }
@@ -72,7 +60,7 @@ impl StructNameSpace {
     #[cfg(feature = "json")]
     pub fn json_encode(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::StructExpr(StructFunction::JsonEncode))
+            .map_unary(FunctionExpr::StructExpr(StructFunction::JsonEncode))
     }
 
     pub fn with_fields(self, fields: Vec<Expr>) -> PolarsResult<Expr> {
@@ -93,23 +81,10 @@ impl StructNameSpace {
             })
         }
 
-        let mut new_fields = Vec::with_capacity(fields.len());
-        new_fields.push(Default::default());
-
-        for e in fields.into_iter().map(|e| materialize_field(&self.0, e)) {
-            new_fields.push(e?)
-        }
-        new_fields[0] = self.0;
-        Ok(Expr::Function {
-            input: new_fields,
-            function: FunctionExpr::StructExpr(StructFunction::WithFields),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                flags: FunctionFlags::default()
-                    | FunctionFlags::PASS_NAME_TO_APPLY
-                    | FunctionFlags::INPUT_WILDCARD_EXPANSION,
-                ..Default::default()
-            },
-        })
+        let s = self.0.clone();
+        self.0.try_map_n_ary(
+            FunctionExpr::StructExpr(StructFunction::WithFields),
+            fields.into_iter().map(|e| materialize_field(&s, e)),
+        )
     }
 }

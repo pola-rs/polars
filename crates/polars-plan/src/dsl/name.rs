@@ -96,7 +96,7 @@ impl ExprNameNameSpace {
     #[cfg(feature = "dtype-struct")]
     pub fn prefix_fields(self, prefix: &str) -> Expr {
         self.0
-            .map_private(FunctionExpr::StructExpr(StructFunction::PrefixFields(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::PrefixFields(
                 PlSmallStr::from_str(prefix),
             )))
     }
@@ -104,7 +104,7 @@ impl ExprNameNameSpace {
     #[cfg(feature = "dtype-struct")]
     pub fn suffix_fields(self, suffix: &str) -> Expr {
         self.0
-            .map_private(FunctionExpr::StructExpr(StructFunction::SuffixFields(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::SuffixFields(
                 PlSmallStr::from_str(suffix),
             )))
     }
