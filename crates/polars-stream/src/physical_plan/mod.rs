@@ -233,6 +233,8 @@ pub enum PhysNodeKind {
         cloud_options: Option<Arc<CloudOptions>>,
         pre_slice: Option<Slice>,
     },
+
+    #[expect(unused)]
     FileScan {
         scan_source: ScanSource,
         file_info: FileInfo,

@@ -140,7 +140,6 @@ impl FileReader for CsvFileReader {
             pre_slice,
             predicate: None,
             cast_columns_policy: _,
-            missing_columns_policy: _,
             num_pipelines,
             callbacks:
                 FileReaderCallbacks {
