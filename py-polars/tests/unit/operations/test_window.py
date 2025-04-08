@@ -342,23 +342,24 @@ def test_window_function_implode_contention_8536() -> None:
 
 
 def test_cached_windows_sync_8803() -> None:
-    assert (
-        pl.DataFrame(
-            [
-                pl.Series("id", [4, 5, 4, 6, 4, 5], dtype=pl.Int64),
-                pl.Series(
-                    "is_valid",
-                    [True, False, False, False, False, False],
-                    dtype=pl.Boolean,
-                ),
-            ]
-        )
-        .with_columns(
-            a=pl.lit(True).is_in(pl.col("is_valid")).over("id"),
-            b=pl.col("is_valid").sum().gt(0).over("id"),
-        )
-        .sum()
-    ).to_dict(as_series=False) == {"id": [28], "is_valid": [1], "a": [3], "b": [3]}
+    with pytest.deprecated_call():
+        assert (
+            pl.DataFrame(
+                [
+                    pl.Series("id", [4, 5, 4, 6, 4, 5], dtype=pl.Int64),
+                    pl.Series(
+                        "is_valid",
+                        [True, False, False, False, False, False],
+                        dtype=pl.Boolean,
+                    ),
+                ]
+            )
+            .with_columns(
+                a=pl.lit(True).is_in(pl.col("is_valid")).over("id"),
+                b=pl.col("is_valid").sum().gt(0).over("id"),
+            )
+            .sum()
+        ).to_dict(as_series=False) == {"id": [28], "is_valid": [1], "a": [3], "b": [3]}
 
 
 def test_window_filtered_aggregation() -> None:

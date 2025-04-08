@@ -125,6 +125,16 @@ impl ListChunked {
         Ok(unsafe { ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) })
     }
 
+    /// Get the inner values as [`Series`] applying the list offsets.
+    pub fn get_inner_trimmed(&self) -> Series {
+        let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();
+
+        // SAFETY: Data type of arrays matches because they are chunks from the same array.
+        unsafe {
+            Series::from_chunks_and_dtype_unchecked(self.name().clone(), chunks, self.inner_dtype())
+        }
+    }
+
     /// Get the inner values as [`Series`], ignoring the list offsets.
     pub fn get_inner(&self) -> Series {
         let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();

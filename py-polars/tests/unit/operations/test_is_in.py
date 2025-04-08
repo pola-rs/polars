@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -215,18 +215,16 @@ def test_is_in_series() -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match=r"'is_in' cannot check for String values in Int64 data",
+        match=r"'is_in' cannot check for List\(String\) values in Int64 data",
     ):
         df.select(pl.col("b").is_in(["x", "x"]))
 
     # check we don't shallow-copy and accidentally modify 'a' (see: #10072)
     a = pl.Series("a", [1, 2])
     b = pl.Series("b", [1, 3]).is_in(a)
-    c = pl.Series("c", [1, 3]).is_in(a.to_frame())  # type: ignore[arg-type]
 
     assert a.name == "a"
     assert_series_equal(b, pl.Series("b", [True, False]))
-    assert_series_equal(c, pl.Series("c", [True, False]))
 
 
 @pytest.mark.parametrize("nulls_equal", [False, True])
@@ -298,10 +296,9 @@ def test_is_in_boolean_list(dtype: PolarsDataType) -> None:
     assert_series_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_is_in_invalid_shape() -> None:
-    with pytest.raises(ComputeError):
-        pl.Series("a", [1, 2, 3]).is_in([[]])
+    with pytest.raises(ShapeError):
+        pl.Series("a", [1, 2, 3]).is_in([[], []])
 
 
 @pytest.mark.may_fail_auto_streaming
@@ -344,12 +341,12 @@ def test_is_in_float(dtype: PolarsDataType) -> None:
         (
             pl.DataFrame({"a": ["1", "2"], "b": [[1, 2], [3, 4]]}),
             None,
-            r"'is_in' cannot check for String values in List\(Int64\) data",
+            r"'is_in' cannot check for List\(Int64\) values in String data",
         ),
         (
             pl.DataFrame({"a": [date.today(), None], "b": [[1, 2], [3, 4]]}),
             None,
-            r"'is_in' cannot check for Date values in List\(Int64\) data",
+            r"'is_in' cannot check for List\(Int64\) values in Date data",
         ),
     ],
 )

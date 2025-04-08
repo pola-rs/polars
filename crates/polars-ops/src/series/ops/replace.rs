@@ -150,7 +150,8 @@ fn get_replacement_mask(s: &Series, old: &Series) -> PolarsResult<BooleanChunked
         // Fast path for when users are using `replace(None, ...)` instead of `fill_null`.
         Ok(s.is_null())
     } else {
-        is_in(s, old, false)
+        let old = old.implode()?;
+        is_in(s, &old.into_series(), false)
     }
 }
 
