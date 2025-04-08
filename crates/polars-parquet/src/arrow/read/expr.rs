@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arrow::array::Array;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::AlignedBytes;
 
 #[derive(Clone)]
@@ -93,11 +93,11 @@ pub enum ParquetScalarRange {
 pub type ParquetColumnExprRef = Arc<dyn ParquetColumnExpr>;
 pub trait ParquetColumnExpr: Send + Sync {
     fn evaluate(&self, values: &dyn Array) -> Bitmap {
-        let mut bm = MutableBitmap::new();
+        let mut bm = BitmapBuilder::new();
         self.evaluate_mut(values, &mut bm);
         bm.freeze()
     }
-    fn evaluate_mut(&self, values: &dyn Array, bm: &mut MutableBitmap);
+    fn evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder);
 
     fn evaluate_null(&self) -> bool;
 
