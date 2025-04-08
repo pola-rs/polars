@@ -26,15 +26,21 @@ pub(super) fn process_projection(
         ctx.acc_projections.clear();
         ctx.projected_names.clear();
 
-        if let Some(name) = lp_arena
-            .get(input)
-            .schema(lp_arena)
-            .get_at_index(0)
-            .map(|(name, _)| name)
-        {
-            ctx.acc_projections
-                .push(ColumnNode(expr_arena.add(AExpr::Column(name.clone()))));
-            ctx.projected_names.insert(name.clone());
+        let input_lp = lp_arena.get(input);
+
+        if !matches!(
+            input_lp,
+            IR::DataFrameScan { .. } | IR::PythonScan { .. } | IR::Scan { .. }
+        ) {
+            if let Some(name) = input_lp
+                .schema(lp_arena)
+                .get_at_index(0)
+                .map(|(name, _)| name)
+            {
+                ctx.acc_projections
+                    .push(ColumnNode(expr_arena.add(AExpr::Column(name.clone()))));
+                ctx.projected_names.insert(name.clone());
+            }
         }
 
         ctx.inner.is_count_star = true;
