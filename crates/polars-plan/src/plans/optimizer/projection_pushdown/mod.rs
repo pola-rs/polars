@@ -439,30 +439,11 @@ impl ProjectionPushDown {
                 mut file_options,
                 mut output_schema,
             } => {
-                if self.is_count_star {
-                    // New-streaming has optimizations to project empty morsels with the correct height
-                    // for empty projections.
-                    if self.in_new_streaming_engine {
-                        file_options.with_columns = Some(Arc::from([]));
-                        output_schema = Some(Default::default());
-
-                        let lp = Scan {
-                            sources,
-                            file_info,
-                            hive_parts,
-                            output_schema,
-                            scan_type,
-                            predicate,
-                            file_options,
-                        };
-
-                        return Ok(lp);
-                    }
-
+                if self.is_count_star && !self.in_new_streaming_engine {
                     ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
                 }
 
-                let do_optimization = match &*scan_type {
+                let mut do_optimization = match &*scan_type {
                     FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
                     FileScan::NDJson { .. } => true,
@@ -473,6 +454,11 @@ impl ProjectionPushDown {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => true,
                 };
+
+                if self.is_count_star && self.in_new_streaming_engine {
+                    output_schema = Some(Default::default());
+                    do_optimization = false;
+                }
 
                 if do_optimization {
                     file_options.with_columns = get_scan_columns(
