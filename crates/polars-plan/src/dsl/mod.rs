@@ -1540,8 +1540,8 @@ impl Expr {
 
     #[cfg(feature = "diff")]
     /// Calculate the n-th discrete difference between values.
-    pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
-        self.map_unary(FunctionExpr::Diff(n, null_behavior))
+    pub fn diff(self, n: Expr, null_behavior: NullBehavior) -> Expr {
+        self.map_binary(FunctionExpr::Diff(null_behavior), n)
     }
 
     #[cfg(feature = "pct_change")]

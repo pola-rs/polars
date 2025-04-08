@@ -8493,7 +8493,9 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
 
-    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
+    def diff(
+        self, n: int | IntoExpr = 1, null_behavior: NullBehavior = "ignore"
+    ) -> Expr:
         """
         Calculate the first discrete difference between shifted items.
 
@@ -8547,6 +8549,7 @@ class Expr:
         │ 5    │
         └──────┘
         """
+        n = parse_into_expression(n)
         return self._from_pyexpr(self._pyexpr.diff(n, null_behavior))
 
     def pct_change(self, n: int | IntoExprColumn = 1) -> Expr:

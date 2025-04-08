@@ -54,9 +54,9 @@ pub(super) fn convert_functions(
     let e = to_expr_irs(input, arena)?;
 
     match function {
-        F::ShiftAndFill => {
+        #[cfg(feature = "diff")]
+        F::Diff(_) => {
             polars_ensure!(&e[1].is_scalar(arena), ComputeError: "'n' must be scalar value");
-            polars_ensure!(&e[2].is_scalar(arena), ComputeError: "'fill_value' must be scalar value");
         },
         F::Repeat => {
             polars_ensure!(&e[0].is_scalar(arena), ComputeError: "'value' must be scalar value");
@@ -71,6 +71,10 @@ pub(super) fn convert_functions(
             if old.is_scalar(arena) && new.is_scalar(arena) {
                 options.set_elementwise();
             }
+        },
+        F::ShiftAndFill => {
+            polars_ensure!(&e[1].is_scalar(arena), ComputeError: "'n' must be scalar value");
+            polars_ensure!(&e[2].is_scalar(arena), ComputeError: "'fill_value' must be scalar value");
         },
         _ => {},
     }
