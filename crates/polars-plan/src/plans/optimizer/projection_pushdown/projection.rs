@@ -28,10 +28,14 @@ pub(super) fn process_projection(
 
         let input_lp = lp_arena.get(input);
 
-        if !matches!(
-            input_lp,
-            IR::DataFrameScan { .. } | IR::PythonScan { .. } | IR::Scan { .. }
-        ) {
+        let select_single_column = match input_lp {
+            IR::DataFrameScan { .. } | IR::Scan { .. } => false,
+            #[cfg(feature = "python")]
+            IR::PythonScan { .. } => false,
+            _ => true,
+        };
+
+        if select_single_column {
             if let Some(name) = input_lp
                 .schema(lp_arena)
                 .get_at_index(0)
