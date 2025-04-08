@@ -570,24 +570,19 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
                 options: _,
-            } if {
-                let input_schema = &ctx.phys_sm[input.node].output_schema;
-                let left_dt = inner_exprs[0]
-                    .dtype(input_schema, Context::Default, ctx.expr_arena)
-                    .unwrap();
-                let right_dt = inner_exprs[1]
-                    .dtype(input_schema, Context::Default, ctx.expr_arena)
-                    .unwrap();
-                left_dt == right_dt
-            } =>
-            {
+            } if is_scalar_ae(inner_exprs[1].node(), &ctx.expr_arena) => {
                 // Translate left and right side separately (they could have different lengths).
                 let left_on_name = unique_column_name();
                 let right_on_name = unique_column_name();
                 let (trans_input_left, trans_expr_left) =
                     lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
+                let right_expr_exploded_node = match ctx.expr_arena.get(inner_exprs[1].node()) {
+                    // expr.implode().explode() ~= expr (and avoids rechunking)
+                    AExpr::Agg(IRAggExpr::Implode(n)) => *n,
+                    _ => ctx.expr_arena.add(AExpr::Explode(inner_exprs[1].node())),
+                };
                 let (trans_input_right, trans_expr_right) =
-                    lower_exprs_with_ctx(input, &[inner_exprs[1].node()], ctx)?;
+                    lower_exprs_with_ctx(input, &[right_expr_exploded_node], ctx)?;
 
                 // We have to ensure the left input has the right name for the semi-anti-join to
                 // generate the correct output name.

@@ -737,6 +737,8 @@ impl CommonSubExprOptimizer {
     ) -> PolarsResult<Option<ProjectionExprs>> {
         let mut has_sub_expr = false;
 
+        dbg!(expr);
+
         // First get all cse's.
         for e in expr {
             // The visitor can return early thus depleted its stack

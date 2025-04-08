@@ -19,15 +19,53 @@ pub(super) fn resolve_is_in(
         &input_schema
     ));
 
-    unpack!(early_escape(&type_left, &type_other));
+    let left_nl = type_left.nesting_level();
+    let right_nl = type_other.nesting_level();
 
-    let casted_expr = match (&type_left, &type_other) {
+    // @HACK. This needs to happen until 2.0 because we support `pl.col.a.is_in(pl.col.a)`.
+    if left_nl == right_nl {
+        polars_warn!(
+            Deprecation,
+            "Using `is_in` with a flat datatype is deprecated.
+Please use `implode` to return to previous behavior.
+
+ See #22149 for more information."
+        );
+        return Ok(Some(AExpr::Agg(IRAggExpr::Implode(other_e.node()))));
+    }
+    // @HACK. This needs to happen until 2.0 because we support `pl.col.a.is_in([[1], [2, 3], ...])`.
+    if left_nl + 2 == right_nl && is_scalar_ae(other_e.node(), expr_arena) {
+        polars_warn!(
+            Deprecation,
+            "Using `is_in` with a nested scalar datatype is deprecated.
+Please wrap in `pl.Series` to return to previous behavior.
+
+ See #22149 for more information."
+        );
+        return Ok(Some(AExpr::Explode(other_e.node())));
+    }
+
+    if left_nl + 1 != right_nl {
+        polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left);
+    }
+
+    let type_other_inner = type_other.inner_dtype().unwrap();
+
+    unpack!(early_escape(&type_left, &type_other_inner));
+
+    let cast_type = match &type_other {
+        DataType::List(_) => DataType::List(Box::new(type_left.clone())),
+        DataType::Array(_, width) => DataType::Array(Box::new(type_left.clone()), *width),
+        _ => unreachable!(),
+    };
+
+    let casted_expr = match (&type_left, type_other_inner) {
         // types are equal, do nothing
         (a, b) if a == b => return Ok(None),
         // all-null can represent anything (and/or empty list), so cast to target dtype
         (_, DataType::Null) => AExpr::Cast {
             expr: other_e.node(),
-            dtype: type_left,
+            dtype: cast_type,
             options: CastOptions::NonStrict,
         },
         #[cfg(feature = "dtype-categorical")]
@@ -37,7 +75,7 @@ pub(super) fn resolve_is_in(
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => AExpr::Cast {
             expr: other_e.node(),
-            dtype: type_left,
+            dtype: cast_type,
             options: CastOptions::NonStrict,
         },
         #[cfg(feature = "dtype-decimal")]
