@@ -88,9 +88,11 @@ from polars.dependencies import (
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
+    _check_for_torch,
     altair,
     great_tables,
     import_optional,
+    torch,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -123,7 +125,6 @@ if TYPE_CHECKING:
     import jax
     import numpy.typing as npt
     import pyiceberg
-    import torch
     from great_tables import GT
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
@@ -404,6 +405,16 @@ class DataFrame:
         elif _check_for_pandas(data) and isinstance(data, pd.DataFrame):
             self._df = pandas_to_pydf(
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
+            )
+
+        elif _check_for_torch(data) and isinstance(data, torch.Tensor):
+            self._df = numpy_to_pydf(
+                data.numpy(force=False),
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
+                orient=orient,
+                nan_to_null=nan_to_null,
             )
 
         elif (
