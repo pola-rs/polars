@@ -61,8 +61,11 @@ pub fn into_reduction(
                 (out, expr)
             } else {
                 // Support len aggregation on 0-width morsels.
-                // Note we do this instead of projecting a scalar, because scalar literals don't
-                // project to the height of the DataFrame (in the PhysicalExpr impl).
+                // Notes:
+                // * We do this instead of projecting a scalar, because scalar literals don't
+                //   project to the height of the DataFrame (in the PhysicalExpr impl).
+                // * This approach is not sound for `update_groups()`, but currently that case is
+                //   not hit (it would need group-by -> len on empty morsels).
                 let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::new_idxsize());
                 let expr = expr_arena.add(AExpr::Len);
 
