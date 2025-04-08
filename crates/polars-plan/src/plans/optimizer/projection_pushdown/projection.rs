@@ -25,6 +25,18 @@ pub(super) fn process_projection(
         // Clear all accumulated projections since we only project a single column from this level.
         ctx.acc_projections.clear();
         ctx.projected_names.clear();
+
+        if let Some(name) = lp_arena
+            .get(input)
+            .schema(lp_arena)
+            .get_at_index(0)
+            .map(|(name, _)| name)
+        {
+            ctx.acc_projections
+                .push(ColumnNode(expr_arena.add(AExpr::Column(name.clone()))));
+            ctx.projected_names.insert(name.clone());
+        }
+
         ctx.inner.is_count_star = true;
         local_projection.push(exprs.pop().unwrap());
         proj_pd.is_count_star = true;

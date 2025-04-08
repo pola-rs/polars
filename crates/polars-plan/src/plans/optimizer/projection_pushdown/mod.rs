@@ -443,7 +443,7 @@ impl ProjectionPushDown {
                     ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
                 }
 
-                let mut do_optimization = match &*scan_type {
+                let do_optimization = match &*scan_type {
                     FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
                     FileScan::NDJson { .. } => true,
@@ -454,11 +454,6 @@ impl ProjectionPushDown {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => true,
                 };
-
-                if self.is_count_star && self.in_new_streaming_engine {
-                    output_schema = Some(Default::default());
-                    do_optimization = false;
-                }
 
                 if do_optimization {
                     file_options.with_columns = get_scan_columns(
@@ -616,6 +611,10 @@ impl ProjectionPushDown {
                         }
                         None
                     };
+                }
+
+                if self.is_count_star && self.in_new_streaming_engine {
+                    output_schema = Some(output_schema.unwrap_or_default());
                 }
 
                 // File builder has a row index, but projected columns
