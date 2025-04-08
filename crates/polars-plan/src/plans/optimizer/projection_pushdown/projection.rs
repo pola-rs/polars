@@ -28,6 +28,8 @@ pub(super) fn process_projection(
 
         let input_lp = lp_arena.get(input);
 
+        // If the input node is not aware of `is_count_star` we must project a single column from
+        // this level, otherwise the upstream nodes may end up projecting everything.
         let select_single_column = match input_lp {
             IR::DataFrameScan { .. } | IR::Scan { .. } => false,
             #[cfg(feature = "python")]
