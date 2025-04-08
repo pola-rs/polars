@@ -297,13 +297,14 @@ impl GroupedReduction for BoolMinGroupedReduction {
 
     fn update_group(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
+        let values = values.as_materialized_series_maintain_scalar();
         let ca: &BooleanChunked = values.as_ref().as_ref();
         if !ca.all() {
             self.values.set(group_idx as usize, false);
@@ -316,7 +317,7 @@ impl GroupedReduction for BoolMinGroupedReduction {
 
     unsafe fn update_groups(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idxs: &[IdxSize],
         _seq_id: u64,
     ) -> PolarsResult<()> {
@@ -324,6 +325,7 @@ impl GroupedReduction for BoolMinGroupedReduction {
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
         assert!(values.len() == group_idxs.len());
+        let values = values.as_materialized_series(); // @scalar-opt
         let ca: &BooleanChunked = values.as_ref().as_ref();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
@@ -439,13 +441,14 @@ impl GroupedReduction for BoolMaxGroupedReduction {
 
     fn update_group(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
+        let values = values.as_materialized_series_maintain_scalar();
         let ca: &BooleanChunked = values.as_ref().as_ref();
         if ca.any() {
             self.values.set(group_idx as usize, true);
@@ -458,7 +461,7 @@ impl GroupedReduction for BoolMaxGroupedReduction {
 
     unsafe fn update_groups(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idxs: &[IdxSize],
         _seq_id: u64,
     ) -> PolarsResult<()> {
@@ -466,6 +469,7 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
         assert!(values.len() == group_idxs.len());
+        let values = values.as_materialized_series(); // @scalar-opt
         let ca: &BooleanChunked = values.as_ref().as_ref();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.

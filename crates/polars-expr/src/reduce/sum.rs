@@ -89,13 +89,14 @@ where
 
     fn update_group(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &self.in_dtype);
+        let values = values.as_materialized_series(); // @scalar-opt
         let values = cast_sum_input(values, &self.in_dtype)?;
         let ca: &ChunkedArray<T> = values.as_ref().as_ref().as_ref();
         self.sums[group_idx as usize] += ChunkAgg::sum(ca).unwrap_or(T::Native::zero());
@@ -104,13 +105,14 @@ where
 
     unsafe fn update_groups(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idxs: &[IdxSize],
         _seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &self.in_dtype);
+        let values = values.as_materialized_series(); // @scalar-opt
         let values = cast_sum_input(values, &self.in_dtype)?;
         assert!(values.len() == group_idxs.len());
         let ca: &ChunkedArray<T> = values.as_ref().as_ref().as_ref();

@@ -36,7 +36,7 @@ impl GroupedReduction for CountReduce {
 
     fn update_group(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
@@ -50,11 +50,12 @@ impl GroupedReduction for CountReduce {
 
     unsafe fn update_groups(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idxs: &[IdxSize],
         _seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.len() == group_idxs.len());
+        let values = values.as_materialized_series(); // @scalar-opt
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             let mut offset = 0;

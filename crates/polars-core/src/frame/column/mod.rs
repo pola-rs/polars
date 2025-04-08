@@ -108,6 +108,17 @@ impl Column {
             Column::Scalar(s) => s.as_materialized_series(),
         }
     }
+
+    /// If the memory repr of this Column is a scalar, a unit-length Series will
+    /// be returned.
+    #[inline]
+    pub fn as_materialized_series_maintain_scalar(&self) -> Series {
+        match self {
+            Column::Scalar(s) => s.as_single_value_series(),
+            v => v.as_materialized_series().clone(),
+        }
+    }
+
     /// Turn [`Column`] into a [`Column::Series`].
     ///
     /// This may need to materialize the [`Series`] on the first invocation for a specific column.

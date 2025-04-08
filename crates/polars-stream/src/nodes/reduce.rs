@@ -66,11 +66,7 @@ impl ReduceNode {
                             let input = selector
                                 .evaluate(morsel.df(), &state.in_memory_exec_state)
                                 .await?;
-                            reducer.update_group(
-                                input.as_materialized_series(),
-                                0,
-                                morsel.seq().to_u64(),
-                            )?;
+                            reducer.update_group(&input, 0, morsel.seq().to_u64())?;
                         }
                     }
 
