@@ -27,6 +27,7 @@ either = { workspace = true }
 hashbrown = { workspace = true }
 hex = { workspace = true, optional = true }
 indexmap = { workspace = true }
+libm = { workspace = true }
 memchr = { workspace = true }
 num-traits = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
