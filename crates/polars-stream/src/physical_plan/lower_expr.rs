@@ -1059,6 +1059,8 @@ pub fn build_length_preserving_select_stream(
     let PhysNodeKind::Select { selectors, .. } = &mut ctx.phys_sm[out_stream.node].kind else {
         unreachable!()
     };
-    selectors.pop();
+    assert!(selectors.pop().unwrap().output_name() == &tmp_name);
+    let out_schema = Arc::make_mut(&mut phys_sm[out_stream.node].output_schema);
+    out_schema.shift_remove(tmp_name.as_ref()).unwrap();
     Ok(out_stream)
 }
