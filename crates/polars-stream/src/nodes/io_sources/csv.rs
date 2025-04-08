@@ -668,7 +668,8 @@ impl ChunkReader {
             unsafe {
                 df.with_column_unchecked(Column::new_row_index(
                     ri.name.clone(),
-                    ri.offset.clone(),
+                    ri.offset
+                        .saturating_add(chunk_row_offset.try_into().unwrap_or(IdxSize::MAX)),
                     df.height(),
                 )?);
             }
