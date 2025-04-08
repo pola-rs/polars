@@ -4,7 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::StringCacheHolder;
-use polars_core::prelude::Field;
+use polars_core::prelude::{Column, Field};
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::RowIndex;
@@ -633,27 +633,6 @@ impl ChunkReader {
                 n_lines
             };
 
-            if cfg!(debug_assertions) {
-                let project_first = &[0];
-
-                let expected_height = read_chunk(
-                    chunk,
-                    &self.parse_options,
-                    &self.reader_schema,
-                    self.ignore_errors,
-                    project_first,
-                    0,       // bytes_offset_thread
-                    n_lines, // capacity
-                    self.null_values.as_ref(),
-                    usize::MAX,  // chunk_size
-                    chunk.len(), // stop_at_nbytes
-                    Some(0),     // starting_point_offset
-                )?
-                .height();
-
-                assert_eq!(h, expected_height);
-            }
-
             DataFrame::empty_with_height(h)
         } else {
             read_chunk(
@@ -686,23 +665,13 @@ impl ChunkReader {
         if let Some(ri) = &self.row_index {
             assert!(n_lines_is_correct);
 
-            let offset = ri.offset;
-
-            let Some(offset) = (|| {
-                let offset = offset.checked_add((chunk_row_offset + slice.0) as IdxSize)?;
-                offset.checked_add(df.height() as IdxSize)?;
-
-                Some(offset)
-            })() else {
-                let msg = format!(
-                    "adding a row index column with offset {} overflows at {} rows",
-                    offset,
-                    chunk_row_offset + slice.0
-                );
-                polars_bail!(ComputeError: msg)
-            };
-
-            unsafe { df.with_row_index_mut(ri.name.clone(), Some(offset as IdxSize)) };
+            unsafe {
+                df.with_column_unchecked(Column::new_row_index(
+                    ri.name.clone(),
+                    ri.offset.clone(),
+                    df.height(),
+                )?)
+            }
         }
 
         Ok((df, height))
