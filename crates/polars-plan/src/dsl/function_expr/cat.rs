@@ -39,6 +39,7 @@ impl CategoricalFunction {
         use CategoricalFunction as C;
         match self {
             C::GetCategories => FunctionOptions::groupwise(),
+            #[cfg(feature = "strings")]
             C::LenBytes | C::LenChars | C::StartsWith(_) | C::EndsWith(_) | C::Slice(_, _) => {
                 FunctionOptions::elementwise()
             },
