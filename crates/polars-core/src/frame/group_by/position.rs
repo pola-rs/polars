@@ -672,21 +672,11 @@ impl GroupPositions {
                     })
                     .collect();
 
-                // SAFETY:
-                // When self goes out of scope, self.sliced will get leaked, as it is
-                // wrapped in a ManuallyDrop<>.
-                // For a shallow clone (such as the incoming self.sliced), the impact is
-                // negligible. For a properly owned Vec (such as the newly created sliced),
-                // the impact can be more substantial, unless dropped explicitly later on.
-                GroupPositions {
-                    sliced: ManuallyDrop::new(GroupsType::Slice {
-                        groups,
-                        rolling: false,
-                    }),
-                    original: self.original,
-                    offset: self.offset,
-                    len: self.len,
+                GroupsType::Slice {
+                    groups,
+                    rolling: false,
                 }
+                .into_sliceable()
             },
         }
     }
