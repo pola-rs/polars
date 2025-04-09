@@ -49,12 +49,9 @@ fn scan_type_to_pyobject<'py>(
                 .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
             Ok(("ndjson", options).into_py_any(py)?)
         },
-        FileScan::Anonymous { .. } => {
-            Err(PyNotImplementedError::new_err("anonymous scan"))
-        },
+        FileScan::Anonymous { .. } => Err(PyNotImplementedError::new_err("anonymous scan")),
     }
 }
-
 
 #[pyclass]
 /// Scan a table with an optional predicate from a python function
