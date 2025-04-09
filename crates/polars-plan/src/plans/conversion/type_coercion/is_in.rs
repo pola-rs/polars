@@ -26,10 +26,10 @@ pub(super) fn resolve_is_in(
     if left_nl == right_nl {
         polars_warn!(
             Deprecation,
-            "Using `is_in` with a flat datatype is deprecated.
+            "Using `is_in` with a flat datatype is ambiguous and deprecated.
 Please use `implode` to return to previous behavior.
 
- See #22149 for more information."
+See #22149 for more information."
         );
         return Ok(Some(AExpr::Agg(IRAggExpr::Implode(other_e.node()))));
     }
@@ -40,7 +40,7 @@ Please use `implode` to return to previous behavior.
             "Using `is_in` with a nested scalar datatype is deprecated.
 Please wrap in `pl.Series` to return to previous behavior.
 
- See #22149 for more information."
+See #22149 for more information."
         );
         return Ok(Some(AExpr::Explode(other_e.node())));
     }

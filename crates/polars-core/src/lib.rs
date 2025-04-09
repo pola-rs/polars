@@ -82,3 +82,4 @@ pub static SINGLE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 pub(crate) const HEAD_DEFAULT_LENGTH: usize = 10;
 /// Default length for a `.tail()` call
 pub(crate) const TAIL_DEFAULT_LENGTH: usize = 10;
+pub const CHEAP_SERIES_HASH_LIMIT: usize = 1000;
