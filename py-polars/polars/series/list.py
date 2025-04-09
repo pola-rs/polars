@@ -7,7 +7,7 @@ from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Collection, Sequence
     from datetime import date, datetime, time
 
     from polars import Expr, Series
@@ -955,7 +955,7 @@ class ListNameSpace:
         ]
         """
 
-    def set_union(self, other: Series) -> Series:
+    def set_union(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET UNION between the elements in this list and the elements of `other`.
 
@@ -979,7 +979,7 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def set_difference(self, other: Series) -> Series:
+    def set_difference(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
 
@@ -1007,7 +1007,7 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def set_intersection(self, other: Series) -> Series:
+    def set_intersection(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
@@ -1031,7 +1031,7 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def set_symmetric_difference(self, other: Series) -> Series:
+    def set_symmetric_difference(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
 

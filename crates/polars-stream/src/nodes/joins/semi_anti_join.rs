@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::BitmapBuilder;
-use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_expr::groups::{Grouper, new_hash_grouper};
@@ -14,6 +13,7 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::sparse_init_vec::SparseInitVec;
 
+use crate::async_executor;
 use crate::async_primitives::connector::{Receiver, Sender};
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
@@ -170,22 +170,23 @@ impl BuildState {
             .map(|b| Arc::new(core::mem::take(&mut b.keys)))
             .collect_vec();
         let (key_drop_q_send, key_drop_q_recv) =
-            crossbeam_channel::bounded(keys_per_local_builder.len());
+            async_channel::bounded(keys_per_local_builder.len());
         let num_partitions = self.local_builders[0].sketch_per_p.len();
         let local_builders = &self.local_builders;
         let groupers: SparseInitVec<Box<dyn Grouper>> =
             SparseInitVec::with_capacity(num_partitions);
 
-        POOL.scope(|s| {
+        async_executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_keys_per_local_builder = Arc::new(keys_per_local_builder);
+            let mut join_handles = Vec::new();
             for p in 0..num_partitions {
                 let arc_keys_per_local_builder = Arc::clone(&arc_keys_per_local_builder);
                 let key_drop_q_send = key_drop_q_send.clone();
                 let key_drop_q_recv = key_drop_q_recv.clone();
                 let groupers = &groupers;
-                s.spawn(move |_| {
+                join_handles.push(s.spawn_task(TaskPriority::High, async move {
                     // Extract from outer arc and drop outer arc.
                     let keys_per_local_builder = Arc::unwrap_or_clone(arc_keys_per_local_builder);
 
@@ -223,7 +224,7 @@ impl BuildState {
                             // If we're the last thread to process this set of keys we're probably
                             // falling behind the rest, since the drop can be quite expensive we skip
                             // a drop attempt hoping someone else will pick up the slack.
-                            key_drop_q_send.send(l).unwrap();
+                            key_drop_q_send.send(l).await.unwrap();
                             skip_drop_attempt = true;
                         } else {
                             skip_drop_attempt = false;
@@ -232,12 +233,12 @@ impl BuildState {
 
                     // We're done, help others out by doing drops.
                     drop(key_drop_q_send); // So we don't deadlock trying to receive from ourselves.
-                    while let Ok(l_keys) = key_drop_q_recv.recv() {
+                    while let Ok(l_keys) = key_drop_q_recv.recv().await {
                         drop(l_keys);
                     }
 
                     groupers.try_set(p, p_grouper).ok().unwrap();
-                });
+                }));
             }
 
             // Drop outer arc after spawning each thread so the inner arcs
@@ -246,6 +247,12 @@ impl BuildState {
             // to end.
             drop(arc_keys_per_local_builder);
             drop(key_drop_q_send);
+
+            polars_io::pl_async::get_runtime().block_on(async move {
+                for handle in join_handles {
+                    handle.await;
+                }
+            });
         });
 
         ProbeState {

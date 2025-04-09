@@ -405,6 +405,18 @@ on startup."#.trim_start())
             $dtype,
         )
     };
+    (length_mismatch = $operation:literal, $lhs:expr, $rhs:expr) => {
+        $crate::polars_err!(
+            ShapeMismatch: "arguments for `{}` have different lengths ({} != {})",
+            $operation, $lhs, $rhs
+        )
+    };
+    (length_mismatch = $operation:literal, $lhs:expr, $rhs:expr, argument = $argument:expr, argument_idx = $argument_idx:expr) => {
+        $crate::polars_err!(
+            ShapeMismatch: "argument {} called '{}' for `{}` have different lengths ({} != {})",
+            $argument_idx, $argument, $operation, $lhs, $rhs
+        )
+    };
     (assertion_error = $objects:expr, $detail:expr, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(
             AssertionError: "{} are different ({})\n[left]: {}\n[right]: {}",

@@ -20,6 +20,7 @@ def test_cast() -> None:
             "e": [-1, 0, None, 1, 2],
         }
     )
+
     # test various dtype casts, using standard ("CAST <col> AS <dtype>")
     # and postgres-specific ("<col>::<dtype>") cast syntax
     with pl.SQLContext(df=df, eager=True) as ctx:
@@ -39,6 +40,7 @@ def test_cast() -> None:
               CAST(b AS SMALLINT) AS b_i16,
               b::bigint AS b_i64,
               d::tinyint AS d_i8,
+              d::hugeint AS d_i128,
               a::int1 AS a_i8,
               a::int2 AS a_i16,
               a::int4 AS a_i32,
@@ -51,6 +53,10 @@ def test_cast() -> None:
               b::uint4 AS b_u32,
               b::uint8 AS b_u64,
               CAST(a AS BIGINT UNSIGNED) AS a_u64,
+              b::utinyint AS b_u8,
+              b::usmallint AS b_u16,
+              a::uinteger AS a_u32,
+              d::ubigint AS d_u64,
 
               -- string/binary
               CAST(a AS CHAR) AS a_char,
@@ -77,6 +83,7 @@ def test_cast() -> None:
         "b_i16": pl.Int16,
         "b_i64": pl.Int64,
         "d_i8": pl.Int8,
+        "d_i128": pl.Int128,
         "a_i8": pl.Int8,
         "a_i16": pl.Int16,
         "a_i32": pl.Int32,
@@ -87,6 +94,10 @@ def test_cast() -> None:
         "b_u32": pl.UInt32,
         "b_u64": pl.UInt64,
         "a_u64": pl.UInt64,
+        "b_u8": pl.UInt8,
+        "b_u16": pl.UInt16,
+        "a_u32": pl.UInt32,
+        "d_u64": pl.UInt64,
         "a_char": pl.String,
         "b_varchar": pl.String,
         "c_blob": pl.Binary,
@@ -113,11 +124,11 @@ def test_cast() -> None:
         (5.0, 5.5, 2.0),
     ]
     assert res.select(cs.integer()).rows() == [
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
-        (2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2),
-        (3, 3, 3, 1, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3),
-        (4, 4, 4, 0, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4),
-        (5, 5, 5, 1, 5, 5, 5, 5, 5, 1, 5, 5, 5, 5),
+        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
+        (2, 2, 2, 0, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 0),
+        (3, 3, 3, 1, 1, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 1),
+        (4, 4, 4, 0, 0, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 4, 0),
+        (5, 5, 5, 1, 1, 5, 5, 5, 5, 5, 1, 5, 5, 5, 5, 5, 5, 5, 1),
     ]
     assert res.select(cs.string()).rows() == [
         ("1", "1.1", "true"),

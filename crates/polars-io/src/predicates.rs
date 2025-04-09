@@ -1,7 +1,7 @@
 use std::fmt;
 
 use arrow::array::Array;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, ParquetScalarRange};
@@ -65,7 +65,7 @@ impl ColumnPredicateExpr {
 
 #[cfg(feature = "parquet")]
 impl ParquetColumnExpr for ColumnPredicateExpr {
-    fn evaluate_mut(&self, values: &dyn Array, bm: &mut MutableBitmap) {
+    fn evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) {
         // We should never evaluate nulls with this.
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
 
@@ -82,8 +82,8 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
         bm.reserve(true_mask.len());
         for chunk in true_mask.downcast_iter() {
             match chunk.validity() {
-                None => bm.extend(chunk.values()),
-                Some(v) => bm.extend(chunk.values() & v),
+                None => bm.extend_from_bitmap(chunk.values()),
+                Some(v) => bm.extend_from_bitmap(&(chunk.values() & v)),
             }
         }
     }

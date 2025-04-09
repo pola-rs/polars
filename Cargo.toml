@@ -20,6 +20,7 @@ repository = "https://github.com/pola-rs/polars"
 [workspace.dependencies]
 aho-corasick = "1.1"
 arboard = { version = "3.4.0", default-features = false }
+async-channel = { version = "2.3.1" }
 async-trait = { version = "0.1.59" }
 atoi_simd = "0.16"
 atomic-waker = "1"
@@ -50,6 +51,7 @@ hex = "0.4.3"
 indexmap = { version = "2", features = ["std", "serde"] }
 itoa = "1.0.6"
 libc = "0.2"
+libm = "0.2"
 memchr = "2.6"
 memmap = { package = "memmap2", version = "0.9" }
 ndarray = { version = "0.16", default-features = false }
@@ -81,7 +83,7 @@ streaming-iterator = "0.1.9"
 strength_reduce = "0.2"
 strum = "0.26"
 strum_macros = "0.26"
-tokio = "1.43"
+tokio = "1.44"
 tokio-util = "0.7.8"
 unicode-normalization = "0.1.24"
 unicode-reverse = "1.0.8"

@@ -49,7 +49,7 @@ def test_group_by() -> None:
     )
 
     # check if this query runs and thus column names propagate
-    df.group_by("b").agg(pl.col("c").forward_fill()).explode("c")
+    df.group_by("b").agg(pl.col("c").fill_null(strategy="forward")).explode("c")
 
     # get a specific column
     result = df.group_by("b", maintain_order=True).agg(pl.count("a"))

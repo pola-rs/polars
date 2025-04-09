@@ -27,6 +27,13 @@ pub fn ewm_mean_by(
         }
     }
 
+    polars_ensure!(
+        s.len() == times.len(),
+        length_mismatch = "ewm_mean_by",
+        s.len(),
+        times.len()
+    );
+
     match (s.dtype(), times.dtype()) {
         (DataType::Float64, DataType::Int64) => func(
             s.f64().unwrap(),

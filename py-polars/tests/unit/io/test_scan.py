@@ -917,6 +917,7 @@ def test_predicate_hive_pruning_with_cast(tmp_path: Path) -> None:
     assert_frame_equal(q.collect(), expect)
 
     q = lf.sql("select * from self where date < '2024-01-02'")
+    print(q.explain())
     assert_frame_equal(q.collect(), expect)
 
 

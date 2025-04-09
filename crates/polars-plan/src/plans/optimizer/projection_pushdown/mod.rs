@@ -439,9 +439,10 @@ impl ProjectionPushDown {
                 mut file_options,
                 mut output_schema,
             } => {
-                if self.is_count_star {
+                if self.is_count_star && !self.in_new_streaming_engine {
                     ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
                 }
+
                 let do_optimization = match &*scan_type {
                     FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
@@ -469,6 +470,9 @@ impl ProjectionPushDown {
                                 FileScan::Parquet { .. } => {},
                                 #[cfg(feature = "ipc")]
                                 FileScan::Ipc { .. } => {},
+                                // All nodes in new-streaming support projecting empty morsels with the correct height
+                                // from the file.
+                                _ if self.in_new_streaming_engine => {},
                                 // Other scan types do not yet support projection of e.g. only the row index or file path
                                 // column - ensure at least 1 column is projected from the file.
                                 _ => {
@@ -515,11 +519,9 @@ impl ProjectionPushDown {
 
                         if let Some(ref hive_parts) = hive_parts {
                             // @TODO:
-                            // This is a hack to support both pre-NEW_MULTIFILE and
-                            // post-NEW_MULTIFILE.
-                            if !self.in_new_streaming_engine
-                                && std::env::var("POLARS_NEW_MULTIFILE").as_deref() != Ok("1")
-                            {
+                            // This is a hack to support both old multiscan handling and new
+                            // multiscan handling.
+                            if !self.in_new_streaming_engine {
                                 // Skip reading hive columns from the file.
                                 let partition_schema = hive_parts.schema();
                                 file_options.with_columns = file_options.with_columns.map(|x| {
@@ -607,6 +609,10 @@ impl ProjectionPushDown {
                         }
                         None
                     };
+                }
+
+                if self.is_count_star && self.in_new_streaming_engine {
+                    output_schema = Some(output_schema.unwrap_or_default());
                 }
 
                 // File builder has a row index, but projected columns

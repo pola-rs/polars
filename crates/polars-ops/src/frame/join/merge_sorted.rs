@@ -2,6 +2,31 @@ use arrow::legacy::utils::{CustomIterTools, FromTrustedLenIterator};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
+fn check_and_union_revmaps(
+    lhs_revmap: &Option<Arc<RevMapping>>,
+    rhs_revmap: &Option<Arc<RevMapping>>,
+) -> PolarsResult<Option<Arc<RevMapping>>> {
+    // Ensure we are operating on either identical locals, or compatible globals.
+    let lhs_revmap = lhs_revmap.as_ref().unwrap();
+    let rhs_revmap = rhs_revmap.as_ref().unwrap();
+    match (&**lhs_revmap, &**rhs_revmap) {
+        (RevMapping::Local(_, l_hash), RevMapping::Local(_, r_hash)) => {
+            // Same local categoricals, we return immediately
+            polars_ensure!(l_hash == r_hash, ComputeError: "cannot merge-sort incompatible categoricals");
+            Ok(None)
+        },
+        // Return revmap that is the union of the two revmaps.
+        (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => {
+            polars_ensure!(l == r, ComputeError: "cannot merge-sort incompatible categoricals");
+            let mut rev_map_merger = GlobalRevMapMerger::new(lhs_revmap.clone());
+            rev_map_merger.merge_map(rhs_revmap)?;
+            let new_map = rev_map_merger.finish();
+            Ok(Some(new_map))
+        },
+        _ => unreachable!(),
+    }
+}
+
 pub fn _merge_sorted_dfs(
     left: &DataFrame,
     right: &DataFrame,
@@ -50,7 +75,21 @@ pub fn _merge_sorted_dfs(
                 rhs_phys.as_materialized_series(),
                 &merge_indicator,
             )?);
-            let mut out = unsafe { out.from_physical_unchecked(lhs.dtype()) }.unwrap();
+
+            let lhs_dt = lhs.dtype();
+            let dtype_out = match (lhs_dt, rhs.dtype()) {
+                // Global categorical revmaps must be merged for the output.
+                (DataType::Categorical(lhs_revmap, ord), DataType::Categorical(rhs_revmap, _)) => {
+                    if let Some(new_revmap) = check_and_union_revmaps(lhs_revmap, rhs_revmap)? {
+                        &DataType::Categorical(Some(new_revmap), *ord)
+                    } else {
+                        lhs_dt
+                    }
+                },
+                _ => lhs_dt,
+            };
+
+            let mut out = unsafe { out.from_physical_unchecked(dtype_out) }.unwrap();
             out.rename(lhs.name().clone());
             Ok(out)
         })

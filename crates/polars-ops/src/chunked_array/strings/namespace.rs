@@ -1,4 +1,4 @@
-use arrow::array::{Array, ValueSize};
+use arrow::array::ValueSize;
 use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
@@ -14,7 +14,6 @@ use super::*;
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
 #[cfg(feature = "string_normalize")]
 use crate::prelude::strings::normalize::UnicodeForm;
-use crate::prelude::strings::starts_with::starts_with_str;
 
 // We need this to infer the right lifetimes for the match closure.
 #[inline(always)]
@@ -66,21 +65,39 @@ pub trait StringNameSpaceImpl: AsString {
     // Parse a string number with base _radix_ into a decimal (i64)
     fn to_integer(&self, base: &UInt32Chunked, strict: bool) -> PolarsResult<Int64Chunked> {
         let ca = self.as_string();
-        let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> Option<i64> {
-            match (opt_s, opt_base) {
-                (Some(s), Some(base)) => <i64 as Num>::from_str_radix(s, base).ok(),
-                _ => None,
+
+        polars_ensure!(
+            ca.len() == base.len() || ca.len() == 1 || base.len() == 1,
+            length_mismatch = "str.to_integer",
+            ca.len(),
+            base.len()
+        );
+
+        let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> PolarsResult<Option<i64>> {
+            let (Some(s), Some(base)) = (opt_s, opt_base) else {
+                return Ok(None);
+            };
+
+            if !(2..=36).contains(&base) {
+                polars_bail!(ComputeError: "`to_integer` called with invalid base '{base}'");
             }
+
+            Ok(<i64 as Num>::from_str_radix(s, base).ok())
         };
-        let out = broadcast_binary_elementwise(ca, base, f);
+        let out = broadcast_try_binary_elementwise(ca, base, f)?;
         if strict && ca.null_count() != out.null_count() {
             let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
-            let all_failures = ca.filter(&failure_mask)?;
-            if all_failures.is_empty() {
+            let n_failures = failure_mask.num_trues();
+            if n_failures == 0 {
                 return Ok(out);
             }
-            let n_failures = all_failures.len();
-            let some_failures = all_failures.unique()?.slice(0, 10).sort(false);
+
+            let some_failures = if ca.len() == 1 {
+                ca.clone()
+            } else {
+                let all_failures = ca.filter(&failure_mask)?;
+                all_failures.unique()?.slice(0, 10).sort(false)
+            };
             let some_error_msg = match base.len() {
                 1 => {
                     // we can ensure that base is not null.
@@ -94,10 +111,10 @@ pub trait StringNameSpaceImpl: AsString {
                         )
                 },
                 _ => {
-                    let base_filures = base.filter(&failure_mask)?;
+                    let base_failures = base.filter(&failure_mask)?;
                     some_failures
                         .get(0)
-                        .zip(base_filures.get(0))
+                        .zip(base_failures.get(0))
                         .and_then(|(s, base)| <i64 as Num>::from_str_radix(s, base).err())
                         .map_or_else(
                             || unreachable!("failed to extract ParseIntError"),
@@ -213,35 +230,6 @@ pub trait StringNameSpaceImpl: AsString {
                 };
                 broadcast_try_binary_elementwise(ca, pat, matcher)
             })
-        }
-    }
-
-    /// Check if strings starts with a substring
-    fn starts_with(&self, sub: &str) -> BooleanChunked {
-        let ca = self.as_string();
-        let iter = ca.downcast_iter().map(|arr| {
-            let out: <BooleanType as PolarsDataType>::Array = arr
-                .views()
-                .iter()
-                .map(|view| starts_with_str(*view, sub, arr.data_buffers()))
-                .collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()));
-
-            out.with_validity_typed(arr.validity().cloned())
-        });
-
-        ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
-    }
-
-    /// This is more performant than the BinaryChunked version because we use the inline prefix
-    /// Use the BinaryChunked::ends_with as there is no specialization here for that
-    fn starts_with_chunked(&self, prefix: &StringChunked) -> BooleanChunked {
-        let ca = self.as_string();
-        match prefix.len() {
-            1 => match prefix.get(0) {
-                Some(s) => self.starts_with(s),
-                None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
-            },
-            _ => broadcast_binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub)),
         }
     }
 
@@ -505,15 +493,13 @@ pub trait StringNameSpaceImpl: AsString {
         split_to_struct(ca, by, n, |s, by| s.splitn(n, by), true)
     }
 
-    fn split(&self, by: &StringChunked) -> ListChunked {
+    fn split(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-
         split_helper(ca, by, str::split)
     }
 
-    fn split_inclusive(&self, by: &StringChunked) -> ListChunked {
+    fn split_inclusive(&self, by: &StringChunked) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
-
         split_helper(ca, by, str::split_inclusive)
     }
 

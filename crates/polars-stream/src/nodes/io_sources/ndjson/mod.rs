@@ -74,7 +74,6 @@ impl FileReader for NDJsonFileReader {
 
             predicate: None,
             cast_columns_policy: _,
-            missing_columns_policy: _,
         } = args
         else {
             panic!("unsupported args: {:?}", &args)

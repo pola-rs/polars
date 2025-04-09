@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import warnings
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
@@ -1235,7 +1235,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
 
-    def set_union(self, other: IntoExpr) -> Expr:
+    def set_union(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET UNION between the elements in this list and the elements of `other`.
 
@@ -1267,10 +1267,15 @@ class ExprListNameSpace:
         │ [5, 6, 7] ┆ [6, 8]       ┆ [5, 6, 7, 8]  │
         └───────────┴──────────────┴───────────────┘
         """  # noqa: W505.
-        other = parse_into_expression(other, str_as_lit=False)
+        if isinstance(other, Collection) and not isinstance(other, str):
+            if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
+                other = list(other)  # eg: set, frozenset, etc
+            other = F.lit(other)._pyexpr
+        else:
+            other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "union"))
 
-    def set_difference(self, other: IntoExpr) -> Expr:
+    def set_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
 
@@ -1304,10 +1309,15 @@ class ExprListNameSpace:
         --------
         polars.Expr.list.diff: Calculates the n-th discrete difference of every sublist.
         """  # noqa: W505.
-        other = parse_into_expression(other, str_as_lit=False)
+        if isinstance(other, Collection) and not isinstance(other, str):
+            if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
+                other = list(other)  # eg: set, frozenset, etc
+            other = F.lit(other)._pyexpr
+        else:
+            other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "difference"))
 
-    def set_intersection(self, other: IntoExpr) -> Expr:
+    def set_intersection(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
@@ -1337,10 +1347,15 @@ class ExprListNameSpace:
         │ [5, 6, 7] ┆ [6, 8]       ┆ [6]          │
         └───────────┴──────────────┴──────────────┘
         """  # noqa: W505.
-        other = parse_into_expression(other, str_as_lit=False)
+        if isinstance(other, Collection) and not isinstance(other, str):
+            if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
+                other = list(other)  # eg: set, frozenset, etc
+            other = F.lit(other)._pyexpr
+        else:
+            other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "intersection"))
 
-    def set_symmetric_difference(self, other: IntoExpr) -> Expr:
+    def set_symmetric_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
 
@@ -1370,5 +1385,10 @@ class ExprListNameSpace:
         │ [5, 6, 7] ┆ [6, 8]       ┆ [8, 5, 7] │
         └───────────┴──────────────┴───────────┘
         """  # noqa: W505.
-        other = parse_into_expression(other, str_as_lit=False)
+        if isinstance(other, Collection) and not isinstance(other, str):
+            if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
+                other = list(other)  # eg: set, frozenset, etc
+            other = F.lit(other)._pyexpr
+        else:
+            other = parse_into_expression(other)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))

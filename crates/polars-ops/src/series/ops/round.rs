@@ -1,4 +1,3 @@
-use num_traits::pow::Pow;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -13,12 +12,23 @@ pub trait RoundSeries: SeriesSealed {
             return if decimals == 0 {
                 let s = ca.apply_values(|val| val.round()).into_series();
                 Ok(s)
+            } else if decimals >= 326 {
+                // More precise than smallest denormal.
+                Ok(s.clone())
             } else {
                 // Note we do the computation on f64 floats to not lose precision
                 // when the computation is done, we cast to f32
-                let multiplier = 10.0.pow(decimals as f64);
+                let multiplier = 10.0_f64.powi(decimals as i32);
                 let s = ca
-                    .apply_values(|val| ((val as f64 * multiplier).round() / multiplier) as f32)
+                    .apply_values(|val| {
+                        let ret = ((val as f64 * multiplier).round() / multiplier) as f32;
+                        if ret.is_finite() {
+                            ret
+                        } else {
+                            // We return the original value which is correct both for overflows and non-finite inputs.
+                            val
+                        }
+                    })
                     .into_series();
                 Ok(s)
             };
@@ -27,10 +37,39 @@ pub trait RoundSeries: SeriesSealed {
             return if decimals == 0 {
                 let s = ca.apply_values(|val| val.round()).into_series();
                 Ok(s)
-            } else {
-                let multiplier = 10.0.pow(decimals as f64);
+            } else if decimals >= 326 {
+                // More precise than smallest denormal.
+                Ok(s.clone())
+            } else if decimals >= 300 {
+                // We're getting into unrepresentable territory for the multiplier
+                // here, split up the 10^n multiplier into 2^n and 5^n.
+                let mul2 = libm::scalbn(1.0, decimals as i32);
+                let invmul2 = 1.0 / mul2; // Still exact for any valid value of decimals.
+                let mul5 = 5.0_f64.powi(decimals as i32);
                 let s = ca
-                    .apply_values(|val| (val * multiplier).round() / multiplier)
+                    .apply_values(|val| {
+                        let ret = (val * mul2 * mul5).round() / mul5 * invmul2;
+                        if ret.is_finite() {
+                            ret
+                        } else {
+                            // We return the original value which is correct both for overflows and non-finite inputs.
+                            val
+                        }
+                    })
+                    .into_series();
+                Ok(s)
+            } else {
+                let multiplier = 10.0_f64.powi(decimals as i32);
+                let s = ca
+                    .apply_values(|val| {
+                        let ret = (val * multiplier).round() / multiplier;
+                        if ret.is_finite() {
+                            ret
+                        } else {
+                            // We return the original value which is correct both for overflows and non-finite inputs.
+                            val
+                        }
+                    })
                     .into_series();
                 Ok(s)
             };
@@ -123,8 +162,17 @@ pub trait RoundSeries: SeriesSealed {
                 if value == 0.0 {
                     return value as <$T as PolarsNumericType>::Native;
                 }
-                let magnitude = 10.0_f64.powi(digits - 1 - value.abs().log10().floor() as i32);
-                ((value * magnitude).round() / magnitude) as <$T as PolarsNumericType>::Native
+                // To deal with very large/small numbers we split up 10^n in 5^n and 2^n.
+                // The scaling by 2^n is almost always lossless.
+                let exp = digits - 1 - value.abs().log10().floor() as i32;
+                let pow5 = 5.0_f64.powi(exp);
+                let scaled = libm::scalbn(value, exp) * pow5;
+                let descaled = libm::scalbn(scaled.round() / pow5, -exp);
+                if descaled.is_finite() {
+                    descaled as <$T as PolarsNumericType>::Native
+                } else {
+                    value as <$T as PolarsNumericType>::Native
+                }
             }).into_series();
             return Ok(s);
         });

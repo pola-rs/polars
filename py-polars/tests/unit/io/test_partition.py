@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
@@ -349,3 +350,26 @@ def test_max_size_partition_collect_files(tmp_path: Path) -> None:
     )
 
     assert output_files == [tmp_path / f"{i}.{io_type['ext']}" for i in range(6)]
+
+
+@pytest.mark.parametrize(("io_type"), io_types)
+def test_partition_to_memory(tmp_path: Path, io_type: IOType) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [5, 10, 1996],
+        }
+    )
+
+    output_files = {}
+
+    def file_path_cb(ctx: BasePartitionContext) -> io.BytesIO:
+        f = io.BytesIO()
+        output_files[ctx.file_path] = f
+        return f
+
+    io_type["sink"](df.lazy(), PartitionMaxSize("", file_path=file_path_cb, max_size=1))
+
+    assert len(output_files) == df.height
+    for i, (_, value) in enumerate(output_files.items()):
+        value.seek(0)
+        assert_frame_equal(io_type["scan"](value).collect(), df.slice(i, 1))

@@ -40,7 +40,7 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// order between calls/multiple reductions.
     fn update_group(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()>;
@@ -54,7 +54,7 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// group_idxs[i] < self.num_groups() for all i.
     unsafe fn update_groups(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idxs: &[IdxSize],
         seq_id: u64,
     ) -> PolarsResult<()>;
@@ -245,12 +245,13 @@ where
 
     fn update_group(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.dtype() == &self.in_dtype);
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let values = values.as_materialized_series(); // @scalar-opt
         let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         self.reducer
@@ -260,13 +261,14 @@ where
 
     unsafe fn update_groups(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idxs: &[IdxSize],
         seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.dtype() == &self.in_dtype);
         assert!(values.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let values = values.as_materialized_series(); // @scalar-opt
         let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         unsafe {
@@ -399,7 +401,7 @@ where
 
     fn update_group(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
@@ -407,6 +409,7 @@ where
         // of doing this materialized cast.
         assert!(values.dtype() == &self.in_dtype);
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let values = values.as_materialized_series(); // @scalar-opt
         let values = values.to_physical_repr();
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         self.reducer
@@ -419,7 +422,7 @@ where
 
     unsafe fn update_groups(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idxs: &[IdxSize],
         seq_id: u64,
     ) -> PolarsResult<()> {
@@ -428,6 +431,7 @@ where
         assert!(values.dtype() == &self.in_dtype);
         assert!(values.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let values = values.as_materialized_series(); // @scalar-opt
         let values = values.to_physical_repr();
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         unsafe {
@@ -555,7 +559,7 @@ impl GroupedReduction for NullGroupedReduction {
 
     fn update_group(
         &mut self,
-        _values: &Series,
+        _values: &Column,
         _group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
@@ -564,7 +568,7 @@ impl GroupedReduction for NullGroupedReduction {
 
     unsafe fn update_groups(
         &mut self,
-        _values: &Series,
+        _values: &Column,
         _group_idxs: &[IdxSize],
         _seq_id: u64,
     ) -> PolarsResult<()> {

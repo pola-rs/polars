@@ -18,14 +18,15 @@ use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
+use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode};
-use crate::nodes::{JoinHandle, Morsel, PhaseOutcome, TaskPriority};
+use crate::nodes::{JoinHandle, Morsel, TaskPriority};
 
 pub struct MaxSizePartitionSinkNode {
     input_schema: SchemaRef,
     max_size: IdxSize,
 
-    base_path: PathBuf,
+    base_path: Arc<PathBuf>,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -47,7 +48,7 @@ impl MaxSizePartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         max_size: IdxSize,
-        base_path: PathBuf,
+        base_path: Arc<PathBuf>,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,

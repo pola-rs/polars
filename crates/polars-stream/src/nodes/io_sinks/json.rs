@@ -1,11 +1,9 @@
 use std::cmp::Reverse;
-use std::path::PathBuf;
 
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::json::BatchedWriter;
-use polars_io::utils::file::AsyncWriteable;
-use polars_plan::dsl::SinkOptions;
+use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
 
 use super::{SinkInputPort, SinkNode};
@@ -13,21 +11,22 @@ use crate::async_executor::spawn;
 use crate::async_primitives::connector::Receiver;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::parallelize_receive_task;
-use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
+use crate::nodes::io_sinks::phase::PhaseOutcome;
+use crate::nodes::{JoinHandle, TaskPriority};
 
 pub struct NDJsonSinkNode {
-    path: PathBuf,
+    target: SinkTarget,
     sink_options: SinkOptions,
     cloud_options: Option<CloudOptions>,
 }
 impl NDJsonSinkNode {
     pub fn new(
-        path: PathBuf,
+        target: SinkTarget,
         sink_options: SinkOptions,
         cloud_options: Option<CloudOptions>,
     ) -> Self {
         Self {
-            path,
+            target,
             sink_options,
             cloud_options,
         }
@@ -98,19 +97,14 @@ impl SinkNode for NDJsonSinkNode {
         //
         // Task that will actually do write to the target file.
         let sink_options = self.sink_options.clone();
-        let path = self.path.clone();
+        let target = self.target.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             use tokio::io::AsyncWriteExt;
 
-            if sink_options.mkdir {
-                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
-            }
-
-            let mut file = polars_io::utils::file::AsyncWriteable::try_new(
-                path.to_str().unwrap(),
-                cloud_options.as_ref(),
-            )
-            .await?;
+            let mut file = target
+                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .await?
+                .try_into_async_writeable()?;
 
             while let Ok(mut lin_rx) = io_rx.recv().await {
                 while let Some(Priority(_, buffer)) = lin_rx.get().await {
@@ -118,14 +112,7 @@ impl SinkNode for NDJsonSinkNode {
                 }
             }
 
-            if let AsyncWriteable::Local(file) = &mut file {
-                polars_io::utils::sync_on_close::tokio_sync_on_close(
-                    sink_options.sync_on_close,
-                    file,
-                )
-                .await?;
-            }
-
+            file.sync_on_close(sink_options.sync_on_close).await?;
             file.close().await?;
 
             PolarsResult::Ok(())

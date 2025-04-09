@@ -1406,14 +1406,15 @@ class Expr:
         │ 4   ┆ 10      ┆ 4               │
         └─────┴─────────┴─────────────────┘
 
-        Null values are excluded, but can also be filled by calling `forward_fill`.
+        Null values are excluded, but can also be filled by calling
+        `fill_null(strategy="forward")`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
         ...     pl.col("values").cum_sum().alias("value_cum_sum"),
         ...     pl.col("values")
         ...     .cum_sum()
-        ...     .forward_fill()
+        ...     .fill_null(strategy="forward")
         ...     .alias("value_cum_sum_all_filled"),
         ... )
         shape: (8, 3)
@@ -1526,12 +1527,16 @@ class Expr:
         └─────┴─────────┴─────────────────┘
 
 
-        Null values are excluded, but can also be filled by calling `forward_fill`.
+        Null values are excluded, but can also be filled by calling
+        `fill_null(strategy="forward")`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
         ...     pl.col("values").cum_max().alias("cum_max"),
-        ...     pl.col("values").cum_max().forward_fill().alias("cum_max_all_filled"),
+        ...     pl.col("values")
+        ...     .cum_max()
+        ...     .fill_null(strategy="forward")
+        ...     .alias("cum_max_all_filled"),
         ... )
         shape: (8, 3)
         ┌────────┬─────────┬────────────────────┐
@@ -2647,8 +2652,7 @@ class Expr:
 
         See Also
         --------
-        backward_fill
-        forward_fill
+        fill_null
 
         Examples
         --------
@@ -2856,6 +2860,8 @@ class Expr:
         """
         Fill missing values with the last non-null value.
 
+        This is an alias of `.fill_null(strategy="forward")`.
+
         Parameters
         ----------
         limit
@@ -2863,34 +2869,16 @@ class Expr:
 
         See Also
         --------
-        backward_fill
+        fill_null
         shift
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, None],
-        ...         "b": [4, None, 6],
-        ...     }
-        ... )
-        >>> df.select(pl.all().forward_fill())
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 4   │
-        │ 2   ┆ 4   │
-        │ 2   ┆ 6   │
-        └─────┴─────┘
         """
-        return self._from_pyexpr(self._pyexpr.forward_fill(limit))
+        return self.fill_null(strategy="forward", limit=limit)
 
     def backward_fill(self, limit: int | None = None) -> Expr:
         """
         Fill missing values with the next non-null value.
+
+        This is an alias of `.fill_null(strategy="backward")`.
 
         Parameters
         ----------
@@ -2899,42 +2887,10 @@ class Expr:
 
         See Also
         --------
-        forward_fill
+        fill_null
         shift
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, None],
-        ...         "b": [4, None, 6],
-        ...         "c": [None, None, 2],
-        ...     }
-        ... )
-        >>> df.select(pl.all().backward_fill())
-        shape: (3, 3)
-        ┌──────┬─────┬─────┐
-        │ a    ┆ b   ┆ c   │
-        │ ---  ┆ --- ┆ --- │
-        │ i64  ┆ i64 ┆ i64 │
-        ╞══════╪═════╪═════╡
-        │ 1    ┆ 4   ┆ 2   │
-        │ 2    ┆ 6   ┆ 2   │
-        │ null ┆ 6   ┆ 2   │
-        └──────┴─────┴─────┘
-        >>> df.select(pl.all().backward_fill(limit=1))
-        shape: (3, 3)
-        ┌──────┬─────┬──────┐
-        │ a    ┆ b   ┆ c    │
-        │ ---  ┆ --- ┆ ---  │
-        │ i64  ┆ i64 ┆ i64  │
-        ╞══════╪═════╪══════╡
-        │ 1    ┆ 4   ┆ null │
-        │ 2    ┆ 6   ┆ 2    │
-        │ null ┆ 6   ┆ 2    │
-        └──────┴─────┴──────┘
         """
-        return self._from_pyexpr(self._pyexpr.backward_fill(limit))
+        return self.fill_null(strategy="backward", limit=limit)
 
     def reverse(self) -> Expr:
         """
@@ -8537,7 +8493,9 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
 
-    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
+    def diff(
+        self, n: int | IntoExpr = 1, null_behavior: NullBehavior = "ignore"
+    ) -> Expr:
         """
         Calculate the first discrete difference between shifted items.
 
@@ -8591,6 +8549,7 @@ class Expr:
         │ 5    │
         └──────┘
         """
+        n = parse_into_expression(n)
         return self._from_pyexpr(self._pyexpr.diff(n, null_behavior))
 
     def pct_change(self, n: int | IntoExprColumn = 1) -> Expr:
@@ -10143,11 +10102,10 @@ class Expr:
         Parameters
         ----------
         bins
-            Discretizations to make.
-            If None given, we determine the boundaries based on the data.
+            Bin edges. If None given, we determine the edges based on the data.
         bin_count
-            If no bins provided, this will be used to determine
-            the distance of the bins
+            If `bins` is not provided, `bin_count` uniform bins are created that fully
+            encompass the data.
         include_breakpoint
             Include a column that indicates the upper breakpoint.
         include_category
@@ -10167,7 +10125,7 @@ class Expr:
         │ --- │
         │ u32 │
         ╞═════╡
-        │ 1   │
+        │ 3   │
         │ 2   │
         └─────┘
         >>> df.select(
@@ -10181,7 +10139,7 @@ class Expr:
         │ ---                  │
         │ struct[3]            │
         ╞══════════════════════╡
-        │ {2.0,"(1.0, 2.0]",1} │
+        │ {2.0,"[1.0, 2.0]",3} │
         │ {3.0,"(2.0, 3.0]",2} │
         └──────────────────────┘
         """

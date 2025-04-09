@@ -285,3 +285,8 @@ def test_against_np_busday_offset(
         start, n, weekmask=week_mask, holidays=holidays, roll=roll
     )
     assert result == expected
+
+
+def test_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series([date(2088, 8, 5)] * 2).dt.add_business_days(pl.Series([1] * 3))

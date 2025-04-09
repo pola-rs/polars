@@ -108,6 +108,17 @@ impl Column {
             Column::Scalar(s) => s.as_materialized_series(),
         }
     }
+
+    /// If the memory repr of this Column is a scalar, a unit-length Series will
+    /// be returned.
+    #[inline]
+    pub fn as_materialized_series_maintain_scalar(&self) -> Series {
+        match self {
+            Column::Scalar(s) => s.as_single_value_series(),
+            v => v.as_materialized_series().clone(),
+        }
+    }
+
     /// Turn [`Column`] into a [`Column::Series`].
     ///
     /// This may need to materialize the [`Series`] on the first invocation for a specific column.
@@ -1324,17 +1335,20 @@ impl Column {
             .map(Self::from)
     }
 
-    pub fn gather_every(&self, n: usize, offset: usize) -> Column {
+    pub fn gather_every(&self, n: usize, offset: usize) -> PolarsResult<Column> {
+        polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n should be positive");
         if self.len().saturating_sub(offset) == 0 {
-            return self.clear();
+            return Ok(self.clear());
         }
 
         match self {
-            Column::Series(s) => s.gather_every(n, offset).into(),
-            Column::Partitioned(s) => s.as_materialized_series().gather_every(n, offset).into(),
+            Column::Series(s) => Ok(s.gather_every(n, offset)?.into()),
+            Column::Partitioned(s) => {
+                Ok(s.as_materialized_series().gather_every(n, offset)?.into())
+            },
             Column::Scalar(s) => {
                 let total = s.len() - offset;
-                s.resize(1 + (total - 1) / n).into()
+                Ok(s.resize(1 + (total - 1) / n).into())
             },
         }
     }

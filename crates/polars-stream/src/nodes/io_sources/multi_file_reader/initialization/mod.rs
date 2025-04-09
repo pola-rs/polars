@@ -114,3 +114,13 @@ impl MultiScanTaskInitializer {
         )
     }
 }
+
+pub(super) fn max_concurrent_scans_config() -> usize {
+    const DEFAULT_MAX_CONCURRENT_SCANS: usize = 8;
+
+    std::env::var("POLARS_MAX_CONCURRENT_SCANS").map_or(DEFAULT_MAX_CONCURRENT_SCANS, |v| {
+        v.parse::<usize>()
+            .expect("unable to parse POLARS_MAX_CONCURRENT_SCANS")
+            .max(1)
+    })
+}

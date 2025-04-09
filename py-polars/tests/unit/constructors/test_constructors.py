@@ -730,12 +730,17 @@ def test_init_arrow_dupes() -> None:
         arrays=[
             pa.array([1, 2, 3], type=pa.int32()),
             pa.array([4, 5, 6], type=pa.int32()),
+            pa.array(
+                [7, 8, 9], type=pa.decimal128(38, 10)
+            ),  # included as this triggers a panic during construction alongside duplicate fields
         ],
-        schema=pa.schema([("col", pa.int32()), ("col", pa.int32())]),
+        schema=pa.schema(
+            [("col", pa.int32()), ("col", pa.int32()), ("col3", pa.decimal128(38, 10))]
+        ),
     )
     with pytest.raises(
         DuplicateError,
-        match="column 'col' appears more than once; names must be unique",
+        match=r"""column appears more than once; names must be unique: \["col"\]""",
     ):
         pl.DataFrame(tbl)
 

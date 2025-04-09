@@ -1144,7 +1144,6 @@ impl SQLContext {
                 ..
             } => {
                 if let Some(alias) = alias {
-                    let table_name = alias.name.value.clone();
                     let column_names: Vec<Option<PlSmallStr>> = alias
                         .columns
                         .iter()
@@ -1187,11 +1186,13 @@ impl SQLContext {
                         .collect();
 
                     let lf = DataFrame::new(column_series)?.lazy();
+
                     if *with_offset {
-                        // TODO: support 'WITH ORDINALITY' modifier.
+                        // TODO: support 'WITH ORDINALITY|OFFSET' modifier.
                         //  (note that 'WITH OFFSET' is BigQuery-specific syntax, not PostgreSQL)
-                        polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH OFFSET/ORDINALITY");
+                        polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
                     }
+                    let table_name = alias.name.value.clone();
                     self.table_map.insert(table_name.clone(), lf.clone());
                     Ok((table_name.clone(), lf))
                 } else {

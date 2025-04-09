@@ -1,8 +1,6 @@
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
-use polars_io::utils::file::Writeable;
-use polars_io::utils::mkdir::mkdir_recursive;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::format_pl_smallstr;
@@ -229,172 +227,105 @@ fn create_physical_plan_impl(
                 })),
                 SinkTypeIR::File(FileSinkType {
                     file_type,
-                    path,
+                    target,
                     sink_options,
                     cloud_options,
-                }) => match file_type {
-                    #[cfg(feature = "parquet")]
-                    FileType::Parquet(options) => Ok(Box::new(SinkExecutor {
+                }) => {
+                    let name: &'static str = match &file_type {
+                        #[cfg(feature = "parquet")]
+                        FileType::Parquet(_) => "parquet",
+                        #[cfg(feature = "ipc")]
+                        FileType::Ipc(_) => "ipc",
+                        #[cfg(feature = "csv")]
+                        FileType::Csv(_) => "csv",
+                        #[cfg(feature = "json")]
+                        FileType::Json(_) => "json",
+                        #[allow(unreachable_patterns)]
+                        _ => panic!("enable filetype feature"),
+                    };
+
+                    Ok(Box::new(SinkExecutor {
                         input,
-                        name: "parquet".to_string(),
+                        name: name.to_string(),
                         f: Box::new(move |mut df, _state| {
+                            let mut file = target
+                                .open_into_writeable(&sink_options, cloud_options.as_ref())?;
+                            let writer = &mut *file;
+
                             use std::io::BufWriter;
-                            use std::ops::DerefMut;
+                            match &file_type {
+                                #[cfg(feature = "parquet")]
+                                FileType::Parquet(options) => {
+                                    use polars_io::parquet::write::ParquetWriter;
+                                    ParquetWriter::new(BufWriter::new(writer))
+                                        .with_compression(options.compression)
+                                        .with_statistics(options.statistics)
+                                        .with_row_group_size(options.row_group_size)
+                                        .with_data_page_size(options.data_page_size)
+                                        .finish(&mut df)?;
+                                },
+                                #[cfg(feature = "ipc")]
+                                FileType::Ipc(options) => {
+                                    use polars_io::SerWriter;
+                                    use polars_io::ipc::IpcWriter;
+                                    IpcWriter::new(BufWriter::new(writer))
+                                        .with_compression(options.compression)
+                                        .with_compat_level(options.compat_level)
+                                        .finish(&mut df)?;
+                                },
+                                #[cfg(feature = "csv")]
+                                FileType::Csv(options) => {
+                                    use polars_io::SerWriter;
+                                    use polars_io::csv::write::CsvWriter;
+                                    CsvWriter::new(BufWriter::new(writer))
+                                        .include_bom(options.include_bom)
+                                        .include_header(options.include_header)
+                                        .with_separator(options.serialize_options.separator)
+                                        .with_line_terminator(
+                                            options.serialize_options.line_terminator.clone(),
+                                        )
+                                        .with_quote_char(options.serialize_options.quote_char)
+                                        .with_batch_size(options.batch_size)
+                                        .with_datetime_format(
+                                            options.serialize_options.datetime_format.clone(),
+                                        )
+                                        .with_date_format(
+                                            options.serialize_options.date_format.clone(),
+                                        )
+                                        .with_time_format(
+                                            options.serialize_options.time_format.clone(),
+                                        )
+                                        .with_float_scientific(
+                                            options.serialize_options.float_scientific,
+                                        )
+                                        .with_float_precision(
+                                            options.serialize_options.float_precision,
+                                        )
+                                        .with_null_value(options.serialize_options.null.clone())
+                                        .with_quote_style(options.serialize_options.quote_style)
+                                        .finish(&mut df)?;
+                                },
+                                #[cfg(feature = "json")]
+                                FileType::Json(_options) => {
+                                    use polars_io::SerWriter;
+                                    use polars_io::json::{JsonFormat, JsonWriter};
 
-                            use polars_io::parquet::write::ParquetWriter;
-
-                            if sink_options.mkdir {
-                                mkdir_recursive(path.as_path())?;
+                                    JsonWriter::new(BufWriter::new(writer))
+                                        .with_json_format(JsonFormat::JsonLines)
+                                        .finish(&mut df)?;
+                                },
+                                #[allow(unreachable_patterns)]
+                                _ => panic!("enable filetype feature"),
                             }
 
-                            let path = path.as_ref().display().to_string();
-                            let mut file = polars_io::utils::file::Writeable::try_new(
-                                &path,
-                                cloud_options.as_ref(),
-                            )?;
-                            ParquetWriter::new(BufWriter::new(file.deref_mut()))
-                                .with_compression(options.compression)
-                                .with_statistics(options.statistics)
-                                .with_row_group_size(options.row_group_size)
-                                .with_data_page_size(options.data_page_size)
-                                .finish(&mut df)?;
-
-                            if let Writeable::Local(file) = &mut file {
-                                polars_io::utils::sync_on_close::sync_on_close(
-                                    sink_options.sync_on_close,
-                                    file,
-                                )?;
-                            }
+                            file.sync_on_close(sink_options.sync_on_close)?;
                             file.close()?;
 
                             Ok(None)
                         }),
-                    })),
-                    #[cfg(feature = "ipc")]
-                    FileType::Ipc(options) => Ok(Box::new(SinkExecutor {
-                        input,
-                        name: "ipc".to_string(),
-                        f: Box::new(move |mut df, _state| {
-                            use std::io::BufWriter;
-                            use std::ops::DerefMut;
-
-                            use polars_io::SerWriter;
-                            use polars_io::ipc::IpcWriter;
-
-                            if sink_options.mkdir {
-                                mkdir_recursive(path.as_path())?;
-                            }
-
-                            let path = path.as_ref().display().to_string();
-                            let mut file = polars_io::utils::file::Writeable::try_new(
-                                &path,
-                                cloud_options.as_ref(),
-                            )?;
-                            IpcWriter::new(BufWriter::new(file.deref_mut()))
-                                .with_compression(options.compression)
-                                .with_compat_level(options.compat_level)
-                                .finish(&mut df)?;
-
-                            if let Writeable::Local(file) = &mut file {
-                                polars_io::utils::sync_on_close::sync_on_close(
-                                    sink_options.sync_on_close,
-                                    file,
-                                )?;
-                            }
-
-                            file.close()?;
-
-                            Ok(None)
-                        }),
-                    })),
-                    #[cfg(feature = "csv")]
-                    FileType::Csv(options) => Ok(Box::new(SinkExecutor {
-                        input,
-                        name: "csv".to_string(),
-                        f: Box::new(move |mut df, _state| {
-                            use std::io::BufWriter;
-                            use std::ops::DerefMut;
-
-                            use polars_io::SerWriter;
-                            use polars_io::csv::write::CsvWriter;
-
-                            if sink_options.mkdir {
-                                mkdir_recursive(path.as_path())?;
-                            }
-
-                            let path = path.as_ref().display().to_string();
-                            let mut file = polars_io::utils::file::Writeable::try_new(
-                                &path,
-                                cloud_options.as_ref(),
-                            )?;
-                            CsvWriter::new(BufWriter::new(file.deref_mut()))
-                                .include_bom(options.include_bom)
-                                .include_header(options.include_header)
-                                .with_separator(options.serialize_options.separator)
-                                .with_line_terminator(
-                                    options.serialize_options.line_terminator.clone(),
-                                )
-                                .with_quote_char(options.serialize_options.quote_char)
-                                .with_batch_size(options.batch_size)
-                                .with_datetime_format(
-                                    options.serialize_options.datetime_format.clone(),
-                                )
-                                .with_date_format(options.serialize_options.date_format.clone())
-                                .with_time_format(options.serialize_options.time_format.clone())
-                                .with_float_scientific(options.serialize_options.float_scientific)
-                                .with_float_precision(options.serialize_options.float_precision)
-                                .with_null_value(options.serialize_options.null.clone())
-                                .with_quote_style(options.serialize_options.quote_style)
-                                .finish(&mut df)?;
-
-                            if let Writeable::Local(file) = &mut file {
-                                polars_io::utils::sync_on_close::sync_on_close(
-                                    sink_options.sync_on_close,
-                                    file,
-                                )?;
-                            }
-                            file.close()?;
-
-                            Ok(None)
-                        }),
-                    })),
-                    #[cfg(feature = "json")]
-                    FileType::Json(_) => Ok(Box::new(SinkExecutor {
-                        input,
-                        name: "ndjson".to_string(),
-                        f: Box::new(move |mut df, _state| {
-                            use std::io::BufWriter;
-                            use std::ops::DerefMut;
-
-                            use polars_io::SerWriter;
-                            use polars_io::json::{JsonFormat, JsonWriter};
-
-                            if sink_options.mkdir {
-                                mkdir_recursive(path.as_path())?;
-                            }
-
-                            let path = path.as_ref().display().to_string();
-                            let mut file = polars_io::utils::file::Writeable::try_new(
-                                &path,
-                                cloud_options.as_ref(),
-                            )?;
-                            JsonWriter::new(BufWriter::new(file.deref_mut()))
-                                .with_json_format(JsonFormat::JsonLines)
-                                .finish(&mut df)?;
-
-                            if let Writeable::Local(file) = &mut file {
-                                polars_io::utils::sync_on_close::sync_on_close(
-                                    sink_options.sync_on_close,
-                                    file,
-                                )?;
-                            }
-
-                            file.close()?;
-
-                            Ok(None)
-                        }),
-                    })),
+                    }))
                 },
+
                 SinkTypeIR::Partition { .. } => {
                     polars_bail!(InvalidOperation:
                         "partition sinks not yet supported in standard engine."
@@ -487,12 +418,8 @@ fn create_physical_plan_impl(
             };
 
             let mut state = ExpressionConversionState::new(true);
-            let do_new_multifile = (sources.len() > 1 || hive_parts.is_some())
-                && !matches!(&*scan_type, FileScan::Anonymous { .. })
-                && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1");
 
             let mut create_skip_batch_predicate = false;
-            create_skip_batch_predicate |= do_new_multifile;
             #[cfg(feature = "parquet")]
             {
                 create_skip_batch_predicate |= matches!(
@@ -520,17 +447,6 @@ fn create_physical_plan_impl(
                 })
                 .transpose()?;
 
-            if do_new_multifile {
-                return Ok(Box::new(executors::MultiScanExec::new(
-                    sources,
-                    file_info,
-                    hive_parts.map(|h| h.into_statistics()),
-                    predicate,
-                    file_options,
-                    scan_type,
-                )));
-            }
-
             match *scan_type {
                 #[cfg(feature = "csv")]
                 FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
@@ -553,7 +469,6 @@ fn create_physical_plan_impl(
                     file_options: *file_options,
                     hive_parts: hive_parts.map(|h| h.into_statistics()),
                     cloud_options,
-                    metadata,
                 })),
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {

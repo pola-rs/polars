@@ -245,7 +245,7 @@ pub enum FunctionExpr {
     Coalesce,
     ShrinkType,
     #[cfg(feature = "diff")]
-    Diff(i64, NullBehavior),
+    Diff(NullBehavior),
     #[cfg(feature = "pct_change")]
     PctChange,
     #[cfg(feature = "interpolate")]
@@ -321,18 +321,13 @@ pub enum FunctionExpr {
     /// Creating this node is unsafe
     /// This will lead to calls over FFI.
     FfiPlugin {
+        flags: FunctionOptions,
         /// Shared library.
         lib: PlSmallStr,
         /// Identifier in the shared lib.
         symbol: PlSmallStr,
         /// Pickle serialized keyword arguments.
         kwargs: Arc<[u8]>,
-    },
-    BackwardFill {
-        limit: FillNullLimit,
-    },
-    ForwardFill {
-        limit: FillNullLimit,
     },
     MaxHorizontal,
     MinHorizontal,
@@ -414,13 +409,14 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "fused")]
             Fused(f) => f.hash(state),
             #[cfg(feature = "diff")]
-            Diff(_, null_behavior) => null_behavior.hash(state),
+            Diff(null_behavior) => null_behavior.hash(state),
             #[cfg(feature = "interpolate")]
             Interpolate(f) => f.hash(state),
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => {},
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin {
+                flags: _,
                 lib,
                 symbol,
                 kwargs,
@@ -579,7 +575,6 @@ impl Hash for FunctionExpr {
             RLEID => {},
             ToPhysical => {},
             SetSortedFlag(is_sorted) => is_sorted.hash(state),
-            BackwardFill { limit } | ForwardFill { limit } => limit.hash(state),
             #[cfg(feature = "ewma")]
             EwmMean { options } => options.hash(state),
             #[cfg(feature = "ewma_by")]
@@ -716,7 +711,7 @@ impl Display for FunctionExpr {
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
-            Diff(_, _) => "diff",
+            Diff(_) => "diff",
             #[cfg(feature = "pct_change")]
             PctChange => "pct_change",
             #[cfg(feature = "interpolate")]
@@ -775,8 +770,6 @@ impl Display for FunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
-            BackwardFill { .. } => "backward_fill",
-            ForwardFill { .. } => "forward_fill",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
             SumHorizontal { .. } => "sum_horizontal",
@@ -1081,7 +1074,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
-            Diff(n, null_behavior) => map!(dispatch::diff, n, null_behavior),
+            Diff(null_behavior) => map_as_slice!(dispatch::diff, null_behavior),
             #[cfg(feature = "pct_change")]
             PctChange => map_as_slice!(dispatch::pct_change),
             #[cfg(feature = "interpolate")]
@@ -1178,6 +1171,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin {
+                flags: _,
                 lib,
                 symbol,
                 kwargs,
@@ -1189,8 +1183,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     kwargs.as_ref()
                 )
             },
-            BackwardFill { limit } => map!(dispatch::backward_fill, limit),
-            ForwardFill { limit } => map!(dispatch::forward_fill, limit),
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
             SumHorizontal { ignore_nulls } => wrap!(dispatch::sum_horizontal, ignore_nulls),
@@ -1217,6 +1209,187 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "reinterpret")]
             Reinterpret(signed) => map!(dispatch::reinterpret, signed),
             ExtendConstant => map_as_slice!(dispatch::extend_constant),
+        }
+    }
+}
+
+impl FunctionExpr {
+    pub fn function_options(&self) -> FunctionOptions {
+        use FunctionExpr as F;
+        match self {
+            #[cfg(feature = "dtype-array")]
+            F::ArrayExpr(e) => e.function_options(),
+            F::BinaryExpr(e) => e.function_options(),
+            #[cfg(feature = "dtype-categorical")]
+            F::Categorical(e) => e.function_options(),
+            F::ListExpr(e) => e.function_options(),
+            #[cfg(feature = "strings")]
+            F::StringExpr(e) => e.function_options(),
+            #[cfg(feature = "dtype-struct")]
+            F::StructExpr(e) => e.function_options(),
+            #[cfg(feature = "temporal")]
+            F::TemporalExpr(e) => e.function_options(),
+            #[cfg(feature = "bitwise")]
+            F::Bitwise(e) => e.function_options(),
+            F::Boolean(e) => e.function_options(),
+            #[cfg(feature = "business")]
+            F::Business(e) => e.function_options(),
+            F::Pow(e) => e.function_options(),
+            #[cfg(feature = "range")]
+            F::Range(e) => e.function_options(),
+            #[cfg(feature = "abs")]
+            F::Abs => FunctionOptions::elementwise(),
+            F::Negate => FunctionOptions::elementwise(),
+            #[cfg(feature = "hist")]
+            F::Hist { .. } => FunctionOptions::groupwise(),
+            F::NullCount => FunctionOptions::aggregation(),
+            #[cfg(feature = "row_hash")]
+            F::Hash(_, _, _, _) => FunctionOptions::elementwise(),
+            #[cfg(feature = "arg_where")]
+            F::ArgWhere => FunctionOptions::groupwise(),
+            #[cfg(feature = "index_of")]
+            F::IndexOf => {
+                FunctionOptions::aggregation().with_casting_rules(CastingRules::FirstArgLossless)
+            },
+            #[cfg(feature = "search_sorted")]
+            F::SearchSorted(_) => FunctionOptions::groupwise().with_supertyping(
+                (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
+            ),
+            #[cfg(feature = "trigonometry")]
+            F::Trigonometry(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "trigonometry")]
+            F::Atan2 => FunctionOptions::elementwise(),
+            #[cfg(feature = "sign")]
+            F::Sign => FunctionOptions::elementwise(),
+            F::FillNull => FunctionOptions::elementwise().with_supertyping(Default::default()),
+            F::FillNullWithStrategy(strategy) if strategy.is_elementwise() => {
+                FunctionOptions::elementwise()
+            },
+            F::FillNullWithStrategy(_) => FunctionOptions::groupwise(),
+            #[cfg(feature = "rolling_window")]
+            F::RollingExpr(_) => FunctionOptions::length_preserving(),
+            #[cfg(feature = "rolling_window_by")]
+            F::RollingExprBy(_) => FunctionOptions::length_preserving(),
+            F::ShiftAndFill => FunctionOptions::length_preserving(),
+            F::Shift => FunctionOptions::length_preserving(),
+            F::DropNans => FunctionOptions::row_separable(),
+            F::DropNulls => FunctionOptions::row_separable().with_allow_empty_inputs(true),
+            #[cfg(feature = "mode")]
+            F::Mode => FunctionOptions::groupwise(),
+            #[cfg(feature = "moment")]
+            F::Skew(_) => FunctionOptions::aggregation(),
+            #[cfg(feature = "moment")]
+            F::Kurtosis(_, _) => FunctionOptions::aggregation(),
+            #[cfg(feature = "dtype-array")]
+            F::Reshape(_) => FunctionOptions::groupwise(),
+            #[cfg(feature = "repeat_by")]
+            F::RepeatBy => FunctionOptions::elementwise(),
+            F::ArgUnique => FunctionOptions::groupwise(),
+            #[cfg(feature = "rank")]
+            F::Rank { .. } => FunctionOptions::groupwise(),
+            F::Repeat => FunctionOptions::groupwise()
+                .with_allow_rename(true)
+                .with_changes_length(true),
+            #[cfg(feature = "round_series")]
+            F::Clip { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-struct")]
+            F::AsStruct => FunctionOptions::elementwise()
+                .with_pass_name_to_apply(true)
+                .with_input_wildcard_expansion(true),
+            #[cfg(feature = "top_k")]
+            F::TopK { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "top_k")]
+            F::TopKBy { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "cum_agg")]
+            F::CumCount { .. }
+            | F::CumSum { .. }
+            | F::CumProd { .. }
+            | F::CumMin { .. }
+            | F::CumMax { .. } => FunctionOptions::length_preserving(),
+            F::Reverse => FunctionOptions::length_preserving(),
+            #[cfg(feature = "dtype-struct")]
+            F::ValueCounts { .. } => FunctionOptions::groupwise().with_pass_name_to_apply(true),
+            #[cfg(feature = "unique_counts")]
+            F::UniqueCounts => FunctionOptions::groupwise(),
+            #[cfg(feature = "approx_unique")]
+            F::ApproxNUnique => FunctionOptions::aggregation(),
+            F::Coalesce => FunctionOptions::elementwise()
+                .with_input_wildcard_expansion(true)
+                .with_supertyping(Default::default()),
+            F::ShrinkType => FunctionOptions::length_preserving(),
+            #[cfg(feature = "diff")]
+            F::Diff(NullBehavior::Drop) => FunctionOptions::groupwise(),
+            #[cfg(feature = "diff")]
+            F::Diff(NullBehavior::Ignore) => FunctionOptions::length_preserving(),
+            #[cfg(feature = "pct_change")]
+            F::PctChange => FunctionOptions::length_preserving(),
+            #[cfg(feature = "interpolate")]
+            F::Interpolate(_) => FunctionOptions::length_preserving(),
+            #[cfg(feature = "interpolate_by")]
+            F::InterpolateBy => FunctionOptions::length_preserving(),
+            #[cfg(feature = "log")]
+            F::Log { .. } | F::Log1p | F::Exp => FunctionOptions::elementwise(),
+            #[cfg(feature = "log")]
+            F::Entropy { .. } => FunctionOptions::aggregation(),
+            F::Unique(_) => FunctionOptions::groupwise(),
+            #[cfg(feature = "round_series")]
+            F::Round { .. } | F::RoundSF { .. } | F::Floor | F::Ceil => {
+                FunctionOptions::elementwise()
+            },
+            F::UpperBound | F::LowerBound => FunctionOptions::aggregation(),
+            #[cfg(feature = "fused")]
+            F::Fused(_) => FunctionOptions::elementwise(),
+            F::ConcatExpr(_) => FunctionOptions::groupwise()
+                .with_input_wildcard_expansion(true)
+                .with_supertyping(Default::default()),
+            #[cfg(feature = "cov")]
+            F::Correlation { .. } => {
+                FunctionOptions::aggregation().with_supertyping(Default::default())
+            },
+            #[cfg(feature = "peaks")]
+            F::PeakMin | F::PeakMax => FunctionOptions::length_preserving(),
+            #[cfg(feature = "cutqcut")]
+            F::Cut { .. } | F::QCut { .. } => {
+                FunctionOptions::length_preserving().with_pass_name_to_apply(true)
+            },
+            #[cfg(feature = "rle")]
+            F::RLE => FunctionOptions::groupwise(),
+            #[cfg(feature = "rle")]
+            F::RLEID => FunctionOptions::length_preserving(),
+            F::ToPhysical => FunctionOptions::elementwise(),
+            #[cfg(feature = "random")]
+            F::Random {
+                method: RandomMethod::Sample { .. },
+                ..
+            } => FunctionOptions::groupwise(),
+            #[cfg(feature = "random")]
+            F::Random {
+                method: RandomMethod::Shuffle,
+                ..
+            } => FunctionOptions::length_preserving(),
+            F::SetSortedFlag(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "ffi_plugin")]
+            F::FfiPlugin { flags, .. } => *flags,
+            F::MaxHorizontal | F::MinHorizontal => FunctionOptions::elementwise()
+                .with_input_wildcard_expansion(true)
+                .with_allow_rename(true),
+            F::MeanHorizontal { .. } | F::SumHorizontal { .. } => {
+                FunctionOptions::elementwise().with_input_wildcard_expansion(true)
+            },
+            #[cfg(feature = "ewma")]
+            F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } => {
+                FunctionOptions::length_preserving()
+            },
+            #[cfg(feature = "ewma_by")]
+            F::EwmMeanBy { .. } => FunctionOptions::length_preserving(),
+            #[cfg(feature = "replace")]
+            F::Replace => FunctionOptions::elementwise(),
+            #[cfg(feature = "replace")]
+            F::ReplaceStrict { .. } => FunctionOptions::elementwise(),
+            F::GatherEvery { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "reinterpret")]
+            F::Reinterpret(_) => FunctionOptions::elementwise(),
+            F::ExtendConstant => FunctionOptions::groupwise(),
         }
     }
 }

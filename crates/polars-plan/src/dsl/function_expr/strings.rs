@@ -215,6 +215,84 @@ impl StringFunction {
             EscapeRegex => mapper.with_same_dtype(),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use StringFunction as S;
+        match self {
+            #[cfg(feature = "concat_str")]
+            S::ConcatHorizontal { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "concat_str")]
+            S::ConcatVertical { .. } => FunctionOptions::aggregation(),
+            #[cfg(feature = "regex")]
+            S::Contains { .. } => {
+                FunctionOptions::elementwise().with_supertyping(Default::default())
+            },
+            S::CountMatches(_) => FunctionOptions::elementwise(),
+            S::EndsWith | S::StartsWith | S::Extract(_) => {
+                FunctionOptions::elementwise().with_supertyping(Default::default())
+            },
+            S::ExtractAll => FunctionOptions::elementwise(),
+            #[cfg(feature = "extract_groups")]
+            S::ExtractGroups { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "string_to_integer")]
+            S::ToInteger { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "regex")]
+            S::Find { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
+            #[cfg(feature = "extract_jsonpath")]
+            S::JsonDecode { dtype: Some(_), .. } => FunctionOptions::elementwise(),
+            // because dtype should be inferred only once and be consistent over chunks/morsels.
+            #[cfg(feature = "extract_jsonpath")]
+            S::JsonDecode { dtype: None, .. } => FunctionOptions::elementwise_with_infer(),
+            #[cfg(feature = "extract_jsonpath")]
+            S::JsonPathMatch => FunctionOptions::elementwise(),
+            S::LenBytes | S::LenChars => FunctionOptions::elementwise(),
+            #[cfg(feature = "regex")]
+            S::Replace { .. } => {
+                FunctionOptions::elementwise().with_supertyping(Default::default())
+            },
+            #[cfg(feature = "string_normalize")]
+            S::Normalize { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "string_reverse")]
+            S::Reverse => FunctionOptions::elementwise(),
+            #[cfg(feature = "temporal")]
+            S::Strptime(_, options) if options.format.is_some() => FunctionOptions::elementwise(),
+            S::Strptime(_, _) => FunctionOptions::elementwise_with_infer(),
+            S::Split(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "nightly")]
+            S::Titlecase => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-decimal")]
+            S::ToDecimal(_) => FunctionOptions::elementwise_with_infer(),
+            #[cfg(feature = "string_encoding")]
+            S::HexEncode | S::Base64Encode => FunctionOptions::elementwise(),
+            #[cfg(feature = "binary_encoding")]
+            S::HexDecode(_) | S::Base64Decode(_) => FunctionOptions::elementwise(),
+            S::Uppercase | S::Lowercase => FunctionOptions::elementwise(),
+            S::StripChars
+            | S::StripCharsStart
+            | S::StripCharsEnd
+            | S::StripPrefix
+            | S::StripSuffix
+            | S::Head
+            | S::Tail => FunctionOptions::elementwise(),
+            S::Slice => FunctionOptions::elementwise(),
+            #[cfg(feature = "string_pad")]
+            S::PadStart { .. } | S::PadEnd { .. } | S::ZFill => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-struct")]
+            S::SplitExact { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-struct")]
+            S::SplitN(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "find_many")]
+            S::ContainsAny { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "find_many")]
+            S::ReplaceMany { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "find_many")]
+            S::ExtractMany { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "find_many")]
+            S::FindMany { .. } => FunctionOptions::groupwise(),
+            #[cfg(feature = "regex")]
+            S::EscapeRegex => FunctionOptions::elementwise(),
+        }
+    }
 }
 
 impl Display for StringFunction {
@@ -541,17 +619,17 @@ pub(super) fn find(s: &[Column], literal: bool, strict: bool) -> PolarsResult<Co
 
 pub(super) fn ends_with(s: &[Column]) -> PolarsResult<Column> {
     _check_same_length(s, "ends_with")?;
-    let ca = &s[0].str()?.as_binary();
-    let suffix = &s[1].str()?.as_binary();
+    let ca = s[0].str()?.as_binary();
+    let suffix = s[1].str()?.as_binary();
 
-    Ok(ca.ends_with_chunked(suffix).into_column())
+    Ok(ca.ends_with_chunked(&suffix)?.into_column())
 }
 
 pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
     _check_same_length(s, "starts_with")?;
-    let ca = s[0].str()?;
-    let prefix = s[1].str()?;
-    Ok(ca.starts_with_chunked(prefix).into_column())
+    let ca = s[0].str()?.as_binary();
+    let prefix = s[1].str()?.as_binary();
+    Ok(ca.starts_with_chunked(&prefix)?.into_column())
 }
 
 /// Extract a regex pattern from the a string value.
@@ -712,9 +790,9 @@ pub(super) fn split(s: &[Column], inclusive: bool) -> PolarsResult<Column> {
     let by = s[1].str()?;
 
     if inclusive {
-        Ok(ca.split_inclusive(by).into_column())
+        Ok(ca.split_inclusive(by)?.into_column())
     } else {
-        Ok(ca.split(by).into_column())
+        Ok(ca.split(by)?.into_column())
     }
 }
 
@@ -746,6 +824,16 @@ fn to_datetime(
 ) -> PolarsResult<Column> {
     let datetime_strings = &s[0].str()?;
     let ambiguous = &s[1].str()?;
+
+    polars_ensure!(
+        datetime_strings.len() == ambiguous.len()
+            || datetime_strings.len() == 1
+            || ambiguous.len() == 1,
+        length_mismatch = "str.strptime",
+        datetime_strings.len(),
+        ambiguous.len()
+    );
+
     let tz_aware = match &options.format {
         #[cfg(all(feature = "regex", feature = "timezones"))]
         Some(format) => TZ_AWARE_RE.is_match(format),

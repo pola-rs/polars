@@ -25,6 +25,30 @@ pub(super) fn process_projection(
         // Clear all accumulated projections since we only project a single column from this level.
         ctx.acc_projections.clear();
         ctx.projected_names.clear();
+
+        let input_lp = lp_arena.get(input);
+
+        // If the input node is not aware of `is_count_star` we must project a single column from
+        // this level, otherwise the upstream nodes may end up projecting everything.
+        let input_is_count_star_aware = match input_lp {
+            IR::DataFrameScan { .. } | IR::Scan { .. } => true,
+            #[cfg(feature = "python")]
+            IR::PythonScan { .. } => true,
+            _ => false,
+        };
+
+        if !input_is_count_star_aware {
+            if let Some(name) = input_lp
+                .schema(lp_arena)
+                .get_at_index(0)
+                .map(|(name, _)| name)
+            {
+                ctx.acc_projections
+                    .push(ColumnNode(expr_arena.add(AExpr::Column(name.clone()))));
+                ctx.projected_names.insert(name.clone());
+            }
+        }
+
         ctx.inner.is_count_star = true;
         local_projection.push(exprs.pop().unwrap());
         proj_pd.is_count_star = true;

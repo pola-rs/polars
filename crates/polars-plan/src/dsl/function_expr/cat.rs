@@ -34,6 +34,17 @@ impl CategoricalFunction {
             Slice(_, _) => mapper.with_dtype(DataType::String),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use CategoricalFunction as C;
+        match self {
+            C::GetCategories => FunctionOptions::groupwise(),
+            #[cfg(feature = "strings")]
+            C::LenBytes | C::LenChars | C::StartsWith(_) | C::EndsWith(_) | C::Slice(_, _) => {
+                FunctionOptions::elementwise()
+            },
+        }
+    }
 }
 
 impl Display for CategoricalFunction {
@@ -152,12 +163,12 @@ fn len_chars(c: &Column) -> PolarsResult<Column> {
 
 #[cfg(feature = "strings")]
 fn starts_with(c: &Column, prefix: &str) -> PolarsResult<Column> {
-    apply_to_cats(c, |s| s.starts_with(prefix))
+    apply_to_cats_binary(c, |s| s.starts_with(prefix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]
 fn ends_with(c: &Column, suffix: &str) -> PolarsResult<Column> {
-    apply_to_cats_binary(c, |s| s.as_binary().ends_with(suffix.as_bytes()))
+    apply_to_cats_binary(c, |s| s.ends_with(suffix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]

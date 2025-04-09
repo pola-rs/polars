@@ -47,19 +47,22 @@ pub fn register_plugin_function(
         input_wildcard_expansion,
     );
 
+    let options = FunctionOptions {
+        collect_groups,
+        cast_options: cast_to_supertypes,
+        flags,
+        ..Default::default()
+    };
+
     Ok(Expr::Function {
         input: args.to_exprs(),
         function: FunctionExpr::FfiPlugin {
+            flags: options,
             lib: plugin_path.into(),
             symbol: function_name.into(),
             kwargs: kwargs.into(),
         },
-        options: FunctionOptions {
-            collect_groups,
-            cast_options: cast_to_supertypes,
-            flags,
-            ..Default::default()
-        },
+        options,
     }
     .into())
 }

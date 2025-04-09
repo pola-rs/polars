@@ -4,6 +4,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import CategoricalRemappingWarning
+from polars.testing import assert_series_equal
 
 
 def test_set_intersection_13765() -> None:
@@ -75,6 +76,23 @@ def test_set_invalid_types() -> None:
         df.with_columns(
             pl.col("b")
             .implode()
+            .implode()
             .over("a", mapping_strategy="join")
             .list.set_intersection([1])
         )
+
+
+@pytest.mark.parametrize("input", [[], [1, 2], [1, None]])
+@pytest.mark.parametrize(
+    "set_op",
+    [
+        "set_union",
+        "set_intersection",
+        "set_difference",
+        "set_symmetric_difference",
+    ],
+)
+def test_set_opts_set_input(input: list[list[int | None]], set_op: str) -> None:
+    a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+    op = getattr(a.list, set_op)
+    assert_series_equal(op(input).list.sort(), op(set(input)).list.sort())
