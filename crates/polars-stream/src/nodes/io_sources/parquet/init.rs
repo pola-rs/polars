@@ -346,37 +346,22 @@ impl ParquetReadImpl {
         let row_index = self.row_index.clone();
         let min_values_per_thread = self.config.min_values_per_thread;
 
-        let mut use_prefiltered = self.predicate.is_some()
-            && self.normalized_pre_slice.is_none()
-            && matches!(
-                self.options.parallel,
-                ParallelStrategy::Auto | ParallelStrategy::Prefiltered
-            );
+        let mut use_prefiltered = matches!(self.options.parallel, ParallelStrategy::Prefiltered);
+        use_prefiltered |=
+            self.predicate.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);
+        use_prefiltered &= self.normalized_pre_slice.is_none();
 
         let predicate_arrow_field_indices = if use_prefiltered {
             let predicate = self.predicate.as_ref().unwrap();
-            let v = (!predicate.live_columns.is_empty())
-                .then(|| {
-                    let mut out = predicate
-                        .live_columns
-                        .iter()
-                        // Can be `None` - if the column is e.g. a hive column, or the row index column.
-                        .filter_map(|x| projected_arrow_schema.index_of(x))
-                        .collect::<Vec<_>>();
+            let mut predicate_arrow_field_indices = predicate
+                .live_columns
+                .iter()
+                // Can be `None` - if the column is e.g. a hive column, or the row index column.
+                .filter_map(|x| projected_arrow_schema.index_of(x))
+                .collect::<Vec<_>>();
 
-                    out.sort_unstable();
-
-                    // There is at least one non-predicate column, or pre-filtering was
-                    // explicitly requested (only useful for testing).
-                    (out.len() < projected_arrow_schema.len()
-                        || matches!(self.options.parallel, ParallelStrategy::Prefiltered))
-                    .then_some(out)
-                })
-                .flatten();
-
-            use_prefiltered &= v.is_some();
-
-            v.unwrap_or_default()
+            predicate_arrow_field_indices.sort_unstable();
+            predicate_arrow_field_indices
         } else {
             vec![]
         };
