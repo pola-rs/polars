@@ -1,6 +1,5 @@
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
-use polars_io::predicates::SkipBatchPredicate;
 use polars_io::prelude::{JsonLineReader, SerReader};
 use polars_io::utils::compression::maybe_decompress_bytes;
 
@@ -131,74 +130,6 @@ impl JsonExec {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         accumulate_dataframes_vertical(dfs)
-    }
-}
-
-impl ScanExec for JsonExec {
-    fn read(
-        &mut self,
-        with_columns: Option<Arc<[PlSmallStr]>>,
-        slice: Option<(usize, usize)>,
-        predicate: Option<ScanPredicate>,
-        _skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
-        row_index: Option<polars_io::RowIndex>,
-    ) -> PolarsResult<DataFrame> {
-        self.file_options.with_columns = with_columns;
-        self.file_options.pre_slice = slice.map(|(s, l)| (s as i64, l));
-        self.predicate = predicate;
-        self.file_options.row_index = row_index;
-
-        if self.file_info.reader_schema.is_none() {
-            self.schema()?;
-        }
-        self.read_impl()
-    }
-
-    fn schema(&mut self) -> PolarsResult<&SchemaRef> {
-        if self.file_info.reader_schema.is_some() {
-            return Ok(&self.file_info.schema);
-        }
-
-        let memslice = self
-            .sources
-            .at(0)
-            .to_memslice_async_assume_latest(self.sources.is_cloud_url())?;
-
-        let owned = &mut vec![];
-        let bytes = maybe_decompress_bytes(&memslice[..], owned)?;
-
-        let schema = polars_io::ndjson::infer_schema(
-            &mut std::io::Cursor::new(bytes),
-            self.options.infer_schema_length,
-        )?;
-
-        let schema = Arc::new(schema);
-        self.file_info.schema = schema.clone();
-        self.file_info.reader_schema = Some(arrow::Either::Right(schema.clone()));
-
-        Ok(&self.file_info.schema)
-    }
-
-    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
-        let (lb, ub) = self.file_info.row_estimation;
-        if lb.is_some_and(|lb| lb == ub) {
-            return Ok(ub as IdxSize);
-        }
-
-        let memslice = self
-            .sources
-            .at(0)
-            .to_memslice_async_assume_latest(self.sources.is_cloud_url())?;
-
-        let owned = &mut vec![];
-        let bytes = maybe_decompress_bytes(&memslice[..], owned)?;
-
-        let reader = polars_io::ndjson::core::JsonLineReader::new(std::io::Cursor::new(bytes));
-        let num_unfiltered_rows = reader.count()?;
-
-        self.file_info.row_estimation = (Some(num_unfiltered_rows), num_unfiltered_rows);
-
-        Ok(num_unfiltered_rows as IdxSize)
     }
 }
 

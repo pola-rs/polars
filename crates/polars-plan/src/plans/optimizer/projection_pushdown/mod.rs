@@ -519,11 +519,9 @@ impl ProjectionPushDown {
 
                         if let Some(ref hive_parts) = hive_parts {
                             // @TODO:
-                            // This is a hack to support both pre-NEW_MULTIFILE and
-                            // post-NEW_MULTIFILE.
-                            if !self.in_new_streaming_engine
-                                && std::env::var("POLARS_NEW_MULTIFILE").as_deref() != Ok("1")
-                            {
+                            // This is a hack to support both old multiscan handling and new
+                            // multiscan handling.
+                            if !self.in_new_streaming_engine {
                                 // Skip reading hive columns from the file.
                                 let partition_schema = hive_parts.schema();
                                 file_options.with_columns = file_options.with_columns.map(|x| {

@@ -418,12 +418,8 @@ fn create_physical_plan_impl(
             };
 
             let mut state = ExpressionConversionState::new(true);
-            let do_new_multifile = (sources.len() > 1 || hive_parts.is_some())
-                && !matches!(&*scan_type, FileScan::Anonymous { .. })
-                && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1");
 
             let mut create_skip_batch_predicate = false;
-            create_skip_batch_predicate |= do_new_multifile;
             #[cfg(feature = "parquet")]
             {
                 create_skip_batch_predicate |= matches!(
@@ -451,17 +447,6 @@ fn create_physical_plan_impl(
                 })
                 .transpose()?;
 
-            if do_new_multifile {
-                return Ok(Box::new(executors::MultiScanExec::new(
-                    sources,
-                    file_info,
-                    hive_parts.map(|h| h.into_statistics()),
-                    predicate,
-                    file_options,
-                    scan_type,
-                )));
-            }
-
             match *scan_type {
                 #[cfg(feature = "csv")]
                 FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
@@ -484,7 +469,6 @@ fn create_physical_plan_impl(
                     file_options: *file_options,
                     hive_parts: hive_parts.map(|h| h.into_statistics()),
                     cloud_options,
-                    metadata,
                 })),
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {
