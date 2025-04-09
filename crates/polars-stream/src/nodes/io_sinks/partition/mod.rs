@@ -17,7 +17,8 @@ use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::async_primitives::{connector, distributor_channel};
 use crate::execute::StreamingExecutionState;
-use crate::nodes::{Morsel, PhaseOutcome, TaskPriority};
+use crate::nodes::io_sinks::phase::PhaseOutcome;
+use crate::nodes::{Morsel, TaskPriority};
 
 pub mod by_key;
 pub mod max_size;

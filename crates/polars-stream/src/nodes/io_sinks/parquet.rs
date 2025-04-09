@@ -27,7 +27,8 @@ use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::execute::StreamingExecutionState;
-use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
+use crate::nodes::io_sinks::phase::PhaseOutcome;
+use crate::nodes::{JoinHandle, TaskPriority};
 
 pub struct ParquetSinkNode {
     target: SinkTarget,

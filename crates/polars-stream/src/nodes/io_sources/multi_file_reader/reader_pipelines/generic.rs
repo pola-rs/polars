@@ -25,9 +25,11 @@ use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_columns::Mis
 use crate::nodes::io_sources::multi_file_reader::extra_ops::{
     ExtraOperations, SchemaNamesMatchPolicy,
 };
-use crate::nodes::io_sources::multi_file_reader::initialization::MultiScanTaskInitializer;
 use crate::nodes::io_sources::multi_file_reader::initialization::slice::{
     ResolvedSliceInfo, resolve_to_positive_slice,
+};
+use crate::nodes::io_sources::multi_file_reader::initialization::{
+    MultiScanTaskInitializer, max_concurrent_scans_config,
 };
 use crate::nodes::io_sources::multi_file_reader::post_apply_pipeline::PostApplyPool;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
@@ -35,7 +37,6 @@ use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileR
 use crate::nodes::io_sources::multi_file_reader::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks,
 };
-use crate::nodes::io_sources::multi_scan::max_concurrent_scans;
 
 impl MultiScanTaskInitializer {
     /// Generic reader pipeline that should work for all file types and configurations
@@ -221,7 +222,9 @@ impl MultiScanTaskInitializer {
         let projected_file_schema = self.config.projected_file_schema.clone();
         let full_file_schema = self.config.full_file_schema.clone();
         let num_pipelines = self.config.num_pipelines();
-        let max_concurrent_scans = max_concurrent_scans(num_pipelines).min(sources.len());
+        let max_concurrent_scans = num_pipelines
+            .min(sources.len())
+            .min(max_concurrent_scans_config());
 
         let (started_reader_tx, started_reader_rx) =
             tokio::sync::mpsc::channel(max_concurrent_scans.max(2) - 1);
