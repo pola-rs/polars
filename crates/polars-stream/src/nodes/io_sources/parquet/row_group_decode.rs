@@ -5,7 +5,7 @@ use polars_core::prelude::{
     ArrowField, ArrowSchema, BooleanChunked, ChunkFilter, Column, DataType, IdxCa, IntoColumn,
 };
 use polars_core::series::{IsSorted, Series};
-use polars_core::utils::arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
+use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_bail};
 use polars_io::hive;
 use polars_io::predicates::{ColumnPredicateExpr, ScanIOPredicate, SpecializedColumnPredicateExpr};
@@ -484,7 +484,7 @@ impl RowGroupDecoder {
         }
         opt_decode_err.transpose()?;
 
-        let (live_df_filtered, mask) = if use_column_predicates {
+        let (live_df_filtered, mut mask) = if use_column_predicates {
             assert!(scan_predicate.column_predicates.is_sumwise_complete);
             if masks.len() == 1 {
                 (
@@ -545,22 +545,21 @@ impl RowGroupDecoder {
 
         if self.non_predicate_arrow_field_indices.is_empty() {
             // User or test may have explicitly requested prefiltering
-            return Ok(live_df_filtered
-                .select(self.projected_arrow_schema.iter_names().cloned())
-                .unwrap());
+            let iter = self.projected_arrow_schema.iter_names().cloned();
+            return Ok(if let Some(ri) = self.row_index.as_ref() {
+                live_df_filtered
+                    .select(std::iter::once(ri.0.clone()).chain(iter))
+                    .unwrap()
+            } else {
+                live_df_filtered.select(iter).unwrap()
+            });
         }
 
-        let mask_bitmap = {
-            let mut mask_bitmap = BitmapBuilder::with_capacity(mask.len());
-
-            for chunk in mask.downcast_iter() {
-                match chunk.validity() {
-                    None => mask_bitmap.extend_from_bitmap(chunk.values()),
-                    Some(validity) => mask_bitmap.extend_from_bitmap(&(validity & chunk.values())),
-                }
-            }
-
-            mask_bitmap.freeze()
+        mask.rechunk_mut();
+        let mask_bitmap = mask.downcast_as_array();
+        let mask_bitmap = match mask_bitmap.validity() {
+            None => mask_bitmap.values().clone(),
+            Some(v) => mask_bitmap.values() & v,
         };
 
         assert_eq!(mask_bitmap.len(), projection_height);
