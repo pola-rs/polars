@@ -588,9 +588,9 @@ def test_list_function_group_awareness() -> None:
         "group": [0, 1, 2],
         "get_scalar": [100, 105, 100],
         "take_no_implode": [[100], [105], [100]],
-        "implode_get": [[100], [105], [100]],
+        "implode_get": [100, 105, 100],
         "implode_take": [[[100]], [[105]], [[100]]],
-        "implode_slice": [[[100, 103]], [[105, 106, 105]], [[100, 102]]],
+        "implode_slice": [[100, 103], [105, 106, 105], [100, 102]],
     }
 
 

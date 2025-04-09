@@ -256,7 +256,7 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
-    pub(crate) fn det_groups_from_list(&mut self, s: &Series) {
+    fn det_groups_from_list(&mut self, s: &Series) {
         let mut offset = 0 as IdxSize;
         let list = s
             .list()
@@ -392,6 +392,22 @@ impl<'a> AggregationContext<'a> {
         // make sure that previous setting is not used
         self.update_groups = UpdateGroups::No;
         self
+    }
+
+    pub(crate) fn _implode_no_agg(&mut self) {
+        match self.state.clone() {
+            AggState::NotAggregated(_) => {
+                let _ = self.aggregated();
+                let AggState::AggregatedList(s) = self.state.clone() else {
+                    unreachable!()
+                };
+                self.state = AggState::AggregatedScalar(s);
+            },
+            AggState::AggregatedList(s) => {
+                self.state = AggState::AggregatedScalar(s);
+            },
+            _ => unreachable!("should only be called in non-agg/list-agg state by aggregation.rs"),
+        }
     }
 
     /// Get the aggregated version of the series.

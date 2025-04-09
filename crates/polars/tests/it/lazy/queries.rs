@@ -265,9 +265,7 @@ fn test_group_by_on_lists() -> PolarsResult<()> {
     // a list of lists
     assert_eq!(
         out.column("arrays")?.dtype(),
-        &DataType::List(Box::new(DataType::List(Box::new(DataType::List(
-            Box::new(DataType::Int32)
-        )))))
+        &DataType::List(Box::new(DataType::List(Box::new(DataType::Int32))))
     );
 
     Ok(())

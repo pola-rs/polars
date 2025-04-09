@@ -61,6 +61,9 @@ def test_concat_list_in_agg_6397() -> None:
     df = pl.DataFrame({"group": [1, 2, 2, 3], "value": ["a", "b", "c", "d"]})
 
     # single list
+    # TODO: this shouldn't be allowed and raise
+    # Currently this do a cast to list in the expression and
+    # therefore leads to different nesting
     assert df.group_by("group").agg(
         [
             # this casts every element to a list
@@ -78,7 +81,7 @@ def test_concat_list_in_agg_6397() -> None:
         ]
     ).sort("group").to_dict(as_series=False) == {
         "group": [1, 2, 3],
-        "result": [[["a"]], [["b", "c"]], [["d"]]],
+        "result": [["a"], ["b", "c"], ["d"]],
     }
 
 

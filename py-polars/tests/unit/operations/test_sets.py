@@ -76,6 +76,7 @@ def test_set_invalid_types() -> None:
         df.with_columns(
             pl.col("b")
             .implode()
+            .implode()
             .over("a", mapping_strategy="join")
             .list.set_intersection([1])
         )
