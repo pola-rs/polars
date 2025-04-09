@@ -26,6 +26,8 @@ mod slice_pushdown_lp;
 mod stack_opt;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
+#[cfg(feature = "cse")]
+pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
 use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
