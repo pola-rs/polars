@@ -833,36 +833,38 @@ fn to_graph_rec<'a>(
                     }?;
 
                     let get_batch_fn = Box::new(move |state: &StreamingExecutionState| {
-                        Python::with_gil(|py| {
+                        let df = Python::with_gil(|py| {
                             match generator.bind(py).call_method0(intern!(py, "__next__")) {
-                                Ok(out) => {
-                                    let mut df = polars_plan::plans::python_df_to_rust(py, out)?;
-                                    if let (Some(pred), false) =
-                                        (&pl_predicate, can_parse_predicate)
-                                    {
-                                        let mask =
-                                            pred.evaluate(&df, &state.in_memory_exec_state)?;
-                                        df = df.filter(mask.bool()?)?;
-                                    }
-                                    if validate_schema {
-                                        polars_ensure!(
-                                            df.schema() == &output_schema,
-                                            SchemaMismatch: "user provided schema: {:?} doesn't match the DataFrame schema: {:?}",
-                                            output_schema, df.schema()
-                                        );
-                                    }
-                                    Ok(Some(df))
-                                },
+                                Ok(out) => polars_plan::plans::python_df_to_rust(py, out).map(Some),
                                 Err(err)
                                     if err.matches(py, PyStopIteration::type_object(py))? =>
                                 {
-                                    Ok(None)
+                                    return Ok(None);
                                 },
                                 Err(err) => polars_bail!(
                                     ComputeError: "caught exception during execution of a Python source, exception: {err}"
                                 ),
                             }
-                        })
+                        })?;
+
+                        let Some(mut df) = df else { return Ok(None) };
+
+                        if validate_schema {
+                            polars_ensure!(
+                                df.schema() == &output_schema,
+                                SchemaMismatch: "user provided schema: {:?} doesn't match the DataFrame schema: {:?}",
+                                output_schema, df.schema()
+                            );
+                        }
+
+                        // TODO: Move this to a FilterNode so that it happens in parallel. We may need
+                        // to move all of the enclosing code to `lower_ir` for this.
+                        if let (Some(pred), false) = (&pl_predicate, can_parse_predicate) {
+                            let mask = pred.evaluate(&df, &state.in_memory_exec_state)?;
+                            df = df.filter(mask.bool()?)?;
+                        }
+
+                        Ok(Some(df))
                     }) as Box<_>;
 
                     (PlSmallStr::from_static("io_plugin"), get_batch_fn)
