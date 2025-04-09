@@ -13,6 +13,49 @@ use super::expr_nodes::PyGroupbyOptions;
 use crate::PyDataFrame;
 use crate::lazyframe::visit::PyExprIR;
 
+fn scan_type_to_pyobject<'py>(
+    py: Python<'py>,
+    scan_type: &FileScan,
+) -> PyResult<PyObject> {
+    match scan_type {
+        #[cfg(feature = "csv")]
+        FileScan::Csv {
+            options,
+            cloud_options,
+        } => {
+            let options = serde_json::to_string(options)
+                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+            let cloud_options = serde_json::to_string(cloud_options)
+                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+            Ok(("csv", options, cloud_options).into_py_any(py)?)
+        },
+        #[cfg(feature = "parquet")]
+        FileScan::Parquet {
+            options,
+            cloud_options,
+            ..
+        } => {
+            let options = serde_json::to_string(options)
+                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+            let cloud_options = serde_json::to_string(cloud_options)
+                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+            Ok(("parquet", options, cloud_options).into_py_any(py)?)
+        },
+        #[cfg(feature = "ipc")]
+        FileScan::Ipc { .. } => Err(PyNotImplementedError::new_err("ipc scan")),
+        #[cfg(feature = "json")]
+        FileScan::NDJson { options, .. } => {
+            let options = serde_json::to_string(options)
+                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+            Ok(("ndjson", options).into_py_any(py)?)
+        },
+        FileScan::Anonymous { .. } => {
+            Err(PyNotImplementedError::new_err("anonymous scan"))
+        },
+    }
+}
+
+
 #[pyclass]
 /// Scan a table with an optional predicate from a python function
 pub struct PythonScan {
@@ -344,45 +387,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             file_options: PyFileOptions {
                 inner: (**file_options).clone(),
             },
-            scan_type: match &**scan_type {
-                #[cfg(feature = "csv")]
-                FileScan::Csv {
-                    options,
-                    cloud_options,
-                } => {
-                    // Since these options structs are serializable,
-                    // we just use the serde json representation
-                    let options = serde_json::to_string(options)
-                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                    let cloud_options = serde_json::to_string(cloud_options)
-                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                    ("csv", options, cloud_options).into_py_any(py)?
-                },
-                #[cfg(feature = "parquet")]
-                FileScan::Parquet {
-                    options,
-                    cloud_options,
-                    ..
-                } => {
-                    let options = serde_json::to_string(options)
-                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                    let cloud_options = serde_json::to_string(cloud_options)
-                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                    ("parquet", options, cloud_options).into_py_any(py)?
-                },
-                #[cfg(feature = "ipc")]
-                FileScan::Ipc { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
-                #[cfg(feature = "json")]
-                FileScan::NDJson { options, .. } => {
-                    // TODO: Also pass cloud_options
-                    let options = serde_json::to_string(options)
-                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                    ("ndjson", options).into_py_any(py)?
-                },
-                FileScan::Anonymous { .. } => {
-                    return Err(PyNotImplementedError::new_err("anonymous scan"));
-                },
-            },
+            scan_type: scan_type_to_pyobject(py, &**scan_type)?,
         }
         .into_py_any(py),
         IR::DataFrameScan {
@@ -621,46 +626,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         })?
                         .into_py_any(py)?;
 
-                    let scan_type = match &**scan_type {
-                        #[cfg(feature = "csv")]
-                        FileScan::Csv {
-                            options,
-                            cloud_options,
-                        } => {
-                            let options = serde_json::to_string(options)
-                                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                            let cloud_options = serde_json::to_string(cloud_options)
-                                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                            ("csv", options, cloud_options).into_py_any(py)?
-                        },
-                        #[cfg(feature = "parquet")]
-                        FileScan::Parquet {
-                            options,
-                            cloud_options,
-                            ..
-                        } => {
-                            let options = serde_json::to_string(options)
-                                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                            let cloud_options = serde_json::to_string(cloud_options)
-                                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                            ("parquet", options, cloud_options).into_py_any(py)?
-                        },
-                        #[cfg(feature = "ipc")]
-                        FileScan::Ipc { .. } => {
-                            return Err(PyNotImplementedError::new_err("ipc scan"));
-                        },
-                        #[cfg(feature = "json")]
-                        FileScan::NDJson { options, .. } => {
-                            let options = serde_json::to_string(options)
-                                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
-                            ("ndjson", options).into_py_any(py)?
-                        },
-                        FileScan::Anonymous { .. } => {
-                            return Err(PyNotImplementedError::new_err(
-                                "anonymous scan in FastCount",
-                            ));
-                        },
-                    };
+                    let scan_type = scan_type_to_pyobject(py, &**scan_type)?;
 
                     let alias = alias
                         .as_ref()
