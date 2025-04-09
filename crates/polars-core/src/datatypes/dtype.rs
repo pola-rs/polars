@@ -926,9 +926,9 @@ impl DataType {
     pub fn nesting_level(&self) -> usize {
         let mut level = 0;
         let mut slf = self;
-        while let Self::List(inner) | Self::Array(inner, _) = &slf {
+        while let Some(inner_dtype) = slf.inner_dtype() {
             level += 1;
-            slf = inner.as_ref();
+            slf = inner_dtype;
         }
         level
     }

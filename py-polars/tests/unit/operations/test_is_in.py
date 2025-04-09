@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
-from polars.exceptions import InvalidOperationError, ShapeError
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
