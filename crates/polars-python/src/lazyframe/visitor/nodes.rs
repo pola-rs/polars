@@ -13,10 +13,7 @@ use super::expr_nodes::PyGroupbyOptions;
 use crate::PyDataFrame;
 use crate::lazyframe::visit::PyExprIR;
 
-fn scan_type_to_pyobject<'py>(
-    py: Python<'py>,
-    scan_type: &FileScan,
-) -> PyResult<PyObject> {
+fn scan_type_to_pyobject<'py>(py: Python<'py>, scan_type: &FileScan) -> PyResult<PyObject> {
     match scan_type {
         #[cfg(feature = "csv")]
         FileScan::Csv {
