@@ -19,8 +19,9 @@ use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::execute::StreamingExecutionState;
 use crate::morsel::SourceToken;
 use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
+use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode, parallelize_receive_task};
-use crate::nodes::{JoinHandle, Morsel, MorselSeq, PhaseOutcome, TaskPriority};
+use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
 
 type Linearized =
     Priority<Reverse<MorselSeq>, (SourceToken, Vec<(Buffer<u8>, Vec<Column>, DataFrame)>)>;

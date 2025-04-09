@@ -4,7 +4,6 @@ use std::sync::Arc;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
-use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
@@ -32,7 +31,6 @@ use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
-use crate::nodes::io_sources::multi_scan::MultiscanRowRestriction;
 use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
@@ -198,8 +196,20 @@ pub enum PhysNodeKind {
 
     MultiScan {
         scan_sources: ScanSources,
+
+        file_reader_builder: Arc<dyn FileReaderBuilder>,
+        cloud_options: Option<Arc<CloudOptions>>,
+
+        /// Columns to project from the file.
+        projected_file_schema: SchemaRef,
+        /// Final output schema of morsels being sent out of MultiScan.
+        output_schema: SchemaRef,
+
+        row_index: Option<RowIndex>,
+        pre_slice: Option<Slice>,
+        predicate: Option<ExprIR>,
+
         hive_parts: Option<HivePartitionsDf>,
-        scan_type: Box<FileScan>,
         allow_missing_columns: bool,
         include_file_paths: Option<PlSmallStr>,
 
@@ -214,24 +224,6 @@ pub enum PhysNodeKind {
         /// Each file should contain exactly all the columns ignoring the hive columns i.f.f.
         /// `allow_missing_columns == false`.
         file_schema: SchemaRef,
-
-        /// Final output schema of morsels being sent out of MultiScan.
-        output_schema: SchemaRef,
-
-        /// Selection of `file_schema` columns should to be included in the output morsels.
-        projection: Option<Bitmap>,
-
-        row_restriction: Option<MultiscanRowRestriction>,
-        predicate: Option<ExprIR>,
-        row_index: Option<RowIndex>,
-
-        // Fields for new multiscan
-        // TODO: Remove `Option<>`
-        file_reader_builder: Option<Arc<dyn FileReaderBuilder>>,
-        /// Columns to project from the file.
-        projected_file_schema: SchemaRef,
-        cloud_options: Option<Arc<CloudOptions>>,
-        pre_slice: Option<Slice>,
     },
 
     #[expect(unused)]

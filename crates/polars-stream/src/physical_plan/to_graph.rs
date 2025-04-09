@@ -467,90 +467,56 @@ fn to_graph_rec<'a>(
             )
         },
 
-        #[expect(unused)]
         MultiScan {
             scan_sources,
-            hive_parts,
-            scan_type,
+            file_reader_builder,
+            cloud_options,
+            projected_file_schema,
             output_schema,
-            file_schema,
+            row_index,
+            pre_slice,
+            predicate,
+            hive_parts,
             allow_missing_columns,
             include_file_paths,
-            projection,
-            row_restriction,
-            predicate,
-            row_index,
-
-            pre_slice,
-            file_reader_builder,
-            projected_file_schema,
-            cloud_options,
+            file_schema,
         } => {
-            if let Some(file_reader_builder) = file_reader_builder {
-                let hive_parts = hive_parts.clone();
+            let hive_parts = hive_parts.clone();
 
-                let predicate = predicate
-                    .as_ref()
-                    .map(|pred| {
-                        create_scan_predicate(
-                            pred,
-                            ctx.expr_arena,
-                            output_schema,
-                            &mut ctx.expr_conversion_state,
-                            true, // create_skip_batch_predicate
-                            file_reader_builder
-                                .reader_capabilities()
-                                .contains(ReaderCapabilities::SPECIALIZED_FILTER), // create_column_predicates
-                        )
-                    })
-                    .transpose()?
-                    .map(|p| p.to_io(None, file_schema.clone()));
+            let predicate = predicate
+                .as_ref()
+                .map(|pred| {
+                    create_scan_predicate(
+                        pred,
+                        ctx.expr_arena,
+                        output_schema,
+                        &mut ctx.expr_conversion_state,
+                        true, // create_skip_batch_predicate
+                        file_reader_builder
+                            .reader_capabilities()
+                            .contains(ReaderCapabilities::SPECIALIZED_FILTER), // create_column_predicates
+                    )
+                })
+                .transpose()?
+                .map(|p| p.to_io(None, file_schema.clone()));
 
-                ctx.graph.add_node(
-                    nodes::io_sources::multi_file_reader::MultiFileReader::new(
-                        scan_sources.clone(),
-                        file_reader_builder.clone(),
-                        cloud_options.clone(),
-                        output_schema.clone(),
-                        projected_file_schema.clone(),
-                        file_schema.clone(),
-                        row_index.clone(),
-                        pre_slice.clone(),
-                        predicate,
-                        hive_parts.map(Arc::new),
-                        include_file_paths.clone(),
-                        *allow_missing_columns,
-                    ),
-                    [],
-                )
-            } else {
-                let predicate = predicate
-                    .as_ref()
-                    .map(|pred| {
-                        create_scan_predicate(
-                            pred,
-                            ctx.expr_arena,
-                            file_schema,
-                            &mut ctx.expr_conversion_state,
-                            true,  // create_skip_batch_predicate
-                            false, // create_column_predicates
-                        )
-                    })
-                    .transpose()?
-                    .map(|p| p.to_io(None, file_schema.clone()));
-
-                match &**scan_type {
-                    #[cfg(feature = "parquet")]
-                    polars_plan::dsl::FileScan::Parquet { .. } => unreachable!(),
-                    #[cfg(feature = "ipc")]
-                    polars_plan::dsl::FileScan::Ipc { .. } => unreachable!(),
-                    #[cfg(feature = "csv")]
-                    polars_plan::dsl::FileScan::Csv { .. } => unreachable!(),
-                    #[cfg(feature = "json")]
-                    polars_plan::dsl::FileScan::NDJson { .. } => unreachable!(),
-                    _ => todo!(),
-                }
-            }
+            ctx.graph.add_node(
+                nodes::io_sources::multi_file_reader::MultiFileReader::new(
+                    scan_sources.clone(),
+                    file_reader_builder.clone(),
+                    cloud_options.clone(),
+                    output_schema.clone(),
+                    projected_file_schema.clone(),
+                    file_schema.clone(),
+                    row_index.clone(),
+                    pre_slice.clone(),
+                    predicate,
+                    hive_parts.map(Arc::new),
+                    include_file_paths.clone(),
+                    *allow_missing_columns,
+                ),
+                [],
+            )
         },
 
         FileScan { scan_type, .. } => {
