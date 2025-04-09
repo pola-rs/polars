@@ -409,6 +409,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT RTRIM(column_1) FROM df;
     /// ```
     RTrim,
+    /// SQL 'split_part' function.
+    /// Splits a string into an array of strings using the given delimiter
+    /// and returns the `n`-th part (1-indexed).
+    /// ```sql
+    /// SELECT SPLIT_PART(column_1, ',', 2) FROM df;
+    /// ```
+    SplitPart,
     /// SQL 'starts_with' function.
     /// Returns True if the value starts with the second argument.
     /// ```sql
@@ -879,6 +886,7 @@ impl PolarsSQLFunctions {
             "reverse" => Self::Reverse,
             "right" => Self::Right,
             "rtrim" => Self::RTrim,
+            "split_part" => Self::SplitPart,
             "starts_with" => Self::StartsWith,
             "string_to_array" => Self::StringToArray,
             "strptime" => Self::Strptime,
@@ -1201,7 +1209,7 @@ impl SQLFunctionVisitor<'_> {
             },
             OctetLength => self.visit_unary(|e| e.str().len_bytes()),
             StrPos => {
-                // // note: SQL is 1-indexed; returns zero if no match found
+                // note: SQL is 1-indexed; returns zero if no match found
                 self.visit_binary(|expr, substring| {
                     (expr.str().find(substring, true) + typed_lit(1u32)).fill_null(typed_lit(0u32))
                 })
@@ -1278,6 +1286,27 @@ impl SQLFunctionVisitor<'_> {
                     2 => self.visit_binary(|e, s| e.str().strip_chars_end(s)),
                     _ => {
                         polars_bail!(SQLSyntax: "RTRIM expects 1-2 arguments (found {})", args.len())
+                    },
+                }
+            },
+            SplitPart => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    3 => self.try_visit_ternary(|e, sep, idx| {
+                        let idx = adjust_one_indexed_param(idx, true);
+                        Ok(when(e.clone().is_not_null())
+                            .then(
+                                e.clone()
+                                    .str()
+                                    .split(sep)
+                                    .list()
+                                    .get(idx, true)
+                                    .fill_null(lit("")),
+                            )
+                            .otherwise(e.clone()))
+                    }),
+                    _ => {
+                        polars_bail!(SQLSyntax: "SPLIT_PART expects 3 arguments (found {})", args.len())
                     },
                 }
             },
