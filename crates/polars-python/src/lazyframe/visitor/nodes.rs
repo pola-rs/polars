@@ -620,7 +620,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                             PyNotImplementedError::new_err("FastCount with BytesIO sources")
                         })?
                         .into_py_any(py)?;
-                
+
                     let scan_type = match &**scan_type {
                         #[cfg(feature = "csv")]
                         FileScan::Csv {
@@ -661,12 +661,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                             ));
                         },
                     };
-                
+
                     let alias = alias
                         .as_ref()
                         .map(|a| a.as_str())
                         .map_or_else(|| Ok(py.None()), |s| s.into_py_any(py))?;
-                
+
                     ("fast_count", sources, scan_type, alias).into_py_any(py)?
                 },
             },
