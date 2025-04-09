@@ -381,7 +381,7 @@ def from_torch(
     Parameters
     ----------
     tensor : :class:`torch.Tensor`
-        A one or more dimensional PyTorch `Tensor` object.
+        A PyTorch `Tensor` object of one or more dimensions.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -415,22 +415,25 @@ def from_torch(
     >>> import torch
     >>> data = torch.tensor(
     ...     [
-    ...         [1234.5, 200.0, -3000.5],
+    ...         [1234.5, 200.0, 3000.5],
     ...         [8000.0, 500.5, 6000.0],
     ...     ]
     ... )
-    >>> df = pl.from_torch(data, schema=["colx", "coly"])
+    >>> df = pl.from_torch(
+    ...     data,
+    ...     schema=["colx", "coly", "colz"],
+    ...     schema_overrides={"colz": pl.Float64},
+    ... )
     >>> df
-    shape: (3, 2)
-    ┌─────────┬────────┐
-    │ colx    ┆ coly   │
-    │ ---     ┆ ---    │
-    │ f32     ┆ f32    │
-    ╞═════════╪════════╡
-    │ 1234.5  ┆ 8000.0 │
-    │ 200.0   ┆ 500.5  │
-    │ -3000.5 ┆ 6000.0 │
-    └─────────┴────────┘
+    shape: (2, 3)
+    ┌────────┬───────┬────────┐
+    │ colx   ┆ coly  ┆ colz   │
+    │ ---    ┆ ---   ┆ ---    │
+    │ f32    ┆ f32   ┆ f64    │
+    ╞════════╪═══════╪════════╡
+    │ 1234.5 ┆ 200.0 ┆ 3000.5 │
+    │ 8000.0 ┆ 500.5 ┆ 6000.0 │
+    └────────┴───────┴────────┘
     """
     return wrap_df(
         numpy_to_pydf(
