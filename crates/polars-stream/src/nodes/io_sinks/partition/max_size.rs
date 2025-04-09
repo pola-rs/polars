@@ -18,9 +18,9 @@ use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
+use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode};
 use crate::nodes::{JoinHandle, Morsel, TaskPriority};
-use crate::nodes::io_sinks::phase::PhaseOutcome;
 
 pub struct MaxSizePartitionSinkNode {
     input_schema: SchemaRef,

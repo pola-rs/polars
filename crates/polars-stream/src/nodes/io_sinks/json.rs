@@ -11,8 +11,8 @@ use crate::async_executor::spawn;
 use crate::async_primitives::connector::Receiver;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::parallelize_receive_task;
-use crate::nodes::{JoinHandle, TaskPriority};
 use crate::nodes::io_sinks::phase::PhaseOutcome;
+use crate::nodes::{JoinHandle, TaskPriority};
 
 pub struct NDJsonSinkNode {
     target: SinkTarget,
