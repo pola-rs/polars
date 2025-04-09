@@ -839,7 +839,7 @@ fn to_graph_rec<'a>(
                                 Err(err)
                                     if err.matches(py, PyStopIteration::type_object(py))? =>
                                 {
-                                    return Ok(None);
+                                    Ok(None)
                                 },
                                 Err(err) => polars_bail!(
                                     ComputeError: "caught exception during execution of a Python source, exception: {err}"
