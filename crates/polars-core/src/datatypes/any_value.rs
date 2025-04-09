@@ -9,9 +9,9 @@ use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
 
 use super::*;
+use crate::CHEAP_SERIES_HASH_LIMIT;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
-use crate::CHEAP_SERIES_HASH_LIMIT;
 
 #[cfg(feature = "object")]
 #[derive(Debug)]

@@ -26,23 +26,12 @@ pub(super) fn resolve_is_in(
     if left_nl == right_nl {
         polars_warn!(
             Deprecation,
-            "Using `is_in` with a flat datatype is ambiguous and deprecated.
+            "`is_in` with a collection of the same datatype is ambiguous and deprecated.
 Please use `implode` to return to previous behavior.
 
-See #22149 for more information."
+See https://github.com/pola-rs/polars/issues/22149 for more information."
         );
         return Ok(Some(AExpr::Agg(IRAggExpr::Implode(other_e.node()))));
-    }
-    // @HACK. This needs to happen until 2.0 because we support `pl.col.a.is_in([[1], [2, 3], ...])`.
-    if left_nl + 2 == right_nl && is_scalar_ae(other_e.node(), expr_arena) {
-        polars_warn!(
-            Deprecation,
-            "Using `is_in` with a nested scalar datatype is deprecated.
-Please wrap in `pl.Series` to return to previous behavior.
-
-See #22149 for more information."
-        );
-        return Ok(Some(AExpr::Explode(other_e.node())));
     }
 
     if left_nl + 1 != right_nl {
@@ -51,7 +40,7 @@ See #22149 for more information."
 
     let type_other_inner = type_other.inner_dtype().unwrap();
 
-    unpack!(early_escape(&type_left, &type_other_inner));
+    unpack!(early_escape(&type_left, type_other_inner));
 
     let cast_type = match &type_other {
         DataType::List(_) => DataType::List(Box::new(type_left.clone())),

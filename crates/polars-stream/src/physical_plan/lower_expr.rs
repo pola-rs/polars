@@ -570,7 +570,7 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
                 options: _,
-            } if is_scalar_ae(inner_exprs[1].node(), &ctx.expr_arena) => {
+            } if is_scalar_ae(inner_exprs[1].node(), ctx.expr_arena) => {
                 // Translate left and right side separately (they could have different lengths).
                 let left_on_name = unique_column_name();
                 let right_on_name = unique_column_name();
