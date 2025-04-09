@@ -13,7 +13,7 @@ use super::expr_nodes::PyGroupbyOptions;
 use crate::PyDataFrame;
 use crate::lazyframe::visit::PyExprIR;
 
-fn scan_type_to_pyobject<'py>(py: Python<'py>, scan_type: &FileScan) -> PyResult<PyObject> {
+fn scan_type_to_pyobject(py: Python, scan_type: &FileScan) -> PyResult<PyObject> {
     match scan_type {
         #[cfg(feature = "csv")]
         FileScan::Csv {
@@ -381,7 +381,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             file_options: PyFileOptions {
                 inner: (**file_options).clone(),
             },
-            scan_type: scan_type_to_pyobject(py, &**scan_type)?,
+            scan_type: scan_type_to_pyobject(py, scan_type)?,
         }
         .into_py_any(py),
         IR::DataFrameScan {
@@ -620,7 +620,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         })?
                         .into_py_any(py)?;
 
-                    let scan_type = scan_type_to_pyobject(py, &**scan_type)?;
+                    let scan_type = scan_type_to_pyobject(py, scan_type)?;
 
                     let alias = alias
                         .as_ref()
