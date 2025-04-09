@@ -474,6 +474,7 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
+    // TODO! don't auto cast here, but implode beforehand.
     let mut first_ca = match first.try_list() {
         Some(ca) => ca,
         None => {

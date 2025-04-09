@@ -14,7 +14,7 @@ use polars_ops::prelude::nan_propagating_aggregate;
 use rayon::prelude::*;
 
 use super::*;
-use crate::expressions::AggState::{AggregatedList, AggregatedScalar};
+use crate::expressions::AggState::AggregatedScalar;
 use crate::expressions::{
     AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
 };
@@ -354,18 +354,23 @@ impl PhysicalExpr for AggregationExpr {
                     let c = match ac.agg_state() {
                         // mean agg:
                         // -> f64 -> list<f64>
-                        AggState::AggregatedScalar(c) => c
+                        AggregatedScalar(c) => c
                             .reshape_list(&[
                                 ReshapeDimension::Infer,
                                 ReshapeDimension::new_dimension(1),
                             ])
                             .unwrap(),
+                        // Auto-imploded
+                        AggState::NotAggregated(_) | AggState::AggregatedList(_) => {
+                            ac._implode_no_agg();
+                            return Ok(ac);
+                        },
                         _ => {
                             let agg = ac.aggregated();
                             agg.as_list().into_column()
                         },
                     };
-                    AggregatedList(c.with_name(keep_name))
+                    AggState::AggregatedList(c.with_name(keep_name))
                 },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
