@@ -5779,9 +5779,7 @@ class Expr:
         │ [9, 10]   ┆ 3                ┆ false    │
         └───────────┴──────────────────┴──────────┘
         """
-        if isinstance(other, Collection) and not isinstance(
-            other, (Sequence, pl.Series)
-        ):
+        if isinstance(other, Collection) and not isinstance(other, pl.Series):
             other = list(other)  # eg: set, frozenset, etc
 
         other = parse_into_expression(other)
