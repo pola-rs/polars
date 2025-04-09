@@ -44,6 +44,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
     let cast_type = match &type_other {
         DataType::List(_) => DataType::List(Box::new(type_left.clone())),
+        #[cfg(feature = "dtype-array")]
         DataType::Array(_, width) => DataType::Array(Box::new(type_left.clone()), *width),
         _ => unreachable!(),
     };
