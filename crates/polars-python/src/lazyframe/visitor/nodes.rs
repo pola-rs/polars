@@ -8,6 +8,7 @@ use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionIR, Pyt
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyString;
 
 use super::expr_nodes::PyGroupbyOptions;
 use crate::PyDataFrame;
@@ -641,57 +642,14 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             contexts: contexts.iter().map(|n| n.0).collect(),
         }
         .into_py_any(py),
-        // Reference get_sink on how to deconstruct the payload
-        IR::Sink {
-            input: _,
-            payload: _,
-        } => Sink {
+        IR::Sink { input, payload } => Sink {
             input: input.0,
-            payload: match payload {
-                #[allow(unused_variables)]
-                SinkTypeIR::File(FileSinkType {
-                    path,
-                    file_type,
-                    sink_options: _,
-                    cloud_options,
-                }) => {
-                    let path = path.as_ref().as_path();
-                    match &file_type {
-                        #[cfg(feature = "parquet")]
-                        FileType::Parquet(options) => Box::new(ParquetSink::new(
-                            path,
-                            *options,
-                            input_schema.as_ref(),
-                            cloud_options.as_ref(),
-                        )?)
-                            as Box<dyn SinkTrait>,
-                        #[cfg(feature = "ipc")]
-                        FileType::Ipc(options) => Box::new(IpcSink::new(
-                            path,
-                            *options,
-                            input_schema.as_ref(),
-                            cloud_options.as_ref(),
-                        )?) as Box<dyn SinkTrait>,
-                        #[cfg(feature = "csv")]
-                        FileType::Csv(options) => Box::new(CsvSink::new(
-                            path,
-                            options.clone(),
-                            input_schema.as_ref(),
-                            cloud_options.as_ref(),
-                        )?) as Box<dyn SinkTrait>,
-                        #[cfg(feature = "json")]
-                        FileType::Json(options) => Box::new(JsonSink::new(
-                            path,
-                            *options,
-                            input_schema.as_ref(),
-                            cloud_options.as_ref(),
-                        )?)
-                            as Box<dyn SinkTrait>,
-                        #[allow(unreachable_patterns)]
-                        _ => unreachable!(),
-                    }
-                },    
-            },
+            payload: PyString::new(
+                py,
+                &serde_json::to_string(payload)
+                    .map_err(|err| PyValueError::new_err(format!("{err:?}")))?,
+            )
+            .into(),
         }
         .into_py_any(py),
         IR::SinkMultiple { .. } => Err(PyNotImplementedError::new_err(
