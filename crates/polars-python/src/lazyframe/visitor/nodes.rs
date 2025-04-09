@@ -616,7 +616,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 } => {
                     let sources = sources
                         .into_paths()
-                        .ok_or_else(|| PyNotImplementedError::new_err("FastCount with BytesIO sources"))?
+                        .ok_or_else(|| {
+                            PyNotImplementedError::new_err("FastCount with BytesIO sources")
+                        })?
                         .into_py_any(py)?;
                 
                     let scan_type = match &**scan_type {
@@ -644,7 +646,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                             ("parquet", options, cloud_options).into_py_any(py)?
                         },
                         #[cfg(feature = "ipc")]
-                        FileScan::Ipc { .. } => return Err(PyNotImplementedError::new_err("ipc scan")),
+                        FileScan::Ipc { .. } => {
+                            return Err(PyNotImplementedError::new_err("ipc scan"));
+                        },
                         #[cfg(feature = "json")]
                         FileScan::NDJson { options, .. } => {
                             let options = serde_json::to_string(options)
@@ -652,16 +656,19 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                             ("ndjson", options).into_py_any(py)?
                         },
                         FileScan::Anonymous { .. } => {
-                            return Err(PyNotImplementedError::new_err("anonymous scan in FastCount"));
+                            return Err(PyNotImplementedError::new_err(
+                                "anonymous scan in FastCount",
+                            ));
                         },
                     };
+                
                     let alias = alias
-                    .as_ref()
-                    .map(|a| a.as_str())
-                    .map_or_else(|| Ok(py.None()), |s| s.into_py_any(py))?;
+                        .as_ref()
+                        .map(|a| a.as_str())
+                        .map_or_else(|| Ok(py.None()), |s| s.into_py_any(py))?;
                 
                     ("fast_count", sources, scan_type, alias).into_py_any(py)?
-                }
+                },
             },
         }
         .into_py_any(py),
