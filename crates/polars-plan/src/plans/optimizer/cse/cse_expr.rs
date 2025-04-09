@@ -151,6 +151,69 @@ impl<V> IdentifierMap<V> {
     }
 }
 
+/// Merges identical expressions into identical IDs.
+///
+/// Does no analysis whether this leads to legal substitutions.
+#[derive(Default)]
+pub struct NaiveExprMerger {
+    node_to_uniq_id: PlHashMap<Node, u32>,
+    uniq_id_to_node: Vec<Node>,
+    identifier_to_uniq_id: IdentifierMap<u32>,
+    arg_stack: Vec<Option<Identifier>>,
+}
+
+impl NaiveExprMerger {
+    pub fn add_expr(&mut self, node: Node, arena: &Arena<AExpr>) {
+        let node = AexprNode::new(node);
+        node.visit(self, arena).unwrap();
+    }
+
+    pub fn get_uniq_id(&self, node: Node) -> Option<u32> {
+        self.node_to_uniq_id.get(&node).copied()
+    }
+
+    pub fn get_node(&self, uniq_id: u32) -> Option<Node> {
+        self.uniq_id_to_node.get(uniq_id as usize).copied()
+    }
+}
+
+impl Visitor for NaiveExprMerger {
+    type Node = AexprNode;
+    type Arena = Arena<AExpr>;
+
+    fn pre_visit(
+        &mut self,
+        _node: &Self::Node,
+        _arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        self.arg_stack.push(None);
+        Ok(VisitRecursion::Continue)
+    }
+
+    fn post_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        let mut identifier = Identifier::new();
+        while let Some(Some(arg)) = self.arg_stack.pop() {
+            identifier.combine(&arg);
+        }
+        identifier = identifier.add_ae_node(node, arena);
+        let uniq_id = *self.identifier_to_uniq_id.entry(
+            identifier,
+            || {
+                let uniq_id = self.uniq_id_to_node.len() as u32;
+                self.uniq_id_to_node.push(node.node());
+                uniq_id
+            },
+            arena,
+        );
+        self.node_to_uniq_id.insert(node.node(), uniq_id);
+        Ok(VisitRecursion::Continue)
+    }
+}
+
 /// Identifier maps to Expr Node and count.
 type SubExprCount = IdentifierMap<(Node, u32)>;
 /// (post_visit_idx, identifier);
