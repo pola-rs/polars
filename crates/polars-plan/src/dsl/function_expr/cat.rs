@@ -58,8 +58,9 @@ impl CategoricalFunction {
             | C::EndsWith(_)
             | C::Slice(_, _)
             | C::Uppercase
-            | C::Lowercase
-            | C::Titlecase => FunctionOptions::elementwise(),
+            | C::Lowercase => FunctionOptions::elementwise(),
+            #[cfg(all(feature = "strings", feature = "nightly"))]
+            C::Titlecase => FunctionOptions::elementwise(),
         }
     }
 }
