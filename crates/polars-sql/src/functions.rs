@@ -1144,6 +1144,7 @@ impl SQLFunctionVisitor<'_> {
                     self.try_visit_unary(|e| {
                         let dt = e.to_field(schema, Context::default())?.dtype;
                         match dt {
+                            #[cfg(feature = "dtype-categorical")]
                             DataType::Categorical(..) | DataType::Enum(..) => {
                                 Ok(e.cat().to_titlecase())
                             },
@@ -1183,6 +1184,7 @@ impl SQLFunctionVisitor<'_> {
                     self.try_visit_unary(|e| {
                         let dt = e.to_field(schema, Context::default())?.dtype;
                         match dt {
+                            #[cfg(feature = "dtype-categorical")]
                             DataType::Categorical(..) | DataType::Enum(..) => {
                                 Ok(e.cat().to_lowercase())
                             },
@@ -1433,6 +1435,7 @@ impl SQLFunctionVisitor<'_> {
                     self.try_visit_unary(|e| {
                         let dt = e.to_field(schema, Context::default())?.dtype;
                         match dt {
+                            #[cfg(feature = "dtype-categorical")]
                             DataType::Categorical(..) | DataType::Enum(..) => {
                                 Ok(e.cat().to_uppercase())
                             },
