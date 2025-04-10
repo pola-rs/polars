@@ -459,7 +459,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 });
                                 let exact_not_in = and!(min_is_max, has_no_nulls, fallback_expr);
 
-                                Some(or!(fallback_expr, min_max_is_in))
+                                Some(or!(exact_not_in, min_max_is_in))
                             },
                             _ => None,
                         }
