@@ -354,15 +354,11 @@ def test_cached_windows_sync_8803() -> None:
             ]
         )
         .with_columns(
-            is_valid_imploded=pl.col("is_valid").implode(),
-        )
-        .with_columns(
-            a=pl.lit(True).is_in(pl.col("is_valid_imploded")).over("id"),
+            a=pl.lit(True).is_in(pl.col("is_valid")).over("id"),
             b=pl.col("is_valid").sum().gt(0).over("id"),
         )
-        .select(["id", "is_valid", "a", "b"])
         .sum()
-    ).to_dict(as_series=False) == {"id": [28], "is_valid": [1], "a": [6], "b": [3]}
+    ).to_dict(as_series=False) == {"id": [28], "is_valid": [1], "a": [3], "b": [3]}
 
 
 def test_window_filtered_aggregation() -> None:
