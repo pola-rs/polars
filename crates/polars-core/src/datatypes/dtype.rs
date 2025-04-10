@@ -922,6 +922,16 @@ impl DataType {
     pub fn is_unknown(&self) -> bool {
         matches!(self, DataType::Unknown(_))
     }
+
+    pub fn nesting_level(&self) -> usize {
+        let mut level = 0;
+        let mut slf = self;
+        while let Some(inner_dtype) = slf.inner_dtype() {
+            level += 1;
+            slf = inner_dtype;
+        }
+        level
+    }
 }
 
 impl Display for DataType {

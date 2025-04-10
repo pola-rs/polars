@@ -1050,19 +1050,8 @@ impl Expr {
     #[cfg(feature = "is_in")]
     pub fn is_in<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Self {
         let other = other.into();
-        let other_constant = is_column_independent(&other);
-        let returns_scalar = all_return_scalar(&self);
-
         let function = BooleanFunction::IsIn { nulls_equal };
-        let mut options = function.function_options();
-        if !other_constant {
-            // we don't have to apply on groups, so this is faster
-            // TODO: this optimization should be done during conversion to IR.
-            options.collect_groups = ApplyOptions::GroupWise;
-        }
-        if returns_scalar {
-            options.flags |= FunctionFlags::RETURNS_SCALAR;
-        }
+        let options = function.function_options();
         let function = function.into();
         Expr::Function {
             input: vec![self, other],

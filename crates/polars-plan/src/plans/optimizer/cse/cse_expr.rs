@@ -1,17 +1,15 @@
 use std::hash::BuildHasher;
 
 use hashbrown::hash_map::RawEntryMut;
+use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_utils::aliases::PlFixedStateQuality;
 use polars_utils::format_pl_smallstr;
+use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::vec::CapacityByFactor;
 
 use super::*;
 use crate::constants::CSE_REPLACED;
 use crate::prelude::visitor::AexprNode;
-
-const SERIES_LIMIT: usize = 1000;
-
-use polars_utils::hashing::_boost_hash_combine;
 
 #[derive(Debug, Clone)]
 struct ProjectionExprs {
@@ -379,7 +377,7 @@ impl ExprIdentifierVisitor<'_> {
                         // Object and nested types are harder to hash and compare.
                         let allow = !(dtype.is_nested() | dtype.is_object());
 
-                        if s.len() < SERIES_LIMIT && allow {
+                        if s.len() < CHEAP_SERIES_HASH_LIMIT && allow {
                             REFUSE_ALLOW_MEMBER
                         } else {
                             REFUSE_NO_MEMBER
