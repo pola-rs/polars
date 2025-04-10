@@ -18,6 +18,13 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 pub use convert::into_reduction;
 use polars_core::prelude::*;
 
+use crate::EvictIdx;
+
+/// A type-erased state for the evictions of a grouped reduction.
+pub trait EvictedReductionState : Any + Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+}
+
 /// A reduction with groups.
 ///
 /// Each group has its own reduction state that values can be aggregated into.
@@ -59,6 +66,39 @@ pub trait GroupedReduction: Any + Send + Sync {
         seq_id: u64,
     ) -> PolarsResult<()>;
 
+    /// Updates this GroupedReduction with new values. values[subset[i]] should
+    /// be added to reduction self[group_idxs[i]]. For order-sensitive grouped
+    /// reductions, seq_id can be used to resolve order between calls/multiple
+    /// reductions. If the group_idxs[i] has its evict bit set the current value
+    /// in the group should be evicted and reset before updating.
+    ///
+    /// # Safety
+    /// The subset and group_idxs are in-bounds.
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        _values: &Series,
+        _subset: &[IdxSize],
+        _group_idxs: &[EvictIdx],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        todo!()
+    }
+    
+    /// Combines the evicted reduction states into this one. The evicted state
+    /// evictions[subset[i]] should be combined into group self[group_idxs[i]].
+    /// 
+    /// # Safety
+    /// The subset and group_idxs are in-bounds and the EvictedReductionState
+    /// was taken from a GroupedReduction similar to this one.
+    unsafe fn combine_evictions_subset(
+        &mut self,
+        _evictions: &dyn EvictedReductionState,
+        _subset: &[IdxSize],
+        _group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        todo!()
+    }
+
     /// Combines this GroupedReduction with another. Group other[i]
     /// should be combined into group self[group_idxs[i]].
     ///
@@ -98,6 +138,11 @@ pub trait GroupedReduction: Any + Send + Sync {
         partition_sizes: &[IdxSize],
         partition_idxs: &[IdxSize],
     ) -> Vec<Box<dyn GroupedReduction>>;
+    
+    /// Take the accumulated evicted groups.
+    fn take_evictions(&mut self) -> Box<dyn EvictedReductionState> {
+        todo!()
+    }
 
     /// Returns the finalized value per group as a Series.
     ///
