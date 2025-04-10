@@ -167,7 +167,10 @@ impl PhysicalPipe {
                     distributor_channel(num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
                 handles.push(scope.spawn_task(TaskPriority::High, async move {
-                    while let Ok(morsel) = receiver.recv().await {
+                    while let Ok(mut morsel) = receiver.recv().await {
+                        // Important: we have to drop the consume token before
+                        // going into the buffered distributor.
+                        drop(morsel.take_consume_token());
                         if distributor.send(morsel).await.is_err() {
                             break;
                         }
