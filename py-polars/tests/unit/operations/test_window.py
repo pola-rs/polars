@@ -577,3 +577,22 @@ def test_window_implode_explode() -> None:
     ).select(
         works=(pl.col.x * pl.col.x.implode().explode()).over(pl.col.y),
     ).to_dict(as_series=False) == {"works": [1, 4, 9, 1, 4, 9, 1, 4, 9]}
+
+
+def test_window_22006() -> None:
+    df = pl.DataFrame(
+        [
+            {"a": 1, "b": 1},
+            {"a": 1, "b": 2},
+            {"a": 2, "b": 3},
+            {"a": 2, "b": 4},
+        ]
+    )
+
+    df_empty = pl.DataFrame([], df.schema)
+
+    df_out = df.select(c=pl.col("b").over("a", mapping_strategy="join"))
+
+    df_empty_out = df_empty.select(c=pl.col("b").over("a", mapping_strategy="join"))
+
+    assert df_out.schema == df_empty_out.schema
