@@ -240,8 +240,15 @@ fn list_serializer<'a, O: Offset>(
     let end = offsets.last().unwrap().to_usize();
     let mut serializer = new_serializer(array.values().as_ref(), start, end - start);
 
+    let mut prev_offset = start;
     let f = move |offset: Option<&[O]>, buf: &mut Vec<u8>| {
         if let Some(offset) = offset {
+            if offset[0].to_usize() > prev_offset {
+                for _ in 0..(offset[0].to_usize() - prev_offset) {
+                    serializer.next().unwrap();
+                }
+            }
+
             let length = (offset[1] - offset[0]).to_usize();
             buf.push(b'[');
             let mut is_first_row = true;
@@ -253,6 +260,7 @@ fn list_serializer<'a, O: Offset>(
                 buf.extend(serializer.next().unwrap());
             }
             buf.push(b']');
+            prev_offset = offset[1].to_usize();
         } else {
             buf.extend(b"null");
         }
