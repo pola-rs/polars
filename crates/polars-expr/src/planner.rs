@@ -496,17 +496,19 @@ fn create_physical_expr_inner(
                 schema,
                 state,
                 |i, state| {
-                    polars_ensure!(
-                        !(
-                            (is_reducing_aggregation || has_window) &&
-                            state.has_implode() &&
+                    let mut has_unsupported_implode = state.has_implode();
+                    has_unsupported_implode &= is_reducing_aggregation || has_window
+                    has_unsupported_implode &= matches!(ctxt, Context::Aggregation);
+                    #[cfg(feature = "is_in")]
+                    {
                             // @HACK. This is done to support the `implode` hack for `is_in`.
                             // This can be remove when either:
                             // * `implode` is properly supported in aggregation contexts
                             // * The `is_in` hack is gone.
-                            !(matches!(function, FunctionExpr::Boolean(BooleanFunction::IsIn { .. })) && i > 0) &&
-                            matches!(ctxt, Context::Aggregation)
-                        ),
+                        has_unsupported_implode &= !(matches!(function, FunctionExpr::Boolean(BooleanFunction::IsIn { .. })) && i > 0);
+                    }
+                    polars_ensure!(
+                        !has_unsupported_implode,
                         InvalidOperation: "'implode' followed by an aggregation is not allowed"
                     );
                     Ok(())
