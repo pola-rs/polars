@@ -760,3 +760,14 @@ def test_out_of_ns_range_no_tu_specified_13592() -> None:
 def test_wrong_format_percent() -> None:
     with pytest.raises(InvalidOperationError):
         pl.Series(["2019-01-01"]).str.strptime(pl.Date, format="d%")
+
+
+def test_polars_parser_fooled_by_trailing_nonsense_22167() -> None:
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2025-04-06T18:57:42.77756192Z"]).str.to_datetime(
+            "%Y-%m-%dT%H:%M:%S.%9fcabbagebananapotato"
+        )
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2025-04-06T18:57:42.77756192Z"]).str.to_datetime(
+            "%Y-%m-%dT%H:%M:%S.%9f#z"
+        )
