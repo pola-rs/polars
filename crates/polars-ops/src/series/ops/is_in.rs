@@ -978,6 +978,7 @@ fn is_in_decimal(
             let other = other.into_series();
             is_in_numeric(ca_in.physical(), &other, nulls_equal)
         },
+        #[cfg(feature = "dtype-array")]
         DataType::Array(_, _) => {
             let other = other.list()?;
             let other = other.apply_to_inner(&|s| {
@@ -1000,12 +1001,14 @@ pub fn is_in(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Bool
         s.len(),
         other.len()
     );
-    polars_ensure!(
-        matches!(other.dtype(), DataType::List(_) | DataType::Array(..)),
-        opq = is_in,
-        s.dtype(),
-        other.dtype()
-    );
+
+    #[allow(unused_mut)]
+    let mut other_is_valid_type = matches!(other.dtype(), DataType::List(_));
+    #[cfg(feature = "dtype-array")]
+    {
+        other_is_valid_type |= matches!(other.dtype(), DataType::Array(..))
+    }
+    polars_ensure!(other_is_valid_type, opq = is_in, s.dtype(), other.dtype());
 
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
