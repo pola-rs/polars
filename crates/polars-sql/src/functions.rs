@@ -1139,21 +1139,16 @@ impl SQLFunctionVisitor<'_> {
             },
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
             #[cfg(feature = "nightly")]
-            InitCap => {
-                if let Some(schema) = self.active_schema {
-                    self.try_visit_unary(|e| {
-                        let dt = e.to_field(schema, Context::default())?.dtype;
-                        match dt {
-                            #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(..) | DataType::Enum(..) => {
-                                Ok(e.cat().to_titlecase())
-                            },
-                            _ => Ok(e.str().to_titlecase()),
-                        }
+            InitCap => match self.active_schema {
+                None => self.visit_unary(|e| e.str().to_titlecase()),
+                Some(schema) => self.try_visit_unary(|e| {
+                    let dt = e.to_field(schema, Context::default())?.dtype;
+                    Ok(match dt {
+                        #[cfg(feature = "dtype-categorical")]
+                        DataType::Categorical(..) | DataType::Enum(..) => e.cat().to_titlecase(),
+                        _ => e.str().to_titlecase(),
                     })
-                } else {
-                    self.visit_unary(|e| e.str().to_titlecase())
-                }
+                }),
             },
             Left => self.try_visit_binary(|e, length| {
                 Ok(match length {
@@ -1179,21 +1174,16 @@ impl SQLFunctionVisitor<'_> {
                 })
             }),
             Length => self.visit_unary(|e| e.str().len_chars()),
-            Lower => {
-                if let Some(schema) = self.active_schema {
-                    self.try_visit_unary(|e| {
-                        let dt = e.to_field(schema, Context::default())?.dtype;
-                        match dt {
-                            #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(..) | DataType::Enum(..) => {
-                                Ok(e.cat().to_lowercase())
-                            },
-                            _ => Ok(e.str().to_lowercase()),
-                        }
+            Lower => match self.active_schema {
+                None => self.visit_unary(|e| e.str().to_lowercase()),
+                Some(schema) => self.try_visit_unary(|e| {
+                    let dt = e.to_field(schema, Context::default())?.dtype;
+                    Ok(match dt {
+                        #[cfg(feature = "dtype-categorical")]
+                        DataType::Categorical(..) | DataType::Enum(..) => e.cat().to_lowercase(),
+                        _ => e.str().to_lowercase(),
                     })
-                } else {
-                    self.visit_unary(|e| e.str().to_lowercase())
-                }
+                }),
             },
             LTrim => {
                 let args = extract_args(function)?;
@@ -1430,21 +1420,16 @@ impl SQLFunctionVisitor<'_> {
                     _ => polars_bail!(SQLSyntax: "SUBSTR expects 2-3 arguments (found {})", args.len()),
                 }
             },
-            Upper => {
-                if let Some(schema) = self.active_schema {
-                    self.try_visit_unary(|e| {
-                        let dt = e.to_field(schema, Context::default())?.dtype;
-                        match dt {
-                            #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(..) | DataType::Enum(..) => {
-                                Ok(e.cat().to_uppercase())
-                            },
-                            _ => Ok(e.str().to_uppercase()),
-                        }
+            Upper => match self.active_schema {
+                None => self.visit_unary(|e| e.str().to_uppercase()),
+                Some(schema) => self.try_visit_unary(|e| {
+                    let dt = e.to_field(schema, Context::default())?.dtype;
+                    Ok(match dt {
+                        #[cfg(feature = "dtype-categorical")]
+                        DataType::Categorical(..) | DataType::Enum(..) => e.cat().to_uppercase(),
+                        _ => e.str().to_uppercase(),
                     })
-                } else {
-                    self.visit_unary(|e| e.str().to_uppercase())
-                }
+                }),
             },
 
             // ----
