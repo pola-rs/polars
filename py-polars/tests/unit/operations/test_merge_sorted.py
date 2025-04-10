@@ -308,3 +308,22 @@ def test_merge_sorted_categorical_21952() -> None:
             "│ d   │\n"
             "└─────┘"
         )
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_chain_streaming_21789(streaming: bool) -> None:
+    lf0 = pl.LazyFrame({"foo": ["a1", "a2"], "n": [10, 20]})
+    lf1 = pl.LazyFrame({"foo": ["b1", "b2"], "n": [11, 21]})
+    lf2 = pl.LazyFrame({"foo": ["c1", "c2"], "n": [12, 22]})
+
+    expected = pl.DataFrame(
+        {
+            "foo": ["a1", "b1", "c1", "a2", "b2", "c2"],
+            "n": [10, 11, 12, 20, 21, 22],
+        }
+    )
+
+    pq = lf0.merge_sorted(lf1, key="n").merge_sorted(lf2, key="n")
+    out = pq.collect(engine="streaming" if streaming else "in-memory")
+
+    assert_frame_equal(out, expected)
