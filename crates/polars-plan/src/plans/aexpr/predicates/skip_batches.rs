@@ -438,7 +438,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 // The above case does always cover the fallback path. Since there
                                 // is code that relies on the `min==max` always filtering normally,
                                 // we add it here.
-                                let fallback_expr = expr_arena.add(AExpr::Function {
+                                let exact_not_in = expr_arena.add(AExpr::Function {
                                     input: vec![
                                         ExprIR::new(col_min, OutputName::Alias(PlSmallStr::EMPTY)),
                                         ExprIR::new(lv_node, OutputName::Alias(PlSmallStr::EMPTY)),
@@ -449,7 +449,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                                     options: BooleanFunction::IsIn { nulls_equal }
                                         .function_options(),
                                 });
-                                let fallback_expr = expr_arena.add(AExpr::Function {
+                                let exact_not_in = expr_arena.add(AExpr::Function {
                                     input: vec![ExprIR::new(
                                         fallback_expr,
                                         OutputName::Alias(PlSmallStr::EMPTY),
@@ -457,7 +457,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                                     function: FunctionExpr::Boolean(BooleanFunction::Not),
                                     options: BooleanFunction::Not.function_options(),
                                 });
-                                let fallback_expr = and!(min_is_max, has_no_nulls, fallback_expr);
+                                let exact_not_in = and!(min_is_max, has_no_nulls, fallback_expr);
 
                                 Some(or!(fallback_expr, min_max_is_in))
                             },
