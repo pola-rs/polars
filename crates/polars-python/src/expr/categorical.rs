@@ -37,6 +37,7 @@ impl PyExpr {
         self.inner.clone().cat().to_lowercase().into()
     }
 
+    #[cfg(feature = "nightly")]
     fn cat_to_titlecase(&self) -> Self {
         self.inner.clone().cat().to_titlecase().into()
     }

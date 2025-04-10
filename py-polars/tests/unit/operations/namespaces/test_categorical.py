@@ -372,3 +372,72 @@ def test_titlecase() -> None:
     ):
         assert ex_str == act, f"{ex_str} != {act}"
         assert ex_py == act, f"{ex_py} != {act}"
+
+
+def test_sql_lowercase() -> None:
+    dt = pl.Enum(["A", "B", "C", "D", "E"])
+    df = pl.DataFrame(
+        {
+            "enum_col": pl.Series(["A", "B", "C", "D", "A"], dtype=dt),
+            "int_col": [1, 2, 3, 4, 5],
+        }
+    )
+
+    result = (
+        pl.SQLContext({"sql_table": df})
+        .execute("SELECT * FROM sql_table WHERE LOWER(enum_col) = 'a';")
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "enum_col": pl.Series(["A", "A"], dtype=dt),
+            "int_col": [1, 5],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_sql_uppercase() -> None:
+    dt = pl.Enum(["a", "b", "c", "d", "e"])
+    df = pl.DataFrame(
+        {
+            "enum_col": pl.Series(["a", "b", "c", "d", "a"], dtype=dt),
+            "int_col": [1, 2, 3, 4, 5],
+        }
+    )
+
+    result = (
+        pl.SQLContext({"sql_table": df})
+        .execute("SELECT * FROM sql_table WHERE UPPER(enum_col) = 'A';")
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "enum_col": pl.Series(["a", "a"], dtype=dt),
+            "int_col": [1, 5],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_sql_titlecase() -> None:
+    dt = pl.Enum(["aa", "bb", "cc", "dd", "ee"])
+    df = pl.DataFrame(
+        {
+            "enum_col": pl.Series(["aa", "bb", "cc", "dd", "aa"], dtype=dt),
+            "int_col": [1, 2, 3, 4, 5],
+        }
+    )
+
+    result = (
+        pl.SQLContext({"sql_table": df})
+        .execute("SELECT * FROM sql_table WHERE INITCAP(enum_col) = 'Aa';")
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "enum_col": pl.Series(["aa", "aa"], dtype=dt),
+            "int_col": [1, 5],
+        }
+    )
+    assert_frame_equal(result, expected)

@@ -16,11 +16,11 @@ pub enum CategoricalFunction {
     #[cfg(feature = "strings")]
     Slice(i64, Option<usize>),
     #[cfg(feature = "strings")]
-    UpperCase,
+    Uppercase,
     #[cfg(feature = "strings")]
-    LowerCase,
+    Lowercase,
     #[cfg(feature = "strings")]
-    TitleCase,
+    Titlecase,
 }
 
 impl CategoricalFunction {
@@ -39,11 +39,11 @@ impl CategoricalFunction {
             #[cfg(feature = "strings")]
             Slice(_, _) => mapper.with_dtype(DataType::String),
             #[cfg(feature = "strings")]
-            UpperCase => mapper.with_dtype(DataType::String),
+            Uppercase => mapper.with_dtype(DataType::String),
             #[cfg(feature = "strings")]
-            LowerCase => mapper.with_dtype(DataType::String),
+            Lowercase => mapper.with_dtype(DataType::String),
             #[cfg(feature = "strings")]
-            TitleCase => mapper.with_dtype(DataType::String),
+            Titlecase => mapper.with_dtype(DataType::String),
         }
     }
 
@@ -57,9 +57,9 @@ impl CategoricalFunction {
             | C::StartsWith(_)
             | C::EndsWith(_)
             | C::Slice(_, _)
-            | C::UpperCase
-            | C::LowerCase
-            | C::TitleCase => FunctionOptions::elementwise(),
+            | C::Uppercase
+            | C::Lowercase
+            | C::Titlecase => FunctionOptions::elementwise(),
         }
     }
 }
@@ -80,11 +80,11 @@ impl Display for CategoricalFunction {
             #[cfg(feature = "strings")]
             Slice(_, _) => "slice",
             #[cfg(feature = "strings")]
-            UpperCase => "uppercase",
+            Uppercase => "uppercase",
             #[cfg(feature = "strings")]
-            LowerCase => "lowercase",
+            Lowercase => "lowercase",
             #[cfg(feature = "strings")]
-            TitleCase => "titlecase",
+            Titlecase => "titlecase",
         };
         write!(f, "cat.{s}")
     }
@@ -106,11 +106,11 @@ impl From<CategoricalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "strings")]
             Slice(offset, length) => map!(slice, offset, length),
             #[cfg(feature = "strings")]
-            UpperCase => map!(to_uppercase),
+            Uppercase => map!(to_uppercase),
             #[cfg(feature = "strings")]
-            LowerCase => map!(to_lowercase),
-            #[cfg(feature = "strings")]
-            TitleCase => map!(to_titlecase),
+            Lowercase => map!(to_lowercase),
+            #[cfg(all(feature = "strings", feature = "nightly"))]
+            Titlecase => map!(to_titlecase),
         }
     }
 }
@@ -241,6 +241,7 @@ fn to_lowercase(c: &Column) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "strings")]
+#[cfg(feature = "nightly")]
 fn to_titlecase(c: &Column) -> PolarsResult<Column> {
     apply_to_cats_str(c, |s| s.to_titlecase())
 }

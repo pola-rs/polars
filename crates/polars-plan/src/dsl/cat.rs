@@ -35,16 +35,16 @@ impl CategoricalNameSpace {
 
     #[cfg(feature = "strings")]
     pub fn to_uppercase(self) -> Expr {
-        self.0.map_unary(CategoricalFunction::UpperCase)
+        self.0.map_unary(CategoricalFunction::Uppercase)
     }
 
     #[cfg(feature = "strings")]
     pub fn to_lowercase(self) -> Expr {
-        self.0.map_unary(CategoricalFunction::LowerCase)
+        self.0.map_unary(CategoricalFunction::Lowercase)
     }
 
-    #[cfg(feature = "strings")]
+    #[cfg(all(feature = "strings", feature = "nightly"))]
     pub fn to_titlecase(self) -> Expr {
-        self.0.map_unary(CategoricalFunction::TitleCase)
+        self.0.map_unary(CategoricalFunction::Titlecase)
     }
 }

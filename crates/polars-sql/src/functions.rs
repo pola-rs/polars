@@ -10,7 +10,7 @@ use polars_lazy::dsl::ListNameSpaceExtension;
 use polars_ops::chunked_array::UnicodeForm;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
-use polars_plan::prelude::{StrptimeOptions, col, cols, lit};
+use polars_plan::prelude::{Context, StrptimeOptions, col, cols, lit};
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
@@ -1139,7 +1139,21 @@ impl SQLFunctionVisitor<'_> {
             },
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
             #[cfg(feature = "nightly")]
-            InitCap => self.visit_unary(|e| e.str().to_titlecase()),
+            InitCap => {
+                if let Some(schema) = self.active_schema {
+                    self.try_visit_unary(|e| {
+                        let dt = e.to_field(schema, Context::default())?.dtype;
+                        match dt {
+                            DataType::Categorical(..) | DataType::Enum(..) => {
+                                Ok(e.cat().to_titlecase())
+                            },
+                            _ => Ok(e.str().to_titlecase()),
+                        }
+                    })
+                } else {
+                    self.visit_unary(|e| e.str().to_titlecase())
+                }
+            },
             Left => self.try_visit_binary(|e, length| {
                 Ok(match length {
                     Expr::Literal(lv) if lv.is_null() => lit(lv),
@@ -1164,7 +1178,21 @@ impl SQLFunctionVisitor<'_> {
                 })
             }),
             Length => self.visit_unary(|e| e.str().len_chars()),
-            Lower => self.visit_unary(|e| e.str().to_lowercase()),
+            Lower => {
+                if let Some(schema) = self.active_schema {
+                    self.try_visit_unary(|e| {
+                        let dt = e.to_field(schema, Context::default())?.dtype;
+                        match dt {
+                            DataType::Categorical(..) | DataType::Enum(..) => {
+                                Ok(e.cat().to_lowercase())
+                            },
+                            _ => Ok(e.str().to_lowercase()),
+                        }
+                    })
+                } else {
+                    self.visit_unary(|e| e.str().to_lowercase())
+                }
+            },
             LTrim => {
                 let args = extract_args(function)?;
                 match args.len() {
@@ -1400,7 +1428,21 @@ impl SQLFunctionVisitor<'_> {
                     _ => polars_bail!(SQLSyntax: "SUBSTR expects 2-3 arguments (found {})", args.len()),
                 }
             },
-            Upper => self.visit_unary(|e| e.str().to_uppercase()),
+            Upper => {
+                if let Some(schema) = self.active_schema {
+                    self.try_visit_unary(|e| {
+                        let dt = e.to_field(schema, Context::default())?.dtype;
+                        match dt {
+                            DataType::Categorical(..) | DataType::Enum(..) => {
+                                Ok(e.cat().to_uppercase())
+                            },
+                            _ => Ok(e.str().to_uppercase()),
+                        }
+                    })
+                } else {
+                    self.visit_unary(|e| e.str().to_uppercase())
+                }
+            },
 
             // ----
             // Aggregate functions

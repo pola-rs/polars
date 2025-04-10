@@ -13,4 +13,9 @@ The following methods are available under the `expr.cat` attribute.
     Expr.cat.get_categories
     Expr.cat.len_bytes
     Expr.cat.len_chars
+    Expr.cat.slice
     Expr.cat.starts_with
+    Expr.cat.to_lowercase
+    Expr.cat.to_titlecase
+    Expr.cat.to_uppercase
+
