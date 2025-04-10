@@ -301,3 +301,74 @@ def test_cat_slice() -> None:
         "",
         None,
     ]
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_cat_to_lowercase() -> None:
+    s = pl.Series(["Hello", "WORLD"], dtype=pl.Categorical)
+    expected = pl.Series(["hello", "world"])
+    assert_series_equal(s.cat.to_lowercase(), expected)
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_cat_to_uppercase() -> None:
+    s = pl.Series(["Hello", "WORLD"], dtype=pl.Categorical)
+    expected = pl.Series(["HELLO", "WORLD"])
+    assert_series_equal(s.cat.to_uppercase(), expected)
+
+
+def test_titlecase() -> None:
+    df = pl.DataFrame(
+        {
+            "misc": pl.Series(
+                [
+                    "welcome to my world",
+                    "double  space",
+                    "and\ta\t tab",
+                    "by jean-paul sartre, 'esq'",
+                    "SOMETIMES/life/gives/you/a/2nd/chance",
+                ],
+                dtype=pl.Categorical,
+            )
+        }
+    )
+    expected = [
+        "Welcome To My World",
+        "Double  Space",
+        "And\tA\t Tab",
+        "By Jean-Paul Sartre, 'Esq'",
+        "Sometimes/Life/Gives/You/A/2nd/Chance",
+    ]
+    actual = df.select(pl.col("misc").cat.to_titlecase()).to_series()
+    for ex, act in zip(expected, actual):
+        assert ex == act, f"{ex} != {act}"
+
+    df = pl.DataFrame(
+        {
+            "quotes": pl.Series(
+                [
+                    "'e.t. phone home'",
+                    "you talkin' to me?",
+                    "i feel the need--the need for speed",
+                    "to infinity,and BEYOND!",
+                    "say 'what' again!i dare you - I\u00a0double-dare you!",
+                    "What.we.got.here... is#failure#to#communicate",
+                ],
+                dtype=pl.Categorical,
+            )
+        }
+    )
+    expected_str = [
+        "'E.T. Phone Home'",
+        "You Talkin' To Me?",
+        "I Feel The Need--The Need For Speed",
+        "To Infinity,And Beyond!",
+        "Say 'What' Again!I Dare You - I\u00a0Double-Dare You!",
+        "What.We.Got.Here... Is#Failure#To#Communicate",
+    ]
+    expected_py = [s.title() for s in df["quotes"].to_list()]
+    for ex_str, ex_py, act in zip(
+        expected_str, expected_py, df["quotes"].cat.to_titlecase()
+    ):
+        assert ex_str == act, f"{ex_str} != {act}"
+        assert ex_py == act, f"{ex_py} != {act}"

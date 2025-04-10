@@ -15,6 +15,12 @@ pub enum CategoricalFunction {
     EndsWith(String),
     #[cfg(feature = "strings")]
     Slice(i64, Option<usize>),
+    #[cfg(feature = "strings")]
+    UpperCase,
+    #[cfg(feature = "strings")]
+    LowerCase,
+    #[cfg(feature = "strings")]
+    TitleCase,
 }
 
 impl CategoricalFunction {
@@ -32,6 +38,12 @@ impl CategoricalFunction {
             EndsWith(_) => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "strings")]
             Slice(_, _) => mapper.with_dtype(DataType::String),
+            #[cfg(feature = "strings")]
+            UpperCase => mapper.with_dtype(DataType::String),
+            #[cfg(feature = "strings")]
+            LowerCase => mapper.with_dtype(DataType::String),
+            #[cfg(feature = "strings")]
+            TitleCase => mapper.with_dtype(DataType::String),
         }
     }
 
@@ -40,9 +52,14 @@ impl CategoricalFunction {
         match self {
             C::GetCategories => FunctionOptions::groupwise(),
             #[cfg(feature = "strings")]
-            C::LenBytes | C::LenChars | C::StartsWith(_) | C::EndsWith(_) | C::Slice(_, _) => {
-                FunctionOptions::elementwise()
-            },
+            C::LenBytes
+            | C::LenChars
+            | C::StartsWith(_)
+            | C::EndsWith(_)
+            | C::Slice(_, _)
+            | C::UpperCase
+            | C::LowerCase
+            | C::TitleCase => FunctionOptions::elementwise(),
         }
     }
 }
@@ -62,6 +79,12 @@ impl Display for CategoricalFunction {
             EndsWith(_) => "ends_with",
             #[cfg(feature = "strings")]
             Slice(_, _) => "slice",
+            #[cfg(feature = "strings")]
+            UpperCase => "uppercase",
+            #[cfg(feature = "strings")]
+            LowerCase => "lowercase",
+            #[cfg(feature = "strings")]
+            TitleCase => "titlecase",
         };
         write!(f, "cat.{s}")
     }
@@ -82,6 +105,12 @@ impl From<CategoricalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             EndsWith(suffix) => map!(ends_with, suffix.as_str()),
             #[cfg(feature = "strings")]
             Slice(offset, length) => map!(slice, offset, length),
+            #[cfg(feature = "strings")]
+            UpperCase => map!(to_uppercase),
+            #[cfg(feature = "strings")]
+            LowerCase => map!(to_lowercase),
+            #[cfg(feature = "strings")]
+            TitleCase => map!(to_titlecase),
         }
     }
 }
@@ -118,10 +147,9 @@ fn _get_cat_phys_map(ca: &CategoricalChunked) -> (StringChunked, Series) {
     (categories, phys)
 }
 
-/// Fast path: apply a string function to the categories of a categorical column and broadcast the
-/// result back to the array.
-// fn apply_to_cats<F, T>(ca: &CategoricalChunked, mut op: F) -> PolarsResult<Column>
-fn apply_to_cats<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
+/// Apply a string function that produces non-string output to the categories of a categorical
+/// column and broadcast the result back to the array.
+fn apply_to_cats_generic<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
 where
     F: FnMut(&StringChunked) -> ChunkedArray<T>,
     ChunkedArray<T>: IntoSeries,
@@ -135,9 +163,9 @@ where
     Ok(out.into_column())
 }
 
-/// Fast path: apply a binary function to the categories of a categorical column and broadcast the
-/// result back to the array.
-fn apply_to_cats_binary<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
+/// Apply a binary function that produces non-string output to the categories of a categorical
+/// column and broadcast the result back to the array.
+fn apply_to_cats_binary_generic<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
 where
     F: FnMut(&BinaryChunked) -> ChunkedArray<T>,
     ChunkedArray<T>: IntoSeries,
@@ -151,24 +179,38 @@ where
     Ok(out.into_column())
 }
 
+/// Apply a string function that produces string output to the categories of a
+/// categorical column and broadcast the result back to the array.
+fn apply_to_cats_str<F>(c: &Column, mut op: F) -> PolarsResult<Column>
+where
+    F: FnMut(&StringChunked) -> StringChunked,
+{
+    let ca = c.categorical()?;
+    let (categories, phys) = _get_cat_phys_map(ca);
+    let result = op(&categories);
+    // SAFETY: physical idx array is valid.
+    let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
+    Ok(out.into_column())
+}
+
 #[cfg(feature = "strings")]
 fn len_bytes(c: &Column) -> PolarsResult<Column> {
-    apply_to_cats(c, |s| s.str_len_bytes())
+    apply_to_cats_generic(c, |s| s.str_len_bytes())
 }
 
 #[cfg(feature = "strings")]
 fn len_chars(c: &Column) -> PolarsResult<Column> {
-    apply_to_cats(c, |s| s.str_len_chars())
+    apply_to_cats_generic(c, |s| s.str_len_chars())
 }
 
 #[cfg(feature = "strings")]
 fn starts_with(c: &Column, prefix: &str) -> PolarsResult<Column> {
-    apply_to_cats_binary(c, |s| s.starts_with(prefix.as_bytes()))
+    apply_to_cats_binary_generic(c, |s| s.starts_with(prefix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]
 fn ends_with(c: &Column, suffix: &str) -> PolarsResult<Column> {
-    apply_to_cats_binary(c, |s| s.ends_with(suffix.as_bytes()))
+    apply_to_cats_binary_generic(c, |s| s.ends_with(suffix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]
@@ -186,4 +228,19 @@ fn slice(c: &Column, offset: i64, length: Option<usize>) -> PolarsResult<Column>
     // SAFETY: physical idx array is valid.
     let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
     Ok(out.into_column())
+}
+
+#[cfg(feature = "strings")]
+fn to_uppercase(c: &Column) -> PolarsResult<Column> {
+    apply_to_cats_str(c, |s| s.to_uppercase())
+}
+
+#[cfg(feature = "strings")]
+fn to_lowercase(c: &Column) -> PolarsResult<Column> {
+    apply_to_cats_str(c, |s| s.to_lowercase())
+}
+
+#[cfg(feature = "strings")]
+fn to_titlecase(c: &Column) -> PolarsResult<Column> {
+    apply_to_cats_str(c, |s| s.to_titlecase())
 }

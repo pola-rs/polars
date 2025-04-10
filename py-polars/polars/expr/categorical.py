@@ -303,3 +303,83 @@ class ExprCatNameSpace:
         └─────────────┴───────┘
         """
         return wrap_expr(self._pyexpr.cat_slice(offset, length))
+
+    def to_uppercase(self) -> Expr:
+        """
+        Modify and return string representations as their uppercase equivalent.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": pl.Series(["cat", "dog"], dtype=pl.Categorical)})
+        >>> df.with_columns(foo_upper=pl.col("foo").cat.to_uppercase())
+        shape: (2, 2)
+        ┌─────┬───────────┐
+        │ foo ┆ foo_upper │
+        │ --- ┆ ---       │
+        │ cat ┆ str       │
+        ╞═════╪═══════════╡
+        │ cat ┆ CAT       │
+        │ dog ┆ DOG       │
+        └─────┴───────────┘
+        """
+        return wrap_expr(self._pyexpr.cat_to_uppercase())
+
+    def to_lowercase(self) -> Expr:
+        """
+        Modify and return string representations as their lowercase equivalent.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": pl.Series(["CAT", "DOG"], dtype=pl.Categorical)})
+        >>> df.with_columns(foo_lower=pl.col("foo").cat.to_lowercase())
+        shape: (2, 2)
+        ┌─────┬───────────┐
+        │ foo ┆ foo_lower │
+        │ --- ┆ ---       │
+        │ cat ┆ str       │
+        ╞═════╪═══════════╡
+        │ CAT ┆ cat       │
+        │ DOG ┆ dog       │
+        └─────┴───────────┘
+        """
+        return wrap_expr(self._pyexpr.cat_to_lowercase())
+
+    def to_titlecase(self) -> Expr:
+        """
+        Modify and return string representations as their titlecase equivalent.
+
+        Notes
+        -----
+        This is a form of case transform where the first letter of each word is
+        capitalized, with the rest of the word in lowercase. Non-alphanumeric
+        characters define the word boundaries.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "quotes": pl.Series(
+        ...             [
+        ...                 "'e.t. phone home'",
+        ...                 "you talkin' to me?",
+        ...                 "to infinity,and BEYOND!",
+        ...             ],
+        ...             dtype=pl.Categorical,
+        ...         )
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     quotes_title=pl.col("quotes").cat.to_titlecase(),
+        ... )
+        shape: (3, 2)
+        ┌─────────────────────────┬─────────────────────────┐
+        │ quotes                  ┆ quotes_title            │
+        │ ---                     ┆ ---                     │
+        │ cat                     ┆ str                     │
+        ╞═════════════════════════╪═════════════════════════╡
+        │ 'e.t. phone home'       ┆ 'E.T. Phone Home'       │
+        │ you talkin' to me?      ┆ You Talkin' To Me?      │
+        │ to infinity,and BEYOND! ┆ To Infinity,And Beyond! │
+        └─────────────────────────┴─────────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.cat_to_titlecase())

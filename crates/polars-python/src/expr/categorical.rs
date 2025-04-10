@@ -28,4 +28,16 @@ impl PyExpr {
     fn cat_slice(&self, offset: i64, length: Option<usize>) -> Self {
         self.inner.clone().cat().slice(offset, length).into()
     }
+
+    fn cat_to_uppercase(&self) -> Self {
+        self.inner.clone().cat().to_uppercase().into()
+    }
+
+    fn cat_to_lowercase(&self) -> Self {
+        self.inner.clone().cat().to_lowercase().into()
+    }
+
+    fn cat_to_titlecase(&self) -> Self {
+        self.inner.clone().cat().to_titlecase().into()
+    }
 }
