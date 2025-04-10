@@ -134,7 +134,7 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
 
 
 @pytest.mark.write_disk
-def test_hive_streaming_pushdown_is_in(tmp_path: Path) -> None:
+def test_hive_streaming_pushdown_is_in_22212(tmp_path: Path) -> None:
     (
         pl.DataFrame({"x": range(5)}).write_parquet(
             tmp_path,
