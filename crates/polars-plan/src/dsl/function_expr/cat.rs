@@ -19,7 +19,7 @@ pub enum CategoricalFunction {
     Uppercase,
     #[cfg(feature = "strings")]
     Lowercase,
-    #[cfg(feature = "strings")]
+    #[cfg(all(feature = "strings", feature = "nightly"))]
     Titlecase,
 }
 
@@ -42,7 +42,7 @@ impl CategoricalFunction {
             Uppercase => mapper.with_dtype(DataType::String),
             #[cfg(feature = "strings")]
             Lowercase => mapper.with_dtype(DataType::String),
-            #[cfg(feature = "strings")]
+            #[cfg(all(feature = "strings", feature = "nightly"))]
             Titlecase => mapper.with_dtype(DataType::String),
         }
     }
@@ -83,7 +83,7 @@ impl Display for CategoricalFunction {
             Uppercase => "uppercase",
             #[cfg(feature = "strings")]
             Lowercase => "lowercase",
-            #[cfg(feature = "strings")]
+            #[cfg(all(feature = "strings", feature = "nightly"))]
             Titlecase => "titlecase",
         };
         write!(f, "cat.{s}")
