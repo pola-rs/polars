@@ -18,7 +18,7 @@ pub fn get_expr_depth_limit() -> PolarsResult<u16> {
     Ok(depth)
 }
 
-fn ok_checker(_state: &ExpressionConversionState) -> PolarsResult<()> {
+fn ok_checker(_i: usize, _state: &ExpressionConversionState) -> PolarsResult<()> {
     Ok(())
 }
 
@@ -41,14 +41,15 @@ pub(crate) fn create_physical_expressions_check_state<F>(
     checker: F,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>>
 where
-    F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
+    F: Fn(usize, &ExpressionConversionState) -> PolarsResult<()>,
 {
     exprs
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             state.reset();
             let out = create_physical_expr(e, context, expr_arena, schema, state);
-            checker(state)?;
+            checker(i, state)?;
             out
         })
         .collect()
@@ -75,14 +76,15 @@ pub(crate) fn create_physical_expressions_from_nodes_check_state<F>(
     checker: F,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>>
 where
-    F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
+    F: Fn(usize, &ExpressionConversionState) -> PolarsResult<()>,
 {
     exprs
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             state.reset();
             let out = create_physical_expr_inner(*e, context, expr_arena, schema, state);
-            checker(state)?;
+            checker(i, state)?;
             out
         })
         .collect()
@@ -457,7 +459,7 @@ fn create_physical_expr_inner(
                 expr_arena,
                 schema,
                 state,
-                |state| {
+                |_, state| {
                     polars_ensure!(!((is_reducing_aggregation || has_window) && state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
                     Ok(())
                 },
@@ -493,8 +495,20 @@ fn create_physical_expr_inner(
                 expr_arena,
                 schema,
                 state,
-                |state| {
-                    polars_ensure!(!((is_reducing_aggregation || has_window) && state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
+                |i, state| {
+                    polars_ensure!(
+                        !(
+                            (is_reducing_aggregation || has_window) &&
+                            state.has_implode() &&
+                            // @HACK. This is done to support the `implode` hack for `is_in`.
+                            // This can be remove when either:
+                            // * `implode` is properly supported in aggregation contexts
+                            // * The `is_in` hack is gone.
+                            !(matches!(function, FunctionExpr::Boolean(BooleanFunction::IsIn { .. })) && i > 0) &&
+                            matches!(ctxt, Context::Aggregation)
+                        ),
+                        InvalidOperation: "'implode' followed by an aggregation is not allowed"
+                    );
                     Ok(())
                 },
             )?;
