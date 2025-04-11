@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
+    AnyStr,
     Callable,
     Literal,
     TypeVar,
@@ -220,7 +221,9 @@ def arrlen(obj: Any) -> int | None:
         return None
 
 
-def normalize_filepath(path: str | Path, *, check_not_directory: bool = True) -> str:
+def normalize_filepath(
+    path: os.PathLike[AnyStr] | AnyStr, *, check_not_directory: bool = True
+) -> AnyStr:
     """Create a string path, expanding the home directory if present."""
     # don't use pathlib here as it modifies slashes (s3:// -> s3:/)
     path = os.path.expanduser(path)  # noqa: PTH111
