@@ -4,8 +4,7 @@ use super::ListArray;
 use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder};
 use crate::bitmap::OptBitmapBuilder;
 use crate::datatypes::ArrowDataType;
-use crate::offset::{Offsets, OffsetsBuffer};
-use crate::types::Offset;
+use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
 pub struct ListArrayBuilder<O: Offset, B: ArrayBuilder> {
     dtype: ArrowDataType,
