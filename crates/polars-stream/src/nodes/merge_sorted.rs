@@ -195,16 +195,6 @@ impl ComputeNode for MergeSortedNode {
                 send[0] = PortState::Done;
             },
 
-            // If the output port is blocked, the input port is blocked as well.
-            (PortState::Blocked, _, _) => {
-                if recv[0] != PortState::Done {
-                    recv[0] = PortState::Blocked;
-                }
-                if recv[1] != PortState::Done {
-                    recv[1] = PortState::Blocked;
-                }
-            },
-
             // If one of the two ports is blocked such that we cannot produce data anymore, block
             // the other input port and output port.
             (_, PortState::Blocked, _) if self.left_unmerged.is_empty() => {
