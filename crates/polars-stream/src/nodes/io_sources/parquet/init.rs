@@ -382,6 +382,9 @@ impl ParquetReadImpl {
             )
         }
 
+        let predicate_arrow_field_indices = Arc::new(predicate_arrow_field_indices);
+        let non_predicate_arrow_field_indices = Arc::new(non_predicate_arrow_field_indices);
+
         RowGroupDecoder {
             num_pipelines: self.config.num_pipelines,
             projected_arrow_schema,

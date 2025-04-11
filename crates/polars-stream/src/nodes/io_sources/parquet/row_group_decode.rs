@@ -31,9 +31,9 @@ pub(super) struct RowGroupDecoder {
     pub(super) predicate: Option<ScanIOPredicate>,
     pub(super) use_prefiltered: Option<PrefilterMaskSetting>,
     /// Indices into `projected_arrow_schema. This must be sorted.
-    pub(super) predicate_arrow_field_indices: Vec<usize>,
+    pub(super) predicate_arrow_field_indices: Arc<Vec<usize>>,
     /// Indices into `projected_arrow_schema. This must be sorted.
-    pub(super) non_predicate_arrow_field_indices: Vec<usize>,
+    pub(super) non_predicate_arrow_field_indices: Arc<Vec<usize>>,
     pub(super) min_values_per_thread: usize,
 }
 
@@ -48,7 +48,10 @@ impl RowGroupDecoder {
             slice.0 == 0 && slice.1 >= row_group_data.row_group_metadata.num_rows()
         });
 
-        if self.use_prefiltered.is_some() && row_group_data.slice.is_none() {
+        if self.use_prefiltered.is_some()
+            && row_group_data.slice.is_none()
+            && !self.predicate_arrow_field_indices.is_empty()
+        {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
             self.row_group_data_to_df_impl(row_group_data).await
@@ -425,7 +428,7 @@ fn decode_column_in_filter(
             }));
         }
     }
-    let (mut c, m) = decode_column(arrow_field, &row_group_data, filter, projection_height)?;
+    let (mut c, m) = decode_column(arrow_field, row_group_data, filter, projection_height)?;
 
     if let Some(constant) = constant {
         c = Column::new_scalar(c.name().clone(), constant.clone(), m.set_bits());
@@ -476,11 +479,13 @@ impl RowGroupDecoder {
                 .map(|&i| self.projected_arrow_schema.get_at_index(i).unwrap())
                 .all(|(_, arrow_field)| !arrow_field.dtype().is_nested());
 
-        let cols_per_thread =
-            (self.predicate_arrow_field_indices.len() / self.num_pipelines).max(1);
+        let cols_per_thread = (self
+            .predicate_arrow_field_indices
+            .len()
+            .div_ceil(self.num_pipelines))
+        .max(1);
         let task_handles = {
-            let predicate_arrow_field_indices =
-                Arc::new(self.predicate_arrow_field_indices.clone());
+            let predicate_arrow_field_indices = self.predicate_arrow_field_indices.clone();
             let projected_arrow_schema = self.projected_arrow_schema.clone();
             let row_group_data = row_group_data.clone();
 
@@ -610,31 +615,62 @@ impl RowGroupDecoder {
         let prefilter_cost = calc_prefilter_cost(&mask_bitmap);
         let expected_num_rows = mask_bitmap.set_bits();
 
-        let mut opt_decode_err = None;
+        let cols_per_thread = (self
+            .predicate_arrow_field_indices
+            .len()
+            .div_ceil(self.num_pipelines))
+        .max(1);
+        let task_handles = {
+            let non_predicate_arrow_field_indices = self.non_predicate_arrow_field_indices.clone();
+            let projected_arrow_schema = self.projected_arrow_schema.clone();
+            let row_group_data = row_group_data.clone();
+            let prefilter_setting = *prefilter_setting;
+            (0..self.non_predicate_arrow_field_indices.len())
+                .step_by(cols_per_thread)
+                .map(move |offset| {
+                    let row_group_data = row_group_data.clone();
+                    let non_predicate_arrow_field_indices =
+                        non_predicate_arrow_field_indices.clone();
+                    let projected_arrow_schema = projected_arrow_schema.clone();
+                    let mask = mask.clone();
+                    let mask_bitmap = mask_bitmap.clone();
 
-        let mut dead_cols_decode_iter = self
-            .non_predicate_arrow_field_indices
-            .iter()
-            .map(|&i| self.projected_arrow_schema.get_at_index(i).unwrap())
-            .map(|(_, arrow_field)| {
-                match decode_column_prefiltered(
-                    arrow_field,
-                    &row_group_data,
-                    prefilter_cost,
-                    prefilter_setting,
-                    &mask,
-                    &mask_bitmap,
-                    expected_num_rows,
-                ) {
-                    Ok(v) => v,
-                    e @ Err(_) => {
-                        opt_decode_err.replace(e);
-                        Column::default()
-                    },
-                }
-            });
+                    async move {
+                        // This is exact as we have already taken out the remainder.
+                        (offset..offset + cols_per_thread)
+                            .map(|i| {
+                                let (_, arrow_field) = projected_arrow_schema
+                                    .get_at_index(non_predicate_arrow_field_indices[i])
+                                    .unwrap();
+
+                                decode_column_prefiltered(
+                                    arrow_field,
+                                    row_group_data.as_ref(),
+                                    prefilter_cost,
+                                    &prefilter_setting,
+                                    &mask,
+                                    &mask_bitmap,
+                                    expected_num_rows,
+                                )
+                            })
+                            .collect::<PolarsResult<Vec<_>>>()
+                    }
+                })
+                .map(|fut| {
+                    async_executor::AbortOnDropHandle::new(async_executor::spawn(
+                        TaskPriority::Low,
+                        fut,
+                    ))
+                })
+                .collect::<Vec<_>>()
+        };
 
         let live_columns = live_df_filtered.take_columns();
+
+        let mut dead_cols = Vec::with_capacity(self.non_predicate_arrow_field_indices.len());
+        for fut in task_handles {
+            dead_cols.extend(fut.await?);
+        }
 
         // dead_columns
         // [ ..arrow_fields ]
@@ -643,22 +679,20 @@ impl RowGroupDecoder {
         // We re-use `hive::merge_sorted_to_schema_order()` as it performs most of the merge operation we want.
         // But we take out the `row_index` column as it isn't on the correct side.
 
-        let mut merged = Vec::with_capacity(live_columns.len() + dead_cols_decode_iter.len());
+        let mut merged = Vec::with_capacity(live_columns.len() + dead_cols.len());
 
         if self.row_index.is_some() {
             merged.push(live_columns[0].clone());
         };
 
         hive::merge_sorted_to_schema_order(
-            &mut dead_cols_decode_iter, // df_columns
+            &mut dead_cols.into_iter(), // df_columns
             &mut live_columns
                 .into_iter()
                 .skip(self.row_index.is_some() as usize), // hive_columns
             &self.projected_arrow_schema,
             &mut merged,
         );
-
-        opt_decode_err.transpose()?;
 
         let df = unsafe { DataFrame::new_no_checks(expected_num_rows, merged) };
         Ok(df)
