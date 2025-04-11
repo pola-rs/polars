@@ -2624,9 +2624,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             selected engine, the query is run using the polars streaming
             engine.
 
-            .. note::
-               The GPU engine is currently not supported.
-
         Returns
         -------
         DataFrame
@@ -3391,9 +3388,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars streaming
             engine.
-
-            .. note::
-               The GPU engine is currently not supported.
 
         Returns
         -------
