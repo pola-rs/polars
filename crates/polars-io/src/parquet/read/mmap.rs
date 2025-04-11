@@ -1,10 +1,6 @@
 use arrow::array::Array;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::Field;
-#[cfg(feature = "async")]
-use bytes::Bytes;
-#[cfg(feature = "async")]
-use polars_core::datatypes::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::read::{
     BasicDecompressor, ColumnChunkMetadata, Filter, PageReader, column_iter_to_arrays,
@@ -24,8 +20,6 @@ use polars_utils::mmap::{MemReader, MemSlice};
 ///   d. when all the data is available deserialize on multiple threads, for example using rayon
 pub enum ColumnStore {
     Local(MemSlice),
-    #[cfg(feature = "async")]
-    Fetched(PlHashMap<u64, Bytes>),
 }
 
 /// For local files memory maps all columns that are part of the parquet field `field_name`.
@@ -48,16 +42,6 @@ fn _mmap_single_column<'a>(
     let chunk = match store {
         ColumnStore::Local(mem_slice) => {
             mem_slice.slice(byte_range.start as usize..byte_range.end as usize)
-        },
-        #[cfg(all(feature = "async", feature = "parquet"))]
-        ColumnStore::Fetched(fetched) => {
-            let entry = fetched.get(&byte_range.start).unwrap_or_else(|| {
-                panic!(
-                    "mmap_columns: column with start {} must be prefetched in ColumnStore.\n",
-                    byte_range.start
-                )
-            });
-            MemSlice::from_bytes(entry.clone())
         },
     };
     (meta, chunk)

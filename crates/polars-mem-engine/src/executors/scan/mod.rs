@@ -1,28 +1,8 @@
-#[cfg(feature = "csv")]
-mod csv;
-#[cfg(feature = "ipc")]
-mod ipc;
-#[cfg(feature = "json")]
-mod ndjson;
-#[cfg(feature = "parquet")]
-mod parquet;
 #[cfg(feature = "python")]
 mod python_scan;
 
 use std::mem;
 
-#[cfg(feature = "csv")]
-pub(crate) use csv::CsvExec;
-#[cfg(feature = "ipc")]
-pub(crate) use ipc::IpcExec;
-#[cfg(feature = "json")]
-pub(crate) use ndjson::JsonExec;
-#[cfg(feature = "parquet")]
-pub(crate) use parquet::ParquetExec;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
-use polars_io::predicates::PhysicalIoExpr;
-#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
-use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
 
 #[cfg(feature = "python")]

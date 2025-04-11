@@ -2,8 +2,6 @@
 mod csv;
 mod frame;
 mod ipc_one_shot;
-#[cfg(feature = "parquet")]
-mod parquet;
 mod reproject;
 mod union;
 
@@ -13,8 +11,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 pub(crate) use csv::CsvSource;
 pub(crate) use frame::*;
 pub(crate) use ipc_one_shot::*;
-#[cfg(feature = "parquet")]
-pub(crate) use parquet::*;
 pub(crate) use reproject::*;
 pub(crate) use union::*;
 

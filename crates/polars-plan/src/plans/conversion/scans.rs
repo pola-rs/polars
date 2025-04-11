@@ -43,7 +43,7 @@ pub(super) fn parquet_file_info(
                 let uri = first_path.to_string_lossy();
                 get_runtime().block_in_place_on(async {
                     let mut reader =
-                        ParquetAsyncReader::from_uri(&uri, cloud_options, None).await?;
+                        ParquetObjectStore::from_uri(&uri, cloud_options, None).await?;
 
                     PolarsResult::Ok((
                         reader.schema().await?,
