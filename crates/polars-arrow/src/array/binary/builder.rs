@@ -53,7 +53,7 @@ impl<O: Offset> StaticArrayBuilder for BinaryArrayBuilder<O> {
     }
 
     fn len(&self) -> usize {
-        self.offsets.len()
+        self.offsets.len_proxy()
     }
 
     fn extend_nulls(&mut self, length: usize) {
