@@ -496,7 +496,7 @@ fn to_graph_rec<'a>(
                         true, // create_skip_batch_predicate
                         file_reader_builder
                             .reader_capabilities()
-                            .contains(ReaderCapabilities::SPECIALIZED_FILTER), // create_column_predicates
+                            .contains(ReaderCapabilities::PARTIAL_FILTER), // create_column_predicates
                     )
                 })
                 .transpose()?

@@ -22,7 +22,14 @@ bitflags! {
         /// Supports slicing with offsets relative to the end of the file (i.e. `offset < 0 / Slice::Negative`)
         const NEGATIVE_PRE_SLICE = 1 << 2;
 
-        /// Supports specialized filtering (e.g. through the use of metadata).
-        const SPECIALIZED_FILTER = 1 << 3;
+        /// Supports specialized filtering (e.g. through the use of metadata) but may not filter
+        /// out all rows that don't match the predicate.
+        const PARTIAL_FILTER = 1 << 3;
+
+        /// Supports specialized filtering (e.g. through the use of metadata) and will always
+        /// filter out all rows that don't match the predicate.
+        ///
+        /// `PARTIAL_FILTER` should also be enabled if this is enabled.
+        const FULL_FILTER = 1 << 4;
     }
 }

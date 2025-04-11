@@ -3131,3 +3131,23 @@ def test_unspecialized_decoding_prefiltering() -> None:
         .collect(engine="streaming")
     )
     assert_frame_equal(result, df.filter(expr))
+
+
+def test_filtering_on_other_parallel_modes_with_statistics() -> None:
+    f = io.BytesIO()
+
+    pl.DataFrame(
+        {
+            "a": [1, 4, 9, 2, 4, 8, 3, 4, 7],
+        }
+    ).write_parquet(f, row_group_size=3)
+
+    for parallel in ["columns", "row_groups"]:
+        f.seek(0)
+        assert_series_equal(
+            pl.scan_parquet(f, parallel=parallel)
+            .filter(pl.col.a == 4)
+            .collect()
+            .to_series(),
+            pl.Series("a", [4, 4, 4]),
+        )
