@@ -246,7 +246,7 @@ impl MultiScanTaskInitializer {
                     projected_file_schema,
                     missing_columns_policy,
                     full_file_schema,
-                    check_schema_names: None,
+                    check_schema_names: self.config.check_schema_names.clone(),
                 },
                 num_pipelines,
                 verbose,
@@ -457,11 +457,17 @@ impl ReaderStarter {
 
             // Note: We do set_external_columns later below to avoid blocking this loop.
             let predicate = if extra_ops_post.predicate.is_some()
-                && reader_capabilities.contains(ReaderCapabilities::SPECIALIZED_FILTER)
+                && reader_capabilities.contains(ReaderCapabilities::PARTIAL_FILTER)
                 && extra_ops_post.row_index.is_none()
                 && extra_ops_post.pre_slice.is_none()
             {
-                extra_ops_post.predicate.take()
+                if reader_capabilities.contains(ReaderCapabilities::FULL_FILTER) {
+                    // If the reader can fully handle the predicate itself, let it do it itself.
+                    extra_ops_post.predicate.take()
+                } else {
+                    // Otherwise, we want to pass it and filter again afterwards.
+                    extra_ops_post.predicate.clone()
+                }
             } else {
                 None
             };

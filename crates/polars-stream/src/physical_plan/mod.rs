@@ -30,6 +30,7 @@ use polars_utils::slice_enum::Slice;
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
+use crate::nodes::io_sources::multi_file_reader::extra_ops::SchemaNamesMatchPolicy;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::ExprCache;
 
@@ -212,17 +213,9 @@ pub enum PhysNodeKind {
         hive_parts: Option<HivePartitionsDf>,
         allow_missing_columns: bool,
         include_file_paths: Option<PlSmallStr>,
+        check_schema_names: Option<SchemaNamesMatchPolicy>,
 
-        /// Schema that all files are coerced into.
-        ///
-        /// - Does include the `row_index`.
-        /// - Does include `include_file_paths`.
-        /// - Does include the hive columns.
-        ///
-        /// Each file may never contain more column than are given in this schema.
-        ///
-        /// Each file should contain exactly all the columns ignoring the hive columns i.f.f.
-        /// `allow_missing_columns == false`.
+        /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,
     },
 

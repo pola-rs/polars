@@ -1399,6 +1399,7 @@ pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {
     (num_edges / rg_len).clamp(0.0, 1.0)
 }
 
+#[derive(Clone, Copy)]
 pub enum PrefilterMaskSetting {
     Auto,
     Pre,

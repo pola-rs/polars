@@ -760,3 +760,11 @@ def test_out_of_ns_range_no_tu_specified_13592() -> None:
 def test_wrong_format_percent() -> None:
     with pytest.raises(InvalidOperationError):
         pl.Series(["2019-01-01"]).str.strptime(pl.Date, format="d%")
+
+
+def test_strptime_empty_input_22214() -> None:
+    s = pl.Series("x", [], pl.String)
+
+    assert s.str.strptime(pl.Time, "%H:%M:%S%.f").is_empty()
+    assert s.str.strptime(pl.Date, "%Y-%m-%d").is_empty()
+    assert s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z").is_empty()

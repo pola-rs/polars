@@ -120,7 +120,7 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
     assert q.filter(pl.col("a").is_in([1, 4])).collect().shape == (2, 2)
-    assert "hive partitioning: skipped 3 files" in capfd.readouterr().err
+    assert "allows skipping 3 / 5" in capfd.readouterr().err
 
     # Ensure the CSE can work with hive partitions.
     q = q.filter(pl.col("a").gt(2))
@@ -131,6 +131,25 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
         "d_right": [3, 4],
     }
     assert result.to_dict(as_series=False) == expected
+
+
+@pytest.mark.write_disk
+def test_hive_streaming_pushdown_is_in_22212(tmp_path: Path) -> None:
+    (
+        pl.DataFrame({"x": range(5)}).write_parquet(
+            tmp_path,
+            partition_by="x",
+        )
+    )
+
+    lf = pl.scan_parquet(tmp_path, hive_partitioning=True).filter(
+        pl.col("x").is_in([1, 4])
+    )
+
+    assert_frame_equal(
+        lf.collect(engine="streaming", predicate_pushdown=False),
+        lf.collect(engine="streaming", predicate_pushdown=True),
+    )
 
 
 @pytest.mark.xdist_group("streaming")
@@ -815,7 +834,7 @@ def test_hive_predicate_dates_14712(
         tmp_path, partition_by="a"
     )
     pl.scan_parquet(tmp_path).filter(pl.col("a") != datetime(2024, 1, 1)).collect()
-    assert "hive partitioning: skipped 1 files" in capfd.readouterr().err
+    assert "allows skipping 1 / 1" in capfd.readouterr().err
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Test is only for Windows paths")

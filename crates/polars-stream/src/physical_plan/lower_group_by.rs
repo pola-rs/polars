@@ -52,6 +52,7 @@ fn build_group_by_fallback(
         group_by_lp_node,
         &mut lp_arena,
         expr_arena,
+        None,
     )?);
 
     let group_by_node = PhysNode {

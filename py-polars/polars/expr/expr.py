@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import math
 import operator
+import sys
 import warnings
 from collections.abc import Collection, Mapping, Sequence
 from datetime import timedelta
@@ -63,7 +64,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyExpr
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Iterable
     from io import IOBase
 
@@ -99,7 +99,10 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 elif BUILDING_SPHINX_DOCS:
-    property = sphinx_accessor
+    # note: we assign this way to work around an autocomplete issue in ipython/jedi
+    # (ref: https://github.com/davidhalter/jedi/issues/2057)
+    current_module = sys.modules[__name__]
+    current_module.property = sphinx_accessor
 
 
 class Expr:

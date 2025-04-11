@@ -344,7 +344,7 @@ pub trait DataFrameJoinOps: IntoDf {
             };
         }
         let (lhs_keys, rhs_keys) =
-            if left_df.is_empty() || other.is_empty() && matches!(&args.how, JoinType::Inner) {
+            if (left_df.is_empty() || other.is_empty()) && matches!(&args.how, JoinType::Inner) {
                 // Fast path for empty inner joins.
                 // Return 2 dummies so that we don't row-encode.
                 let a = Series::full_null("".into(), 0, &DataType::Null);

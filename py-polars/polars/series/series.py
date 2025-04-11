@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import math
 import os
+import sys
 from collections.abc import Iterable, Sequence
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
@@ -109,7 +110,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Collection, Generator, Mapping
 
     import jax
@@ -150,7 +150,10 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Self
 elif BUILDING_SPHINX_DOCS:
-    property = sphinx_accessor
+    # note: we assign this way to work around an autocomplete issue in ipython/jedi
+    # (ref: https://github.com/davidhalter/jedi/issues/2057)
+    current_module = sys.modules[__name__]
+    current_module.property = sphinx_accessor
 
 ArrayLike = Union[
     Sequence[Any],

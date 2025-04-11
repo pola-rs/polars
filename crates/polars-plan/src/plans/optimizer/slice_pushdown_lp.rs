@@ -11,6 +11,7 @@ mod inner {
 
     pub struct SlicePushDown {
         pub streaming: bool,
+        #[expect(unused)]
         pub new_streaming: bool,
         scratch: UnitVec<Node>,
     }
@@ -205,7 +206,7 @@ impl SlicePushDown {
                 mut file_options,
                 predicate,
                 scan_type,
-            }, Some(state)) if matches!(&*scan_type, FileScan::Csv { .. }) && predicate.is_none() && self.new_streaming =>  {
+            }, Some(state)) if matches!(&*scan_type, FileScan::Csv { .. }) && predicate.is_none()  =>  {
                 file_options.pre_slice = Some((state.offset, state.len as usize));
 
                 let lp = Scan {
@@ -220,30 +221,7 @@ impl SlicePushDown {
 
                 Ok(lp)
             },
-            #[cfg(feature = "csv")]
-            (Scan {
-                sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                mut file_options,
-                predicate,
-                scan_type,
-            }, Some(state)) if predicate.is_none() && state.offset >= 0 && matches!(&*scan_type, FileScan::Csv{..}) =>  {
-                file_options.pre_slice = Some((0, state.offset as usize + state.len as usize));
 
-                let lp = Scan {
-                    sources,
-                    file_info,
-                    hive_parts,
-                    output_schema,
-                    scan_type,
-                    file_options,
-                    predicate,
-                };
-
-                self.no_pushdown_finish_opt(lp, Some(state), lp_arena)
-            },
             #[cfg(feature = "json")]
             (Scan {
                 sources,
@@ -253,7 +231,7 @@ impl SlicePushDown {
                 mut file_options,
                 predicate,
                 scan_type,
-            }, Some(state)) if predicate.is_none() && self.new_streaming && matches!(&*scan_type, FileScan::NDJson {.. }) =>  {
+            }, Some(state)) if predicate.is_none() && matches!(&*scan_type, FileScan::NDJson {.. }) =>  {
                 file_options.pre_slice = Some((state.offset, state.len as usize));
 
                 let lp = Scan {
@@ -302,7 +280,7 @@ impl SlicePushDown {
                 mut file_options,
                 predicate,
                 scan_type,
-            }, Some(state)) if self.new_streaming && predicate.is_none() && matches!(&*scan_type, FileScan::Ipc{..})=>  {
+            }, Some(state)) if predicate.is_none() && matches!(&*scan_type, FileScan::Ipc{..})=>  {
                 file_options.pre_slice = Some((state.offset, state.len as usize));
 
                 let lp = Scan {
