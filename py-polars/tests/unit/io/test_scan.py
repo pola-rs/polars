@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
@@ -1030,6 +1031,7 @@ def test_only_project_missing(scan_type: tuple[Any, Any]) -> None:
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="windows paths are a mess")
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     "scan_type",
