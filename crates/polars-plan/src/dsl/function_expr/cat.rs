@@ -163,21 +163,6 @@ where
     Ok(out.into_column())
 }
 
-/// Apply a binary function to the categories of a categorical column and broadcast the result.
-fn apply_to_cats_binary<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
-where
-    F: FnMut(&BinaryChunked) -> ChunkedArray<T>,
-    ChunkedArray<T>: IntoSeries + ChunkTakeUnchecked<IdxCa>,
-    T: PolarsDataType,
-{
-    let ca = c.categorical()?;
-    let (categories, phys) = _get_cat_phys_map(ca);
-    let result = op(&categories.as_binary());
-    // SAFETY: physical idx array is valid.
-    let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
-    Ok(out.into_column())
-}
-
 #[cfg(feature = "strings")]
 fn len_bytes(c: &Column) -> PolarsResult<Column> {
     apply_to_cats(c, |s| s.str_len_bytes())
@@ -190,12 +175,12 @@ fn len_chars(c: &Column) -> PolarsResult<Column> {
 
 #[cfg(feature = "strings")]
 fn starts_with(c: &Column, prefix: &str) -> PolarsResult<Column> {
-    apply_to_cats_binary(c, |s| s.starts_with(prefix.as_bytes()))
+    apply_to_cats(c, |s| s.as_binary().starts_with(prefix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]
 fn ends_with(c: &Column, suffix: &str) -> PolarsResult<Column> {
-    apply_to_cats_binary(c, |s| s.ends_with(suffix.as_bytes()))
+    apply_to_cats(c, |s| s.as_binary().ends_with(suffix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]
