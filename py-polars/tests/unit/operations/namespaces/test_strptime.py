@@ -771,6 +771,14 @@ def test_polars_parser_fooled_by_trailing_nonsense_22167() -> None:
         pl.Series(["2025-04-06T18:57:42.77756192Z"]).str.to_datetime(
             "%Y-%m-%dT%H:%M:%S.%9f#z"
         )
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2025-04-06T18:57:42.77Z"]).str.to_datetime(
+            "%Y-%m-%dT%H:%M:%S.%3f#z"
+        )
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2025-04-06T18:57:42.77123Z"]).str.to_datetime(
+            "%Y-%m-%dT%H:%M:%S.%6f#z"
+        )
 
 
 def test_strptime_empty_input_22214() -> None:
