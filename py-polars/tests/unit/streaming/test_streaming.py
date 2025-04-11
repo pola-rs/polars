@@ -189,7 +189,7 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     for how in join_strategies:
         q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
         assert_frame_equal(
-            q.collect(engine="old-streaming"),  # type: ignore[call-overload]
+            q.collect(engine="streaming"),
             q.collect(engine="in-memory"),
             check_row_order=how == "left",
         )
@@ -342,20 +342,6 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
         .agg(pl.all().mean())
         .sort(pl.col("id"))
     )
-
-    plan_lines = [
-        line.strip()
-        for line in query.explain(engine="old-streaming").splitlines()  # type: ignore[arg-type]
-    ]
-
-    # Each input of the concatenation should be a streaming section,
-    # as these might be streamable even though the horizontal concatenation itself
-    # doesn't yet support streaming.
-    for i, line in enumerate(plan_lines):
-        if line.startswith("PLAN"):
-            assert plan_lines[i + 1].startswith("STREAMING"), (
-                f"{line} does not contain a streaming section"
-            )
 
     result = query.collect(engine="streaming")
 

@@ -294,17 +294,23 @@ def test_streaming_outer_join_partial_flush(tmp_path: Path) -> None:
     join_cols = set(lf1.collect_schema()).intersection(set(lf2.collect_schema()))
     final_lf = lf1.join(lf2, on=list(join_cols), how="full", coalesce=True)
 
-    assert final_lf.collect(engine="old-streaming").to_dict(as_series=False) == {  # type: ignore[call-overload]
-        "value_at": [
-            datetime(2024, 1, 1, 0, 0),
-            datetime(2024, 2, 1, 0, 0),
-            datetime(2024, 3, 1, 0, 0),
-            datetime(2024, 4, 1, 0, 0),
-            datetime(2024, 5, 1, 0, 0),
-            datetime(2024, 6, 1, 0, 0),
-        ],
-        "value": [0, 1, 2, 3, 4, 5],
-    }
+    assert_frame_equal(
+        final_lf.collect(engine="streaming"),
+        pl.DataFrame(
+            {
+                "value_at": [
+                    datetime(2024, 1, 1, 0, 0),
+                    datetime(2024, 2, 1, 0, 0),
+                    datetime(2024, 3, 1, 0, 0),
+                    datetime(2024, 4, 1, 0, 0),
+                    datetime(2024, 5, 1, 0, 0),
+                    datetime(2024, 6, 1, 0, 0),
+                ],
+                "value": [0, 1, 2, 3, 4, 5],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_flush_join_and_operation_19040() -> None:

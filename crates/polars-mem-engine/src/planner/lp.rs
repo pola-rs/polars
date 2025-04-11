@@ -484,51 +484,6 @@ fn create_physical_plan_impl(
                 .transpose()?;
 
             match *scan_type {
-                #[cfg(feature = "csv")]
-                FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
-                    sources,
-                    file_info,
-                    options,
-                    predicate,
-                    file_options,
-                })),
-                #[cfg(feature = "ipc")]
-                FileScan::Ipc {
-                    options,
-                    cloud_options,
-                    metadata,
-                } => Ok(Box::new(executors::IpcExec {
-                    sources,
-                    file_info,
-                    predicate,
-                    options,
-                    file_options: *file_options,
-                    hive_parts: hive_parts.map(|h| h.into_statistics()),
-                    cloud_options,
-                })),
-                #[cfg(feature = "parquet")]
-                FileScan::Parquet {
-                    options,
-                    cloud_options,
-                    metadata,
-                } => Ok(Box::new(executors::ParquetExec::new(
-                    sources,
-                    file_info,
-                    hive_parts.map(|h| h.into_statistics()),
-                    predicate,
-                    options,
-                    cloud_options,
-                    file_options,
-                    metadata,
-                ))),
-                #[cfg(feature = "json")]
-                FileScan::NDJson { options, .. } => Ok(Box::new(executors::JsonExec::new(
-                    sources,
-                    options,
-                    file_options,
-                    file_info,
-                    predicate,
-                ))),
                 FileScan::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,
@@ -539,6 +494,7 @@ fn create_physical_plan_impl(
                         predicate_has_windows: state.has_windows,
                     }))
                 },
+                _ => unreachable!(),
             }
         },
 
