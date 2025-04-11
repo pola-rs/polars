@@ -416,6 +416,7 @@ fn to_graph_rec<'a>(
                 sort_node,
                 &mut lp_arena,
                 ctx.expr_arena,
+                None,
             )?);
 
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -478,6 +479,7 @@ fn to_graph_rec<'a>(
             predicate,
             hive_parts,
             allow_missing_columns,
+            check_schema_names,
             include_file_paths,
             file_schema,
         } => {
@@ -514,6 +516,7 @@ fn to_graph_rec<'a>(
                     hive_parts.map(Arc::new),
                     include_file_paths.clone(),
                     *allow_missing_columns,
+                    check_schema_names.clone(),
                 ),
                 [],
             )
@@ -614,6 +617,7 @@ fn to_graph_rec<'a>(
                 join_node,
                 &mut lp_arena,
                 ctx.expr_arena,
+                None,
             )?);
 
             ctx.graph.add_node(
@@ -903,6 +907,7 @@ fn to_graph_rec<'a>(
             let hive_parts = None;
             let include_file_paths = None;
             let allow_missing_columns = false;
+            let check_schema_names = None;
 
             ctx.graph.add_node(
                 nodes::io_sources::multi_file_reader::MultiFileReader::new(
@@ -918,6 +923,7 @@ fn to_graph_rec<'a>(
                     hive_parts,
                     include_file_paths,
                     allow_missing_columns,
+                    check_schema_names,
                 ),
                 [],
             )

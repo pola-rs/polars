@@ -21,6 +21,7 @@ use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::nodes::io_sources::multi_file_reader;
+use crate::nodes::io_sources::multi_file_reader::extra_ops::SchemaNamesMatchPolicy;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::{
     ExprCache, build_length_preserving_select_stream, build_select_stream,
@@ -507,7 +508,7 @@ pub fn lower_ir(
                     let cloud_options = cloud_options.clone().map(Arc::new);
                     let file_schema = file_info.schema.clone();
 
-                    let projected_file_schema =
+                    let (projected_file_schema, file_schema) =
                         multi_file_reader::initialization::projection::resolve_projections(
                             &output_schema,
                             &file_schema,
@@ -515,6 +516,9 @@ pub fn lower_ir(
                             file_options.row_index.as_ref().map(|ri| ri.name.as_str()),
                             file_options.include_file_paths.as_ref().map(|x| x.as_str()),
                         );
+                    let has_projection = file_options.with_columns.is_some();
+                    let check_schema_names =
+                        (!has_projection).then_some(SchemaNamesMatchPolicy::ForbidExtra);
 
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
@@ -527,6 +531,7 @@ pub fn lower_ir(
                         predicate: None,
                         hive_parts,
                         allow_missing_columns: file_options.allow_missing_columns,
+                        check_schema_names,
                         include_file_paths: file_options.include_file_paths,
                         file_schema,
                     };
@@ -851,6 +856,7 @@ pub fn lower_ir(
                     distinct_lp_node,
                     &mut lp_arena,
                     expr_arena,
+                    None,
                 )?);
 
                 let distinct_node = PhysNode {

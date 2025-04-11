@@ -46,6 +46,7 @@ pub fn _execute_ir_plan_with_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<P
         ir_plan.lp_top,
         &mut ir_plan.lp_arena,
         &mut ir_plan.expr_arena,
+        None,
     )
     .map_err(PyPolarsErr::from)?;
 

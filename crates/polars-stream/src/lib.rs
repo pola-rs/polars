@@ -9,6 +9,7 @@ pub use skeleton::run_query;
 mod execute;
 pub(crate) mod expression;
 mod graph;
+pub use skeleton::{QueryResult, StreamingQuery};
 mod morsel;
 mod nodes;
 mod physical_plan;

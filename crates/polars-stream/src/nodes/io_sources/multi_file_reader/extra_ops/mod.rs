@@ -36,7 +36,7 @@ impl ExtraOperations {
 }
 
 /// TODO: Eventually move this enum to polars-plan
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[expect(unused)]
 pub enum SchemaNamesMatchPolicy {
     /// * If the schema lengths match, ensure that all columns match in the same order
@@ -44,6 +44,8 @@ pub enum SchemaNamesMatchPolicy {
     ///   cannot be found in the target schema.
     ///   * Ignores if the incoming schema is missing columns, this is handled by a separate module.
     OrderedExact,
+    /// Error if there are extra columns outside the target schema.
+    ForbidExtra,
 }
 
 impl SchemaNamesMatchPolicy {
@@ -77,9 +79,22 @@ impl SchemaNamesMatchPolicy {
                         extra_col,
                     )
                 }
+            },
 
-                Ok(())
+            ForbidExtra => {
+                if let Some(extra_col) = incoming_schema
+                    .iter_names()
+                    .find(|x| !target_schema.contains(x))
+                {
+                    polars_bail!(
+                        SchemaMismatch:
+                        "extra column in file outside of expected schema: {}",
+                        extra_col,
+                    )
+                }
             },
         }
+
+        Ok(())
     }
 }

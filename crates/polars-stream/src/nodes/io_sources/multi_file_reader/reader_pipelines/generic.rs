@@ -246,7 +246,7 @@ impl MultiScanTaskInitializer {
                     projected_file_schema,
                     missing_columns_policy,
                     full_file_schema,
-                    check_schema_names: None,
+                    check_schema_names: self.config.check_schema_names.clone(),
                 },
                 num_pipelines,
                 verbose,

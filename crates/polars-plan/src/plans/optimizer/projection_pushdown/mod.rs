@@ -12,7 +12,7 @@ mod semi_anti_join;
 use arrow::Either;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
-use polars_io::{RowIndex, hive};
+use polars_io::RowIndex;
 use recursive::recursive;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
@@ -433,13 +433,16 @@ impl ProjectionPushDown {
             Scan {
                 sources,
                 mut file_info,
-                mut hive_parts,
+                hive_parts,
                 scan_type,
                 predicate,
                 mut file_options,
                 mut output_schema,
             } => {
-                if self.is_count_star && !self.in_new_streaming_engine {
+                // TODO: Remove
+                let in_new_streaming_engine = true;
+
+                if self.is_count_star && !in_new_streaming_engine {
                     ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
                 }
 
@@ -495,102 +498,13 @@ impl ProjectionPushDown {
                         }
                     }
 
-                    output_schema = if let Some(ref with_columns) = file_options.with_columns {
+                    output_schema = if file_options.with_columns.is_some() {
                         let mut schema = update_scan_schema(
                             &ctx.acc_projections,
                             expr_arena,
                             &file_info.schema,
                             scan_type.sort_projection(&file_options),
                         )?;
-
-                        if !self.in_new_streaming_engine {
-                            // Cull the hive partitions that are not projected out.
-                            hive_parts = if let Some(mut hive_parts) = hive_parts {
-                                let (_, projected_indices) = hive_parts
-                                    .get_projection_schema_and_indices(
-                                        &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
-                                    );
-                                hive_parts.apply_projection(&projected_indices);
-                                Some(hive_parts)
-                            } else {
-                                None
-                            };
-                        }
-
-                        if let Some(ref hive_parts) = hive_parts {
-                            // @TODO:
-                            // This is a hack to support both old multiscan handling and new
-                            // multiscan handling.
-                            if !self.in_new_streaming_engine {
-                                // Skip reading hive columns from the file.
-                                let partition_schema = hive_parts.schema();
-                                file_options.with_columns = file_options.with_columns.map(|x| {
-                                    x.iter()
-                                        .filter(|x| !partition_schema.contains(x))
-                                        .cloned()
-                                        .collect::<Arc<[_]>>()
-                                });
-
-                                let mut out = Schema::with_capacity(schema.len());
-
-                                // Ensure the ordering of `schema` matches what the reader will give -
-                                // namely, if a hive column also exists in the file it will be projected
-                                // based on its position in the file. This is extremely important for the
-                                // new-streaming engine.
-
-                                // row_index is separate
-                                let opt_row_index_col_name = file_options
-                                    .row_index
-                                    .as_ref()
-                                    .map(|v| &v.name)
-                                    .filter(|v| schema.contains(v))
-                                    .cloned();
-
-                                if let Some(name) = &opt_row_index_col_name {
-                                    out.insert_at_index(
-                                        0,
-                                        name.clone(),
-                                        schema.get(name).unwrap().clone(),
-                                    )
-                                    .unwrap();
-                                }
-
-                                {
-                                    let df_fields_iter = &mut schema
-                                        .iter()
-                                        .filter(|fld| {
-                                            !partition_schema.contains(fld.0)
-                                                && Some(fld.0) != opt_row_index_col_name.as_ref()
-                                        })
-                                        .map(|(a, b)| (a.clone(), b.clone()));
-
-                                    let hive_fields_iter = &mut partition_schema
-                                        .iter()
-                                        .map(|(a, b)| (a.clone(), b.clone()));
-
-                                    // `schema` also contains the `row_index` column here, so we don't need to handle it
-                                    // separately.
-
-                                    macro_rules! do_merge {
-                                        ($schema:expr) => {
-                                            hive::merge_sorted_to_schema_order_impl(
-                                                df_fields_iter,
-                                                hive_fields_iter,
-                                                &mut out,
-                                                &|v| $schema.index_of(&v.0),
-                                            )
-                                        };
-                                    }
-
-                                    match file_info.reader_schema.as_ref().unwrap() {
-                                        Either::Left(reader_schema) => do_merge!(reader_schema),
-                                        Either::Right(reader_schema) => do_merge!(reader_schema),
-                                    }
-                                }
-
-                                schema = out;
-                            }
-                        }
 
                         if let Some(ref file_path_col) = file_options.include_file_paths {
                             if let Some(i) = schema.index_of(file_path_col) {
@@ -601,12 +515,6 @@ impl ProjectionPushDown {
 
                         Some(Arc::new(schema))
                     } else {
-                        if !self.in_new_streaming_engine {
-                            file_options.with_columns = maybe_init_projection_excluding_hive(
-                                file_info.reader_schema.as_ref().unwrap(),
-                                hive_parts.as_ref().map(|h| h.schema()),
-                            );
-                        }
                         None
                     };
                 }
@@ -662,7 +570,7 @@ impl ProjectionPushDown {
                 // TODO: Our scans don't perfectly give the right projection order with combinations
                 // of hive columns that exist in the file, so we always add a `Select {}` node here.
 
-                if self.in_new_streaming_engine {
+                if in_new_streaming_engine {
                     Ok(lp)
                 } else {
                     let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);

@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 
 use bridge::BridgeState;
+use extra_ops::SchemaNamesMatchPolicy;
 use initialization::MultiScanTaskInitializer;
 use polars_core::config;
 use polars_core::schema::SchemaRef;
@@ -52,6 +53,7 @@ pub struct MultiFileReaderConfig {
     hive_parts: Option<Arc<HivePartitionsDf>>,
     include_file_paths: Option<PlSmallStr>,
     allow_missing_columns: bool,
+    check_schema_names: Option<SchemaNamesMatchPolicy>,
 
     num_pipelines: AtomicUsize,
     /// Number of readers to initialize concurrently. e.g. Parquet will want to fetch metadata in this
@@ -113,6 +115,7 @@ impl MultiFileReader {
         hive_parts: Option<Arc<HivePartitionsDf>>,
         include_file_paths: Option<PlSmallStr>,
         allow_missing_columns: bool,
+        check_schema_names: Option<SchemaNamesMatchPolicy>,
     ) -> Self {
         let name = format_pl_smallstr!("MultiScan[{}]", file_reader_builder.reader_name());
 
@@ -132,6 +135,7 @@ impl MultiFileReader {
                     hive_parts,
                     include_file_paths,
                     allow_missing_columns,
+                    check_schema_names,
                     num_pipelines: AtomicUsize::new(0),
                     n_readers_pre_init: 3,
                     verbose: AtomicBool::new(false),
@@ -155,7 +159,7 @@ impl ComputeNode for MultiFileReader {
     ) -> polars_error::PolarsResult<()> {
         use MultiScanState::*;
         assert!(recv.is_empty());
-        assert!(send.len() == 1);
+        assert_eq!(send.len(), 1);
 
         send[0] = if send[0] == PortState::Done {
             self.state = Finished;
