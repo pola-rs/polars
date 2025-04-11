@@ -94,8 +94,7 @@ impl ApplyExpr {
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let all_unit_len = all_unit_length(&ca);
-        if all_unit_len && self.function_returns_scalar {
+        if self.function_returns_scalar && all_unit_length(&ca) {
             ac.with_agg_state(AggState::AggregatedScalar(
                 ca.explode().unwrap().into_column(),
             ));
@@ -225,7 +224,7 @@ impl ApplyExpr {
             },
         };
 
-        ac.with_values_and_args(c, aggregated, Some(&self.expr), true)?;
+        ac.with_values_and_args(c, aggregated, Some(&self.expr), true, self.is_scalar())?;
         Ok(ac)
     }
     fn apply_multiple_group_aware<'a>(
@@ -296,8 +295,17 @@ impl ApplyExpr {
         drop(iters);
 
         // Take the first aggregation context that as that is the input series.
-        let ac = acs.swap_remove(0);
-        self.finish_apply_groups(ac, ca)
+        let mut ac = acs.swap_remove(0);
+        let c = if self.function_returns_scalar {
+            ac.update_groups = UpdateGroups::No;
+            ca.explode().unwrap().into_column()
+        } else {
+            ca.into_series().into()
+        };
+
+        ac.with_values_and_args(c, true, None, false, self.function_returns_scalar)?;
+
+        Ok(ac)
     }
 }
 
@@ -370,6 +378,7 @@ impl PhysicalExpr for ApplyExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
+        dbg!(&self.expr);
         polars_ensure!(
             self.allow_group_aware,
             expr = self.expr,
@@ -390,7 +399,7 @@ impl PhysicalExpr for ApplyExpr {
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            match self.collect_groups {
+            match dbg!(self.collect_groups) {
                 ApplyOptions::ApplyList => {
                     let mut c = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
                     let c = self.eval_and_flatten(&mut c)?;
@@ -416,11 +425,14 @@ impl PhysicalExpr for ApplyExpr {
                     if has_agg_list || (has_agg_scalar && has_not_agg) {
                         self.apply_multiple_group_aware(acs, df)
                     } else {
+                        dbg!(self.is_scalar());
+                        dbg!(&self.expr);
                         apply_multiple_elementwise(
                             acs,
                             self.function.as_ref(),
                             &self.expr,
                             self.check_lengths,
+                            self.is_scalar(),
                         )
                     }
                 },
@@ -465,6 +477,7 @@ fn apply_multiple_elementwise<'a>(
     function: &dyn ColumnsUdf,
     expr: &Expr,
     check_lengths: bool,
+    returns_scalar: bool,
 ) -> PolarsResult<AggregationContext<'a>> {
     match acs.first().unwrap().agg_state() {
         // A fast path that doesn't drop groups of the first arg.
@@ -517,7 +530,7 @@ fn apply_multiple_elementwise<'a>(
 
             // Take the first aggregation context that as that is the input series.
             let mut ac = acs.swap_remove(0);
-            ac.with_values_and_args(c, aggregated, None, true)?;
+            ac.with_values_and_args(c, aggregated, None, true, returns_scalar)?;
             Ok(ac)
         },
     }
