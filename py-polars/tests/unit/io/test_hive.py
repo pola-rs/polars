@@ -133,6 +133,25 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     assert result.to_dict(as_series=False) == expected
 
 
+@pytest.mark.write_disk
+def test_hive_streaming_pushdown_is_in_22212(tmp_path: Path) -> None:
+    (
+        pl.DataFrame({"x": range(5)}).write_parquet(
+            tmp_path,
+            partition_by="x",
+        )
+    )
+
+    lf = pl.scan_parquet(tmp_path, hive_partitioning=True).filter(
+        pl.col("x").is_in([1, 4])
+    )
+
+    assert_frame_equal(
+        lf.collect(engine="streaming", predicate_pushdown=False),
+        lf.collect(engine="streaming", predicate_pushdown=True),
+    )
+
+
 @pytest.mark.xdist_group("streaming")
 @pytest.mark.write_disk
 @pytest.mark.parametrize("streaming", [True, False])

@@ -771,3 +771,11 @@ def test_polars_parser_fooled_by_trailing_nonsense_22167() -> None:
         pl.Series(["2025-04-06T18:57:42.77756192Z"]).str.to_datetime(
             "%Y-%m-%dT%H:%M:%S.%9f#z"
         )
+
+
+def test_strptime_empty_input_22214() -> None:
+    s = pl.Series("x", [], pl.String)
+
+    assert s.str.strptime(pl.Time, "%H:%M:%S%.f").is_empty()
+    assert s.str.strptime(pl.Date, "%Y-%m-%d").is_empty()
+    assert s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z").is_empty()

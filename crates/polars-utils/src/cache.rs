@@ -21,7 +21,7 @@ where
     pub fn new(func: F, size: usize) -> Self {
         Self {
             func,
-            cache: LruCache::with_capacity(size),
+            cache: LruCache::with_capacity(size.max(1)),
         }
     }
 

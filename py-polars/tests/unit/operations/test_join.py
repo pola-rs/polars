@@ -2117,3 +2117,18 @@ def test_join_where_nonboolean_predicate() -> None:
         ComputeError, match="'join_where' predicates must resolve to boolean"
     ):
         df1.join_where(df2, pl.col("a") * 2)
+
+
+def test_empty_outer_join_22206() -> None:
+    df = pl.LazyFrame({"a": [5, 6], "b": [1, 2]})
+    empty = pl.LazyFrame(schema=df.collect_schema())
+    assert_frame_equal(
+        df.join(empty, on=["a", "b"], how="full", coalesce=True),
+        df,
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        empty.join(df, on=["a", "b"], how="full", coalesce=True),
+        df,
+        check_row_order=False,
+    )
