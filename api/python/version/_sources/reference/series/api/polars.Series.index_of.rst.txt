@@ -1,0 +1,6 @@
+﻿polars.Series.index\_of
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.index_of
