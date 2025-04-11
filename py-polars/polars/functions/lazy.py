@@ -1080,7 +1080,7 @@ def map_groups(
     function: Callable[[Sequence[Series]], Series | Any],
     return_dtype: PolarsDataType | None = None,
     *,
-    returns_scalar: bool = True,
+    returns_scalar: bool = False,
 ) -> Expr:
     """
     Apply a custom/user-defined function (UDF) in a GroupBy context.
@@ -1133,6 +1133,7 @@ def map_groups(
     ...             / list_of_series[0].sum()
     ...             + list_of_series[1],
     ...             return_dtype=pl.Float64,
+    ....            returns_scalar=False,
     ...         ).alias("my_custom_aggregation")
     ...     )
     ... ).sort("group")

@@ -220,7 +220,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
             multiply,
             [col("A"), col("B")],
             GetOutput::from_type(DataType::Int32),
-            true,
+            false,
         )])
         .collect()?;
 

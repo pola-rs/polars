@@ -94,16 +94,15 @@ impl ApplyExpr {
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let all_unit_len = all_unit_length(&ca);
-        if all_unit_len && self.function_returns_scalar {
-            ac.with_agg_state(AggState::AggregatedScalar(
-                ca.explode().unwrap().into_column(),
-            ));
-            ac.with_update_groups(UpdateGroups::No);
+        let c = if self.function_returns_scalar {
+            ac.update_groups = UpdateGroups::No;
+            ca.explode().unwrap().into_column()
         } else {
-            ac.with_values(ca.into_column(), true, Some(&self.expr))?;
             ac.with_update_groups(UpdateGroups::WithSeriesLen);
-        }
+            ca.into_series().into()
+        };
+
+        ac.with_values_and_args(c, true, None, false, self.function_returns_scalar)?;
 
         Ok(ac)
     }
@@ -225,7 +224,7 @@ impl ApplyExpr {
             },
         };
 
-        ac.with_values_and_args(c, aggregated, Some(&self.expr), true)?;
+        ac.with_values_and_args(c, aggregated, Some(&self.expr), true, self.is_scalar())?;
         Ok(ac)
     }
     fn apply_multiple_group_aware<'a>(
@@ -299,15 +298,6 @@ impl ApplyExpr {
         let ac = acs.swap_remove(0);
         self.finish_apply_groups(ac, ca)
     }
-}
-
-fn all_unit_length(ca: &ListChunked) -> bool {
-    assert_eq!(ca.chunks().len(), 1);
-
-    let list_arr = ca.downcast_iter().next().unwrap();
-    let offset = list_arr.offsets().as_slice();
-    // Note: Checking offset.last() == 0 handles the Null dtype - in that case the offsets can be (e.g. [0,0,0 ...])
-    (offset[offset.len() - 1] as usize) == list_arr.len() || offset[offset.len() - 1] == 0
 }
 
 fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> PolarsResult<()> {
@@ -421,6 +411,7 @@ impl PhysicalExpr for ApplyExpr {
                             self.function.as_ref(),
                             &self.expr,
                             self.check_lengths,
+                            self.is_scalar(),
                         )
                     }
                 },
@@ -465,6 +456,7 @@ fn apply_multiple_elementwise<'a>(
     function: &dyn ColumnsUdf,
     expr: &Expr,
     check_lengths: bool,
+    returns_scalar: bool,
 ) -> PolarsResult<AggregationContext<'a>> {
     match acs.first().unwrap().agg_state() {
         // A fast path that doesn't drop groups of the first arg.
@@ -517,7 +509,7 @@ fn apply_multiple_elementwise<'a>(
 
             // Take the first aggregation context that as that is the input series.
             let mut ac = acs.swap_remove(0);
-            ac.with_values_and_args(c, aggregated, None, true)?;
+            ac.with_values_and_args(c, aggregated, None, true, returns_scalar)?;
             Ok(ac)
         },
     }

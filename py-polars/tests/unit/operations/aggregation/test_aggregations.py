@@ -237,7 +237,7 @@ def test_online_variance() -> None:
     )
 
 
-def test_err_on_implode_and_agg() -> None:
+def test_implode_and_agg() -> None:
     df = pl.DataFrame({"type": ["water", "fire", "water", "earth"]})
 
     # this would OOB
@@ -254,13 +254,9 @@ def test_err_on_implode_and_agg() -> None:
         "type": ["water", "fire", "earth"],
         "foo": [["water", "water"], ["fire"], ["earth"]],
     }
-
-    # but not during a window function as the groups cannot be mapped back
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"'implode' followed by an aggregation is not allowed",
-    ):
-        df.lazy().select(pl.col("type").implode().list.head(1).over("type")).collect()
+    assert df.select(pl.col("type").implode().list.head(1).over("type")).to_dict(
+        as_series=False
+    ) == {"type": [["water"], ["fire"], ["water"], ["earth"]]}
 
 
 def test_mapped_literal_to_literal_9217() -> None:
