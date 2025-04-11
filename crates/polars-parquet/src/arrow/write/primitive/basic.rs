@@ -119,6 +119,20 @@ where
     array_to_page(array, options, type_, Encoding::Plain, encode_plain)
 }
 
+pub fn array_to_statistics<T, P>(
+    array: &PrimitiveArray<T>,
+    _type: PrimitiveType,
+    options: &StatisticsOptions,
+) -> PrimitiveStatistics<P>
+where
+    T: NativeType,
+    P: ParquetNativeType,
+    T: num_traits::AsPrimitive<P>,
+    P: num_traits::AsPrimitive<i64>,
+{
+    build_statistics(array, _type, options)
+}
+
 pub fn array_to_page_integer<T, P>(
     array: &PrimitiveArray<T>,
     options: WriteOptions,
@@ -170,7 +184,7 @@ where
 
     let buffer = encode(array, encode_options, buffer);
 
-    let statistics = if options.has_statistics() {
+    let statistics = if options.has_page_statistics() {
         Some(build_statistics(array, type_.clone(), &options.statistics).serialize())
     } else {
         None
