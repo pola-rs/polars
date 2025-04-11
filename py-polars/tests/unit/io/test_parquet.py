@@ -3133,7 +3133,10 @@ def test_unspecialized_decoding_prefiltering() -> None:
     assert_frame_equal(result, df.filter(expr))
 
 
-def test_filtering_on_other_parallel_modes_with_statistics() -> None:
+@pytest.mark.parametrize("parallel", ["columns", "row_groups"])
+def test_filtering_on_other_parallel_modes_with_statistics(
+    parallel: ParallelStrategy,
+) -> None:
     f = io.BytesIO()
 
     pl.DataFrame(
@@ -3142,12 +3145,11 @@ def test_filtering_on_other_parallel_modes_with_statistics() -> None:
         }
     ).write_parquet(f, row_group_size=3)
 
-    for parallel in ["columns", "row_groups"]:
-        f.seek(0)
-        assert_series_equal(
-            pl.scan_parquet(f, parallel=parallel)
-            .filter(pl.col.a == 4)
-            .collect()
-            .to_series(),
-            pl.Series("a", [4, 4, 4]),
-        )
+    f.seek(0)
+    assert_series_equal(
+        pl.scan_parquet(f, parallel=parallel)
+        .filter(pl.col.a == 4)
+        .collect()
+        .to_series(),
+        pl.Series("a", [4, 4, 4]),
+    )
