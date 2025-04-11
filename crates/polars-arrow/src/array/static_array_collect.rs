@@ -794,6 +794,27 @@ impl<T: AsArray> ArrayFromIterDtype<Option<T>> for ListArray<i64> {
     }
 }
 
+impl<T: AsArray> ArrayFromIter<T> for ListArray<i64> {
+    fn arr_from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let iter_values: Vec<T> = iter.into_iter().collect();
+        let mut builder = AnonymousListArrayBuilder::new(iter_values.len());
+        for arr in &iter_values {
+            builder.push(arr.as_array());
+        }
+        builder.finish(None).unwrap()
+    }
+
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<T, E>>>(iter: I) -> Result<Self, E> {
+        let iter_values = iter.into_iter().collect::<Result<Vec<_>, E>>()?;
+        let mut builder = AnonymousListArrayBuilder::new(iter_values.len());
+        for arr in &iter_values {
+            builder.push(arr.as_array());
+        }
+        Ok(builder.finish(None).unwrap())
+    }
+}
+
 impl<T: AsArray> ArrayFromIter<Option<T>> for ListArray<i64> {
     fn arr_from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
         let iter = iter.into_iter();
