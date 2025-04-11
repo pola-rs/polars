@@ -1080,7 +1080,7 @@ def map_groups(
     function: Callable[[Sequence[Series]], Series | Any],
     return_dtype: PolarsDataType | None = None,
     *,
-    returns_scalar: bool = True,
+    returns_scalar: bool = False,
 ) -> Expr:
     """
     Apply a custom/user-defined function (UDF) in a GroupBy context.
