@@ -107,7 +107,9 @@ def test_map_groups_none() -> None:
     out = (
         df.group_by("g", maintain_order=True).agg(
             pl.map_groups(
-                exprs=["a", pl.col("b") ** 4, pl.col("a") / 4], function=func, returns_scalar=False
+                exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],
+                function=func,
+                returns_scalar=False,
             ).alias("multiple")
         )
     )["multiple"]
@@ -132,7 +134,7 @@ def test_map_groups_object_output() -> None:
             [pl.col("dates"), pl.col("names")],
             lambda s: Foo(dict(zip(s[0], s[1]))),
             return_dtype=pl.Object,
-            returns_scalar=True
+            returns_scalar=True,
         )
     )
 

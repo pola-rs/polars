@@ -447,21 +447,8 @@ fn create_physical_expr_inner(
                 .get(expression)
                 .to_field(schema, ctxt, expr_arena)?;
 
-            let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
-                && matches!(options.collect_groups, ApplyOptions::GroupWise);
-            // Will be reset in the function so get that here.
-            let has_window = state.local.has_window;
-            let input = create_physical_expressions_check_state(
-                input,
-                ctxt,
-                expr_arena,
-                schema,
-                state,
-                |state| {
-                    polars_ensure!(!((is_reducing_aggregation || has_window) && state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
-                    Ok(())
-                },
-            )?;
+            let input =
+                create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
@@ -483,21 +470,8 @@ fn create_physical_expr_inner(
             let output_field = expr_arena
                 .get(expression)
                 .to_field(schema, ctxt, expr_arena)?;
-            let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
-                && matches!(options.collect_groups, ApplyOptions::GroupWise);
-            // Will be reset in the function so get that here.
-            let has_window = state.local.has_window;
-            let input = create_physical_expressions_check_state(
-                input,
-                ctxt,
-                expr_arena,
-                schema,
-                state,
-                |state| {
-                    //polars_ensure!(!((is_reducing_aggregation || has_window) && state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
-                    Ok(())
-                },
-            )?;
+            let input =
+                create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
 
             Ok(Arc::new(ApplyExpr::new(
                 input,

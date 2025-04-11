@@ -94,15 +94,15 @@ impl ApplyExpr {
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
-        if self.function_returns_scalar && all_unit_length(&ca) {
-            ac.with_agg_state(AggState::AggregatedScalar(
-                ca.explode().unwrap().into_column(),
-            ));
-            ac.with_update_groups(UpdateGroups::No);
+        let c = if self.function_returns_scalar {
+            ac.update_groups = UpdateGroups::No;
+            ca.explode().unwrap().into_column()
         } else {
-            ac.with_values(ca.into_column(), true, Some(&self.expr))?;
             ac.with_update_groups(UpdateGroups::WithSeriesLen);
-        }
+            ca.into_series().into()
+        };
+
+        ac.with_values_and_args(c, true, None, false, self.function_returns_scalar)?;
 
         Ok(ac)
     }
@@ -295,27 +295,9 @@ impl ApplyExpr {
         drop(iters);
 
         // Take the first aggregation context that as that is the input series.
-        let mut ac = acs.swap_remove(0);
-        let c = if self.function_returns_scalar {
-            ac.update_groups = UpdateGroups::No;
-            ca.explode().unwrap().into_column()
-        } else {
-            ca.into_series().into()
-        };
-
-        ac.with_values_and_args(c, true, None, false, self.function_returns_scalar)?;
-
-        Ok(ac)
+        let ac = acs.swap_remove(0);
+        self.finish_apply_groups(ac, ca)
     }
-}
-
-fn all_unit_length(ca: &ListChunked) -> bool {
-    assert_eq!(ca.chunks().len(), 1);
-
-    let list_arr = ca.downcast_iter().next().unwrap();
-    let offset = list_arr.offsets().as_slice();
-    // Note: Checking offset.last() == 0 handles the Null dtype - in that case the offsets can be (e.g. [0,0,0 ...])
-    (offset[offset.len() - 1] as usize) == list_arr.len() || offset[offset.len() - 1] == 0
 }
 
 fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> PolarsResult<()> {
@@ -378,7 +360,6 @@ impl PhysicalExpr for ApplyExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        dbg!(&self.expr);
         polars_ensure!(
             self.allow_group_aware,
             expr = self.expr,
@@ -399,7 +380,7 @@ impl PhysicalExpr for ApplyExpr {
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            match dbg!(self.collect_groups) {
+            match self.collect_groups {
                 ApplyOptions::ApplyList => {
                     let mut c = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
                     let c = self.eval_and_flatten(&mut c)?;
@@ -425,8 +406,6 @@ impl PhysicalExpr for ApplyExpr {
                     if has_agg_list || (has_agg_scalar && has_not_agg) {
                         self.apply_multiple_group_aware(acs, df)
                     } else {
-                        dbg!(self.is_scalar());
-                        dbg!(&self.expr);
                         apply_multiple_elementwise(
                             acs,
                             self.function.as_ref(),
