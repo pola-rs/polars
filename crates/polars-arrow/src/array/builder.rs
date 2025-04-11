@@ -1,5 +1,6 @@
 use polars_utils::IdxSize;
 
+use crate::array::binary::BinaryArrayBuilder;
 use crate::array::binview::BinaryViewArrayGenericBuilder;
 use crate::array::boolean::BooleanArrayBuilder;
 use crate::array::fixed_size_binary::FixedSizeBinaryArrayBuilder;
@@ -296,6 +297,7 @@ pub fn make_builder(dtype: &ArrowDataType) -> Box<dyn ArrayBuilder> {
         Primitive(prim_t) => with_match_primitive_type_full!(prim_t, |$T| {
             Box::new(PrimitiveArrayBuilder::<$T>::new(dtype.clone()))
         }),
+        LargeBinary => Box::new(BinaryArrayBuilder::<i64>::new(dtype.clone())),
         FixedSizeBinary => Box::new(FixedSizeBinaryArrayBuilder::new(dtype.clone())),
         LargeList => {
             let ArrowDataType::LargeList(inner_dt) = dtype else {
@@ -325,7 +327,7 @@ pub fn make_builder(dtype: &ArrowDataType) -> Box<dyn ArrayBuilder> {
         BinaryView => Box::new(BinaryViewArrayGenericBuilder::<[u8]>::new(dtype.clone())),
         Utf8View => Box::new(BinaryViewArrayGenericBuilder::<str>::new(dtype.clone())),
 
-        List | Binary | LargeBinary | Utf8 | LargeUtf8 | Map | Union | Dictionary(_) => {
+        List | Binary | Utf8 | LargeUtf8 | Map | Union | Dictionary(_) => {
             unimplemented!()
         },
     }
