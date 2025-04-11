@@ -117,7 +117,7 @@ fn scan_predicate_to_mask(
 
     if verbose {
         eprintln!(
-            "[MultiScan]: Predicate pushdown allows skipping {} / {} sources",
+            "[MultiScan]: Predicate pushdown allows skipping {} / {} files",
             mask.set_bits(),
             mask.len()
         );

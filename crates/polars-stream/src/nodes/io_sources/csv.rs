@@ -182,6 +182,29 @@ impl FileReader for CsvFileReader {
             self.options.raise_if_empty,
         )?;
 
+        if let Some(schema) = &self.options.schema {
+            if schema.len() != inferred_schema.len()
+                && !self.options.parse_options.truncate_ragged_lines
+            {
+                polars_bail!(
+                    SchemaMismatch:
+                    "provided schema does not match number of columns in file ({} != {} in file)",
+                    schema.len(),
+                    inferred_schema.len(),
+                );
+            }
+
+            if self.options.parse_options.truncate_ragged_lines {
+                inferred_schema = Arc::unwrap_or_clone(schema.clone());
+            } else {
+                inferred_schema = schema
+                    .iter_names()
+                    .zip(inferred_schema.into_iter().map(|(_, dtype)| dtype))
+                    .map(|(name, dtype)| (name.clone(), dtype))
+                    .collect();
+            }
+        }
+
         if let Some(dtypes) = self.options.dtype_overwrite.as_deref() {
             for (i, dtype) in dtypes.iter().enumerate() {
                 inferred_schema.set_dtype_at_index(i, dtype.clone());

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
@@ -28,21 +27,6 @@ def _enable_force_async(monkeypatch: pytest.MonkeyPatch) -> None:
     """Modifies the provided monkeypatch context."""
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-
-
-def _assert_force_async(capfd: Any, data_file_extension: str) -> None:
-    if (
-        os.getenv("POLARS_AUTO_NEW_STREAMING", os.getenv("POLARS_FORCE_NEW_STREAMING"))
-        == "1"
-    ):
-        return
-
-    """Calls `capfd.readouterr`, consuming the captured output so far."""
-    if data_file_extension == ".ndjson":
-        return
-
-    captured = capfd.readouterr().err
-    assert captured.count("ASYNC READING FORCED") >= 1
 
 
 def _scan(
@@ -208,9 +192,6 @@ def test_scan(
 
     df = _scan(data_file.path, data_file.df.schema).collect()
 
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
-
     assert_frame_equal(df, data_file.df)
 
 
@@ -222,9 +203,6 @@ def test_scan_with_limit(
         _enable_force_async(monkeypatch)
 
     df = _scan(data_file.path, data_file.df.schema).limit(4483).collect()
-
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -248,9 +226,6 @@ def test_scan_with_filter(
         .filter(pl.col("sequence") % 2 == 0)
         .collect()
     )
-
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -276,9 +251,6 @@ def test_scan_with_filter_and_limit(
         .collect()
     )
 
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
-
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -303,9 +275,6 @@ def test_scan_with_limit_and_filter(
         .collect()
     )
 
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
-
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -328,9 +297,6 @@ def test_scan_with_row_index_and_limit(
         .limit(4483)
         .collect()
     )
-
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -357,9 +323,6 @@ def test_scan_with_row_index_and_filter(
         .collect()
     )
 
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
-
     assert_frame_equal(
         df,
         pl.DataFrame(
@@ -385,9 +348,6 @@ def test_scan_with_row_index_limit_and_filter(
         .filter(pl.col("sequence") % 2 == 0)
         .collect()
     )
-
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,
@@ -418,9 +378,6 @@ def test_scan_with_row_index_projected_out(
         .collect()
     )
 
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
-
     assert_frame_equal(df, data_file.df.select(subset))
 
 
@@ -440,9 +397,6 @@ def test_scan_with_row_index_filter_and_limit(
         .limit(4483)
         .collect()
     )
-
-    if force_async:
-        _assert_force_async(capfd, data_file.path.suffix)
 
     assert_frame_equal(
         df,

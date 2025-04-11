@@ -16,6 +16,9 @@ use crate::ScanPredicate;
 use crate::executors::{CachePrefiller, SinkExecutor};
 use crate::predicate::PhysicalColumnPredicates;
 
+pub type StreamingExecutorBuilder =
+    fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<Box<dyn Executor>>;
+
 fn partitionable_gb(
     keys: &[ExprIR],
     aggs: &[ExprIR],
@@ -76,10 +79,18 @@ pub fn create_physical_plan(
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    build_streaming_executor: Option<StreamingExecutorBuilder>,
 ) -> PolarsResult<Box<dyn Executor>> {
     let mut state = ConversionState::new()?;
     let mut cache_nodes = Default::default();
-    let plan = create_physical_plan_impl(root, lp_arena, expr_arena, &mut state, &mut cache_nodes)?;
+    let plan = create_physical_plan_impl(
+        root,
+        lp_arena,
+        expr_arena,
+        &mut state,
+        &mut cache_nodes,
+        build_streaming_executor,
+    )?;
 
     if cache_nodes.is_empty() {
         Ok(plan)
@@ -99,6 +110,7 @@ pub fn create_multiple_physical_plans(
     roots: &[Node],
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    build_streaming_executor: Option<StreamingExecutorBuilder>,
 ) -> PolarsResult<MultiplePhysicalPlans> {
     let mut state = ConversionState::new()?;
     let mut cache_nodes = Default::default();
@@ -106,7 +118,14 @@ pub fn create_multiple_physical_plans(
         roots
             .iter()
             .map(|&node| {
-                create_physical_plan_impl(node, lp_arena, expr_arena, new_state, &mut cache_nodes)
+                create_physical_plan_impl(
+                    node,
+                    lp_arena,
+                    expr_arena,
+                    new_state,
+                    &mut cache_nodes,
+                    build_streaming_executor,
+                )
             })
             .collect::<PolarsResult<Vec<_>>>()
     })?;
@@ -190,12 +209,29 @@ fn create_physical_plan_impl(
     state: &mut ConversionState,
     // Cache nodes in order of discovery
     cache_nodes: &mut PlIndexMap<usize, Box<dyn Executor>>,
+    build_streaming_executor: Option<StreamingExecutorBuilder>,
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
 
     macro_rules! recurse {
         ($node:expr, $state: expr) => {
-            create_physical_plan_impl($node, lp_arena, expr_arena, $state, cache_nodes)
+            create_physical_plan_impl(
+                $node,
+                lp_arena,
+                expr_arena,
+                $state,
+                cache_nodes,
+                build_streaming_executor,
+            )
+        };
+    }
+
+    if let Some(build_func) = build_streaming_executor {
+        match lp_arena.get(root) {
+            Scan { scan_type, .. } if !matches!(scan_type.as_ref(), FileScan::Anonymous { .. }) => {
+                return build_func(root, lp_arena, expr_arena);
+            },
+            _ => {},
         };
     }
 
@@ -505,6 +541,7 @@ fn create_physical_plan_impl(
                 },
             }
         },
+
         Select {
             expr,
             input,
