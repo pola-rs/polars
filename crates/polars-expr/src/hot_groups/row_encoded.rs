@@ -1,4 +1,6 @@
+use arrow::array::builder::StaticArrayBuilder;
 use arrow::array::PrimitiveArray;
+use arrow::offset::Offsets;
 use polars_utils::vec::PushUnchecked;
 
 use crate::hash_keys::RowEncodedKeys;
@@ -9,6 +11,8 @@ use super::*;
 pub struct RowEncodedHashHotGrouper {
     key_schema: Arc<Schema>,
     table: FixedIndexTable<Vec<u8>>,
+    evicted_key_data: Vec<u8>,
+    evicted_key_offsets: Offsets<i64>,
 }
 
 impl RowEncodedHashHotGrouper {
@@ -16,6 +20,8 @@ impl RowEncodedHashHotGrouper {
         Self {
             key_schema,
             table: FixedIndexTable::new(max_groups.try_into().unwrap()),
+            evicted_key_data: Vec::new(),
+            evicted_key_offsets: Offsets::new(),
         }
     }
 }
@@ -49,7 +55,11 @@ impl HotGrouper for RowEncodedHashHotGrouper {
             keys.for_each_hash(|opt_h| {
                 if let Some(h) = opt_h {
                     let key = keys.keys.value_unchecked(idx);
-                    if let Some(g) = self.table.insert_key(h, key) {
+                    let opt_g = self.table.insert_key(h, key, |evicted| {
+                        self.evicted_key_offsets.try_push(evicted.len()).unwrap();
+                        self.evicted_key_data.extend_from_slice(evicted);
+                    });
+                    if let Some(g) = opt_g {
                         hot_idxs.push_unchecked(idx as IdxSize);
                         hot_group_idxs.push_unchecked(g);
                     } else {
@@ -72,7 +82,7 @@ impl HotGrouper for RowEncodedHashHotGrouper {
     }
     
     fn num_evictions(&self) -> usize {
-        todo!()
+        self.evicted_key_offsets.len()
     }
     
     fn take_evicted_keys(&mut self) -> HashKeys {
