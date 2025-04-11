@@ -374,7 +374,8 @@ fn aexpr_to_skip_batch_predicate_rec(
             } => match function {
                 FunctionExpr::Boolean(f) => match f {
                     #[cfg(feature = "is_in")]
-                    BooleanFunction::IsIn { .. } => {
+                    BooleanFunction::IsIn { nulls_equal } => {
+                        let nulls_equal = *nulls_equal;
                         let lv_node = input[1].node();
                         match (
                             into_column(input[0].node(), expr_arena, schema, 0),
@@ -426,7 +427,39 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 let lv_has_not_nulls = has_no_nulls!(lv_node);
                                 let null_case = or!(lv_has_not_nulls, col_has_no_nulls);
 
-                                Some(and!(null_case, expr))
+                                let min_max_is_in = and!(null_case, expr);
+
+                                let col_nc = col!(null_count: col);
+
+                                let min_is_max = binexpr!(Eq, col_min, col_max); // Eq so that (None == None) == None
+                                let idx_zero = lv!(idx: 0);
+                                let has_no_nulls = eq!(col_nc, idx_zero);
+
+                                // The above case does always cover the fallback path. Since there
+                                // is code that relies on the `min==max` always filtering normally,
+                                // we add it here.
+                                let exact_not_in = expr_arena.add(AExpr::Function {
+                                    input: vec![
+                                        ExprIR::new(col_min, OutputName::Alias(PlSmallStr::EMPTY)),
+                                        ExprIR::new(lv_node, OutputName::Alias(PlSmallStr::EMPTY)),
+                                    ],
+                                    function: FunctionExpr::Boolean(BooleanFunction::IsIn {
+                                        nulls_equal,
+                                    }),
+                                    options: BooleanFunction::IsIn { nulls_equal }
+                                        .function_options(),
+                                });
+                                let exact_not_in = expr_arena.add(AExpr::Function {
+                                    input: vec![ExprIR::new(
+                                        exact_not_in,
+                                        OutputName::Alias(PlSmallStr::EMPTY),
+                                    )],
+                                    function: FunctionExpr::Boolean(BooleanFunction::Not),
+                                    options: BooleanFunction::Not.function_options(),
+                                });
+                                let exact_not_in = and!(min_is_max, has_no_nulls, exact_not_in);
+
+                                Some(or!(exact_not_in, min_max_is_in))
                             },
                             _ => None,
                         }
