@@ -42,18 +42,18 @@ fn covariance(s: &[Column], ddof: u8) -> PolarsResult<Column> {
     use polars_ops::chunked_array::cov::cov;
     let ret = match a.dtype() {
         DataType::Float32 => {
-            let ret = cov(a.f32().unwrap(), b.f32().unwrap(), ddof).map(|v| v as f32);
+            let ret = cov(a.f32().unwrap(), b.f32().unwrap(), ddof)?.map(|v| v as f32);
             return Ok(Column::new(name, &[ret]));
         },
-        DataType::Float64 => cov(a.f64().unwrap(), b.f64().unwrap(), ddof),
-        DataType::Int32 => cov(a.i32().unwrap(), b.i32().unwrap(), ddof),
-        DataType::Int64 => cov(a.i64().unwrap(), b.i64().unwrap(), ddof),
-        DataType::UInt32 => cov(a.u32().unwrap(), b.u32().unwrap(), ddof),
-        DataType::UInt64 => cov(a.u64().unwrap(), b.u64().unwrap(), ddof),
+        DataType::Float64 => cov(a.f64().unwrap(), b.f64().unwrap(), ddof)?,
+        DataType::Int32 => cov(a.i32().unwrap(), b.i32().unwrap(), ddof)?,
+        DataType::Int64 => cov(a.i64().unwrap(), b.i64().unwrap(), ddof)?,
+        DataType::UInt32 => cov(a.u32().unwrap(), b.u32().unwrap(), ddof)?,
+        DataType::UInt64 => cov(a.u64().unwrap(), b.u64().unwrap(), ddof)?,
         _ => {
             let a = a.cast(&DataType::Float64)?;
             let b = b.cast(&DataType::Float64)?;
-            cov(a.f64().unwrap(), b.f64().unwrap(), ddof)
+            cov(a.f64().unwrap(), b.f64().unwrap(), ddof)?
         },
     };
     Ok(Column::new(name, &[ret]))
@@ -67,17 +67,17 @@ fn pearson_corr(s: &[Column]) -> PolarsResult<Column> {
     use polars_ops::chunked_array::cov::pearson_corr;
     let ret = match a.dtype() {
         DataType::Float32 => {
-            let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap()).map(|v| v as f32);
+            let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap())?.map(|v| v as f32);
             return Ok(Column::new(name.clone(), &[ret]));
         },
-        DataType::Float64 => pearson_corr(a.f64().unwrap(), b.f64().unwrap()),
-        DataType::Int32 => pearson_corr(a.i32().unwrap(), b.i32().unwrap()),
-        DataType::Int64 => pearson_corr(a.i64().unwrap(), b.i64().unwrap()),
-        DataType::UInt32 => pearson_corr(a.u32().unwrap(), b.u32().unwrap()),
+        DataType::Float64 => pearson_corr(a.f64().unwrap(), b.f64().unwrap())?,
+        DataType::Int32 => pearson_corr(a.i32().unwrap(), b.i32().unwrap())?,
+        DataType::Int64 => pearson_corr(a.i64().unwrap(), b.i64().unwrap())?,
+        DataType::UInt32 => pearson_corr(a.u32().unwrap(), b.u32().unwrap())?,
         _ => {
             let a = a.cast(&DataType::Float64)?;
             let b = b.cast(&DataType::Float64)?;
-            pearson_corr(a.f64().unwrap(), b.f64().unwrap())
+            pearson_corr(a.f64().unwrap(), b.f64().unwrap())?
         },
     };
     Ok(Column::new(name, &[ret]))
