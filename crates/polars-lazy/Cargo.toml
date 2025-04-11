@@ -50,6 +50,7 @@ parquet = [
   "polars-expr/parquet",
   "polars-mem-engine/parquet",
   "polars-stream?/parquet",
+  "new_streaming",
 ]
 async = [
   "polars-plan/async",
@@ -65,8 +66,16 @@ cloud = [
   "futures",
   "polars-mem-engine/cloud",
   "polars-stream?/cloud",
+  "new_streaming",
 ]
-ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc", "polars-mem-engine/ipc", "polars-stream?/ipc"]
+ipc = [
+  "polars-io/ipc",
+  "polars-plan/ipc",
+  "polars-pipe?/ipc",
+  "polars-mem-engine/ipc",
+  "polars-stream?/ipc",
+  "new_streaming",
+]
 json = [
   "polars-io/json",
   "polars-plan/json",
@@ -74,8 +83,16 @@ json = [
   "polars-pipe?/json",
   "polars-mem-engine/json",
   "polars-stream?/json",
+  "new_streaming",
 ]
-csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv", "polars-mem-engine/csv", "polars-stream?/csv"]
+csv = [
+  "polars-io/csv",
+  "polars-plan/csv",
+  "polars-pipe?/csv",
+  "polars-mem-engine/csv",
+  "polars-stream?/csv",
+  "new_streaming",
+]
 temporal = [
   "dtype-datetime",
   "dtype-date",

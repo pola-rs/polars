@@ -11,8 +11,6 @@ use polars_core::error::feature_gated;
 use polars_io::SerReader;
 #[cfg(any(feature = "parquet", feature = "json"))]
 use polars_io::cloud::CloudOptions;
-#[cfg(all(feature = "parquet", feature = "async"))]
-use polars_io::parquet::read::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
@@ -148,10 +146,12 @@ async fn count_rows_cloud_parquet(
     paths: &[std::path::PathBuf],
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
+    use polars_io::prelude::ParquetObjectStore;
+
     let collection = paths.iter().map(|path| {
         with_concurrency_budget(1, || async {
             let mut reader =
-                ParquetAsyncReader::from_uri(&path.to_string_lossy(), cloud_options, None).await?;
+                ParquetObjectStore::from_uri(&path.to_string_lossy(), cloud_options, None).await?;
             reader.num_rows().await
         })
     });

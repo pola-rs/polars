@@ -159,6 +159,8 @@ impl PyDataFrame {
             offset,
         });
 
+        _ = use_statistics;
+
         match get_either_file(py_f, false)? {
             Py(f) => {
                 let buf = std::io::Cursor::new(f.to_memslice());
@@ -170,7 +172,6 @@ impl PyDataFrame {
                         .with_slice(n_rows.map(|x| (0, x)))
                         .with_row_index(row_index)
                         .set_low_memory(low_memory)
-                        .use_statistics(use_statistics)
                         .set_rechunk(rechunk)
                         .finish()
                 })
@@ -182,7 +183,6 @@ impl PyDataFrame {
                     .read_parallel(parallel.0)
                     .with_slice(n_rows.map(|x| (0, x)))
                     .with_row_index(row_index)
-                    .use_statistics(use_statistics)
                     .set_rechunk(rechunk)
                     .finish()
             }),

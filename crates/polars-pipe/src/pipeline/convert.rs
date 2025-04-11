@@ -4,9 +4,6 @@ use std::rc::Rc;
 use hashbrown::hash_map::Entry;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
-use polars_io::predicates::ScanIOPredicate;
-#[cfg(feature = "parquet")]
-use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_ops::prelude::JoinType;
 use polars_plan::prelude::expr_ir::{ExprIR, OutputName};
 use polars_plan::prelude::*;
@@ -111,50 +108,7 @@ where
                     options: parquet_options,
                     cloud_options,
                     metadata,
-                } => {
-                    let predicate = predicate
-                        .as_ref()
-                        .map(|predicate| {
-                            let p = to_physical(predicate, expr_arena, schema)?;
-                            // Arc's all the way down. :(
-                            // Temporarily until: https://github.com/rust-lang/rust/issues/65991
-                            // stabilizes
-                            struct Wrap {
-                                p: Arc<dyn PhysicalPipedExpr>,
-                            }
-                            impl PhysicalIoExpr for Wrap {
-                                fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
-                                    self.p.evaluate_io(df)
-                                }
-
-                                fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
-                                    self.p.as_stats_evaluator()
-                                }
-                            }
-                            let live_columns = Arc::new(PlIndexSet::from_iter(
-                                aexpr_to_leaf_names_iter(predicate.node(), expr_arena),
-                            ));
-                            PolarsResult::Ok(ScanIOPredicate {
-                                predicate: Arc::new(Wrap { p }) as Arc<dyn PhysicalIoExpr>,
-                                live_columns,
-                                skip_batch_predicate: None,
-                                column_predicates: Arc::new(Default::default()),
-                            })
-                        })
-                        .transpose()?;
-                    let src = sources::ParquetSource::new(
-                        sources,
-                        parquet_options,
-                        cloud_options,
-                        metadata,
-                        file_options,
-                        file_info,
-                        hive_parts.map(|h| h.into_statistics()),
-                        verbose,
-                        predicate,
-                    )?;
-                    Ok(Box::new(src) as Box<dyn Source>)
-                },
+                } => panic!("Parquet no longer supported for old streaming engine"),
                 _ => todo!(),
             }
         },
