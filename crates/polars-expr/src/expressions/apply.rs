@@ -126,11 +126,14 @@ impl ApplyExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         let s = ac.get_values();
 
-        polars_ensure!(
-            !matches!(ac.agg_state(), AggState::AggregatedScalar(_)),
-            expr = self.expr,
-            ComputeError: "cannot aggregate, the column is already aggregated",
-        );
+        #[allow(clippy::nonminimal_bool)]
+        {
+            polars_ensure!(
+                !(matches!(ac.agg_state(), AggState::AggregatedScalar(_)) && !s.dtype().is_list() ) ,
+                expr = self.expr,
+                ComputeError: "cannot aggregate, the column is already aggregated",
+            );
+        }
 
         let name = s.name().clone();
         let agg = ac.aggregated();
