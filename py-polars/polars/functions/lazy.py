@@ -1133,7 +1133,6 @@ def map_groups(
     ...             / list_of_series[0].sum()
     ...             + list_of_series[1],
     ...             return_dtype=pl.Float64,
-    ....            returns_scalar=False,
     ...         ).alias("my_custom_aggregation")
     ...     )
     ... ).sort("group")
