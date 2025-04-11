@@ -148,13 +148,12 @@ fn _get_cat_phys_map(ca: &CategoricalChunked) -> (StringChunked, Series) {
     (categories, phys)
 }
 
-/// Apply a string function that produces non-string output to the categories of a categorical
-/// column and broadcast the result back to the array.
-fn apply_to_cats_generic<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
+/// Apply a string function to the categories of a categorical column and broadcast the result.
+fn apply_to_cats<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
 where
     F: FnMut(&StringChunked) -> ChunkedArray<T>,
-    ChunkedArray<T>: IntoSeries,
-    T: PolarsDataType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
+    ChunkedArray<T>: IntoSeries + ChunkTakeUnchecked<IdxCa>,
+    T: PolarsDataType,
 {
     let ca = c.categorical()?;
     let (categories, phys) = _get_cat_phys_map(ca);
@@ -164,13 +163,12 @@ where
     Ok(out.into_column())
 }
 
-/// Apply a binary function that produces non-string output to the categories of a categorical
-/// column and broadcast the result back to the array.
-fn apply_to_cats_binary_generic<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
+/// Apply a binary function to the categories of a categorical column and broadcast the result.
+fn apply_to_cats_binary<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
 where
     F: FnMut(&BinaryChunked) -> ChunkedArray<T>,
-    ChunkedArray<T>: IntoSeries,
-    T: PolarsDataType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
+    ChunkedArray<T>: IntoSeries + ChunkTakeUnchecked<IdxCa>,
+    T: PolarsDataType,
 {
     let ca = c.categorical()?;
     let (categories, phys) = _get_cat_phys_map(ca);
@@ -180,38 +178,24 @@ where
     Ok(out.into_column())
 }
 
-/// Apply a string function that produces string output to the categories of a
-/// categorical column and broadcast the result back to the array.
-fn apply_to_cats_str<F>(c: &Column, mut op: F) -> PolarsResult<Column>
-where
-    F: FnMut(&StringChunked) -> StringChunked,
-{
-    let ca = c.categorical()?;
-    let (categories, phys) = _get_cat_phys_map(ca);
-    let result = op(&categories);
-    // SAFETY: physical idx array is valid.
-    let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
-    Ok(out.into_column())
-}
-
 #[cfg(feature = "strings")]
 fn len_bytes(c: &Column) -> PolarsResult<Column> {
-    apply_to_cats_generic(c, |s| s.str_len_bytes())
+    apply_to_cats(c, |s| s.str_len_bytes())
 }
 
 #[cfg(feature = "strings")]
 fn len_chars(c: &Column) -> PolarsResult<Column> {
-    apply_to_cats_generic(c, |s| s.str_len_chars())
+    apply_to_cats(c, |s| s.str_len_chars())
 }
 
 #[cfg(feature = "strings")]
 fn starts_with(c: &Column, prefix: &str) -> PolarsResult<Column> {
-    apply_to_cats_binary_generic(c, |s| s.starts_with(prefix.as_bytes()))
+    apply_to_cats_binary(c, |s| s.starts_with(prefix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]
 fn ends_with(c: &Column, suffix: &str) -> PolarsResult<Column> {
-    apply_to_cats_binary_generic(c, |s| s.ends_with(suffix.as_bytes()))
+    apply_to_cats_binary(c, |s| s.ends_with(suffix.as_bytes()))
 }
 
 #[cfg(feature = "strings")]
@@ -233,16 +217,16 @@ fn slice(c: &Column, offset: i64, length: Option<usize>) -> PolarsResult<Column>
 
 #[cfg(feature = "strings")]
 fn to_uppercase(c: &Column) -> PolarsResult<Column> {
-    apply_to_cats_str(c, |s| s.to_uppercase())
+    apply_to_cats(c, |s| s.to_uppercase())
 }
 
 #[cfg(feature = "strings")]
 fn to_lowercase(c: &Column) -> PolarsResult<Column> {
-    apply_to_cats_str(c, |s| s.to_lowercase())
+    apply_to_cats(c, |s| s.to_lowercase())
 }
 
 #[cfg(feature = "strings")]
 #[cfg(feature = "nightly")]
 fn to_titlecase(c: &Column) -> PolarsResult<Column> {
-    apply_to_cats_str(c, |s| s.to_titlecase())
+    apply_to_cats(c, |s| s.to_titlecase())
 }
