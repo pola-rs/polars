@@ -1048,12 +1048,14 @@ def test_async_read_21945(tmp_path: Path, scan_type: tuple[Any, Any]) -> None:
     pl.DataFrame({"value": [3]}).write_parquet(f2)
 
     df = (
-        pl.scan_parquet(["file://" + str(f1), f2], include_file_paths="foo")
+        pl.scan_parquet(["file://" + str(f1), str(f2)], include_file_paths="foo")
         .filter(value=1)
         .collect()
     )
 
-    assert_frame_equal(df, pl.DataFrame({"value": [1], "foo": ["file://" + str(f1)]}))
+    assert_frame_equal(
+        df, pl.DataFrame({"value": [1], "foo": ["file://" + f1.as_posix()]})
+    )
 
 
 @pytest.mark.write_disk
