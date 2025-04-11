@@ -1028,3 +1028,60 @@ def test_only_project_missing(scan_type: tuple[Any, Any]) -> None:
         s.select("missing").collect(),
         pl.DataFrame([pl.Series("missing", [None, None, None], pl.Int32)]),
     )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "scan_type",
+    [
+        (pl.DataFrame.write_parquet, pl.scan_parquet),
+        (pl.DataFrame.write_ipc, pl.scan_ipc),
+        (pl.DataFrame.write_csv, pl.scan_csv),
+        (pl.DataFrame.write_ndjson, pl.scan_ndjson),
+    ],
+)
+def test_async_read_21945(tmp_path: Path, scan_type: tuple[Any, Any]) -> None:
+    f1 = tmp_path / "f1"
+    f2 = tmp_path / "f2"
+
+    pl.DataFrame({"value": [1, 2]}).write_parquet(f1)
+    pl.DataFrame({"value": [3]}).write_parquet(f2)
+
+    df = (
+        pl.scan_parquet(["file://" + str(f1), f2], include_file_paths="foo")
+        .filter(value=1)
+        .collect()
+    )
+
+    assert_frame_equal(df, pl.DataFrame({"value": [1], "foo": ["file://" + str(f1)]}))
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("with_str_contains", [False, True])
+def test_hive_pruning_str_contains_21706(
+    tmp_path: Path, capfd: Any, monkeypatch: Any, with_str_contains: bool
+) -> None:
+    df = pl.DataFrame(
+        {
+            "pdate": [20250301, 20250301, 20250302, 20250302, 20250303, 20250303],
+            "prod_id": ["A1", "A2", "B1", "B2", "C1", "C2"],
+            "price": [11, 22, 33, 44, 55, 66],
+        }
+    )
+
+    df.write_parquet(tmp_path, partition_by=["pdate"])
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    f = pl.col("pdate") == 20250303
+    if with_str_contains:
+        f = f & pl.col("prod_id").str.contains("1")
+
+    df = pl.scan_parquet(tmp_path, hive_partitioning=True).filter(f).collect()
+
+    captured = capfd.readouterr().err
+    assert "allows skipping 2 / 3" in captured
+
+    assert_frame_equal(
+        df,
+        pl.scan_parquet(tmp_path, hive_partitioning=True).collect().filter(f),
+    )
