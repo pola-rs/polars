@@ -2405,6 +2405,25 @@ time
     )
 
 
+def test_csv_try_parse_dates_leading_zero_8_digits_22167() -> None:
+    result = pl.read_csv(
+        io.StringIO(
+            "a\n2025-04-06T18:56:42.617736974Z\n2025-04-06T18:57:42.77756192Z\n2025-04-06T18:58:44.56928733Z"
+        ),
+        try_parse_dates=True,
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [
+                datetime(2025, 4, 6, 18, 56, 42, 617736, tzinfo=timezone.utc),
+                datetime(2025, 4, 6, 18, 57, 42, 777561, tzinfo=timezone.utc),
+                datetime(2025, 4, 6, 18, 58, 44, 569287, tzinfo=timezone.utc),
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_csv_read_time_schema_overrides() -> None:
     df = pl.Series("time", [0]).cast(pl.Time()).to_frame()

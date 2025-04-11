@@ -23,8 +23,11 @@ fn update_and_parse<T: atoi_simd::Parse>(
     let new_offset = offset + incr;
     let bytes = vals.get(offset..new_offset)?;
     let (val, parsed) = atoi_simd::parse_any(bytes).ok()?;
-    if parsed == 0 {
-        None
+    if parsed != incr {
+        panic!(
+            "Invariant when calling StrpTimeState.parse was not upheld. Expected {} parsed digits, got {}.",
+            incr, parsed
+        );
     } else {
         Some((val, new_offset))
     }
@@ -220,18 +223,27 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
                     b'S' => cnt += 2,
                     b'9' => {
                         cnt += 9;
-                        debug_assert_eq!(iter.next(), Some(&b'f'));
-                        return Some(cnt);
+                        if matches!(iter.next(), Some(&b'f')) && iter.next().is_none() {
+                            return Some(cnt);
+                        } else {
+                            return None;
+                        }
                     },
                     b'6' => {
                         cnt += 6;
-                        debug_assert_eq!(iter.next(), Some(&b'f'));
-                        return Some(cnt);
+                        if matches!(iter.next(), Some(&b'f')) && iter.next().is_none() {
+                            return Some(cnt);
+                        } else {
+                            return None;
+                        }
                     },
                     b'3' => {
                         cnt += 3;
-                        debug_assert_eq!(iter.next(), Some(&b'f'));
-                        return Some(cnt);
+                        if matches!(iter.next(), Some(&b'f')) && iter.next().is_none() {
+                            return Some(cnt);
+                        } else {
+                            return None;
+                        }
                     },
                     _ => return None,
                 },
