@@ -56,13 +56,15 @@ impl<K> FixedIndexTable<K> {
     /// Tries to insert a key with a given hash.
     /// 
     /// Returns Some((index, evict_old)) if successful, None otherwise.
-    pub fn insert_key<Q>(
+    pub fn insert_key<Q, F>(
         &mut self,
         hash: u64,
         key: &Q,
+        mut on_evict: F,
     ) -> Option<EvictIdx>
     where
-        Q: ToOwned<Owned=K> + PartialEq<K> + ?Sized
+        Q: ToOwned<Owned=K> + PartialEq<K> + ?Sized,
+        F: FnMut(&K)
     {
         let tag = hash as u32;
         let h1 = (hash >> self.shift) as usize;
@@ -138,7 +140,9 @@ impl<K> FixedIndexTable<K> {
             let slot = self.slots.get_unchecked_mut(hr);
             if slot.last_access_tag == tag {
                 slot.tag = tag;
-                key.clone_into(self.keys.get_unchecked_mut(slot.key_index as usize));
+                let evict_key = self.keys.get_unchecked_mut(slot.key_index as usize);
+                on_evict(evict_key);
+                key.clone_into(evict_key);
                 *self.hashes.get_unchecked_mut(slot.key_index as usize) = hash;
                 Some(EvictIdx::new(slot.key_index, true))
             } else {

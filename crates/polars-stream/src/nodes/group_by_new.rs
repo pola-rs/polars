@@ -7,7 +7,8 @@ use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::HotGrouper;
-use polars_expr::reduce::GroupedReduction;
+use polars_expr::reduce::{EvictedReductionState, GroupedReduction};
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
@@ -23,8 +24,6 @@ struct LocalGroupBySinkState {
     hot_grouper: Box<dyn HotGrouper>,
     hot_grouped_reductions: Vec<Box<dyn GroupedReduction>>,
 
-    cold_morsels: Vec<(u64, DataFrame, HashKeys)>,
-
     // A cardinality sketch per partition for the keys seen by this builder.
     sketch_per_p: Vec<CardinalitySketch>,
 
@@ -32,14 +31,20 @@ struct LocalGroupBySinkState {
     // for partition p, where start, stop are:
     // let start = morsel_idxs_offsets[i * num_partitions + p];
     // let stop = morsel_idxs_offsets[(i + 1) * num_partitions + p];
+    cold_morsels: Vec<(u64, DataFrame, HashKeys)>,
     morsel_idxs_values_per_p: Vec<Vec<IdxSize>>,
     morsel_idxs_offsets_per_p: Vec<usize>,
+    
+    // Similar to the above, but for evicted aggregates.
+    evictions: Vec<(HashKeys, Vec<Box<dyn EvictedReductionState>>)>,
+    eviction_idxs_values_per_p: Vec<Vec<IdxSize>>,
+    eviction_idxs_offsets_per_p: Vec<usize>,
 }
 
 struct GroupBySinkState {
     key_selectors: Vec<StreamExpr>,
-    grouped_reduction_selectors: Vec<StreamExpr>,
     key_schema: Arc<Schema>,
+    grouped_reduction_cols: Vec<PlSmallStr>,
     grouped_reductions: Vec<Box<dyn GroupedReduction>>,
     locals: Vec<LocalGroupBySinkState>,
     random_state: PlRandomState,
@@ -55,7 +60,7 @@ impl GroupBySinkState {
     ) {
         for (mut recv, local) in receivers.into_iter().zip(&mut self.locals) {
             let key_selectors = &self.key_selectors;
-            let grouped_reduction_selectors = &self.grouped_reduction_selectors;
+            let grouped_reduction_cols = &self.grouped_reduction_cols;
             let random_state = &self.random_state;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut hot_idxs = Vec::new();
@@ -79,7 +84,7 @@ impl GroupBySinkState {
                     local.hot_grouper.insert_keys(&hash_keys, &mut hot_idxs, &mut hot_group_idxs, &mut cold_idxs);
 
                     // Update reductions.
-                    for (selector, reduction) in grouped_reduction_selectors
+                    for (col, reduction) in grouped_reduction_cols
                         .iter()
                         .zip(&mut local.hot_grouped_reductions)
                     {
@@ -87,16 +92,19 @@ impl GroupBySinkState {
                             // SAFETY: we resize the reduction to the number of groups beforehand.
                             reduction.resize(local.hot_grouper.num_groups());
                             reduction.update_groups_while_evicting(
-                                selector
-                                    .evaluate(&df, &state.in_memory_exec_state)
-                                    .await?
-                                    .as_materialized_series(),
+                                df.column(col).unwrap(),
                                 &hot_idxs,
                                 &hot_group_idxs,
                                 seq,
                             )?;
                         }
                     }
+                    
+                    // If cold_idxs.len() >= 0.75 * df.height(), directly take df / hash keys and use offsets within it.
+                    // Otherwise, gather first.
+                    
+
+                    // Add evicted
                 }
                 Ok(())
             }));

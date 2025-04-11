@@ -76,7 +76,7 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// The subset and group_idxs are in-bounds.
     unsafe fn update_groups_while_evicting(
         &mut self,
-        _values: &Series,
+        _values: &Column,
         _subset: &[IdxSize],
         _group_idxs: &[EvictIdx],
         _seq_id: u64,

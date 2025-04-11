@@ -32,6 +32,16 @@ pub trait HotGrouper: Any + Send + Sync {
     /// Get all the current hot keys, in group order.
     fn keys(&self) -> HashKeys;
 
+    /// Get the number of evicted keys stored.
+    fn num_evictions(&self) -> usize {
+        todo!()
+    }
+    
+    /// Consume all the evicted keys from this HotGrouper.
+    fn take_evicted_keys(&mut self) -> HashKeys {
+        todo!()
+    }
+
     fn as_any(&self) -> &dyn Any;
 }
 

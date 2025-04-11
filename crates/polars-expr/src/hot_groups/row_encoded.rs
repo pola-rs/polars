@@ -70,6 +70,14 @@ impl HotGrouper for RowEncodedHashHotGrouper {
             keys,
         })
     }
+    
+    fn num_evictions(&self) -> usize {
+        todo!()
+    }
+    
+    fn take_evicted_keys(&mut self) -> HashKeys {
+        todo!()
+    }
 
     fn as_any(&self) -> &dyn Any {
         self
