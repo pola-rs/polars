@@ -37,9 +37,15 @@ pub(super) struct RowGroupDecoder {
 impl RowGroupDecoder {
     pub(super) async fn row_group_data_to_df(
         &self,
-        row_group_data: RowGroupData,
+        mut row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
-        if self.use_prefiltered.is_some() {
+        // If the slice consumes the entire row-group. Don't slice. This allows for prefiltering to
+        // happen more often until we properly support prefiltering with pre-slices.
+        row_group_data.slice.take_if(|slice| {
+            slice.0 == 0 && slice.1 >= row_group_data.row_group_metadata.num_rows()
+        });
+
+        if self.use_prefiltered.is_some() && row_group_data.slice.is_none() {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
             self.row_group_data_to_df_impl(row_group_data).await

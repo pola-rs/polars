@@ -349,22 +349,19 @@ impl ParquetReadImpl {
         let mut use_prefiltered = matches!(self.options.parallel, ParallelStrategy::Prefiltered);
         use_prefiltered |=
             self.predicate.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);
-        use_prefiltered &= self.normalized_pre_slice.is_none();
 
-        let predicate_arrow_field_indices = if use_prefiltered {
-            let predicate = self.predicate.as_ref().unwrap();
-            let mut predicate_arrow_field_indices = predicate
-                .live_columns
-                .iter()
-                // Can be `None` - if the column is e.g. a hive column, or the row index column.
-                .filter_map(|x| projected_arrow_schema.index_of(x))
-                .collect::<Vec<_>>();
-
-            predicate_arrow_field_indices.sort_unstable();
-            predicate_arrow_field_indices
-        } else {
-            vec![]
-        };
+        let mut predicate_arrow_field_indices = vec![];
+        if use_prefiltered {
+            if let Some(predicate) = self.predicate.as_ref() {
+                predicate_arrow_field_indices = predicate
+                    .live_columns
+                    .iter()
+                    // Can be `None` - if the column is e.g. a hive column, or the row index column.
+                    .filter_map(|x| projected_arrow_schema.index_of(x))
+                    .collect::<Vec<_>>();
+                predicate_arrow_field_indices.sort_unstable();
+            }
+        }
 
         let use_prefiltered = use_prefiltered.then(PrefilterMaskSetting::init_from_env);
 
