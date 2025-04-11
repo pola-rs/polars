@@ -2200,6 +2200,19 @@ impl LazyFrame {
         };
         Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }
+
+    /// Returns `True` if the DataFrame contains no rows.
+    ///
+    /// `is_empty` must materialize the DataFrame and might trigger I/O
+    /// that is part of the query.
+    pub fn is_empty(self) -> PolarsResult<bool> {
+        Ok(self
+            .limit(1)
+            // Guarantee at least one column to prevent Err in `.collect()`
+            .with_column(Expr::Literal(LiteralValue::untyped_null()))
+            .collect()?
+            .is_empty())
+    }
 }
 
 /// Utility struct for lazy group_by operation.

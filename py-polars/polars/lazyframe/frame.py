@@ -8123,3 +8123,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             lf = lf.select(columns)
 
         return lf.collect()._to_metadata(stats=stats)
+
+    def is_empty(self) -> bool:
+        """
+        Returns `True` if the DataFrame contains no rows.
+
+        `is_empty` must materialize the DataFrame and might trigger I/O
+        that is part of the query.
+
+        Examples
+        --------
+        >>> df = pl.LazyFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        >>> df.is_empty()
+        False
+        >>> df.filter(pl.col("foo") > 99).is_empty()
+        True
+        """
+        return self._ldf.is_empty()
