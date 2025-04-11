@@ -383,6 +383,7 @@ impl ParquetReadImpl {
         }
 
         RowGroupDecoder {
+            num_pipelines: self.config.num_pipelines,
             projected_arrow_schema,
             row_index,
             predicate: self.predicate.clone(),

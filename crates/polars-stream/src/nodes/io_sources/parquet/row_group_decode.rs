@@ -8,7 +8,9 @@ use polars_core::series::{IsSorted, Series};
 use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_bail};
 use polars_io::hive;
-use polars_io::predicates::{ColumnPredicateExpr, ScanIOPredicate, SpecializedColumnPredicateExpr};
+use polars_io::predicates::{
+    ColumnPredicateExpr, ColumnPredicates, ScanIOPredicate, SpecializedColumnPredicateExpr,
+};
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::_internal::calc_prefilter_cost;
 use polars_io::prelude::try_set_sorted_flag;
@@ -23,6 +25,7 @@ use crate::nodes::TaskPriority;
 
 /// Turns row group data into DataFrames.
 pub(super) struct RowGroupDecoder {
+    pub(super) num_pipelines: usize,
     pub(super) projected_arrow_schema: Arc<ArrowSchema>,
     pub(super) row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
     pub(super) predicate: Option<ScanIOPredicate>,
@@ -391,6 +394,46 @@ fn calc_cols_per_thread(
 
 // Pre-filtered
 
+fn decode_column_in_filter(
+    arrow_field: &ArrowField,
+    use_column_predicates: bool,
+    column_predicates: &ColumnPredicates,
+    row_group_data: &RowGroupData,
+    projection_height: usize,
+) -> PolarsResult<(Column, Bitmap)> {
+    let mut filter = None;
+    let mut constant = None;
+    if use_column_predicates {
+        if let Some((column_predicate, specialized)) =
+            column_predicates.predicates.get(&arrow_field.name)
+        {
+            constant = specialized.as_ref().and_then(|s| match s {
+                SpecializedColumnPredicateExpr::Eq(sc) if !sc.is_null() => Some(sc),
+                SpecializedColumnPredicateExpr::EqMissing(sc) => Some(sc),
+                _ => None,
+            });
+
+            let p = ColumnPredicateExpr::new(
+                arrow_field.name.clone(),
+                DataType::from_arrow_field(arrow_field),
+                column_predicate.clone(),
+                specialized.clone(),
+            );
+            filter = Some(Filter::Predicate(PredicateFilter {
+                predicate: Arc::new(p) as _,
+                include_values: constant.is_none(),
+            }));
+        }
+    }
+    let (mut c, m) = decode_column(arrow_field, &row_group_data, filter, projection_height)?;
+
+    if let Some(constant) = constant {
+        c = Column::new_scalar(c.name().clone(), constant.clone(), m.set_bits());
+    }
+
+    Ok((c, m))
+}
+
 impl RowGroupDecoder {
     async fn row_group_data_to_df_prefiltered(
         &self,
@@ -424,7 +467,6 @@ impl RowGroupDecoder {
         //
         // We do a trick to turn `Iterator<Item = Result<Column>>` into `Iterator<Item = Column>`
         // for `hive::merge_sorted_to_schema_order`.
-        let mut opt_decode_err = None;
 
         let use_column_predicates = scan_predicate.column_predicates.is_sumwise_complete
             && self.row_index.is_none()
@@ -434,61 +476,56 @@ impl RowGroupDecoder {
                 .map(|&i| self.projected_arrow_schema.get_at_index(i).unwrap())
                 .all(|(_, arrow_field)| !arrow_field.dtype().is_nested());
 
-        let decoded_live_cols_iter = self
-            .predicate_arrow_field_indices
-            .iter()
-            .map(|&i| self.projected_arrow_schema.get_at_index(i).unwrap())
-            .map(|(_, arrow_field)| {
-                let (filter, constant) = if !use_column_predicates {
-                    (None, None)
-                } else if let Some((column_predicate, specialized)) = scan_predicate
-                    .column_predicates
-                    .predicates
-                    .get(&arrow_field.name)
-                {
-                    let constant = specialized.as_ref().and_then(|s| match s {
-                        SpecializedColumnPredicateExpr::Eq(sc) if !sc.is_null() => Some(sc),
-                        SpecializedColumnPredicateExpr::EqMissing(sc) => Some(sc),
-                        _ => None,
-                    });
+        let cols_per_thread =
+            (self.predicate_arrow_field_indices.len() / self.num_pipelines).max(1);
+        let task_handles = {
+            let predicate_arrow_field_indices =
+                Arc::new(self.predicate_arrow_field_indices.clone());
+            let projected_arrow_schema = self.projected_arrow_schema.clone();
+            let row_group_data = row_group_data.clone();
 
-                    let p = ColumnPredicateExpr::new(
-                        arrow_field.name.clone(),
-                        DataType::from_arrow_field(arrow_field),
-                        column_predicate.clone(),
-                        specialized.clone(),
-                    );
+            (0..self.predicate_arrow_field_indices.len())
+                .step_by(cols_per_thread)
+                .map(move |offset| {
+                    let row_group_data = row_group_data.clone();
+                    let predicate_arrow_field_indices = predicate_arrow_field_indices.clone();
+                    let projected_arrow_schema = projected_arrow_schema.clone();
+                    let column_predicates = scan_predicate.column_predicates.clone();
 
-                    (
-                        Some(Filter::Predicate(PredicateFilter {
-                            predicate: Arc::new(p) as _,
-                            include_values: constant.is_none(),
-                        })),
-                        constant,
-                    )
-                } else {
-                    (None, None)
-                };
-                let res = decode_column(arrow_field, &row_group_data, filter, projection_height);
+                    async move {
+                        // This is exact as we have already taken out the remainder.
+                        (offset..offset + cols_per_thread)
+                            .map(|i| {
+                                let (_, arrow_field) = projected_arrow_schema
+                                    .get_at_index(predicate_arrow_field_indices[i])
+                                    .unwrap();
 
-                match (res, constant) {
-                    (Ok((c, m)), None) => (c, m),
-                    (Ok((c, m)), Some(constant)) => (
-                        Column::new_scalar(c.name().clone(), constant.clone(), m.set_bits()),
-                        m,
-                    ),
-                    (e @ Err(_), _) => {
-                        opt_decode_err.replace(e);
-                        Default::default()
-                    },
-                }
-            });
+                                decode_column_in_filter(
+                                    arrow_field,
+                                    use_column_predicates,
+                                    column_predicates.as_ref(),
+                                    row_group_data.as_ref(),
+                                    projection_height,
+                                )
+                            })
+                            .collect::<PolarsResult<Vec<_>>>()
+                    }
+                })
+                .map(|fut| {
+                    async_executor::AbortOnDropHandle::new(async_executor::spawn(
+                        TaskPriority::Low,
+                        fut,
+                    ))
+                })
+                .collect::<Vec<_>>()
+        };
 
-        for (c, m) in decoded_live_cols_iter {
-            live_columns.push(c);
-            masks.push(m);
+        for fut in task_handles {
+            for (c, m) in fut.await? {
+                live_columns.push(c);
+                masks.push(m);
+            }
         }
-        opt_decode_err.transpose()?;
 
         let (live_df_filtered, mut mask) = if use_column_predicates {
             assert!(scan_predicate.column_predicates.is_sumwise_complete);
