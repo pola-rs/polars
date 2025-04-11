@@ -405,7 +405,7 @@ impl PySeries {
         })
     }
 
-    fn is_sorted(&self, py: Python, descending: bool, nulls_last: bool) -> PyResult<bool> {
+    fn is_sorted(&mut self, py: Python, descending: bool, nulls_last: bool) -> PyResult<bool> {
         let options = SortOptions {
             descending,
             nulls_last,
@@ -413,7 +413,27 @@ impl PySeries {
             maintain_order: false,
             limit: None,
         };
-        py.enter_polars(|| self.series.is_sorted(options))
+
+        let expect = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+
+        let (check_sorted, sorted_flag) = py.enter_polars(|| {
+            self.series
+                .is_sorted(options)
+                .map(|check| (check, self.series.get_flags().is_sorted()))
+        })?;
+
+        if check_sorted && sorted_flag != expect {
+            let _ = py.enter_polars(|| {
+                self.series.set_sorted_flag(expect);
+                PolarsResult::Ok(())
+            });
+        }
+
+        Ok(check_sorted)
     }
 
     fn clear(&self) -> Self {
