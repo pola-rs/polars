@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
-use polars_io::prelude::{FileMetadata, ParquetOptions};
+use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::dsl::ScanSource;
 
@@ -25,7 +25,15 @@ impl FileReaderBuilder for ParquetReaderBuilder {
     fn reader_capabilities(&self) -> ReaderCapabilities {
         use ReaderCapabilities as RC;
 
-        RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE | RC::SPECIALIZED_FILTER
+        let mut capabilities =
+            RC::ROW_INDEX | RC::PRE_SLICE | RC::NEGATIVE_PRE_SLICE | RC::PARTIAL_FILTER;
+        if matches!(
+            self.options.parallel,
+            ParallelStrategy::Auto | ParallelStrategy::Prefiltered
+        ) {
+            capabilities |= RC::FULL_FILTER;
+        }
+        capabilities
     }
 
     fn build_file_reader(
