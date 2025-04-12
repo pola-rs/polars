@@ -536,3 +536,14 @@ def test_hist_include_lower_22056() -> None:
             }
         )
     assert_frame_equal(result, expected)
+
+
+def test_hist_ulp_edge_22234() -> None:
+    # Uniform path
+    s = pl.Series([1.0, 1e-16, 1.3e-16, -1.0])
+    result = s.hist(bin_count=2)
+    assert result["count"].to_list() == [1, 3]
+
+    # Manual path
+    result = s.hist(bins=[-1, 0, 1])
+    assert result["count"].to_list() == [1, 3]
