@@ -113,7 +113,13 @@ where
                 let idx = scale * (item - min_break);
                 let idx_floor = idx.floor();
                 let idx = if idx == idx_floor {
-                    idx - 1.0
+                    /* If value appears to be on a boundary, check if it's actually above the boundary */
+                    let boundary_idx = idx_floor as usize;
+                    if boundary_idx < breaks.len() && item > breaks[boundary_idx] {
+                        idx_floor 
+                    } else {
+                        idx - 1.0
+                    }
                 } else {
                     idx_floor
                 };
