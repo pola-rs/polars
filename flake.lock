@@ -16,21 +16,6 @@
         "type": "github"
       }
     },
-    "nixpkgs-nightly": {
-      "locked": {
-        "lastModified": 1744400462,
-        "narHash": "sha256-/pi3bB10dJVW++EHRP5HF0NXJJmLOWY8/LMAZPlPbAE=",
-        "owner": "nixos",
-        "repo": "nixpkgs",
-        "rev": "dad6408193f5911d1806e2f6d0d8e8bbce5da203",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nixos",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
     "pyproject-nix": {
       "inputs": {
         "nixpkgs": [
@@ -54,7 +39,6 @@
     "root": {
       "inputs": {
         "nixpkgs": "nixpkgs",
-        "nixpkgs-nightly": "nixpkgs-nightly",
         "pyproject-nix": "pyproject-nix",
         "rust-overlay": "rust-overlay",
         "utils": "utils"
