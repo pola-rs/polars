@@ -3,22 +3,21 @@ use polars_utils::kahan_sum::KahanSum;
 
 use crate::prelude::SeriesSealed;
 
-fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> PolarsResult<Option<f64>> {
+fn central_moment(ca: &Float64Chunked, moment: usize, mean: f64) -> PolarsResult<Option<f64>> {
     let out = match moment {
         0 => Some(1.0),
         1 => Some(0.0),
         _ => {
-            let s_sub_mean = s.cast(&DataType::Float64)? - mean;
-            let s_sub_mean = s_sub_mean.f64().unwrap();
-
+            if ca.null_count() == ca.len() {
+                return Ok(None);
+            }
             let mut sum = KahanSum::default();
             let mut n: IdxSize = 0;
 
-            for a in s_sub_mean {
-                if let Some(a) = a {
-                    n += 1;
-                    sum += a.powi(moment as i32)
-                }
+            for a in ca.into_iter().flatten() {
+                let diff = a - mean;
+                n += 1;
+                sum += diff.powi(moment as i32)
             }
 
             if n == 0 {
@@ -43,20 +42,22 @@ pub trait MomentSeries: SeriesSealed {
     /// see: [scipy](https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024)
     fn skew(&self, bias: bool) -> PolarsResult<Option<f64>> {
         let s = self.as_series();
+        let s = s.cast(&DataType::Float64)?;
+        let ca = s.f64().unwrap();
 
-        let mean = match s.mean() {
+        let mean = match ca.mean() {
             Some(mean) => mean,
             None => return Ok(None),
         };
         // we can unwrap because if it were None, we already return None above
-        let m2 = moment_precomputed_mean(s, 2, mean)?.unwrap();
-        let m3 = moment_precomputed_mean(s, 3, mean)?.unwrap();
+        let m2 = central_moment(ca, 2, mean)?.unwrap();
+        let m3 = central_moment(ca, 3, mean)?.unwrap();
         let zero = m2 <= (f64::EPSILON * mean).powf(2.0);
         let vals = match zero {
             true => f64::NAN,
             false => m3 / m2.powf(1.5),
         };
-        let n = (s.len() - s.null_count()) as f64;
+        let n = (ca.len() - ca.null_count()) as f64;
         let out = if !bias && !zero && n > 3.0 {
             ((n - 1.0) * n).sqrt() / (n - 2.0) * vals
         } else {
@@ -76,20 +77,22 @@ pub trait MomentSeries: SeriesSealed {
     /// see: [scipy](https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1027)
     fn kurtosis(&self, fisher: bool, bias: bool) -> PolarsResult<Option<f64>> {
         let s = self.as_series();
+        let s = s.cast(&DataType::Float64)?;
+        let ca = s.f64().unwrap();
 
-        let mean = match s.mean() {
+        let mean = match ca.mean() {
             Some(mean) => mean,
             None => return Ok(None),
         };
         // we can unwrap because if it were None, we already return None above
-        let m2 = moment_precomputed_mean(s, 2, mean)?.unwrap();
-        let m4 = moment_precomputed_mean(s, 4, mean)?.unwrap();
+        let m2 = central_moment(ca, 2, mean)?.unwrap();
+        let m4 = central_moment(ca, 4, mean)?.unwrap();
         let zero = m2 <= (f64::EPSILON * mean).powf(2.0);
         let vals = match zero {
             true => f64::NAN,
             false => m4 / m2.powf(2.0),
         };
-        let n = (s.len() - s.null_count()) as f64;
+        let n = (ca.len() - ca.null_count()) as f64;
         let out = if !bias && !zero && n > 3.0 {
             3.0 + 1.0 / (n - 2.0) / (n - 3.0)
                 * ((n.powf(2.0) - 1.0) * vals - 3.0 * (n - 1.0).powf(2.0))
@@ -111,8 +114,10 @@ mod test {
     use super::*;
 
     fn moment(s: &Series, moment: usize) -> PolarsResult<Option<f64>> {
+        let s = s.cast(&DataType::Float64).unwrap();
+        let ca = s.f64().unwrap();
         match s.mean() {
-            Some(mean) => moment_precomputed_mean(s, moment, mean),
+            Some(mean) => central_moment(ca, moment, mean),
             None => Ok(None),
         }
     }
