@@ -1830,7 +1830,11 @@ class StringNameSpace:
         """
 
     def to_integer(
-        self, *, base: int | IntoExprColumn = 10, dtype: PolarsIntegerType = Int64, strict: bool = True
+        self,
+        *,
+        base: int | IntoExprColumn = 10,
+        dtype: PolarsIntegerType = Int64,
+        strict: bool = True,
     ) -> Series:
         """
         Convert an String column into a column of dtype with base radix.

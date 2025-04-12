@@ -2405,7 +2405,11 @@ class ExprStringNameSpace:
         return F.when(split.ne_missing([])).then(split).otherwise([""]).explode()
 
     def to_integer(
-        self, *, base: int | IntoExprColumn = 10, dtype: PolarsIntegerType = Int64, strict: bool = True
+        self,
+        *,
+        base: int | IntoExprColumn = 10,
+        dtype: PolarsIntegerType = Int64,
+        strict: bool = True,
     ) -> Expr:
         """
         Convert a String column into an Int64 column with base radix.
