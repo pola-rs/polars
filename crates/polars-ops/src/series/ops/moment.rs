@@ -1,41 +1,31 @@
 use polars_core::prelude::*;
+use polars_utils::kahan_sum::KahanSum;
 
 use crate::prelude::SeriesSealed;
 
 fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> PolarsResult<Option<f64>> {
-    // see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L922
     let out = match moment {
         0 => Some(1.0),
         1 => Some(0.0),
         _ => {
-            let mut n_list = vec![moment];
-            let mut current_n = moment;
-            while current_n > 2 {
-                if current_n % 2 == 1 {
-                    current_n = (current_n - 1) / 2
-                } else {
-                    current_n /= 2
+            let s_sub_mean = s.cast(&DataType::Float64)? - mean;
+            let s_sub_mean = s_sub_mean.f64().unwrap();
+
+            let mut sum = KahanSum::default();
+            let mut n: IdxSize = 0;
+
+            for a in s_sub_mean {
+                if let Some(a) = a {
+                    n += 1;
+                    sum += a.powi(moment as i32)
                 }
-                n_list.push(current_n)
             }
 
-            let a_zero_mean = s.cast(&DataType::Float64)? - mean;
-
-            let mut s = if n_list.pop().unwrap() == 1 {
-                // TODO remove: false positive
-                #[allow(clippy::redundant_clone)]
-                a_zero_mean.clone()
+            if n == 0 {
+                None
             } else {
-                (&a_zero_mean * &a_zero_mean)?
-            };
-
-            for n in n_list.iter().rev() {
-                s = (&s * &s)?;
-                if n % 2 == 1 {
-                    s = (&s * &a_zero_mean)?;
-                }
+                Some(sum.sum() / n as f64)
             }
-            s.mean()
         },
     };
     Ok(out)
