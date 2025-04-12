@@ -34,6 +34,17 @@
             rust-overlay.overlays.default
           ];
         };
+        lib = pkgs.lib;
+
+        rustNightlyToolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
+          extensions = [
+            "rust-analyzer"
+            "rust-src"
+            "llvm-tools"
+            "miri"
+          ];
+          targets = [ "wasm32-unknown-emscripten" ];
+        };
 
         # The extra-index-url produces errors that we cannot really deal with.
         requirements-ci-text =
@@ -577,21 +588,345 @@
                 packages-docs = (requirements-docs.renderers.withPackages { inherit python; }) python-pkgs;
                 packages-lint = (requirements-lint.renderers.withPackages { inherit python; }) python-pkgs;
               in
-              (packages-dev ++ packages-ci ++ packages-docs ++ packages-lint)
+              (
+                packages-dev
+                ++ packages-ci
+                ++ packages-docs
+                ++ packages-lint
+                ++ (with python-pkgs; [
+                  importlib-resources
+                  psutil
+                  hvplot
+                  seaborn
+
+                  duckdb
+                  pandas
+                  jupyterlab
+
+                  pygithub
+
+                  # Used for polars-benchmark
+                  pydantic-settings
+
+                  # # Used for Altair SVG / PNG conversions
+                  # (localPyPkg ./python-packages/vl-convert-python)
+                ])
+              )
             )
           );
       in
       {
-        devShells.default = pkgs.mkShell {
-          packages = [ pythonEnv ];
+        devShells.default =
+          let
+            aliasToScript =
+              alias:
+              let
+                pwd = if alias ? pwd then "$POLARS_ROOT/${alias.pwd}" else "$POLARS_ROOT";
+              in
+              ''
+                set -e
+                pushd "${pwd}" > /dev/null
+                echo "[INFO]: Changed directory to ${pwd}"
+                ${alias.cmd}
+                popd > /dev/null
+              '';
+            buildPy =
+              alias: cmd:
+              let
+                targetDir = "$POLARS_ROOT/py-polars/polars";
+              in
+              ''
+                ${cmd}
+                mv "${targetDir}/polars.abi3.so" "${targetDir}/polars.abi3.so.${alias}"
+                ln -sf "${targetDir}/polars.abi3.so.${alias}" "${targetDir}/polars.abi3.so"
+              '';
+            step = title: alias: ''
+              echo '[${title}]'
+              ${aliasToScript alias}
+              echo '${title} Done ✅'
+              echo
+            '';
+            aliases = rec {
+              check = {
+                cmd = "cargo check --workspace --all-targets --all-features";
+                doc = "Run cargo check with all features";
+              };
+              typos = {
+                cmd = "typos";
+                doc = "Run a Spell Check with Typos";
+              };
+              clippy-all = {
+                cmd = "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro";
+                doc = "Run clippy with all features";
+              };
+              clippy-default = {
+                cmd = "cargo clippy --all-targets --locked -- -D warnings -D clippy::dbg_macro";
+                doc = "Run clippy with default features";
+              };
+              fmt = {
+                cmd = "cargo fmt --all";
+                doc = "Run autoformatting";
+              };
+              pyselect = {
+                pwd = "py-polars";
+                cmd = ''
+                  								if [ -z "$1" ]; then
+                  									echo "Usage $0 <debug/debug-release>"
+                                    exit 2
+                  								fi
 
-          shellHook = ''
-            export PYTHONPATH="$PYTHONPATH:$PWD/py-polars"
-          '';
+                                  ln -sf "$POLARS_ROOT/py-polars/polars/polars.abi3.so.$1.latest" polars/polars.abi3.so
+                '';
+                doc = "Build the python library";
+              };
+              pybuild = {
+                pwd = "py-polars";
+                cmd = buildPy "debug" "maturin develop -m $POLARS_ROOT/py-polars/Cargo.toml \"$@\"";
+                doc = "Build the python library";
+              };
+              pybuild-mindebug = {
+                pwd = "py-polars";
+                cmd = buildPy "mindebug" "maturin develop --profile mindebug-dev \"$@\"";
+                doc = "Build the python library with minimal debug information";
+              };
+              pybuild-nodebug-release = {
+                pwd = "py-polars";
+                cmd = buildPy "nodebug-release" "maturin develop --profile nodebug-release \"$@\"";
+                doc = "Build the python library in release mode without debug symbols";
+              };
+              pybuild-release = {
+                pwd = "py-polars";
+                cmd = buildPy "release" "maturin develop --profile release \"$@\"";
+                doc = "Build the python library in release mode with minimal debug symbols";
+              };
+              pybuild-debug-release = {
+                pwd = "py-polars";
+                cmd = buildPy "debug-release" "maturin develop --profile debug-release \"$@\"";
+                doc = "Build the python library in release mode with full debug symbols";
+              };
+              pybuild-dist-release = {
+                pwd = "py-polars";
+                cmd = buildPy "dist-release" "maturin develop --profile dist-release \"$@\"";
+                doc = "Build the python library in release mode which would be distributed to users";
+              };
+              pyselect-build = {
+                pwd = "py-polars";
+                cmd = ''
+                  if [ -z "$1" ]; then
+                      echo "Usage: $0 <BUILD>" > 2
+                      exit 2
+                  fi
 
-        };
-        packages.hello = pkgs.hello;
-        packages.default = pkgs.hello;
+                  TARGET_DIR="$POLARS_ROOT/py-polars/polars"
+                  ln -sf "$TARGET_DIR/polars.abi3.so.$1" "$TARGET_DIR/polars.abi3.so"
+                '';
+                doc = "Select a previous build of polars";
+              };
+              pytest-all = {
+                pwd = "py-polars";
+                cmd = "pytest -n auto --dist=loadgroup \"$@\"";
+                doc = "Run the default python tests";
+              };
+              pytest-release = {
+                pwd = "py-polars";
+                cmd = "pytest -n auto --dist=loadgroup -m 'not release and not benchmark and not docs' \"$@\"";
+                doc = "Run the release python tests";
+              };
+              pytest = {
+                pwd = "py-polars";
+                cmd = "pytest \"$@\"";
+                doc = "Run the default python tests";
+              };
+              pyfmt = {
+                pwd = "py-polars";
+                cmd = ''
+                  ruff check py-polars
+                  ruff format py-polars
+                  dprint fmt crates
+                  typos crates
+                  typos py-polars
+                '';
+                doc = "Run python autoformatting";
+              };
+              rstest = {
+                pwd = "crates";
+                cmd = ''
+                  cargo test --all-features \
+                    -p polars-compute       \
+                    -p polars-core          \
+                    -p polars-io            \
+                    -p polars-lazy          \
+                    -p polars-ops           \
+                    -p polars-plan          \
+                    -p polars-row           \
+                    -p polars-sql           \
+                    -p polars-time          \
+                    -p polars-utils         \
+                    --                      \
+                    --test-threads=2        \
+                '';
+                doc = "Run the Rust tests";
+              };
+              rsnextest = {
+                pwd = "crates";
+                cmd = ''
+                  cargo nextest run --all-features \
+                    -p polars-compute              \
+                    -p polars-core                 \
+                    -p polars-io                   \
+                    -p polars-lazy                 \
+                    -p polars-ops                  \
+                    -p polars-plan                 \
+                    -p polars-row                  \
+                    -p polars-sql                  \
+                    -p polars-time                 \
+                    -p polars-utils                \
+                '';
+                doc = "Run the Rust tests with Cargo-Nextest";
+              };
+              precommit = {
+                cmd = ''
+                  ${step "Rust Format" fmt}
+                  ${step "Python Format" pyfmt}
+                  ${step "Spell Check" typos}
+                  ${step "Clippy All" clippy-all}
+                  ${step "Clippy Default" clippy-default}
+                '';
+                doc = "Run the checks to do before committing";
+              };
+              prepush = {
+                cmd = ''
+                  ${aliasToScript precommit}
+                  ${step "Rust Tests" rstest}
+                  ${step "Python Build" pybuild-mindebug}
+                  ${step "Python Tests" pytest-all}
+                '';
+                doc = "Run the checks to do before pushing";
+              };
+              profile-setup = {
+                cmd = ''
+                  echo '1'    | sudo tee /proc/sys/kernel/perf_event_paranoid
+                  echo '1024' | sudo tee /proc/sys/kernel/perf_event_mlock_kb
+                '';
+                doc = "Setup the environment for profiling";
+              };
+              debug-setup = {
+                cmd = ''
+                  echo '0' | sudo tee /proc/sys/kernel/yama/ptrace_scope
+                '';
+                doc = "Setup the environment for attach debugging";
+              };
+            };
+
+            mapAttrsToList = lib.attrsets.mapAttrsToList;
+          in
+          pkgs.mkShell {
+            packages =
+              with pkgs;
+              [
+                pythonEnv
+
+                cmake
+                gnumake
+
+                maturin
+                rustNightlyToolchain
+
+                typos
+                mypy
+                dprint
+
+                zlib
+
+                cargo-nextest
+
+                linuxPackages_latest.perf
+                samply
+                hyperfine
+
+                graphviz
+
+                openssl
+                pkg-config
+              ]
+              ++ (mapAttrsToList (
+                name: value: pkgs.writeShellScriptBin "pl-${name}" (aliasToScript value)
+              ) aliases);
+
+            shellHook =
+              let
+                concatStrings = lib.concatStrings;
+
+                max =
+                  x: y:
+                  assert builtins.isInt x;
+                  assert builtins.isInt y;
+                  if x < y then y else x;
+                listMax = lib.foldr max 0;
+                maxLength = listMax (mapAttrsToList (name: _: (builtins.stringLength name)) aliases);
+                nSpaces = n: (lib.concatMapStrings (_: " ") (lib.range 1 n));
+              in
+              ''
+                						export POLARS_ROOT="$PWD"
+                            export PYTHONPATH="$PYTHONPATH:$PWD/py-polars"
+                            export CARGO_BUILD_JOBS=8
+
+                            echo
+                            echo 'Defined Aliases:'
+                            ${concatStrings (
+                              mapAttrsToList (name: value: ''
+                                echo ' - pl-${name}:${nSpaces (maxLength - (builtins.stringLength name))} ${value.doc}'
+                              '') aliases
+                            )}
+              '';
+
+          };
+        packages.default =
+          let
+            project = builtins.fromTOML (builtins.readFile ./py-polars/Cargo.toml);
+            rustNightlyPlatform = pkgs.makeRustPlatform {
+              cargo = rustNightlyToolchain;
+              rustc = rustNightlyToolchain;
+            };
+          in
+          pkgs.python3Packages.buildPythonPackage {
+            pname = "polars";
+            version = project.package.version;
+
+            build-system = [ rustNightlyPlatform.maturinBuildHook ];
+
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+              rustNightlyPlatform.cargoSetupHook
+              rustNightlyPlatform.cargoBuildHook
+              rustNightlyPlatform.cargoInstallHook
+              rustNightlyToolchain
+            ];
+
+            maturinBuildFlags = [
+              "-m"
+              "py-polars/Cargo.toml"
+            ];
+            postInstall = ''
+              						# Move polars.abi3.so -> polars.so
+              						local polarsSo=""
+              						local soName=""
+              						while IFS= read -r -d "" p ; do
+              							polarsSo=$p
+              							soName="$(basename "$polarsSo")"
+              							[[ "$soName" == polars.so ]] && break
+              						done < <( find "$out" -iname "polars*.so" -print0 )
+              						[[ -z "''${polarsSo:-}" ]] && echo "polars.so not found" >&2 && exit 1
+              						if [[ "$soName" != polars.so ]] ; then
+              							mv "$polarsSo" "$(dirname "$polarsSo")/polars.so"
+              						fi
+              					'';
+
+            src = ./.;
+            cargoDeps = pkgs.rustPlatform.importCargoLock {
+              lockFile = ./Cargo.lock;
+            };
+          };
       }
     );
 }
