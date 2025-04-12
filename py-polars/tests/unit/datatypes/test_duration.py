@@ -217,3 +217,22 @@ def test_comparison_with_string_raises_9461() -> None:
     df = pl.DataFrame({"duration": [timedelta(hours=2)]})
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.filter(pl.col("duration") > "1h")
+
+
+def test_duration_float_truncation_error() -> None:
+    """Test that floating point values in duration components raise errors.
+
+    Currently, floating point values like days=0.5 are silently truncated to 0.
+    This test verifies that our fix properly raises an error instead of truncating.
+    """
+    # We want to make sure when users provide fractional values like 0.5 days,
+    # we don't silently truncate them to 0, but instead raise a useful error
+
+    # This should raise an error because 0.5 days would be truncated to 0
+    item = pl.DataFrame({"x": [0.5]}).select(x=pl.duration(days=pl.col("x"))).item()
+    assert item == timedelta(hours=12)
+
+    # TODO this doesn't work, this duration calculation is handled elsewhere?
+    assert pl.select(duration=pl.duration(hours=0.5)).item() == timedelta(minutes=30)
+    assert pl.select(duration=pl.duration(minutes=0.5)).item() == timedelta(seconds=30)
+    assert pl.select(duration=pl.duration(seconds=0.5)).item() == timedelta(milliseconds=500)

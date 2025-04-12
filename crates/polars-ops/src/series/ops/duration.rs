@@ -12,56 +12,72 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
     }
 
     // TODO: Handle overflow for UInt64
-    let weeks = s[0].cast(&DataType::Int64).unwrap();
-    let days = s[1].cast(&DataType::Int64).unwrap();
-    let hours = s[2].cast(&DataType::Int64).unwrap();
-    let minutes = s[3].cast(&DataType::Int64).unwrap();
-    let seconds = s[4].cast(&DataType::Int64).unwrap();
-    let mut milliseconds = s[5].cast(&DataType::Int64).unwrap();
-    let mut microseconds = s[6].cast(&DataType::Int64).unwrap();
-    let mut nanoseconds = s[7].cast(&DataType::Int64).unwrap();
+    let weeks = &s[0];
+    let days = &s[1];
+    let hours = &s[2];
+    let minutes = &s[3];
+    let seconds = &s[4];
+    let milliseconds = &s[5];
+    let microseconds = &s[6];
+    let nanoseconds = &s[7];
 
     let is_scalar = |s: &Column| s.len() == 1;
-    let is_zero_scalar = |s: &Column| is_scalar(s) && s.get(0).unwrap() == AnyValue::Int64(0);
+    let is_zero_scalar =
+        |s: &Column| is_scalar(s) && s.get(0).unwrap() == AnyValue::zero_sum(s.dtype());
 
     // Process subseconds
     let max_len = s.iter().map(|s| s.len()).max().unwrap();
     let mut duration = match time_unit {
         TimeUnit::Microseconds => {
-            if is_scalar(&microseconds) {
-                microseconds = microseconds.new_from_index(0, max_len);
+            let mut duration = microseconds.cast(&DataType::Int64).unwrap();
+            if is_scalar(&duration) {
+                duration = duration.new_from_index(0, max_len);
             }
             if !is_zero_scalar(&nanoseconds) {
-                microseconds = (microseconds + (nanoseconds.wrapping_trunc_div_scalar(1_000)))?;
+                duration = (duration
+                    + nanoseconds
+                        .wrapping_trunc_div_scalar(1_000)
+                        .cast(&DataType::Int64)
+                        .unwrap())?;
             }
             if !is_zero_scalar(&milliseconds) {
-                microseconds = (microseconds + milliseconds * 1_000)?;
+                duration = (duration + (milliseconds * 1_000).cast(&DataType::Int64).unwrap())?;
             }
-            microseconds
+            duration
         },
         TimeUnit::Nanoseconds => {
+            let mut duration = nanoseconds.cast(&DataType::Int64).unwrap();
             if is_scalar(&nanoseconds) {
-                nanoseconds = nanoseconds.new_from_index(0, max_len);
+                duration = duration.new_from_index(0, max_len);
             }
             if !is_zero_scalar(&microseconds) {
-                nanoseconds = (nanoseconds + microseconds * 1_000)?;
+                duration = (duration + (microseconds * 1_000).cast(&DataType::Int64).unwrap())?;
             }
             if !is_zero_scalar(&milliseconds) {
-                nanoseconds = (nanoseconds + milliseconds * 1_000_000)?;
+                duration = (duration + (milliseconds * 1_000_000).cast(&DataType::Int64).unwrap())?;
             }
-            nanoseconds
+            duration
         },
         TimeUnit::Milliseconds => {
+            let mut duration = milliseconds.cast(&DataType::Int64).unwrap();
             if is_scalar(&milliseconds) {
-                milliseconds = milliseconds.new_from_index(0, max_len);
+                duration = duration.new_from_index(0, max_len);
             }
             if !is_zero_scalar(&nanoseconds) {
-                milliseconds = (milliseconds + (nanoseconds.wrapping_trunc_div_scalar(1_000_000)))?;
+                duration = (duration
+                    + nanoseconds
+                        .wrapping_trunc_div_scalar(1_000_000)
+                        .cast(&DataType::Int64)
+                        .unwrap())?;
             }
             if !is_zero_scalar(&microseconds) {
-                milliseconds = (milliseconds + (microseconds.wrapping_trunc_div_scalar(1_000)))?;
+                duration = (duration
+                    + microseconds
+                        .wrapping_trunc_div_scalar(1_000)
+                        .cast(&DataType::Int64)
+                        .unwrap())?;
             }
-            milliseconds
+            duration
         },
     };
 
@@ -72,19 +88,28 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
         TimeUnit::Milliseconds => MILLISECONDS,
     };
     if !is_zero_scalar(&seconds) {
-        duration = (duration + seconds * multiplier)?;
+        duration = (duration + (seconds * multiplier).cast(&DataType::Int64).unwrap())?;
     }
     if !is_zero_scalar(&minutes) {
-        duration = (duration + minutes * multiplier * 60)?;
+        duration = (duration + (minutes * multiplier * 60).cast(&DataType::Int64).unwrap())?;
     }
     if !is_zero_scalar(&hours) {
-        duration = (duration + hours * multiplier * 60 * 60)?;
+        duration = (duration
+            + (hours * multiplier * 60 * 60)
+                .cast(&DataType::Int64)
+                .unwrap())?;
     }
     if !is_zero_scalar(&days) {
-        duration = (duration + days * multiplier * SECONDS_IN_DAY)?;
+        duration = (duration
+            + (days * multiplier * SECONDS_IN_DAY)
+                .cast(&DataType::Int64)
+                .unwrap())?;
     }
     if !is_zero_scalar(&weeks) {
-        duration = (duration + weeks * multiplier * SECONDS_IN_DAY * 7)?;
+        duration = (duration
+            + (weeks * multiplier * SECONDS_IN_DAY * 7)
+                .cast(&DataType::Int64)
+                .unwrap())?;
     }
 
     duration.cast(&DataType::Duration(time_unit))
