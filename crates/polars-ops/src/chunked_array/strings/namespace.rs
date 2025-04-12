@@ -96,7 +96,7 @@ pub trait StringNameSpaceImpl: AsString {
                 ca.clone()
             } else {
                 let all_failures = ca.filter(&failure_mask)?;
-                all_failures.unique()?.slice(0, 10).sort(false)
+                all_failures.slice(0, 10)
             };
             let some_error_msg = match base.len() {
                 1 => {
