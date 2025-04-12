@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
+from polars.datatypes import Int64
 from polars import functions as F
 from polars._utils.deprecation import (
     deprecate_function,
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         PolarsDataType,
+        PolarsIntegerType,
         PolarsTemporalType,
         TimeUnit,
         TransferEncoding,
@@ -2404,7 +2406,7 @@ class ExprStringNameSpace:
         return F.when(split.ne_missing([])).then(split).otherwise([""]).explode()
 
     def to_integer(
-        self, *, base: int | IntoExprColumn = 10, strict: bool = True
+        self, *, base: int | IntoExprColumn = 10, dtype: PolarsIntegerType = Int64, strict: bool = True
     ) -> Expr:
         """
         Convert a String column into an Int64 column with base radix.
@@ -2427,12 +2429,12 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
-        >>> df.with_columns(parsed=pl.col("bin").str.to_integer(base=2, strict=False))
+        >>> df.with_columns(parsed=pl.col("bin").str.to_integer(base=2, dtype=Int32, strict=False))
         shape: (4, 2)
         ┌─────────┬────────┐
         │ bin     ┆ parsed │
         │ ---     ┆ ---    │
-        │ str     ┆ i64    │
+        │ str     ┆ i32    │
         ╞═════════╪════════╡
         │ 110     ┆ 6      │
         │ 101     ┆ 5      │
@@ -2455,7 +2457,7 @@ class ExprStringNameSpace:
         └──────┴────────┘
         """
         base = parse_into_expression(base, str_as_lit=False)
-        return wrap_expr(self._pyexpr.str_to_integer(base, strict))
+        return wrap_expr(self._pyexpr.str_to_integer(base, dtype, strict))
 
     def contains_any(
         self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False

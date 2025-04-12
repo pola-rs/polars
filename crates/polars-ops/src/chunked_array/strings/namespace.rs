@@ -24,6 +24,77 @@ where
     f
 }
 
+#[cfg(feature = "string_to_integer")]
+// This is a helper function used in the `to_integer` method of the StringNameSpaceImpl trait.
+fn parse_integer<T>(ca: &ChunkedArray<StringType>,  base: &UInt32Chunked, strict: bool) -> PolarsResult<Series>
+where
+    T: PolarsIntegerType,
+    T::Native: Num,
+    ChunkedArray<T>: IntoSeries,
+    <<T as polars_core::datatypes::PolarsNumericType>::Native as num_traits::Num>::FromStrRadixErr: std::fmt::Display,
+{
+    let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> PolarsResult<Option<T::Native>> {
+        let (Some(s), Some(base)) = (opt_s, opt_base) else {
+            return Ok(None);
+        };
+
+        if !(2..=36).contains(&base) {
+            polars_bail!(ComputeError: "`to_integer` called with invalid base '{base}'");
+        }
+
+        Ok(T::Native::from_str_radix(s, base).ok())
+    };
+    let out: ChunkedArray<T> = broadcast_try_binary_elementwise(ca, base, f)?;
+    if strict && ca.null_count() != out.null_count() {
+        let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
+        let n_failures = failure_mask.num_trues();
+        if n_failures == 0 {
+            return Ok(out.into_series());
+        }
+
+        let some_failures = if ca.len() == 1 {
+            ca.clone()
+        } else {
+            let all_failures = ca.filter(&failure_mask)?;
+            all_failures.unique()?.slice(0, 10).sort(false)
+        };
+        let some_error_msg = match base.len() {
+            1 => {
+                // we can ensure that base is not null.
+                let base = base.get(0).unwrap();
+                some_failures
+                    .get(0)
+                    .and_then(|s| T::Native::from_str_radix(s, base).err())
+                    .map_or_else(
+                        || unreachable!("failed to extract ParseIntError"),
+                        |e| format!("{}", e),
+                    )
+            },
+            _ => {
+                let base_failures = base.filter(&failure_mask)?;
+                some_failures
+                    .get(0)
+                    .zip(base_failures.get(0))
+                    .and_then(|(s, base)| T::Native::from_str_radix(s, base).err())
+                    .map_or_else(
+                        || unreachable!("failed to extract ParseIntError"),
+                        |e| format!("{}", e),
+                    )
+            },
+        };
+        polars_bail!(
+            ComputeError:
+            "strict integer parsing failed for {} value(s): {}; error message for the \
+             first shown value: '{}' (consider non-strict parsing)",
+            n_failures,
+            some_failures.into_series().fmt_list(),
+            some_error_msg
+        );
+    }
+
+    Ok(out.into_series())
+}
+
 pub trait StringNameSpaceImpl: AsString {
     #[cfg(not(feature = "binary_encoding"))]
     fn hex_decode(&self) -> PolarsResult<StringChunked> {
@@ -62,8 +133,8 @@ pub trait StringNameSpaceImpl: AsString {
     }
 
     #[cfg(feature = "string_to_integer")]
-    // Parse a string number with base _radix_ into a decimal (i64)
-    fn to_integer(&self, base: &UInt32Chunked, strict: bool) -> PolarsResult<Int64Chunked> {
+    // Parse a string number with base _radix_ into a decimal dtype
+    fn to_integer(&self, base: &UInt32Chunked, dtype: Option<DataType>, strict: bool) -> PolarsResult<Series> {
         let ca = self.as_string();
 
         polars_ensure!(
@@ -73,66 +144,18 @@ pub trait StringNameSpaceImpl: AsString {
             base.len()
         );
 
-        let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> PolarsResult<Option<i64>> {
-            let (Some(s), Some(base)) = (opt_s, opt_base) else {
-                return Ok(None);
-            };
-
-            if !(2..=36).contains(&base) {
-                polars_bail!(ComputeError: "`to_integer` called with invalid base '{base}'");
-            }
-
-            Ok(<i64 as Num>::from_str_radix(s, base).ok())
-        };
-        let out = broadcast_try_binary_elementwise(ca, base, f)?;
-        if strict && ca.null_count() != out.null_count() {
-            let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
-            let n_failures = failure_mask.num_trues();
-            if n_failures == 0 {
-                return Ok(out);
-            }
-
-            let some_failures = if ca.len() == 1 {
-                ca.clone()
-            } else {
-                let all_failures = ca.filter(&failure_mask)?;
-                all_failures.unique()?.slice(0, 10).sort(false)
-            };
-            let some_error_msg = match base.len() {
-                1 => {
-                    // we can ensure that base is not null.
-                    let base = base.get(0).unwrap();
-                    some_failures
-                        .get(0)
-                        .and_then(|s| <i64 as Num>::from_str_radix(s, base).err())
-                        .map_or_else(
-                            || unreachable!("failed to extract ParseIntError"),
-                            |e| format!("{}", e),
-                        )
-                },
-                _ => {
-                    let base_failures = base.filter(&failure_mask)?;
-                    some_failures
-                        .get(0)
-                        .zip(base_failures.get(0))
-                        .and_then(|(s, base)| <i64 as Num>::from_str_radix(s, base).err())
-                        .map_or_else(
-                            || unreachable!("failed to extract ParseIntError"),
-                            |e| format!("{}", e),
-                        )
-                },
-            };
-            polars_bail!(
-                ComputeError:
-                "strict integer parsing failed for {} value(s): {}; error message for the \
-                first shown value: '{}' (consider non-strict parsing)",
-                n_failures,
-                some_failures.into_series().fmt_list(),
-                some_error_msg
-            );
-        };
-
-        Ok(out)
+        match dtype.unwrap_or(DataType::Int64) {
+            DataType::Int8 => parse_integer::<Int8Type>(ca, base, strict),
+            DataType::Int16 => parse_integer::<Int16Type>(ca, base, strict),
+            DataType::Int32 => parse_integer::<Int32Type>(ca, base, strict),
+            DataType::Int64 => parse_integer::<Int64Type>(ca, base, strict),
+            DataType::Int128 => parse_integer::<Int128Type>(ca, base, strict),
+            DataType::UInt8 => parse_integer::<UInt8Type>(ca, base, strict),
+            DataType::UInt16 => parse_integer::<UInt16Type>(ca, base, strict),
+            DataType::UInt32 => parse_integer::<UInt32Type>(ca, base, strict),
+            DataType::UInt64 => parse_integer::<UInt64Type>(ca, base, strict),
+            dtype => polars_bail!(InvalidOperation: "Invalid dtype {:?}", dtype),
+        }
     }
 
     fn contains_chunked(

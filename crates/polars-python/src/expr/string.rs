@@ -220,11 +220,12 @@ impl PyExpr {
         self.inner.clone().str().base64_decode(strict).into()
     }
 
-    fn str_to_integer(&self, base: Self, strict: bool) -> Self {
+    #[pyo3(signature = (base, dtype=Some(Wrap(DataType::Int64)), strict=true))]
+    fn str_to_integer(&self, base: Self, dtype: Option<Wrap<DataType>>, strict: bool) -> Self {
         self.inner
             .clone()
             .str()
-            .to_integer(base.inner, strict)
+            .to_integer(base.inner, dtype.map(|wrap| wrap.0), strict)
             .with_fmt("str.to_integer")
             .into()
     }
