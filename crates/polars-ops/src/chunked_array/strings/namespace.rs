@@ -26,12 +26,17 @@ where
 
 #[cfg(feature = "string_to_integer")]
 // This is a helper function used in the `to_integer` method of the StringNameSpaceImpl trait.
-fn parse_integer<T>(ca: &ChunkedArray<StringType>,  base: &UInt32Chunked, strict: bool) -> PolarsResult<Series>
+fn parse_integer<T>(
+    ca: &ChunkedArray<StringType>,
+    base: &UInt32Chunked,
+    strict: bool,
+) -> PolarsResult<Series>
 where
     T: PolarsIntegerType,
     T::Native: Num,
     ChunkedArray<T>: IntoSeries,
-    <<T as polars_core::datatypes::PolarsNumericType>::Native as num_traits::Num>::FromStrRadixErr: std::fmt::Display,
+    <<T as polars_core::datatypes::PolarsNumericType>::Native as num_traits::Num>::FromStrRadixErr:
+        std::fmt::Display,
 {
     let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> PolarsResult<Option<T::Native>> {
         let (Some(s), Some(base)) = (opt_s, opt_base) else {
@@ -134,7 +139,12 @@ pub trait StringNameSpaceImpl: AsString {
 
     #[cfg(feature = "string_to_integer")]
     // Parse a string number with base _radix_ into a decimal dtype
-    fn to_integer(&self, base: &UInt32Chunked, dtype: Option<DataType>, strict: bool) -> PolarsResult<Series> {
+    fn to_integer(
+        &self,
+        base: &UInt32Chunked,
+        dtype: Option<DataType>,
+        strict: bool,
+    ) -> PolarsResult<Series> {
         let ca = self.as_string();
 
         polars_ensure!(

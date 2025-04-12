@@ -438,7 +438,8 @@ impl StringNameSpace {
     /// Parse string in base radix into decimal.
     /// The resulting dtype is `dtype`
     pub fn to_integer(self, base: Expr, dtype: Option<DataType>, strict: bool) -> Expr {
-        self.0.map_binary(StringFunction::ToInteger {dtype, strict}, base)
+        self.0
+            .map_binary(StringFunction::ToInteger { dtype, strict }, base)
     }
 
     /// Return the length of each string as the number of bytes.

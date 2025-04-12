@@ -1104,7 +1104,11 @@ pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "string_to_integer")]
-pub(super) fn to_integer(s: &[Column], dtype: &Option<DataType>, strict: bool) -> PolarsResult<Column> {
+pub(super) fn to_integer(
+    s: &[Column],
+    dtype: &Option<DataType>,
+    strict: bool,
+) -> PolarsResult<Column> {
     let ca = s[0].str()?;
     let base = s[1].strict_cast(&DataType::UInt32)?;
     ca.to_integer(base.u32()?, dtype.clone(), strict)
