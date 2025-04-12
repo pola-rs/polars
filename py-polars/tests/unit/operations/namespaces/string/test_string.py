@@ -507,9 +507,9 @@ def test_str_to_integer_base_literal() -> None:
 
 def test_str_to_integer_i8() -> None:
     df = pl.DataFrame(
-        {"i8": ["1111111", "ff", "-128", None, "42"], "base": [2, 16, 10, 8, None]}
+        {"str": ["1111111", "7f", "-128", None, "42"], "base": [2, 16, 10, 8, None]}
     )
-    out = df.select(base_expr=pl.col("i8").str.to_integer(base="base", dtype=pl.Int8))
+    out = df.select(i8=pl.col("str").str.to_integer(base="base", dtype=pl.Int8))
     expected = pl.DataFrame(
         {"i8": [127, 127, -128, None, None]},
         schema={"i8": pl.Int8},
@@ -517,7 +517,7 @@ def test_str_to_integer_i8() -> None:
     assert_frame_equal(out, expected)
 
     # test strict raise
-    df = pl.DataFrame({"i8": ["110", "ff", None], "base": [2, 10, 8]})
+    df = pl.DataFrame({"i8": ["110", "7f", None], "base": [2, 10, 8]})
 
     with pytest.raises(ComputeError):
         df.select(pl.col("i8").str.to_integer(base="base", dtype=pl.Int8))
@@ -526,7 +526,7 @@ def test_str_to_integer_i8() -> None:
 def test_str_to_integer_i128() -> None:
     df = pl.DataFrame(
         {
-            "i128": [
+            "str": [
                     "6129899454972456276923959272",
                     "1A44E53BFEBA967E6682FBB0",
                     "10100110111110110101110100000100110010101111000100011000000100010101010101101011111111101000",
@@ -536,7 +536,7 @@ def test_str_to_integer_i128() -> None:
             "base": [10, 16, 2, 8, None]
         }
     )
-    out = df.select(base_expr=pl.col("i128").str.to_integer(base="base", dtype=pl.Int128))
+    out = df.select(i128=pl.col("str").str.to_integer(base="base", dtype=pl.Int128))
     expected = pl.DataFrame(
         {
             "i128": [

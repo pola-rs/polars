@@ -2429,7 +2429,9 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
         >>> df.with_columns(
-        ...     parsed=pl.col("bin").str.to_integer(base=2, dtype=pl.Int32, strict=False)
+        ...     parsed=pl.col("bin").str.to_integer(
+        ...         base=2, dtype=pl.Int32, strict=False
+        ...     )
         ... )
         shape: (4, 2)
         ┌─────────┬────────┐
