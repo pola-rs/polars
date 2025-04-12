@@ -1856,7 +1856,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
-        >>> s.str.to_integer(base=2, dtype=Int32, strict=False)
+        >>> s.str.to_integer(base=2, dtype=pl.Int32, strict=False)
         shape: (4,)
         Series: 'bin' [i32]
         [

@@ -5,7 +5,6 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
-from polars.datatypes import Int64
 from polars import functions as F
 from polars._utils.deprecation import (
     deprecate_function,
@@ -15,7 +14,7 @@ from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import find_stacklevel, no_default
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Time, parse_into_dtype
+from polars.datatypes import Date, Datetime, Int64, Time, parse_into_dtype
 from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.exceptions import ChronoFormatWarning
 
@@ -2429,7 +2428,9 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
-        >>> df.with_columns(parsed=pl.col("bin").str.to_integer(base=2, dtype=Int32, strict=False))
+        >>> df.with_columns(
+        ...     parsed=pl.col("bin").str.to_integer(base=2, dtype=pl.Int32, strict=False)
+        ... )
         shape: (4, 2)
         ┌─────────┬────────┐
         │ bin     ┆ parsed │
