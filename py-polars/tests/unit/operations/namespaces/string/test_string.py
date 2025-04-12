@@ -561,7 +561,7 @@ def test_str_to_integer_i128() -> None:
                 None,
                 "7798994549724957734429272",
             ],
-            "base": [10, 16, 2, 8, None],
+            "base": [2, 10, 16, 8, None],
         }
     )
 
