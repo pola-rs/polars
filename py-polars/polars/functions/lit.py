@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import polars._reexport as pl
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Duration
-from polars.dependencies import _check_for_numpy
+from polars.dependencies import _check_for_numpy, _check_for_pytz, pytz
 from polars.dependencies import numpy as np
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -90,10 +90,10 @@ def lit(
         else:
             # value has time zone, but dtype does not: keep value time zone
             if dtype_tz is None:
-                if isinstance(value_tz, ZoneInfo) or getattr(
-                    value_tz,
-                    "zone",  # handle pytz named timezone.
-                    None,
+                if isinstance(value_tz, ZoneInfo) or (
+                    _check_for_pytz(value_tz)
+                    and isinstance(value_tz, pytz.tzinfo.BaseTzInfo)
+                    and value_tz.zone is not None
                 ):
                     # named timezone
                     tz = str(value_tz)

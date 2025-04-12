@@ -21,6 +21,7 @@ _POLARS_CLOUD_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
 _PYICEBERG_AVAILABLE = True
+_PYTZ_AVAILABLE = True
 
 
 class _LazyModule(ModuleType):
@@ -164,6 +165,7 @@ if TYPE_CHECKING:
     import pyarrow
     import pydantic
     import pyiceberg
+    import pytz
 else:
     # infrequently-used builtins
     dataclasses, _ = _lazy_import("dataclasses")
@@ -185,6 +187,7 @@ else:
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
     pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
     gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
+    pytz, _PYTZ_AVAILABLE = _lazy_import("pytz")
 
 
 @cache
@@ -219,6 +222,12 @@ def _check_for_pyarrow(obj: Any, *, check_type: bool = True) -> bool:
 def _check_for_pydantic(obj: Any, *, check_type: bool = True) -> bool:
     return _PYDANTIC_AVAILABLE and _might_be(
         cast(Hashable, type(obj) if check_type else obj), "pydantic"
+    )
+
+
+def _check_for_pytz(obj: Any, *, check_type: bool = True) -> bool:
+    return _PYTZ_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "pytz"
     )
 
 
@@ -306,11 +315,13 @@ __all__ = [
     "pydantic",
     "pyiceberg",
     "pyarrow",
+    "pytz",
     # lazy utilities
     "_check_for_numpy",
     "_check_for_pandas",
     "_check_for_pyarrow",
     "_check_for_pydantic",
+    "_check_for_pytz",
     # exported flags/guards
     "_ALTAIR_AVAILABLE",
     "_DELTALAKE_AVAILABLE",
