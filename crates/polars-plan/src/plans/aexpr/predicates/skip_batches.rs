@@ -399,15 +399,15 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 //      )
                                 let col = col.clone();
 
-                                let lv_node = expr_arena.add(AExpr::Explode(lv_node));
+                                let lv_node_exploded = expr_arena.add(AExpr::Explode(lv_node));
                                 let lv_min =
                                     expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Min {
-                                        input: lv_node,
+                                        input: lv_node_exploded,
                                         propagate_nans: true,
                                     }));
                                 let lv_max =
                                     expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Max {
-                                        input: lv_node,
+                                        input: lv_node_exploded,
                                         propagate_nans: true,
                                     }));
 
@@ -429,7 +429,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 let idx_zero = lv!(idx: 0);
                                 let col_has_no_nulls = eq!(col_nc, idx_zero);
 
-                                let lv_has_not_nulls = has_no_nulls!(lv_node);
+                                let lv_has_not_nulls = has_no_nulls!(lv_node_exploded);
                                 let null_case = or!(lv_has_not_nulls, col_has_no_nulls);
 
                                 let min_max_is_in = and!(null_case, expr);
