@@ -664,6 +664,14 @@ fn to_graph_rec<'a>(
             let right_key_schema =
                 compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?;
 
+            // We want to make sure here that the key types match otherwise we get out garbage out
+            // since the hashes will be calculated differently.
+            polars_ensure!(
+                left_key_schema.len() == right_key_schema.len() &&
+                left_key_schema.iter_values().zip(right_key_schema.iter_values()).all(|(l, r)| l == r),
+                SchemaMismatch: "semi-anti-join received different key types on either side"
+            );
+
             // We use key columns entirely by position, and allow duplicate names in key selectors,
             // so just assign arbitrary unique names for the selectors.
             let unique_left_on = left_on
