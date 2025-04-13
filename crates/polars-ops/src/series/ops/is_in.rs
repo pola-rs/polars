@@ -954,6 +954,7 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
     }
 }
 
+#[cfg(feature = "dtype-decimal")]
 fn is_in_decimal(
     ca_in: &DecimalChunked,
     other: &Series,
