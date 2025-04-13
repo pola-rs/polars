@@ -59,7 +59,34 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             options: CastOptions::NonStrict,
         },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Categorical(_, _) | DataType::Enum(_, _), DataType::String) => return Ok(None),
+        (DataType::Enum(_, _), DataType::String) => AExpr::Cast {
+            expr: other_e.node(),
+            dtype: cast_type,
+            options: CastOptions::NonStrict,
+        },
+
+        // @NOTE: Local Categorical coercion has to happen in the kernel, which makes it streaming
+        // incompatible.
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(Some(rm), ordering), DataType::String) if rm.is_global() => {
+            AExpr::Cast {
+                expr: other_e.node(),
+                dtype: match &type_other {
+                    DataType::List(_) => {
+                        DataType::List(Box::new(DataType::Categorical(None, *ordering)))
+                    },
+                    #[cfg(feature = "dtype-array")]
+                    DataType::Array(_, width) => {
+                        DataType::Array(Box::new(DataType::Categorical(None, *ordering)), *width)
+                    },
+                    _ => unreachable!(),
+                },
+                options: CastOptions::NonStrict,
+            }
+        },
+
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::Categorical(_, _), DataType::String) => return Ok(None),
         #[cfg(feature = "dtype-categorical")]
         (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => return Ok(None),
         #[cfg(feature = "dtype-decimal")]
