@@ -388,6 +388,11 @@ fn is_in_cat_and_enum(
     other: &Series,
     nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked> {
+    use std::borrow::Cow;
+
+    use arrow::array::{Array, FixedSizeListArray, IntoBoxedArray, ListArray};
+
+    let mut needs_remap = false;
     let to_categories = match (ca_in.dtype(), other.dtype().inner_dtype().unwrap()) {
         (DataType::Enum(revmap, ordering), DataType::String) => {
             let categories = revmap.as_deref().unwrap().get_categories();
@@ -420,7 +425,7 @@ fn is_in_cat_and_enum(
             let (Some(revmap), Some(other_revmap)) = (revmap, other_revmap) else {
                 polars_bail!(ComputeError: "expected revmap to be set at this point");
             };
-            polars_ensure!(revmap.same_src(other_revmap), string_cache_mismatch);
+            needs_remap = !revmap.same_src(&other_revmap);
             (&|s: Series| {
                 let ca = s.categorical()?;
                 let ca = ca.physical().clone();
@@ -446,15 +451,73 @@ fn is_in_cat_and_enum(
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     };
 
+    let mut ca_in = Cow::Borrowed(ca_in);
     let other = match other.dtype() {
         DataType::List(_) => {
-            let other = other.list()?;
+            let mut other = Cow::Borrowed(other.list()?);
+            if needs_remap {
+                let other_rechunked = other.rechunk();
+                let other_arr = other_rechunked.downcast_as_array();
+
+                let other_inner = other.get_inner();
+                let other_offsets = other_arr.offsets().clone();
+                let other_inner = other_inner.categorical()?;
+                let (ca_in_remapped, other_inner) =
+                    make_rhs_categoricals_compatible(&ca_in, &other_inner)?;
+
+                let other_inner_phys = other_inner.physical().rechunk();
+                let other_inner_phys = other_inner_phys.downcast_as_array();
+
+                let other_phys = ListArray::try_new(
+                    other_arr.dtype().clone(),
+                    other_offsets,
+                    other_inner_phys.clone().into_boxed(),
+                    other_arr.validity().cloned(),
+                )?;
+
+                other = Cow::Owned(unsafe {
+                    ListChunked::from_chunks_and_dtype(
+                        other.name().clone(),
+                        vec![other_phys.into_boxed()],
+                        DataType::List(Box::new(other_inner.dtype().clone())),
+                    )
+                });
+                ca_in = Cow::Owned(ca_in_remapped);
+            }
             let other = other.apply_to_inner(to_categories)?;
             other.into_series()
         },
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, _) => {
-            let other = other.array()?;
+            let mut other = Cow::Borrowed(other.array()?);
+            if needs_remap {
+                let other_rechunked = other.rechunk();
+                let other_arr = other_rechunked.downcast_as_array();
+
+                let other_inner = other.get_inner();
+                let other_inner = other_inner.categorical()?;
+                let (ca_in_remapped, other_inner) =
+                    make_rhs_categoricals_compatible(&ca_in, &other_inner)?;
+
+                let other_inner_phys = other_inner.physical().rechunk();
+                let other_inner_phys = other_inner_phys.downcast_as_array();
+
+                let other_phys = FixedSizeListArray::try_new(
+                    other_arr.dtype().clone(),
+                    other.len(),
+                    other_inner_phys.clone().into_boxed(),
+                    other_arr.validity().cloned(),
+                )?;
+
+                other = Cow::Owned(unsafe {
+                    ArrayChunked::from_chunks_and_dtype(
+                        other.name().clone(),
+                        vec![other_phys.into_boxed()],
+                        DataType::Array(Box::new(other_inner.dtype().clone()), other.width()),
+                    )
+                });
+                ca_in = Cow::Owned(ca_in_remapped);
+            }
             let other = other.apply_to_inner(to_categories)?;
             other.into_series()
         },
