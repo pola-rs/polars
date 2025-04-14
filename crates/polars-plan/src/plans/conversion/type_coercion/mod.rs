@@ -185,8 +185,16 @@ impl OptimizationRule for TypeCoercionRule {
                     _ => unreachable!(),
                 };
 
-                let Some(result) =
-                    is_in::resolve_is_in(input, expr_arena, lp_arena, lp_node, is_contains, op, flat, nested)?
+                let Some(result) = is_in::resolve_is_in(
+                    input,
+                    expr_arena,
+                    lp_arena,
+                    lp_node,
+                    is_contains,
+                    op,
+                    flat,
+                    nested,
+                )?
                 else {
                     return Ok(None);
                 };

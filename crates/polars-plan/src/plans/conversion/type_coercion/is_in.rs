@@ -6,6 +6,7 @@ pub(super) enum IsInTypeCoercionResult {
     Implode,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn resolve_is_in(
     input: &[ExprIR],
     expr_arena: &Arena<AExpr>,

@@ -425,7 +425,7 @@ fn is_in_cat_and_enum(
             let (Some(revmap), Some(other_revmap)) = (revmap, other_revmap) else {
                 polars_bail!(ComputeError: "expected revmap to be set at this point");
             };
-            needs_remap = !revmap.same_src(&other_revmap);
+            needs_remap = !revmap.same_src(other_revmap);
             (&|s: Series| {
                 let ca = s.categorical()?;
                 let ca = ca.physical().clone();
@@ -463,7 +463,7 @@ fn is_in_cat_and_enum(
                 let other_offsets = other_arr.offsets().clone();
                 let other_inner = other_inner.categorical()?;
                 let (ca_in_remapped, other_inner) =
-                    make_rhs_categoricals_compatible(&ca_in, &other_inner)?;
+                    make_rhs_categoricals_compatible(&ca_in, other_inner)?;
 
                 let other_inner_phys = other_inner.physical().rechunk();
                 let other_inner_phys = other_inner_phys.downcast_as_array();
@@ -497,7 +497,7 @@ fn is_in_cat_and_enum(
                 let other_inner = other.get_inner();
                 let other_inner = other_inner.categorical()?;
                 let (ca_in_remapped, other_inner) =
-                    make_rhs_categoricals_compatible(&ca_in, &other_inner)?;
+                    make_rhs_categoricals_compatible(&ca_in, other_inner)?;
 
                 let other_inner_phys = other_inner.physical().rechunk();
                 let other_inner_phys = other_inner_phys.downcast_as_array();
