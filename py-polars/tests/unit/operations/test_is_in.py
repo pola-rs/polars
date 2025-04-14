@@ -497,7 +497,8 @@ def test_cat_is_in_with_lit_str(dtype: pl.DataType, nulls_equal: bool) -> None:
         (False, pl.Enum(["a", "b", "c"])),
         (True, pl.Categorical),
         pytest.param(
-            True, pl.Enum(["a", "b", "c"]),
+            True,
+            pl.Enum(["a", "b", "c"]),
             marks=pytest.mark.xfail(
                 reason="Bug. See https://github.com/pola-rs/polars/issues/22260"
             ),
