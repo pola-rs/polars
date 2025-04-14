@@ -79,9 +79,9 @@ impl VarState {
         // Just a specialized version of
         // self.combine(&Self { weight: 1.0, mean: x, dp: 0.0 })
         let new_weight = self.weight + 1.0;
-        let delta_mean = self.mean - x;
-        let new_mean = self.mean - delta_mean / new_weight;
-        self.dp += (new_mean - x) * delta_mean;
+        let delta_mean = x - self.mean;
+        let new_mean = self.mean + delta_mean / new_weight;
+        self.dp += (x - new_mean) * delta_mean;
         self.weight = new_weight;
         self.mean = new_mean;
         self.clear_zero_weight_nan();
@@ -91,9 +91,9 @@ impl VarState {
         // Just a specialized version of
         // self.combine(&Self { weight: -1.0, mean: x, dp: 0.0 })
         let new_weight = self.weight - 1.0;
-        let delta_mean = self.mean - x;
-        let new_mean = self.mean + delta_mean / new_weight;
-        self.dp -= (new_mean - x) * delta_mean;
+        let delta_mean = x - self.mean;
+        let new_mean = self.mean - delta_mean / new_weight;
+        self.dp -= (x - new_mean) * delta_mean;
         self.weight = new_weight;
         self.mean = new_mean;
         self.clear_zero_weight_nan();
@@ -106,9 +106,9 @@ impl VarState {
 
         let new_weight = self.weight + other.weight;
         let other_weight_frac = other.weight / new_weight;
-        let delta_mean = self.mean - other.mean;
-        let new_mean = self.mean - delta_mean * other_weight_frac;
-        self.dp += other.dp + other.weight * (new_mean - other.mean) * delta_mean;
+        let delta_mean = other.mean - self.mean;
+        let new_mean = self.mean + delta_mean * other_weight_frac;
+        self.dp += other.dp + other.weight * (other.mean - new_mean) * delta_mean;
         self.weight = new_weight;
         self.mean = new_mean;
         self.clear_zero_weight_nan();
@@ -160,11 +160,11 @@ impl CovState {
 
         let new_weight = self.weight + other.weight;
         let other_weight_frac = other.weight / new_weight;
-        let delta_mean_x = self.mean_x - other.mean_x;
-        let delta_mean_y = self.mean_y - other.mean_y;
-        let new_mean_x = self.mean_x - delta_mean_x * other_weight_frac;
-        let new_mean_y = self.mean_y - delta_mean_y * other_weight_frac;
-        self.dp_xy += other.dp_xy + other.weight * (new_mean_x - other.mean_x) * delta_mean_y;
+        let delta_mean_x = other.mean_x - self.mean_x;
+        let delta_mean_y = other.mean_y - self.mean_y;
+        let new_mean_x = self.mean_x + delta_mean_x * other_weight_frac;
+        let new_mean_y = self.mean_y + delta_mean_y * other_weight_frac;
+        self.dp_xy += other.dp_xy + other.weight * (other.mean_x - new_mean_x) * delta_mean_y;
         self.weight = new_weight;
         self.mean_x = new_mean_x;
         self.mean_y = new_mean_y;
@@ -215,13 +215,13 @@ impl PearsonState {
 
         let new_weight = self.weight + other.weight;
         let other_weight_frac = other.weight / new_weight;
-        let delta_mean_x = self.mean_x - other.mean_x;
-        let delta_mean_y = self.mean_y - other.mean_y;
-        let new_mean_x = self.mean_x - delta_mean_x * other_weight_frac;
-        let new_mean_y = self.mean_y - delta_mean_y * other_weight_frac;
-        self.dp_xx += other.dp_xx + other.weight * (new_mean_x - other.mean_x) * delta_mean_x;
-        self.dp_xy += other.dp_xy + other.weight * (new_mean_x - other.mean_x) * delta_mean_y;
-        self.dp_yy += other.dp_yy + other.weight * (new_mean_y - other.mean_y) * delta_mean_y;
+        let delta_mean_x = other.mean_x - self.mean_x;
+        let delta_mean_y = other.mean_y - self.mean_y;
+        let new_mean_x = self.mean_x + delta_mean_x * other_weight_frac;
+        let new_mean_y = self.mean_y + delta_mean_y * other_weight_frac;
+        self.dp_xx += other.dp_xx + other.weight * (other.mean_x - new_mean_x) * delta_mean_x;
+        self.dp_xy += other.dp_xy + other.weight * (other.mean_x - new_mean_x) * delta_mean_y;
+        self.dp_yy += other.dp_yy + other.weight * (other.mean_y - new_mean_y) * delta_mean_y;
         self.weight = new_weight;
         self.mean_x = new_mean_x;
         self.mean_y = new_mean_y;
