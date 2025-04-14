@@ -164,7 +164,9 @@ impl PhysicalExpr for AggregationExpr {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
-        polars_ensure!(!matches!(ac.agg_state(), AggState::Literal(_)), ComputeError: "cannot aggregate a literal");
+
+        // Literals cannot be aggregated except for implode.
+        polars_ensure!((!matches!(ac.agg_state(), AggState::Literal(_)) || matches!(self.agg_type.groupby, GroupByMethod::Implode)), ComputeError: "cannot aggregate a literal");
 
         if let AggregatedScalar(_) = ac.agg_state() {
             match self.agg_type.groupby {
