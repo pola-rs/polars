@@ -26,30 +26,17 @@ where
             // User-supplied bins. Note these are actually bin edges. Check for monotonicity.
             // If we only have one edge, we have no bins.
             let bin_len = bins.len();
-            // We also check for uniformity of bins. We declare uniformity if the difference
-            // between the largest and smallest bin is < 0.00001 the average bin size.
             if bin_len > 1 {
-                let mut smallest = bins[1] - bins[0];
-                let mut largest = smallest;
-                let mut avg_bin_size = smallest;
-                for i in 1..bins.len() {
-                    let d = bins[i] - bins[i - 1];
-                    if d <= 0.0 {
+                for i in 1..bin_len {
+                    if (bins[i] - bins[i - 1]) <= 0.0 {
                         return Err(PolarsError::ComputeError(
                             "bins must increase monotonically".into(),
                         ));
                     }
-                    if d > largest {
-                        largest = d;
-                    } else if d < smallest {
-                        smallest = d;
-                    }
-                    avg_bin_size += d;
                 }
-                let uniform = (largest - smallest) / (avg_bin_size / bin_len as f64) < 0.00001;
-                (bins.to_vec(), uniform)
+                (bins.to_vec(), false)
             } else {
-                (Vec::<f64>::new(), false) // uniformity doesn't matter here
+                (Vec::<f64>::new(), false)
             }
         },
         (bin_count, None) => {
@@ -105,20 +92,22 @@ where
     let min_break: f64 = breaks[0];
     let max_break: f64 = breaks[num_bins];
     let scale = num_bins as f64 / (max_break - min_break);
+    let max_idx = num_bins - 1;
 
     for chunk in ca.downcast_iter() {
         for item in chunk.non_null_values_iter() {
             let item = item.to_f64().unwrap();
             if item > min_break && item <= max_break {
-                let idx = scale * (item - min_break);
-                let idx_floor = idx.floor();
-                let idx = if idx == idx_floor {
-                    idx - 1.0
-                } else {
-                    idx_floor
-                };
-                /* idx > (num_bins - 1) may happen due to floating point representation imprecision */
-                let idx = cmp::min(idx as usize, num_bins - 1);
+                // idx > (num_bins - 1) may happen due to floating point representation imprecision
+                let mut idx = cmp::min((scale * (item - min_break)) as usize, max_idx);
+
+                // Adjust for float imprecision providing idx > 1 ULP of the breaks
+                if item <= breaks[idx] {
+                    idx -= 1;
+                } else if item > breaks[idx + 1] {
+                    idx += 1;
+                }
+
                 count[idx] += 1;
             } else if item == min_break {
                 count[0] += 1;
