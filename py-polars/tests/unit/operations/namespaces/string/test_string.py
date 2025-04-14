@@ -505,25 +505,54 @@ def test_str_to_integer_base_literal() -> None:
         )
 
 
-def test_str_to_integer_i8() -> None:
+def test_str_to_integer_dtype() -> None:
     df = pl.DataFrame(
         {"str": ["1111111", "7f", "-128", None, "42"], "base": [2, 16, 10, 8, None]}
     )
-    out = df.select(i8=pl.col("str").str.to_integer(base="base", dtype=pl.Int8))
+    out = df.select(
+        i8=pl.col("str").str.to_integer(base="base", dtype=pl.Int8),
+        i16=pl.col("str").str.to_integer(base="base", dtype=pl.Int16),
+        i32=pl.col("str").str.to_integer(base="base", dtype=pl.Int32),
+        i64=pl.col("str").str.to_integer(base="base", dtype=pl.Int64),
+        u8=pl.col("str").str.to_integer(base="base", dtype=pl.UInt8),
+        u16=pl.col("str").str.to_integer(base="base", dtype=pl.UInt16),
+        u32=pl.col("str").str.to_integer(base="base", dtype=pl.UInt32),
+        u64=pl.col("str").str.to_integer(base="base", dtype=pl.UInt64),
+    )
     expected = pl.DataFrame(
-        {"i8": [127, 127, -128, None, None]},
-        schema={"i8": pl.Int8},
+        {
+            "i8": [127, 127, -128, None, None],
+            "i16": [127, 127, -128, None, None],
+            "i32": [127, 127, -128, None, None],
+            "i64": [127, 127, -128, None, None],
+            "u8": [127, 127, 128, None, None],
+            "u16": [127, 127, 128, None, None],
+            "u32": [127, 127, 128, None, None],
+            "u64": [127, 127, 128, None, None],
+        },
+        schema={
+            "i8": pl.Int8,
+            "i16": pl.Int16,
+            "i32": pl.Int32,
+            "i64": pl.Int64,
+            "u8": pl.UInt8,
+            "u16": pl.UInt16,
+            "u32": pl.UInt32,
+            "u64": pl.UInt64,
+        },
     )
     assert_frame_equal(out, expected)
 
-    # test strict raise
-    df = pl.DataFrame({"i8": ["110", "7f", None], "base": [2, 10, 8]})
+    # test invalid dtype raise
+    df = pl.DataFrame(
+        {"str": ["1111111", "7f", "-128", None, "42"], "base": [2, 16, 10, 8, None]}
+    )
 
     with pytest.raises(ComputeError):
-        df.select(pl.col("i8").str.to_integer(base="base", dtype=pl.Int8))
+        df.select(pl.col("str").str.to_integer(base="base", dtype=pl.Decimal))
 
 
-def test_str_to_integer_i128() -> None:
+def test_str_to_integer_large() -> None:
     df = pl.DataFrame(
         {
             "str": [
