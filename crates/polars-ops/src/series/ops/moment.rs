@@ -1,4 +1,4 @@
-use polars_compute::var_cov::{KurtosisState, SkewState, kurtosis, skew};
+use polars_compute::moment::{KurtosisState, SkewState, kurtosis, skew};
 use polars_core::prelude::*;
 
 use crate::prelude::SeriesSealed;

@@ -3,7 +3,7 @@ use num_traits::{FromPrimitive, ToPrimitive};
 use polars_error::polars_ensure;
 
 use super::*;
-use crate::var_cov::VarState;
+use crate::moment::VarState;
 
 pub struct VarWindow<'a, T> {
     slice: &'a [T],

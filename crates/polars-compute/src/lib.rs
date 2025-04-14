@@ -30,7 +30,7 @@ pub mod rolling;
 pub mod size;
 pub mod sum;
 pub mod unique;
-pub mod var_cov;
+pub mod moment;
 
 // Trait to enable the scalar blanket implementation.
 pub trait NotSimdPrimitive: NativeType {}
