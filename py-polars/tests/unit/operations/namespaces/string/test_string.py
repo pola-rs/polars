@@ -507,7 +507,7 @@ def test_str_to_integer_base_literal() -> None:
 
 def test_str_to_integer_dtype() -> None:
     df = pl.DataFrame(
-        {"str": ["1111111", "7f", "-128", None, "42"], "base": [2, 16, 10, 8, None]}
+        {"str": ["1111111", "7f", "128", None, "42"], "base": [2, 16, 10, 8, None]}
     )
     out = df.select(
         i8=pl.col("str").str.to_integer(base="base", dtype=pl.Int8),
@@ -521,10 +521,10 @@ def test_str_to_integer_dtype() -> None:
     )
     expected = pl.DataFrame(
         {
-            "i8": [127, 127, -128, None, None],
-            "i16": [127, 127, -128, None, None],
-            "i32": [127, 127, -128, None, None],
-            "i64": [127, 127, -128, None, None],
+            "i8": [127, 127, 128, None, None],
+            "i16": [127, 127, 128, None, None],
+            "i32": [127, 127, 128, None, None],
+            "i64": [127, 127, 128, None, None],
             "u8": [127, 127, 128, None, None],
             "u16": [127, 127, 128, None, None],
             "u32": [127, 127, 128, None, None],
@@ -548,7 +548,7 @@ def test_str_to_integer_large() -> None:
     df = pl.DataFrame(
         {
             "str": [
-                "6129899454972456276923959272",
+                "-6129899454972456276923959272",
                 "1A44E53BFEBA967E6682FBB0",
                 "10100110111110110101110100000100110010101111000100011000000100010101010101101011111111101000",
                 None,
@@ -561,7 +561,7 @@ def test_str_to_integer_large() -> None:
     expected = pl.DataFrame(
         {
             "i128": [
-                6129899454972456276923959272,
+                -6129899454972456276923959272,
                 8129899739726392769273592752,
                 3229899454972495776923959272,
                 None,
