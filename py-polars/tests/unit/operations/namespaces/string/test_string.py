@@ -507,7 +507,7 @@ def test_str_to_integer_base_literal() -> None:
 
 def test_str_to_integer_dtype() -> None:
     df = pl.DataFrame(
-        {"str": ["1111111", "7f", "128", None, "42"], "base": [2, 16, 10, 8, None]}
+        {"str": ["1111111", "7f", "127", None, "42"], "base": [2, 16, 10, 8, None]}
     )
     out = df.select(
         i8=pl.col("str").str.to_integer(base="base", dtype=pl.Int8),
@@ -521,14 +521,14 @@ def test_str_to_integer_dtype() -> None:
     )
     expected = pl.DataFrame(
         {
-            "i8": [127, 127, 128, None, None],
-            "i16": [127, 127, 128, None, None],
-            "i32": [127, 127, 128, None, None],
-            "i64": [127, 127, 128, None, None],
-            "u8": [127, 127, 128, None, None],
-            "u16": [127, 127, 128, None, None],
-            "u32": [127, 127, 128, None, None],
-            "u64": [127, 127, 128, None, None],
+            "i8": [127, 127, 127, None, None],
+            "i16": [127, 127, 127, None, None],
+            "i32": [127, 127, 127, None, None],
+            "i64": [127, 127, 127, None, None],
+            "u8": [127, 127, 127, None, None],
+            "u16": [127, 127, 127, None, None],
+            "u32": [127, 127, 127, None, None],
+            "u64": [127, 127, 127, None, None],
         },
         schema={
             "i8": pl.Int8,
