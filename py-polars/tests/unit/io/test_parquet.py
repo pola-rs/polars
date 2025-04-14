@@ -3153,3 +3153,10 @@ def test_filtering_on_other_parallel_modes_with_statistics(
         .to_series(),
         pl.Series("a", [4, 4, 4]),
     )
+
+
+def test_filter_on_logical_dtype_22252() -> None:
+    f = io.BytesIO()
+    pl.Series("a", [datetime(1996, 10, 5)]).to_frame().write_parquet(f)
+    f.seek(0)
+    pl.scan_parquet(f).filter(pl.col.a.dt.weekday() == 6).collect()
