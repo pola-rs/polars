@@ -10,7 +10,6 @@ use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_
 use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
 
-use self::is_in::IsInTypeCoercionResult;
 use super::*;
 
 pub struct TypeCoercionRule {}
@@ -201,6 +200,7 @@ impl OptimizationRule for TypeCoercionRule {
 
                 let function = function.clone();
                 let mut input = input.to_vec();
+                use self::is_in::IsInTypeCoercionResult;
                 match result {
                     IsInTypeCoercionResult::SuperType(flat_type, nested_type) => {
                         let input_schema = get_schema(lp_arena, lp_node);
