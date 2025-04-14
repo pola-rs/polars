@@ -308,7 +308,7 @@ def test_is_in_invalid_shape() -> None:
 def test_is_in_list_rhs() -> None:
     assert_series_equal(
         pl.Series([1, 2, 3, 4, 5]).is_in(pl.Series([[1], [2, 9], [None], None, None])),
-        pl.Series([True, True, False, False, False]),
+        pl.Series([True, True, False, None, None]),
     )
 
 

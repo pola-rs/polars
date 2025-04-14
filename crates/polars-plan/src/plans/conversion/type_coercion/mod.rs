@@ -171,26 +171,46 @@ impl OptimizationRule for TypeCoercionRule {
                 let mut input = input.to_vec();
                 match result {
                     IsInTypeCoercionResult::SuperType(self_type, other_type) => {
-                        let self_input = expr_arena.add(AExpr::Cast {
-                            expr: input[0].node(),
-                            dtype: self_type,
-                            options: CastOptions::NonStrict,
-                        });
-                        let other_input = expr_arena.add(AExpr::Cast {
-                            expr: input[1].node(),
-                            dtype: other_type,
-                            options: CastOptions::NonStrict,
-                        });
-                        input[0].set_node(self_input);
-                        input[1].set_node(other_input);
+                        let input_schema = get_schema(lp_arena, lp_node);
+                        let other_e = &input[1];
+                        let (_, type_left) = unpack!(get_aexpr_and_type(
+                            expr_arena,
+                            input[0].node(),
+                            &input_schema
+                        ));
+                        let (_, type_other) = unpack!(get_aexpr_and_type(
+                            expr_arena,
+                            other_e.node(),
+                            &input_schema
+                        ));
+                        cast_expr_ir(
+                            &mut input[0],
+                            &type_left,
+                            &self_type,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                        cast_expr_ir(
+                            &mut input[1],
+                            &type_other,
+                            &other_type,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
                     },
-                    IsInTypeCoercionResult::OtherCast(dtype) => {
-                        let other_input = expr_arena.add(AExpr::Cast {
-                            expr: input[1].node(),
-                            dtype,
-                            options: CastOptions::NonStrict,
-                        });
-                        input[1].set_node(other_input);
+                    IsInTypeCoercionResult::OtherCast { dtype, strict } => {
+                        let input_schema = get_schema(lp_arena, lp_node);
+                        let (_, type_other) = unpack!(get_aexpr_and_type(
+                            expr_arena,
+                            input[1].node(),
+                            &input_schema
+                        ));
+                        let options = if strict {
+                            CastOptions::Strict
+                        } else {
+                            CastOptions::NonStrict
+                        };
+                        cast_expr_ir(&mut input[1], &type_other, &dtype, expr_arena, options)?;
                     },
                     IsInTypeCoercionResult::Implode => {
                         let other_input =

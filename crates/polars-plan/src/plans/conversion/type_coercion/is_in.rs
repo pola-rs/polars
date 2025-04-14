@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) enum IsInTypeCoercionResult {
     SuperType(DataType, DataType),
-    OtherCast(DataType),
+    OtherCast { dtype: DataType, strict: bool },
     Implode,
 }
 
@@ -59,24 +59,33 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         // types are equal, do nothing
         (a, b) if a == b => return Ok(None),
         // all-null can represent anything (and/or empty list), so cast to target dtype
-        (_, DataType::Null) => IsInTypeCoercionResult::OtherCast(cast_type),
+        (_, DataType::Null) => IsInTypeCoercionResult::OtherCast {
+            dtype: cast_type,
+            strict: false,
+        },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Enum(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast(cast_type),
+        (DataType::Enum(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
+            dtype: cast_type,
+            strict: true,
+        },
 
         // @NOTE: Local Categorical coercion has to happen in the kernel, which makes it streaming
         // incompatible.
         #[cfg(feature = "dtype-categorical")]
         (DataType::Categorical(Some(rm), ordering), DataType::String) if rm.is_global() => {
-            IsInTypeCoercionResult::OtherCast(match &type_other {
-                DataType::List(_) => {
-                    DataType::List(Box::new(DataType::Categorical(None, *ordering)))
+            IsInTypeCoercionResult::OtherCast {
+                dtype: match &type_other {
+                    DataType::List(_) => {
+                        DataType::List(Box::new(DataType::Categorical(None, *ordering)))
+                    },
+                    #[cfg(feature = "dtype-array")]
+                    DataType::Array(_, width) => {
+                        DataType::Array(Box::new(DataType::Categorical(None, *ordering)), *width)
+                    },
+                    _ => unreachable!(),
                 },
-                #[cfg(feature = "dtype-array")]
-                DataType::Array(_, width) => {
-                    DataType::Array(Box::new(DataType::Categorical(None, *ordering)), *width)
-                },
-                _ => unreachable!(),
-            })
+                strict: false,
+            }
         },
 
         #[cfg(feature = "dtype-categorical")]
@@ -85,7 +94,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => return Ok(None),
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
-            IsInTypeCoercionResult::OtherCast(cast_type)
+            IsInTypeCoercionResult::OtherCast { dtype: cast_type, strict: false }
         },
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
