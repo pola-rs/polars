@@ -58,6 +58,11 @@ impl CategoricalChunked {
         self.physical.name()
     }
 
+    /// Get the physical array (the category indexes).
+    pub fn into_physical(self) -> UInt32Chunked {
+        self.physical.0
+    }
+
     // TODO: Rename this
     /// Get a reference to the physical array (the categories).
     pub fn physical(&self) -> &UInt32Chunked {
@@ -201,7 +206,7 @@ impl CategoricalChunked {
         self.get_ordering() == CategoricalOrdering::Lexical
     }
 
-    pub(crate) fn get_ordering(&self) -> CategoricalOrdering {
+    pub fn get_ordering(&self) -> CategoricalOrdering {
         if let DataType::Categorical(_, ordering) | DataType::Enum(_, ordering) =
             &self.physical.2.as_ref().unwrap()
         {

@@ -521,6 +521,7 @@ def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
     )
 
 
+@pl.StringCache()
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
 @pytest.mark.may_fail_auto_streaming
 def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
@@ -540,6 +541,7 @@ def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
     assert_frame_equal(res, expected_df)
 
 
+@pl.StringCache()
 @pytest.mark.parametrize(
     ("val", "expected"),
     [
