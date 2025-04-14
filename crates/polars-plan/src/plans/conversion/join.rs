@@ -515,7 +515,7 @@ fn build_upcast_node_list(
             } else if schema_merged.contains(name) {
                 ExprOrigin::Right
             } else {
-                ExprOrigin::None
+                polars_bail!(ColumnNotFound: "{}", name);
             }
         },
         AExpr::Literal(..) => ExprOrigin::None,
