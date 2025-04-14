@@ -9,10 +9,23 @@
 //
 // Algorithms from:
 // Numerically stable parallel computation of (co-)variance.
-// Schubert, E., & Gertz, M. (2018).
+// Schubert, E. & Gertz, M. (2018).
 //
 // Key equations from the paper:
 // (17) for mean update, (23) for dp update (and also Table 1).
+//
+//
+// For higher moments we refer to:
+// Numerically Stable, Scalable Formulas for Parallel and Online Computation of
+// Higher-Order Multivariate Central Moments with Arbitrary Weights.
+// Pébay, P. & Terriberry, T. B. & Kolla, H. & Bennett J. (2016)
+//
+// Key equations from paper:
+// (3.26) mean update, (3.27) moment update.
+//
+// Here we use mk to mean the weighted kth central moment:
+//    mk = sum(weight[i] * (x[i] - mean_x)**k)
+// Note that we'll use the terms m2 = dp = dp_xx if unambiguous.
 
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
@@ -67,12 +80,6 @@ impl VarState {
             self.mean = 0.0;
             self.dp = 0.0;
         }
-    }
-
-    pub(crate) fn new_single(x: f64) -> Self {
-        let mut out = Self::default();
-        out.insert_one(x);
-        out
     }
 
     pub fn insert_one(&mut self, x: f64) {
@@ -237,6 +244,245 @@ impl PearsonState {
     }
 }
 
+#[derive(Default, Clone)]
+pub struct SkewState {
+    weight: f64,
+    mean: f64,
+    m2: f64,
+    m3: f64,
+}
+
+impl SkewState {
+    fn new(x: &[f64]) -> Self {
+        if x.is_empty() {
+            return Self::default();
+        }
+
+        let weight = x.len() as f64;
+        let mean = alg_sum_f64(x.iter().copied()) / weight;
+        let mut m2 = 0.0;
+        let mut m3 = 0.0;
+        for xi in x.iter() {
+            let d = xi - mean;
+            let d2 = d * d;
+            let d3 = d * d2;
+            m2 = alg_add_f64(m2, d2);
+            m3 = alg_add_f64(m3, d3);
+        }
+        Self {
+            weight,
+            mean,
+            m2,
+            m3,
+        }
+    }
+
+    fn clear_zero_weight_nan(&mut self) {
+        // Clear NaNs due to division by zero.
+        if self.weight == 0.0 {
+            self.mean = 0.0;
+            self.m2 = 0.0;
+            self.m3 = 0.0;
+        }
+    }
+
+    pub fn insert_one(&mut self, x: f64) {
+        // TODO: specialize this? Saves some multiplications/additions.
+        self.combine(&SkewState {
+            weight: 1.0,
+            mean: x,
+            m2: 0.0,
+            m3: 0.0,
+        });
+    }
+
+    pub fn remove_one(&mut self, x: f64) {
+        // TODO: specialize this? Saves some multiplications/additions.
+        self.combine(&SkewState {
+            weight: -1.0,
+            mean: x,
+            m2: 0.0,
+            m3: 0.0,
+        });
+    }
+
+    pub fn combine(&mut self, other: &Self) {
+        if other.weight == 0.0 {
+            return;
+        }
+
+        let new_weight = self.weight + other.weight;
+        let other_weight_frac = other.weight / new_weight;
+        let self_weight_frac = 1.0 - other_weight_frac;
+
+        let delta_mean = other.mean - self.mean;
+        let other_weight_frac_delta_mean = delta_mean * other_weight_frac;
+
+        let new_mean = self.mean + other_weight_frac_delta_mean;
+        let new_m2 = self.m2 + other.m2 + other.weight * (other.mean - new_mean) * delta_mean;
+        let new_m3 = self.m3
+            + other.m3
+            + delta_mean
+                * (self_weight_frac
+                    * other_weight_frac_delta_mean
+                    * delta_mean
+                    * (self.weight - other.weight)
+                    + 3.0 * (other.m2 - other_weight_frac * (self.m2 + other.m2)));
+        self.weight = new_weight;
+        self.mean = new_mean;
+        self.m2 = new_m2;
+        self.m3 = new_m3;
+        self.clear_zero_weight_nan();
+    }
+
+    pub fn finalize(&self, bias: bool) -> Option<f64> {
+        let m2 = self.m2 / self.weight;
+        let m3 = self.m3 / self.weight;
+        let biased_est = m3 / m2.powf(1.5);
+        if bias {
+            Some(biased_est)
+        } else if self.weight > 2.0 {
+            let correction = (self.weight * (self.weight - 1.0)).sqrt() / (self.weight - 2.0);
+            Some(correction * biased_est)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct KurtosisState {
+    weight: f64,
+    mean: f64,
+    m2: f64,
+    m3: f64,
+    m4: f64,
+}
+
+impl KurtosisState {
+    fn new(x: &[f64]) -> Self {
+        if x.is_empty() {
+            return Self::default();
+        }
+
+        let weight = x.len() as f64;
+        let mean = alg_sum_f64(x.iter().copied()) / weight;
+        let mut m2 = 0.0;
+        let mut m3 = 0.0;
+        let mut m4 = 0.0;
+        for xi in x.iter() {
+            let d = xi - mean;
+            let d2 = d * d;
+            let d3 = d * d2;
+            let d4 = d2 * d2;
+            m2 = alg_add_f64(m2, d2);
+            m3 = alg_add_f64(m3, d3);
+            m4 = alg_add_f64(m4, d4);
+        }
+        Self {
+            weight,
+            mean,
+            m2,
+            m3,
+            m4,
+        }
+    }
+
+    fn clear_zero_weight_nan(&mut self) {
+        // Clear NaNs due to division by zero.
+        if self.weight == 0.0 {
+            self.mean = 0.0;
+            self.m2 = 0.0;
+            self.m3 = 0.0;
+            self.m4 = 0.0;
+        }
+    }
+
+    pub fn insert_one(&mut self, x: f64) {
+        // TODO: specialize this? Saves some multiplications/additions.
+        self.combine(&KurtosisState {
+            weight: 1.0,
+            mean: x,
+            m2: 0.0,
+            m3: 0.0,
+            m4: 0.0,
+        });
+    }
+
+    pub fn remove_one(&mut self, x: f64) {
+        // TODO: specialize this? Saves some multiplications/additions.
+        self.combine(&KurtosisState {
+            weight: -1.0,
+            mean: x,
+            m2: 0.0,
+            m3: 0.0,
+            m4: 0.0,
+        });
+    }
+
+    pub fn combine(&mut self, other: &Self) {
+        if other.weight == 0.0 {
+            return;
+        }
+
+        let new_weight = self.weight + other.weight;
+        let other_weight_frac = other.weight / new_weight;
+        let self_weight_frac = 1.0 - other_weight_frac;
+
+        let delta_mean = other.mean - self.mean;
+        let other_weight_frac_delta_mean = delta_mean * other_weight_frac;
+        let both_weight_frac_delta_mean2 =
+            self_weight_frac * other_weight_frac_delta_mean * delta_mean;
+
+        let self_weight_frac_other_m2 = self_weight_frac * other.m2;
+        let other_weight_frac_self_m2 = other_weight_frac * self.m2;
+        let weight_diff = self.weight - other.weight;
+        let m2_weight_diff = self_weight_frac_other_m2 - other_weight_frac_self_m2;
+
+        let new_mean = self.mean + other_weight_frac_delta_mean;
+        let new_m2 = self.m2 + other.m2 + other.weight * (other.mean - new_mean) * delta_mean;
+        let new_m3 = self.m3
+            + other.m3
+            + delta_mean * (both_weight_frac_delta_mean2 * weight_diff + 3.0 * m2_weight_diff);
+
+        let new_m4 = self.m4
+            + other.m4
+            + delta_mean
+                * (delta_mean
+                    * (both_weight_frac_delta_mean2
+                        * (self.weight - other_weight_frac * (self.weight + weight_diff))
+                        + 6.0 * (self_weight_frac_other_m2 - other_weight_frac * m2_weight_diff))
+                    + 4.0 * (other.m3 - other_weight_frac * (self.m3 + other.m3)));
+
+        self.weight = new_weight;
+        self.mean = new_mean;
+        self.m2 = new_m2;
+        self.m3 = new_m3;
+        self.m4 = new_m4;
+        self.clear_zero_weight_nan();
+    }
+
+    pub fn finalize(&self, fisher: bool, bias: bool) -> Option<f64> {
+        let m4 = self.m4 / self.weight;
+        let m2 = self.m2 / self.weight;
+        let biased_est = m4 / (m2 * m2);
+        let out = if bias {
+            biased_est
+        } else {
+            let n = self.weight;
+            if n < 3.0 {
+                return None;
+            }
+            let nm1_nm2 = (n - 1.0) / (n - 2.0);
+            let np1_nm3 = (n + 1.0) / (n - 3.0);
+            let nm1_nm3 = (n - 1.0) / (n - 3.0);
+            nm1_nm2 * (np1_nm3 * biased_est - 3.0 * nm1_nm3) + 3.0
+        };
+
+        if fisher { Some(out - 3.0) } else { Some(out) }
+    }
+}
+
 fn chunk_as_float<T, I, F>(it: I, mut f: F)
 where
     T: NativeType + AsPrimitive<f64>,
@@ -341,6 +587,40 @@ where
             x.values().iter().copied().zip(y.values().iter().copied()),
             |l, r| out.combine(&PearsonState::new(l, r)),
         );
+    }
+    out
+}
+
+pub fn skew<T>(arr: &PrimitiveArray<T>) -> SkewState
+where
+    T: NativeType + AsPrimitive<f64>,
+{
+    let mut out = SkewState::default();
+    if arr.has_nulls() {
+        chunk_as_float(arr.non_null_values_iter(), |chunk| {
+            out.combine(&SkewState::new(chunk))
+        });
+    } else {
+        chunk_as_float(arr.values().iter().copied(), |chunk| {
+            out.combine(&SkewState::new(chunk))
+        });
+    }
+    out
+}
+
+pub fn kurtosis<T>(arr: &PrimitiveArray<T>) -> KurtosisState
+where
+    T: NativeType + AsPrimitive<f64>,
+{
+    let mut out = KurtosisState::default();
+    if arr.has_nulls() {
+        chunk_as_float(arr.non_null_values_iter(), |chunk| {
+            out.combine(&KurtosisState::new(chunk))
+        });
+    } else {
+        chunk_as_float(arr.values().iter().copied(), |chunk| {
+            out.combine(&KurtosisState::new(chunk))
+        });
     }
     out
 }

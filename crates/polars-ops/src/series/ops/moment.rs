@@ -1,34 +1,7 @@
+use polars_compute::var_cov::{KurtosisState, SkewState, kurtosis, skew};
 use polars_core::prelude::*;
-use polars_utils::kahan_sum::KahanSum;
 
 use crate::prelude::SeriesSealed;
-
-fn central_moment(ca: &Float64Chunked, moment: usize, mean: f64) -> PolarsResult<Option<f64>> {
-    let out = match moment {
-        0 => Some(1.0),
-        1 => Some(0.0),
-        _ => {
-            if ca.null_count() == ca.len() {
-                return Ok(None);
-            }
-            let mut sum = KahanSum::default();
-            let mut n: IdxSize = 0;
-
-            for a in ca.into_iter().flatten() {
-                let diff = a - mean;
-                n += 1;
-                sum += diff.powi(moment as i32)
-            }
-
-            if n == 0 {
-                None
-            } else {
-                Some(sum.sum() / n as f64)
-            }
-        },
-    };
-    Ok(out)
-}
 
 pub trait MomentSeries: SeriesSealed {
     /// Compute the sample skewness of a data set.
@@ -45,25 +18,11 @@ pub trait MomentSeries: SeriesSealed {
         let s = s.cast(&DataType::Float64)?;
         let ca = s.f64().unwrap();
 
-        let mean = match ca.mean() {
-            Some(mean) => mean,
-            None => return Ok(None),
-        };
-        // we can unwrap because if it were None, we already return None above
-        let m2 = central_moment(ca, 2, mean)?.unwrap();
-        let m3 = central_moment(ca, 3, mean)?.unwrap();
-        let zero = m2 <= (f64::EPSILON * mean).powf(2.0);
-        let vals = match zero {
-            true => f64::NAN,
-            false => m3 / m2.powf(1.5),
-        };
-        let n = (ca.len() - ca.null_count()) as f64;
-        let out = if !bias && !zero && n > 3.0 {
-            ((n - 1.0) * n).sqrt() / (n - 2.0) * vals
-        } else {
-            vals
-        };
-        Ok(Some(out))
+        let mut state = SkewState::default();
+        for arr in ca.downcast_iter() {
+            state.combine(&skew(arr));
+        }
+        Ok(state.finalize(bias))
     }
 
     /// Compute the kurtosis (Fisher or Pearson) of a dataset.
@@ -80,30 +39,11 @@ pub trait MomentSeries: SeriesSealed {
         let s = s.cast(&DataType::Float64)?;
         let ca = s.f64().unwrap();
 
-        let mean = match ca.mean() {
-            Some(mean) => mean,
-            None => return Ok(None),
-        };
-        // we can unwrap because if it were None, we already return None above
-        let m2 = central_moment(ca, 2, mean)?.unwrap();
-        let m4 = central_moment(ca, 4, mean)?.unwrap();
-        let zero = m2 <= (f64::EPSILON * mean).powf(2.0);
-        let vals = match zero {
-            true => f64::NAN,
-            false => m4 / m2.powf(2.0),
-        };
-        let n = (ca.len() - ca.null_count()) as f64;
-        let out = if !bias && !zero && n > 3.0 {
-            3.0 + 1.0 / (n - 2.0) / (n - 3.0)
-                * ((n.powf(2.0) - 1.0) * vals - 3.0 * (n - 1.0).powf(2.0))
-        } else {
-            vals
-        };
-        if fisher {
-            Ok(Some(out - 3.0))
-        } else {
-            Ok(Some(out))
+        let mut state = KurtosisState::default();
+        for arr in ca.downcast_iter() {
+            state.combine(&kurtosis(arr));
         }
+        Ok(state.finalize(fisher, bias))
     }
 }
 
@@ -112,27 +52,6 @@ impl MomentSeries for Series {}
 #[cfg(test)]
 mod test {
     use super::*;
-
-    fn moment(s: &Series, moment: usize) -> PolarsResult<Option<f64>> {
-        let s = s.cast(&DataType::Float64).unwrap();
-        let ca = s.f64().unwrap();
-        match s.mean() {
-            Some(mean) => central_moment(ca, moment, mean),
-            None => Ok(None),
-        }
-    }
-
-    #[test]
-    fn test_moment_compute() -> PolarsResult<()> {
-        let s = Series::new(PlSmallStr::EMPTY, &[1, 2, 3, 4, 5, 23]);
-
-        assert_eq!(moment(&s, 0)?, Some(1.0));
-        assert_eq!(moment(&s, 1)?, Some(0.0));
-        assert!((moment(&s, 2)?.unwrap() - 57.22222222222223).abs() < 0.00001);
-        assert!((moment(&s, 3)?.unwrap() - 724.0740740740742).abs() < 0.00001);
-
-        Ok(())
-    }
 
     #[test]
     fn test_skew() -> PolarsResult<()> {

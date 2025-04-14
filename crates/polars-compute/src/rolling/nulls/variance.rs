@@ -17,23 +17,19 @@ pub struct VarWindow<'a, T> {
 impl<T: NativeType + ToPrimitive> VarWindow<'_, T> {
     // compute sum from the entire window
     unsafe fn compute_var_and_null_count(&mut self, start: usize, end: usize) {
-        let mut var = None;
+        self.var = None;
         let mut idx = start;
         self.null_count = 0;
         for value in &self.slice[start..end] {
             let valid = self.validity.get_bit_unchecked(idx);
             if valid {
                 let value: f64 = NumCast::from(*value).unwrap();
-                match &mut var {
-                    None => var = Some(VarState::new_single(value)),
-                    Some(current) => current.insert_one(value),
-                }
+                self.var.get_or_insert_default().insert_one(value);
             } else {
                 self.null_count += 1;
             }
             idx += 1;
         }
-        self.var = var;
     }
 }
 
@@ -115,11 +111,7 @@ impl<'a, T: NativeType + ToPrimitive + IsFloat + FromPrimitive> RollingAggWindow
                 if valid {
                     let entering_value = *self.slice.get_unchecked(idx);
                     let entering_value: f64 = NumCast::from(entering_value).unwrap();
-
-                    match &mut self.var {
-                        None => self.var = Some(VarState::new_single(entering_value)),
-                        Some(current) => current.insert_one(entering_value),
-                    }
+                    self.var.get_or_insert_default().insert_one(entering_value);
                 } else {
                     // null value entering the window
                     self.null_count += 1;
