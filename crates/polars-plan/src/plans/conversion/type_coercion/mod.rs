@@ -10,6 +10,7 @@ use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_
 use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
 
+use self::is_in::IsInTypeCoercionResult;
 use super::*;
 
 pub struct TypeCoercionRule {}
@@ -162,14 +163,41 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                let Some(casted_expr) = is_in::resolve_is_in(input, expr_arena, lp_arena, lp_node)?
+                let Some(result) = is_in::resolve_is_in(input, expr_arena, lp_arena, lp_node)?
                 else {
                     return Ok(None);
                 };
 
                 let mut input = input.to_vec();
-                let other_input = expr_arena.add(casted_expr);
-                input[1].set_node(other_input);
+                match result {
+                    IsInTypeCoercionResult::SuperType(self_type, other_type) => {
+                        let self_input = expr_arena.add(AExpr::Cast {
+                            expr: input[0].node(),
+                            dtype: self_type,
+                            options: CastOptions::NonStrict,
+                        });
+                        let other_input = expr_arena.add(AExpr::Cast {
+                            expr: input[1].node(),
+                            dtype: other_type,
+                            options: CastOptions::NonStrict,
+                        });
+                        input[0].set_node(self_input);
+                        input[1].set_node(other_input);
+                    },
+                    IsInTypeCoercionResult::OtherCast(dtype) => {
+                        let other_input = expr_arena.add(AExpr::Cast {
+                            expr: input[1].node(),
+                            dtype,
+                            options: CastOptions::NonStrict,
+                        });
+                        input[1].set_node(other_input);
+                    },
+                    IsInTypeCoercionResult::Implode => {
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        input[1].set_node(other_input);
+                    },
+                }
 
                 Some(AExpr::Function {
                     function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),

@@ -1,11 +1,17 @@
 use super::*;
 
+pub(super) enum IsInTypeCoercionResult {
+    SuperType(DataType, DataType),
+    OtherCast(DataType),
+    Implode,
+}
+
 pub(super) fn resolve_is_in(
     input: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     lp_arena: &Arena<IR>,
     lp_node: Node,
-) -> PolarsResult<Option<AExpr>> {
+) -> PolarsResult<Option<IsInTypeCoercionResult>> {
     let input_schema = get_schema(lp_arena, lp_node);
     let other_e = &input[1];
     let (_, type_left) = unpack!(get_aexpr_and_type(
@@ -31,7 +37,7 @@ Please use `implode` to return to previous behavior.
 
 See https://github.com/pola-rs/polars/issues/22149 for more information."
         );
-        return Ok(Some(AExpr::Agg(IRAggExpr::Implode(other_e.node()))));
+        return Ok(Some(IsInTypeCoercionResult::Implode));
     }
 
     if left_nl + 1 != right_nl {
@@ -53,36 +59,24 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         // types are equal, do nothing
         (a, b) if a == b => return Ok(None),
         // all-null can represent anything (and/or empty list), so cast to target dtype
-        (_, DataType::Null) => AExpr::Cast {
-            expr: other_e.node(),
-            dtype: cast_type,
-            options: CastOptions::NonStrict,
-        },
+        (_, DataType::Null) => IsInTypeCoercionResult::OtherCast(cast_type),
         #[cfg(feature = "dtype-categorical")]
-        (DataType::Enum(_, _), DataType::String) => AExpr::Cast {
-            expr: other_e.node(),
-            dtype: cast_type,
-            options: CastOptions::NonStrict,
-        },
+        (DataType::Enum(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast(cast_type),
 
         // @NOTE: Local Categorical coercion has to happen in the kernel, which makes it streaming
         // incompatible.
         #[cfg(feature = "dtype-categorical")]
         (DataType::Categorical(Some(rm), ordering), DataType::String) if rm.is_global() => {
-            AExpr::Cast {
-                expr: other_e.node(),
-                dtype: match &type_other {
-                    DataType::List(_) => {
-                        DataType::List(Box::new(DataType::Categorical(None, *ordering)))
-                    },
-                    #[cfg(feature = "dtype-array")]
-                    DataType::Array(_, width) => {
-                        DataType::Array(Box::new(DataType::Categorical(None, *ordering)), *width)
-                    },
-                    _ => unreachable!(),
+            IsInTypeCoercionResult::OtherCast(match &type_other {
+                DataType::List(_) => {
+                    DataType::List(Box::new(DataType::Categorical(None, *ordering)))
                 },
-                options: CastOptions::NonStrict,
-            }
+                #[cfg(feature = "dtype-array")]
+                DataType::Array(_, width) => {
+                    DataType::Array(Box::new(DataType::Categorical(None, *ordering)), *width)
+                },
+                _ => unreachable!(),
+            })
         },
 
         #[cfg(feature = "dtype-categorical")]
@@ -90,10 +84,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         #[cfg(feature = "dtype-categorical")]
         (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => return Ok(None),
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => AExpr::Cast {
-            expr: other_e.node(),
-            dtype: cast_type,
-            options: CastOptions::NonStrict,
+        (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
+            IsInTypeCoercionResult::OtherCast(cast_type)
         },
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
@@ -142,6 +134,46 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         // don't attempt to cast between obviously mismatched types, but
         // allow integer/float comparison (will use their supertypes).
         (a, b) => {
+            use DataType as T;
+            if a != b
+                && a.to_physical().is_primitive_numeric()
+                && b.to_physical().is_primitive_numeric()
+            {
+                // @TAG: 2.0
+                // @HACK: `is_in` does supertype casting between primitive numerics, which
+                // honestly makes very little sense. To stay backwards compatible we keep this,
+                // but please 2.0 remove this.
+
+                // Since these two also also physically numerical but aren't allowed, we exclude
+                // them here.
+                let mut is_allowed_type = true;
+                #[cfg(feature = "dtype-categorical")]
+                {
+                    is_allowed_type &= !matches!(a, T::Categorical(..) | T::Enum(..));
+                }
+                #[cfg(feature = "dtype-decimal")]
+                {
+                    is_allowed_type &= !matches!(a, T::Decimal(..));
+                }
+
+                if is_allowed_type {
+                    let super_type =
+                        polars_core::utils::try_get_supertype(&type_left, type_other_inner)?;
+                    let other_type = match &type_other {
+                        DataType::List(_) => DataType::List(Box::new(super_type.clone())),
+                        #[cfg(feature = "dtype-array")]
+                        DataType::Array(_, width) => {
+                            DataType::Array(Box::new(super_type.clone()), *width)
+                        },
+                        _ => unreachable!(),
+                    };
+
+                    return Ok(Some(IsInTypeCoercionResult::SuperType(
+                        super_type, other_type,
+                    )));
+                }
+            }
+
             if (a.is_primitive_numeric() && b.is_primitive_numeric()) || (a == &DataType::Null) {
                 return Ok(None);
             }

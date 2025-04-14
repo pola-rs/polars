@@ -133,63 +133,24 @@ where
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
-    fn is_in_numeric_broadcast<T>(
-        ca_in: &ChunkedArray<T>,
-        other: &ChunkedArray<T>,
-        nulls_equal: bool,
-    ) -> PolarsResult<BooleanChunked>
-    where
-        T: PolarsNumericType,
-        T::Native: TotalHash + TotalEq + ToTotalOrd,
-        <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
-    {
-        // first make sure that the types are equal
-        if ca_in.dtype() != other.dtype() {
-            let st = try_get_supertype(ca_in.dtype(), other.dtype())?;
-            let left = ca_in.cast(&st)?;
-            let right = other.cast(&st)?;
-
-            let ca_in: &ChunkedArray<T> = left.as_ref().as_ref();
-            let other: &ChunkedArray<T> = right.as_ref().as_ref();
-
-            is_in_helper_ca(ca_in, other, nulls_equal)
-        } else {
-            is_in_helper_ca(ca_in, other, nulls_equal)
-        }
-    }
-
-    // We check implicitly cast to supertype here
     match other.dtype() {
-        DataType::List(dt) => {
+        DataType::List(..) => {
             let other = other.list()?;
-            let st = try_get_supertype(ca_in.dtype(), dt)?;
-            if &st != ca_in.dtype() || **dt != st {
-                let left = ca_in.cast(&st)?;
-                let right = other.cast(&DataType::List(Box::new(st)))?;
-                return is_in(&left, &right, nulls_equal);
-            };
-
             if other.len() == 1 {
                 let other = other.explode()?;
                 let other = other.as_ref().as_ref();
-                is_in_numeric_broadcast(ca_in, other, nulls_equal)
+                is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
                 is_in_numeric_list(ca_in, other)
             }
         },
         #[cfg(feature = "dtype-array")]
-        DataType::Array(dt, width) => {
+        DataType::Array(..) => {
             let other = other.array()?;
-            let st = try_get_supertype(ca_in.dtype(), dt)?;
-            if &st != ca_in.dtype() || **dt != st {
-                let left = ca_in.cast(&st)?;
-                let right = other.cast(&DataType::Array(Box::new(st), *width))?;
-                return is_in(&left, &right, nulls_equal);
-            };
             if other.len() == 1 {
                 let other = other.explode()?;
                 let other = other.as_ref().as_ref();
-                is_in_numeric_broadcast(ca_in, other, nulls_equal)
+                is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
                 is_in_numeric_array(ca_in, other)
             }
