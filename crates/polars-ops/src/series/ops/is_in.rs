@@ -50,6 +50,7 @@ where
 fn is_in_numeric_list<T>(
     ca_in: &ChunkedArray<T>,
     other: &ListChunked,
+    nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked>
 where
     T: PolarsNumericType,
@@ -57,28 +58,58 @@ where
 {
     let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
         let value = ca_in.get(0);
-        other.apply_amortized_generic(|opt_s| {
-            Some(
-                opt_s.map(|s| {
-                    let ca = s.as_ref().unpack::<T>().unwrap();
-                    ca.iter().any(|a| a == value)
-                }) == Some(true),
-            )
-        })
+        match value {
+            None if !nulls_equal => BooleanChunked::full_null(PlSmallStr::EMPTY, other.len()),
+            None => other.apply_amortized_generic(|opt_s| {
+                Some(
+                    opt_s.map(|s| {
+                        let ca = s.as_ref().unpack::<T>().unwrap();
+                        ca.has_nulls()
+                    }) == Some(true),
+                )
+            }),
+            Some(value) => other.apply_amortized_generic(|opt_s| {
+                Some(
+                    opt_s.map(|s| {
+                        let ca = s.as_ref().unpack::<T>().unwrap();
+                        ca.iter().any(|a| a == Some(value))
+                    }) == Some(true),
+                )
+            }),
+        }
     } else {
-        polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
+        polars_ensure!(
+            ca_in.len() == other.len(),
+            ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}",
+            ca_in.len(), other.len()
+        );
         {
-            ca_in
-                .iter()
-                .zip(other.amortized_iter())
-                .map(|(value, series)| match (value, series) {
-                    (val, Some(series)) => {
-                        let ca = series.as_ref().unpack::<T>().unwrap();
-                        ca.iter().any(|a| a == val)
-                    },
-                    _ => false,
-                })
-                .collect_trusted()
+            if nulls_equal {
+                ca_in
+                    .iter()
+                    .zip(other.amortized_iter())
+                    .map(|(value, series)| match (value, series) {
+                        (val, Some(series)) => {
+                            let ca = series.as_ref().unpack::<T>().unwrap();
+                            ca.iter().any(|a| a == val)
+                        },
+                        _ => false,
+                    })
+                    .collect_trusted()
+            } else {
+                ca_in
+                    .iter()
+                    .zip(other.amortized_iter())
+                    .map(|(value, series)| match (value, series) {
+                        (None, _) => None,
+                        (val, Some(series)) => {
+                            let ca = series.as_ref().unpack::<T>().unwrap();
+                            Some(ca.iter().any(|a| a == val))
+                        },
+                        _ => Some(false),
+                    })
+                    .collect_trusted()
+            }
         }
     };
     ca.rename(ca_in.name().clone());
@@ -89,6 +120,7 @@ where
 fn is_in_numeric_array<T>(
     ca_in: &ChunkedArray<T>,
     other: &ArrayChunked,
+    nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked>
 where
     T: PolarsNumericType,
@@ -96,28 +128,59 @@ where
 {
     let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
         let value = ca_in.get(0);
-
-        other.apply_amortized_generic(|opt_s| {
-            Some(
-                opt_s.map(|s| {
-                    let ca = s.as_ref().unpack::<T>().unwrap();
-                    ca.iter().any(|a| a == value)
-                }) == Some(true),
-            )
-        })
+        match value {
+            None if !nulls_equal => BooleanChunked::full_null(PlSmallStr::EMPTY, other.len()),
+            None => other.apply_amortized_generic(|opt_s| {
+                Some(
+                    opt_s.map(|s| {
+                        let ca = s.as_ref().unpack::<T>().unwrap();
+                        ca.has_nulls()
+                    }) == Some(true),
+                )
+            }),
+            Some(value) => other.apply_amortized_generic(|opt_s| {
+                Some(
+                    opt_s.map(|s| {
+                        let ca = s.as_ref().unpack::<T>().unwrap();
+                        ca.iter().any(|a| a == Some(value))
+                    }) == Some(true),
+                )
+            }),
+        }
     } else {
-        polars_ensure!(ca_in.len() == other.len(), ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}", ca_in.len(), other.len());
-        ca_in
-            .iter()
-            .zip(other.amortized_iter())
-            .map(|(value, series)| match (value, series) {
-                (val, Some(series)) => {
-                    let ca = series.as_ref().unpack::<T>().unwrap();
-                    ca.iter().any(|a| a == val)
-                },
-                _ => false,
-            })
-            .collect_trusted()
+        polars_ensure!(
+            ca_in.len() == other.len(),
+            ComputeError: "shapes don't match: expected {} elements in 'is_in' comparison, got {}",
+            ca_in.len(), other.len()
+        );
+        {
+            if nulls_equal {
+                ca_in
+                    .iter()
+                    .zip(other.amortized_iter())
+                    .map(|(value, series)| match (value, series) {
+                        (val, Some(series)) => {
+                            let ca = series.as_ref().unpack::<T>().unwrap();
+                            ca.iter().any(|a| a == val)
+                        },
+                        _ => false,
+                    })
+                    .collect_trusted()
+            } else {
+                ca_in
+                    .iter()
+                    .zip(other.amortized_iter())
+                    .map(|(value, series)| match (value, series) {
+                        (None, _) => None,
+                        (val, Some(series)) => {
+                            let ca = series.as_ref().unpack::<T>().unwrap();
+                            Some(ca.iter().any(|a| a == val))
+                        },
+                        _ => Some(false),
+                    })
+                    .collect_trusted()
+            }
+        }
     };
     ca.rename(ca_in.name().clone());
     Ok(ca)
@@ -141,7 +204,7 @@ where
                 let other = other.as_ref().as_ref();
                 is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
-                is_in_numeric_list(ca_in, other)
+                is_in_numeric_list(ca_in, other, nulls_equal)
             }
         },
         #[cfg(feature = "dtype-array")]
@@ -152,7 +215,7 @@ where
                 let other = other.as_ref().as_ref();
                 is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
-                is_in_numeric_array(ca_in, other)
+                is_in_numeric_array(ca_in, other, nulls_equal)
             }
         },
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
@@ -1003,6 +1066,8 @@ pub fn is_in(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Bool
         },
         dt if dt.to_physical().is_primitive_numeric() => {
             let s = s.to_physical_repr();
+            let other = other.to_physical_repr();
+            let other = other.as_ref();
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_in_numeric(ca, other, nulls_equal)

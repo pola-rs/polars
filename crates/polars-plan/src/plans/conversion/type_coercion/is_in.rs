@@ -134,29 +134,13 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         // don't attempt to cast between obviously mismatched types, but
         // allow integer/float comparison (will use their supertypes).
         (a, b) => {
-            use DataType as T;
-            if a != b
-                && a.to_physical().is_primitive_numeric()
-                && b.to_physical().is_primitive_numeric()
-            {
-                // @TAG: 2.0
-                // @HACK: `is_in` does supertype casting between primitive numerics, which
-                // honestly makes very little sense. To stay backwards compatible we keep this,
-                // but please 2.0 remove this.
+            if (a.is_primitive_numeric() && b.is_primitive_numeric()) || (a == &DataType::Null) {
+                if a != b {
+                    // @TAG: 2.0
+                    // @HACK: `is_in` does supertype casting between primitive numerics, which
+                    // honestly makes very little sense. To stay backwards compatible we keep this,
+                    // but please in 2.0 remove this.
 
-                // Since these two also also physically numerical but aren't allowed, we exclude
-                // them here.
-                let mut is_allowed_type = true;
-                #[cfg(feature = "dtype-categorical")]
-                {
-                    is_allowed_type &= !matches!(a, T::Categorical(..) | T::Enum(..));
-                }
-                #[cfg(feature = "dtype-decimal")]
-                {
-                    is_allowed_type &= !matches!(a, T::Decimal(..));
-                }
-
-                if is_allowed_type {
                     let super_type =
                         polars_core::utils::try_get_supertype(&type_left, type_other_inner)?;
                     let other_type = match &type_other {
@@ -172,9 +156,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         super_type, other_type,
                     )));
                 }
-            }
 
-            if (a.is_primitive_numeric() && b.is_primitive_numeric()) || (a == &DataType::Null) {
                 return Ok(None);
             }
             polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)
