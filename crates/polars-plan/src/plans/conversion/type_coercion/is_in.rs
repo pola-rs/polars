@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) enum IsInTypeCoercionResult {
     SuperType(DataType, DataType),
+    SelfCast { dtype: DataType, strict: bool },
     OtherCast { dtype: DataType, strict: bool },
     Implode,
 }
@@ -72,6 +73,18 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             dtype: cast_type,
             strict: true,
         },
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::String, DataType::Enum(_, _)) => IsInTypeCoercionResult::SelfCast {
+            dtype: type_other_inner.clone(),
+            strict: true,
+        },
+        #[cfg(feature = "dtype-categorical")]
+        (DataType::String, DataType::Categorical(Some(rm), ordering)) if rm.is_global() => {
+            IsInTypeCoercionResult::SelfCast {
+                dtype: DataType::Categorical(None, *ordering),
+                strict: false,
+            }
+        },
 
         // @NOTE: Local Categorical coercion has to happen in the kernel, which makes it streaming
         // incompatible.
@@ -95,7 +108,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         #[cfg(feature = "dtype-categorical")]
         (DataType::Categorical(_, _), DataType::String) => return Ok(None),
         #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => return Ok(None),
+        (DataType::String, DataType::Categorical(_, _)) => return Ok(None),
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
             IsInTypeCoercionResult::OtherCast {

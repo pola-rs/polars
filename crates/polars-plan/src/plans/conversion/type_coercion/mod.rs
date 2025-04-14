@@ -229,6 +229,20 @@ impl OptimizationRule for TypeCoercionRule {
                             CastOptions::NonStrict,
                         )?;
                     },
+                    IsInTypeCoercionResult::SelfCast { dtype, strict } => {
+                        let input_schema = get_schema(lp_arena, lp_node);
+                        let (_, type_self) = unpack!(get_aexpr_and_type(
+                            expr_arena,
+                            input[flat].node(),
+                            &input_schema
+                        ));
+                        let options = if strict {
+                            CastOptions::Strict
+                        } else {
+                            CastOptions::NonStrict
+                        };
+                        cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
+                    },
                     IsInTypeCoercionResult::OtherCast { dtype, strict } => {
                         let input_schema = get_schema(lp_arena, lp_node);
                         let (_, type_other) = unpack!(get_aexpr_and_type(

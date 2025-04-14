@@ -533,15 +533,20 @@ def test_is_in_with_wildcard_13809() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
-@pytest.mark.may_fail_auto_streaming
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pytest.param(pl.Categorical, marks=pytest.mark.may_fail_auto_streaming),
+        pl.Enum(["a", "b", "c", "d"]),
+    ],
+)
 def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
     s = pl.Series(["c", "c", "b"], dtype=dtype)
 
     # test local
     assert_series_equal(
-        pl.Series(["a", "d", "e", "b"]).is_in(s),
-        pl.Series([False, False, False, True]),
+        pl.Series(["a", "d", "b"]).is_in(s),
+        pl.Series([False, False, True]),
     )
 
 
@@ -586,6 +591,7 @@ def test_cat_list_is_in_from_cat_single(val: str | None, expected: list[bool]) -
     assert_frame_equal(res, expected_df)
 
 
+@pl.StringCache()
 def test_cat_list_is_in_from_str() -> None:
     df = pl.DataFrame(
         [
@@ -603,6 +609,7 @@ def test_cat_list_is_in_from_str() -> None:
     assert_frame_equal(res, expected_df)
 
 
+@pl.StringCache()
 @pytest.mark.parametrize(
     ("val", "expected"),
     [

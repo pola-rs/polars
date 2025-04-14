@@ -234,6 +234,10 @@ where
         DataType::List(..) => {
             let other = other.list()?;
             if other.len() == 1 {
+                if other.has_nulls() {
+                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
+                }
+
                 let other = other.explode()?;
                 let other = other.as_ref().as_ref();
                 is_in_helper_ca(ca_in, other, nulls_equal)
@@ -245,6 +249,10 @@ where
         DataType::Array(..) => {
             let other = other.array()?;
             if other.len() == 1 {
+                if other.has_nulls() {
+                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
+                }
+
                 let other = other.explode()?;
                 let other = other.as_ref().as_ref();
                 is_in_helper_ca(ca_in, other, nulls_equal)
@@ -300,6 +308,10 @@ fn is_in_binary(
         DataType::List(dt) if DataType::Binary == **dt => {
             let other = other.list()?;
             if other.len() == 1 {
+                if other.has_nulls() {
+                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
+                }
+
                 let other = other.explode()?;
                 let other = other.binary()?;
                 is_in_helper_ca(ca_in, other, nulls_equal)
@@ -311,6 +323,10 @@ fn is_in_binary(
         DataType::Array(dt, _) if DataType::Binary == **dt => {
             let other = other.array()?;
             if other.len() == 1 {
+                if other.has_nulls() {
+                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
+                }
+
                 let other = other.explode()?;
                 let other = other.binary()?;
                 is_in_helper_ca(ca_in, other, nulls_equal)
@@ -360,6 +376,10 @@ fn is_in_boolean(
         DataType::List(dt) if ca_in.dtype() == &**dt => {
             let other = other.list()?;
             if other.len() == 1 {
+                if other.has_nulls() {
+                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
+                }
+
                 let other = other.explode()?;
                 let other = other.bool()?;
                 is_in_boolean_broadcast(ca_in, other, nulls_equal)
@@ -371,6 +391,10 @@ fn is_in_boolean(
         DataType::Array(dt, _) if ca_in.dtype() == &**dt => {
             let other = other.array()?;
             if other.len() == 1 {
+                if other.has_nulls() {
+                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
+                }
+
                 let other = other.explode()?;
                 let other = other.bool()?;
                 is_in_boolean_broadcast(ca_in, other, nulls_equal)
@@ -523,6 +547,7 @@ fn is_in_cat_and_enum(
         },
         _ => polars_bail!(opq = is_in, ca_in.dtype(), other.dtype()),
     };
+
     is_in_numeric(ca_in.physical(), &other, nulls_equal)
 }
 
@@ -533,6 +558,10 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
             DataType::List(_) => {
                 let other = other.list()?;
                 if other.len() == 1 {
+                    if other.has_nulls() {
+                        return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
+                    }
+
                     let other = other.explode()?;
                     BooleanChunked::from_iter_values(
                         ca_in.name().clone(),
@@ -548,6 +577,10 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
             DataType::Array(_, _) => {
                 let other = other.array()?;
                 if other.len() == 1 {
+                    if other.has_nulls() {
+                        return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
+                    }
+
                     let other = other.explode()?;
                     BooleanChunked::from_iter_values(
                         ca_in.name().clone(),
@@ -625,6 +658,10 @@ fn is_in_row_encoded(
                 )
             })?;
             if other.len() == 1 {
+                if other.has_nulls() {
+                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
+                }
+
                 let other = other.explode()?;
                 let other = other.binary_offset()?;
                 is_in_helper_ca(&ca_in, other, nulls_equal)
@@ -642,6 +679,10 @@ fn is_in_row_encoded(
                 )
             })?;
             if other.len() == 1 {
+                if other.has_nulls() {
+                    return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
+                }
+
                 let other = other.explode()?;
                 let other = other.binary_offset()?;
                 is_in_helper_ca(&ca_in, other, nulls_equal)
