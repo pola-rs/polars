@@ -355,11 +355,7 @@ impl SkewState {
         let m2 = self.m2 / self.weight;
         let m3 = self.m3 / self.weight;
         let is_zero = m2 <= (f64::EPSILON * self.mean).powi(2);
-        let biased_est = if is_zero {
-            f64::NAN
-        } else {
-            m3 / m2.powf(1.5)
-        };
+        let biased_est = if is_zero { f64::NAN } else { m3 / m2.powf(1.5) };
         if bias {
             if self.weight == 0.0 {
                 None
@@ -516,16 +512,12 @@ impl KurtosisState {
         let m4 = self.m4 / self.weight;
         let m2 = self.m2 / self.weight;
         let is_zero = m2 <= (f64::EPSILON * self.mean).powi(2);
-        let biased_est = if is_zero {
-            f64::NAN
-        } else {
-            m4 / (m2 * m2)
-        };
+        let biased_est = if is_zero { f64::NAN } else { m4 / (m2 * m2) };
         let out = if bias {
             if self.weight == 0.0 {
                 return None;
             }
-                
+
             biased_est
         } else {
             if self.weight <= 3.0 {
