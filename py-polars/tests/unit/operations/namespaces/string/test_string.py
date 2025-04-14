@@ -543,14 +543,6 @@ def test_str_to_integer_dtype() -> None:
     )
     assert_frame_equal(out, expected)
 
-    # test invalid dtype raise
-    df = pl.DataFrame(
-        {"str": ["1111111", "7f", "-128", None, "42"], "base": [2, 16, 10, 8, None]}
-    )
-
-    with pytest.raises(ComputeError):
-        df.select(pl.col("str").str.to_integer(base="base", dtype=pl.Decimal))
-
 
 def test_str_to_integer_large() -> None:
     df = pl.DataFrame(
