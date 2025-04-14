@@ -274,7 +274,8 @@ def test_is_in_boolean(nulls_equal: bool) -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.List(pl.Boolean), pl.Array(pl.Boolean, 2)])
-def test_is_in_boolean_list(dtype: PolarsDataType) -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_boolean_list(dtype: PolarsDataType, nulls_equal: bool) -> None:
     # Note list is_in does not propagate nulls.
     df = pl.DataFrame(
         {
@@ -291,8 +292,10 @@ def test_is_in_boolean_list(dtype: PolarsDataType) -> None:
             ),
         }
     )
-    result = df.select(pl.col("a").is_in("b"))["a"]
-    expected = pl.Series("a", [True, False, True, False, False])
+    missing_true = True if nulls_equal else None
+    missing_false = False if nulls_equal else None
+    result = df.select(pl.col("a").is_in("b", nulls_equal=nulls_equal))["a"]
+    expected = pl.Series("a", [True, False, missing_true, missing_false, missing_false])
     assert_series_equal(result, expected)
 
 
