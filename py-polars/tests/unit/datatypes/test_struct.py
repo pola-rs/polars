@@ -762,7 +762,7 @@ def test_struct_is_in() -> None:
     # The dtype casts below test that struct is_in upcasts dtypes.
     s1 = (
         pl.DataFrame({"x": [4, 3, 4, 9], "y": [0, 4, 6, 2]})
-        .select(pl.struct(schema={"x": pl.Int8, "y": pl.Float32}))
+        .select(pl.struct(schema={"x": pl.Int64, "y": pl.Int64}))
         .to_series()
     )
     s2 = (

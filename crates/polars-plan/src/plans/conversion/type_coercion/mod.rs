@@ -159,41 +159,64 @@ impl OptimizationRule for TypeCoercionRule {
             } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
             #[cfg(feature = "is_in")]
             AExpr::Function {
-                function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
+                ref function,
                 ref input,
                 options,
-            } => {
-                let Some(result) = is_in::resolve_is_in(input, expr_arena, lp_arena, lp_node)?
+            } if {
+                let mut matches = matches!(
+                    function,
+                    FunctionExpr::Boolean(BooleanFunction::IsIn { .. })
+                        | FunctionExpr::ListExpr(ListFunction::Contains)
+                );
+                #[cfg(feature = "dtype-array")]
+                {
+                    matches |= matches!(function, FunctionExpr::ArrayExpr(ArrayFunction::Contains));
+                }
+                matches
+            } =>
+            {
+                let (op, flat, nested, is_contains) = match function {
+                    FunctionExpr::Boolean(BooleanFunction::IsIn { .. }) => ("is_in", 0, 1, false),
+                    FunctionExpr::ListExpr(ListFunction::Contains) => ("list.contains", 1, 0, true),
+                    #[cfg(feature = "dtype-array")]
+                    FunctionExpr::ArrayExpr(ArrayFunction::Contains) => {
+                        ("arr.contains", 1, 0, true)
+                    },
+                    _ => unreachable!(),
+                };
+
+                let Some(result) =
+                    is_in::resolve_is_in(input, expr_arena, lp_arena, lp_node, is_contains, op, flat, nested)?
                 else {
                     return Ok(None);
                 };
 
+                let function = function.clone();
                 let mut input = input.to_vec();
                 match result {
-                    IsInTypeCoercionResult::SuperType(self_type, other_type) => {
+                    IsInTypeCoercionResult::SuperType(flat_type, nested_type) => {
                         let input_schema = get_schema(lp_arena, lp_node);
-                        let other_e = &input[1];
                         let (_, type_left) = unpack!(get_aexpr_and_type(
                             expr_arena,
-                            input[0].node(),
+                            input[flat].node(),
                             &input_schema
                         ));
                         let (_, type_other) = unpack!(get_aexpr_and_type(
                             expr_arena,
-                            other_e.node(),
+                            input[nested].node(),
                             &input_schema
                         ));
                         cast_expr_ir(
-                            &mut input[0],
+                            &mut input[flat],
                             &type_left,
-                            &self_type,
+                            &flat_type,
                             expr_arena,
                             CastOptions::NonStrict,
                         )?;
                         cast_expr_ir(
-                            &mut input[1],
+                            &mut input[nested],
                             &type_other,
-                            &other_type,
+                            &nested_type,
                             expr_arena,
                             CastOptions::NonStrict,
                         )?;
@@ -202,7 +225,7 @@ impl OptimizationRule for TypeCoercionRule {
                         let input_schema = get_schema(lp_arena, lp_node);
                         let (_, type_other) = unpack!(get_aexpr_and_type(
                             expr_arena,
-                            input[1].node(),
+                            input[nested].node(),
                             &input_schema
                         ));
                         let options = if strict {
@@ -210,9 +233,10 @@ impl OptimizationRule for TypeCoercionRule {
                         } else {
                             CastOptions::NonStrict
                         };
-                        cast_expr_ir(&mut input[1], &type_other, &dtype, expr_arena, options)?;
+                        cast_expr_ir(&mut input[nested], &type_other, &dtype, expr_arena, options)?;
                     },
                     IsInTypeCoercionResult::Implode => {
+                        assert!(!is_contains);
                         let other_input =
                             expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
                         input[1].set_node(other_input);
@@ -220,7 +244,7 @@ impl OptimizationRule for TypeCoercionRule {
                 }
 
                 Some(AExpr::Function {
-                    function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
+                    function,
                     input,
                     options,
                 })

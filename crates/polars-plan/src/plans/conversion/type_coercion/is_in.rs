@@ -11,17 +11,20 @@ pub(super) fn resolve_is_in(
     expr_arena: &Arena<AExpr>,
     lp_arena: &Arena<IR>,
     lp_node: Node,
+    is_contains: bool,
+    op: &'static str,
+    flat_idx: usize,
+    nested_idx: usize,
 ) -> PolarsResult<Option<IsInTypeCoercionResult>> {
     let input_schema = get_schema(lp_arena, lp_node);
-    let other_e = &input[1];
     let (_, type_left) = unpack!(get_aexpr_and_type(
         expr_arena,
-        input[0].node(),
+        input[flat_idx].node(),
         &input_schema
     ));
     let (_, type_other) = unpack!(get_aexpr_and_type(
         expr_arena,
-        other_e.node(),
+        input[nested_idx].node(),
         &input_schema
     ));
 
@@ -29,7 +32,7 @@ pub(super) fn resolve_is_in(
     let right_nl = type_other.nesting_level();
 
     // @HACK. This needs to happen until 2.0 because we support `pl.col.a.is_in(pl.col.a)`.
-    if left_nl == right_nl {
+    if !is_contains && left_nl == right_nl {
         polars_warn!(
             Deprecation,
             "`is_in` with a collection of the same datatype is ambiguous and deprecated.
@@ -41,7 +44,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
     }
 
     if left_nl + 1 != right_nl {
-        polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left);
+        polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data", &type_other, &type_left);
     }
 
     let type_other_inner = type_other.inner_dtype().unwrap();
@@ -94,11 +97,14 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => return Ok(None),
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
-            IsInTypeCoercionResult::OtherCast { dtype: cast_type, strict: false }
+            IsInTypeCoercionResult::OtherCast {
+                dtype: cast_type,
+                strict: false,
+            }
         },
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
-            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)
+            polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data", &type_other, &type_left)
         },
         // can't check for more granular time_unit in less-granular time_unit data,
         // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
@@ -106,39 +112,42 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             if lhs_unit <= rhs_unit {
                 return Ok(None);
             } else {
-                polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit)
+                polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit)
             }
         },
         (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
             if lhs_unit <= rhs_unit {
                 return Ok(None);
             } else {
-                polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
+                polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
             }
         },
-        (_, DataType::List(other_inner)) => {
-            if other_inner.as_ref() == &type_left
-                || (type_left == DataType::Null)
-                || (other_inner.as_ref() == &DataType::Null)
-                || (other_inner.as_ref().is_primitive_numeric() && type_left.is_primitive_numeric())
-            {
-                return Ok(None);
-            }
-            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_left, &type_other)
+        (_, DataType::List(_)) => {
+            polars_ensure!(
+                &type_left == type_other_inner,
+                InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data",
+                &type_left, &type_other
+            );
+            return Ok(None);
         },
         #[cfg(feature = "dtype-array")]
-        (_, DataType::Array(other_inner, _)) => {
-            if other_inner.as_ref() == &type_left
-                || (type_left == DataType::Null)
-                || (other_inner.as_ref() == &DataType::Null)
-                || (other_inner.as_ref().is_primitive_numeric() && type_left.is_primitive_numeric())
-            {
-                return Ok(None);
-            }
-            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_left, &type_other)
+        (_, DataType::Array(_, _)) => {
+            polars_ensure!(
+                &type_left == type_other_inner,
+                InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data",
+                &type_left, &type_other
+            );
+            return Ok(None);
         },
         #[cfg(feature = "dtype-struct")]
-        (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return Ok(None),
+        (DataType::Struct(_), _) | (_, DataType::Struct(_)) => {
+            polars_ensure!(
+                &type_left == type_other_inner,
+                InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data",
+                &type_left, &type_other
+            );
+            return Ok(None);
+        },
 
         // don't attempt to cast between obviously mismatched types, but
         // allow integer/float comparison (will use their supertypes).
@@ -168,7 +177,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
                 return Ok(None);
             }
-            polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)
+            polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data", &type_other, &type_left)
         },
     };
     Ok(Some(casted_expr))

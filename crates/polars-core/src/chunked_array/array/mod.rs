@@ -141,40 +141,37 @@ impl ArrayChunked {
     ) -> PolarsResult<ArrayChunked> {
         // Rechunk or the generated Series will have wrong length.
         let ca = self.rechunk();
-        let field = self
-            .inner_dtype()
-            .to_arrow_field(PlSmallStr::from_static("item"), CompatLevel::newest());
+        let arr = ca.downcast_as_array();
 
-        let chunks = ca.downcast_iter().map(|arr| {
-            let elements = unsafe {
-                Series::_try_from_arrow_unchecked_with_md(
-                    self.name().clone(),
-                    vec![(*arr.values()).clone()],
-                    &field.dtype,
-                    field.metadata.as_deref(),
-                )
-                .unwrap()
-            };
+        // SAFETY:
+        // Inner dtype is passed correctly
+        let elements = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                self.name().clone(),
+                vec![arr.values().clone()],
+                ca.inner_dtype(),
+            )
+        };
 
-            let expected_len = elements.len();
-            let out: Series = func(elements)?;
-            polars_ensure!(
-                out.len() == expected_len,
-                ComputeError: "the function should apply element-wise, it removed elements instead"
-            );
-            let out = out.rechunk();
-            let values = out.chunks()[0].clone();
+        let expected_len = elements.len();
+        let out: Series = func(elements)?;
+        polars_ensure!(
+            out.len() == expected_len,
+            ComputeError: "the function should apply element-wise, it removed elements instead"
+        );
+        let out = out.rechunk();
+        let values = out.chunks()[0].clone();
 
-            let inner_dtype = FixedSizeListArray::default_datatype(
-                out.dtype().to_arrow(CompatLevel::newest()),
-                ca.width(),
-            );
-            let arr =
-                FixedSizeListArray::new(inner_dtype, arr.len(), values, arr.validity().cloned());
-            Ok(arr)
-        });
+        let inner_dtype = FixedSizeListArray::default_datatype(values.dtype().clone(), ca.width());
+        let arr = FixedSizeListArray::new(inner_dtype, arr.len(), values, arr.validity().cloned());
 
-        ArrayChunked::try_from_chunk_iter(self.name().clone(), chunks)
+        Ok(unsafe {
+            ArrayChunked::from_chunks_and_dtype_unchecked(
+                self.name().clone(),
+                vec![arr.into_boxed()],
+                DataType::Array(Box::new(out.dtype().clone()), self.width()),
+            )
+        })
     }
 
     /// Recurse nested types until we are at the leaf array.

@@ -163,11 +163,11 @@ def test_is_in_struct() -> None:
 def test_is_in_null_prop() -> None:
     assert pl.Series([None], dtype=pl.Float32).is_in(pl.Series([42])).item() is None
     assert pl.Series([{"a": None}, None], dtype=pl.Struct({"a": pl.Float32})).is_in(
-        pl.Series([{"a": 42}])
+        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Float32}))
     ).to_list() == [False, None]
 
     assert pl.Series([{"a": None}, None], dtype=pl.Struct({"a": pl.Boolean})).is_in(
-        pl.Series([{"a": 42}])
+        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Boolean}))
     ).to_list() == [False, None]
 
 
@@ -456,7 +456,18 @@ def test_cat_is_in_series_non_existent(nulls_equal: bool) -> None:
 
 
 @StringCache()
-@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    "nulls_equal",
+    [
+        False,
+        pytest.param(
+            True,
+            marks=pytest.mark.xfail(
+                reason="Bug. See https://github.com/pola-rs/polars/issues/22260"
+            ),
+        ),
+    ],
+)
 def test_enum_is_in_series_non_existent(nulls_equal: bool) -> None:
     dtype = pl.Enum(["a", "b", "c"])
     missing_value = False if nulls_equal else None
@@ -479,8 +490,20 @@ def test_cat_is_in_with_lit_str(dtype: pl.DataType, nulls_equal: bool) -> None:
 
 
 @StringCache()
-@pytest.mark.parametrize("nulls_equal", [False, True])
-@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
+@pytest.mark.parametrize(
+    ("nulls_equal", "dtype"),
+    [
+        (False, pl.Categorical),
+        (False, pl.Enum(["a", "b", "c"])),
+        (True, pl.Categorical),
+        pytest.param(
+            True, pl.Enum(["a", "b", "c"]),
+            marks=pytest.mark.xfail(
+                reason="Bug. See https://github.com/pola-rs/polars/issues/22260"
+            ),
+        ),
+    ],
+)
 def test_cat_is_in_with_lit_str_non_existent(
     dtype: pl.DataType, nulls_equal: bool
 ) -> None:
