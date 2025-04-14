@@ -27,6 +27,8 @@
 //    mk = sum(weight[i] * (x[i] - mean_x)**k)
 // Note that we'll use the terms m2 = dp = dp_xx if unambiguous.
 
+#![allow(clippy::collapsible_else_if)]
+
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
