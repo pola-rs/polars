@@ -510,7 +510,7 @@ impl KurtosisState {
         self.clear_zero_weight_nan();
     }
 
-    pub fn finalize(&self, bias: bool, fisher: bool) -> Option<f64> {
+    pub fn finalize(&self, fisher: bool, bias: bool) -> Option<f64> {
         let m4 = self.m4 / self.weight;
         let m2 = self.m2 / self.weight;
         let is_zero = m2 <= (f64::EPSILON * self.mean).powi(2);
