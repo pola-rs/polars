@@ -287,23 +287,41 @@ impl SkewState {
     }
 
     pub fn insert_one(&mut self, x: f64) {
-        // TODO: specialize this? Saves some multiplications/additions.
-        self.combine(&SkewState {
-            weight: 1.0,
-            mean: x,
-            m2: 0.0,
-            m3: 0.0,
-        });
+        // Specialization of self.combine(&SkewState { weight: 1.0, mean: x, m2: 0.0, m3: 0.0 });
+        let new_weight = self.weight + 1.0;
+        let delta_mean = x - self.mean;
+        let delta_mean_weight = delta_mean / new_weight;
+        let new_mean = self.mean + delta_mean_weight;
+
+        let weight_diff = self.weight - 1.0;
+        let m2_update = (x - new_mean) * delta_mean;
+        let new_m2 = self.m2 + m2_update;
+        let new_m3 = self.m3 + delta_mean_weight * (m2_update * weight_diff - 3.0 * self.m2);
+
+        self.weight = new_weight;
+        self.mean = new_mean;
+        self.m2 = new_m2;
+        self.m3 = new_m3;
+        self.clear_zero_weight_nan();
     }
 
     pub fn remove_one(&mut self, x: f64) {
-        // TODO: specialize this? Saves some multiplications/additions.
-        self.combine(&SkewState {
-            weight: -1.0,
-            mean: x,
-            m2: 0.0,
-            m3: 0.0,
-        });
+        // Specialization of self.combine(&SkewState { weight: -1.0, mean: x, m2: 0.0, m3: 0.0 });
+        let new_weight = self.weight - 1.0;
+        let delta_mean = x - self.mean;
+        let delta_mean_weight = delta_mean / new_weight;
+        let new_mean = self.mean - delta_mean_weight;
+
+        let weight_diff = self.weight + 1.0;
+        let m2_update = (new_mean - x) * delta_mean;
+        let new_m2 = self.m2 + m2_update;
+        let new_m3 = self.m3 + delta_mean_weight * (m2_update * weight_diff + 3.0 * self.m2);
+
+        self.weight = new_weight;
+        self.mean = new_mean;
+        self.m2 = new_m2;
+        self.m3 = new_m3;
+        self.clear_zero_weight_nan();
     }
 
     pub fn combine(&mut self, other: &Self) {
@@ -312,22 +330,20 @@ impl SkewState {
         }
 
         let new_weight = self.weight + other.weight;
-        let other_weight_frac = other.weight / new_weight;
-        let self_weight_frac = 1.0 - other_weight_frac;
-
         let delta_mean = other.mean - self.mean;
-        let other_weight_frac_delta_mean = delta_mean * other_weight_frac;
+        let delta_mean_weight = delta_mean / new_weight;
+        let new_mean = self.mean + other.weight * delta_mean_weight;
 
-        let new_mean = self.mean + other_weight_frac_delta_mean;
-        let new_m2 = self.m2 + other.m2 + other.weight * (other.mean - new_mean) * delta_mean;
+        let weight_diff = self.weight - other.weight;
+        let self_weight_other_m2 = self.weight * other.m2;
+        let other_weight_self_m2 = other.weight * self.m2;
+        let m2_update = other.weight * (other.mean - new_mean) * delta_mean;
+        let new_m2 = self.m2 + other.m2 + m2_update;
         let new_m3 = self.m3
             + other.m3
-            + delta_mean
-                * (self_weight_frac
-                    * other_weight_frac_delta_mean
-                    * delta_mean
-                    * (self.weight - other.weight)
-                    + 3.0 * (other.m2 - other_weight_frac * (self.m2 + other.m2)));
+            + delta_mean_weight
+                * (m2_update * weight_diff + 3.0 * (self_weight_other_m2 - other_weight_self_m2));
+
         self.weight = new_weight;
         self.mean = new_mean;
         self.m2 = new_m2;
@@ -338,14 +354,25 @@ impl SkewState {
     pub fn finalize(&self, bias: bool) -> Option<f64> {
         let m2 = self.m2 / self.weight;
         let m3 = self.m3 / self.weight;
-        let biased_est = m3 / m2.powf(1.5);
-        if bias {
-            Some(biased_est)
-        } else if self.weight > 2.0 {
-            let correction = (self.weight * (self.weight - 1.0)).sqrt() / (self.weight - 2.0);
-            Some(correction * biased_est)
+        let is_zero = m2 <= (f64::EPSILON * self.mean).powi(2);
+        let biased_est = if is_zero {
+            f64::NAN
         } else {
-            None
+            m3 / m2.powf(1.5)
+        };
+        if bias {
+            if self.weight == 0.0 {
+                None
+            } else {
+                Some(biased_est)
+            }
+        } else {
+            if self.weight <= 2.0 {
+                None
+            } else {
+                let correction = (self.weight * (self.weight - 1.0)).sqrt() / (self.weight - 2.0);
+                Some(correction * biased_est)
+            }
         }
     }
 }
@@ -399,60 +426,21 @@ impl KurtosisState {
     }
 
     pub fn insert_one(&mut self, x: f64) {
-        // TODO: specialize this? Saves some multiplications/additions.
-        self.combine(&KurtosisState {
-            weight: 1.0,
-            mean: x,
-            m2: 0.0,
-            m3: 0.0,
-            m4: 0.0,
-        });
-    }
+        // Specialization of self.combine(&KurtosisState { weight: 1.0, mean: x, m2: 0.0, m3: 0.0, m4: 0.0 });
+        let new_weight = self.weight + 1.0;
+        let delta_mean = x - self.mean;
+        let delta_mean_weight = delta_mean / new_weight;
+        let new_mean = self.mean + delta_mean_weight;
 
-    pub fn remove_one(&mut self, x: f64) {
-        // TODO: specialize this? Saves some multiplications/additions.
-        self.combine(&KurtosisState {
-            weight: -1.0,
-            mean: x,
-            m2: 0.0,
-            m3: 0.0,
-            m4: 0.0,
-        });
-    }
-
-    pub fn combine(&mut self, other: &Self) {
-        if other.weight == 0.0 {
-            return;
-        }
-
-        let new_weight = self.weight + other.weight;
-        let other_weight_frac = other.weight / new_weight;
-        let self_weight_frac = 1.0 - other_weight_frac;
-
-        let delta_mean = other.mean - self.mean;
-        let other_weight_frac_delta_mean = delta_mean * other_weight_frac;
-        let both_weight_frac_delta_mean2 =
-            self_weight_frac * other_weight_frac_delta_mean * delta_mean;
-
-        let self_weight_frac_other_m2 = self_weight_frac * other.m2;
-        let other_weight_frac_self_m2 = other_weight_frac * self.m2;
-        let weight_diff = self.weight - other.weight;
-        let m2_weight_diff = self_weight_frac_other_m2 - other_weight_frac_self_m2;
-
-        let new_mean = self.mean + other_weight_frac_delta_mean;
-        let new_m2 = self.m2 + other.m2 + other.weight * (other.mean - new_mean) * delta_mean;
-        let new_m3 = self.m3
-            + other.m3
-            + delta_mean * (both_weight_frac_delta_mean2 * weight_diff + 3.0 * m2_weight_diff);
-
+        let weight_diff = self.weight - 1.0;
+        let m2_update = (x - new_mean) * delta_mean;
+        let new_m2 = self.m2 + m2_update;
+        let new_m3 = self.m3 + delta_mean_weight * (m2_update * weight_diff - 3.0 * self.m2);
         let new_m4 = self.m4
-            + other.m4
-            + delta_mean
-                * (delta_mean
-                    * (both_weight_frac_delta_mean2
-                        * (self.weight - other_weight_frac * (self.weight + weight_diff))
-                        + 6.0 * (self_weight_frac_other_m2 - other_weight_frac * m2_weight_diff))
-                    + 4.0 * (other.m3 - other_weight_frac * (self.m3 + other.m3)));
+            + delta_mean_weight
+                * (delta_mean_weight
+                    * (m2_update * (self.weight * weight_diff + 1.0) + 6.0 * self.m2)
+                    - 4.0 * self.m3);
 
         self.weight = new_weight;
         self.mean = new_mean;
@@ -462,17 +450,89 @@ impl KurtosisState {
         self.clear_zero_weight_nan();
     }
 
-    pub fn finalize(&self, fisher: bool, bias: bool) -> Option<f64> {
+    pub fn remove_one(&mut self, x: f64) {
+        // Specialization of self.combine(&KurtosisState { weight: -1.0, mean: x, m2: 0.0, m3: 0.0, m4: 0.0 });
+        let new_weight = self.weight - 1.0;
+        let delta_mean = x - self.mean;
+        let delta_mean_weight = delta_mean / new_weight;
+        let new_mean = self.mean - delta_mean_weight;
+
+        let weight_diff = self.weight + 1.0;
+        let m2_update = (new_mean - x) * delta_mean;
+        let new_m2 = self.m2 + m2_update;
+        let new_m3 = self.m3 + delta_mean_weight * (m2_update * weight_diff + 3.0 * self.m2);
+        let new_m4 = self.m4
+            + delta_mean_weight
+                * (delta_mean_weight
+                    * (m2_update * (self.weight * weight_diff + 1.0) + 6.0 * self.m2)
+                    + 4.0 * self.m3);
+
+        self.weight = new_weight;
+        self.mean = new_mean;
+        self.m2 = new_m2;
+        self.m3 = new_m3;
+        self.m4 = new_m4;
+        self.clear_zero_weight_nan();
+    }
+
+    pub fn combine(&mut self, other: &Self) {
+        if other.weight == 0.0 {
+            return;
+        }
+
+        let new_weight = self.weight + other.weight;
+        let delta_mean = other.mean - self.mean;
+        let delta_mean_weight = delta_mean / new_weight;
+        let new_mean = self.mean + other.weight * delta_mean_weight;
+
+        let weight_diff = self.weight - other.weight;
+        let self_weight_other_m2 = self.weight * other.m2;
+        let other_weight_self_m2 = other.weight * self.m2;
+        let m2_update = other.weight * (other.mean - new_mean) * delta_mean;
+        let new_m2 = self.m2 + other.m2 + m2_update;
+        let new_m3 = self.m3
+            + other.m3
+            + delta_mean_weight
+                * (m2_update * weight_diff + 3.0 * (self_weight_other_m2 - other_weight_self_m2));
+        let new_m4 = self.m4
+            + other.m4
+            + delta_mean_weight
+                * (delta_mean_weight
+                    * (m2_update * (self.weight * weight_diff + other.weight * other.weight)
+                        + 6.0
+                            * (self.weight * self_weight_other_m2
+                                + other.weight * other_weight_self_m2))
+                    + 4.0 * (self.weight * other.m3 - other.weight * self.m3));
+
+        self.weight = new_weight;
+        self.mean = new_mean;
+        self.m2 = new_m2;
+        self.m3 = new_m3;
+        self.m4 = new_m4;
+        self.clear_zero_weight_nan();
+    }
+
+    pub fn finalize(&self, bias: bool, fisher: bool) -> Option<f64> {
         let m4 = self.m4 / self.weight;
         let m2 = self.m2 / self.weight;
-        let biased_est = m4 / (m2 * m2);
-        let out = if bias {
-            biased_est
+        let is_zero = m2 <= (f64::EPSILON * self.mean).powi(2);
+        let biased_est = if is_zero {
+            f64::NAN
         } else {
-            let n = self.weight;
-            if n < 3.0 {
+            m4 / (m2 * m2)
+        };
+        let out = if bias {
+            if self.weight == 0.0 {
                 return None;
             }
+                
+            biased_est
+        } else {
+            if self.weight <= 3.0 {
+                return None;
+            }
+
+            let n = self.weight;
             let nm1_nm2 = (n - 1.0) / (n - 2.0);
             let np1_nm3 = (n + 1.0) / (n - 3.0);
             let nm1_nm3 = (n - 1.0) / (n - 3.0);
