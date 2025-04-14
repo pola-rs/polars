@@ -9,6 +9,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ColumnNotFoundError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
     from polars.datatypes import DataType
@@ -243,6 +244,7 @@ def test_sql_on_compatible_frame_types() -> None:
     dfp = df.to_pandas()
     dfa = df.to_arrow()
     dfb = dfa.to_batches()[0]  # noqa: F841
+    dfo = PyCapsuleStreamHolder(df)  # noqa: F841
 
     # run polars sql query against all frame types
     for dfs in (  # noqa: B007
@@ -256,6 +258,7 @@ def test_sql_on_compatible_frame_types() -> None:
                 UNION ALL SELECT * FROM dfp  -- pandas frame
                 UNION ALL SELECT * FROM dfa  -- pyarrow table
                 UNION ALL SELECT * FROM dfb  -- pyarrow record batch
+                UNION ALL SELECT * FROM dfo  -- arbitrary pycapsule object
             ) tbl
             INNER JOIN dfs ON dfs.c == tbl.b -- join on pandas/polars series
             GROUP BY "a", "b"
@@ -263,7 +266,7 @@ def test_sql_on_compatible_frame_types() -> None:
             """
         ).collect()
 
-        expected = pl.DataFrame({"a": [1, 3], "b": [4, 6], "cc": [16, 24]})
+        expected = pl.DataFrame({"a": [1, 3], "b": [4, 6], "cc": [20, 30]})
         assert_frame_equal(left=expected, right=res)
 
     # register and operate on non-polars frames
@@ -400,60 +403,60 @@ def test_select_output_heights_20058_21084(filter_expr: str, order_expr: str) ->
     )
 
     assert_frame_equal(
-        df.sql(f"""\
-    SELECT 1 + 1 as a, 1 as b FROM self {filter_expr} {order_expr}
-    """).cast(pl.Int64),
+        df.sql(f"SELECT 1 + 1 as a, 1 as b FROM self {filter_expr} {order_expr}").cast(
+            pl.Int64
+        ),
         pl.DataFrame({"a": [2, 2, 2], "b": [1, 1, 1]}),
     )
 
     # Queries that aggregate to unit height
 
     assert_frame_equal(
-        df.sql(f"""\
-    SELECT COUNT(*) as a FROM self {filter_expr} {order_expr}
-    """).cast(pl.Int64),
+        df.sql(f"SELECT COUNT(*) as a FROM self {filter_expr} {order_expr}").cast(
+            pl.Int64
+        ),
         pl.DataFrame({"a": 3}),
     )
 
     assert_frame_equal(
-        df.sql(f"""\
-    SELECT COUNT(*) as a, 1 as b FROM self {filter_expr} {order_expr}
-    """).cast(pl.Int64),
+        df.sql(
+            f"SELECT COUNT(*) as a, 1 as b FROM self {filter_expr} {order_expr}"
+        ).cast(pl.Int64),
         pl.DataFrame({"a": 3, "b": 1}),
     )
 
     assert_frame_equal(
-        df.sql(f"""\
-    SELECT FIRST(a) as a, 1 as b FROM self {filter_expr} {order_expr}
-    """).cast(pl.Int64),
+        df.sql(
+            f"SELECT FIRST(a) as a, 1 as b FROM self {filter_expr} {order_expr}"
+        ).cast(pl.Int64),
         pl.DataFrame({"a": 1, "b": 1}),
     )
 
     assert_frame_equal(
-        df.sql(f"""\
-    SELECT SUM(a) as a, 1 as b FROM self {filter_expr} {order_expr}
-    """).cast(pl.Int64),
+        df.sql(f"SELECT SUM(a) as a, 1 as b FROM self {filter_expr} {order_expr}").cast(
+            pl.Int64
+        ),
         pl.DataFrame({"a": 6, "b": 1}),
     )
 
     assert_frame_equal(
-        df.sql(f"""\
-    SELECT FIRST(1) as a, 1 as b FROM self {filter_expr} {order_expr}
-    """).cast(pl.Int64),
+        df.sql(
+            f"SELECT FIRST(1) as a, 1 as b FROM self {filter_expr} {order_expr}"
+        ).cast(pl.Int64),
         pl.DataFrame({"a": 1, "b": 1}),
     )
 
     assert_frame_equal(
-        df.sql(f"""\
-    SELECT FIRST(1) + 1 as a, 1 as b FROM self {filter_expr} {order_expr}
-    """).cast(pl.Int64),
+        df.sql(
+            f"SELECT FIRST(1) + 1 as a, 1 as b FROM self {filter_expr} {order_expr}"
+        ).cast(pl.Int64),
         pl.DataFrame({"a": 2, "b": 1}),
     )
 
     assert_frame_equal(
-        df.sql(f"""\
-    SELECT FIRST(1 + 1) as a, 1 as b FROM self {filter_expr} {order_expr}
-    """).cast(pl.Int64),
+        df.sql(
+            f"SELECT FIRST(1 + 1) as a, 1 as b FROM self {filter_expr} {order_expr}"
+        ).cast(pl.Int64),
         pl.DataFrame({"a": 2, "b": 1}),
     )
 
@@ -473,48 +476,34 @@ def test_select_explode_height_filter_order_by() -> None:
     # extended with NULLs.
 
     assert_frame_equal(
-        df.sql(
-            """\
-    SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key
-        """
-        ),
+        df.sql("SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key"),
         pl.Series("list", [2, 1, 3, 4, 5, 6]).to_frame(),
     )
 
     assert_frame_equal(
         df.sql(
-            """\
-    SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key NULLS FIRST
-        """
+            "SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key NULLS FIRST"
         ),
         pl.Series("list", [3, 4, 5, 6, 2, 1]).to_frame(),
     )
 
     # Literals are broadcasted to output height of UNNEST:
     assert_frame_equal(
-        df.sql(
-            """\
-    SELECT UNNEST(list_long) as list, 1 as x FROM self ORDER BY sort_key
-        """
-        ),
+        df.sql("SELECT UNNEST(list_long) as list, 1 as x FROM self ORDER BY sort_key"),
         pl.select(pl.Series("list", [2, 1, 3, 4, 5, 6]), x=1),
     )
 
     # Note: Filter applies before projections in SQL
     assert_frame_equal(
         df.sql(
-            """\
-    SELECT UNNEST(list_long) as list FROM self WHERE filter_mask ORDER BY sort_key
-        """
+            "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask ORDER BY sort_key"
         ),
         pl.Series("list", [4, 5, 6]).to_frame(),
     )
 
     assert_frame_equal(
         df.sql(
-            """\
-    SELECT UNNEST(list_long) as list FROM self WHERE filter_mask_all_true ORDER BY sort_key
-        """
+            "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask_all_true ORDER BY sort_key"
         ),
         pl.Series("list", [2, 1, 3, 4, 5, 6]).to_frame(),
     )

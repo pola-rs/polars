@@ -71,3 +71,5 @@ pub mod python_convert_registry;
 
 #[cfg(feature = "serde")]
 pub mod pl_serialize;
+
+pub mod kahan_sum;
