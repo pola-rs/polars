@@ -354,7 +354,7 @@ pub(super) trait Decoder: Sized {
             None,
         )?;
         let intermediate_array = self
-            .finalize(dtype.clone(), dict, intermediate_array)?
+            .finalize(dtype.underlying_physical_type(), dict, intermediate_array)?
             .into_boxed();
 
         let mask = if let Some(validity) = intermediate_array.validity() {

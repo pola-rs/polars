@@ -24,6 +24,23 @@ use crate::chunked_array::temporal::validate_time_zone;
 use crate::prelude::*;
 
 impl Series {
+    pub fn from_chunk_and_dtype(
+        name: PlSmallStr,
+        chunk: ArrayRef,
+        dtype: &DataType,
+    ) -> PolarsResult<Self> {
+        if &dtype.to_physical().to_arrow(CompatLevel::newest()) != chunk.dtype() {
+            polars_bail!(
+                InvalidOperation: "cannot create a series of type '{dtype}' of arrow chunk with type '{:?}'",
+                chunk.dtype()
+            );
+        }
+
+        // SAFETY: We check that the datatype matches.
+        let series = unsafe { Self::from_chunks_and_dtype_unchecked(name, vec![chunk], dtype) };
+        Ok(series)
+    }
+
     /// Takes chunks and a polars datatype and constructs the Series
     /// This is faster than creating from chunks and an arrow datatype because there is no
     /// casting involved

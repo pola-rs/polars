@@ -69,9 +69,10 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
         // We should never evaluate nulls with this.
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
 
-        // @NOTE: This is okay because we don't have Enums, Categoricals, or Decimals
+        // @TODO: Probably these unwraps should be removed.
         let series =
-            Series::from_arrow_chunks(self.column_name.clone(), vec![values.to_boxed()]).unwrap();
+            Series::from_chunk_and_dtype(self.column_name.clone(), values.to_boxed(), &self.dtype)
+                .unwrap();
         let column = series.into_column();
         let df = unsafe { DataFrame::new_no_checks(values.len(), vec![column]) };
 
