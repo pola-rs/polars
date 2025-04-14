@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use polars_core::POOL;
-use polars_core::prelude::{IntoColumn, PlRandomState};
+use polars_core::prelude::{IntoColumn, PlHashSet, PlRandomState};
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::HotGrouper;
 use polars_expr::reduce::{EvictedReductionState, GroupedReduction};
+use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -20,6 +21,8 @@ use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
+const EVICT_STATE_FLUSH_LIMIT: usize = 100_000;
+
 struct LocalGroupBySinkState {
     hot_grouper: Box<dyn HotGrouper>,
     hot_grouped_reductions: Vec<Box<dyn GroupedReduction>>,
@@ -31,7 +34,7 @@ struct LocalGroupBySinkState {
     // for partition p, where start, stop are:
     // let start = morsel_idxs_offsets[i * num_partitions + p];
     // let stop = morsel_idxs_offsets[(i + 1) * num_partitions + p];
-    cold_morsels: Vec<(u64, DataFrame, HashKeys)>,
+    cold_morsels: Vec<(u64, HashKeys, DataFrame)>,
     morsel_idxs_values_per_p: Vec<Vec<IdxSize>>,
     morsel_idxs_offsets_per_p: Vec<usize>,
     
@@ -41,9 +44,28 @@ struct LocalGroupBySinkState {
     eviction_idxs_offsets_per_p: Vec<usize>,
 }
 
+impl LocalGroupBySinkState {
+    fn flush_evictions(&mut self, partitioner: &HashPartitioner) {
+        let hash_keys = self.hot_grouper.take_evicted_keys();
+        let evicted_states = self.hot_grouped_reductions.iter_mut().map(|hgr| hgr.take_evictions()).collect_vec();
+        
+        hash_keys.gen_idxs_per_partition(
+            &partitioner,
+            &mut self.eviction_idxs_values_per_p,
+            &mut self.sketch_per_p,
+            true,
+        );
+        self
+            .eviction_idxs_offsets_per_p
+            .extend(self.eviction_idxs_values_per_p.iter().map(|vp| vp.len()));
+        self.evictions.push((hash_keys, evicted_states));
+    }
+}
+
 struct GroupBySinkState {
     key_selectors: Vec<StreamExpr>,
     key_schema: Arc<Schema>,
+    uniq_grouped_reduction_cols: Vec<PlSmallStr>,
     grouped_reduction_cols: Vec<PlSmallStr>,
     grouped_reductions: Vec<Box<dyn GroupedReduction>>,
     locals: Vec<LocalGroupBySinkState>,
@@ -55,21 +77,24 @@ impl GroupBySinkState {
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
         receivers: Vec<Receiver<Morsel>>,
+        partitioner: HashPartitioner,
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         for (mut recv, local) in receivers.into_iter().zip(&mut self.locals) {
             let key_selectors = &self.key_selectors;
+            let uniq_grouped_reduction_cols = &self.uniq_grouped_reduction_cols;
             let grouped_reduction_cols = &self.grouped_reduction_cols;
             let random_state = &self.random_state;
+            let partitioner = partitioner.clone();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut hot_idxs = Vec::new();
                 let mut hot_group_idxs = Vec::new();
                 let mut cold_idxs = Vec::new();
                 while let Ok(morsel) = recv.recv().await {
-                    // Compute group indices from key.
+                    // Compute hot group indices from key.
                     let seq = morsel.seq().to_u64();
-                    let df = morsel.into_df();
+                    let mut df = morsel.into_df();
                     let mut key_columns = Vec::new();
                     for selector in key_selectors {
                         let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;
@@ -83,7 +108,7 @@ impl GroupBySinkState {
                     cold_idxs.clear();
                     local.hot_grouper.insert_keys(&hash_keys, &mut hot_idxs, &mut hot_group_idxs, &mut cold_idxs);
 
-                    // Update reductions.
+                    // Update hot reductions.
                     for (col, reduction) in grouped_reduction_cols
                         .iter()
                         .zip(&mut local.hot_grouped_reductions)
@@ -100,11 +125,35 @@ impl GroupBySinkState {
                         }
                     }
                     
-                    // If cold_idxs.len() >= 0.75 * df.height(), directly take df / hash keys and use offsets within it.
-                    // Otherwise, gather first.
-                    
+                    // Store cold keys.
+                    // TODO: don't always gather, if majority cold simply store all and remember offsets into it.
+                    if !cold_idxs.is_empty() {
+                        // Drop columns not used for reductions (key-only columns).
+                        if uniq_grouped_reduction_cols.len() < grouped_reduction_cols.len() {
+                            df = df._select_impl(&uniq_grouped_reduction_cols).unwrap();
+                        }
+                        
+                        unsafe {
+                            let cold_keys = hash_keys.gather_unchecked(&cold_idxs);
+                            let cold_df = df.take_slice_unchecked(&cold_idxs);
+                            
+                            cold_keys.gen_idxs_per_partition(
+                                &partitioner,
+                                &mut local.morsel_idxs_values_per_p,
+                                &mut local.sketch_per_p,
+                                true,
+                            );
+                            local
+                                .morsel_idxs_offsets_per_p
+                                .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
+                            local.cold_morsels.push((seq, cold_keys, cold_df));
+                        }
+                    }
 
-                    // Add evicted
+                    // If we have too many evicted rows, flush them.
+                    if local.hot_grouper.num_evictions() >= EVICT_STATE_FLUSH_LIMIT {
+                        local.flush_evictions(&partitioner);
+                    }
                 }
                 Ok(())
             }));

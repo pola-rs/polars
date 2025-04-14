@@ -64,7 +64,7 @@ impl<K> FixedIndexTable<K> {
     ) -> Option<EvictIdx>
     where
         Q: ToOwned<Owned=K> + PartialEq<K> + ?Sized,
-        F: FnMut(&K)
+        F: FnMut(u64, &K)
     {
         let tag = hash as u32;
         let h1 = (hash >> self.shift) as usize;
@@ -140,10 +140,11 @@ impl<K> FixedIndexTable<K> {
             let slot = self.slots.get_unchecked_mut(hr);
             if slot.last_access_tag == tag {
                 slot.tag = tag;
+                let evict_hash = self.hashes.get_unchecked_mut(slot.key_index as usize);
                 let evict_key = self.keys.get_unchecked_mut(slot.key_index as usize);
-                on_evict(evict_key);
+                on_evict(*evict_hash, evict_key);
                 key.clone_into(evict_key);
-                *self.hashes.get_unchecked_mut(slot.key_index as usize) = hash;
+                *evict_hash = hash;
                 Some(EvictIdx::new(slot.key_index, true))
             } else {
                 slot.last_access_tag = tag;
