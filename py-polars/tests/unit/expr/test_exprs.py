@@ -299,6 +299,13 @@ def test_expression_appends() -> None:
     assert out.to_series().to_list() == [None, None, None, 1, 1, 2]
 
 
+@pytest.mark.may_fail_auto_streaming
+def test_with_columns_rechunk() -> None:
+    df = pl.DataFrame({"a": pl.Series([1, 2]).extend_constant(None, 1)})
+    assert df["a"].n_chunks() == 2
+    assert df.with_columns(pl.col("a").rechunk())["a"].n_chunks() == 1
+
+
 def test_arr_contains() -> None:
     df_groups = pl.DataFrame(
         {
