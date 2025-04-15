@@ -226,7 +226,7 @@ fn create_physical_plan_impl(
         };
     }
 
-    let logical_plan = if state.has_cache_parent {
+    let logical_plan = if state.has_cache_parent || matches!(lp_arena.get(root), IR::Scan { .. }) {
         lp_arena.get(root).clone()
     } else {
         lp_arena.take(root)
