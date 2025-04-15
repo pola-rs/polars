@@ -312,7 +312,7 @@ pub trait SeriesOpsTime: AsSeries {
             },
             dt => {
                 polars_ensure!(
-                    dt.is_primitive_numeric() || !dt.is_unknown(),
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
                     op = "rolling_min_by",
                     dt
                 );
@@ -352,7 +352,7 @@ pub trait SeriesOpsTime: AsSeries {
             },
             dt => {
                 polars_ensure!(
-                    dt.is_primitive_numeric() || !dt.is_unknown(),
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
                     op = "rolling_min",
                     dt
                 );
@@ -393,7 +393,7 @@ pub trait SeriesOpsTime: AsSeries {
             },
             dt => {
                 polars_ensure!(
-                    dt.is_primitive_numeric() || !dt.is_unknown(),
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
                     op = "rolling_max_by",
                     dt
                 );
@@ -433,7 +433,7 @@ pub trait SeriesOpsTime: AsSeries {
             },
             dt => {
                 polars_ensure!(
-                    dt.is_primitive_numeric() || !dt.is_unknown(),
+                    dt.is_primitive_numeric() && !dt.is_unknown(),
                     op = "rolling_max",
                     dt
                 );
