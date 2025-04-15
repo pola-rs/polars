@@ -46,14 +46,13 @@ simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["time", "sync"], optional = true }
+tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"], optional = true }
 tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 fs4 = { version = "0.13", features = ["sync"], optional = true }
-tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread"] }
 home = "0.5.4"
 
 [dev-dependencies]
