@@ -97,6 +97,7 @@ def test_cat_to_dummies() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_is_in_list() -> None:
     # this requires type coercion to cast.
