@@ -1,3 +1,4 @@
+use std::hash::Hash;
 use std::sync::Arc;
 
 use polars_core::POOL;
@@ -7,7 +8,7 @@ use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::HotGrouper;
-use polars_expr::reduce::{EvictedReductionState, GroupedReduction};
+use polars_expr::reduce::GroupedReduction;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
@@ -38,27 +39,30 @@ struct LocalGroupBySinkState {
     morsel_idxs_values_per_p: Vec<Vec<IdxSize>>,
     morsel_idxs_offsets_per_p: Vec<usize>,
     
-    // Similar to the above, but for evicted aggregates.
-    evictions: Vec<(HashKeys, Vec<Box<dyn EvictedReductionState>>)>,
-    eviction_idxs_values_per_p: Vec<Vec<IdxSize>>,
-    eviction_idxs_offsets_per_p: Vec<usize>,
+    // Similar to the above, but for (evicted) pre-aggregates.
+    pre_aggs: Vec<(HashKeys, Vec<Box<dyn GroupedReduction>>)>,
+    pre_agg_idxs_values_per_p: Vec<Vec<IdxSize>>,
+    pre_agg_idxs_offsets_per_p: Vec<usize>,
 }
 
 impl LocalGroupBySinkState {
     fn flush_evictions(&mut self, partitioner: &HashPartitioner) {
         let hash_keys = self.hot_grouper.take_evicted_keys();
-        let evicted_states = self.hot_grouped_reductions.iter_mut().map(|hgr| hgr.take_evictions()).collect_vec();
-        
+        let reductions = self.hot_grouped_reductions.iter_mut().map(|hgr| hgr.take_evictions()).collect_vec();
+        self.add_pre_agg(hash_keys, reductions, partitioner);
+    }
+
+    fn add_pre_agg(&mut self, hash_keys: HashKeys, reductions: Vec<Box<dyn GroupedReduction>>, partitioner: &HashPartitioner) {
         hash_keys.gen_idxs_per_partition(
             &partitioner,
-            &mut self.eviction_idxs_values_per_p,
+            &mut self.pre_agg_idxs_values_per_p,
             &mut self.sketch_per_p,
             true,
         );
         self
-            .eviction_idxs_offsets_per_p
-            .extend(self.eviction_idxs_values_per_p.iter().map(|vp| vp.len()));
-        self.evictions.push((hash_keys, evicted_states));
+            .pre_agg_idxs_offsets_per_p
+            .extend(self.pre_agg_idxs_values_per_p.iter().map(|vp| vp.len()));
+        self.pre_aggs.push((hash_keys, reductions));
     }
 }
 
@@ -158,6 +162,13 @@ impl GroupBySinkState {
                 Ok(())
             }));
         }
+    }
+    
+    fn combine_locals(
+        output_schema: &Schema,
+        mut locals: Vec<LocalGroupBySinkState>,
+    ) -> PolarsResult<DataFrame> {
+        todo!()
     }
 }
 

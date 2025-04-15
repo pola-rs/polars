@@ -20,11 +20,6 @@ use polars_core::prelude::*;
 
 use crate::EvictIdx;
 
-/// A type-erased state for the evictions of a grouped reduction.
-pub trait EvictedReductionState : Any + Send + Sync {
-    fn as_any(&self) -> &dyn Any;
-}
-
 /// A reduction with groups.
 ///
 /// Each group has its own reduction state that values can be aggregated into.
@@ -84,21 +79,6 @@ pub trait GroupedReduction: Any + Send + Sync {
         todo!()
     }
     
-    /// Combines the evicted reduction states into this one. The evicted state
-    /// evictions[subset[i]] should be combined into group self[group_idxs[i]].
-    /// 
-    /// # Safety
-    /// The subset and group_idxs are in-bounds and the EvictedReductionState
-    /// was taken from a GroupedReduction similar to this one.
-    unsafe fn combine_evictions_subset(
-        &mut self,
-        _evictions: &dyn EvictedReductionState,
-        _subset: &[IdxSize],
-        _group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        todo!()
-    }
-
     /// Combines this GroupedReduction with another. Group other[i]
     /// should be combined into group self[group_idxs[i]].
     ///
@@ -140,7 +120,7 @@ pub trait GroupedReduction: Any + Send + Sync {
     ) -> Vec<Box<dyn GroupedReduction>>;
     
     /// Take the accumulated evicted groups.
-    fn take_evictions(&mut self) -> Box<dyn EvictedReductionState> {
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
         todo!()
     }
 
