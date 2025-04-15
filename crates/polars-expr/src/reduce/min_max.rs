@@ -278,6 +278,8 @@ impl Reducer for BinaryMaxReducer {
 pub struct BoolMinGroupedReduction {
     values: MutableBitmap,
     mask: MutableBitmap,
+    evicted_values: BitmapBuilder,
+    evicted_mask: BitmapBuilder,
 }
 
 impl GroupedReduction for BoolMinGroupedReduction {
@@ -321,8 +323,6 @@ impl GroupedReduction for BoolMinGroupedReduction {
         group_idxs: &[IdxSize],
         _seq_id: u64,
     ) -> PolarsResult<()> {
-        // TODO: we should really implement a sum-as-other-type operation instead
-        // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
         assert!(values.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
@@ -333,6 +333,37 @@ impl GroupedReduction for BoolMinGroupedReduction {
                 self.values
                     .and_pos_unchecked(*g as usize, ov.unwrap_or(true));
                 self.mask.or_pos_unchecked(*g as usize, ov.is_some());
+            }
+        }
+        Ok(())
+    }
+    
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        assert!(values.dtype() == &DataType::Boolean);
+        assert!(values.len() == group_idxs.len());
+        let values = values.as_materialized_series(); // @scalar-opt
+        let ca: &BooleanChunked = values.as_ref().as_ref();
+        let arr = ca.downcast_as_array();
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                let ov = arr.get_unchecked(*i as usize);
+                if g.should_evict() {
+                    self.evicted_values.push(self.values.get_unchecked(g.idx()));
+                    self.evicted_mask.push(self.mask.get_unchecked(g.idx()));
+                    self.values.set_unchecked(g.idx(), ov.unwrap_or(true));
+                    self.mask.set_unchecked(g.idx(), ov.is_some());
+                } else {
+                    self.values
+                        .and_pos_unchecked(g.idx(), ov.unwrap_or(true));
+                    self.mask.or_pos_unchecked(g.idx(), ov.is_some());
+                }
             }
         }
         Ok(())
@@ -378,6 +409,15 @@ impl GroupedReduction for BoolMinGroupedReduction {
         }
         Ok(())
     }
+    
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            values: core::mem::take(&mut self.evicted_values).into_mut(),
+            mask: core::mem::take(&mut self.evicted_mask).into_mut(),
+            evicted_values: BitmapBuilder::new(),
+            evicted_mask: BitmapBuilder::new(),
+        })
+    }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
@@ -403,6 +443,8 @@ impl GroupedReduction for BoolMinGroupedReduction {
 pub struct BoolMaxGroupedReduction {
     values: MutableBitmap,
     mask: MutableBitmap,
+    evicted_values: BitmapBuilder,
+    evicted_mask: BitmapBuilder,
 }
 
 impl GroupedReduction for BoolMaxGroupedReduction {
@@ -463,6 +505,37 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         Ok(())
     }
 
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        assert!(values.dtype() == &DataType::Boolean);
+        assert!(values.len() == group_idxs.len());
+        let values = values.as_materialized_series(); // @scalar-opt
+        let ca: &BooleanChunked = values.as_ref().as_ref();
+        let arr = ca.downcast_as_array();
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                let ov = arr.get_unchecked(*i as usize);
+                if g.should_evict() {
+                    self.evicted_values.push(self.values.get_unchecked(g.idx()));
+                    self.evicted_mask.push(self.mask.get_unchecked(g.idx()));
+                    self.values.set_unchecked(g.idx(), ov.unwrap_or(false));
+                    self.mask.set_unchecked(g.idx(), ov.is_some());
+                } else {
+                    self.values
+                        .or_pos_unchecked(g.idx(), ov.unwrap_or(false));
+                    self.mask.or_pos_unchecked(g.idx(), ov.is_some());
+                }
+            }
+        }
+        Ok(())
+    }
+
     unsafe fn combine(
         &mut self,
         other: &dyn GroupedReduction,
@@ -501,6 +574,15 @@ impl GroupedReduction for BoolMaxGroupedReduction {
             }
         }
         Ok(())
+    }
+    
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            values: core::mem::take(&mut self.evicted_values).into_mut(),
+            mask: core::mem::take(&mut self.evicted_mask).into_mut(),
+            evicted_values: BitmapBuilder::new(),
+            evicted_mask: BitmapBuilder::new(),
+        })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {

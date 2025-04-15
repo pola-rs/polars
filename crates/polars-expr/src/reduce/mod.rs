@@ -75,9 +75,7 @@ pub trait GroupedReduction: Any + Send + Sync {
         _subset: &[IdxSize],
         _group_idxs: &[EvictIdx],
         _seq_id: u64,
-    ) -> PolarsResult<()> {
-        todo!()
-    }
+    ) -> PolarsResult<()>;
     
     /// Combines this GroupedReduction with another. Group other[i]
     /// should be combined into group self[group_idxs[i]].
@@ -104,9 +102,7 @@ pub trait GroupedReduction: Any + Send + Sync {
     ) -> PolarsResult<()>;
     
     /// Take the accumulated evicted groups.
-    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
-        todo!()
-    }
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction>;
 
     /// Returns the finalized value per group as a Series.
     ///
@@ -304,6 +300,47 @@ where
         }
         Ok(())
     }
+    
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        assert!(values.dtype() == &self.in_dtype);
+        assert!(values.len() == group_idxs.len());
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
+        let values = values.as_materialized_series(); // @scalar-opt
+        let values = self.reducer.cast_series(values);
+        let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
+        let arr = ca.downcast_as_array();
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            if values.has_nulls() {
+                for (i, g) in subset.iter().zip(group_idxs) {
+                    let ov = arr.get_unchecked(*i as usize);
+                    let grp = self.values.get_unchecked_mut(g.idx());
+                    if g.should_evict() {
+                        let old = core::mem::replace(grp, self.reducer.init());
+                        self.evicted_values.push(old);
+                    }
+                    self.reducer.reduce_one(grp, ov, seq_id);
+                }
+            } else {
+                for (i, g) in subset.iter().zip(group_idxs) {
+                    let v = arr.value_unchecked(*i as usize);
+                    let grp = self.values.get_unchecked_mut(g.idx());
+                    if g.should_evict() {
+                        let old = core::mem::replace(grp, self.reducer.init());
+                        self.evicted_values.push(old);
+                    }
+                    self.reducer.reduce_one(grp, Some(v), seq_id);
+                }
+            }
+        }
+        Ok(())
+    }
 
     unsafe fn combine(
         &mut self,
@@ -341,6 +378,16 @@ where
             }
         }
         Ok(())
+    }
+    
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            values: core::mem::take(&mut self.evicted_values),
+            evicted_values: Vec::new(),
+            in_dtype: self.in_dtype.clone(),
+            reducer: self.reducer.clone(),
+        })
+        
     }
     
     fn finalize(&mut self) -> PolarsResult<Series> {
@@ -541,25 +588,24 @@ where
 }
 
 struct NullGroupedReduction {
-    dtype: DataType,
     num_groups: IdxSize,
+    num_evictions: IdxSize,
+    dtype: DataType,
 }
 
 impl NullGroupedReduction {
     fn new(dtype: DataType) -> Self {
         Self {
-            dtype,
             num_groups: 0,
+            num_evictions: 0,
+            dtype,
         }
     }
 }
 
 impl GroupedReduction for NullGroupedReduction {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self {
-            dtype: self.dtype.clone(),
-            num_groups: self.num_groups,
-        })
+        Box::new(Self::new(self.dtype.clone()))
     }
 
     fn reserve(&mut self, _additional: usize) {}
@@ -585,6 +631,19 @@ impl GroupedReduction for NullGroupedReduction {
     ) -> PolarsResult<()> {
         Ok(())
     }
+    
+    unsafe fn update_groups_while_evicting(
+            &mut self,
+            _values: &Column,
+            _subset: &[IdxSize],
+            group_idxs: &[EvictIdx],
+            _seq_id: u64,
+        ) -> PolarsResult<()> {
+        for g in group_idxs {
+            self.num_evictions += g.should_evict() as IdxSize;
+        }
+        Ok(())
+    }
 
     unsafe fn combine(
         &mut self,
@@ -602,13 +661,19 @@ impl GroupedReduction for NullGroupedReduction {
     ) -> PolarsResult<()> {
         Ok(())
     }
+    
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            num_groups: core::mem::replace(&mut self.num_evictions, 0),
+            num_evictions: 0,
+            dtype: self.dtype.clone(),
+        })
+    }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
-        let num_groups = self.num_groups;
-        self.num_groups = 0;
         Ok(Series::full_null(
             PlSmallStr::EMPTY,
-            num_groups as usize,
+            core::mem::replace(&mut self.num_groups, 0) as usize,
             &self.dtype,
         ))
     }

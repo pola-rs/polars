@@ -17,10 +17,10 @@ use polars_utils::sparse_init_vec::SparseInitVec;
 use rayon::prelude::*;
 
 use super::compute_node_prelude::*;
+use crate::async_executor;
 use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
 use crate::nodes::in_memory_source::InMemorySourceNode;
-use crate::async_executor;
 
 const HOT_TABLE_SIZE: usize = 1024;
 const EVICT_STATE_FLUSH_LIMIT: usize = 100_000;
@@ -148,6 +148,12 @@ impl GroupBySinkState {
                         &mut cold_idxs,
                     );
 
+                    // Drop columns not used for reductions (key-only columns).
+                    if uniq_grouped_reduction_cols.len() < grouped_reduction_cols.len() {
+                        df = df._select_impl(&uniq_grouped_reduction_cols).unwrap();
+                    }
+                    df.rechunk_mut(); // For gathers.
+
                     // Update hot reductions.
                     for (col, reduction) in grouped_reduction_cols
                         .iter()
@@ -168,11 +174,6 @@ impl GroupBySinkState {
                     // Store cold keys.
                     // TODO: don't always gather, if majority cold simply store all and remember offsets into it.
                     if !cold_idxs.is_empty() {
-                        // Drop columns not used for reductions (key-only columns).
-                        if uniq_grouped_reduction_cols.len() < grouped_reduction_cols.len() {
-                            df = df._select_impl(&uniq_grouped_reduction_cols).unwrap();
-                        }
-
                         unsafe {
                             let cold_keys = hash_keys.gather_unchecked(&cold_idxs);
                             let cold_df = df.take_slice_unchecked(&cold_idxs);
@@ -200,9 +201,7 @@ impl GroupBySinkState {
         }
     }
 
-    fn combine_locals(
-        &mut self,
-    ) -> PolarsResult<Vec<GroupByPartition>> {
+    fn combine_locals(&mut self) -> PolarsResult<Vec<GroupByPartition>> {
         // Finalize pre-aggregations.
         POOL.install(|| {
             self.locals
@@ -472,7 +471,7 @@ impl GroupByNode {
                 uniq_grouped_reduction_cols,
                 grouped_reduction_cols,
                 locals,
-                partitioner
+                partitioner,
             }),
             output_schema,
         }
@@ -507,7 +506,10 @@ impl ComputeNode for GroupByNode {
                 };
                 let partitions = sink.combine_locals()?;
                 let dfs = POOL.install(|| {
-                    partitions.into_par_iter().map(|p| p.into_df(&self.output_schema)).collect::<Result<Vec<_>, _>>()
+                    partitions
+                        .into_par_iter()
+                        .map(|p| p.into_df(&self.output_schema))
+                        .collect::<Result<Vec<_>, _>>()
                 })?;
 
                 let df = accumulate_dataframes_vertical_unchecked(dfs);
