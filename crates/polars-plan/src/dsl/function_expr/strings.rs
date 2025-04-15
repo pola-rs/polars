@@ -16,7 +16,7 @@ use crate::{map, map_as_slice};
 
 #[cfg(all(feature = "regex", feature = "timezones"))]
 polars_utils::regex_cache::cached_regex! {
-    static TZ_AWARE_RE = r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)";
+    static TZ_AWARE_RE = r"(?i)(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)";
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -834,11 +834,36 @@ fn to_datetime(
         ambiguous.len()
     );
 
-    let tz_aware = match &options.format {
+    // %Z format specifier is not supported
+    let (tz_aware, format_with_z_capital) = match &options.format {
         #[cfg(all(feature = "regex", feature = "timezones"))]
-        Some(format) => TZ_AWARE_RE.is_match(format),
-        _ => false,
+        Some(format) => {
+            let mut tz_aware = false;
+            let mut format_with_z_capital = false;
+            for cap in TZ_AWARE_RE.captures_iter(format) {
+                if let Some(matched) = cap.get(0) {
+                    let matched_str = matched.as_str();
+                    if matched_str.contains('Z') {
+                        format_with_z_capital = true;
+                        break;
+                    } else {
+                        tz_aware = true;
+                    }
+                }
+            }
+
+            (tz_aware, format_with_z_capital)
+        },
+        _ => (false, false),
     };
+
+    if format_with_z_capital {
+        polars_bail!(
+            ComputeError:
+            "The '%Z' format specifier (timezone name) is not supported for parsing datetime strings. Use '%z' (UTC offset like '+0100') instead."
+        );
+    }
+
     #[cfg(feature = "timezones")]
     if let Some(time_zone) = time_zone {
         validate_time_zone(time_zone)?;
