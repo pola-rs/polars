@@ -11415,6 +11415,8 @@ class DataFrame:
         """
         Interpolate intermediate values. The interpolation method is linear.
 
+        Nulls at the beginning and end of the series remain null.
+
         Examples
         --------
         >>> df = pl.DataFrame(

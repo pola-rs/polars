@@ -7550,6 +7550,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Interpolate intermediate values. The interpolation method is linear.
 
+        Nulls at the beginning and end of the series remain null.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
