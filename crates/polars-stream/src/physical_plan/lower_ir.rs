@@ -8,8 +8,7 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::dsl::{
-    FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, SchemaNamesMatchPolicy,
-    SinkTypeIR,
+    ExtraColumnsPolicy, FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, SinkTypeIR,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, Context, FunctionIR, IR, IRAggExpr, LiteralValue};
@@ -517,8 +516,11 @@ pub fn lower_ir(
                             file_options.include_file_paths.as_ref().map(|x| x.as_str()),
                         );
                     let has_projection = file_options.with_columns.is_some();
-                    let check_schema_names =
-                        (!has_projection).then_some(SchemaNamesMatchPolicy::ForbidExtra);
+                    let extra_columns_policy = if has_projection {
+                        ExtraColumnsPolicy::Ignore
+                    } else {
+                        ExtraColumnsPolicy::Forbid
+                    };
 
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
@@ -531,7 +533,7 @@ pub fn lower_ir(
                         predicate: None,
                         hive_parts,
                         allow_missing_columns: file_options.allow_missing_columns,
-                        check_schema_names,
+                        extra_columns_policy,
                         include_file_paths: file_options.include_file_paths,
                         file_schema,
                     };

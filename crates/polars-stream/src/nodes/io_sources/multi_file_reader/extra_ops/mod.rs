@@ -8,7 +8,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, SchemaNamesMatchPolicy};
+use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 
@@ -34,39 +34,16 @@ impl ExtraOperations {
     }
 }
 
-pub fn apply_schema_names_match_policy(
-    policy: &SchemaNamesMatchPolicy,
+pub fn apply_extra_columns_policy(
+    policy: &ExtraColumnsPolicy,
     target_schema: SchemaRef,
     incoming_schema: SchemaRef,
 ) -> PolarsResult<()> {
-    use SchemaNamesMatchPolicy::*;
+    use ExtraColumnsPolicy::*;
     match policy {
-        OrderedExact => {
-            if incoming_schema.len() == target_schema.len() {
-                if incoming_schema
-                    .iter_names()
-                    .zip(target_schema.iter_names())
-                    .any(|(l, r)| l != r)
-                {
-                    polars_bail!(
-                        SchemaMismatch:
-                        "column name ordering of file differs: {:?} != {:?}",
-                        incoming_schema.iter_names().collect::<Vec<_>>(), target_schema.iter_names().collect::<Vec<_>>()
-                    )
-                }
-            } else if let Some(extra_col) = incoming_schema
-                .iter_names()
-                .find(|x| !target_schema.contains(x))
-            {
-                polars_bail!(
-                    SchemaMismatch:
-                    "extra column in file outside of expected schema: {}",
-                    extra_col,
-                )
-            }
-        },
+        Ignore => {},
 
-        ForbidExtra => {
+        Forbid => {
             if let Some(extra_col) = incoming_schema
                 .iter_names()
                 .find(|x| !target_schema.contains(x))
