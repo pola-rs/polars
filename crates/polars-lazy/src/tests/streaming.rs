@@ -145,8 +145,7 @@ fn test_streaming_aggregate_slice() -> PolarsResult<()> {
         .agg([((lit(1) - col("fats_g")) + col("calories")).sum()])
         .slice(3, 3);
 
-    let q1 = q.with_streaming(true);
-    let out_streaming = q1.collect()?;
+    let out_streaming = q.collect_with_engine(Engine::Streaming)?;
     assert_eq!(out_streaming.shape(), (3, 2));
     Ok(())
 }
@@ -161,8 +160,7 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
     let out = q
         .clone()
         .cross_join(q, None)
-        .with_streaming(true)
-        .collect()?;
+        .collect_with_engine(Engine::Streaming)?;
     assert_eq!(out.shape(), (9, 2));
 
     let q = get_parquet_file().with_projection_pushdown(false);
@@ -180,8 +178,7 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
             col("calories_right_second").alias("calories_right"),
         ]);
 
-    let q2 = q2.with_streaming(true);
-    let out_streaming = q2.collect()?;
+    let out_streaming = q2.collect_with_engine(Engine::Streaming)?;
 
     assert_eq!(
         out_streaming.get_column_names(),
