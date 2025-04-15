@@ -34,7 +34,7 @@ impl<K> FixedIndexTable<K> {
         };
         Self {
             slots: vec![empty_slot; num_slots as usize],
-            shift: 63 - num_slots.trailing_zeros() as u8,
+            shift: 64 - num_slots.trailing_zeros() as u8,
             keys: Vec::with_capacity(num_slots as usize),
             hashes: Vec::with_capacity(num_slots as usize),
             prng: 0,
