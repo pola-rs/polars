@@ -226,15 +226,6 @@ fn create_physical_plan_impl(
         };
     }
 
-    if let Some(build_func) = build_streaming_executor {
-        match lp_arena.get(root) {
-            Scan { scan_type, .. } if !matches!(scan_type.as_ref(), FileScan::Anonymous { .. }) => {
-                return build_func(root, lp_arena, expr_arena);
-            },
-            _ => {},
-        };
-    }
-
     let logical_plan = if state.has_cache_parent {
         lp_arena.get(root).clone()
     } else {
@@ -493,6 +484,11 @@ fn create_physical_plan_impl(
                         output_schema,
                         predicate_has_windows: state.has_windows,
                     }))
+                },
+                _ => {
+                    let build_func = build_streaming_executor
+                        .expect("invalid build. Missing feature new-streaming");
+                    return build_func(root, lp_arena, expr_arena);
                 },
                 _ => unreachable!(),
             }
