@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use num_traits::AsPrimitive;
-use polars_compute::var_cov::VarState;
+use polars_compute::moment::VarState;
 use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
@@ -83,7 +83,7 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         for arr in ca.downcast_iter() {
-            v.combine(&polars_compute::var_cov::var(arr))
+            v.combine(&polars_compute::moment::var(arr))
         }
     }
 
