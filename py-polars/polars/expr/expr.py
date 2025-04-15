@@ -5779,12 +5779,10 @@ class Expr:
         │ [9, 10]   ┆ 3                ┆ false    │
         └───────────┴──────────────────┴──────────┘
         """
-        if isinstance(other, Collection) and not isinstance(other, str):
-            if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
-                other = list(other)  # eg: set, frozenset, etc
-            other = F.lit(pl.Series(other))._pyexpr
-        else:
-            other = parse_into_expression(other)
+        if isinstance(other, Collection) and not isinstance(other, (str, pl.Series)):
+            other = list(other)  # eg: set, frozenset, etc
+
+        other = parse_into_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other, nulls_equal))
 
     def repeat_by(self, by: pl.Series | Expr | str | int) -> Expr:

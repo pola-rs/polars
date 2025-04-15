@@ -18,7 +18,7 @@ pub fn get_expr_depth_limit() -> PolarsResult<u16> {
     Ok(depth)
 }
 
-fn ok_checker(_state: &ExpressionConversionState) -> PolarsResult<()> {
+fn ok_checker(_i: usize, _state: &ExpressionConversionState) -> PolarsResult<()> {
     Ok(())
 }
 
@@ -41,14 +41,15 @@ pub(crate) fn create_physical_expressions_check_state<F>(
     checker: F,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>>
 where
-    F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
+    F: Fn(usize, &ExpressionConversionState) -> PolarsResult<()>,
 {
     exprs
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             state.reset();
             let out = create_physical_expr(e, context, expr_arena, schema, state);
-            checker(state)?;
+            checker(i, state)?;
             out
         })
         .collect()
@@ -75,14 +76,15 @@ pub(crate) fn create_physical_expressions_from_nodes_check_state<F>(
     checker: F,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>>
 where
-    F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
+    F: Fn(usize, &ExpressionConversionState) -> PolarsResult<()>,
 {
     exprs
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             state.reset();
             let out = create_physical_expr_inner(*e, context, expr_arena, schema, state);
-            checker(state)?;
+            checker(i, state)?;
             out
         })
         .collect()

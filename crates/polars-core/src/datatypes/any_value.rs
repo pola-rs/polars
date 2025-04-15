@@ -9,6 +9,7 @@ use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::ToTotalOrd;
 
 use super::*;
+use crate::CHEAP_SERIES_HASH_LIMIT;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
 
@@ -830,13 +831,13 @@ impl AnyValue<'_> {
             BinaryOwned(v) => v.hash(state),
             Boolean(v) => v.hash(state),
             List(v) => {
-                if !cheap {
+                if !cheap || v.len() < CHEAP_SERIES_HASH_LIMIT {
                     Hash::hash(&Wrap(v.clone()), state)
                 }
             },
             #[cfg(feature = "dtype-array")]
             Array(v, width) => {
-                if !cheap {
+                if !cheap || v.len() < CHEAP_SERIES_HASH_LIMIT {
                     Hash::hash(&Wrap(v.clone()), state)
                 }
                 width.hash(state)
