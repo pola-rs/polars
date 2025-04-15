@@ -834,6 +834,18 @@ fn to_datetime(
         ambiguous.len()
     );
 
+    // %Z (timezone name) is not supported
+    if options
+        .format
+        .as_ref()
+        .is_some_and(|format| format.contains("%Z"))
+    {
+        polars_bail!(
+            ComputeError:
+            "The '%Z' format specifier (timezone name) is not supported for parsing datetime strings. Use '%z' (UTC offset like '+0100') instead."
+        );
+    }
+
     let tz_aware = match &options.format {
         #[cfg(all(feature = "regex", feature = "timezones"))]
         Some(format) => TZ_AWARE_RE.is_match(format),
