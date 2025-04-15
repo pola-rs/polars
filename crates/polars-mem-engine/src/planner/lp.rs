@@ -485,11 +485,13 @@ fn create_physical_plan_impl(
                         predicate_has_windows: state.has_windows,
                     }))
                 },
+                #[allow(unreachable_patterns)]
                 _ => {
                     let build_func = build_streaming_executor
                         .expect("invalid build. Missing feature new-streaming");
                     return build_func(root, lp_arena, expr_arena);
                 },
+                #[allow(unreachable_patterns)]
                 _ => unreachable!(),
             }
         },
