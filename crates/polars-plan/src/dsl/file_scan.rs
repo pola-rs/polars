@@ -119,7 +119,7 @@ pub enum CastColumnsPolicy {
 pub enum ExtraColumnsPolicy {
     Ignore,
     /// Error if there are extra columns outside the target schema.
-    Forbid,
+    Raise,
 }
 
 impl PartialEq for FileScan {

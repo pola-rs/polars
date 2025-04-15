@@ -43,7 +43,7 @@ pub fn apply_extra_columns_policy(
     match policy {
         Ignore => {},
 
-        Forbid => {
+        Raise => {
             if let Some(extra_col) = incoming_schema
                 .iter_names()
                 .find(|x| !target_schema.contains(x))

@@ -519,7 +519,7 @@ pub fn lower_ir(
                     let extra_columns_policy = if has_projection {
                         ExtraColumnsPolicy::Ignore
                     } else {
-                        ExtraColumnsPolicy::Forbid
+                        ExtraColumnsPolicy::Raise
                     };
 
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
