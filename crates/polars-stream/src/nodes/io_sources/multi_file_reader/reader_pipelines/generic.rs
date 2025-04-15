@@ -9,7 +9,7 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
@@ -20,8 +20,7 @@ use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::Morsel;
 use crate::nodes::io_sources::multi_file_reader::bridge::BridgeRecvPort;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::apply::ApplyExtraOps;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::cast_columns::CastColumnsPolicy;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_columns::MissingColumnsPolicy;
+use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_columns::initialize_missing_columns_policy;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::{
     ExtraOperations, SchemaNamesMatchPolicy,
 };
@@ -644,7 +643,8 @@ async fn start_reader_impl(
         }
 
         let mut extra_cols = vec![];
-        missing_columns_policy.initialize_policy(
+        initialize_missing_columns_policy(
+            &missing_columns_policy,
             &projected_file_schema,
             get_file_schema!().as_ref(),
             &mut extra_cols,

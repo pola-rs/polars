@@ -4,12 +4,11 @@ pub mod cast_columns;
 pub mod missing_columns;
 pub mod reorder_columns;
 
-use cast_columns::CastColumnsPolicy;
-use missing_columns::MissingColumnsPolicy;
 use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
+use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 

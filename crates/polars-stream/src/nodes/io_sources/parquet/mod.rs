@@ -11,14 +11,14 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder, MemSliceByteSource};
 use polars_parquet::read::schema::infer_schema_with_options;
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{CastColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 
-use super::multi_file_reader::extra_ops::cast_columns::{CastColumns, CastColumnsPolicy};
+use super::multi_file_reader::extra_ops::cast_columns::CastColumns;
 use super::multi_file_reader::reader_interface::output::{
     FileReaderOutputRecv, FileReaderOutputSend,
 };
@@ -234,7 +234,7 @@ impl FileReader for ParquetFileReader {
             }
 
             CastColumns::try_init_from_policy_from_iter(
-                cast_columns_policy,
+                &cast_columns_policy,
                 &projected_schema,
                 &mut self
                     ._file_schema()

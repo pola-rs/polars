@@ -2,21 +2,14 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::DataType;
 use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_bail};
-
-/// TODO: Eventually move this enum to polars-plan
-#[derive(Debug, Clone, Default)]
-pub enum CastColumnsPolicy {
-    /// Raise an error if the datatypes do not match
-    #[default]
-    ErrorOnMismatch,
-}
+use polars_plan::dsl::CastColumnsPolicy;
 
 #[derive(Debug)]
 pub struct CastColumns {}
 
 impl CastColumns {
     pub fn try_init_from_policy(
-        policy: CastColumnsPolicy,
+        policy: &CastColumnsPolicy,
         target_schema: &SchemaRef,
         incoming_schema: &SchemaRef,
     ) -> PolarsResult<Option<Self>> {
@@ -30,7 +23,7 @@ impl CastColumns {
     }
 
     pub fn try_init_from_policy_from_iter(
-        policy: CastColumnsPolicy,
+        policy: &CastColumnsPolicy,
         target_schema: &SchemaRef,
         incoming_schema_iter: &mut dyn Iterator<Item = (&str, &DataType)>,
     ) -> PolarsResult<Option<Self>> {
