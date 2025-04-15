@@ -899,39 +899,57 @@ def _csv_buffer_to_frame(
     if csv.tell() == 0:
         return _empty_frame(raise_if_empty)
 
+    # otherwise rewind the buffer and parse as csv
+    csv.seek(0)
+
     if read_options is None:
         read_options = {}
+
+    date_cols = []
     if schema_overrides:
-        csv_dtypes = read_options.get("dtypes", {})
-        if csv_dtypes:
+        if csv_dtypes := read_options.get("dtypes", {}):
             issue_deprecation_warning(
                 "The `dtypes` parameter for `read_csv` is deprecated. It has been renamed to `schema_overrides`.",
                 version="0.20.31",
             )
-        csv_schema_overrides = read_options.get("schema_overrides", csv_dtypes)
 
-        if csv_schema_overrides and set(csv_schema_overrides).intersection(
-            schema_overrides
-        ):
+        csv_schema_overrides = read_options.get("schema_overrides", csv_dtypes)
+        if set(csv_schema_overrides).intersection(schema_overrides):
             msg = "cannot specify columns in both `schema_overrides` and `read_options['dtypes']`"
             raise ParameterCollisionError(msg)
 
-        read_options = read_options.copy()
-        read_options["schema_overrides"] = {**csv_schema_overrides, **schema_overrides}
+        overrides, schema_overrides = {**csv_schema_overrides, **schema_overrides}, {}
+        for nm, dtype in overrides.items():
+            if dtype != Date:
+                schema_overrides[nm] = dtype
+            else:
+                date_cols.append(nm)
 
-    # otherwise rewind the buffer and parse as csv
-    csv.seek(0)
-    df = read_csv(
-        csv,
-        separator=separator,
-        **read_options,
-    )
-    return _drop_null_data(
-        df,
+        read_options = read_options.copy()
+        read_options["schema_overrides"] = schema_overrides
+
+    df = _drop_null_data(
+        df=read_csv(
+            csv,
+            separator=separator,
+            **read_options,
+        ),
         raise_if_empty=raise_if_empty,
         drop_empty_rows=drop_empty_rows,
         drop_empty_cols=drop_empty_cols,
     )
+    if date_cols:
+        date_casts, schema = {}, df.schema
+        for nm in date_cols:
+            if schema[nm] == String:
+                date_casts[nm] = (
+                    F.col(nm)
+                    .str.replace(r"(?:[ T]00:00:00(?:\.0+)?)$", "")
+                    .str.to_date()
+                )
+        if date_casts:
+            df = df.with_columns(**date_casts)
+    return df
 
 
 def _drop_null_data(
@@ -1087,7 +1105,8 @@ def _read_spreadsheet_calamine(
                     )
                 )
             elif tp == Date:
-                str_to_temporal.append(F.col(nm).str.to_date())
+                dt_str = F.col(nm).str.replace(r"(?:[ T]00:00:00(?:\.0+)?)$", "")
+                str_to_temporal.append(dt_str.str.to_date())
             elif tp == Time:
                 str_to_temporal.append(F.col(nm).str.to_time())
             else:
@@ -1218,7 +1237,9 @@ def _read_spreadsheet_openpyxl(
                             time_zone=getattr(tp, "time_zone", None),
                         )
                     elif tp == Date:
-                        s = s.str.strip_suffix(" 00:00:00").str.to_date()
+                        s = s.str.replace(
+                            r"(?:[ T]00:00:00(?:\.0+)?)$", ""
+                        ).str.to_date()
                     elif tp == Time:
                         s = s.str.to_time()
             else:
