@@ -358,25 +358,6 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         Ok(())
     }
 
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        let values = partition::partition_vec(self.values, partition_sizes, partition_idxs);
-        let seqs = partition::partition_vec(self.seqs, partition_sizes, partition_idxs);
-        std::iter::zip(values, seqs)
-            .map(|(values, seqs)| {
-                Box::new(Self {
-                    in_dtype: self.in_dtype.clone(),
-                    values,
-                    seqs,
-                    policy: PhantomData,
-                }) as _
-            })
-            .collect()
-    }
-
     fn finalize(&mut self) -> PolarsResult<Series> {
         self.seqs.clear();
         unsafe {

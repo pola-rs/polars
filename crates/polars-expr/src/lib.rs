@@ -22,8 +22,8 @@ impl EvictIdx {
         Self(idx | ((should_evict as IdxSize) << (IdxSize::BITS - 1)))
     }
     
-    pub fn idx(&self) -> IdxSize {
-        self.0 & ((1 << (IdxSize::BITS - 1)) - 1)
+    pub fn idx(&self) -> usize {
+        (self.0 & ((1 << (IdxSize::BITS - 1)) - 1)) as usize
     }
 
     pub fn should_evict(&self) -> bool {

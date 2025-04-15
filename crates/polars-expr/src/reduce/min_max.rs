@@ -379,25 +379,6 @@ impl GroupedReduction for BoolMinGroupedReduction {
         Ok(())
     }
 
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        let p_values = partition_mask(&self.values.freeze(), partition_sizes, partition_idxs);
-        let p_mask = partition_mask(&self.mask.freeze(), partition_sizes, partition_idxs);
-        p_values
-            .into_iter()
-            .zip(p_mask)
-            .map(|(values, mask)| {
-                Box::new(Self {
-                    values: values.into_mut(),
-                    mask: mask.into_mut(),
-                }) as _
-            })
-            .collect()
-    }
-
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
@@ -535,25 +516,6 @@ impl GroupedReduction for BoolMaxGroupedReduction {
                 &DataType::Boolean,
             )
         })
-    }
-
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        let p_values = partition_mask(&self.values.freeze(), partition_sizes, partition_idxs);
-        let p_mask = partition_mask(&self.mask.freeze(), partition_sizes, partition_idxs);
-        p_values
-            .into_iter()
-            .zip(p_mask)
-            .map(|(values, mask)| {
-                Box::new(Self {
-                    values: values.into_mut(),
-                    mask: mask.into_mut(),
-                }) as _
-            })
-            .collect()
     }
 
     fn as_any(&self) -> &dyn Any {

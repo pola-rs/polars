@@ -7,6 +7,7 @@ use super::*;
 
 pub struct SumReduce<T: PolarsNumericType> {
     sums: Vec<T::Native>,
+    evicted_sums: Vec<T::Native>,
     in_dtype: DataType,
 }
 
@@ -14,6 +15,7 @@ impl<T: PolarsNumericType> SumReduce<T> {
     fn new(in_dtype: DataType) -> Self {
         SumReduce {
             sums: Vec::new(),
+            evicted_sums: Vec::new(),
             in_dtype,
         }
     }
@@ -75,6 +77,7 @@ where
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
         Box::new(Self {
             sums: Vec::new(),
+            evicted_sums: Vec::new(),
             in_dtype: self.in_dtype.clone(),
         })
     }
@@ -124,6 +127,36 @@ where
         }
         Ok(())
     }
+    
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        // TODO: we should really implement a sum-as-other-type operation instead
+        // of doing this materialized cast.
+        assert!(values.dtype() == &self.in_dtype);
+        let values = values.as_materialized_series(); // @scalar-opt
+        let values = cast_sum_input(values, &self.in_dtype)?;
+        assert!(values.len() == group_idxs.len());
+        let ca: &ChunkedArray<T> = values.as_ref().as_ref().as_ref();
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for (i, g) in subset.iter().zip(group_idxs) {
+                let v = ca.get_unchecked(*i as usize);
+                let s = self.sums.get_unchecked_mut(g.idx() as usize);
+                if g.should_evict() {
+                    self.evicted_sums.push(*s);
+                    *s = v.unwrap_or(T::Native::zero());
+                } else {
+                    *s += v.unwrap_or(T::Native::zero());
+                }
+            }
+        }
+        Ok(())
+    }
 
     unsafe fn combine(
         &mut self,
@@ -159,21 +192,13 @@ where
         }
         Ok(())
     }
-
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        partition::partition_vec(self.sums, partition_sizes, partition_idxs)
-            .into_iter()
-            .map(|sums| {
-                Box::new(Self {
-                    sums,
-                    in_dtype: self.in_dtype.clone(),
-                }) as _
-            })
-            .collect()
+    
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            sums: core::mem::take(&mut self.evicted_sums),
+            evicted_sums: Vec::new(),
+            in_dtype: self.in_dtype.clone(),
+        })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {

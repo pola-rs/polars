@@ -121,22 +121,6 @@ impl GroupedReduction for CountReduce {
         Ok(ca.into_series())
     }
 
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        partition_vec(self.groups, partition_sizes, partition_idxs)
-            .into_iter()
-            .map(|groups| {
-                Box::new(Self {
-                    groups,
-                    include_nulls: self.include_nulls,
-                }) as _
-            })
-            .collect()
-    }
-
     fn as_any(&self) -> &dyn Any {
         self
     }
