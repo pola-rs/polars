@@ -6235,7 +6235,9 @@ class Series:
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Series:
         """
-        Fill null values using interpolation.
+        Interpolate intermediate values.
+
+        Nulls at the beginning and end of the series remain null.
 
         Parameters
         ----------
@@ -6259,7 +6261,9 @@ class Series:
 
     def interpolate_by(self, by: IntoExpr) -> Series:
         """
-        Fill null values using interpolation based on another column.
+        Interpolate intermediate values with x-coordinate based on another column.
+
+        Nulls at the beginning and end of the series remain null.
 
         Parameters
         ----------

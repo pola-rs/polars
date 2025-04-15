@@ -1164,7 +1164,8 @@ impl Expr {
     }
 
     #[cfg(feature = "interpolate")]
-    /// Fill null values using interpolation.
+    /// Interpolate intermediate values.
+    /// Nulls at the beginning and end of the series remain null.
     pub fn interpolate(self, method: InterpolationMethod) -> Expr {
         self.map_unary(FunctionExpr::Interpolate(method))
     }
@@ -1184,7 +1185,9 @@ impl Expr {
     }
 
     #[cfg(feature = "interpolate_by")]
-    /// Fill null values using interpolation.
+    /// Interpolate intermediate values.
+    /// Nulls at the beginning and end of the series remain null.
+    /// The `by` column provides the x-coordinates for interpolation and must not contain nulls.
     pub fn interpolate_by(self, by: Expr) -> Expr {
         self.map_binary(FunctionExpr::InterpolateBy, by)
     }
