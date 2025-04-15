@@ -311,10 +311,17 @@ fn try_build_streaming_group_by(
             .entry(key_id)
             .or_insert_with(unique_column_name)
             .clone();
+
+        // Keys might refer to the same column multiple times, we have to give a unique name to it.
+        let uniq_name = unique_column_name();
         let trans_key_node = expr_arena.add(AExpr::Column(uniq_col));
-        trans_keys.push(ExprIR::from_node(trans_key_node, expr_arena));
+        trans_keys.push(ExprIR::new(
+            trans_key_node,
+            OutputName::Alias(uniq_name.clone()),
+        ));
         let output_name = OutputName::Alias(key.output_name().clone());
-        trans_output_exprs.push(ExprIR::new(trans_key_node, output_name));
+        let trans_output_node = expr_arena.add(AExpr::Column(uniq_name));
+        trans_output_exprs.push(ExprIR::new(trans_output_node, output_name));
     }
     for agg in aggs {
         let trans_node = try_lower_elementwise_scalar_agg_expr(
