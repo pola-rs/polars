@@ -115,6 +115,17 @@ pub enum CastColumnsPolicy {
     ErrorOnMismatch,
 }
 
+#[derive(Debug, Clone)]
+pub enum SchemaNamesMatchPolicy {
+    /// * If the schema lengths match, ensure that all columns match in the same order
+    /// * Otherwise, ensure that there are no extra columns in the incoming schema that
+    ///   cannot be found in the target schema.
+    ///   * Ignores if the incoming schema is missing columns, this is handled by a separate module.
+    OrderedExact,
+    /// Error if there are extra columns outside the target schema.
+    ForbidExtra,
+}
+
 impl PartialEq for FileScan {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {

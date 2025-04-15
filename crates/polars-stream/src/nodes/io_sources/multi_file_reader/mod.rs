@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 
 use bridge::BridgeState;
-use extra_ops::SchemaNamesMatchPolicy;
 use initialization::MultiScanTaskInitializer;
 use polars_core::config;
 use polars_core::schema::SchemaRef;
@@ -17,7 +16,7 @@ use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::{RowIndex, pl_async};
-use polars_plan::dsl::ScanSources;
+use polars_plan::dsl::{ScanSources, SchemaNamesMatchPolicy};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;

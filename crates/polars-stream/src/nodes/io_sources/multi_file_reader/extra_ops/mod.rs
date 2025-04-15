@@ -8,7 +8,7 @@ use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy};
+use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, SchemaNamesMatchPolicy};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 
@@ -34,66 +34,51 @@ impl ExtraOperations {
     }
 }
 
-/// TODO: Eventually move this enum to polars-plan
-#[derive(Debug, Clone)]
-#[expect(unused)]
-pub enum SchemaNamesMatchPolicy {
-    /// * If the schema lengths match, ensure that all columns match in the same order
-    /// * Otherwise, ensure that there are no extra columns in the incoming schema that
-    ///   cannot be found in the target schema.
-    ///   * Ignores if the incoming schema is missing columns, this is handled by a separate module.
-    OrderedExact,
-    /// Error if there are extra columns outside the target schema.
-    ForbidExtra,
-}
-
-impl SchemaNamesMatchPolicy {
-    pub fn apply_policy(
-        &self,
-        target_schema: SchemaRef,
-        incoming_schema: SchemaRef,
-    ) -> PolarsResult<()> {
-        use SchemaNamesMatchPolicy::*;
-        match self {
-            OrderedExact => {
-                if incoming_schema.len() == target_schema.len() {
-                    if incoming_schema
-                        .iter_names()
-                        .zip(target_schema.iter_names())
-                        .any(|(l, r)| l != r)
-                    {
-                        polars_bail!(
-                            SchemaMismatch:
-                            "column name ordering of file differs: {:?} != {:?}",
-                            incoming_schema.iter_names().collect::<Vec<_>>(), target_schema.iter_names().collect::<Vec<_>>()
-                        )
-                    }
-                } else if let Some(extra_col) = incoming_schema
+pub fn apply_schema_names_match_policy(
+    policy: &SchemaNamesMatchPolicy,
+    target_schema: SchemaRef,
+    incoming_schema: SchemaRef,
+) -> PolarsResult<()> {
+    use SchemaNamesMatchPolicy::*;
+    match policy {
+        OrderedExact => {
+            if incoming_schema.len() == target_schema.len() {
+                if incoming_schema
                     .iter_names()
-                    .find(|x| !target_schema.contains(x))
+                    .zip(target_schema.iter_names())
+                    .any(|(l, r)| l != r)
                 {
                     polars_bail!(
                         SchemaMismatch:
-                        "extra column in file outside of expected schema: {}",
-                        extra_col,
+                        "column name ordering of file differs: {:?} != {:?}",
+                        incoming_schema.iter_names().collect::<Vec<_>>(), target_schema.iter_names().collect::<Vec<_>>()
                     )
                 }
-            },
+            } else if let Some(extra_col) = incoming_schema
+                .iter_names()
+                .find(|x| !target_schema.contains(x))
+            {
+                polars_bail!(
+                    SchemaMismatch:
+                    "extra column in file outside of expected schema: {}",
+                    extra_col,
+                )
+            }
+        },
 
-            ForbidExtra => {
-                if let Some(extra_col) = incoming_schema
-                    .iter_names()
-                    .find(|x| !target_schema.contains(x))
-                {
-                    polars_bail!(
-                        SchemaMismatch:
-                        "extra column in file outside of expected schema: {}",
-                        extra_col,
-                    )
-                }
-            },
-        }
-
-        Ok(())
+        ForbidExtra => {
+            if let Some(extra_col) = incoming_schema
+                .iter_names()
+                .find(|x| !target_schema.contains(x))
+            {
+                polars_bail!(
+                    SchemaMismatch:
+                    "extra column in file outside of expected schema: {}",
+                    extra_col,
+                )
+            }
+        },
     }
+
+    Ok(())
 }

@@ -9,7 +9,9 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSource};
+use polars_plan::dsl::{
+    CastColumnsPolicy, MissingColumnsPolicy, ScanSource, SchemaNamesMatchPolicy,
+};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
@@ -22,7 +24,7 @@ use crate::nodes::io_sources::multi_file_reader::bridge::BridgeRecvPort;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::apply::ApplyExtraOps;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_columns::initialize_missing_columns_policy;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::{
-    ExtraOperations, SchemaNamesMatchPolicy,
+    ExtraOperations, apply_schema_names_match_policy,
 };
 use crate::nodes::io_sources::multi_file_reader::initialization::slice::{
     ResolvedSliceInfo, resolve_to_positive_slice,
@@ -664,7 +666,7 @@ async fn start_reader_impl(
 
     if let Some(policy) = check_schema_names {
         if let Ok(this_file_schema) = file_schema_rx.unwrap().recv().await {
-            policy.apply_policy(full_file_schema, this_file_schema)?;
+            apply_schema_names_match_policy(&policy, full_file_schema, this_file_schema)?;
         } else {
             drop(reader_output_port);
             return Err(reader_handle.await.unwrap_err());
