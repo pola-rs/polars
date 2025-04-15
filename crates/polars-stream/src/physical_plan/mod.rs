@@ -23,6 +23,7 @@ mod lower_ir;
 mod to_graph;
 
 pub use fmt::visualize_plan;
+use polars_plan::dsl::ExtraColumnsPolicy;
 use polars_plan::prelude::{FileScanOptions, FileType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -30,7 +31,6 @@ use polars_utils::slice_enum::Slice;
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
-use crate::nodes::io_sources::multi_file_reader::extra_ops::SchemaNamesMatchPolicy;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::lower_expr::ExprCache;
 
@@ -213,7 +213,7 @@ pub enum PhysNodeKind {
         hive_parts: Option<HivePartitionsDf>,
         allow_missing_columns: bool,
         include_file_paths: Option<PlSmallStr>,
-        check_schema_names: Option<SchemaNamesMatchPolicy>,
+        extra_columns_policy: ExtraColumnsPolicy,
 
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
         file_schema: SchemaRef,

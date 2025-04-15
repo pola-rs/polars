@@ -9,7 +9,7 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
@@ -20,10 +20,9 @@ use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::Morsel;
 use crate::nodes::io_sources::multi_file_reader::bridge::BridgeRecvPort;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::apply::ApplyExtraOps;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::cast_columns::CastColumnsPolicy;
-use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_columns::MissingColumnsPolicy;
+use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_columns::initialize_missing_columns_policy;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::{
-    ExtraOperations, SchemaNamesMatchPolicy,
+    ExtraOperations, apply_extra_columns_policy,
 };
 use crate::nodes::io_sources::multi_file_reader::initialization::slice::{
     ResolvedSliceInfo, resolve_to_positive_slice,
@@ -246,7 +245,7 @@ impl MultiScanTaskInitializer {
                     projected_file_schema,
                     missing_columns_policy,
                     full_file_schema,
-                    check_schema_names: self.config.check_schema_names.clone(),
+                    extra_columns_policy: self.config.extra_columns_policy.clone(),
                 },
                 num_pipelines,
                 verbose,
@@ -541,7 +540,7 @@ struct StartReaderArgsConstant {
     projected_file_schema: SchemaRef,
     missing_columns_policy: MissingColumnsPolicy,
     full_file_schema: SchemaRef,
-    check_schema_names: Option<SchemaNamesMatchPolicy>,
+    extra_columns_policy: ExtraColumnsPolicy,
 }
 
 struct StartReaderArgsPerFile {
@@ -562,7 +561,7 @@ async fn start_reader_impl(
         projected_file_schema,
         missing_columns_policy,
         full_file_schema,
-        check_schema_names,
+        extra_columns_policy,
     } = constant_args;
 
     let StartReaderArgsPerFile {
@@ -575,7 +574,7 @@ async fn start_reader_impl(
 
     let pre_slice_to_reader = begin_read_args.pre_slice.clone();
 
-    let file_schema_rx = if check_schema_names.is_some() {
+    let file_schema_rx = if !matches!(extra_columns_policy, ExtraColumnsPolicy::Ignore) {
         // Upstream should not have any reason to attach this.
         assert!(begin_read_args.callbacks.file_schema_tx.is_none());
         let (tx, rx) = connector::connector();
@@ -644,7 +643,8 @@ async fn start_reader_impl(
         }
 
         let mut extra_cols = vec![];
-        missing_columns_policy.initialize_policy(
+        initialize_missing_columns_policy(
+            &missing_columns_policy,
             &projected_file_schema,
             get_file_schema!().as_ref(),
             &mut extra_cols,
@@ -662,9 +662,9 @@ async fn start_reader_impl(
 
     let reader_handle = AbortOnDropHandle::new(reader_handle);
 
-    if let Some(policy) = check_schema_names {
+    if !matches!(extra_columns_policy, ExtraColumnsPolicy::Ignore) {
         if let Ok(this_file_schema) = file_schema_rx.unwrap().recv().await {
-            policy.apply_policy(full_file_schema, this_file_schema)?;
+            apply_extra_columns_policy(&extra_columns_policy, full_file_schema, this_file_schema)?;
         } else {
             drop(reader_output_port);
             return Err(reader_handle.await.unwrap_err());

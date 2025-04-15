@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 
 use bridge::BridgeState;
-use extra_ops::SchemaNamesMatchPolicy;
 use initialization::MultiScanTaskInitializer;
 use polars_core::config;
 use polars_core::schema::SchemaRef;
@@ -17,7 +16,7 @@ use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::{RowIndex, pl_async};
-use polars_plan::dsl::ScanSources;
+use polars_plan::dsl::{ExtraColumnsPolicy, ScanSources};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -53,7 +52,7 @@ pub struct MultiFileReaderConfig {
     hive_parts: Option<Arc<HivePartitionsDf>>,
     include_file_paths: Option<PlSmallStr>,
     allow_missing_columns: bool,
-    check_schema_names: Option<SchemaNamesMatchPolicy>,
+    extra_columns_policy: ExtraColumnsPolicy,
 
     num_pipelines: AtomicUsize,
     /// Number of readers to initialize concurrently. e.g. Parquet will want to fetch metadata in this
@@ -115,7 +114,7 @@ impl MultiFileReader {
         hive_parts: Option<Arc<HivePartitionsDf>>,
         include_file_paths: Option<PlSmallStr>,
         allow_missing_columns: bool,
-        check_schema_names: Option<SchemaNamesMatchPolicy>,
+        extra_columns_policy: ExtraColumnsPolicy,
     ) -> Self {
         let name = format_pl_smallstr!("MultiScan[{}]", file_reader_builder.reader_name());
 
@@ -135,7 +134,7 @@ impl MultiFileReader {
                     hive_parts,
                     include_file_paths,
                     allow_missing_columns,
-                    check_schema_names,
+                    extra_columns_policy,
                     num_pipelines: AtomicUsize::new(0),
                     n_readers_pre_init: 3,
                     verbose: AtomicBool::new(false),

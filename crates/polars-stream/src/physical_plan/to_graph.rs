@@ -479,7 +479,7 @@ fn to_graph_rec<'a>(
             predicate,
             hive_parts,
             allow_missing_columns,
-            check_schema_names,
+            extra_columns_policy,
             include_file_paths,
             file_schema,
         } => {
@@ -516,7 +516,7 @@ fn to_graph_rec<'a>(
                     hive_parts.map(Arc::new),
                     include_file_paths.clone(),
                     *allow_missing_columns,
-                    check_schema_names.clone(),
+                    extra_columns_policy.clone(),
                 ),
                 [],
             )
@@ -887,6 +887,8 @@ fn to_graph_rec<'a>(
                 },
             };
 
+            use polars_plan::dsl::ExtraColumnsPolicy;
+
             use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
 
@@ -919,7 +921,7 @@ fn to_graph_rec<'a>(
             let hive_parts = None;
             let include_file_paths = None;
             let allow_missing_columns = false;
-            let check_schema_names = None;
+            let extra_columns_policy = ExtraColumnsPolicy::Ignore;
 
             ctx.graph.add_node(
                 nodes::io_sources::multi_file_reader::MultiFileReader::new(
@@ -935,7 +937,7 @@ fn to_graph_rec<'a>(
                     hive_parts,
                     include_file_paths,
                     allow_missing_columns,
-                    check_schema_names,
+                    extra_columns_policy,
                 ),
                 [],
             )

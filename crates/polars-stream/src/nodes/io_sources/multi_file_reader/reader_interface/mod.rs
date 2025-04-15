@@ -10,10 +10,10 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
+use polars_plan::dsl::CastColumnsPolicy;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
-use super::extra_ops::cast_columns::CastColumnsPolicy;
 use crate::async_executor::JoinHandle;
 use crate::async_primitives::connector;
 

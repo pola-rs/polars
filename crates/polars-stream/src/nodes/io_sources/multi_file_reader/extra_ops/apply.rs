@@ -17,6 +17,7 @@ use polars_utils::slice_enum::Slice;
 use super::ExtraOperations;
 use super::cast_columns::CastColumns;
 use super::reorder_columns::ReorderColumns;
+use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_columns::initialize_missing_columns_policy;
 
 /// Apply extra operations onto morsels originating from a reader. This should be initialized
 /// per-reader (it contains e.g. file path).
@@ -83,7 +84,7 @@ impl ApplyExtraOps {
                 }
 
                 let cast_columns = CastColumns::try_init_from_policy(
-                    cast_columns_policy,
+                    &cast_columns_policy,
                     &final_output_schema,
                     incoming_schema,
                 )?;
@@ -95,7 +96,8 @@ impl ApplyExtraOps {
                 let mut extra_columns: Vec<ScalarColumn> =
                     Vec::with_capacity(n_expected_extra_columns);
 
-                missing_columns_policy.initialize_policy(
+                initialize_missing_columns_policy(
+                    &missing_columns_policy,
                     &projected_file_schema,
                     incoming_schema,
                     &mut extra_columns,

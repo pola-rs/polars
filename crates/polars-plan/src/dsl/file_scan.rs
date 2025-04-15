@@ -56,6 +56,72 @@ pub enum FileScan {
     },
 }
 
+impl FileScan {
+    pub fn flags(&self) -> ScanFlags {
+        match self {
+            #[cfg(feature = "csv")]
+            Self::Csv { .. } => ScanFlags::empty(),
+            #[cfg(feature = "ipc")]
+            Self::Ipc { .. } => ScanFlags::empty(),
+            #[cfg(feature = "parquet")]
+            Self::Parquet { .. } => ScanFlags::SPECIALIZED_PREDICATE_FILTER,
+            #[cfg(feature = "json")]
+            Self::NDJson { .. } => ScanFlags::empty(),
+            #[allow(unreachable_patterns)]
+            _ => ScanFlags::empty(),
+        }
+    }
+
+    pub(crate) fn sort_projection(&self, _file_options: &FileScanOptions) -> bool {
+        match self {
+            #[cfg(feature = "csv")]
+            Self::Csv { .. } => true,
+            #[cfg(feature = "ipc")]
+            Self::Ipc { .. } => _file_options.row_index.is_some(),
+            #[cfg(feature = "parquet")]
+            Self::Parquet { .. } => false,
+            #[allow(unreachable_patterns)]
+            _ => false,
+        }
+    }
+
+    pub fn streamable(&self) -> bool {
+        match self {
+            #[cfg(feature = "csv")]
+            Self::Csv { .. } => true,
+            #[cfg(feature = "ipc")]
+            Self::Ipc { .. } => false,
+            #[cfg(feature = "parquet")]
+            Self::Parquet { .. } => true,
+            #[cfg(feature = "json")]
+            Self::NDJson { .. } => false,
+            #[allow(unreachable_patterns)]
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum MissingColumnsPolicy {
+    #[default]
+    Raise,
+    Insert,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum CastColumnsPolicy {
+    /// Raise an error if the datatypes do not match
+    #[default]
+    ErrorOnMismatch,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExtraColumnsPolicy {
+    Ignore,
+    /// Error if there are extra columns outside the target schema.
+    Raise,
+}
+
 impl PartialEq for FileScan {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -153,51 +219,6 @@ impl Hash for FileScan {
                 cloud_options.hash(state)
             },
             FileScan::Anonymous { options, .. } => options.hash(state),
-        }
-    }
-}
-
-impl FileScan {
-    pub fn flags(&self) -> ScanFlags {
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { .. } => ScanFlags::empty(),
-            #[cfg(feature = "ipc")]
-            Self::Ipc { .. } => ScanFlags::empty(),
-            #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => ScanFlags::SPECIALIZED_PREDICATE_FILTER,
-            #[cfg(feature = "json")]
-            Self::NDJson { .. } => ScanFlags::empty(),
-            #[allow(unreachable_patterns)]
-            _ => ScanFlags::empty(),
-        }
-    }
-
-    pub(crate) fn sort_projection(&self, _file_options: &FileScanOptions) -> bool {
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { .. } => true,
-            #[cfg(feature = "ipc")]
-            Self::Ipc { .. } => _file_options.row_index.is_some(),
-            #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => false,
-            #[allow(unreachable_patterns)]
-            _ => false,
-        }
-    }
-
-    pub fn streamable(&self) -> bool {
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { .. } => true,
-            #[cfg(feature = "ipc")]
-            Self::Ipc { .. } => false,
-            #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => true,
-            #[cfg(feature = "json")]
-            Self::NDJson { .. } => false,
-            #[allow(unreachable_patterns)]
-            _ => false,
         }
     }
 }
