@@ -339,3 +339,16 @@ def test_full_coalesce_join_and_rename_15583() -> None:
         .collect(engine="streaming")
     )
     assert result["A"].to_list() == [1, 2, 3, 4, 5]
+
+
+def test_invert_order_full_join_22295() -> None:
+    lf = pl.LazyFrame(
+        {
+            "value_at": [datetime(2024, i + 1, 1) for i in range(6)],
+            "value": list(range(6)),
+        }
+    )
+
+    lf.join(lf, on=["value", "value_at"], how="full", coalesce=True).collect(
+        engine="streaming"
+    )
