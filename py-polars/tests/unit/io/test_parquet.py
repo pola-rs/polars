@@ -3160,3 +3160,23 @@ def test_filter_on_logical_dtype_22252() -> None:
     pl.Series("a", [datetime(1996, 10, 5)]).to_frame().write_parquet(f)
     f.seek(0)
     pl.scan_parquet(f).filter(pl.col.a.dt.weekday() == 6).collect()
+
+
+def test_filter_nan_22289() -> None:
+    f = io.BytesIO()
+    pl.DataFrame(
+        {"a": [1, 2, float("nan")], "b": [float("nan"), 5, 6]}, strict=False
+    ).write_parquet(f)
+
+    f.seek(0)
+    lf = pl.scan_parquet(f)
+
+    assert_frame_equal(
+        lf.collect().filter(pl.col.a.is_not_nan()),
+        lf.filter(pl.col.a.is_not_nan()).collect(),
+    )
+
+    assert_frame_equal(
+        lf.collect().filter(pl.col.a.is_nan()),
+        lf.filter(pl.col.a.is_nan()).collect(),
+    )
