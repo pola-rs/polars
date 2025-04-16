@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
@@ -18,6 +19,48 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
     fn new(name: PlSmallStr, values: T) -> Self {
         let values = values.as_ref();
         Series::from_any_values(name, values, true).expect("data types of values should match")
+    }
+}
+
+fn initialize_empty_categorical_revmap_rec(dtype: &DataType) -> Cow<DataType> {
+    use DataType as T;
+    match dtype {
+        #[cfg(feature = "dtype-categorical")]
+        T::Categorical(None, o) => {
+            Cow::Owned(T::Categorical(Some(Arc::new(RevMapping::default())), *o))
+        },
+        T::List(inner_dtype) => match initialize_empty_categorical_revmap_rec(inner_dtype) {
+            Cow::Owned(inner_dtype) => Cow::Owned(T::List(Box::new(inner_dtype))),
+            _ => Cow::Borrowed(dtype),
+        },
+        #[cfg(feature = "dtype-array")]
+        T::Array(inner_dtype, width) => {
+            match initialize_empty_categorical_revmap_rec(inner_dtype) {
+                Cow::Owned(inner_dtype) => Cow::Owned(T::Array(Box::new(inner_dtype), *width)),
+                _ => Cow::Borrowed(dtype),
+            }
+        },
+        #[cfg(feature = "dtype-struct")]
+        T::Struct(fields) => {
+            for (i, field) in fields.iter().enumerate() {
+                if let Cow::Owned(field_dtype) =
+                    initialize_empty_categorical_revmap_rec(field.dtype())
+                {
+                    let mut new_fields = Vec::with_capacity(fields.len());
+                    new_fields.extend(fields[..i].iter().cloned());
+                    new_fields.push(Field::new(field.name().clone(), field_dtype));
+                    new_fields.extend(fields[i + 1..].iter().map(|field| {
+                        let field_dtype =
+                            initialize_empty_categorical_revmap_rec(field.dtype()).into_owned();
+                        Field::new(field.name().clone(), field_dtype)
+                    }));
+                    return Cow::Owned(T::Struct(new_fields));
+                }
+            }
+
+            Cow::Borrowed(dtype)
+        },
+        _ => Cow::Borrowed(dtype),
     }
 }
 
@@ -89,7 +132,12 @@ impl Series {
         strict: bool,
     ) -> PolarsResult<Self> {
         if values.is_empty() {
-            return Ok(Self::new_empty(name, dtype));
+            return Ok(Self::new_empty(
+                name,
+                // This is given categoricals with empty revmaps, but we need to always return
+                // categoricals with non-empty revmaps.
+                initialize_empty_categorical_revmap_rec(dtype).as_ref(),
+            ));
         }
 
         let mut s = match dtype {
