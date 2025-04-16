@@ -20,10 +20,8 @@ use super::compute_node_prelude::*;
 use crate::async_executor;
 use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
+use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
-
-const HOT_TABLE_SIZE: usize = 4;
-const EVICT_STATE_FLUSH_LIMIT: usize = 8;
 
 struct LocalGroupBySinkState {
     hot_grouper: Box<dyn HotGrouper>,
@@ -50,9 +48,10 @@ impl LocalGroupBySinkState {
     fn new(
         key_schema: Arc<Schema>,
         reductions: Vec<Box<dyn GroupedReduction>>,
+        hot_table_size: usize,
         num_partitions: usize,
     ) -> Self {
-        let hot_grouper = new_hash_hot_grouper(key_schema, HOT_TABLE_SIZE);
+        let hot_grouper = new_hash_hot_grouper(key_schema, hot_table_size);
         Self {
             hot_grouper,
             hot_grouped_reductions: reductions,
@@ -192,7 +191,7 @@ impl GroupBySinkState {
                     }
 
                     // If we have too many evicted rows, flush them.
-                    if local.hot_grouper.num_evictions() >= EVICT_STATE_FLUSH_LIMIT {
+                    if local.hot_grouper.num_evictions() >= get_ideal_morsel_size() {
                         local.flush_evictions(&partitioner);
                     }
                 }
@@ -448,6 +447,7 @@ impl GroupByNode {
         random_state: PlRandomState,
         num_pipelines: usize,
     ) -> Self {
+        let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE").map(|sz| sz.parse::<usize>().unwrap()).unwrap_or(1024);
         let num_partitions = num_pipelines;
         let uniq_grouped_reduction_cols = grouped_reduction_cols
             .iter()
@@ -458,7 +458,7 @@ impl GroupByNode {
         let locals = (0..num_pipelines)
             .map(|_| {
                 let reductions = grouped_reductions.iter().map(|gr| gr.new_empty()).collect();
-                LocalGroupBySinkState::new(key_schema.clone(), reductions, num_partitions)
+                LocalGroupBySinkState::new(key_schema.clone(), reductions, hot_table_size, num_partitions)
             })
             .collect();
         let partitioner = HashPartitioner::new(num_partitions, 0);
