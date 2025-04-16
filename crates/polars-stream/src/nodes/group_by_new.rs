@@ -200,7 +200,7 @@ impl GroupBySinkState {
         }
     }
 
-    fn combine_locals(&mut self) -> PolarsResult<Vec<GroupByPartition>> {
+    fn combine_locals(&mut self, output_schema: &Schema) -> PolarsResult<Vec<DataFrame>> {
         // Finalize pre-aggregations.
         POOL.install(|| {
             self.locals
@@ -237,7 +237,7 @@ impl GroupBySinkState {
         }
         let (drop_q_send, drop_q_recv) = async_channel::bounded(self.locals.len());
         let num_partitions = self.locals[0].sketch_per_p.len();
-        let output_per_partition: SparseInitVec<GroupByPartition> =
+        let output_per_partition: SparseInitVec<DataFrame> =
             SparseInitVec::with_capacity(num_partitions);
         let locals = &self.locals;
         let grouper_template = &self.grouper;
@@ -377,7 +377,7 @@ impl GroupBySinkState {
                             GroupByPartition {
                                 grouper: p_grouper,
                                 grouped_reductions: p_reductions,
-                            },
+                            }.into_df(output_schema)?,
                         )
                         .ok()
                         .unwrap();
@@ -504,14 +504,7 @@ impl ComputeNode for GroupByNode {
                 else {
                     unreachable!()
                 };
-                let partitions = sink.combine_locals()?;
-                let dfs = POOL.install(|| {
-                    partitions
-                        .into_par_iter()
-                        .map(|p| p.into_df(&self.output_schema))
-                        .collect::<Result<Vec<_>, _>>()
-                })?;
-
+                let dfs = sink.combine_locals(&self.output_schema)?;
                 let df = accumulate_dataframes_vertical_unchecked(dfs);
                 let source = InMemorySourceNode::new(Arc::new(df), MorselSeq::new(0));
                 self.state = GroupByState::Source(source);
