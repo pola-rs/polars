@@ -41,7 +41,7 @@ pub(super) fn sample_frac(
         ComputeError: "Sample fraction must be a single value."
     );
 
-    let frac_s = frac_s.cast(&Float64)?;
+    let frac_s = frac_s.strict_cast(&Float64)?;
     let frac = frac_s.f64()?;
 
     match frac.get(0) {
@@ -64,7 +64,7 @@ pub(super) fn sample_n(
         ComputeError: "Sample size must be a single value."
     );
 
-    let n_s = n_s.cast(&IDX_DTYPE)?;
+    let n_s = n_s.strict_cast(&IDX_DTYPE)?;
     let n = n_s.idx()?;
 
     match n.get(0) {

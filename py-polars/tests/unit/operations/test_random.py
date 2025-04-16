@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.exceptions import ShapeError
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -48,6 +48,14 @@ def test_sample_expr() -> None:
     assert_series_equal(result1, result2)
 
 
+def test_sample_expr_wrong_input() -> None:
+    df = pl.DataFrame({"a": [1], "foo": ["x"]})
+    with pytest.raises(InvalidOperationError, match="conversion from `str` to `f64`"):
+        df.select(pl.col("a").sample(fraction="foo"))
+    with pytest.raises(InvalidOperationError, match="conversion from `str` to `u32`"):
+        df.select(pl.col("a").sample(n="foo"))
+
+
 def test_sample_df() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
@@ -63,6 +71,14 @@ def test_sample_df() -> None:
     )
     with pytest.raises(ValueError, match="cannot specify both `n` and `fraction`"):
         df.sample(n=2, fraction=0.4)
+
+
+def test_sample_df_wrong_input() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    with pytest.raises(InvalidOperationError, match="conversion from `str` to `f64`"):
+        df.sample(fraction="foo")
+    with pytest.raises(InvalidOperationError, match="conversion from `str` to `u32`"):
+        df.sample(n="foo")
 
 
 def test_sample_n_expr() -> None:
