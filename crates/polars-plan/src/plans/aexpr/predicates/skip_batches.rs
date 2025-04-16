@@ -584,10 +584,11 @@ fn aexpr_to_skip_batch_predicate_rec(
         let col_nc = col!(null_count: col);
 
         let min_is_max = binexpr!(Eq, col_min, col_max); // Eq so that (None == None) == None
+        let is_defined = is_stat_defined!(col_min, schema.get(col).unwrap());
         let idx_zero = lv!(idx: 0);
         let has_no_nulls = eq!(col_nc, idx_zero);
 
-        expr = and!(min_is_max, has_no_nulls, expr);
+        expr = and!(min_is_max, is_defined, has_no_nulls, expr);
     }
     Some(expr)
 }
