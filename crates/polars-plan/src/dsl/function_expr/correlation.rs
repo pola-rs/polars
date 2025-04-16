@@ -26,6 +26,13 @@ impl Display for CorrelationMethod {
 }
 
 pub(super) fn corr(s: &[Column], method: CorrelationMethod) -> PolarsResult<Column> {
+    polars_ensure!(
+        s[0].len() == s[1].len() || s[0].len() == 1 || s[1].len() == 1,
+        length_mismatch = "corr",
+        s[0].len(),
+        s[1].len()
+    );
+
     match method {
         CorrelationMethod::Pearson => pearson_corr(s),
         #[cfg(all(feature = "rank", feature = "propagate_nans"))]
