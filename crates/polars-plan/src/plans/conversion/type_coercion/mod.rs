@@ -428,6 +428,49 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            AExpr::Function {
+                function: ref function @ FunctionExpr::TemporalExpr(TemporalFunction::Duration(_)),
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+
+                for (i, expr) in input.iter().enumerate() {
+                    let (_, dtype) =
+                        unpack!(get_aexpr_and_type(expr_arena, expr.node(), &input_schema));
+
+                    if !matches!(dtype, DataType::Int64) {
+                        let function = function.clone();
+                        let mut input = input.to_vec();
+                        cast_expr_ir(
+                            &mut input[i],
+                            &dtype,
+                            &DataType::Int64,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                        for expr in &mut input[i + 1..] {
+                            let (_, dtype) =
+                                unpack!(get_aexpr_and_type(expr_arena, expr.node(), &input_schema));
+                            cast_expr_ir(
+                                expr,
+                                &dtype,
+                                &DataType::Int64,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+                        }
+
+                        return Ok(Some(AExpr::Function {
+                            function,
+                            input,
+                            options,
+                        }));
+                    }
+                }
+
+                None
+            },
             AExpr::Slice { offset, length, .. } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (_, offset_dtype) =
