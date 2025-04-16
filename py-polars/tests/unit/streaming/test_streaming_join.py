@@ -276,8 +276,6 @@ def test_non_coalescing_streaming_left_join() -> None:
     )
 
 
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="requires python3.10 or higher")
-@pytest.mark.xfail(reason="Bug. See https://github.com/pola-rs/polars/issues/22295")
 @pytest.mark.write_disk
 def test_streaming_outer_join_partial_flush(tmp_path: Path) -> None:
     data = {
