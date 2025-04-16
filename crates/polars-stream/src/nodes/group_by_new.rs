@@ -403,6 +403,14 @@ impl GroupBySinkState {
             PolarsResult::Ok(())
         })?;
 
+        // Drop remaining local state in parallel.
+        POOL.install(|| {
+            core::mem::take(&mut self.locals)
+                .into_par_iter()
+                .with_max_len(1)
+                .for_each(drop);
+        });
+
         Ok(output_per_partition.try_assume_init().ok().unwrap())
     }
 }
