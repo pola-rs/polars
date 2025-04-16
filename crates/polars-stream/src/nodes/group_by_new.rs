@@ -175,7 +175,7 @@ impl GroupBySinkState {
                     if !cold_idxs.is_empty() {
                         unsafe {
                             let cold_keys = hash_keys.gather_unchecked(&cold_idxs);
-                            let cold_df = df.take_slice_unchecked(&cold_idxs);
+                            let cold_df = df.take_slice_unchecked_impl(&cold_idxs, false);
 
                             cold_keys.gen_idxs_per_partition(
                                 &partitioner,
