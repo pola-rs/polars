@@ -456,7 +456,7 @@ impl GroupByNode {
         num_pipelines: usize,
     ) -> Self {
         let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE").map(|sz| sz.parse::<usize>().unwrap()).unwrap_or(1024);
-        let num_partitions = num_pipelines;
+        let num_partitions = num_pipelines - std::env::var("POLARS_PARTITION_FREE_THREADS").map(|sz| sz.parse::<usize>().unwrap()).unwrap_or(0);
         let uniq_grouped_reduction_cols = grouped_reduction_cols
             .iter()
             .cloned()
