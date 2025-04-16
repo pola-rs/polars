@@ -183,34 +183,98 @@ impl ComputeNode for MergeSortedNode {
         assert_eq!(send.len(), 1);
         assert_eq!(recv.len(), 2);
 
-        match (send[0], recv[0], recv[1]) {
+        // The buffer state for input ports is abstracted through the following
+        // port meta states
+        #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+        enum MetaState {
+            NoDataNow,     // Blocked with empty buffer
+            DataAvailable, // Blocked with non-empty buffer, Ready, or Done with non-empty buffer
+            NoMoreData,    // Done with empty buffer
+        }
+
+        let left_meta_state = match recv[0] {
+            PortState::Blocked if self.left_unmerged.is_empty() => MetaState::NoDataNow,
+            PortState::Done if self.left_unmerged.is_empty() => MetaState::NoMoreData,
+            _ => MetaState::DataAvailable,
+        };
+
+        let right_meta_state = match recv[1] {
+            PortState::Blocked if self.right_unmerged.is_empty() => MetaState::NoDataNow,
+            PortState::Done if self.right_unmerged.is_empty() => MetaState::NoMoreData,
+            _ => MetaState::DataAvailable,
+        };
+
+        match (send[0], left_meta_state, right_meta_state) {
+            // Since Done is final, we honor the Done state from either side
             (PortState::Done, _, _) => {
                 recv[0] = PortState::Done;
                 recv[1] = PortState::Done;
             },
 
-            (_, PortState::Done, PortState::Done)
-                if self.left_unmerged.is_empty() && self.right_unmerged.is_empty() =>
-            {
+            (_, MetaState::NoMoreData, MetaState::NoMoreData) => {
                 send[0] = PortState::Done;
             },
 
-            // If one of the two ports is blocked such that we cannot produce data anymore, block
-            // the other input port and output port.
-            (_, PortState::Blocked, _) if self.left_unmerged.is_empty() => {
+            // If the output port is blocked, the input ports are blocked as well.
+            // However, if input ports have data available, the node can proceed.
+            (PortState::Blocked, _, _) => {
+                // Update input ports
+                if recv[0] != PortState::Done {
+                    recv[0] = PortState::Blocked;
+                }
+                if recv[1] != PortState::Done {
+                    recv[1] = PortState::Blocked;
+                }
+
+                // Update output port
+                if left_meta_state == MetaState::DataAvailable
+                    && right_meta_state == MetaState::DataAvailable
+                {
+                    send[0] = PortState::Ready;
+                }
+            },
+
+            // From this point onwards, the output port is Ready.
+            // There are 3 scenarios:
+            // (a) the node is done,
+            // (b) the node is blocked and unable to proceed,
+            // (c) the node can proceed.
+
+            // Hence:
+            // (a) has been taken care of already,
+            // (b) if an input port is blocked with empty buffer, the node is unable to proceed.
+            (PortState::Ready, MetaState::NoDataNow, _) => {
+                // Update output port
                 send[0] = PortState::Blocked;
+
+                // Update input ports
                 if recv[1] != PortState::Done {
                     recv[1] = PortState::Blocked;
                 }
             },
-            (_, _, PortState::Blocked) if self.right_unmerged.is_empty() => {
+
+            (PortState::Ready, _, MetaState::NoDataNow) => {
+                // Update output port
                 send[0] = PortState::Blocked;
+
+                // Update input ports
                 if recv[0] != PortState::Done {
                     recv[0] = PortState::Blocked;
                 }
             },
 
-            _ => send[0] = PortState::Ready,
+            // (c) finally, each input port has DataAvailable or has NoMoreData (not both),
+            // so the node is able to proceed.
+            _ => {
+                send[0] = PortState::Ready;
+                if recv[0] != PortState::Done {
+                    recv[0] = PortState::Ready;
+                }
+
+                if recv[1] != PortState::Done {
+                    recv[1] = PortState::Ready;
+                }
+            },
         }
 
         Ok(())
