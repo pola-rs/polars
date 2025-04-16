@@ -1157,3 +1157,37 @@ def test_sort_bool_nulls_last() -> None:
         pl.Series([None, True, False]).sort(nulls_last=False, descending=True),
         pl.Series([None, True, False]),
     )
+
+
+@pl.StringCache()
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Enum(["a", "b"]),
+        pl.Categorical(ordering="lexical"),
+        pl.Categorical(ordering="physical"),
+    ],
+)
+def test_sort_cat_nulls_last(dtype: PolarsDataType) -> None:
+    assert_series_equal(
+        pl.Series(["a"], dtype=dtype).sort(nulls_last=True),
+        pl.Series(["a"], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series([None, "b", "a"], dtype=dtype).sort(nulls_last=True),
+        pl.Series(["a", "b", None], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series([None, "b", "a"], dtype=dtype).sort(nulls_last=False),
+        pl.Series([None, "a", "b"], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series([None, "b", "a"], dtype=dtype).sort(nulls_last=True, descending=True),
+        pl.Series(["b", "a", None], dtype=dtype),
+    )
+    assert_series_equal(
+        pl.Series([None, "b", "a"], dtype=dtype).sort(
+            nulls_last=False, descending=True
+        ),
+        pl.Series([None, "b", "a"], dtype=dtype),
+    )
