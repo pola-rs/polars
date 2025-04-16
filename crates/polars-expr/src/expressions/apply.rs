@@ -5,10 +5,6 @@ use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::chunked_array::from_iterator_par::try_list_from_par_iter;
 use polars_core::prelude::*;
-#[cfg(feature = "parquet")]
-use polars_io::predicates::{BatchStats, StatsEvaluator};
-#[cfg(feature = "is_between")]
-use polars_ops::prelude::ClosedInterval;
 use rayon::prelude::*;
 
 use super::*;
@@ -425,23 +421,6 @@ impl PhysicalExpr for ApplyExpr {
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)
     }
-    #[cfg(feature = "parquet")]
-    fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
-        let function = match &self.expr {
-            Expr::Function { function, .. } => function,
-            _ => return None,
-        };
-
-        match function {
-            FunctionExpr::Boolean(BooleanFunction::IsNull) => Some(self),
-            #[cfg(feature = "is_in")]
-            FunctionExpr::Boolean(BooleanFunction::IsIn { .. }) => Some(self),
-            #[cfg(feature = "is_between")]
-            FunctionExpr::Boolean(BooleanFunction::IsBetween { closed: _ }) => Some(self),
-            FunctionExpr::Boolean(BooleanFunction::IsNotNull) => Some(self),
-            _ => None,
-        }
-    }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         if self.inputs.len() == 1 && matches!(self.collect_groups, ApplyOptions::ElementWise) {
             Some(self)
@@ -515,140 +494,6 @@ fn apply_multiple_elementwise<'a>(
             ac.with_values_and_args(c, aggregated, None, true, returns_scalar)?;
             Ok(ac)
         },
-    }
-}
-
-#[cfg(feature = "parquet")]
-impl StatsEvaluator for ApplyExpr {
-    fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
-        let read = self.should_read_impl(stats)?;
-        Ok(read)
-    }
-}
-
-#[cfg(feature = "parquet")]
-impl ApplyExpr {
-    fn should_read_impl(&self, stats: &BatchStats) -> PolarsResult<bool> {
-        let (function, input) = match &self.expr {
-            Expr::Function {
-                function, input, ..
-            } => (function, input),
-            _ => return Ok(true),
-        };
-        // Ensure the input of the function is only a `col(..)`.
-        // If it does any arithmetic the code below is flawed.
-        if !matches!(input[0], Expr::Column(_)) {
-            return Ok(true);
-        }
-
-        match function {
-            FunctionExpr::Boolean(BooleanFunction::IsNull) => {
-                let root = expr_to_leaf_column_name(&self.expr)?;
-
-                match stats.get_stats(&root).ok() {
-                    Some(st) => match st.null_count() {
-                        Some(0) => Ok(false),
-                        _ => Ok(true),
-                    },
-                    None => Ok(true),
-                }
-            },
-            FunctionExpr::Boolean(BooleanFunction::IsNotNull) => {
-                let root = expr_to_leaf_column_name(&self.expr)?;
-
-                match stats.get_stats(&root).ok() {
-                    Some(st) => match st.null_count() {
-                        Some(null_count)
-                            if stats
-                                .num_rows()
-                                .is_some_and(|num_rows| num_rows == null_count) =>
-                        {
-                            Ok(false)
-                        },
-                        _ => Ok(true),
-                    },
-                    None => Ok(true),
-                }
-            },
-            #[cfg(feature = "is_in")]
-            FunctionExpr::Boolean(BooleanFunction::IsIn { .. }) => {
-                let should_read = || -> Option<bool> {
-                    let root = expr_to_leaf_column_name(&input[0]).ok()?;
-
-                    let input = self.inputs[1].evaluate_inline()?;
-                    let input = input.as_materialized_series();
-
-                    let st = stats.get_stats(&root).ok()?;
-                    let min = st.to_min()?;
-                    let max = st.to_max()?;
-
-                    if max.get(0).unwrap() == min.get(0).unwrap() {
-                        let one_equals =
-                            |value: &Series| Some(ChunkCompareEq::equal(input, value).ok()?.any());
-                        return one_equals(min);
-                    }
-
-                    let smaller = ChunkCompareIneq::lt(input, min).ok()?;
-                    let bigger = ChunkCompareIneq::gt(input, max).ok()?;
-
-                    Some(!(smaller | bigger).all())
-                };
-
-                Ok(should_read().unwrap_or(true))
-            },
-            #[cfg(feature = "is_between")]
-            FunctionExpr::Boolean(BooleanFunction::IsBetween { closed }) => {
-                let should_read = || -> Option<bool> {
-                    let root: PlSmallStr = expr_to_leaf_column_name(&input[0]).ok()?;
-
-                    let left = self.inputs[1]
-                        .evaluate_inline()?
-                        .as_materialized_series()
-                        .clone();
-                    let right = self.inputs[2]
-                        .evaluate_inline()?
-                        .as_materialized_series()
-                        .clone();
-
-                    let st = stats.get_stats(&root).ok()?;
-                    let min = st.to_min()?;
-                    let max = st.to_max()?;
-
-                    // don't read the row_group anyways as
-                    // the condition will evaluate to false.
-                    // e.g. in_between(10, 5)
-                    if ChunkCompareIneq::gt(&left, &right).ok()?.all() {
-                        return Some(false);
-                    }
-
-                    let (left_open, right_open) = match closed {
-                        ClosedInterval::None => (true, true),
-                        ClosedInterval::Both => (false, false),
-                        ClosedInterval::Left => (false, true),
-                        ClosedInterval::Right => (true, false),
-                    };
-                    // check the right limit of the interval.
-                    // if the end is open, we should be stricter (lt_eq instead of lt).
-                    if right_open && ChunkCompareIneq::lt_eq(&right, min).ok()?.all()
-                        || !right_open && ChunkCompareIneq::lt(&right, min).ok()?.all()
-                    {
-                        return Some(false);
-                    }
-                    // we couldn't conclude anything using the right limit,
-                    // check the left limit of the interval
-                    if left_open && ChunkCompareIneq::gt_eq(&left, max).ok()?.all()
-                        || !left_open && ChunkCompareIneq::gt(&left, max).ok()?.all()
-                    {
-                        return Some(false);
-                    }
-                    // read the row_group
-                    Some(true)
-                };
-
-                Ok(should_read().unwrap_or(true))
-            },
-            _ => Ok(true),
-        }
     }
 }
 
