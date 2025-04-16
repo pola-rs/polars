@@ -633,12 +633,6 @@ pub trait PhysicalExpr: Send + Sync {
         None
     }
 
-    /// Can take &dyn Statistics and determine of a file should be
-    /// read -> `true`
-    /// or not -> `false`
-    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
-        None
-    }
     fn is_literal(&self) -> bool {
         false
     }
@@ -671,11 +665,6 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         self.expr
             .evaluate(df, &state)
             .map(|c| c.take_materialized_series())
-    }
-
-    #[cfg(feature = "parquet")]
-    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
-        self.expr.as_stats_evaluator()
     }
 }
 

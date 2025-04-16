@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
-use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
+use polars_io::predicates::PhysicalIoExpr;
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
 use polars_pipe::pipeline::{
@@ -25,9 +25,6 @@ impl PhysicalIoExpr for Wrap {
             has_window_function: false,
         };
         h.evaluate_io(df)
-    }
-    fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
-        self.0.as_stats_evaluator()
     }
 }
 impl PhysicalPipedExpr for Wrap {

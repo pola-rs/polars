@@ -226,16 +226,7 @@ fn create_physical_plan_impl(
         };
     }
 
-    if let Some(build_func) = build_streaming_executor {
-        match lp_arena.get(root) {
-            Scan { scan_type, .. } if !matches!(scan_type.as_ref(), FileScan::Anonymous { .. }) => {
-                return build_func(root, lp_arena, expr_arena);
-            },
-            _ => {},
-        };
-    }
-
-    let logical_plan = if state.has_cache_parent {
+    let logical_plan = if state.has_cache_parent || matches!(lp_arena.get(root), IR::Scan { .. }) {
         lp_arena.get(root).clone()
     } else {
         lp_arena.take(root)
@@ -484,51 +475,6 @@ fn create_physical_plan_impl(
                 .transpose()?;
 
             match *scan_type {
-                #[cfg(feature = "csv")]
-                FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
-                    sources,
-                    file_info,
-                    options,
-                    predicate,
-                    file_options,
-                })),
-                #[cfg(feature = "ipc")]
-                FileScan::Ipc {
-                    options,
-                    cloud_options,
-                    metadata,
-                } => Ok(Box::new(executors::IpcExec {
-                    sources,
-                    file_info,
-                    predicate,
-                    options,
-                    file_options: *file_options,
-                    hive_parts: hive_parts.map(|h| h.into_statistics()),
-                    cloud_options,
-                })),
-                #[cfg(feature = "parquet")]
-                FileScan::Parquet {
-                    options,
-                    cloud_options,
-                    metadata,
-                } => Ok(Box::new(executors::ParquetExec::new(
-                    sources,
-                    file_info,
-                    hive_parts.map(|h| h.into_statistics()),
-                    predicate,
-                    options,
-                    cloud_options,
-                    file_options,
-                    metadata,
-                ))),
-                #[cfg(feature = "json")]
-                FileScan::NDJson { options, .. } => Ok(Box::new(executors::JsonExec::new(
-                    sources,
-                    options,
-                    file_options,
-                    file_info,
-                    predicate,
-                ))),
                 FileScan::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,
@@ -539,6 +485,14 @@ fn create_physical_plan_impl(
                         predicate_has_windows: state.has_windows,
                     }))
                 },
+                #[allow(unreachable_patterns)]
+                _ => {
+                    let build_func = build_streaming_executor
+                        .expect("invalid build. Missing feature new-streaming");
+                    return build_func(root, lp_arena, expr_arena);
+                },
+                #[allow(unreachable_patterns)]
+                _ => unreachable!(),
             }
         },
 

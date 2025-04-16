@@ -17,14 +17,9 @@ fn get_csv_glob() -> LazyFrame {
     LazyCsvReader::new(file).finish().unwrap()
 }
 
-fn assert_streaming_with_default(q: LazyFrame, total: bool, check_shape_only: bool) {
-    let q_streaming = q.clone().with_streaming(true);
-    if total {
-        assert!(optimization_checks::is_pipeline(q_streaming.clone()));
-    } else {
-        assert!(optimization_checks::has_pipeline(q_streaming.clone()));
-    }
-    let q_expected = q.with_streaming(false);
+fn assert_streaming_with_default(q: LazyFrame, check_shape_only: bool) {
+    let q_streaming = q.clone().with_new_streaming(true);
+    let q_expected = q.with_new_streaming(false);
     let out = q_streaming.collect().unwrap();
     let expected = q_expected.collect().unwrap();
     if check_shape_only {
@@ -43,7 +38,7 @@ fn test_streaming_parquet() -> PolarsResult<()> {
         .agg([((lit(1) - col("fats_g")) + col("calories")).sum()])
         .sort(["sugars_g"], Default::default());
 
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(q, false);
     Ok(())
 }
 
@@ -57,13 +52,13 @@ fn test_streaming_csv() -> PolarsResult<()> {
         .agg([col("calories").sum()])
         .sort(["sugars_g"], Default::default());
 
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(q, false);
     Ok(())
 }
 
 #[test]
 fn test_streaming_glob() -> PolarsResult<()> {
-    assert_streaming_with_default(get_csv_glob(), true, false);
+    assert_streaming_with_default(get_csv_glob(), false);
     Ok(())
 }
 
@@ -73,7 +68,7 @@ fn test_streaming_union_order() -> PolarsResult<()> {
     let q = concat([q.clone(), q], Default::default())?;
     let q = q.select([col("sugars_g"), col("calories")]);
 
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(q, false);
     Ok(())
 }
 
@@ -84,7 +79,7 @@ fn test_streaming_union_join() -> PolarsResult<()> {
     let q = q.select([col("sugars_g"), col("calories")]);
     let q = q.clone().cross_join(q, None);
 
-    assert_streaming_with_default(q, true, true);
+    assert_streaming_with_default(q, true);
     Ok(())
 }
 
@@ -104,7 +99,7 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
             SortMultipleOptions::default().with_order_descending_multi([false, false]),
         );
 
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(q, false);
     Ok(())
 }
 
@@ -121,7 +116,7 @@ fn test_streaming_first_sum() -> PolarsResult<()> {
         ])
         .sort(["sugars_g"], Default::default());
 
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(q, false);
     Ok(())
 }
 
@@ -137,7 +132,7 @@ fn test_streaming_unique() -> PolarsResult<()> {
             SortMultipleOptions::default(),
         );
 
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(q, false);
     Ok(())
 }
 
@@ -150,8 +145,7 @@ fn test_streaming_aggregate_slice() -> PolarsResult<()> {
         .agg([((lit(1) - col("fats_g")) + col("calories")).sum()])
         .slice(3, 3);
 
-    let q1 = q.with_streaming(true);
-    let out_streaming = q1.collect()?;
+    let out_streaming = q.collect_with_engine(Engine::Streaming)?;
     assert_eq!(out_streaming.shape(), (3, 2));
     Ok(())
 }
@@ -166,8 +160,7 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
     let out = q
         .clone()
         .cross_join(q, None)
-        .with_streaming(true)
-        .collect()?;
+        .collect_with_engine(Engine::Streaming)?;
     assert_eq!(out.shape(), (9, 2));
 
     let q = get_parquet_file().with_projection_pushdown(false);
@@ -185,8 +178,7 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
             col("calories_right_second").alias("calories_right"),
         ]);
 
-    let q2 = q2.with_streaming(true);
-    let out_streaming = q2.collect()?;
+    let out_streaming = q2.collect_with_engine(Engine::Streaming)?;
 
     assert_eq!(
         out_streaming.get_column_names(),
@@ -214,7 +206,7 @@ fn test_streaming_inner_join3() -> PolarsResult<()> {
 
     let q = lf_left.inner_join(lf_right, col("col1"), col("col1"));
 
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(q, false);
     Ok(())
 }
 
@@ -234,7 +226,7 @@ fn test_streaming_inner_join2() -> PolarsResult<()> {
 
     let q = lf_left.inner_join(lf_right, col("a"), col("a"));
 
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(q, false);
     Ok(())
 }
 #[test]
@@ -253,7 +245,7 @@ fn test_streaming_left_join() -> PolarsResult<()> {
 
     let q = lf_left.left_join(lf_right, col("a"), col("a"));
 
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(q, false);
     Ok(())
 }
 
@@ -307,7 +299,7 @@ fn test_streaming_partial() -> PolarsResult<()> {
         col("a"),
         col("a_foo"),
     );
-    assert_streaming_with_default(q, false, true);
+    assert_streaming_with_default(q, true);
 
     Ok(())
 }
@@ -322,7 +314,7 @@ fn test_streaming_aggregate_join() -> PolarsResult<()> {
         .slice(0, 3);
 
     let q = q.clone().left_join(q, col("sugars_g"), col("sugars_g"));
-    let q1 = q.with_streaming(true);
+    let q1 = q.with_new_streaming(true);
     let out_streaming = q1.collect()?;
     assert_eq!(out_streaming.shape(), (3, 3));
     Ok(())
@@ -355,7 +347,7 @@ fn test_streaming_double_left_join() -> PolarsResult<()> {
         .left_join(q2.clone(), col("p_id"), col("p_id2"))
         .left_join(q3.clone(), col("m_id"), col("m_id3"));
 
-    assert_streaming_with_default(q.clone(), true, false);
+    assert_streaming_with_default(q.clone(), false);
 
     // more joins
     let q = q.left_join(q1.clone(), col("p_id"), col("p_id")).left_join(
@@ -364,14 +356,14 @@ fn test_streaming_double_left_join() -> PolarsResult<()> {
         col("m_id3"),
     );
 
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(q, false);
     // empty tables
     let q = q1
         .slice(0, 0)
         .left_join(q2.slice(0, 0), col("p_id"), col("p_id2"))
         .left_join(q3.slice(0, 0), col("m_id"), col("m_id3"));
 
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(q, false);
     Ok(())
 }
 
@@ -420,7 +412,7 @@ fn test_streaming_full_outer_join() -> PolarsResult<()> {
 
     // Toggle so that the join order is swapped.
     for toggle in [true, true] {
-        assert_streaming_with_default(q.clone().with_streaming(toggle), true, false);
+        assert_streaming_with_default(q.clone().with_streaming(toggle), false);
     }
 
     Ok(())
