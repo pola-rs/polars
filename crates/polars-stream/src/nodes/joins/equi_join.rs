@@ -117,14 +117,12 @@ fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
         df.get_columns()
             .iter()
             .filter_map(|c| {
-                if let Some((key_name, _)) = params.left_key_schema.get_at_index(key_idx) {
-                    if c.name() == key_name {
-                        let other = df
-                            .column(&format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{key_idx}"))
-                            .unwrap();
-                        key_idx += 1;
-                        return Some(coalesce_columns(&[c.clone(), other.clone()]).unwrap());
-                    }
+                if params.left_key_schema.contains(c.name()) {
+                    let other = df
+                        .column(&format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{key_idx}"))
+                        .unwrap();
+                    key_idx += 1;
+                    return Some(coalesce_columns(&[c.clone(), other.clone()]).unwrap());
                 }
 
                 if c.name().starts_with("__POLARS_COALESCE_KEYCOL") {
