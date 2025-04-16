@@ -138,9 +138,9 @@ where
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &self.in_dtype);
+        assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
         let values = cast_sum_input(values, &self.in_dtype)?;
-        assert!(values.len() == group_idxs.len());
         let ca: &ChunkedArray<T> = values.as_ref().as_ref().as_ref();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.

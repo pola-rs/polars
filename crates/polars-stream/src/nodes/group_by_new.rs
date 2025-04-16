@@ -22,8 +22,8 @@ use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
-const HOT_TABLE_SIZE: usize = 1024;
-const EVICT_STATE_FLUSH_LIMIT: usize = 100_000;
+const HOT_TABLE_SIZE: usize = 4;
+const EVICT_STATE_FLUSH_LIMIT: usize = 8;
 
 struct LocalGroupBySinkState {
     hot_grouper: Box<dyn HotGrouper>,
@@ -318,7 +318,7 @@ impl GroupBySinkState {
                             // If we're the last thread to process this set of morsels we're probably
                             // falling behind the rest, since the drop can be quite expensive we skip
                             // a drop attempt hoping someone else will pick up the slack.
-                            drop_q_send.send(ToDrop::A(l)).await.unwrap();
+                            drop_q_send.try_send(ToDrop::A(l)).await;
                             skip_drop_attempt = true;
                         } else {
                             skip_drop_attempt = false;

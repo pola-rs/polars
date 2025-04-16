@@ -20,6 +20,7 @@ use polars_core::prelude::*;
 
 use crate::EvictIdx;
 
+
 /// A reduction with groups.
 ///
 /// Each group has its own reduction state that values can be aggregated into.
@@ -64,6 +65,21 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// Updates this GroupedReduction with new values. values[subset[i]] should
     /// be added to reduction self[group_idxs[i]]. For order-sensitive grouped
     /// reductions, seq_id can be used to resolve order between calls/multiple
+    /// reductions.
+    ///
+    /// # Safety
+    /// The subset and group_idxs are in-bounds.
+    unsafe fn update_groups_subset(
+        &mut self,
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[IdxSize],
+        seq_id: u64,
+    ) -> PolarsResult<()>;
+
+    /// Updates this GroupedReduction with new values. values[subset[i]] should
+    /// be added to reduction self[group_idxs[i]]. For order-sensitive grouped
+    /// reductions, seq_id can be used to resolve order between calls/multiple
     /// reductions. If the group_idxs[i] has its evict bit set the current value
     /// in the group should be evicted and reset before updating.
     ///
@@ -71,10 +87,10 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// The subset and group_idxs are in-bounds.
     unsafe fn update_groups_while_evicting(
         &mut self,
-        _values: &Column,
-        _subset: &[IdxSize],
-        _group_idxs: &[EvictIdx],
-        _seq_id: u64,
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        seq_id: u64,
     ) -> PolarsResult<()>;
     
     /// Combines this GroupedReduction with another. Group other[i]

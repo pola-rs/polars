@@ -650,7 +650,7 @@ impl BuildState {
                             // If we're the last thread to process this set of morsels we're probably
                             // falling behind the rest, since the drop can be quite expensive we skip
                             // a drop attempt hoping someone else will pick up the slack.
-                            morsel_drop_q_send.send(l).await.unwrap();
+                            morsel_drop_q_send.try_send(l).await;
                             skip_drop_attempt = true;
                         } else {
                             skip_drop_attempt = false;
