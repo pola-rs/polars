@@ -84,7 +84,7 @@ impl GroupedReduction for CountReduce {
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
-        assert!(values.len() == group_idxs.len());
+        assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
         let chunks = values.chunks();
         assert!(chunks.len() == 1);

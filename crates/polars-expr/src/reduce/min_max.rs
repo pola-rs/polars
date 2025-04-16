@@ -346,7 +346,7 @@ impl GroupedReduction for BoolMinGroupedReduction {
         _seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.dtype() == &DataType::Boolean);
-        assert!(values.len() == group_idxs.len());
+        assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
         let ca: &BooleanChunked = values.as_ref().as_ref();
         let arr = ca.downcast_as_array();
@@ -513,7 +513,7 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         _seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.dtype() == &DataType::Boolean);
-        assert!(values.len() == group_idxs.len());
+        assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
         let ca: &BooleanChunked = values.as_ref().as_ref();
         let arr = ca.downcast_as_array();

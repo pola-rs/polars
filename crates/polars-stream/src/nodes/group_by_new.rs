@@ -309,7 +309,7 @@ impl GroupBySinkState {
                                 for (c, r) in grouped_reduction_cols.iter().zip(&mut p_reductions) {
                                     let values = cols.column(c.as_str()).unwrap();
                                     r.resize(p_grouper.num_groups());
-                                    r.update_groups(values, &group_idxs, *seq_id)?;
+                                    r.update_groups_subset(values, p_morsel_idxs, &group_idxs, *seq_id)?;
                                 }
                             }
                         }
@@ -318,7 +318,7 @@ impl GroupBySinkState {
                             // If we're the last thread to process this set of morsels we're probably
                             // falling behind the rest, since the drop can be quite expensive we skip
                             // a drop attempt hoping someone else will pick up the slack.
-                            drop_q_send.try_send(ToDrop::A(l)).await;
+                            drop(drop_q_send.try_send(ToDrop::A(l)));
                             skip_drop_attempt = true;
                         } else {
                             skip_drop_attempt = false;
@@ -359,7 +359,7 @@ impl GroupBySinkState {
                             // If we're the last thread to process this set of morsels we're probably
                             // falling behind the rest, since the drop can be quite expensive we skip
                             // a drop attempt hoping someone else will pick up the slack.
-                            drop_q_send.send(ToDrop::B(l)).await.unwrap();
+                            drop(drop_q_send.try_send(ToDrop::B(l)));
                             skip_drop_attempt = true;
                         } else {
                             skip_drop_attempt = false;

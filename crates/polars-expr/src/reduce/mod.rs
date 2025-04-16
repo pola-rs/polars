@@ -75,7 +75,10 @@ pub trait GroupedReduction: Any + Send + Sync {
         subset: &[IdxSize],
         group_idxs: &[IdxSize],
         seq_id: u64,
-    ) -> PolarsResult<()>;
+    ) -> PolarsResult<()> {
+        assert!(values.len() < (1 << (IdxSize::BITS - 1)));
+        self.update_groups_while_evicting(values, subset, core::mem::transmute(group_idxs), seq_id)
+    }
 
     /// Updates this GroupedReduction with new values. values[subset[i]] should
     /// be added to reduction self[group_idxs[i]]. For order-sensitive grouped
@@ -325,7 +328,7 @@ where
         seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.dtype() == &self.in_dtype);
-        assert!(values.len() == group_idxs.len());
+        assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
         let values = self.reducer.cast_series(values);
@@ -508,7 +511,7 @@ where
         seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.dtype() == &self.in_dtype);
-        assert!(values.len() == group_idxs.len());
+        assert!(subset.len() == group_idxs.len());
         let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.as_materialized_series(); // @scalar-opt
         let values = values.to_physical_repr();
