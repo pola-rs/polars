@@ -516,16 +516,16 @@ where
         let values = values.as_materialized_series(); // @scalar-opt
         let values = values.to_physical_repr();
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
+        let arr = ca.downcast_as_array();
         unsafe {
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (i, g) in subset.iter().zip(group_idxs) {
-                let ov = ca.get_unchecked(*i as usize);
+                let ov = arr.get_unchecked(*i as usize);
                 let grp = self.values.get_unchecked_mut(g.idx() as usize);
                 if g.should_evict() {
-                    let old = core::mem::replace(grp, self.reducer.init());
-                    self.mask.set_unchecked(g.idx(), false);
-                    self.evicted_values.push(old);
+                    self.evicted_values.push(core::mem::replace(grp, self.reducer.init()));
                     self.evicted_mask.push(self.mask.get_unchecked(g.idx()));
+                    self.mask.set_unchecked(g.idx(), false);
                 }
                 if let Some(v) = ov {
                     self.reducer.reduce_one(grp, Some(v), seq_id);
