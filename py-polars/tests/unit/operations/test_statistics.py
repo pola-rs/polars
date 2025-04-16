@@ -143,3 +143,8 @@ def test_kurtosis_same_vals() -> None:
     assert_frame_equal(
         df.select(pl.col("a").kurtosis()), pl.select(a=pl.lit(float("nan")))
     )
+
+
+def test_correction_shape_mismatch_22080() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.select(pl.corr(pl.Series([1, 2]), pl.Series([2, 3, 5])))
