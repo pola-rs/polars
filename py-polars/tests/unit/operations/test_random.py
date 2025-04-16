@@ -76,9 +76,9 @@ def test_sample_df() -> None:
 def test_sample_df_wrong_input() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     with pytest.raises(InvalidOperationError, match="conversion from `str` to `f64`"):
-        df.sample(fraction="foo") # type: ignore[arg-type]
+        df.sample(fraction="foo")  # type: ignore[arg-type]
     with pytest.raises(InvalidOperationError, match="conversion from `str` to `u32`"):
-        df.sample(n="foo") # type: ignore[arg-type]
+        df.sample(n="foo")  # type: ignore[arg-type]
 
 
 def test_sample_n_expr() -> None:
