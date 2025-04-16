@@ -255,7 +255,7 @@ def test_unique_check_order_20480() -> None:
 def test_predicate_pushdown_unique() -> None:
     q = (
         pl.LazyFrame({"id": [1, 2, 3]})
-        .with_columns(pl.date(2024, 1, 1) + pl.duration(days=[1, 2, 3]))  # type: ignore[arg-type]
+        .with_columns(pl.date(2024, 1, 1) + pl.duration(days=pl.Series([1, 2, 3])))  # type: ignore[arg-type]
         .unique()
     )
 
