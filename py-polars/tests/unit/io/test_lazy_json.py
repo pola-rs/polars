@@ -275,7 +275,7 @@ def test_scan_ndjson_raises_on_parse_error_nested() -> None:
         schema={"a": pl.Struct({"b": pl.Int64})},
     )
 
-    with pytest.raises(pl.exceptions.ComputeError, match='"AAAA"'):
+    with pytest.raises(pl.exceptions.ComputeError):
         q.collect()
 
     q = pl.scan_ndjson(

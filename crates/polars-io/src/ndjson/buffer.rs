@@ -49,7 +49,7 @@ impl Buffer<'_> {
                 Ok(())
             },
             Int32(buf) => {
-                let n = deserialize_number::<i32>(value, "Int32", self.ignore_errors)?;
+                let n = deserialize_number::<i32>(value, self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -57,7 +57,7 @@ impl Buffer<'_> {
                 Ok(())
             },
             Int64(buf) => {
-                let n = deserialize_number::<i64>(value, "Int64", self.ignore_errors)?;
+                let n = deserialize_number::<i64>(value, self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -65,7 +65,7 @@ impl Buffer<'_> {
                 Ok(())
             },
             UInt64(buf) => {
-                let n = deserialize_number::<u64>(value, "UInt64", self.ignore_errors)?;
+                let n = deserialize_number::<u64>(value, self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -73,7 +73,7 @@ impl Buffer<'_> {
                 Ok(())
             },
             UInt32(buf) => {
-                let n = deserialize_number::<u32>(value, "UInt32", self.ignore_errors)?;
+                let n = deserialize_number::<u32>(value, self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -81,7 +81,7 @@ impl Buffer<'_> {
                 Ok(())
             },
             Float32(buf) => {
-                let n = deserialize_number::<f32>(value, "Float32", self.ignore_errors)?;
+                let n = deserialize_number::<f32>(value, self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -89,7 +89,7 @@ impl Buffer<'_> {
                 Ok(())
             },
             Float64(buf) => {
-                let n = deserialize_number::<f64>(value, "Float64", self.ignore_errors)?;
+                let n = deserialize_number::<f64>(value, self.ignore_errors)?;
                 match n {
                     Some(v) => buf.append_value(v),
                     None => buf.append_null(),
@@ -169,16 +169,16 @@ pub(crate) fn init_buffers(
 
 fn deserialize_number<T: NativeType + NumCast>(
     value: &Value,
-    type_name: &str,
     ignore_errors: bool,
 ) -> PolarsResult<Option<T>> {
     let to_result = |x: Option<T>| {
         let out = if ignore_errors {
             x
         } else {
-            Some(x.ok_or_else(
-                || polars_err!(ComputeError: "cannot parse '{}' as {}", value, type_name),
-            )?)
+            Some(x.ok_or_else(|| {
+                polars_err!(ComputeError: "cannot parse '{}' as {:?}", value, T::PRIMITIVE
+                )
+            })?)
         };
 
         Ok(out)
@@ -258,11 +258,38 @@ fn deserialize_all<'a>(
                 AnyValue::Null
             });
         },
+        DataType::Float32 => {
+            return Ok(
+                if let Some(v) = deserialize_number::<f32>(json, ignore_errors)? {
+                    AnyValue::Float32(v)
+                } else {
+                    AnyValue::Null
+                },
+            );
+        },
+        DataType::Float64 => {
+            return Ok(
+                if let Some(v) = deserialize_number::<f64>(json, ignore_errors)? {
+                    AnyValue::Float64(v)
+                } else {
+                    AnyValue::Null
+                },
+            );
+        },
         DataType::String => {
             return Ok(match json {
                 Value::String(s) => AnyValue::StringOwned(s.as_ref().into()),
                 v => AnyValue::StringOwned(format_pl_smallstr!("{}", ValueDisplay(v))),
             });
+        },
+        dt if dt.is_primitive_numeric() => {
+            return Ok(
+                if let Some(v) = deserialize_number::<i128>(json, ignore_errors)? {
+                    AnyValue::Int128(v).cast(dt).into_static()
+                } else {
+                    AnyValue::Null
+                },
+            );
         },
         _ => {},
     }
@@ -272,7 +299,6 @@ fn deserialize_all<'a>(
         Value::Static(StaticNode::I64(i)) => AnyValue::Int64(*i),
         Value::Static(StaticNode::U64(u)) => AnyValue::UInt64(*u),
         Value::Static(StaticNode::F64(f)) => AnyValue::Float64(*f),
-        Value::Static(StaticNode::Null) => AnyValue::Null,
         Value::String(s) => AnyValue::StringOwned(s.as_ref().into()),
         Value::Array(arr) => {
             let Some(inner_dtype) = dtype.inner_dtype() else {
@@ -315,7 +341,6 @@ fn deserialize_all<'a>(
                 );
             }
         },
-        #[cfg(not(feature = "dtype-struct"))]
         val => AnyValue::StringOwned(format!("{:#?}", val).into()),
     };
     Ok(out)
