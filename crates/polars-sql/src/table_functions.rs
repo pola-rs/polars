@@ -104,7 +104,7 @@ impl PolarsTableFunctions {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_ipc` expects a single file path; found {:?} arguments", args.len());
 
         let path = self.get_file_path_from_arg(&args[0])?;
-        let lf = LazyFrame::scan_ipc(&path, Default::default())?;
+        let lf = LazyFrame::scan_ipc(&path, Default::default(), Default::default())?;
         Ok((path, lf))
     }
     #[cfg(feature = "json")]

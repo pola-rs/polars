@@ -415,14 +415,10 @@ fn test_ipc_globbing() -> PolarsResult<()> {
     let glob = "../../examples/datasets/foods*.ipc";
     let df = LazyFrame::scan_ipc(
         glob,
-        ScanArgsIpc {
-            n_rows: None,
+        Default::default(),
+        UnifiedScanArgs {
             cache: true,
-            rechunk: false,
-            row_index: None,
-            cloud_options: None,
-            hive_options: Default::default(),
-            include_file_paths: None,
+            ..Default::default()
         },
     )?
     .collect()?;
@@ -508,7 +504,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
     // a union vstacks columns and aggscan optimization determines columns to aggregate in a
     // hashmap, if that doesn't set them sorted the vstack will panic.
     let lf1 = LazyFrame::scan_parquet(GLOB_PARQUET, Default::default())?;
-    let lf2 = LazyFrame::scan_ipc(GLOB_IPC, Default::default())?;
+    let lf2 = LazyFrame::scan_ipc(GLOB_IPC, Default::default(), Default::default())?;
     let lf3 = LazyCsvReader::new(GLOB_CSV).finish()?;
 
     for lf in [lf1, lf2, lf3] {
@@ -615,7 +611,7 @@ fn test_row_index_on_files() -> PolarsResult<()> {
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf = LazyFrame::scan_ipc(FOODS_IPC, Default::default())?
+        let lf = LazyFrame::scan_ipc(FOODS_IPC, Default::default(), Default::default())?
             .with_row_index("index", Some(offset));
 
         assert!(row_index_at_scan(lf.clone()));

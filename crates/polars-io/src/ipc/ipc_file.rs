@@ -49,7 +49,7 @@ use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::shared::{ArrowReader, finish_reader};
 
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Default, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions;
 

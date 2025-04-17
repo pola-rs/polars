@@ -18,8 +18,6 @@ pub use csv::*;
 #[cfg(not(target_arch = "wasm32"))]
 pub use exitable::*;
 pub use file_list_reader::*;
-#[cfg(feature = "ipc")]
-pub use ipc::*;
 #[cfg(feature = "json")]
 pub use ndjson::*;
 #[cfg(feature = "parquet")]

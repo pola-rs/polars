@@ -604,19 +604,23 @@ fn test_group_by_2() -> PolarsResult<()> {
 
     let df_sql = context.execute(sql)?;
     let df_sql = df_sql.collect()?;
-    let expected = LazyFrame::scan_ipc("../../examples/datasets/foods1.ipc", Default::default())?
-        .select(&[col("*")])
-        .group_by(vec![col("category")])
-        .agg(vec![
-            col("category").count().alias("count"),
-            col("calories").max(),
-            col("fats_g").min(),
-        ])
-        .sort_by_exprs(
-            vec![col("count"), col("category")],
-            SortMultipleOptions::default().with_order_descending_multi([false, true]),
-        )
-        .limit(2);
+    let expected = LazyFrame::scan_ipc(
+        "../../examples/datasets/foods1.ipc",
+        Default::default(),
+        Default::default(),
+    )?
+    .select(&[col("*")])
+    .group_by(vec![col("category")])
+    .agg(vec![
+        col("category").count().alias("count"),
+        col("calories").max(),
+        col("fats_g").min(),
+    ])
+    .sort_by_exprs(
+        vec![col("count"), col("category")],
+        SortMultipleOptions::default().with_order_descending_multi([false, true]),
+    )
+    .limit(2);
 
     let expected = expected.collect()?;
     assert!(df_sql.equals(&expected));
