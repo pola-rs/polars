@@ -604,3 +604,12 @@ def test_nested_datetime_ndjson() -> None:
             ]
         ],
     }
+
+
+def test_ndjson_22229() -> None:
+    li = [
+        '{ "campaign": {  "id": "123456" }, "metrics": { "conversions": 7}}',
+        '{ "campaign": {  "id": "654321" }, "metrics": { "conversions": 3.5}}',
+    ]
+
+    assert pl.read_ndjson(io.StringIO("\n".join(li))).to_dict(as_series=False)
