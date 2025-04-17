@@ -184,7 +184,7 @@ fn visualize_plan_rec(
             output_schema: _,
             scan_type,
             predicate,
-            file_options,
+            unified_scan_args,
         } => {
             let name = match &**scan_type {
                 #[cfg(feature = "parquet")]
@@ -207,9 +207,9 @@ fn visualize_plan_rec(
 
             {
                 let total_columns =
-                    file_info.schema.len() - usize::from(file_options.row_index.is_some());
-                let n_columns = file_options
-                    .with_columns
+                    file_info.schema.len() - usize::from(unified_scan_args.row_index.is_some());
+                let n_columns = unified_scan_args
+                    .projection
                     .as_ref()
                     .map(|columns| columns.len());
 
@@ -220,12 +220,12 @@ fn visualize_plan_rec(
                 }
             }
 
-            if let Some(polars_io::RowIndex { name, offset }) = &file_options.row_index {
+            if let Some(polars_io::RowIndex { name, offset }) = &unified_scan_args.row_index {
                 write!(f, r#"\nrow index: name: "{}", offset: {}"#, name, offset).unwrap();
             }
 
-            if let Some((offset, len)) = file_options.pre_slice {
-                write!(f, "\nslice: offset: {}, len: {}", offset, len).unwrap();
+            if let Some(slice) = unified_scan_args.pre_slice.as_ref() {
+                write!(f, "\nslice: {:?}", slice).unwrap();
             }
 
             if let Some(predicate) = predicate.as_ref() {

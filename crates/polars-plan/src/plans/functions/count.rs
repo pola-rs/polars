@@ -22,6 +22,7 @@ use super::*;
 pub fn count_rows(
     sources: &ScanSources,
     scan_type: &FileScan,
+    cloud_options: Option<&CloudOptions>,
     alias: Option<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
     #[cfg(not(any(
@@ -43,30 +44,18 @@ pub fn count_rows(
     {
         let count: PolarsResult<usize> = match scan_type {
             #[cfg(feature = "csv")]
-            FileScan::Csv {
-                options,
-                cloud_options,
-            } => count_all_rows_csv(sources, options),
+            FileScan::Csv { options } => count_all_rows_csv(sources, options),
             #[cfg(feature = "parquet")]
-            FileScan::Parquet { cloud_options, .. } => {
-                count_rows_parquet(sources, cloud_options.as_ref())
-            },
+            FileScan::Parquet { .. } => count_rows_parquet(sources, cloud_options),
             #[cfg(feature = "ipc")]
-            FileScan::Ipc {
-                options,
-                cloud_options,
-                metadata,
-            } => count_rows_ipc(
+            FileScan::Ipc { options, metadata } => count_rows_ipc(
                 sources,
                 #[cfg(feature = "cloud")]
-                cloud_options.as_ref(),
+                cloud_options,
                 metadata.as_deref(),
             ),
             #[cfg(feature = "json")]
-            FileScan::NDJson {
-                options,
-                cloud_options,
-            } => count_rows_ndjson(sources, cloud_options.as_ref()),
+            FileScan::NDJson { options } => count_rows_ndjson(sources, cloud_options),
             FileScan::Anonymous { .. } => {
                 unreachable!()
             },

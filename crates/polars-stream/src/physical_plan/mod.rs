@@ -9,8 +9,8 @@ use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::{
-    FileScan, JoinTypeOptionsIR, PartitionTargetCallback, PartitionVariantIR, ScanSource,
-    ScanSources, SinkOptions, SinkTarget,
+    CastColumnsPolicy, FileScan, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
+    PartitionVariantIR, ScanSource, ScanSources, SinkOptions, SinkTarget,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, IR};
@@ -24,7 +24,7 @@ mod to_graph;
 
 pub use fmt::visualize_plan;
 use polars_plan::dsl::ExtraColumnsPolicy;
-use polars_plan::prelude::{FileScanOptions, FileType};
+use polars_plan::prelude::{FileType, UnifiedScanArgs};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
@@ -211,8 +211,9 @@ pub enum PhysNodeKind {
         predicate: Option<ExprIR>,
 
         hive_parts: Option<HivePartitionsDf>,
-        allow_missing_columns: bool,
         include_file_paths: Option<PlSmallStr>,
+        cast_columns_policy: CastColumnsPolicy,
+        missing_columns_policy: MissingColumnsPolicy,
         extra_columns_policy: ExtraColumnsPolicy,
 
         /// Schema of columns contained in the file. Does not contain external columns (e.g. hive / row_index).
@@ -226,7 +227,7 @@ pub enum PhysNodeKind {
         predicate: Option<ExprIR>,
         output_schema: Option<SchemaRef>,
         scan_type: Box<FileScan>,
-        file_options: Box<FileScanOptions>,
+        unified_scan_args: Box<UnifiedScanArgs>,
     },
 
     #[cfg(feature = "python")]

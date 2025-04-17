@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use polars_io::cloud::CloudOptions;
 use polars_utils::mmap::MemSlice;
 
 use super::*;
@@ -36,6 +37,7 @@ impl OptimizationRule for CountStar {
                         function: FunctionIR::FastCount {
                             sources: count_star_expr.sources,
                             scan_type: count_star_expr.scan_type,
+                            cloud_options: count_star_expr.cloud_options,
                             alias: count_star_expr.alias,
                         },
                     };
@@ -53,6 +55,7 @@ struct CountStarExpr {
     node: Node,
     // Paths to the input files
     sources: ScanSources,
+    cloud_options: Option<CloudOptions>,
     // File Type
     scan_type: Box<FileScan>,
     // Column Alias
@@ -75,7 +78,9 @@ fn visit_logical_plan_for_scan_paths(
             }
 
             let mut scan_type: Option<Box<FileScan>> = None;
+            let mut cloud_options = None;
             let mut sources = None;
+
             for input in inputs {
                 match visit_logical_plan_for_scan_paths(*input, lp_arena, expr_arena, true) {
                     Some(expr) => {
@@ -96,6 +101,10 @@ fn visit_logical_plan_for_scan_paths(
                             },
                             _ => return None,
                         }
+
+                        // Take the first Some(_) cloud option
+                        // TODO: Should check the cloud types are the same.
+                        cloud_options = cloud_options.or(expr.cloud_options);
 
                         match &scan_type {
                             None => scan_type = Some(expr.scan_type),
@@ -119,15 +128,20 @@ fn visit_logical_plan_for_scan_paths(
                     None => ScanSources::default(),
                 },
                 scan_type: scan_type.unwrap(),
+                cloud_options,
                 node,
                 alias: None,
             })
         },
         IR::Scan {
-            scan_type, sources, ..
+            scan_type,
+            sources,
+            unified_scan_args,
+            ..
         } if !matches!(&**scan_type, FileScan::Anonymous { .. }) => Some(CountStarExpr {
             sources: sources.clone(),
             scan_type: scan_type.clone(),
+            cloud_options: unified_scan_args.cloud_options.clone(),
             node,
             alias: None,
         }),

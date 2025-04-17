@@ -24,13 +24,28 @@ pub struct HiveOptions {
     pub try_parse_dates: bool,
 }
 
-impl Default for HiveOptions {
-    fn default() -> Self {
+impl HiveOptions {
+    pub fn new_enabled() -> Self {
         Self {
             enabled: Some(true),
             hive_start_idx: 0,
             schema: None,
             try_parse_dates: true,
         }
+    }
+
+    pub fn new_disabled() -> Self {
+        Self {
+            enabled: Some(false),
+            hive_start_idx: 0,
+            schema: None,
+            try_parse_dates: false,
+        }
+    }
+}
+
+impl Default for HiveOptions {
+    fn default() -> Self {
+        Self::new_enabled()
     }
 }

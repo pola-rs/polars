@@ -435,68 +435,58 @@ pub fn lower_ir(
                 output_schema: _,
                 scan_type,
                 predicate,
-                file_options,
+                unified_scan_args,
             } = v.clone()
             else {
                 unreachable!();
             };
 
-            if scan_sources.is_empty() || file_options.pre_slice.is_some_and(|(_, len)| len == 0) {
+            if scan_sources.is_empty()
+                || unified_scan_args
+                    .pre_slice
+                    .as_ref()
+                    .is_some_and(|slice| slice.len() == 0)
+            {
                 // If there are no sources, just provide an empty in-memory source with the right
                 // schema.
                 PhysNodeKind::InMemorySource {
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
                 }
             } else {
-                let (file_reader_builder, cloud_options) = match &*scan_type {
+                let file_reader_builder = match &*scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet {
                         options,
-                        cloud_options,
                         metadata: first_metadata,
-                    } => (
-                        Arc::new(
-                            crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
-                                options: Arc::new(options.clone()),
-                                first_metadata: first_metadata.clone(),
-                            },
-                        ) as Arc<dyn FileReaderBuilder>,
-                        cloud_options,
-                    ),
+                    } => Arc::new(
+                        crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
+                            options: Arc::new(options.clone()),
+                            first_metadata: first_metadata.clone(),
+                        },
+                    ) as Arc<dyn FileReaderBuilder>,
                     #[cfg(feature = "ipc")]
                     FileScan::Ipc {
                         options: polars_io::ipc::IpcScanOptions {},
-                        cloud_options,
                         metadata: first_metadata,
-                    } => (
-                        Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
-                            first_metadata: first_metadata.clone(),
-                        }) as Arc<dyn FileReaderBuilder>,
-                        cloud_options,
-                    ),
+                    } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
+                        first_metadata: first_metadata.clone(),
+                    }) as Arc<dyn FileReaderBuilder>,
 
                     #[cfg(feature = "csv")]
-                    FileScan::Csv {
-                        options,
-                        cloud_options,
-                    } => (
-                        Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>,
-                        cloud_options,
-                    ),
+                    FileScan::Csv { options } => {
+                        Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>
+                    },
 
                     #[cfg(feature = "json")]
-                    FileScan::NDJson {
-                        options,
-                        cloud_options,
-                    } => (
-                        Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>,
-                        cloud_options,
-                    ),
+                    FileScan::NDJson { options } => {
+                        Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>
+                    },
 
                     _ => todo!(),
                 };
 
                 {
+                    let cloud_options = &unified_scan_args.cloud_options;
                     let output_schema =
                         if std::env::var("POLARS_FORCE_EMPTY_PROJECT").as_deref() == Ok("1") {
                             Default::default()
@@ -512,10 +502,18 @@ pub fn lower_ir(
                             &output_schema,
                             &file_schema,
                             &mut hive_parts,
-                            file_options.row_index.as_ref().map(|ri| ri.name.as_str()),
-                            file_options.include_file_paths.as_ref().map(|x| x.as_str()),
+                            unified_scan_args
+                                .row_index
+                                .as_ref()
+                                .map(|ri| ri.name.as_str()),
+                            unified_scan_args
+                                .include_file_paths
+                                .as_ref()
+                                .map(|x| x.as_str()),
                         );
-                    let has_projection = file_options.with_columns.is_some();
+                    let has_projection = unified_scan_args.projection.is_some();
+
+                    // TODO: Add this to unified scan args.
                     let extra_columns_policy = if has_projection {
                         ExtraColumnsPolicy::Ignore
                     } else {
@@ -532,9 +530,10 @@ pub fn lower_ir(
                         pre_slice: None,
                         predicate: None,
                         hive_parts,
-                        allow_missing_columns: file_options.allow_missing_columns,
+                        cast_columns_policy: unified_scan_args.cast_columns_policy,
+                        missing_columns_policy: unified_scan_args.missing_columns_policy,
                         extra_columns_policy,
-                        include_file_paths: file_options.include_file_paths,
+                        include_file_paths: unified_scan_args.include_file_paths,
                         file_schema,
                     };
 
@@ -549,9 +548,9 @@ pub fn lower_ir(
                         unreachable!()
                     };
 
-                    let pre_slice = file_options.pre_slice.map(Slice::from);
+                    let pre_slice = unified_scan_args.pre_slice.clone();
 
-                    let mut row_index_post = file_options.row_index;
+                    let mut row_index_post = unified_scan_args.row_index;
                     let mut pre_slice_post = pre_slice.clone();
                     let mut predicate_post = predicate.clone();
 

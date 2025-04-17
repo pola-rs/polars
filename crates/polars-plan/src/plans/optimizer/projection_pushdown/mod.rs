@@ -436,7 +436,7 @@ impl ProjectionPushDown {
                 hive_parts,
                 scan_type,
                 predicate,
-                mut file_options,
+                mut unified_scan_args,
                 mut output_schema,
             } => {
                 // TODO: Remove
@@ -459,14 +459,14 @@ impl ProjectionPushDown {
                 };
 
                 if do_optimization {
-                    file_options.with_columns = get_scan_columns(
+                    unified_scan_args.projection = get_scan_columns(
                         &ctx.acc_projections,
                         expr_arena,
-                        file_options.row_index.as_ref(),
-                        file_options.include_file_paths.as_deref(),
+                        unified_scan_args.row_index.as_ref(),
+                        unified_scan_args.include_file_paths.as_deref(),
                     );
 
-                    if let Some(projection) = file_options.with_columns.as_mut() {
+                    if let Some(projection) = unified_scan_args.projection.as_mut() {
                         if projection.is_empty() {
                             match &*scan_type {
                                 #[cfg(feature = "parquet")]
@@ -498,15 +498,15 @@ impl ProjectionPushDown {
                         }
                     }
 
-                    output_schema = if file_options.with_columns.is_some() {
+                    output_schema = if unified_scan_args.projection.is_some() {
                         let mut schema = update_scan_schema(
                             &ctx.acc_projections,
                             expr_arena,
                             &file_info.schema,
-                            scan_type.sort_projection(&file_options),
+                            scan_type.sort_projection(unified_scan_args.row_index.is_some()),
                         )?;
 
-                        if let Some(ref file_path_col) = file_options.include_file_paths {
+                        if let Some(ref file_path_col) = unified_scan_args.include_file_paths {
                             if let Some(i) = schema.index_of(file_path_col) {
                                 let (name, dtype) = schema.shift_remove_index(i).unwrap();
                                 schema.insert_at_index(schema.len(), name, dtype)?;
@@ -525,7 +525,7 @@ impl ProjectionPushDown {
 
                 // File builder has a row index, but projected columns
                 // do not include it, so cull.
-                if let Some(RowIndex { ref name, .. }) = file_options.row_index {
+                if let Some(RowIndex { ref name, .. }) = unified_scan_args.row_index {
                     if output_schema
                         .as_ref()
                         .is_some_and(|schema| !schema.contains(name))
@@ -535,11 +535,11 @@ impl ProjectionPushDown {
                         let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
                         file_schema.shift_remove(name);
                         file_info.schema = Arc::new(file_schema);
-                        file_options.row_index = None;
+                        unified_scan_args.row_index = None;
                     }
                 };
 
-                if let Some(col_name) = &file_options.include_file_paths {
+                if let Some(col_name) = &unified_scan_args.include_file_paths {
                     if output_schema
                         .as_ref()
                         .is_some_and(|schema| !schema.contains(col_name))
@@ -549,7 +549,7 @@ impl ProjectionPushDown {
                         let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
                         file_schema.shift_remove(col_name);
                         file_info.schema = Arc::new(file_schema);
-                        file_options.include_file_paths = None;
+                        unified_scan_args.include_file_paths = None;
                     }
                 };
 
@@ -560,7 +560,7 @@ impl ProjectionPushDown {
                     output_schema,
                     scan_type,
                     predicate,
-                    file_options,
+                    unified_scan_args,
                 };
 
                 if self.is_count_star {

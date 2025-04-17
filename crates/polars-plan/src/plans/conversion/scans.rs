@@ -31,7 +31,7 @@ fn prepare_schemas(mut schema: Schema, row_index: Option<&RowIndex>) -> (SchemaR
 #[cfg(feature = "parquet")]
 pub(super) fn parquet_file_info(
     sources: &ScanSources,
-    file_options: &FileScanOptions,
+    row_index: Option<&RowIndex>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, Option<FileMetadataRef>)> {
     use polars_core::error::feature_gated;
@@ -66,10 +66,8 @@ pub(super) fn parquet_file_info(
         }
     };
 
-    let schema = prepare_output_schema(
-        Schema::from_arrow_schema(reader_schema.as_ref()),
-        file_options.row_index.as_ref(),
-    );
+    let schema =
+        prepare_output_schema(Schema::from_arrow_schema(reader_schema.as_ref()), row_index);
 
     let file_info = FileInfo::new(
         schema,
@@ -84,7 +82,7 @@ pub(super) fn parquet_file_info(
 #[cfg(feature = "ipc")]
 pub(super) fn ipc_file_info(
     sources: &ScanSources,
-    file_options: &FileScanOptions,
+    row_index: Option<&RowIndex>,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
@@ -122,7 +120,7 @@ pub(super) fn ipc_file_info(
     let file_info = FileInfo::new(
         prepare_output_schema(
             Schema::from_arrow_schema(metadata.schema.as_ref()),
-            file_options.row_index.as_ref(),
+            row_index,
         ),
         Some(Either::Left(Arc::clone(&metadata.schema))),
         (None, 0),
@@ -134,7 +132,7 @@ pub(super) fn ipc_file_info(
 #[cfg(feature = "csv")]
 pub fn isolated_csv_file_info(
     source: ScanSourceRef,
-    file_options: &FileScanOptions,
+    row_index: Option<&RowIndex>,
     csv_options: &mut CsvReadOptions,
     _cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
@@ -166,7 +164,7 @@ pub fn isolated_csv_file_info(
         .clone()
         .unwrap_or_else(|| si_result.get_inferred_schema());
 
-    let reader_schema = if let Some(rc) = &file_options.row_index {
+    let reader_schema = if let Some(rc) = row_index {
         let reader_schema = schema.clone();
         let mut output_schema = (*reader_schema).clone();
         output_schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE)?;
@@ -188,7 +186,7 @@ pub fn isolated_csv_file_info(
 #[cfg(feature = "csv")]
 pub fn csv_file_info(
     sources: &ScanSources,
-    file_options: &FileScanOptions,
+    row_index: Option<&RowIndex>,
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
@@ -290,7 +288,7 @@ pub fn csv_file_info(
         .clone()
         .unwrap_or_else(|| si_result.get_inferred_schema());
 
-    let reader_schema = if let Some(rc) = &file_options.row_index {
+    let reader_schema = if let Some(rc) = row_index {
         let reader_schema = schema.clone();
         let mut output_schema = (*reader_schema).clone();
         output_schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE)?;
@@ -312,7 +310,7 @@ pub fn csv_file_info(
 #[cfg(feature = "json")]
 pub fn ndjson_file_info(
     sources: &ScanSources,
-    file_options: &FileScanOptions,
+    row_index: Option<&RowIndex>,
     ndjson_options: &NDJsonReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
@@ -347,13 +345,10 @@ pub fn ndjson_file_info(
     let owned = &mut vec![];
 
     let (mut reader_schema, schema) = if let Some(schema) = ndjson_options.schema.clone() {
-        if file_options.row_index.is_none() {
+        if row_index.is_none() {
             (schema.clone(), schema.clone())
         } else {
-            prepare_schemas(
-                Arc::unwrap_or_clone(schema),
-                file_options.row_index.as_ref(),
-            )
+            prepare_schemas(Arc::unwrap_or_clone(schema), row_index)
         }
     } else {
         let memslice = first.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
@@ -362,7 +357,7 @@ pub fn ndjson_file_info(
         let schema =
             polars_io::ndjson::infer_schema(&mut reader, ndjson_options.infer_schema_length)?;
 
-        prepare_schemas(schema, file_options.row_index.as_ref())
+        prepare_schemas(schema, row_index)
     };
 
     if let Some(overwriting_schema) = &ndjson_options.schema_overwrite {

@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
-use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues, infer_file_schema,
@@ -9,7 +8,9 @@ use polars_io::csv::read::{
 use polars_io::path_utils::expand_paths;
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::get_reader_bytes;
+use polars_io::{HiveOptions, RowIndex};
 use polars_utils::mmap::MemSlice;
+use polars_utils::slice_enum::Slice;
 
 use crate::prelude::*;
 
@@ -321,13 +322,27 @@ impl LazyCsvReader {
 impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
+        let rechunk = self.rechunk();
+        let row_index = self.row_index().cloned();
+        let pre_slice = self.n_rows().map(|len| Slice::Positive { offset: 0, len });
+
         let lf: LazyFrame = DslBuilder::scan_csv(
             self.sources,
             self.read_options,
-            self.cache,
-            self.cloud_options,
-            self.glob,
-            self.include_file_paths,
+            UnifiedScanArgs {
+                schema: None,
+                cloud_options: self.cloud_options,
+                hive_options: HiveOptions::new_disabled(),
+                rechunk,
+                cache: self.cache,
+                glob: self.glob,
+                projection: None,
+                row_index,
+                pre_slice,
+                cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
+                missing_columns_policy: MissingColumnsPolicy::Raise,
+                include_file_paths: self.include_file_paths,
+            },
         )?
         .build()
         .into();
