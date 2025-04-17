@@ -127,7 +127,7 @@ pub enum ExtraColumnsPolicy {
 }
 
 /// Scan arguments shared across different scan types.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UnifiedScanArgs {
     /// User-provided schema of the file. Will be inferred during IR conversion
@@ -148,6 +148,26 @@ pub struct UnifiedScanArgs {
     pub cast_columns_policy: CastColumnsPolicy,
     pub missing_columns_policy: MissingColumnsPolicy,
     pub include_file_paths: Option<PlSmallStr>,
+}
+
+// Manual impl, we have `glob: true` by default.
+impl Default for UnifiedScanArgs {
+    fn default() -> Self {
+        UnifiedScanArgs {
+            schema: None,
+            cloud_options: None,
+            hive_options: HiveOptions::new_disabled(),
+            rechunk: false,
+            cache: false,
+            glob: true,
+            projection: None,
+            row_index: None,
+            pre_slice: None,
+            cast_columns_policy: CastColumnsPolicy::default(),
+            missing_columns_policy: MissingColumnsPolicy::default(),
+            include_file_paths: None,
+        }
+    }
 }
 
 /// Manual impls of Eq/Hash, as some fields are `Arc<T>` where T does not have Eq/Hash. For these

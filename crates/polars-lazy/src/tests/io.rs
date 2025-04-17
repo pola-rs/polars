@@ -418,6 +418,7 @@ fn test_ipc_globbing() -> PolarsResult<()> {
         Default::default(),
         UnifiedScanArgs {
             cache: true,
+            glob: true,
             ..Default::default()
         },
     )?
