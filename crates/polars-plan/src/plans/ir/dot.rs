@@ -244,15 +244,18 @@ impl<'a> IRDotDisplay<'a> {
                 hive_parts: _,
                 predicate,
                 scan_type,
-                file_options: options,
+                unified_scan_args,
                 output_schema: _,
             } => {
                 let name: &str = (&**scan_type).into();
                 let path = ScanSourcesDisplay(sources);
-                let with_columns = options.with_columns.as_ref().map(|cols| cols.as_ref());
+                let with_columns = unified_scan_args
+                    .projection
+                    .as_ref()
+                    .map(|cols| cols.as_ref());
                 let with_columns = NumColumns(with_columns);
                 let total_columns =
-                    file_info.schema.len() - usize::from(options.row_index.is_some());
+                    file_info.schema.len() - usize::from(unified_scan_args.row_index.is_some());
 
                 write_label(f, id, |f| {
                     write!(f, "{name} SCAN {path}\nπ {with_columns}/{total_columns};",)?;
@@ -261,7 +264,7 @@ impl<'a> IRDotDisplay<'a> {
                         write!(f, "\nσ {}", self.display_expr(predicate))?;
                     }
 
-                    if let Some(row_index) = options.row_index.as_ref() {
+                    if let Some(row_index) = unified_scan_args.row_index.as_ref() {
                         write!(f, "\nrow index: {} (+{})", row_index.name, row_index.offset)?;
                     }
 

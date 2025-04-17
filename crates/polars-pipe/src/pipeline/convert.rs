@@ -67,7 +67,7 @@ where
             sources,
             file_info,
             hive_parts,
-            file_options,
+            unified_scan_args,
             predicate,
             output_schema,
             scan_type,
@@ -98,7 +98,7 @@ where
                         sources,
                         file_info.reader_schema.clone().unwrap().unwrap_right(),
                         options,
-                        file_options,
+                        unified_scan_args,
                         verbose,
                     )?;
                     Ok(Box::new(src) as Box<dyn Source>)
@@ -106,7 +106,6 @@ where
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {
                     options: parquet_options,
-                    cloud_options,
                     metadata,
                 } => panic!("Parquet no longer supported for old streaming engine"),
                 _ => todo!(),

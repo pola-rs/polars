@@ -47,7 +47,7 @@ pub async fn resolve_to_positive_slice(
 
 /// Translates a negative slice to positive slice.
 async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<ResolvedSliceInfo> {
-    let verbose = config.verbose();
+    let verbose = config.verbose;
 
     let pre_slice @ Slice::Negative {
         offset_from_end,

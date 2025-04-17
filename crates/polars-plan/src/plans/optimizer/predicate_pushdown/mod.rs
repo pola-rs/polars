@@ -373,12 +373,13 @@ impl PredicatePushDown<'_> {
                 hive_parts: scan_hive_parts,
                 ref predicate,
                 scan_type,
-                file_options: options,
+                unified_scan_args,
                 output_schema,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
-                if let Some(col) = options.include_file_paths.as_deref() {
+                // TODO: Allow predicates on file names, this should be supported by new-streaming.
+                if let Some(col) = unified_scan_args.include_file_paths.as_deref() {
                     blocked_names.push(col);
                 }
 
@@ -391,7 +392,7 @@ impl PredicatePushDown<'_> {
                         // Disallow row index pushdown of other scans as they may
                         // not update the row index properly before applying the
                         // predicate (e.g. FileScan::Csv doesn't).
-                        if let Some(ref row_index) = options.row_index {
+                        if let Some(ref row_index) = unified_scan_args.row_index {
                             blocked_names.push(row_index.name.as_ref());
                         };
                     },
@@ -408,7 +409,7 @@ impl PredicatePushDown<'_> {
 
                 let mut do_optimization = match &*scan_type {
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => options.pre_slice.is_none(),
+                    FileScan::Csv { .. } => unified_scan_args.pre_slice.is_none(),
                     FileScan::Anonymous { function, .. } => function.allows_predicate_pushdown(),
                     #[cfg(feature = "json")]
                     FileScan::NDJson { .. } => true,
@@ -425,7 +426,7 @@ impl PredicatePushDown<'_> {
                         file_info,
                         hive_parts,
                         predicate,
-                        file_options: options,
+                        unified_scan_args,
                         output_schema,
                         scan_type,
                     }
@@ -435,7 +436,7 @@ impl PredicatePushDown<'_> {
                         file_info,
                         hive_parts,
                         predicate: None,
-                        file_options: options,
+                        unified_scan_args,
                         output_schema,
                         scan_type,
                     };

@@ -2138,7 +2138,7 @@ impl LazyFrame {
             {
                 let DslPlan::Scan {
                     sources,
-                    mut file_options,
+                    mut unified_scan_args,
                     scan_type,
                     file_info,
                     cached_ir: _,
@@ -2147,14 +2147,14 @@ impl LazyFrame {
                     unreachable!()
                 };
 
-                file_options.row_index = Some(RowIndex {
+                unified_scan_args.row_index = Some(RowIndex {
                     name,
                     offset: offset.unwrap_or(0),
                 });
 
                 DslPlan::Scan {
                     sources,
-                    file_options,
+                    unified_scan_args,
                     scan_type,
                     file_info,
                     cached_ir: Default::default(),
@@ -2603,7 +2603,9 @@ mod streaming_dispatch {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Box<dyn Executor>> {
         let rechunk = match ir_arena.get(node) {
-            IR::Scan { file_options, .. } => file_options.rechunk,
+            IR::Scan {
+                unified_scan_args, ..
+            } => unified_scan_args.rechunk,
             _ => false,
         };
 

@@ -229,13 +229,13 @@ pub(crate) fn insert_streaming_nodes(
             },
             Scan {
                 scan_type,
-                file_options,
+                unified_scan_args,
                 ..
             } if scan_type.streamable()
-                && file_options
-                    .pre_slice
-                    .map(|slice| slice.0 >= 0)
-                    .unwrap_or(true) =>
+                && matches!(
+                    &unified_scan_args.pre_slice,
+                    None | Some(polars_utils::slice_enum::Slice::Positive { .. })
+                ) =>
             {
                 if state.streamable {
                     state.sources.push(root);

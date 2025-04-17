@@ -16,7 +16,6 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
-use polars_io::{HiveOptions, RowIndex};
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::IEJoinOptions;
 use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinTypeOptions};
@@ -187,25 +186,6 @@ pub struct UnpivotArgsDSL {
     pub index: Vec<Selector>,
     pub variable_name: Option<PlSmallStr>,
     pub value_name: Option<PlSmallStr>,
-}
-
-pub type FileCount = u32;
-
-#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-/// Generic options for all file types.
-pub struct FileScanOptions {
-    // Slice applied before predicates
-    pub pre_slice: Option<(i64, usize)>,
-    pub with_columns: Option<Arc<[PlSmallStr]>>,
-    pub cache: bool,
-    pub row_index: Option<RowIndex>,
-    pub rechunk: bool,
-    pub file_counter: FileCount,
-    pub hive_options: HiveOptions,
-    pub glob: bool,
-    pub include_file_paths: Option<PlSmallStr>,
-    pub allow_missing_columns: bool,
 }
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]

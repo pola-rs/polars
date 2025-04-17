@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::{HiveOptions, RowIndex};
+use polars_utils::slice_enum::Slice;
 
 use crate::prelude::*;
 
@@ -52,17 +53,32 @@ impl LazyFileListReader for LazyIpcReader {
         let args = self.args;
 
         let options = IpcScanOptions {};
+        let pre_slice = args.n_rows.map(|len| Slice::Positive { offset: 0, len });
+
+        let cloud_options = args.cloud_options;
+        let hive_options = args.hive_options;
+        let rechunk = args.rechunk;
+        let cache = args.cache;
+        let row_index = args.row_index;
+        let include_file_paths = args.include_file_paths;
 
         let lf: LazyFrame = DslBuilder::scan_ipc(
             self.sources,
             options,
-            args.n_rows,
-            args.cache,
-            args.row_index,
-            args.rechunk,
-            args.cloud_options,
-            args.hive_options,
-            args.include_file_paths,
+            UnifiedScanArgs {
+                schema: None,
+                cloud_options,
+                hive_options,
+                rechunk,
+                cache,
+                glob: true,
+                projection: None,
+                row_index,
+                pre_slice,
+                cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
+                missing_columns_policy: MissingColumnsPolicy::Raise,
+                include_file_paths,
+            },
         )?
         .build()
         .into();

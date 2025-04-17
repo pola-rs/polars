@@ -9,7 +9,7 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
+use polars_plan::dsl::{ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
@@ -45,7 +45,7 @@ impl MultiScanTaskInitializer {
         skip_files_mask: Option<Bitmap>,
         predicate: Option<ScanIOPredicate>,
     ) -> PolarsResult<JoinHandle<PolarsResult<()>>> {
-        let verbose = self.config.verbose();
+        let verbose = self.config.verbose;
         let reader_capabilities = self.config.file_reader_builder.reader_capabilities();
 
         // Row index should only be pushed if we have a predicate or negative slice as there is a
@@ -94,19 +94,16 @@ impl MultiScanTaskInitializer {
             },
         };
 
-        let missing_columns_policy = if self.config.allow_missing_columns {
-            MissingColumnsPolicy::Insert
-        } else {
-            MissingColumnsPolicy::Raise
-        };
+        let cast_columns_policy = self.config.cast_columns_policy.clone();
+        let missing_columns_policy = self.config.missing_columns_policy.clone();
+        let include_file_paths = self.config.include_file_paths.clone();
 
         let extra_ops = ExtraOperations {
             row_index,
             pre_slice,
-            missing_columns_policy: missing_columns_policy.clone(),
-            // TODO: Expose config for this
-            cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
-            include_file_paths: self.config.include_file_paths.clone(),
+            cast_columns_policy,
+            missing_columns_policy,
+            include_file_paths,
             predicate,
         };
 
@@ -243,7 +240,7 @@ impl MultiScanTaskInitializer {
                     hive_parts,
                     final_output_schema,
                     projected_file_schema,
-                    missing_columns_policy,
+                    missing_columns_policy: self.config.missing_columns_policy.clone(),
                     full_file_schema,
                     extra_columns_policy: self.config.extra_columns_policy.clone(),
                 },

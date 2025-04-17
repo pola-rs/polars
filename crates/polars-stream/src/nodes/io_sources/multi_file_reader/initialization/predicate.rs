@@ -24,7 +24,7 @@ impl MultiScanTaskInitializer {
                     self.config.projected_file_schema.as_ref(),
                     hive_parts.schema(),
                     hive_parts,
-                    self.config.verbose(),
+                    self.config.verbose,
                 )?;
 
                 return Ok((

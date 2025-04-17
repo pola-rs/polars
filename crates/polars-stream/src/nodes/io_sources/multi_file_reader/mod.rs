@@ -5,18 +5,17 @@ pub mod post_apply_pipeline;
 pub mod reader_interface;
 pub mod reader_pipelines;
 
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
 use bridge::BridgeState;
 use initialization::MultiScanTaskInitializer;
-use polars_core::config;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::{RowIndex, pl_async};
-use polars_plan::dsl::{ExtraColumnsPolicy, ScanSources};
+use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, ScanSources};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -31,45 +30,44 @@ use crate::graph::PortState;
 use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
 
+pub const DEFAULT_N_READERS_PRE_INIT: usize = 3;
+
 // Some parts are called MultiFileReader for now to avoid conflict with existing MultiScan.
 
 pub struct MultiFileReaderConfig {
-    sources: ScanSources,
-    file_reader_builder: Arc<dyn FileReaderBuilder>,
-    cloud_options: Option<Arc<CloudOptions>>,
+    pub sources: ScanSources,
+    pub file_reader_builder: Arc<dyn FileReaderBuilder>,
+    pub cloud_options: Option<Arc<CloudOptions>>,
 
     /// Final output schema of MultiScan node. Includes all e.g. row index / missing columns / file paths / hive etc.
-    final_output_schema: SchemaRef,
+    pub final_output_schema: SchemaRef,
     /// Columns to be projected from the file.
-    projected_file_schema: SchemaRef,
+    pub projected_file_schema: SchemaRef,
     /// Full schema of the file. Used for complaining about extra columns.
-    full_file_schema: SchemaRef,
+    pub full_file_schema: SchemaRef,
 
-    row_index: Option<RowIndex>,
-    pre_slice: Option<Slice>,
-    predicate: Option<ScanIOPredicate>,
+    pub row_index: Option<RowIndex>,
+    pub pre_slice: Option<Slice>,
+    pub predicate: Option<ScanIOPredicate>,
 
-    hive_parts: Option<Arc<HivePartitionsDf>>,
-    include_file_paths: Option<PlSmallStr>,
-    allow_missing_columns: bool,
-    extra_columns_policy: ExtraColumnsPolicy,
+    pub hive_parts: Option<Arc<HivePartitionsDf>>,
+    pub include_file_paths: Option<PlSmallStr>,
+    pub missing_columns_policy: MissingColumnsPolicy,
+    pub extra_columns_policy: ExtraColumnsPolicy,
+    pub cast_columns_policy: CastColumnsPolicy,
 
-    num_pipelines: AtomicUsize,
+    pub num_pipelines: AtomicUsize,
     /// Number of readers to initialize concurrently. e.g. Parquet will want to fetch metadata in this
     /// step.
-    n_readers_pre_init: usize,
+    pub n_readers_pre_init: usize,
 
-    verbose: AtomicBool,
+    pub verbose: bool,
 }
 
 impl MultiFileReaderConfig {
     fn num_pipelines(&self) -> usize {
         self.num_pipelines
             .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    fn verbose(&self) -> bool {
-        self.verbose.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -97,50 +95,14 @@ pub struct MultiFileReader {
 }
 
 impl MultiFileReader {
-    #[expect(clippy::too_many_arguments)]
-    pub fn new(
-        sources: ScanSources,
-        file_reader_builder: Arc<dyn FileReaderBuilder>,
-        cloud_options: Option<Arc<CloudOptions>>,
-
-        final_output_schema: SchemaRef,
-        projected_file_schema: SchemaRef,
-        full_file_schema: SchemaRef,
-
-        row_index: Option<RowIndex>,
-        pre_slice: Option<Slice>,
-        predicate: Option<ScanIOPredicate>,
-
-        hive_parts: Option<Arc<HivePartitionsDf>>,
-        include_file_paths: Option<PlSmallStr>,
-        allow_missing_columns: bool,
-        extra_columns_policy: ExtraColumnsPolicy,
-    ) -> Self {
-        let name = format_pl_smallstr!("MultiScan[{}]", file_reader_builder.reader_name());
+    pub fn new(config: Arc<MultiFileReaderConfig>) -> Self {
+        let name = format_pl_smallstr!("MultiScan[{}]", config.file_reader_builder.reader_name());
+        let verbose = config.verbose;
 
         MultiFileReader {
             name,
-            state: MultiScanState::Uninitialized {
-                config: Arc::new(MultiFileReaderConfig {
-                    sources,
-                    file_reader_builder,
-                    cloud_options,
-                    final_output_schema,
-                    projected_file_schema,
-                    full_file_schema,
-                    row_index,
-                    pre_slice,
-                    predicate,
-                    hive_parts,
-                    include_file_paths,
-                    allow_missing_columns,
-                    extra_columns_policy,
-                    num_pipelines: AtomicUsize::new(0),
-                    n_readers_pre_init: 3,
-                    verbose: AtomicBool::new(false),
-                }),
-            },
-            verbose: config::verbose(),
+            state: MultiScanState::Uninitialized { config },
+            verbose,
         }
     }
 }
@@ -198,7 +160,7 @@ impl ComputeNode for MultiFileReader {
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             use MultiScanState::*;
 
-            self.state.initialize(num_pipelines, verbose);
+            self.state.initialize(num_pipelines);
             self.state.refresh(verbose).await?;
 
             match &mut self.state {
@@ -294,7 +256,7 @@ impl MultiScanState {
     }
 
     /// Initialize state if not yet initialized.
-    fn initialize(&mut self, num_pipelines: usize, verbose: bool) {
+    fn initialize(&mut self, num_pipelines: usize) {
         use MultiScanState::*;
 
         let slf = std::mem::replace(self, Finished);
@@ -307,9 +269,6 @@ impl MultiScanState {
         config
             .num_pipelines
             .store(num_pipelines, std::sync::atomic::Ordering::Relaxed);
-        config
-            .verbose
-            .store(verbose, std::sync::atomic::Ordering::Relaxed);
 
         let (join_handle, send_phase_tx_to_bridge, bridge_state) =
             MultiScanTaskInitializer::new(config).spawn_background_tasks();

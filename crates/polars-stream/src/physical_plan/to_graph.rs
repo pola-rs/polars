@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 use parking_lot::Mutex;
 use polars_core::prelude::PlRandomState;
@@ -29,6 +30,7 @@ use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
 use crate::nodes::io_sinks::SinkComputeNode;
+use crate::nodes::io_sources::multi_file_reader::MultiFileReaderConfig;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
 use crate::physical_plan::lower_expr::compute_output_schema;
@@ -478,8 +480,9 @@ fn to_graph_rec<'a>(
             pre_slice,
             predicate,
             hive_parts,
-            allow_missing_columns,
+            missing_columns_policy,
             extra_columns_policy,
+            cast_columns_policy,
             include_file_paths,
             file_schema,
         } => {
@@ -502,22 +505,48 @@ fn to_graph_rec<'a>(
                 .transpose()?
                 .map(|p| p.to_io(None, file_schema.clone()));
 
+            let sources = scan_sources.clone();
+            let file_reader_builder = file_reader_builder.clone();
+            let cloud_options = cloud_options.clone();
+
+            let final_output_schema = output_schema.clone();
+            let projected_file_schema = projected_file_schema.clone();
+            let full_file_schema = file_schema.clone();
+
+            let row_index = row_index.clone();
+            let pre_slice = pre_slice.clone();
+            let hive_parts = hive_parts.map(Arc::new);
+            let include_file_paths = include_file_paths.clone();
+            let missing_columns_policy = missing_columns_policy.clone();
+            let extra_columns_policy = extra_columns_policy.clone();
+            let cast_columns_policy = cast_columns_policy.clone();
+
+            let verbose = config::verbose();
+
             ctx.graph.add_node(
-                nodes::io_sources::multi_file_reader::MultiFileReader::new(
-                    scan_sources.clone(),
-                    file_reader_builder.clone(),
-                    cloud_options.clone(),
-                    output_schema.clone(),
-                    projected_file_schema.clone(),
-                    file_schema.clone(),
-                    row_index.clone(),
-                    pre_slice.clone(),
-                    predicate,
-                    hive_parts.map(Arc::new),
-                    include_file_paths.clone(),
-                    *allow_missing_columns,
-                    extra_columns_policy.clone(),
-                ),
+                nodes::io_sources::multi_file_reader::MultiFileReader::new(Arc::new(
+                    MultiFileReaderConfig {
+                        sources,
+                        file_reader_builder,
+                        cloud_options,
+                        final_output_schema,
+                        projected_file_schema,
+                        full_file_schema,
+                        row_index,
+                        pre_slice,
+                        predicate,
+                        hive_parts,
+                        include_file_paths,
+                        missing_columns_policy,
+                        extra_columns_policy,
+                        cast_columns_policy,
+                        // Initialized later
+                        num_pipelines: AtomicUsize::new(0),
+                        n_readers_pre_init:
+                            nodes::io_sources::multi_file_reader::DEFAULT_N_READERS_PRE_INIT,
+                        verbose,
+                    },
+                )),
                 [],
             )
         },
@@ -887,7 +916,7 @@ fn to_graph_rec<'a>(
                 },
             };
 
-            use polars_plan::dsl::ExtraColumnsPolicy;
+            use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 
             use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
@@ -911,34 +940,45 @@ fn to_graph_rec<'a>(
             }) as Arc<dyn FileReaderBuilder>;
 
             // Give multiscan a single scan source. (It doesn't actually read from this).
-            let scan_sources = ScanSources::Paths(Arc::from([PathBuf::from("python-scan-0")]));
+            let sources = ScanSources::Paths(Arc::from([PathBuf::from("python-scan-0")]));
             let cloud_options = None;
+            let final_output_schema = output_schema.clone();
             let projected_file_schema = output_schema.clone();
-            let file_schema = output_schema.clone();
+            let full_file_schema = output_schema.clone();
             let row_index = None;
             let pre_slice = None;
             let predicate = None;
             let hive_parts = None;
             let include_file_paths = None;
-            let allow_missing_columns = false;
+            let missing_columns_policy = MissingColumnsPolicy::Raise;
             let extra_columns_policy = ExtraColumnsPolicy::Ignore;
+            let cast_columns_policy = CastColumnsPolicy::ErrorOnMismatch;
+            let verbose = config::verbose();
 
             ctx.graph.add_node(
-                nodes::io_sources::multi_file_reader::MultiFileReader::new(
-                    scan_sources.clone(),
-                    file_reader_builder,
-                    cloud_options,
-                    output_schema,
-                    projected_file_schema.clone(),
-                    file_schema.clone(),
-                    row_index,
-                    pre_slice,
-                    predicate,
-                    hive_parts,
-                    include_file_paths,
-                    allow_missing_columns,
-                    extra_columns_policy,
-                ),
+                nodes::io_sources::multi_file_reader::MultiFileReader::new(Arc::new(
+                    MultiFileReaderConfig {
+                        sources,
+                        file_reader_builder,
+                        cloud_options,
+                        final_output_schema,
+                        projected_file_schema,
+                        full_file_schema,
+                        row_index,
+                        pre_slice,
+                        predicate,
+                        hive_parts,
+                        include_file_paths,
+                        missing_columns_policy,
+                        extra_columns_policy,
+                        cast_columns_policy,
+                        // Initialized later
+                        num_pipelines: AtomicUsize::new(0),
+                        n_readers_pre_init:
+                            nodes::io_sources::multi_file_reader::DEFAULT_N_READERS_PRE_INIT,
+                        verbose,
+                    },
+                )),
                 [],
             )
         },

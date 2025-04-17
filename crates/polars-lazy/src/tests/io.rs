@@ -1,6 +1,7 @@
 use polars_io::RowIndex;
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
+use polars_utils::slice_enum::Slice;
 
 use super::*;
 
@@ -399,7 +400,9 @@ fn test_scan_parquet_limit_9001() {
             let sliced = options.slice.unwrap();
             sliced.1 == 3
         },
-        IR::Scan { file_options, .. } => file_options.pre_slice == Some((0, 3)),
+        IR::Scan {
+            unified_scan_args, ..
+        } => unified_scan_args.pre_slice == Some(Slice::Positive { offset: 0, len: 3 }),
         _ => true,
     });
 }

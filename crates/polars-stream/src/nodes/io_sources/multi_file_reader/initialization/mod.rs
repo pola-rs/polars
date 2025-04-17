@@ -32,7 +32,7 @@ impl MultiScanTaskInitializer {
         Arc<Mutex<BridgeState>>,
     ) {
         assert!(self.config.num_pipelines() > 0);
-        let verbose = self.config.verbose();
+        let verbose = self.config.verbose;
 
         if verbose {
             eprintln!(
@@ -48,7 +48,7 @@ impl MultiScanTaskInitializer {
         let (bridge_handle, bridge_recv_port_tx, send_phase_chan_to_bridge) =
             spawn_bridge(bridge_state.clone());
 
-        let verbose = self.config.verbose();
+        let verbose = self.config.verbose;
 
         let background_tasks_handle = AbortOnDropHandle::new(async_executor::spawn(
             TaskPriority::Low,

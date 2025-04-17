@@ -1,7 +1,8 @@
 use std::num::TryFromIntError;
 use std::ops::Range;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Slice {
     /// Or zero
     Positive {
@@ -23,13 +24,20 @@ impl Slice {
         }
     }
 
+    pub fn len_mut(&mut self) -> &mut usize {
+        match self {
+            Slice::Positive { len, .. } => len,
+            Slice::Negative { len, .. } => len,
+        }
+    }
+
     /// Returns the end position of the slice (offset + len).
     ///
     /// # Panics
     /// Panics if self is negative.
     pub fn end_position(&self) -> usize {
         let Slice::Positive { offset, len } = self.clone() else {
-            panic!("cannot use end() on a negative slice");
+            panic!("cannot use end_position() on a negative slice");
         };
 
         offset.saturating_add(len)

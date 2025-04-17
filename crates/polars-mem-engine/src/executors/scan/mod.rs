@@ -4,6 +4,7 @@ mod python_scan;
 use std::mem;
 
 use polars_plan::global::_set_n_rows_for_scan;
+use polars_utils::slice_enum::Slice;
 
 #[cfg(feature = "python")]
 pub(crate) use self::python_scan::*;
@@ -37,7 +38,7 @@ impl Executor for DataFrameExec {
 
 pub(crate) struct AnonymousScanExec {
     pub(crate) function: Arc<dyn AnonymousScan>,
-    pub(crate) file_options: Box<FileScanOptions>,
+    pub(crate) unified_scan_args: Box<UnifiedScanArgs>,
     pub(crate) file_info: FileInfo,
     pub(crate) predicate: Option<ScanPredicate>,
     pub(crate) output_schema: Option<SchemaRef>,
@@ -47,11 +48,12 @@ pub(crate) struct AnonymousScanExec {
 impl Executor for AnonymousScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let mut args = AnonymousScanArgs {
-            n_rows: self.file_options.pre_slice.map(|x| {
-                assert_eq!(x.0, 0);
-                x.1
+            n_rows: self.unified_scan_args.pre_slice.clone().map(|x| {
+                assert!(matches!(x, Slice::Positive { offset: 0, .. }));
+
+                x.len()
             }),
-            with_columns: self.file_options.with_columns.clone(),
+            with_columns: self.unified_scan_args.projection.clone(),
             schema: self.file_info.schema.clone(),
             output_schema: self.output_schema.clone(),
             predicate: None,

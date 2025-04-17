@@ -4,10 +4,10 @@ use polars_core::error::feature_gated;
 use polars_core::{POOL, config};
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_io::path_utils::is_cloud_url;
-use polars_plan::dsl::ScanSources;
+use polars_plan::dsl::{ScanSources, UnifiedScanArgs};
 use polars_plan::global::_set_n_rows_for_scan;
-use polars_plan::prelude::FileScanOptions;
 use polars_utils::itertools::Itertools;
+use polars_utils::slice_enum::Slice;
 
 use super::*;
 use crate::pipeline::determine_chunk_size;
@@ -23,7 +23,7 @@ pub(crate) struct CsvSource {
     n_threads: usize,
     sources: ScanSources,
     options: Option<CsvReadOptions>,
-    file_options: Box<FileScanOptions>,
+    unified_scan_args: Box<UnifiedScanArgs>,
     verbose: bool,
     // state for multi-file reads
     current_path_idx: usize,
@@ -41,11 +41,11 @@ impl CsvSource {
             .sources
             .as_paths()
             .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
-        let file_options = self.file_options.clone();
+        let unified_scan_args = self.unified_scan_args.as_ref();
 
-        let n_rows = file_options.pre_slice.map(|x| {
-            assert_eq!(x.0, 0);
-            x.1
+        let n_rows = unified_scan_args.pre_slice.clone().map(|slice| {
+            assert!(matches!(slice, Slice::Positive { len: 0, .. }));
+            slice.len()
         });
 
         if self.current_path_idx == paths.len()
@@ -65,7 +65,7 @@ impl CsvSource {
         self.current_path_idx += 1;
 
         let options = self.options.clone().unwrap();
-        let mut with_columns = file_options.with_columns;
+        let mut with_columns = unified_scan_args.projection.clone();
         let mut projected_len = 0;
         with_columns
             .as_ref()
@@ -81,15 +81,16 @@ impl CsvSource {
             self.schema.len()
         };
         let n_rows = _set_n_rows_for_scan(
-            file_options
+            unified_scan_args
                 .pre_slice
-                .map(|x| {
-                    assert_eq!(x.0, 0);
-                    x.1
+                .clone()
+                .map(|slice| {
+                    assert!(matches!(slice, Slice::Positive { len: 0, .. }));
+                    slice.len()
                 })
                 .map(|n| n.saturating_sub(self.n_rows_read)),
         );
-        let row_index = file_options.row_index.map(|mut ri| {
+        let row_index = unified_scan_args.row_index.clone().map(|mut ri| {
             ri.offset += self.n_rows_read as IdxSize;
             ri
         });
@@ -124,7 +125,7 @@ impl CsvSource {
                 .try_into_reader_with_file_path(None)?
         };
 
-        if let Some(col) = &file_options.include_file_paths {
+        if let Some(col) = &unified_scan_args.include_file_paths {
             self.include_file_path =
                 Some(StringChunked::full(col.clone(), path.to_str().unwrap(), 1));
         };
@@ -143,7 +144,7 @@ impl CsvSource {
         sources: ScanSources,
         schema: SchemaRef,
         options: CsvReadOptions,
-        file_options: Box<FileScanOptions>,
+        unified_scan_args: Box<UnifiedScanArgs>,
         verbose: bool,
     ) -> PolarsResult<Self> {
         Ok(CsvSource {
@@ -153,7 +154,7 @@ impl CsvSource {
             n_threads: POOL.current_num_threads(),
             sources,
             options: Some(options),
-            file_options,
+            unified_scan_args,
             verbose,
             current_path_idx: 0,
             n_rows_read: 0,
