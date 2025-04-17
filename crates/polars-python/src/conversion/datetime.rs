@@ -57,16 +57,18 @@ pub fn datetime_to_py_object<'py>(
                     .call1((v, tu.to_ascii(), time_zone.as_str()))
             } else {
                 let datetime = utc_datetime.with_timezone(&tz);
-                datetime.into_pyobject(py)
+                Ok(datetime.into_pyobject(py)?.into_any())
             }
         } else if let Ok(tz) = FixedOffset::from_str(time_zone) {
             let naive_datetime = timestamp_to_naive_datetime(v, tu);
             let datetime = tz.from_utc_datetime(&naive_datetime);
-            datetime.into_pyobject(py)
+            Ok(datetime.into_pyobject(py)?.into_any())
         } else {
             Err(PyPolarsErr::Other(format!("Could not parse timezone: {time_zone}")).into())
         }
     } else {
-        timestamp_to_naive_datetime(v, tu).into_pyobject(py)
+        Ok(timestamp_to_naive_datetime(v, tu)
+            .into_pyobject(py)?
+            .into_any())
     }
 }
