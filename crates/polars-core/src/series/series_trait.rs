@@ -366,6 +366,12 @@ pub trait SeriesTrait:
         None
     }
 
+    /// Returns the quantile value in the array
+    /// Returns a result of option because the array is nullable and quantile can OOB.
+    fn quantile(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Option<f64>> {
+        Ok(None)
+    }
+
     /// Create a new Series filled with values from the given index.
     ///
     /// # Example
