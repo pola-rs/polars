@@ -107,14 +107,20 @@ impl Buffer<'_> {
                 Ok(())
             },
             #[cfg(feature = "dtype-datetime")]
-            Datetime(buf, _, _) => {
-                let v = deserialize_datetime::<Int64Type>(value, "Datetime", self.ignore_errors)?;
+            Datetime(buf, tu, _) => {
+                let v =
+                    deserialize_datetime::<Int64Type>(value, "Datetime", self.ignore_errors, *tu)?;
                 buf.append_option(v);
                 Ok(())
             },
             #[cfg(feature = "dtype-date")]
             Date(buf) => {
-                let v = deserialize_datetime::<Int32Type>(value, "Date", self.ignore_errors)?;
+                let v = deserialize_datetime::<Int32Type>(
+                    value,
+                    "Date",
+                    self.ignore_errors,
+                    TimeUnit::Microseconds, // ignored
+                )?;
                 buf.append_option(v);
                 Ok(())
             },
@@ -193,6 +199,7 @@ fn deserialize_datetime<T>(
     value: &Value,
     type_name: &str,
     ignore_errors: bool,
+    tu: TimeUnit,
 ) -> PolarsResult<Option<T::Native>>
 where
     T: PolarsNumericType,
@@ -201,9 +208,7 @@ where
     match value {
         Value::String(val) => {
             if let Some(pattern) = infer_pattern_single(val) {
-                if let Ok(mut infer) =
-                    DatetimeInfer::try_from_with_unit(pattern, Some(TimeUnit::Microseconds))
-                {
+                if let Ok(mut infer) = DatetimeInfer::try_from_with_unit(pattern, Some(tu)) {
                     if let Some(v) = infer.parse(val) {
                         return Ok(Some(v));
                     }
@@ -226,12 +231,40 @@ fn deserialize_all<'a>(
     dtype: &DataType,
     ignore_errors: bool,
 ) -> PolarsResult<AnyValue<'a>> {
-    if let DataType::String = dtype {
-        return Ok(match json {
-            Value::String(s) => AnyValue::StringOwned(s.as_ref().into()),
-            Value::Static(StaticNode::Null) => AnyValue::Null,
-            v => AnyValue::StringOwned(format_pl_smallstr!("{}", ValueDisplay(v))),
-        });
+    if let Value::Static(StaticNode::Null) = json {
+        return Ok(AnyValue::Null);
+    }
+    match dtype {
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Date => {
+            let value = deserialize_datetime::<Int32Type>(
+                json,
+                "Date",
+                ignore_errors,
+                TimeUnit::Microseconds, // ignored
+            )?;
+            return Ok(if let Some(value) = value {
+                AnyValue::Date(value)
+            } else {
+                AnyValue::Null
+            });
+        },
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(tu, tz) => {
+            let value = deserialize_datetime::<Int64Type>(json, "Datetime", ignore_errors, *tu)?;
+            return Ok(if let Some(value) = value {
+                AnyValue::DatetimeOwned(value, *tu, tz.as_ref().map(|s| Arc::from(s.clone())))
+            } else {
+                AnyValue::Null
+            });
+        },
+        DataType::String => {
+            return Ok(match json {
+                Value::String(s) => AnyValue::StringOwned(s.as_ref().into()),
+                v => AnyValue::StringOwned(format_pl_smallstr!("{}", ValueDisplay(v))),
+            });
+        },
+        _ => {},
     }
 
     let out = match json {
