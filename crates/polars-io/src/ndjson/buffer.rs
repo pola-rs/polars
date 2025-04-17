@@ -235,6 +235,7 @@ fn deserialize_all<'a>(
         return Ok(AnyValue::Null);
     }
     match dtype {
+        #[cfg(feature = "dtype-datetime")]
         DataType::Date => {
             let value = deserialize_datetime::<Int32Type>(
                 json,
@@ -248,6 +249,7 @@ fn deserialize_all<'a>(
                 AnyValue::Null
             });
         },
+        #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(tu, tz) => {
             let value = deserialize_datetime::<Int64Type>(json, "Datetime", ignore_errors, *tu)?;
             return Ok(if let Some(value) = value {
