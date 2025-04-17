@@ -592,7 +592,7 @@ fn to_graph_rec<'a>(
             }
 
             ctx.graph.add_node(
-                nodes::group_by_new::GroupByNode::new(
+                nodes::group_by::GroupByNode::new(
                     key_schema,
                     key_selectors,
                     grouper,
@@ -602,12 +602,6 @@ fn to_graph_rec<'a>(
                     PlRandomState::default(),
                     ctx.num_pipelines,
                 ),
-                // key_selectors,
-                // grouped_reduction_selectors,
-                // grouped_reductions,
-                // grouper,
-                // node.output_schema.clone(),
-                // PlRandomState::default(),
                 [(input_key, input.port)],
             )
         },

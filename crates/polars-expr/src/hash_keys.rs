@@ -331,6 +331,8 @@ impl RowEncodedKeys {
         }
     }
 
+    /// # Safety
+    /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         let idx_arr = arrow::ffi::mmap::slice(idxs);
         Self {
@@ -358,6 +360,8 @@ impl SingleKeys {
         })
     }
 
+    /// # Safety
+    /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         Self {
             random_state: self.random_state,
@@ -420,6 +424,8 @@ impl BinviewKeys {
         }
     }
 
+    /// # Safety
+    /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         let idx_arr = arrow::ffi::mmap::slice(idxs);
         Self {

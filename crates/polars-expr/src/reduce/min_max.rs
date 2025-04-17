@@ -12,7 +12,6 @@ use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 
 use super::*;
-use crate::reduce::partition::partition_mask;
 
 pub fn new_min_reduction(dtype: DataType, propagate_nans: bool) -> Box<dyn GroupedReduction> {
     use DataType::*;

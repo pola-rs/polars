@@ -45,14 +45,6 @@ impl<K> FixedIndexTable<K> {
         self.keys.len()
     }
 
-    pub fn clear(&mut self) {
-        for slot in &mut self.slots {
-            slot.key_index = IdxSize::MAX;
-        }
-        self.keys.clear();
-        self.hashes.clear();
-    }
-
     /// Tries to insert a key with a given hash.
     ///
     /// Returns Some((index, evict_old)) if successful, None otherwise.

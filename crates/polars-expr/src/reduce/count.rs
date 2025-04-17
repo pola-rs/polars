@@ -2,7 +2,6 @@
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
-use crate::reduce::partition::partition_vec;
 
 pub struct CountReduce {
     counts: Vec<u64>,

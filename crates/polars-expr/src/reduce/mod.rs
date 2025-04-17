@@ -5,7 +5,6 @@ mod first_last;
 mod len;
 mod mean;
 mod min_max;
-mod partition;
 mod sum;
 mod var_std;
 
@@ -76,7 +75,8 @@ pub trait GroupedReduction: Any + Send + Sync {
         seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.len() < (1 << (IdxSize::BITS - 1)));
-        self.update_groups_while_evicting(values, subset, core::mem::transmute(group_idxs), seq_id)
+        let evict_group_idxs = core::mem::transmute::<&[IdxSize], &[EvictIdx]>(group_idxs);
+        self.update_groups_while_evicting(values, subset, evict_group_idxs, seq_id)
     }
 
     /// Updates this GroupedReduction with new values. values[subset[i]] should
@@ -519,7 +519,7 @@ where
             // SAFETY: indices are in-bounds guaranteed by trait.
             for (i, g) in subset.iter().zip(group_idxs) {
                 let ov = arr.get_unchecked(*i as usize);
-                let grp = self.values.get_unchecked_mut(g.idx() as usize);
+                let grp = self.values.get_unchecked_mut(g.idx());
                 if g.should_evict() {
                     self.evicted_values
                         .push(core::mem::replace(grp, self.reducer.init()));
