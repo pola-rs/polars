@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import io
 from typing import TYPE_CHECKING
 
@@ -127,3 +128,50 @@ This allows it to read into multiple rows.
         scan_lines(f).collect().to_series(),
         pl.Series("lines", text.splitlines(), pl.String()),
     )
+
+
+def test_datetime_io_predicate_pushdown_21790() -> None:
+    recorded: dict[str, pl.Expr | None] = {"predicate": None}
+    df = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime.datetime(2024, 1, 1, 0),
+                datetime.datetime(2024, 1, 3, 0),
+            ]
+        }
+    )
+
+    def _source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        # capture the predicate passed in
+        recorded["predicate"] = predicate
+        inner_df = df.clone()
+        if with_columns is not None:
+            inner_df = inner_df.select(with_columns)
+        if predicate is not None:
+            inner_df = inner_df.filter(predicate)
+
+        yield inner_df
+
+    schema = {"timestamp": pl.Datetime(time_unit="ns")}
+    lf = register_io_source(io_source=_source, schema=schema)
+
+    cutoff = datetime.datetime(2024, 1, 4)
+    expr = pl.col("timestamp") < cutoff
+    filtered_df = lf.filter(expr).collect()
+
+    pushed_predicate = recorded["predicate"]
+    assert pushed_predicate is not None
+    assert_series_equal(filtered_df.to_series(), df.filter(expr).to_series())
+
+    # check the expression directly
+    dt_val, column_cast = pushed_predicate.meta.pop()
+    # Extract the datetime value from the expression
+    assert pl.DataFrame({}).select(dt_val).item() == cutoff
+
+    column = column_cast.meta.pop()[0]
+    assert column.meta == pl.col("timestamp")
