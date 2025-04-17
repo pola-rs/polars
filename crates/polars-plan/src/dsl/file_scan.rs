@@ -150,7 +150,7 @@ pub struct UnifiedScanArgs {
     pub include_file_paths: Option<PlSmallStr>,
 }
 
-// Manual impl, we have `glob: true` by default.
+// Manual default, we have `glob: true` by default.
 impl Default for UnifiedScanArgs {
     fn default() -> Self {
         UnifiedScanArgs {
