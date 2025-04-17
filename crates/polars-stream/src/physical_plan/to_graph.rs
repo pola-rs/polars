@@ -572,7 +572,7 @@ fn to_graph_rec<'a>(
 
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?;
-            let grouper = new_hash_grouper(key_schema);
+            let grouper = new_hash_grouper(key_schema.clone());
 
             let key_selectors = key
                 .iter()
@@ -580,27 +580,27 @@ fn to_graph_rec<'a>(
                 .try_collect_vec()?;
 
             let mut grouped_reductions = Vec::new();
-            let mut grouped_reduction_selectors = Vec::new();
+            let mut grouped_reduction_cols = Vec::new();
             for agg in aggs {
                 let (reduction, input_node) =
                     into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
-                let selector = create_stream_expr(
-                    &ExprIR::from_node(input_node, ctx.expr_arena),
-                    ctx,
-                    input_schema,
-                )?;
+                let AExpr::Column(col) = ctx.expr_arena.get(input_node) else {
+                    unreachable!()
+                };
                 grouped_reductions.push(reduction);
-                grouped_reduction_selectors.push(selector);
+                grouped_reduction_cols.push(col.clone());
             }
 
             ctx.graph.add_node(
                 nodes::group_by::GroupByNode::new(
+                    key_schema,
                     key_selectors,
-                    grouped_reduction_selectors,
-                    grouped_reductions,
                     grouper,
+                    grouped_reduction_cols,
+                    grouped_reductions,
                     node.output_schema.clone(),
                     PlRandomState::default(),
+                    ctx.num_pipelines,
                 ),
                 [(input_key, input.port)],
             )

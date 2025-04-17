@@ -299,6 +299,16 @@ impl HashKeys {
             sketch.insert(opt_h.unwrap_or(0));
         })
     }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+        match self {
+            HashKeys::RowEncoded(s) => Self::RowEncoded(s.gather_unchecked(idxs)),
+            HashKeys::Single(s) => Self::Single(s.gather_unchecked(idxs)),
+            HashKeys::Binview(s) => Self::Binview(s.gather_unchecked(idxs)),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -320,6 +330,19 @@ impl RowEncodedKeys {
             }
         }
     }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        Self {
+            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
+                &self.hashes,
+                &idx_arr,
+            ),
+            keys: polars_compute::gather::binary::take_unchecked(&self.keys, &idx_arr),
+        }
+    }
 }
 
 /// Single keys without prehashing.
@@ -335,6 +358,16 @@ impl SingleKeys {
         downcast_single_key_ca!(self.keys, |keys| {
             for_each_hash(keys, f, &self.random_state);
         })
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+        Self {
+            random_state: self.random_state,
+            keys: self.keys.take_slice_unchecked(idxs),
+            null_is_valid: self.null_is_valid,
+        }
     }
 }
 
@@ -388,6 +421,20 @@ impl BinviewKeys {
             for h in self.hashes.values_iter() {
                 f(Some(*h));
             }
+        }
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        Self {
+            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
+                &self.hashes,
+                &idx_arr,
+            ),
+            keys: polars_compute::gather::binview::take_binview_unchecked(&self.keys, &idx_arr),
+            null_is_valid: self.null_is_valid,
         }
     }
 }

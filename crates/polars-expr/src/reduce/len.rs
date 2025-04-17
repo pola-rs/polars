@@ -2,11 +2,11 @@
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
-use crate::reduce::partition::partition_vec;
 
 #[derive(Default)]
 pub struct LenReduce {
     groups: Vec<u64>,
+    evictions: Vec<u64>,
 }
 
 impl GroupedReduction for LenReduce {
@@ -48,6 +48,27 @@ impl GroupedReduction for LenReduce {
         Ok(())
     }
 
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        _values: &Column,
+        _subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        unsafe {
+            // SAFETY: indices are in-bounds guaranteed by trait.
+            for g in group_idxs.iter() {
+                let grp = self.groups.get_unchecked_mut(g.idx());
+                if g.should_evict() {
+                    self.evictions.push(*grp);
+                    *grp = 0;
+                }
+                *grp += 1;
+            }
+        }
+        Ok(())
+    }
+
     unsafe fn combine(
         &mut self,
         other: &dyn GroupedReduction,
@@ -82,6 +103,13 @@ impl GroupedReduction for LenReduce {
         Ok(())
     }
 
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            groups: core::mem::take(&mut self.evictions),
+            evictions: Vec::new(),
+        })
+    }
+
     fn finalize(&mut self) -> PolarsResult<Series> {
         let ca: IdxCa = self
             .groups
@@ -89,17 +117,6 @@ impl GroupedReduction for LenReduce {
             .map(|l| IdxSize::try_from(l).expect(LENGTH_LIMIT_MSG))
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
-    }
-
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        partition_vec(self.groups, partition_sizes, partition_idxs)
-            .into_iter()
-            .map(|groups| Box::new(Self { groups }) as _)
-            .collect()
     }
 
     fn as_any(&self) -> &dyn Any {

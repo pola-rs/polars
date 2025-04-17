@@ -238,6 +238,7 @@ pub enum PhysNodeKind {
     GroupBy {
         input: PhysStream,
         key: Vec<ExprIR>,
+        // Must be a 'simple' expression, a singular column feeding into a single aggregate, or Len.
         aggs: Vec<ExprIR>,
     },
 
