@@ -1,5 +1,7 @@
 use std::fs::File;
 use std::io;
+use std::mem::ManuallyDrop;
+use std::sync::LazyLock;
 
 pub use memmap::Mmap;
 
@@ -154,6 +156,7 @@ use polars_error::PolarsResult;
 #[cfg(target_family = "unix")]
 use polars_error::polars_bail;
 pub use private::MemSlice;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 
 /// A cursor over a [`MemSlice`].
 #[derive(Debug, Clone)]
@@ -258,6 +261,20 @@ impl io::Seek for MemReader {
     }
 }
 
+pub static UNMAP_POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
+    let thread_name = std::env::var("POLARS_THREAD_NAME").unwrap_or_else(|_| "polars".to_string());
+    ThreadPoolBuilder::new()
+        .num_threads(
+            std::thread::available_parallelism()
+                .unwrap_or(std::num::NonZeroUsize::new(1).unwrap())
+                .get()
+                .min(4),
+        )
+        .thread_name(move |i| format!("{}-unmap-{}", thread_name, i))
+        .build()
+        .expect("could not spawn threads")
+});
+
 // Keep track of memory mapped files so we don't write to them while reading
 // Use a btree as it uses less memory than a hashmap and this thing never shrinks.
 // Write handle in Windows is exclusive, so this is only necessary in Unix.
@@ -270,7 +287,34 @@ static MEMORY_MAPPED_FILES: std::sync::LazyLock<
 pub struct MMapSemaphore {
     #[cfg(target_family = "unix")]
     key: (u64, u64),
-    mmap: Mmap,
+    mmap: ManuallyDrop<Mmap>,
+}
+
+impl Drop for MMapSemaphore {
+    fn drop(&mut self) {
+        #[cfg(target_family = "unix")]
+        {
+            let mut guard = MEMORY_MAPPED_FILES.lock().unwrap();
+            if let std::collections::btree_map::Entry::Occupied(mut e) = guard.entry(self.key) {
+                let v = e.get_mut();
+                *v -= 1;
+
+                if *v == 0 {
+                    e.remove_entry();
+                }
+            }
+        }
+
+        unsafe {
+            let mmap = ManuallyDrop::take(&mut self.mmap);
+            // If the unmap is 1 MiB or bigger, we do it in a background thread.
+            if self.mmap.len() >= 1024 * 1024 {
+                UNMAP_POOL.spawn(move || drop(mmap));
+            } else {
+                drop(mmap);
+            }
+        }
+    }
 }
 
 impl MMapSemaphore {
@@ -293,11 +337,16 @@ impl MMapSemaphore {
                 std::collections::btree_map::Entry::Occupied(mut e) => *e.get_mut() += 1,
                 std::collections::btree_map::Entry::Vacant(e) => _ = e.insert(1),
             }
-            Ok(Self { key, mmap })
+            Ok(Self {
+                key,
+                mmap: ManuallyDrop::new(mmap),
+            })
         }
 
         #[cfg(not(target_family = "unix"))]
-        Ok(Self { mmap })
+        Ok(Self {
+            mmap: ManuallyDrop::new(mmap),
+        })
     }
 
     pub fn new_from_file(file: &File) -> PolarsResult<MMapSemaphore> {
@@ -313,21 +362,6 @@ impl AsRef<[u8]> for MMapSemaphore {
     #[inline]
     fn as_ref(&self) -> &[u8] {
         self.mmap.as_ref()
-    }
-}
-
-#[cfg(target_family = "unix")]
-impl Drop for MMapSemaphore {
-    fn drop(&mut self) {
-        let mut guard = MEMORY_MAPPED_FILES.lock().unwrap();
-        if let std::collections::btree_map::Entry::Occupied(mut e) = guard.entry(self.key) {
-            let v = e.get_mut();
-            *v -= 1;
-
-            if *v == 0 {
-                e.remove_entry();
-            }
-        }
     }
 }
 
