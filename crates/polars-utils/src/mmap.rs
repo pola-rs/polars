@@ -344,7 +344,9 @@ impl MMapSemaphore {
         }
 
         #[cfg(not(target_family = "unix"))]
-        Ok(Self { mmap: ManuallyDrop::new(mmap) })
+        Ok(Self {
+            mmap: ManuallyDrop::new(mmap),
+        })
     }
 
     pub fn new_from_file(file: &File) -> PolarsResult<MMapSemaphore> {
