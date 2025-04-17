@@ -308,7 +308,12 @@ impl GroupBySinkState {
                                 for (c, r) in grouped_reduction_cols.iter().zip(&mut p_reductions) {
                                     let values = cols.column(c.as_str()).unwrap();
                                     r.resize(p_grouper.num_groups());
-                                    r.update_groups_subset(values, p_morsel_idxs, &group_idxs, *seq_id)?;
+                                    r.update_groups_subset(
+                                        values,
+                                        p_morsel_idxs,
+                                        &group_idxs,
+                                        *seq_id,
+                                    )?;
                                 }
                             }
                         }
@@ -455,8 +460,13 @@ impl GroupByNode {
         random_state: PlRandomState,
         num_pipelines: usize,
     ) -> Self {
-        let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE").map(|sz| sz.parse::<usize>().unwrap()).unwrap_or(1024);
-        let num_partitions = num_pipelines - std::env::var("POLARS_PARTITION_FREE_THREADS").map(|sz| sz.parse::<usize>().unwrap()).unwrap_or(0);
+        let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE")
+            .map(|sz| sz.parse::<usize>().unwrap())
+            .unwrap_or(1024);
+        let num_partitions = num_pipelines
+            - std::env::var("POLARS_PARTITION_FREE_THREADS")
+                .map(|sz| sz.parse::<usize>().unwrap())
+                .unwrap_or(0);
         let uniq_grouped_reduction_cols = grouped_reduction_cols
             .iter()
             .cloned()
@@ -466,7 +476,12 @@ impl GroupByNode {
         let locals = (0..num_pipelines)
             .map(|_| {
                 let reductions = grouped_reductions.iter().map(|gr| gr.new_empty()).collect();
-                LocalGroupBySinkState::new(key_schema.clone(), reductions, hot_table_size, num_partitions)
+                LocalGroupBySinkState::new(
+                    key_schema.clone(),
+                    reductions,
+                    hot_table_size,
+                    num_partitions,
+                )
             })
             .collect();
         let partitioner = HashPartitioner::new(num_partitions, 0);

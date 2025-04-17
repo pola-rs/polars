@@ -330,7 +330,8 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
             let grp_val = self.values.get_unchecked_mut(g.idx());
             let grp_seq = self.seqs.get_unchecked_mut(g.idx());
             if g.should_evict() {
-                self.evicted_values.push(core::mem::replace(grp_val, AnyValue::Null));
+                self.evicted_values
+                    .push(core::mem::replace(grp_val, AnyValue::Null));
                 self.evicted_seqs.push(core::mem::replace(grp_seq, 0));
             }
             if P::should_replace(seq_id, *grp_seq) {
@@ -379,7 +380,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         }
         Ok(())
     }
-    
+
     fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
         Box::new(Self {
             in_dtype: self.in_dtype.clone(),

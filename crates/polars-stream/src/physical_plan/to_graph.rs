@@ -584,7 +584,9 @@ fn to_graph_rec<'a>(
             for agg in aggs {
                 let (reduction, input_node) =
                     into_reduction(agg.node(), ctx.expr_arena, input_schema)?;
-                let AExpr::Column(col) = ctx.expr_arena.get(input_node) else { unreachable!() };
+                let AExpr::Column(col) = ctx.expr_arena.get(input_node) else {
+                    unreachable!()
+                };
                 grouped_reductions.push(reduction);
                 grouped_reduction_cols.push(col.clone());
             }

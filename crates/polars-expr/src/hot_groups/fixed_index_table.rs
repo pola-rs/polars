@@ -1,6 +1,6 @@
+use polars_utils::IdxSize;
 use polars_utils::select::select_unpredictable;
 use polars_utils::vec::PushUnchecked;
-use polars_utils::IdxSize;
 
 use crate::EvictIdx;
 
@@ -14,7 +14,7 @@ struct Slot {
 }
 
 /// A fixed-size hash table which maps keys to indices.
-/// 
+///
 /// Instead of growing indefinitely this table will evict keys instead.
 pub struct FixedIndexTable<K> {
     slots: Vec<Slot>,
@@ -30,7 +30,7 @@ impl<K> FixedIndexTable<K> {
         let empty_slot = Slot {
             tag: u32::MAX,
             last_access_tag: u32::MAX,
-            key_index: IdxSize::MAX
+            key_index: IdxSize::MAX,
         };
         Self {
             slots: vec![empty_slot; num_slots as usize],
@@ -40,11 +40,11 @@ impl<K> FixedIndexTable<K> {
             prng: 0,
         }
     }
-    
+
     pub fn len(&self) -> usize {
         self.keys.len()
     }
-    
+
     pub fn clear(&mut self) {
         for slot in &mut self.slots {
             slot.key_index = IdxSize::MAX;
@@ -52,24 +52,19 @@ impl<K> FixedIndexTable<K> {
         self.keys.clear();
         self.hashes.clear();
     }
-    
+
     /// Tries to insert a key with a given hash.
-    /// 
+    ///
     /// Returns Some((index, evict_old)) if successful, None otherwise.
-    pub fn insert_key<Q, F>(
-        &mut self,
-        hash: u64,
-        key: &Q,
-        mut on_evict: F,
-    ) -> Option<EvictIdx>
+    pub fn insert_key<Q, F>(&mut self, hash: u64, key: &Q, mut on_evict: F) -> Option<EvictIdx>
     where
-        Q: ToOwned<Owned=K> + PartialEq<K> + ?Sized,
-        F: FnMut(u64, &K)
+        Q: ToOwned<Owned = K> + PartialEq<K> + ?Sized,
+        F: FnMut(u64, &K),
     {
         let tag = hash as u32;
         let h1 = (hash >> self.shift) as usize;
         let h2 = (hash.wrapping_mul(H2_MULT) >> self.shift) as usize;
-        
+
         unsafe {
             // We only want a single branch for the hot hit/miss check. This is
             // why we check both slots at once.
@@ -85,7 +80,7 @@ impl<K> FixedIndexTable<K> {
             if s1_delta & s2_delta == 0 {
                 // We want to branchlessly select the most likely candidate
                 // first to ensure no further branch mispredicts in the vast
-                // majority of cases. 
+                // majority of cases.
                 let ha = select_unpredictable(s1_delta == 0, h1, h2);
                 let sa = self.slots.get_unchecked_mut(ha);
                 if let Some(sak) = self.keys.get(sa.key_index as usize) {
@@ -94,7 +89,7 @@ impl<K> FixedIndexTable<K> {
                         return Some(EvictIdx::new(sa.key_index, false));
                     }
                 }
-                
+
                 // If both hashes matched we have to check the second slot too.
                 if s1_delta == s2_delta {
                     let hb = h1 ^ h2 ^ ha;
@@ -121,7 +116,7 @@ impl<K> FixedIndexTable<K> {
                     self.hashes.push_unchecked(hash);
                     return Some(EvictIdx::new(s1.key_index, false));
                 }
-                
+
                 // Check the second slot.
                 let s2 = self.slots.get_unchecked_mut(h2);
                 if s2.key_index >= num_keys {
@@ -133,7 +128,7 @@ impl<K> FixedIndexTable<K> {
                     return Some(EvictIdx::new(s2.key_index, false));
                 }
             }
-            
+
             // Randomly try to evict one of the two slots.
             let hr = select_unpredictable(self.prng >> 63 != 0, h1, h2);
             self.prng = self.prng.wrapping_add(hash);
@@ -152,14 +147,12 @@ impl<K> FixedIndexTable<K> {
             }
         }
     }
-    
+
     pub fn keys(&self) -> &[K] {
         &self.keys
     }
-    
+
     pub fn hashes(&self) -> &[u64] {
         &self.hashes
     }
 }
-
-

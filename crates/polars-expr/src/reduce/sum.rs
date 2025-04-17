@@ -7,7 +7,7 @@ use polars_utils::float::IsFloat;
 
 use super::*;
 
-pub trait SumCast : Sized {
+pub trait SumCast: Sized {
     type Sum: NumericNative + From<Self>;
 }
 
@@ -20,7 +20,13 @@ macro_rules! impl_sum_cast {
     };
 }
 
-impl_sum_cast!(bool as IdxSize, u8 as i64, u16 as i64, i8 as i64, i16 as i64);
+impl_sum_cast!(
+    bool as IdxSize,
+    u8 as i64,
+    u16 as i64,
+    i8 as i64,
+    i16 as i64
+);
 impl_sum_cast!(u32, u64, i32, i64, i128, f32, f64);
 
 fn out_dtype(in_dtype: &DataType) -> DataType {
@@ -31,7 +37,6 @@ fn out_dtype(in_dtype: &DataType) -> DataType {
         dt => dt.clone(),
     }
 }
-
 
 pub fn new_sum_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
     use DataType::*;
@@ -114,15 +119,10 @@ where
         assert!(m.is_none());
         let arr = Box::new(PrimitiveArray::from_vec(v));
         Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::EMPTY,
-                vec![arr],
-                &out_dtype(dtype),
-            )
+            Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr], &out_dtype(dtype))
         })
     }
 }
-
 
 #[derive(Clone)]
 struct BoolSumReducer;

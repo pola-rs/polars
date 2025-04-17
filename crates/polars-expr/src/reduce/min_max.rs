@@ -337,7 +337,7 @@ impl GroupedReduction for BoolMinGroupedReduction {
         }
         Ok(())
     }
-    
+
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &Column,
@@ -360,8 +360,7 @@ impl GroupedReduction for BoolMinGroupedReduction {
                     self.values.set_unchecked(g.idx(), ov.unwrap_or(true));
                     self.mask.set_unchecked(g.idx(), ov.is_some());
                 } else {
-                    self.values
-                        .and_pos_unchecked(g.idx(), ov.unwrap_or(true));
+                    self.values.and_pos_unchecked(g.idx(), ov.unwrap_or(true));
                     self.mask.or_pos_unchecked(g.idx(), ov.is_some());
                 }
             }
@@ -409,7 +408,7 @@ impl GroupedReduction for BoolMinGroupedReduction {
         }
         Ok(())
     }
-    
+
     fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
         Box::new(Self {
             values: core::mem::take(&mut self.evicted_values).into_mut(),
@@ -527,8 +526,7 @@ impl GroupedReduction for BoolMaxGroupedReduction {
                     self.values.set_unchecked(g.idx(), ov.unwrap_or(false));
                     self.mask.set_unchecked(g.idx(), ov.is_some());
                 } else {
-                    self.values
-                        .or_pos_unchecked(g.idx(), ov.unwrap_or(false));
+                    self.values.or_pos_unchecked(g.idx(), ov.unwrap_or(false));
                     self.mask.or_pos_unchecked(g.idx(), ov.is_some());
                 }
             }
@@ -575,7 +573,7 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         }
         Ok(())
     }
-    
+
     fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
         Box::new(Self {
             values: core::mem::take(&mut self.evicted_values).into_mut(),

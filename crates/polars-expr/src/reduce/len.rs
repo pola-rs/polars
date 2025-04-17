@@ -47,7 +47,7 @@ impl GroupedReduction for LenReduce {
         }
         Ok(())
     }
-    
+
     unsafe fn update_groups_while_evicting(
         &mut self,
         _values: &Column,
@@ -102,7 +102,7 @@ impl GroupedReduction for LenReduce {
         }
         Ok(())
     }
-    
+
     fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
         Box::new(Self {
             groups: core::mem::take(&mut self.evictions),

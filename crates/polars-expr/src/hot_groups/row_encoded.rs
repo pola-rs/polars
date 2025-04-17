@@ -3,10 +3,9 @@ use arrow::buffer::Buffer;
 use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_utils::vec::PushUnchecked;
 
+use super::*;
 use crate::hash_keys::RowEncodedKeys;
 use crate::hot_groups::fixed_index_table::FixedIndexTable;
-
-use super::*;
 
 pub struct RowEncodedHashHotGrouper {
     key_schema: Arc<Schema>,
@@ -47,11 +46,11 @@ impl HotGrouper for RowEncodedHashHotGrouper {
         let HashKeys::RowEncoded(keys) = keys else {
             unreachable!()
         };
-        
+
         hot_idxs.reserve(keys.hashes.len());
         hot_group_idxs.reserve(keys.hashes.len());
         cold_idxs.reserve(keys.hashes.len());
-        
+
         unsafe {
             let mut idx = 0;
             keys.for_each_hash(|opt_h| {
@@ -69,7 +68,7 @@ impl HotGrouper for RowEncodedHashHotGrouper {
                         cold_idxs.push_unchecked(idx as IdxSize);
                     }
                 }
-                
+
                 idx += 1;
             });
         }
@@ -78,16 +77,13 @@ impl HotGrouper for RowEncodedHashHotGrouper {
     fn keys(&self) -> HashKeys {
         let hashes = PrimitiveArray::from_slice(self.table.hashes());
         let keys = LargeBinaryArray::from_slice(self.table.keys());
-        HashKeys::RowEncoded(RowEncodedKeys {
-            hashes,
-            keys,
-        })
+        HashKeys::RowEncoded(RowEncodedKeys { hashes, keys })
     }
-    
+
     fn num_evictions(&self) -> usize {
         self.evicted_key_offsets.len_proxy()
     }
-    
+
     fn take_evicted_keys(&mut self) -> HashKeys {
         let hashes = PrimitiveArray::from_vec(core::mem::take(&mut self.evicted_key_hashes));
         let values = Buffer::from(core::mem::take(&mut self.evicted_key_data));

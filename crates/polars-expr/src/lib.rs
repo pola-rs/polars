@@ -12,7 +12,6 @@ use polars_utils::IdxSize;
 
 pub use crate::planner::{ExpressionConversionState, create_physical_expr};
 
-
 /// An index where the top bit indicates whether a value should be evicted.
 pub struct EvictIdx(IdxSize);
 
@@ -21,7 +20,7 @@ impl EvictIdx {
         debug_assert!(idx >> (IdxSize::BITS - 1) == 0);
         Self(idx | ((should_evict as IdxSize) << (IdxSize::BITS - 1)))
     }
-    
+
     pub fn idx(&self) -> usize {
         (self.0 & ((1 << (IdxSize::BITS - 1)) - 1)) as usize
     }

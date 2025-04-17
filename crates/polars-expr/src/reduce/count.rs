@@ -76,7 +76,7 @@ impl GroupedReduction for CountReduce {
         }
         Ok(())
     }
-    
+
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &Column,
@@ -145,12 +145,12 @@ impl GroupedReduction for CountReduce {
         }
         Ok(())
     }
-    
+
     fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
         Box::new(Self {
             counts: core::mem::take(&mut self.evicted_counts),
             evicted_counts: Vec::new(),
-            include_nulls: self.include_nulls
+            include_nulls: self.include_nulls,
         })
     }
 

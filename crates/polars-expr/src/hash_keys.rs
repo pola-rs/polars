@@ -299,7 +299,7 @@ impl HashKeys {
             sketch.insert(opt_h.unwrap_or(0));
         })
     }
-    
+
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
@@ -330,11 +330,14 @@ impl RowEncodedKeys {
             }
         }
     }
-    
+
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         let idx_arr = arrow::ffi::mmap::slice(idxs);
         Self {
-            hashes: polars_compute::gather::primitive::take_primitive_unchecked(&self.hashes, &idx_arr),
+            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
+                &self.hashes,
+                &idx_arr,
+            ),
             keys: polars_compute::gather::binary::take_unchecked(&self.keys, &idx_arr),
         }
     }
@@ -354,7 +357,7 @@ impl SingleKeys {
             for_each_hash(keys, f, &self.random_state);
         })
     }
-    
+
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         Self {
             random_state: self.random_state,
@@ -416,11 +419,14 @@ impl BinviewKeys {
             }
         }
     }
-    
+
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
         let idx_arr = arrow::ffi::mmap::slice(idxs);
         Self {
-            hashes: polars_compute::gather::primitive::take_primitive_unchecked(&self.hashes, &idx_arr),
+            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
+                &self.hashes,
+                &idx_arr,
+            ),
             keys: polars_compute::gather::binview::take_binview_unchecked(&self.keys, &idx_arr),
             null_is_valid: self.null_is_valid,
         }
