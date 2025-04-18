@@ -37,6 +37,7 @@ where
     Ok(unsafe { ca.with_chunks(vec![arr]) })
 }
 
+#[cfg(feature = "moment")]
 pub fn rolling_skew(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
     let window_size = options.window_size;
     let min_periods = options.min_periods;
@@ -60,7 +61,6 @@ pub fn rolling_skew(s: &Series, options: RollingOptionsFixedWindow) -> PolarsRes
     }
 }
 
-#[cfg(feature = "moment")]
 fn rolling_kurtosis_ca<T>(
     ca: &ChunkedArray<T>,
     window_size: usize,
@@ -98,6 +98,7 @@ where
     Ok(unsafe { ca.with_chunks(vec![arr]) })
 }
 
+#[cfg(feature = "moment")]
 pub fn rolling_kurtosis(s: &Series, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
     let window_size = options.window_size;
     let min_periods = options.min_periods;
