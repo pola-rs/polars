@@ -20,6 +20,7 @@ pub enum RollingFunction {
     Std(RollingOptionsFixedWindow),
     #[cfg(feature = "moment")]
     Skew(RollingOptionsFixedWindow),
+    #[cfg(feature = "moment")]
     Kurtosis(RollingOptionsFixedWindow),
     #[cfg(feature = "cov")]
     CorrCov {

@@ -61,6 +61,7 @@ pub fn rolling_skew(s: &Series, options: RollingOptionsFixedWindow) -> PolarsRes
     }
 }
 
+#[cfg(feature = "moment")]
 fn rolling_kurtosis_ca<T>(
     ca: &ChunkedArray<T>,
     window_size: usize,
