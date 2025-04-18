@@ -788,14 +788,16 @@ where
                             offset_iter,
                             Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                            )
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<
+                            rolling::nulls::MomentWindow<_, rolling::nulls::VarianceMoment>,
+                            _,
+                            _,
+                        >(
+                            values,
+                            validity,
+                            offset_iter,
+                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
+                        ),
                     };
                     ChunkedArray::from(arr).into_series()
                 } else {
@@ -853,14 +855,16 @@ where
                             offset_iter,
                             Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                            )
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<
+                            rolling::nulls::MomentWindow<_, rolling::nulls::VarianceMoment>,
+                            _,
+                            _,
+                        >(
+                            values,
+                            validity,
+                            offset_iter,
+                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
+                        ),
                     };
 
                     let mut ca = ChunkedArray::<T>::from(arr);

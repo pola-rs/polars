@@ -38,7 +38,7 @@ pub enum QuantileMethod {
 #[deprecated(note = "use QuantileMethod instead")]
 pub type QuantileInterpolOptions = QuantileMethod;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum RollingFnParams {
     Quantile(RollingQuantileParams),

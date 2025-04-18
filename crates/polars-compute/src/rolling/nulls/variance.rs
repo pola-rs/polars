@@ -1,30 +1,73 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+
 use num_traits::{FromPrimitive, ToPrimitive};
 
 use super::*;
 use crate::moment::VarState;
 
-pub struct VarWindow<'a, T> {
-    slice: &'a [T],
-    validity: &'a Bitmap,
-    var: Option<VarState>,
-    last_start: usize,
-    last_end: usize,
-    null_count: usize,
+pub trait StateUpdate {
+    fn new(params: Option<RollingFnParams>) -> Self;
+    fn insert_one(&mut self, x: f64);
+
+    fn remove_one(&mut self, x: f64);
+
+    fn finalize(&self) -> Option<f64>;
+}
+
+pub struct VarianceMoment {
+    state: VarState,
     ddof: u8,
 }
 
-impl<T: NativeType + ToPrimitive> VarWindow<'_, T> {
+impl StateUpdate for VarianceMoment {
+    fn new(params: Option<RollingFnParams>) -> Self {
+        let ddof = if let Some(RollingFnParams::Var(params)) = params {
+            params.ddof
+        } else {
+            1
+        };
+
+        Self {
+            state: VarState::default(),
+            ddof,
+        }
+    }
+
+    fn insert_one(&mut self, x: f64) {
+        self.state.insert_one(x);
+    }
+
+    fn remove_one(&mut self, x: f64) {
+        self.state.remove_one(x);
+    }
+    fn finalize(&self) -> Option<f64> {
+        self.state.finalize(self.ddof)
+    }
+}
+
+pub struct MomentWindow<'a, T, M: StateUpdate> {
+    slice: &'a [T],
+    validity: &'a Bitmap,
+    moment: Option<M>,
+    last_start: usize,
+    last_end: usize,
+    null_count: usize,
+    params: Option<RollingFnParams>,
+}
+
+impl<T: NativeType + ToPrimitive, M: StateUpdate> MomentWindow<'_, T, M> {
     // compute sum from the entire window
-    unsafe fn compute_var_and_null_count(&mut self, start: usize, end: usize) {
-        self.var = None;
+    unsafe fn compute_moment_and_null_count(&mut self, start: usize, end: usize) {
+        self.moment = None;
         let mut idx = start;
         self.null_count = 0;
         for value in &self.slice[start..end] {
             let valid = self.validity.get_bit_unchecked(idx);
             if valid {
                 let value: f64 = NumCast::from(*value).unwrap();
-                self.var.get_or_insert_default().insert_one(value);
+                self.moment
+                    .get_or_insert_with(|| M::new(self.params))
+                    .insert_one(value);
             } else {
                 self.null_count += 1;
             }
@@ -33,8 +76,8 @@ impl<T: NativeType + ToPrimitive> VarWindow<'_, T> {
     }
 }
 
-impl<'a, T: NativeType + ToPrimitive + IsFloat + FromPrimitive> RollingAggWindowNulls<'a, T>
-    for VarWindow<'a, T>
+impl<'a, T: NativeType + ToPrimitive + IsFloat + FromPrimitive, M: StateUpdate>
+    RollingAggWindowNulls<'a, T> for MomentWindow<'a, T, M>
 {
     unsafe fn new(
         slice: &'a [T],
@@ -43,22 +86,16 @@ impl<'a, T: NativeType + ToPrimitive + IsFloat + FromPrimitive> RollingAggWindow
         end: usize,
         params: Option<RollingFnParams>,
     ) -> Self {
-        let ddof = if let Some(RollingFnParams::Var(params)) = params {
-            params.ddof
-        } else {
-            1
-        };
-
         let mut out = Self {
             slice,
             validity,
-            var: None,
+            moment: None,
             last_start: start,
             last_end: end,
             null_count: 0,
-            ddof,
+            params,
         };
-        out.compute_var_and_null_count(start, end);
+        out.compute_moment_and_null_count(start, end);
         out
     }
 
@@ -81,7 +118,7 @@ impl<'a, T: NativeType + ToPrimitive + IsFloat + FromPrimitive> RollingAggWindow
                         break;
                     }
                     let leaving_value: f64 = NumCast::from(leaving_value).unwrap();
-                    if let Some(v) = self.var.as_mut() {
+                    if let Some(v) = self.moment.as_mut() {
                         v.remove_one(leaving_value)
                     }
                 } else {
@@ -90,7 +127,7 @@ impl<'a, T: NativeType + ToPrimitive + IsFloat + FromPrimitive> RollingAggWindow
 
                     // self.sum is None and the leaving value is None
                     // if the entering value is valid, we might get a new sum.
-                    if self.var.is_none() {
+                    if self.moment.is_none() {
                         recompute_var = true;
                         break;
                     }
@@ -103,7 +140,7 @@ impl<'a, T: NativeType + ToPrimitive + IsFloat + FromPrimitive> RollingAggWindow
 
         // we traverse all values and compute
         if recompute_var {
-            self.compute_var_and_null_count(start, end);
+            self.compute_moment_and_null_count(start, end);
         } else {
             for idx in self.last_end..end {
                 let valid = self.validity.get_bit_unchecked(idx);
@@ -111,7 +148,9 @@ impl<'a, T: NativeType + ToPrimitive + IsFloat + FromPrimitive> RollingAggWindow
                 if valid {
                     let entering_value = *self.slice.get_unchecked(idx);
                     let entering_value: f64 = NumCast::from(entering_value).unwrap();
-                    self.var.get_or_insert_default().insert_one(entering_value);
+                    self.moment
+                        .get_or_insert_with(|| M::new(self.params))
+                        .insert_one(entering_value);
                 } else {
                     // null value entering the window
                     self.null_count += 1;
@@ -119,8 +158,8 @@ impl<'a, T: NativeType + ToPrimitive + IsFloat + FromPrimitive> RollingAggWindow
             }
         }
         self.last_end = end;
-        self.var.as_ref().and_then(|v| {
-            let out = v.finalize(self.ddof);
+        self.moment.as_ref().and_then(|v| {
+            let out = v.finalize();
             out.map(|v| T::from_f64(v).unwrap())
         })
     }
@@ -149,7 +188,7 @@ where
     } else {
         det_offsets
     };
-    rolling_apply_agg_window::<VarWindow<_>, _, _>(
+    rolling_apply_agg_window::<MomentWindow<_, VarianceMoment>, _, _>(
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),
         window_size,
