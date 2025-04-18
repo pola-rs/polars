@@ -1116,7 +1116,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     RollingFunction::Std(_) => {
                         return Err(PyNotImplementedError::new_err("rolling std"));
                     },
-                    RollingFunction::Skew(_, _) => {
+                    RollingFunction::Skew { .. } => {
                         return Err(PyNotImplementedError::new_err("rolling skew"));
                     },
                     RollingFunction::CorrCov { .. } => {

@@ -8,7 +8,7 @@ use super::*;
 #[cfg(feature = "cov")]
 use crate::dsl::pow::pow;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum RollingFunction {
     Min(RollingOptionsFixedWindow),
@@ -19,7 +19,7 @@ pub enum RollingFunction {
     Var(RollingOptionsFixedWindow),
     Std(RollingOptionsFixedWindow),
     #[cfg(feature = "moment")]
-    Skew(usize, bool),
+    Skew(RollingOptionsFixedWindow),
     #[cfg(feature = "cov")]
     CorrCov {
         rolling_options: RollingOptionsFixedWindow,
@@ -54,26 +54,6 @@ impl Display for RollingFunction {
         };
 
         write!(f, "{name}")
-    }
-}
-
-impl Hash for RollingFunction {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        use RollingFunction::*;
-
-        std::mem::discriminant(self).hash(state);
-        match self {
-            #[cfg(feature = "moment")]
-            Skew(window_size, bias) => {
-                window_size.hash(state);
-                bias.hash(state)
-            },
-            #[cfg(feature = "cov")]
-            CorrCov { is_corr, .. } => {
-                is_corr.hash(state);
-            },
-            _ => {},
-        }
     }
 }
 
@@ -130,10 +110,10 @@ pub(super) fn rolling_std(s: &Column, options: RollingOptionsFixedWindow) -> Pol
 }
 
 #[cfg(feature = "moment")]
-pub(super) fn rolling_skew(s: &Column, window_size: usize, bias: bool) -> PolarsResult<Column> {
+pub(super) fn rolling_skew(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
     // @scalar-opt
     s.as_materialized_series()
-        .rolling_skew(window_size, bias)
+        .rolling_skew(options)
         .map(Column::from)
 }
 

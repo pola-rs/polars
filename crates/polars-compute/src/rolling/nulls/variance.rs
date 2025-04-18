@@ -3,7 +3,7 @@
 use num_traits::{FromPrimitive, ToPrimitive};
 
 use super::*;
-use crate::moment::VarState;
+use crate::moment::{KurtosisState, SkewState, VarState};
 
 pub trait StateUpdate {
     fn new(params: Option<RollingFnParams>) -> Self;
@@ -42,6 +42,70 @@ impl StateUpdate for VarianceMoment {
     }
     fn finalize(&self) -> Option<f64> {
         self.state.finalize(self.ddof)
+    }
+}
+
+struct KurtosisMoment {
+    state: KurtosisState,
+    fisher: bool,
+    bias: bool,
+}
+
+impl StateUpdate for KurtosisMoment {
+    fn new(params: Option<RollingFnParams>) -> Self {
+        let (fisher, bias) = if let Some(RollingFnParams::Kurtosis { fisher, bias }) = params {
+            (fisher, bias)
+        } else {
+            (false, false)
+        };
+
+        Self {
+            state: KurtosisState::default(),
+            fisher,
+            bias,
+        }
+    }
+
+    fn insert_one(&mut self, x: f64) {
+        self.state.insert_one(x);
+    }
+
+    fn remove_one(&mut self, x: f64) {
+        self.state.remove_one(x);
+    }
+    fn finalize(&self) -> Option<f64> {
+        self.state.finalize(self.fisher, self.bias)
+    }
+}
+
+struct SkewMoment {
+    state: SkewState,
+    bias: bool,
+}
+
+impl StateUpdate for SkewMoment {
+    fn new(params: Option<RollingFnParams>) -> Self {
+        let bias = if let Some(RollingFnParams::Skew { bias }) = params {
+            bias
+        } else {
+            false
+        };
+
+        Self {
+            state: SkewState::default(),
+            bias,
+        }
+    }
+
+    fn insert_one(&mut self, x: f64) {
+        self.state.insert_one(x);
+    }
+
+    fn remove_one(&mut self, x: f64) {
+        self.state.remove_one(x);
+    }
+    fn finalize(&self) -> Option<f64> {
+        self.state.finalize(self.bias)
     }
 }
 
@@ -189,6 +253,56 @@ where
         det_offsets
     };
     rolling_apply_agg_window::<MomentWindow<_, VarianceMoment>, _, _>(
+        arr.values().as_slice(),
+        arr.validity().as_ref().unwrap(),
+        window_size,
+        min_periods,
+        offsets_fn,
+        params,
+    )
+}
+
+pub fn rolling_skew<T>(
+    arr: &PrimitiveArray<T>,
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+    params: Option<RollingFnParams>,
+) -> ArrayRef
+where
+    T: NativeType + ToPrimitive + FromPrimitive + IsFloat + Float,
+{
+    let offsets_fn = if center {
+        det_offsets_center
+    } else {
+        det_offsets
+    };
+    rolling_apply_agg_window::<MomentWindow<_, SkewMoment>, _, _>(
+        arr.values().as_slice(),
+        arr.validity().as_ref().unwrap(),
+        window_size,
+        min_periods,
+        offsets_fn,
+        params,
+    )
+}
+
+pub fn rolling_kurtosis<T>(
+    arr: &PrimitiveArray<T>,
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+    params: Option<RollingFnParams>,
+) -> ArrayRef
+where
+    T: NativeType + ToPrimitive + FromPrimitive + IsFloat + Float,
+{
+    let offsets_fn = if center {
+        det_offsets_center
+    } else {
+        det_offsets
+    };
+    rolling_apply_agg_window::<MomentWindow<_, KurtosisMoment>, _, _>(
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),
         window_size,

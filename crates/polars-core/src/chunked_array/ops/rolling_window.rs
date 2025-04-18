@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 use polars_compute::rolling::RollingFnParams;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -18,6 +20,15 @@ pub struct RollingOptionsFixedWindow {
     /// Optional parameters for the rolling
     #[cfg_attr(feature = "serde", serde(default))]
     pub fn_params: Option<RollingFnParams>,
+}
+
+impl Hash for RollingOptionsFixedWindow {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.window_size.hash(state);
+        self.min_periods.hash(state);
+        self.center.hash(state);
+        self.weights.is_some().hash(state);
+    }
 }
 
 impl Default for RollingOptionsFixedWindow {

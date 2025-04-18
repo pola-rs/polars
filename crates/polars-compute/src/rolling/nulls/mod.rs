@@ -177,7 +177,7 @@ mod test {
         assert_eq!(out, &[None, None, Some(2.0), Some(12.5)]);
 
         let testpars = Some(RollingFnParams::Var(RollingVarParams { ddof: 0 }));
-        let out = rolling_var(arr, 3, 1, false, None, testpars.clone());
+        let out = rolling_var(arr, 3, 1, false, None, testpars);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
 
@@ -188,7 +188,7 @@ mod test {
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, Some(2.0), Some(6.333333333333334)]);
 
-        let out = rolling_var(arr, 4, 1, false, None, testpars.clone());
+        let out = rolling_var(arr, 4, 1, false, None, testpars);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(
