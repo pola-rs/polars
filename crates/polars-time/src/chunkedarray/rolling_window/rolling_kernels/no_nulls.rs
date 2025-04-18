@@ -7,6 +7,7 @@ use chrono_tz::Tz;
 use num_traits::{FromPrimitive, ToPrimitive};
 use polars_compute::rolling::RollingFnParams;
 use polars_compute::rolling::no_nulls::{self, RollingAggWindowNoNulls};
+use polars_compute::rolling::nulls::VarianceMoment;
 use polars_compute::rolling::quantile_filter::SealedRolling;
 
 use super::*;
@@ -321,14 +322,14 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<no_nulls::VarWindow<_>, _, _>(
+        rolling_apply_agg_window_sorted::<no_nulls::MomentWindow<_, VarianceMoment>, _, _>(
             values,
             offset_iter,
             min_periods,
             params,
         )
     } else {
-        rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(
+        rolling_apply_agg_window::<no_nulls::MomentWindow<_, VarianceMoment>, _, _>(
             values,
             offset_iter,
             min_periods,

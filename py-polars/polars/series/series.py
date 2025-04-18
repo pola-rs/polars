@@ -6018,7 +6018,14 @@ class Series:
         """
 
     @unstable()
-    def rolling_skew(self, window_size: int, *, bias: bool = True) -> Series:
+    def rolling_skew(
+        self,
+        window_size: int,
+        *,
+        bias: bool = True,
+        min_samples: int | None = None,
+        center: bool = False,
+    ) -> Series:
         """
         Compute a rolling skew.
 
@@ -6035,6 +6042,11 @@ class Series:
             Integer size of the rolling window.
         bias
             If False, the calculations are corrected for statistical bias.
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result. If set to `None` (default), it will be set equal to `window_size`.
+        center
+            Set the labels at the center of the window.
 
         Examples
         --------

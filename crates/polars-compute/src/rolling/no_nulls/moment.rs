@@ -2,45 +2,37 @@
 use num_traits::{FromPrimitive, ToPrimitive};
 use polars_error::polars_ensure;
 
+pub use super::super::moment::*;
 use super::*;
-use crate::moment::VarState;
 
-pub struct VarWindow<'a, T> {
+pub struct MomentWindow<'a, T, M: StateUpdate> {
     slice: &'a [T],
-    var: VarState,
-    ddof: u8,
+    moment: M,
     last_start: usize,
     last_end: usize,
+    params: Option<RollingFnParams>,
 }
 
-impl<T: ToPrimitive + Copy> VarWindow<'_, T> {
+impl<T: ToPrimitive + Copy, M: StateUpdate> MomentWindow<'_, T, M> {
     fn compute_var(&mut self, start: usize, end: usize) {
-        self.var = VarState::default();
+        self.moment = M::new(self.params);
         for value in &self.slice[start..end] {
             let value: f64 = NumCast::from(*value).unwrap();
-            self.var.insert_one(value);
+            self.moment.insert_one(value);
         }
     }
 }
 
-impl<'a, T: NativeType + IsFloat + Float + ToPrimitive + FromPrimitive>
-    RollingAggWindowNoNulls<'a, T> for VarWindow<'a, T>
+impl<'a, T: NativeType + IsFloat + Float + ToPrimitive + FromPrimitive, M: StateUpdate>
+    RollingAggWindowNoNulls<'a, T> for MomentWindow<'a, T, M>
 {
     fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
         let mut out = Self {
             slice,
-            var: VarState::default(),
+            moment: M::new(params),
             last_start: start,
             last_end: end,
-            ddof: match params {
-                None => 1,
-                Some(pars) => {
-                    let RollingFnParams::Var(pars) = pars else {
-                        unreachable!("expected Var params");
-                    };
-                    pars.ddof
-                },
-            },
+            params,
         };
         out.compute_var(start, end);
         out
@@ -62,7 +54,7 @@ impl<'a, T: NativeType + IsFloat + Float + ToPrimitive + FromPrimitive>
                     break;
                 }
                 let leaving_value: f64 = NumCast::from(leaving_value).unwrap();
-                self.var.remove_one(leaving_value);
+                self.moment.remove_one(leaving_value);
             }
             recompute_var
         };
@@ -77,13 +69,11 @@ impl<'a, T: NativeType + IsFloat + Float + ToPrimitive + FromPrimitive>
                 let entering_value = *self.slice.get_unchecked(idx);
                 let entering_value: f64 = NumCast::from(entering_value).unwrap();
 
-                self.var.insert_one(entering_value);
+                self.moment.insert_one(entering_value);
             }
         }
         self.last_end = end;
-        self.var
-            .finalize(self.ddof)
-            .map(|v| T::from_f64(v).unwrap())
+        self.moment.finalize().map(|v| T::from_f64(v).unwrap())
     }
 }
 
@@ -103,7 +93,7 @@ where
         false => det_offsets,
     };
     match weights {
-        None => rolling_apply_agg_window::<VarWindow<_>, _, _>(
+        None => rolling_apply_agg_window::<MomentWindow<_, VarianceMoment>, _, _>(
             values,
             window_size,
             min_periods,
@@ -130,6 +120,52 @@ where
             )
         },
     }
+}
+
+pub fn rolling_skew<T>(
+    values: &[T],
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+    params: Option<RollingFnParams>,
+) -> PolarsResult<ArrayRef>
+where
+    T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
+{
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
+    };
+    rolling_apply_agg_window::<MomentWindow<_, SkewMoment>, _, _>(
+        values,
+        window_size,
+        min_periods,
+        offset_fn,
+        params,
+    )
+}
+
+pub fn rolling_kurtosis<T>(
+    values: &[T],
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+    params: Option<RollingFnParams>,
+) -> PolarsResult<ArrayRef>
+where
+    T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
+{
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
+    };
+    rolling_apply_agg_window::<MomentWindow<_, KurtosisMoment>, _, _>(
+        values,
+        window_size,
+        min_periods,
+        offset_fn,
+        params,
+    )
 }
 
 #[cfg(test)]

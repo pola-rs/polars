@@ -1,8 +1,8 @@
 mod mean;
 mod min_max;
+mod moment;
 mod quantile;
 mod sum;
-mod variance;
 use std::fmt::Debug;
 
 use arrow::array::PrimitiveArray;
@@ -12,10 +12,10 @@ use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
 pub use mean::*;
 pub use min_max::*;
+pub use moment::*;
 use num_traits::{Float, Num, NumCast};
 pub use quantile::*;
 pub use sum::*;
-pub use variance::*;
 
 use super::*;
 

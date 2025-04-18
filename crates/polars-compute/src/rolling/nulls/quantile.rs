@@ -178,27 +178,27 @@ mod test {
             method: QuantileMethod::Linear,
         }));
 
-        let out = rolling_quantile(arr, 2, 2, false, None, med_pars.clone());
+        let out = rolling_quantile(arr, 2, 2, false, None, med_pars);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, Some(3.5)]);
 
-        let out = rolling_quantile(arr, 2, 1, false, None, med_pars.clone());
+        let out = rolling_quantile(arr, 2, 1, false, None, med_pars);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(3.0), Some(3.5)]);
 
-        let out = rolling_quantile(arr, 4, 1, false, None, med_pars.clone());
+        let out = rolling_quantile(arr, 4, 1, false, None, med_pars);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(2.0), Some(3.0)]);
 
-        let out = rolling_quantile(arr, 4, 1, true, None, med_pars.clone());
+        let out = rolling_quantile(arr, 4, 1, true, None, med_pars);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(2.0), Some(3.0), Some(3.5)]);
 
-        let out = rolling_quantile(arr, 4, 4, true, None, med_pars.clone());
+        let out = rolling_quantile(arr, 4, 4, true, None, med_pars);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, None]);

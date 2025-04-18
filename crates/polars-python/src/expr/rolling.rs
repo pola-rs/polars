@@ -323,8 +323,24 @@ impl PyExpr {
             .into())
     }
 
-    fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
-        self.inner.clone().rolling_skew(window_size, bias).into()
+    #[pyo3(signature = (window_size, bias, min_periods, center))]
+    fn rolling_skew(
+        &self,
+        window_size: usize,
+        bias: bool,
+        min_periods: Option<usize>,
+        center: bool,
+    ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
+        let options = RollingOptionsFixedWindow {
+            window_size,
+            weights: None,
+            min_periods,
+            center,
+            fn_params: Some(RollingFnParams::Skew { bias }),
+        };
+
+        self.inner.clone().rolling_skew(options).into()
     }
 
     #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]

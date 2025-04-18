@@ -8253,7 +8253,14 @@ class Expr:
         )
 
     @unstable()
-    def rolling_skew(self, window_size: int, *, bias: bool = True) -> Expr:
+    def rolling_skew(
+        self,
+        window_size: int,
+        *,
+        bias: bool = True,
+        min_samples: int | None = None,
+        center: bool = False,
+    ) -> Expr:
         """
         Compute a rolling skew.
 
@@ -8270,6 +8277,12 @@ class Expr:
             Integer size of the rolling window.
         bias
             If False, the calculations are corrected for statistical bias.
+                     bias: bool = True,
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result. If set to `None` (default), it will be set equal to `window_size`.
+        center
+            Set the labels at the center of the window.
 
         Examples
         --------
@@ -8292,7 +8305,11 @@ class Expr:
         >>> pl.Series([1, 4, 2]).skew(), pl.Series([4, 2, 9]).skew()
         (0.38180177416060584, 0.47033046033698594)
         """
-        return self._from_pyexpr(self._pyexpr.rolling_skew(window_size, bias))
+        return self._from_pyexpr(
+            self._pyexpr.rolling_skew(
+                window_size, bias=bias, min_periods=min_samples, center=center
+            )
+        )
 
     @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")

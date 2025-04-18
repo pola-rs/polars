@@ -969,7 +969,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                     Var(options) => map!(rolling::rolling_var, options.clone()),
                     Std(options) => map!(rolling::rolling_std, options.clone()),
                     #[cfg(feature = "moment")]
-                    Skew(window_size, bias) => map!(rolling::rolling_skew, window_size, bias),
+                    Skew(options) => map!(rolling::rolling_skew, options.clone()),
                     #[cfg(feature = "cov")]
                     CorrCov {
                         rolling_options,

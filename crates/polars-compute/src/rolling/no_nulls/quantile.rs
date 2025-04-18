@@ -280,27 +280,27 @@ mod test {
             prob: 0.5,
             method: Linear,
         }));
-        let out = rolling_quantile(values, 2, 2, false, None, med_pars.clone()).unwrap();
+        let out = rolling_quantile(values, 2, 2, false, None, med_pars).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(1.5), Some(2.5), Some(3.5)]);
 
-        let out = rolling_quantile(values, 2, 1, false, None, med_pars.clone()).unwrap();
+        let out = rolling_quantile(values, 2, 1, false, None, med_pars).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.5), Some(3.5)]);
 
-        let out = rolling_quantile(values, 4, 1, false, None, med_pars.clone()).unwrap();
+        let out = rolling_quantile(values, 4, 1, false, None, med_pars).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.0), Some(2.5)]);
 
-        let out = rolling_quantile(values, 4, 1, true, None, med_pars.clone()).unwrap();
+        let out = rolling_quantile(values, 4, 1, true, None, med_pars).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.5), Some(2.0), Some(2.5), Some(3.0)]);
 
-        let out = rolling_quantile(values, 4, 4, true, None, med_pars.clone()).unwrap();
+        let out = rolling_quantile(values, 4, 4, true, None, med_pars).unwrap();
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, Some(2.5), None]);
