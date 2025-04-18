@@ -20,6 +20,8 @@ pub enum RollingFunction {
     Std(RollingOptionsFixedWindow),
     #[cfg(feature = "moment")]
     Skew(RollingOptionsFixedWindow),
+    #[cfg(feature = "moment")]
+    Kurtosis(RollingOptionsFixedWindow),
     #[cfg(feature = "cov")]
     CorrCov {
         rolling_options: RollingOptionsFixedWindow,
@@ -34,26 +36,28 @@ impl Display for RollingFunction {
         use RollingFunction::*;
 
         let name = match self {
-            Min(_) => "rolling_min",
-            Max(_) => "rolling_max",
-            Mean(_) => "rolling_mean",
-            Sum(_) => "rolling_sum",
-            Quantile(_) => "rolling_quantile",
-            Var(_) => "rolling_var",
-            Std(_) => "rolling_std",
+            Min(_) => "min",
+            Max(_) => "max",
+            Mean(_) => "mean",
+            Sum(_) => "rsum",
+            Quantile(_) => "quantile",
+            Var(_) => "var",
+            Std(_) => "std",
             #[cfg(feature = "moment")]
-            Skew(..) => "rolling_skew",
+            Skew(..) => "skew",
+            #[cfg(feature = "moment")]
+            Kurtosis(..) => "kurtosis",
             #[cfg(feature = "cov")]
             CorrCov { is_corr, .. } => {
                 if *is_corr {
-                    "rolling_corr"
+                    "corr"
                 } else {
-                    "rolling_cov"
+                    "cov"
                 }
             },
         };
 
-        write!(f, "{name}")
+        write!(f, "rolling_{name}")
     }
 }
 
@@ -112,9 +116,18 @@ pub(super) fn rolling_std(s: &Column, options: RollingOptionsFixedWindow) -> Pol
 #[cfg(feature = "moment")]
 pub(super) fn rolling_skew(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
     // @scalar-opt
-    s.as_materialized_series()
-        .rolling_skew(options)
-        .map(Column::from)
+    let s = s.as_materialized_series();
+    polars_ops::series::rolling_skew(s, options).map(Column::from)
+}
+
+#[cfg(feature = "moment")]
+pub(super) fn rolling_kurtosis(
+    s: &Column,
+    options: RollingOptionsFixedWindow,
+) -> PolarsResult<Column> {
+    // @scalar-opt
+    let s = s.as_materialized_series();
+    polars_ops::series::rolling_kurtosis(s, options).map(Column::from)
 }
 
 #[cfg(feature = "cov")]
