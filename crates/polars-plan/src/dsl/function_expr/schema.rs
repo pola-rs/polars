@@ -69,7 +69,7 @@ impl FunctionExpr {
                     #[cfg(feature = "cov")]
                     CorrCov {..} => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
-                    Skew(..) => mapper.map_to_float_dtype(),
+                    Skew(..) | Kurtosis(..) => mapper.map_to_float_dtype(),
                 }
             },
             #[cfg(feature = "rolling_window_by")]

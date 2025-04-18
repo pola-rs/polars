@@ -1330,6 +1330,13 @@ impl Expr {
         self.finish_rolling(options, RollingFunction::Skew)
     }
 
+    /// Apply a rolling skew.
+    #[cfg(feature = "rolling_window")]
+    #[cfg(feature = "moment")]
+    pub fn rolling_kurtosis(self, options: RollingOptionsFixedWindow) -> Expr {
+        self.finish_rolling(options, RollingFunction::Kurtosis)
+    }
+
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.

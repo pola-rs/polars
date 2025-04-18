@@ -8284,6 +8284,10 @@ class Expr:
         center
             Set the labels at the center of the window.
 
+        See Also
+        --------
+        Expr.skew
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 4, 2, 9]})
@@ -8308,6 +8312,71 @@ class Expr:
         return self._from_pyexpr(
             self._pyexpr.rolling_skew(
                 window_size, bias=bias, min_periods=min_samples, center=center
+            )
+        )
+
+    @unstable()
+    def rolling_kurtosis(
+        self,
+        window_size: int,
+        *,
+        fisher: bool = True,
+        bias: bool = True,
+        min_samples: int | None = None,
+        center: bool = False,
+    ) -> Expr:
+        """
+        Compute a rolling kurtosis.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        The window at a given row will include the row itself, and the `window_size - 1`
+        elements before it.
+
+        Parameters
+        ----------
+        window_size
+            Integer size of the rolling window.
+        fisher : bool, optional
+            If True, Fisher's definition is used (normal ==> 0.0). If False,
+            Pearson's definition is used (normal ==> 3.0).
+        bias : bool, optional
+            If False, the calculations are corrected for statistical bias.
+        min_samples
+            The number of values in the window that should be non-null before computing
+            a result. If set to `None` (default), it will be set equal to `window_size`.
+        center
+            Set the labels at the center of the window.
+
+        See Also
+        --------
+        Expr.kurtosis
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 4, 2, 9]})
+        >>> df.select(pl.col("a").rolling_kurtosis(3))
+        shape: (4, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        │ null │
+        │ -1.5 │
+        │ -1.5 │
+        └──────┘
+        """
+        return self._from_pyexpr(
+            self._pyexpr.rolling_kurtosis(
+                window_size,
+                fisher=fisher,
+                bias=bias,
+                min_periods=min_samples,
+                center=center,
             )
         )
 

@@ -343,6 +343,27 @@ impl PyExpr {
         self.inner.clone().rolling_skew(options).into()
     }
 
+    #[pyo3(signature = (window_size, fisher, bias, min_periods, center))]
+    fn rolling_kurtosis(
+        &self,
+        window_size: usize,
+        fisher: bool,
+        bias: bool,
+        min_periods: Option<usize>,
+        center: bool,
+    ) -> Self {
+        let min_periods = min_periods.unwrap_or(window_size);
+        let options = RollingOptionsFixedWindow {
+            window_size,
+            weights: None,
+            min_periods,
+            center,
+            fn_params: Some(RollingFnParams::Kurtosis { fisher, bias }),
+        };
+
+        self.inner.clone().rolling_kurtosis(options).into()
+    }
+
     #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
     fn rolling_map(
         &self,

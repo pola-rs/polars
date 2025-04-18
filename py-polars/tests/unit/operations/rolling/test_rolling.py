@@ -201,6 +201,34 @@ def test_rolling_skew() -> None:
     )
 
 
+def test_rolling_kurtosis() -> None:
+    s = pl.Series([1, 2, 3, 3, 2, 10, 8])
+    assert s.rolling_kurtosis(window_size=4, bias=True).to_list() == pytest.approx(
+        [
+            None,
+            None,
+            None,
+            -1.371900826446281,
+            -1.9999999999999991,
+            -0.7055324211778693,
+            -1.7878967572797346,
+        ]
+    )
+    assert s.rolling_kurtosis(
+        window_size=4, bias=True, fisher=False
+    ).to_list() == pytest.approx(
+        [
+            None,
+            None,
+            None,
+            1.628099173553719,
+            1.0000000000000009,
+            2.2944675788221307,
+            1.2121032427202654,
+        ]
+    )
+
+
 @pytest.mark.parametrize("time_zone", [None, "US/Central"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values", "expected_dtype"),
