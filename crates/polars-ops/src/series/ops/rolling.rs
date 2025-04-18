@@ -20,16 +20,23 @@ where
     T: PolarsFloatType,
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
+    use arrow::array::Array;
+
     let ca = ca.rechunk();
     let arr = ca.downcast_get(0).unwrap();
-
-    let arr = polars_compute::rolling::nulls::rolling_skew(
-        arr,
-        window_size,
-        min_periods,
-        center,
-        Some(RollingFnParams::Skew { bias }),
-    );
+    let params = Some(RollingFnParams::Skew { bias });
+    let arr = if arr.has_nulls() {
+        polars_compute::rolling::nulls::rolling_skew(arr, window_size, min_periods, center, params)
+    } else {
+        let values = arr.values();
+        polars_compute::rolling::no_nulls::rolling_skew(
+            values,
+            window_size,
+            min_periods,
+            center,
+            params,
+        )?
+    };
     Ok(unsafe { ca.with_chunks(vec![arr]) })
 }
 

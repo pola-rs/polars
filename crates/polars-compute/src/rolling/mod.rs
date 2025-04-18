@@ -1,8 +1,9 @@
 mod min_max;
+pub mod moment;
 pub mod no_nulls;
 pub mod nulls;
 pub mod quantile_filter;
-mod window;
+pub(super) mod window;
 use std::hash::Hash;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 

@@ -1,15 +1,15 @@
 mod mean;
 mod min_max;
+mod moment;
 mod quantile;
 mod sum;
-mod variance;
 
 use arrow::legacy::utils::CustomIterTools;
 pub use mean::*;
 pub use min_max::*;
+pub use moment::*;
 pub use quantile::*;
 pub use sum::*;
-pub use variance::*;
 
 use super::*;
 
