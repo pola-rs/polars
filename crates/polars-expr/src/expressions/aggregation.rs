@@ -580,7 +580,7 @@ impl PartitionedAggregation for AggregationExpr {
                         let mask = agg_count.equal(0 as IdxSize);
                         let agg_count = agg_count.set(&mask, None).unwrap().into_series();
 
-                        let agg_s = &agg_s / &agg_count;
+                        let agg_s = &agg_s / &agg_count.cast(agg_s.dtype()).unwrap();
                         Ok(agg_s?.with_name(new_name).into_column())
                     },
                     _ => Ok(Column::full_null(

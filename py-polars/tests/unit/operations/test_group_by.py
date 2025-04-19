@@ -1251,3 +1251,20 @@ def test_group_by_cse_dup_key_alias_22238() -> None:
         pl.DataFrame({"a": [1, 2], "a_with_alias": [1, 2], "x": [11, 5]}),
         check_row_order=False,
     )
+
+
+def test_group_by_22328() -> None:
+    N = 20
+
+    df1 = pl.select(
+        x=pl.repeat(1, N // 2).append(pl.repeat(2, N // 2)).shuffle(),
+        y=pl.lit(3.0, pl.Float32),
+    ).lazy()
+
+    df2 = pl.select(x=pl.repeat(4, N)).lazy()
+
+    assert (
+        df2.join(df1.group_by("x").mean().with_columns(z="y"), how="left", on="x")
+        .with_columns(pl.col("z").fill_null(0))
+        .collect()
+    ).shape == (20, 3)
