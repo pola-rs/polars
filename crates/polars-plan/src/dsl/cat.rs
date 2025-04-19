@@ -32,4 +32,19 @@ impl CategoricalNameSpace {
     pub fn slice(self, offset: i64, length: Option<usize>) -> Expr {
         self.0.map_unary(CategoricalFunction::Slice(offset, length))
     }
+
+    #[cfg(feature = "strings")]
+    pub fn to_uppercase(self) -> Expr {
+        self.0.map_unary(CategoricalFunction::Uppercase)
+    }
+
+    #[cfg(feature = "strings")]
+    pub fn to_lowercase(self) -> Expr {
+        self.0.map_unary(CategoricalFunction::Lowercase)
+    }
+
+    #[cfg(all(feature = "strings", feature = "nightly"))]
+    pub fn to_titlecase(self) -> Expr {
+        self.0.map_unary(CategoricalFunction::Titlecase)
+    }
 }

@@ -362,6 +362,7 @@ dtype-categorical = [
   "polars-core/dtype-categorical",
   "polars-io/dtype-categorical",
   "polars-lazy?/dtype-categorical",
+  "polars-sql?/dtype-categorical",
   "polars-ops/dtype-categorical",
 ]
 dtype-struct = [
