@@ -496,7 +496,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn is_sliced(&self) -> bool {
-        self.views.as_ptr() != self.views.storage_ptr()
+        !std::ptr::eq(self.views.as_ptr(), self.views.storage_ptr())
     }
 
     pub fn maybe_gc(self) -> Self {
