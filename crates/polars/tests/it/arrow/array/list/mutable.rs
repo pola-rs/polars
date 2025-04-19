@@ -21,9 +21,9 @@ fn basics() {
         Some(Bitmap::from([true, true, true, true, false, true])),
     );
 
-    let data_type = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
+    let dtype = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
     let expected = ListArray::<i32>::new(
-        data_type,
+        dtype,
         vec![0, 3, 3, 6].try_into().unwrap(),
         Box::new(values),
         Some(Bitmap::from([true, false, true])),

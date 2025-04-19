@@ -145,7 +145,7 @@ def test_from_dict_with_scalars() -> None:
     assert df9.rows() == [(0, 2, 0, "x"), (1, 1, 0, "x"), (2, 0, 0, "x")]
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_from_dict_with_values_mixed() -> None:
     # a bit of everything
     mixed_dtype_data: dict[str, Any] = {
@@ -186,7 +186,7 @@ def test_from_dict_with_values_mixed() -> None:
     )
     dfx = df.select(pl.exclude("idx"))
 
-    assert len(df) == n_range
+    assert df.height == n_range
     assert dfx[:5].rows() == dfx[5:10].rows()
     assert dfx[-10:-5].rows() == dfx[-5:].rows()
     assert dfx.row(n_range // 2, named=True) == mixed_dtype_data

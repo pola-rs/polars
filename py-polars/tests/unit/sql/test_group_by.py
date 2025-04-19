@@ -10,7 +10,7 @@ from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_ipc_path() -> Path:
     return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
@@ -238,3 +238,15 @@ def test_group_by_errors() -> None:
         match=r"'a' should participate in the GROUP BY clause or an aggregate function",
     ):
         df.sql("SELECT a, SUM(b) FROM self GROUP BY b")
+
+    with pytest.raises(
+        SQLSyntaxError,
+        match=r"HAVING clause not valid outside of GROUP BY",
+    ):
+        df.sql("SELECT a, COUNT(a) AS n FROM self HAVING n > 1")
+
+
+def test_group_by_output_struct() -> None:
+    df = pl.DataFrame({"g": [1], "x": [2], "y": [3]})
+    out = df.group_by("g").agg(pl.struct(pl.col.x.min(), pl.col.y.sum()))
+    assert out.rows() == [(1, {"x": 2, "y": 3})]

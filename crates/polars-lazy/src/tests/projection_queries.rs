@@ -128,7 +128,10 @@ fn concat_str_regex_expansion() -> PolarsResult<()> {
         .select([concat_str([col(r"^b_a_\d$")], ";", false).alias("concatenated")])
         .collect()?;
     let s = out.column("concatenated")?;
-    assert_eq!(s, &Series::new("concatenated", ["a--;;", ";b--;", ";;c--"]));
+    assert_eq!(
+        s,
+        &Column::new("concatenated".into(), ["a--;;", ";b--;", ";;c--"])
+    );
 
     Ok(())
 }

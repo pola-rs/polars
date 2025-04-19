@@ -24,7 +24,7 @@ class PolarsSlice:
     is_unbounded: bool
     obj: FrameOrSeries
 
-    def __init__(self, obj: FrameOrSeries):
+    def __init__(self, obj: FrameOrSeries) -> None:
         self.obj = obj
 
     @staticmethod
@@ -116,7 +116,7 @@ class LazyPolarsSlice:
 
     obj: LazyFrame
 
-    def __init__(self, obj: LazyFrame):
+    def __init__(self, obj: LazyFrame) -> None:
         self.obj = obj
 
     def apply(self, s: slice) -> LazyFrame:

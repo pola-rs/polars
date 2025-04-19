@@ -1,14 +1,14 @@
 use arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
-use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_core::{POOL, downcast_as_macro_arg_physical};
 use polars_utils::total_ord::TotalOrd;
 
 fn first_n_valid_mask(num_valid: usize, out_len: usize) -> Option<Bitmap> {
     if num_valid < out_len {
-        let mut bm = MutableBitmap::with_capacity(out_len);
+        let mut bm = BitmapBuilder::with_capacity(out_len);
         bm.extend_constant(num_valid, true);
         bm.extend_constant(out_len - num_valid, false);
         Some(bm.freeze())
@@ -48,7 +48,7 @@ fn top_k_bool_impl(
         ]
     };
 
-    let mut bm = MutableBitmap::with_capacity(out_len);
+    let mut bm = BitmapBuilder::with_capacity(out_len);
     for (n, value) in sequence {
         if out_len == 0 {
             break;
@@ -58,7 +58,7 @@ fn top_k_bool_impl(
         out_len -= extra;
     }
 
-    let arr = BooleanArray::from_data_default(bm.into(), validity);
+    let arr = BooleanArray::from_data_default(bm.freeze(), validity);
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
@@ -71,7 +71,8 @@ where
     }
 
     // Get rid of all the nulls and transform into Vec<T::Native>.
-    let nnca = ca.drop_nulls().rechunk();
+    let mut nnca = ca.drop_nulls();
+    nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
     let (_, buffer, _) = chunk.into_inner();
     let mut vec = buffer.make_mut();
@@ -105,7 +106,8 @@ fn top_k_binary_impl(
     }
 
     // Get rid of all the nulls and transform into mutable views.
-    let nnca = ca.drop_nulls().rechunk();
+    let mut nnca = ca.drop_nulls();
+    nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
     let buffers = chunk.data_buffers().clone();
     let mut views = chunk.into_views();
@@ -145,8 +147,8 @@ fn top_k_binary_impl(
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
-pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
-    fn extract_target_and_k(s: &[Series]) -> PolarsResult<(usize, &Series)> {
+pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
+    fn extract_target_and_k(s: &[Column]) -> PolarsResult<(usize, &Column)> {
         let k_s = &s[1];
         polars_ensure!(
             k_s.len() == 1,
@@ -176,8 +178,7 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
     if is_sorted {
         let out_len = k.min(src.len());
         let ignored_len = src.len() - out_len;
-
-        let slice_at_start = (sorted_flag == IsSorted::Ascending) ^ descending;
+        let slice_at_start = (sorted_flag == IsSorted::Ascending) == descending;
         let nulls_at_start = src.get(0).unwrap() == AnyValue::Null;
         let offset = if nulls_at_start == slice_at_start {
             src.null_count().min(ignored_len)
@@ -197,39 +198,32 @@ pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
     let s = src.to_physical_repr();
 
     match s.dtype() {
-        DataType::Boolean => Ok(top_k_bool_impl(s.bool().unwrap(), k, descending).into_series()),
+        DataType::Boolean => Ok(top_k_bool_impl(s.bool().unwrap(), k, descending).into_column()),
         DataType::String => {
             let ca = top_k_binary_impl(&s.str().unwrap().as_binary(), k, descending);
             let ca = unsafe { ca.to_string_unchecked() };
-            Ok(ca.into_series())
+            Ok(ca.into_column())
         },
-        DataType::Binary => Ok(top_k_binary_impl(s.binary().unwrap(), k, descending).into_series()),
-        DataType::Decimal(_, _) => {
-            let src = src.decimal().unwrap();
-            let ca = top_k_num_impl(src, k, descending);
-            let mut lca = DecimalChunked::new_logical(ca);
-            lca.2 = Some(DataType::Decimal(src.precision(), Some(src.scale())));
-            Ok(lca.into_series())
-        },
+        DataType::Binary => Ok(top_k_binary_impl(s.binary().unwrap(), k, descending).into_column()),
         DataType::Null => Ok(src.slice(0, k)),
-        DataType::Struct(_) => {
+        dt if dt.is_primitive_numeric() => {
+            macro_rules! dispatch {
+                ($ca:expr) => {{ top_k_num_impl($ca, k, descending).into_column() }};
+            }
+            unsafe {
+                downcast_as_macro_arg_physical!(&s, dispatch).from_physical_unchecked(origin_dtype)
+            }
+        },
+        _ => {
             // Fallback to more generic impl.
             top_k_by_impl(k, src, &[src.clone()], vec![descending])
-        },
-        _dt => {
-            macro_rules! dispatch {
-                ($ca:expr) => {{
-                    top_k_num_impl($ca, k, descending).into_series()
-                }};
-            }
-            unsafe { downcast_as_macro_arg_physical!(&s, dispatch).cast_unchecked(origin_dtype) }
         },
     }
 }
 
-pub fn top_k_by(s: &[Series], descending: Vec<bool>) -> PolarsResult<Series> {
+pub fn top_k_by(s: &[Column], descending: Vec<bool>) -> PolarsResult<Column> {
     /// Return (k, src, by)
-    fn extract_parameters(s: &[Series]) -> PolarsResult<(usize, &Series, &[Series])> {
+    fn extract_parameters(s: &[Column]) -> PolarsResult<(usize, &Column, &[Column])> {
         let k_s = &s[1];
 
         polars_ensure!(
@@ -269,24 +263,28 @@ pub fn top_k_by(s: &[Series], descending: Vec<bool>) -> PolarsResult<Series> {
 
 fn top_k_by_impl(
     k: usize,
-    src: &Series,
-    by: &[Series],
+    src: &Column,
+    by: &[Column],
     descending: Vec<bool>,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     if src.is_empty() {
         return Ok(src.clone());
     }
 
-    let multithreaded = k >= 10000;
+    let multithreaded = k >= 10000 && POOL.current_num_threads() > 1;
     let mut sort_options = SortMultipleOptions {
         descending: descending.into_iter().map(|x| !x).collect(),
         nulls_last: vec![true; by.len()],
         multithreaded,
         maintain_order: false,
+        limit: None,
     };
 
     let idx = _arg_bottom_k(k, by, &mut sort_options)?;
 
-    let result = unsafe { src.take_unchecked(&idx.into_inner()) };
-    Ok(result)
+    let result = unsafe {
+        src.as_materialized_series()
+            .take_unchecked(&idx.into_inner())
+    };
+    Ok(result.into())
 }

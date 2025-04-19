@@ -1,12 +1,15 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::any::Any;
 use std::future::Future;
-use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Wake, Waker};
 
+use atomic_waker::AtomicWaker;
 use parking_lot::Mutex;
+use polars_error::signals::try_raise_keyboard_interrupt;
 
 /// The state of the task. Can't be part of the TaskData enum as it needs to be
 /// atomically updateable, even when we hold the lock on the data.
@@ -71,7 +74,8 @@ enum TaskData<F: Future> {
 
 struct Task<F: Future, S, M> {
     state: TaskState,
-    data: Mutex<(TaskData<F>, Option<Waker>)>,
+    data: Mutex<TaskData<F>>,
+    join_waker: AtomicWaker,
     schedule: S,
     metadata: M,
 }
@@ -89,13 +93,14 @@ where
     unsafe fn spawn(future: F, schedule: S, metadata: M) -> Arc<Self> {
         let task = Arc::new(Self {
             state: TaskState::default(),
-            data: Mutex::new((TaskData::Empty, None)),
+            data: Mutex::new(TaskData::Empty),
+            join_waker: AtomicWaker::new(),
             schedule,
             metadata,
         });
 
         let waker = unsafe { Waker::from_raw(std_shim::raw_waker(task.clone())) };
-        task.data.try_lock().unwrap().0 = TaskData::Polling(future, waker);
+        *task.data.try_lock().unwrap() = TaskData::Polling(future, waker);
         task
     }
 
@@ -118,9 +123,9 @@ where
     }
 }
 
-impl<'a, F, S, M> Wake for Task<F, S, M>
+impl<F, S, M> Wake for Task<F, S, M>
 where
-    F: Future + Send + 'a,
+    F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
@@ -143,9 +148,9 @@ pub trait DynTask<M>: Send + Sync {
     fn schedule(self: Arc<Self>);
 }
 
-impl<'a, F, S, M> DynTask<M> for Task<F, S, M>
+impl<F, S, M> DynTask<M> for Task<F, S, M>
 where
-    F: Future + Send + 'a,
+    F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
@@ -157,19 +162,22 @@ where
     fn run(self: Arc<Self>) -> bool {
         let mut data = self.data.lock();
 
-        let poll_result = match &mut data.0 {
+        let poll_result = match &mut *data {
             TaskData::Polling(future, waker) => {
                 self.state.start_running();
                 // SAFETY: we always store a Task in an Arc and never move it.
                 let fut = unsafe { Pin::new_unchecked(future) };
                 let mut ctx = Context::from_waker(waker);
-                catch_unwind(AssertUnwindSafe(|| fut.poll(&mut ctx)))
+                catch_unwind(AssertUnwindSafe(|| {
+                    try_raise_keyboard_interrupt();
+                    fut.poll(&mut ctx)
+                }))
             },
             TaskData::Cancelled => return true,
             _ => unreachable!("invalid TaskData when polling"),
         };
 
-        data.0 = match poll_result {
+        *data = match poll_result {
             Err(error) => TaskData::Panic(error),
             Ok(Poll::Ready(output)) => TaskData::Ready(output),
             Ok(Poll::Pending) => {
@@ -182,11 +190,8 @@ where
             },
         };
 
-        let join_waker = data.1.take();
         drop(data);
-        if let Some(w) = join_waker {
-            w.wake();
-        }
+        self.join_waker.wake();
         true
     }
 
@@ -202,9 +207,9 @@ trait Joinable<T>: Send + Sync {
     fn poll_join(&self, ctx: &mut Context<'_>) -> Poll<T>;
 }
 
-impl<'a, F, S, M> Joinable<F::Output> for Task<F, S, M>
+impl<F, S, M> Joinable<F::Output> for Task<F, S, M>
 where
-    F: Future + Send + 'a,
+    F: Future + Send,
     F::Output: Send + 'static,
     S: Fn(Runnable<M>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
@@ -214,17 +219,20 @@ where
     }
 
     fn poll_join(&self, cx: &mut Context<'_>) -> Poll<F::Output> {
-        let mut data = self.data.lock();
-        if matches!(data.0, TaskData::Empty | TaskData::Polling(..)) {
-            data.1 = Some(cx.waker().clone());
-            return Poll::Pending;
-        }
+        self.join_waker.register(cx.waker());
+        if let Some(mut data) = self.data.try_lock() {
+            if matches!(*data, TaskData::Empty | TaskData::Polling(..)) {
+                return Poll::Pending;
+            }
 
-        match core::mem::replace(&mut data.0, TaskData::Joined) {
-            TaskData::Ready(output) => Poll::Ready(output),
-            TaskData::Panic(error) => resume_unwind(error),
-            TaskData::Cancelled => panic!("joined on cancelled task"),
-            _ => unreachable!("invalid TaskData when joining"),
+            match core::mem::replace(&mut *data, TaskData::Joined) {
+                TaskData::Ready(output) => Poll::Ready(output),
+                TaskData::Panic(error) => resume_unwind(error),
+                TaskData::Cancelled => panic!("joined on cancelled task"),
+                _ => unreachable!("invalid TaskData when joining"),
+            }
+        } else {
+            Poll::Pending
         }
     }
 }
@@ -233,23 +241,23 @@ trait Cancellable: Send + Sync {
     fn cancel(&self);
 }
 
-impl<'a, F, S, M> Cancellable for Task<F, S, M>
+impl<F, S, M> Cancellable for Task<F, S, M>
 where
-    F: Future + Send + 'a,
+    F: Future + Send,
     F::Output: Send + 'static,
     S: Send + Sync + 'static,
     M: Send + Sync + 'static,
 {
     fn cancel(&self) {
         let mut data = self.data.lock();
-        match data.0 {
+        match *data {
             // Already done.
             TaskData::Panic(_) | TaskData::Joined => {},
 
             // Still in-progress, cancel.
             _ => {
-                data.0 = TaskData::Cancelled;
-                if let Some(join_waker) = data.1.take() {
+                *data = TaskData::Cancelled;
+                if let Some(join_waker) = self.join_waker.take() {
                     join_waker.wake();
                 }
             },
@@ -278,6 +286,10 @@ impl<M> Runnable<M> {
 
 pub struct JoinHandle<T>(Option<Arc<dyn Joinable<T>>>);
 pub struct CancelHandle(Weak<dyn Cancellable>);
+pub struct AbortOnDropHandle<T> {
+    join_handle: JoinHandle<T>,
+    cancel_handle: CancelHandle,
+}
 
 impl<T> JoinHandle<T> {
     pub fn cancel_handle(&self) -> CancelHandle {
@@ -305,15 +317,38 @@ impl<T> Future for JoinHandle<T> {
 }
 
 impl CancelHandle {
-    pub fn cancel(self) {
+    pub fn cancel(&self) {
         if let Some(t) = self.0.upgrade() {
             t.cancel();
         }
     }
 }
 
-#[allow(unused)]
-pub fn spawn<F, S, M>(future: F, schedule: S, metadata: M) -> JoinHandle<F::Output>
+impl<T> AbortOnDropHandle<T> {
+    pub fn new(join_handle: JoinHandle<T>) -> Self {
+        let cancel_handle = join_handle.cancel_handle();
+        Self {
+            join_handle,
+            cancel_handle,
+        }
+    }
+}
+
+impl<T> Future for AbortOnDropHandle<T> {
+    type Output = T;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.join_handle).poll(cx)
+    }
+}
+
+impl<T> Drop for AbortOnDropHandle<T> {
+    fn drop(&mut self) {
+        self.cancel_handle.cancel();
+    }
+}
+
+pub fn spawn<F, S, M>(future: F, schedule: S, metadata: M) -> (Runnable<M>, JoinHandle<F::Output>)
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
@@ -321,7 +356,7 @@ where
     M: Send + Sync + 'static,
 {
     let task = unsafe { Task::spawn(future, schedule, metadata) };
-    JoinHandle(Some(task))
+    (task.clone().into_runnable(), task.into_join_handle())
 }
 
 /// Takes a future and turns it into a runnable task with associated metadata.

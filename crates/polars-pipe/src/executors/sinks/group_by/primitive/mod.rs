@@ -1,24 +1,23 @@
 use std::any::Any;
 use std::fmt::Debug;
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::Mutex;
 
 use arrow::legacy::is_valid::IsValid;
 use arrow::legacy::kernels::sort_partition::partition_to_groups_amortized;
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
-use polars_core::export::ahash::RandomState;
+use polars_core::POOL;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_set_partition_size;
-use polars_core::POOL;
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
-use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
+use polars_utils::aliases::PlSeedableRandomStateQuality;
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
+use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::group_by::aggregates::AggregateFunction;
 use crate::executors::sinks::group_by::ooc_state::OocState;
 use crate::executors::sinks::group_by::physical_agg_to_logical;
@@ -26,7 +25,6 @@ use crate::executors::sinks::group_by::string::{apply_aggregate, write_agg_idx};
 use crate::executors::sinks::group_by::utils::{compute_slices, finalize_group_by, prepare_key};
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::load_vec;
-use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
@@ -62,7 +60,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     key: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: RandomState,
+    hb: PlSeedableRandomStateQuality,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
     // to populate the buffer where the hashmap points to
@@ -116,7 +114,7 @@ where
         io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
         ooc: bool,
     ) -> Self {
-        let hb = RandomState::default();
+        let hb = PlSeedableRandomStateQuality::default();
         let partitions = _set_partition_size();
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
@@ -174,7 +172,7 @@ where
                         let agg_fns =
                             unsafe { std::slice::from_raw_parts_mut(ptr, aggregators_len) };
                         let mut key_builder = PrimitiveChunkedBuilder::<K>::new(
-                            self.output_schema.get_at_index(0).unwrap().0,
+                            self.output_schema.get_at_index(0).unwrap().0.clone(),
                             agg_map.len(),
                         );
                         let dtypes = agg_fns
@@ -197,7 +195,7 @@ where
                                     .zip(buffers.iter_mut())
                                 {
                                     unsafe {
-                                        let agg_fn = agg_fns.get_unchecked_release_mut(i);
+                                        let agg_fn = agg_fns.get_unchecked_mut(i);
                                         let av = agg_fn.finalize();
                                         buffer.add(av);
                                     }
@@ -206,10 +204,14 @@ where
                         );
 
                         let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
-                        cols.push(key_builder.finish().into_series());
-                        cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
+                        cols.push(key_builder.finish().into_series().into_column());
+                        cols.extend(
+                            buffers
+                                .into_iter()
+                                .map(|buf| buf.into_series().into_column()),
+                        );
                         physical_agg_to_logical(&mut cols, &self.output_schema);
-                        Some(unsafe { DataFrame::new_no_checks(cols) })
+                        Some(unsafe { DataFrame::new_no_checks_height_from_first(cols) })
                     })
                     .collect::<Vec<_>>();
             Ok(dfs)
@@ -231,7 +233,7 @@ where
         for group in &self.sort_partitions {
             let [offset, length] = group;
             let (opt_v, h) = if unsafe { arr.is_valid_unchecked(*offset as usize) } {
-                let first_g_value = unsafe { *values.get_unchecked_release(*offset as usize) };
+                let first_g_value = unsafe { *values.get_unchecked(*offset as usize) };
                 // Ensure that this hash is equal to the default non-sorted sink.
                 let h = self.hb.hash_one(first_g_value);
                 // let h = integer_hash(first_g_value);
@@ -252,10 +254,7 @@ where
             for (i, aggregation_s) in
                 (0..self.number_of_aggs() as IdxSize).zip(&self.aggregation_series)
             {
-                let agg_fn = unsafe {
-                    self.aggregators
-                        .get_unchecked_release_mut((agg_idx + i) as usize)
-                };
+                let agg_fn = unsafe { self.aggregators.get_unchecked_mut((agg_idx + i) as usize) };
                 agg_fn.pre_agg_ordered(chunk.chunk_index, *offset, *length, aggregation_s)
             }
         }
@@ -274,7 +273,7 @@ where
         let s = s.to_physical_repr();
         let s = prepare_key(&s, chunk);
 
-        // todo! ammortize allocation
+        // TODO: Amortize allocation.
         for phys_e in self.aggregation_columns.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let s = s.to_physical_repr();
@@ -293,7 +292,7 @@ where
         let ca: &ChunkedArray<K> = s.as_ref().as_ref();
 
         // ensure the hashes are set
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        s.vec_hash(self.hb, &mut self.hashes).unwrap();
 
         let arr = ca.downcast_iter().next().unwrap();
         let pre_agg_len = self.pre_agg_partitions.len();
@@ -303,7 +302,7 @@ where
 
         // this reuses the hashes buffer as [u64] as idx buffer as [idxsize]
         // write the hashes to self.hashes buffer
-        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // s.vec_hash(self.hb, &mut self.hashes).unwrap();
         // now we have written hashes, we take the pointer to this buffer
         // we will write the aggregation_function indexes in the same buffer
         // this is unsafe and we must check that we only write the hashes that
@@ -368,11 +367,11 @@ where
             return self.sink_sorted(ca, chunk);
         }
 
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        s.vec_hash(self.hb, &mut self.hashes).unwrap();
 
         // this reuses the hashes buffer as [u64] as idx buffer as [idxsize]
         // write the hashes to self.hashes buffer
-        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // s.vec_hash(self.hb, &mut self.hashes).unwrap();
         // now we have written hashes, we take the pointer to this buffer
         // we will write the aggregation_function indexes in the same buffer
         // this is unsafe and we must check that we only write the hashes that
@@ -439,12 +438,11 @@ where
                     // combine the aggregation functions
                     for i in 0..self.aggregation_columns.len() {
                         unsafe {
-                            let agg_fn_other = other
-                                .aggregators
-                                .get_unchecked_release(agg_idx_other as usize + i);
+                            let agg_fn_other =
+                                other.aggregators.get_unchecked(agg_idx_other as usize + i);
                             let agg_fn_self = self
                                 .aggregators
-                                .get_unchecked_release_mut(agg_idx_self as usize + i);
+                                .get_unchecked_mut(agg_idx_self as usize + i);
                             agg_fn_self.combine(agg_fn_other.as_any())
                         }
                     }
@@ -455,10 +453,11 @@ where
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
         let payload = if self.ooc_state.ooc {
-            let mut iot = self.ooc_state.io_thread.lock().unwrap();
-            // make sure that we reset the shared states
-            // the OOC group_by will call split as well and it should
-            // not send continue spilling to disk
+            let mut guard = self.ooc_state.io_thread.lock().unwrap();
+            // Type hint fixes rust-analyzer thinking .take() is an iterator method.
+            let iot: &mut Option<_> = &mut *guard;
+            // Make sure that we reset the shared states. The OOC group_by will
+            // call split as well and it should not send continue spilling to disk.
             let iot = iot.take().unwrap();
             self.ooc_state.ooc = false;
 
@@ -480,7 +479,7 @@ where
             Some(self.ooc_state.io_thread.clone()),
             self.ooc_state.ooc,
         );
-        new.hb = self.hb.clone();
+        new.hb = self.hb;
         new.thread_no = thread_no;
         Box::new(new)
     }
@@ -497,7 +496,7 @@ fn insert_and_get<T>(
     h: u64,
     opt_v: Option<T>,
     pre_agg_len: usize,
-    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
+    pre_agg_partitions: &mut [PlIdHashMap<Key<Option<T>>, IdxSize>],
     current_aggregators: &mut Vec<AggregateFunction>,
     agg_fns: &Vec<AggregateFunction>,
 ) -> IdxSize
@@ -505,15 +504,14 @@ where
     T: NumericNative + Hash,
 {
     let part = hash_to_partition(h, pre_agg_len);
-    let current_partition = unsafe { pre_agg_partitions.get_unchecked_release_mut(part) };
+    let current_partition = unsafe { pre_agg_partitions.get_unchecked_mut(part) };
 
     let entry = current_partition
         .raw_entry_mut()
         .from_hash(h, |k| k.value == opt_v);
     match entry {
         RawEntryMut::Vacant(entry) => {
-            let offset =
-                unsafe { NumCast::from(current_aggregators.len()).unwrap_unchecked_release() };
+            let offset = unsafe { NumCast::from(current_aggregators.len()).unwrap_unchecked() };
             let key = Key {
                 hash: h,
                 value: opt_v,
@@ -533,13 +531,13 @@ fn try_insert_and_get<T>(
     h: u64,
     opt_v: Option<T>,
     pre_agg_len: usize,
-    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
+    pre_agg_partitions: &mut [PlIdHashMap<Key<Option<T>>, IdxSize>],
 ) -> Option<IdxSize>
 where
     T: NumericNative + Hash,
 {
     let part = hash_to_partition(h, pre_agg_len);
-    let current_partition = unsafe { pre_agg_partitions.get_unchecked_release_mut(part) };
+    let current_partition = unsafe { pre_agg_partitions.get_unchecked_mut(part) };
 
     let entry = current_partition
         .raw_entry_mut()

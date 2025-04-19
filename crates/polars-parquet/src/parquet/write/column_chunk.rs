@@ -2,23 +2,23 @@ use std::io::Write;
 
 #[cfg(feature = "async")]
 use futures::AsyncWrite;
-use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
+use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 #[cfg(feature = "async")]
-use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
-use parquet_format_safe::{ColumnChunk, ColumnMetaData, Type};
+use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
+use polars_parquet_format::{ColumnChunk, ColumnMetaData, Type};
 use polars_utils::aliases::PlHashSet;
 
+use super::DynStreamingIterator;
 #[cfg(feature = "async")]
 use super::page::write_page_async;
-use super::page::{write_page, PageWriteSpec};
+use super::page::{PageWriteSpec, write_page};
 use super::statistics::reduce;
-use super::DynStreamingIterator;
+use crate::parquet::FallibleStreamingIterator;
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::ColumnDescriptor;
 use crate::parquet::page::{CompressedPage, PageType};
-use crate::parquet::FallibleStreamingIterator;
 
 pub fn write_column_chunk<W, E>(
     writer: &mut W,
@@ -179,7 +179,11 @@ fn build_column_chunk(
     let metadata = ColumnMetaData {
         type_,
         encodings,
-        path_in_schema: descriptor.path_in_schema.clone(),
+        path_in_schema: descriptor
+            .path_in_schema
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>(),
         codec: compression.into(),
         num_values,
         total_uncompressed_size,
@@ -191,6 +195,8 @@ fn build_column_chunk(
         statistics,
         encoding_stats: None,
         bloom_filter_offset: None,
+        bloom_filter_length: None,
+        size_statistics: None,
     };
 
     Ok(ColumnChunk {

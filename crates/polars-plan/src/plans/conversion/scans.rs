@@ -1,25 +1,17 @@
-use std::path::PathBuf;
-
 use either::Either;
+use polars_io::RowIndex;
 use polars_io::path_utils::is_cloud_url;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
-use polars_io::RowIndex;
+use polars_io::utils::compression::maybe_decompress_bytes;
 
 use super::*;
-
-fn get_first_path(paths: &[PathBuf]) -> PolarsResult<&PathBuf> {
-    // Use first path to get schema.
-    paths
-        .first()
-        .ok_or_else(|| polars_err!(ComputeError: "expected at least 1 path"))
-}
 
 #[cfg(any(feature = "parquet", feature = "ipc"))]
 fn prepare_output_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> SchemaRef {
     if let Some(rc) = row_index {
-        let _ = schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE);
+        let _ = schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE);
     }
     Arc::new(schema)
 }
@@ -28,7 +20,7 @@ fn prepare_output_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> Sc
 fn prepare_schemas(mut schema: Schema, row_index: Option<&RowIndex>) -> (SchemaRef, SchemaRef) {
     if let Some(rc) = row_index {
         let reader_schema = schema.clone();
-        let _ = schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE);
+        let _ = schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE);
         (Arc::new(reader_schema), Arc::new(schema))
     } else {
         let schema = Arc::new(schema);
@@ -38,43 +30,44 @@ fn prepare_schemas(mut schema: Schema, row_index: Option<&RowIndex>) -> (SchemaR
 
 #[cfg(feature = "parquet")]
 pub(super) fn parquet_file_info(
-    paths: &[PathBuf],
-    file_options: &FileScanOptions,
-    cloud_options: Option<&polars_io::cloud::CloudOptions>,
-) -> PolarsResult<(FileInfo, Option<FileMetaDataRef>)> {
-    let path = get_first_path(paths)?;
+    sources: &ScanSources,
+    row_index: Option<&RowIndex>,
+    #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
+) -> PolarsResult<(FileInfo, Option<FileMetadataRef>)> {
+    use polars_core::error::feature_gated;
 
-    let (schema, reader_schema, num_rows, metadata) = if is_cloud_url(path) {
-        #[cfg(not(feature = "cloud"))]
-        panic!("One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled.");
+    let (reader_schema, num_rows, metadata) = {
+        if sources.is_cloud_url() {
+            let first_path = &sources.as_paths().unwrap()[0];
+            feature_gated!("cloud", {
+                let uri = first_path.to_string_lossy();
+                get_runtime().block_in_place_on(async {
+                    let mut reader =
+                        ParquetObjectStore::from_uri(&uri, cloud_options, None).await?;
 
-        #[cfg(feature = "cloud")]
-        {
-            let uri = path.to_string_lossy();
-            get_runtime().block_on(async {
-                let mut reader = ParquetAsyncReader::from_uri(&uri, cloud_options, None).await?;
-                let reader_schema = reader.schema().await?;
-                let num_rows = reader.num_rows().await?;
-                let metadata = reader.get_metadata().await?.clone();
-
-                let schema =
-                    prepare_output_schema((&reader_schema).into(), file_options.row_index.as_ref());
-                PolarsResult::Ok((schema, reader_schema, Some(num_rows), Some(metadata)))
-            })?
+                    PolarsResult::Ok((
+                        reader.schema().await?,
+                        Some(reader.num_rows().await?),
+                        Some(reader.get_metadata().await?.clone()),
+                    ))
+                })?
+            })
+        } else {
+            let first_source = sources
+                .first()
+                .ok_or_else(|| polars_err!(ComputeError: "expected at least 1 source"))?;
+            let memslice = first_source.to_memslice()?;
+            let mut reader = ParquetReader::new(std::io::Cursor::new(memslice));
+            (
+                reader.schema()?,
+                Some(reader.num_rows()?),
+                Some(reader.get_metadata()?.clone()),
+            )
         }
-    } else {
-        let file = polars_utils::open_file(path)?;
-        let mut reader = ParquetReader::new(file);
-        let reader_schema = reader.schema()?;
-        let schema =
-            prepare_output_schema((&reader_schema).into(), file_options.row_index.as_ref());
-        (
-            schema,
-            reader_schema,
-            Some(reader.num_rows()?),
-            Some(reader.get_metadata()?.clone()),
-        )
     };
+
+    let schema =
+        prepare_output_schema(Schema::from_arrow_schema(reader_schema.as_ref()), row_index);
 
     let file_info = FileInfo::new(
         schema,
@@ -88,35 +81,46 @@ pub(super) fn parquet_file_info(
 // TODO! return metadata arced
 #[cfg(feature = "ipc")]
 pub(super) fn ipc_file_info(
-    paths: &[PathBuf],
-    file_options: &FileScanOptions,
+    sources: &ScanSources,
+    row_index: Option<&RowIndex>,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
-    let path = get_first_path(paths)?;
+    use polars_core::error::feature_gated;
 
-    let metadata = if is_cloud_url(path) {
-        #[cfg(not(feature = "cloud"))]
-        panic!("One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled.");
-
-        #[cfg(feature = "cloud")]
-        {
-            let uri = path.to_string_lossy();
-            get_runtime().block_on(async {
-                polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options)
-                    .await?
-                    .metadata()
-                    .await
-            })?
-        }
-    } else {
-        arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
-            polars_utils::open_file(path)?,
-        ))?
+    let Some(first) = sources.first() else {
+        polars_bail!(ComputeError: "expected at least 1 source");
     };
+
+    let metadata = match first {
+        ScanSourceRef::Path(path) => {
+            if is_cloud_url(path) {
+                feature_gated!("cloud", {
+                    let uri = path.to_string_lossy();
+                    get_runtime().block_on(async {
+                        polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options)
+                            .await?
+                            .metadata()
+                            .await
+                    })?
+                })
+            } else {
+                arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
+                    polars_utils::open_file(path)?,
+                ))?
+            }
+        },
+        ScanSourceRef::File(file) => {
+            arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(file))?
+        },
+        ScanSourceRef::Buffer(buff) => {
+            arrow::io::ipc::read::read_file_metadata(&mut std::io::Cursor::new(buff))?
+        },
+    };
+
     let file_info = FileInfo::new(
         prepare_output_schema(
-            metadata.schema.as_ref().into(),
-            file_options.row_index.as_ref(),
+            Schema::from_arrow_schema(metadata.schema.as_ref()),
+            row_index,
         ),
         Some(Either::Left(Arc::clone(&metadata.schema))),
         (None, 0),
@@ -126,120 +130,149 @@ pub(super) fn ipc_file_info(
 }
 
 #[cfg(feature = "csv")]
-pub(super) fn csv_file_info(
-    paths: &[PathBuf],
-    file_options: &FileScanOptions,
+pub fn isolated_csv_file_info(
+    source: ScanSourceRef,
+    row_index: Option<&RowIndex>,
+    csv_options: &mut CsvReadOptions,
+    _cloud_options: Option<&polars_io::cloud::CloudOptions>,
+) -> PolarsResult<FileInfo> {
+    use std::io::{Read, Seek};
+
+    use polars_io::csv::read::schema_inference::SchemaInferenceResult;
+    use polars_io::utils::get_reader_bytes;
+
+    let run_async = source.run_async();
+
+    let memslice = source.to_memslice_async_assume_latest(run_async)?;
+    let owned = &mut vec![];
+    let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
+    if reader.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
+        polars_bail!(NoData: "empty CSV")
+    }
+    reader.rewind()?;
+
+    let reader_bytes = get_reader_bytes(&mut reader).expect("could not mmap file");
+
+    // this needs a way to estimated bytes/rows.
+    let si_result =
+        SchemaInferenceResult::try_from_reader_bytes_and_options(&reader_bytes, csv_options)?;
+
+    csv_options.update_with_inference_result(&si_result);
+
+    let mut schema = csv_options
+        .schema
+        .clone()
+        .unwrap_or_else(|| si_result.get_inferred_schema());
+
+    let reader_schema = if let Some(rc) = row_index {
+        let reader_schema = schema.clone();
+        let mut output_schema = (*reader_schema).clone();
+        output_schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE)?;
+        schema = Arc::new(output_schema);
+        reader_schema
+    } else {
+        schema.clone()
+    };
+
+    let estimated_n_rows = si_result.get_estimated_n_rows();
+
+    Ok(FileInfo::new(
+        schema,
+        Some(Either::Right(reader_schema)),
+        (None, estimated_n_rows),
+    ))
+}
+
+#[cfg(feature = "csv")]
+pub fn csv_file_info(
+    sources: &ScanSources,
+    row_index: Option<&RowIndex>,
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
     use std::io::{Read, Seek};
 
-    use polars_core::{config, POOL};
-    use polars_io::csv::read::is_compressed;
+    use polars_core::error::feature_gated;
+    use polars_core::{POOL, config};
     use polars_io::csv::read::schema_inference::SchemaInferenceResult;
     use polars_io::utils::get_reader_bytes;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
+    polars_ensure!(!sources.is_empty(), ComputeError: "expected at least 1 source");
 
     // TODO:
     // * See if we can do better than scanning all files if there is a row limit
     // * See if we can do this without downloading the entire file
 
     // prints the error message if paths is empty.
-    let first_path = get_first_path(paths)?;
-    let run_async = is_cloud_url(first_path) || config::force_async();
+    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
 
     let cache_entries = {
-        #[cfg(feature = "cloud")]
-        {
-            if run_async {
+        if run_async {
+            feature_gated!("cloud", {
                 Some(polars_io::file_cache::init_entries_from_uri_list(
-                    paths
+                    sources
+                        .as_paths()
+                        .unwrap()
                         .iter()
                         .map(|path| Arc::from(path.to_str().unwrap()))
                         .collect::<Vec<_>>()
                         .as_slice(),
                     cloud_options,
                 )?)
-            } else {
-                None
-            }
-        }
-        #[cfg(not(feature = "cloud"))]
-        {
-            if run_async {
-                panic!("required feature `cloud` is not enabled")
-            }
+            })
+        } else {
+            None
         }
     };
 
     let infer_schema_func = |i| {
-        let mut file = if run_async {
-            #[cfg(feature = "cloud")]
-            {
-                let entry: &Arc<polars_io::file_cache::FileCacheEntry> =
-                    &cache_entries.as_ref().unwrap()[i];
-                entry.try_open_check_latest()?
-            }
-            #[cfg(not(feature = "cloud"))]
-            {
-                panic!("required feature `cloud` is not enabled")
-            }
-        } else {
-            polars_utils::open_file(paths.get(i).unwrap())?
-        };
-
-        let mut magic_nr = [0u8; 4];
-        let res_len = file.read(&mut magic_nr)?;
-        if res_len < 2 {
-            if csv_options.raise_if_empty {
-                polars_bail!(NoData: "empty CSV")
-            }
-        } else {
-            polars_ensure!(
-            !is_compressed(&magic_nr),
-            ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
-            );
+        let source = sources.at(i);
+        let memslice = source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), i)?;
+        let owned = &mut vec![];
+        let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
+        if reader.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
+            polars_bail!(NoData: "empty CSV")
         }
+        reader.rewind()?;
 
-        file.rewind()?;
-        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
+        let reader_bytes = get_reader_bytes(&mut reader).expect("could not mmap file");
 
         // this needs a way to estimated bytes/rows.
-        let si_result =
-            SchemaInferenceResult::try_from_reader_bytes_and_options(&reader_bytes, csv_options)?;
-
-        Ok(si_result)
+        SchemaInferenceResult::try_from_reader_bytes_and_options(&reader_bytes, csv_options)
     };
 
     let merge_func = |a: PolarsResult<SchemaInferenceResult>,
-                      b: PolarsResult<SchemaInferenceResult>| match (a, b) {
-        (Err(e), _) | (_, Err(e)) => Err(e),
-        (Ok(a), Ok(b)) => {
-            let merged_schema = if csv_options.schema.is_some() {
-                csv_options.schema.clone().unwrap()
-            } else {
-                let schema_a = a.get_inferred_schema();
-                let schema_b = b.get_inferred_schema();
+                      b: PolarsResult<SchemaInferenceResult>| {
+        match (a, b) {
+            (Err(e), _) | (_, Err(e)) => Err(e),
+            (Ok(a), Ok(b)) => {
+                let merged_schema = if csv_options.schema.is_some() {
+                    csv_options.schema.clone().unwrap()
+                } else {
+                    let schema_a = a.get_inferred_schema();
+                    let schema_b = b.get_inferred_schema();
 
-                match (schema_a.is_empty(), schema_b.is_empty()) {
-                    (true, _) => schema_b,
-                    (_, true) => schema_a,
-                    _ => {
-                        let mut s = Arc::unwrap_or_clone(schema_a);
-                        s.to_supertype(&schema_b)?;
-                        Arc::new(s)
-                    },
-                }
-            };
+                    match (schema_a.is_empty(), schema_b.is_empty()) {
+                        (true, _) => schema_b,
+                        (_, true) => schema_a,
+                        _ => {
+                            let mut s = Arc::unwrap_or_clone(schema_a);
+                            s.to_supertype(&schema_b)?;
+                            Arc::new(s)
+                        },
+                    }
+                };
 
-            Ok(a.with_inferred_schema(merged_schema))
-        },
+                Ok(a.with_inferred_schema(merged_schema))
+            },
+        }
     };
 
     let si_results = POOL.join(
         || infer_schema_func(0),
         || {
-            (1..paths.len())
+            (1..sources.len())
                 .into_par_iter()
                 .map(infer_schema_func)
                 .reduce(|| Ok(Default::default()), merge_func)
@@ -255,10 +288,10 @@ pub(super) fn csv_file_info(
         .clone()
         .unwrap_or_else(|| si_result.get_inferred_schema());
 
-    let reader_schema = if let Some(rc) = &file_options.row_index {
+    let reader_schema = if let Some(rc) = row_index {
         let reader_schema = schema.clone();
         let mut output_schema = (*reader_schema).clone();
-        output_schema.insert_at_index(0, rc.name.as_ref().into(), IDX_DTYPE)?;
+        output_schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE)?;
         schema = Arc::new(output_schema);
         reader_schema
     } else {
@@ -275,70 +308,62 @@ pub(super) fn csv_file_info(
 }
 
 #[cfg(feature = "json")]
-pub(super) fn ndjson_file_info(
-    paths: &[PathBuf],
-    file_options: &FileScanOptions,
-    ndjson_options: &mut NDJsonReadOptions,
+pub fn ndjson_file_info(
+    sources: &ScanSources,
+    row_index: Option<&RowIndex>,
+    ndjson_options: &NDJsonReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
     use polars_core::config;
+    use polars_core::error::feature_gated;
 
-    let run_async = !paths.is_empty() && is_cloud_url(&paths[0]) || config::force_async();
+    let Some(first) = sources.first() else {
+        polars_bail!(ComputeError: "expected at least 1 source");
+    };
+
+    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
 
     let cache_entries = {
-        #[cfg(feature = "cloud")]
-        {
-            if run_async {
+        if run_async {
+            feature_gated!("cloud", {
                 Some(polars_io::file_cache::init_entries_from_uri_list(
-                    paths
+                    sources
+                        .as_paths()
+                        .unwrap()
                         .iter()
                         .map(|path| Arc::from(path.to_str().unwrap()))
                         .collect::<Vec<_>>()
                         .as_slice(),
                     cloud_options,
                 )?)
-            } else {
-                None
-            }
-        }
-        #[cfg(not(feature = "cloud"))]
-        {
-            if run_async {
-                panic!("required feature `cloud` is not enabled")
-            }
+            })
+        } else {
+            None
         }
     };
 
-    let first_path = get_first_path(paths)?;
+    let owned = &mut vec![];
 
-    let f = if run_async {
-        #[cfg(feature = "cloud")]
-        {
-            cache_entries.unwrap()[0].try_open_check_latest()?
-        }
-        #[cfg(not(feature = "cloud"))]
-        {
-            panic!("required feature `cloud` is not enabled")
-        }
-    } else {
-        polars_utils::open_file(first_path)?
-    };
-    let mut reader = std::io::BufReader::new(f);
-
-    let (reader_schema, schema) = if let Some(schema) = ndjson_options.schema.take() {
-        if file_options.row_index.is_none() {
+    let (mut reader_schema, schema) = if let Some(schema) = ndjson_options.schema.clone() {
+        if row_index.is_none() {
             (schema.clone(), schema.clone())
         } else {
-            prepare_schemas(
-                Arc::unwrap_or_clone(schema),
-                file_options.row_index.as_ref(),
-            )
+            prepare_schemas(Arc::unwrap_or_clone(schema), row_index)
         }
     } else {
+        let memslice = first.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
+        let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
+
         let schema =
             polars_io::ndjson::infer_schema(&mut reader, ndjson_options.infer_schema_length)?;
-        prepare_schemas(schema, file_options.row_index.as_ref())
+
+        prepare_schemas(schema, row_index)
     };
+
+    if let Some(overwriting_schema) = &ndjson_options.schema_overwrite {
+        let schema = Arc::make_mut(&mut reader_schema);
+        overwrite_schema(schema, overwriting_schema)?;
+    }
 
     Ok(FileInfo::new(
         schema,

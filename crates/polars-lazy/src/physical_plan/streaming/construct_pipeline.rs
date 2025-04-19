@@ -4,12 +4,12 @@ use std::sync::Mutex;
 
 use polars_core::config::verbose;
 use polars_core::prelude::*;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
-use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
+use polars_expr::{ExpressionConversionState, create_physical_expr};
+use polars_io::predicates::PhysicalIoExpr;
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
 use polars_pipe::pipeline::{
-    create_pipeline, execute_pipeline, get_dummy_operator, get_operator, CallBacks, PipeLine,
+    CallBacks, PipeLine, create_pipeline, execute_pipeline, get_dummy_operator, get_operator,
 };
 use polars_plan::prelude::expr_ir::ExprIR;
 
@@ -26,13 +26,12 @@ impl PhysicalIoExpr for Wrap {
         };
         h.evaluate_io(df)
     }
-    fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
-        self.0.as_stats_evaluator()
-    }
 }
 impl PhysicalPipedExpr for Wrap {
     fn evaluate(&self, chunk: &DataChunk, state: &ExecutionState) -> PolarsResult<Series> {
-        self.0.evaluate(&chunk.data, state)
+        self.0
+            .evaluate(&chunk.data, state)
+            .map(|c| c.take_materialized_series())
     }
     fn field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.0.to_field(input_schema)
@@ -46,7 +45,7 @@ impl PhysicalPipedExpr for Wrap {
 fn to_physical_piped_expr(
     expr: &ExprIR,
     expr_arena: &Arena<AExpr>,
-    schema: Option<&SchemaRef>,
+    schema: &SchemaRef,
 ) -> PolarsResult<Arc<dyn PhysicalPipedExpr>> {
     // this is a double Arc<dyn> explore if we can create a single of it.
     create_physical_expr(
@@ -54,7 +53,7 @@ fn to_physical_piped_expr(
         Context::Default,
         expr_arena,
         schema,
-        &mut ExpressionConversionState::new(false, 0),
+        &mut ExpressionConversionState::new(false),
     )
     .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
 }
@@ -204,7 +203,7 @@ pub(super) fn construct(
         // we connect into the original tree.
         Sink {
             input,
-            payload: SinkType::Memory,
+            payload: SinkTypeIR::Memory,
         } => *input,
         // Other sinks were not inserted during conversion,
         // so they are returned as-is
@@ -240,13 +239,12 @@ fn get_pipeline_node(
     // so we just create a scan that returns an empty df
     let dummy = lp_arena.add(IR::DataFrameScan {
         df: Arc::new(DataFrame::empty()),
-        schema: Arc::new(Schema::new()),
+        schema: Arc::new(Schema::default()),
         output_schema: None,
-        filter: None,
     });
 
     IR::MapFunction {
-        function: FunctionNode::Pipeline {
+        function: FunctionIR::Pipeline {
             function: Arc::new(Mutex::new(move |_df: DataFrame| {
                 let state = ExecutionState::new();
                 if state.verbose() {

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 
@@ -44,17 +45,22 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Int16 => downcast_and_pack!(Int16Array, Int16),
         DataType::Int32 => downcast_and_pack!(Int32Array, Int32),
         DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
+        DataType::Int128 => downcast_and_pack!(Int128Array, Int128),
         DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray);
             if dt.is_primitive() {
-                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], dt);
+                let s = Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![v], dt);
                 AnyValue::List(s)
             } else {
-                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], &dt.to_physical())
-                    .cast_unchecked(dt)
-                    .unwrap();
+                let s = Series::from_chunks_and_dtype_unchecked(
+                    PlSmallStr::EMPTY,
+                    vec![v],
+                    &dt.to_physical(),
+                )
+                .from_physical_unchecked(dt)
+                .unwrap();
                 AnyValue::List(s)
             }
         },
@@ -62,12 +68,16 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Array(dt, width) => {
             let v: ArrayRef = downcast!(FixedSizeListArray);
             if dt.is_primitive() {
-                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], dt);
+                let s = Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![v], dt);
                 AnyValue::Array(s, *width)
             } else {
-                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], &dt.to_physical())
-                    .cast_unchecked(dt)
-                    .unwrap();
+                let s = Series::from_chunks_and_dtype_unchecked(
+                    PlSmallStr::EMPTY,
+                    vec![v],
+                    &dt.to_physical(),
+                )
+                .from_physical_unchecked(dt)
+                .unwrap();
                 AnyValue::Array(s, *width)
             }
         },
@@ -92,7 +102,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Datetime(tu, tz) => {
             let arr = &*(arr as *const dyn Array as *const Int64Array);
             let v = arr.value_unchecked(idx);
-            AnyValue::Datetime(v, *tu, tz)
+            AnyValue::Datetime(v, *tu, tz.as_ref())
         },
         #[cfg(feature = "dtype-date")]
         DataType::Date => {
@@ -119,7 +129,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             AnyValue::Decimal(v, scale.unwrap_or_else(|| unreachable!()))
         },
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => {
+        DataType::Object(_) => {
             // We should almost never hit this. The only known exception is when we put objects in
             // structs. Any other hit should be considered a bug.
             let arr = arr.as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
@@ -153,7 +163,7 @@ impl<'a> AnyValue<'a> {
 
                                 if arr.is_valid_unchecked(idx) {
                                     let v = arr.value_unchecked(idx);
-                                    match fld.data_type() {
+                                    match fld.dtype() {
                                         DataType::Categorical(Some(rev_map), _) => {
                                             AnyValue::Categorical(
                                                 v,
@@ -170,13 +180,13 @@ impl<'a> AnyValue<'a> {
                                     AnyValue::Null
                                 }
                             } else {
-                                arr_to_any_value(&**arr, idx, fld.data_type())
+                                arr_to_any_value(&**arr, idx, fld.dtype())
                             }
                         }
 
                         #[cfg(not(feature = "dtype-categorical"))]
                         {
-                            arr_to_any_value(&**arr, idx, fld.data_type())
+                            arr_to_any_value(&**arr, idx, fld.dtype())
                         }
                     })
                 }

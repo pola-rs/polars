@@ -5,7 +5,7 @@ fn convert_while_ascii(b: &[u8], convert: fn(&u8) -> u8, out: &mut Vec<u8>) {
     out.clear();
     out.reserve(b.len());
 
-    const USIZE_SIZE: usize = std::mem::size_of::<usize>();
+    const USIZE_SIZE: usize = size_of::<usize>();
     const MAGIC_UNROLL: usize = 2;
     const N: usize = USIZE_SIZE * MAGIC_UNROLL;
     const NONASCII_MASK: usize = usize::from_ne_bytes([0x80; USIZE_SIZE]);
@@ -154,7 +154,7 @@ pub(super) fn to_titlecase<'a>(ca: &'a StringChunked) -> StringChunked {
             } else {
                 s.push(c);
             }
-            next_is_upper = c.is_whitespace();
+            next_is_upper = !c.is_alphanumeric();
         }
 
         // Put buf back for next iteration.

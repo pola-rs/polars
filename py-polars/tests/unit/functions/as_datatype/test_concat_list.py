@@ -61,6 +61,9 @@ def test_concat_list_in_agg_6397() -> None:
     df = pl.DataFrame({"group": [1, 2, 2, 3], "value": ["a", "b", "c", "d"]})
 
     # single list
+    # TODO: this shouldn't be allowed and raise
+    # Currently this do a cast to list in the expression and
+    # therefore leads to different nesting
     assert df.group_by("group").agg(
         [
             # this casts every element to a list
@@ -78,7 +81,7 @@ def test_concat_list_in_agg_6397() -> None:
         ]
     ).sort("group").to_dict(as_series=False) == {
         "group": [1, 2, 3],
-        "result": [[["a"]], [["b", "c"]], [["d"]]],
+        "result": [["a"], ["b", "c"], ["d"]],
     }
 
 
@@ -91,6 +94,7 @@ def test_list_concat_supertype() -> None:
     ].to_list() == [[1, 10000], [2, 20000]]
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_list_concat_4762() -> None:
     df = pl.DataFrame({"x": "a"})
     expected = {"x": [["a", "a"]]}
@@ -171,3 +175,23 @@ def test_concat_list_empty() -> None:
 def test_concat_list_empty_struct() -> None:
     df = pl.DataFrame({"a": []}, schema={"a": pl.Struct({"b": pl.Boolean})})
     df.select(pl.concat_list("a"))
+
+
+def test_cross_join_concat_list_18587() -> None:
+    lf = pl.LazyFrame({"u32": [0, 1], "str": ["a", "b"]})
+
+    lf1 = lf.select(pl.struct(pl.all()).alias("1"))
+    lf2 = lf.select(pl.struct(pl.all()).alias("2"))
+    lf3 = lf.select(pl.struct(pl.all()).alias("3"))
+
+    result = (
+        lf1.join(lf2, how="cross")
+        .join(lf3, how="cross")
+        .select(pl.concat_list("1", "2", "3"))
+        .collect()
+    )
+
+    vals = [{"u32": 0, "str": "a"}, {"u32": 1, "str": "b"}]
+    expected = [[a, b, c] for a in vals for b in vals for c in vals]
+
+    assert result["1"].to_list() == expected

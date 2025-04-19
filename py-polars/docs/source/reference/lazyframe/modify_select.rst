@@ -12,6 +12,7 @@ Manipulation/selection
     LazyFrame.clear
     LazyFrame.clone
     LazyFrame.drop
+    LazyFrame.drop_nans
     LazyFrame.drop_nulls
     LazyFrame.explode
     LazyFrame.fill_nan
@@ -26,10 +27,12 @@ Manipulation/selection
     LazyFrame.interpolate
     LazyFrame.join
     LazyFrame.join_asof
+    LazyFrame.join_where
     LazyFrame.last
     LazyFrame.limit
     LazyFrame.melt
     LazyFrame.merge_sorted
+    LazyFrame.remove
     LazyFrame.rename
     LazyFrame.reverse
     LazyFrame.rolling

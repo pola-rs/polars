@@ -1,68 +1,17 @@
-mod dsl;
+mod check;
 
-use polars_core::error::{polars_err, PolarsResult};
-use polars_io::path_utils::is_cloud_url;
+use polars_core::error::PolarsResult;
 
-use crate::dsl::Expr;
-use crate::plans::options::SinkType;
-use crate::plans::{DslFunction, DslPlan, FunctionNode};
+use crate::dsl::DslPlan;
 
-/// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
-pub fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
-    let mut expr_stack = vec![];
-    for plan_node in dsl.into_iter() {
-        match plan_node {
-            DslPlan::MapFunction {
-                function: DslFunction::FunctionNode(function),
-                ..
-            } => match function {
-                FunctionNode::Opaque { .. } => return ineligible_error("contains opaque function"),
-                #[cfg(feature = "python")]
-                FunctionNode::OpaquePython { .. } => {
-                    return ineligible_error("contains Python function")
-                },
-                _ => (),
-            },
-            #[cfg(feature = "python")]
-            DslPlan::PythonScan { .. } => return ineligible_error("contains Python scan"),
-            DslPlan::GroupBy { apply: Some(_), .. } => {
-                return ineligible_error("contains Python function in group by operation")
-            },
-            DslPlan::Scan { paths, .. }
-                if paths.lock().unwrap().0.iter().any(|p| !is_cloud_url(p)) =>
-            {
-                return ineligible_error("contains scan of local file system")
-            },
-            DslPlan::Sink { payload, .. } => {
-                if !matches!(payload, SinkType::Cloud { .. }) {
-                    return ineligible_error("contains sink to non-cloud location");
-                }
-            },
-            plan => {
-                plan.get_expr(&mut expr_stack);
+/// Prepare the given [`DslPlan`] for execution on Polars Cloud.
+pub fn prepare_cloud_plan(dsl: DslPlan) -> PolarsResult<Vec<u8>> {
+    // Check the plan for cloud eligibility.
+    check::assert_cloud_eligible(&dsl)?;
 
-                for expr in expr_stack.drain(..) {
-                    for expr_node in expr.into_iter() {
-                        match expr_node {
-                            Expr::AnonymousFunction { .. } => {
-                                return ineligible_error("contains anonymous function")
-                            },
-                            Expr::RenameAlias { .. } => {
-                                return ineligible_error("contains custom name remapping")
-                            },
-                            _ => (),
-                        }
-                    }
-                }
-            },
-        }
-    }
-    Ok(())
-}
+    // Serialize the plan.
+    let mut writer = Vec::new();
+    dsl.serialize_versioned(&mut writer)?;
 
-fn ineligible_error(message: &str) -> PolarsResult<()> {
-    Err(polars_err!(
-        InvalidOperation:
-        "logical plan ineligible for execution on Polars Cloud: {message}"
-    ))
+    Ok(writer)
 }

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_sqlite_db(tmp_path: Path) -> Path:
     test_db = tmp_path / "test.db"
     test_db.unlink(missing_ok=True)
@@ -51,7 +51,7 @@ def tmp_sqlite_db(tmp_path: Path) -> Path:
     return test_db
 
 
-@pytest.fixture()
+@pytest.fixture
 def tmp_sqlite_inference_db(tmp_path: Path) -> Path:
     test_db = tmp_path / "test_inference.db"
     test_db.unlink(missing_ok=True)

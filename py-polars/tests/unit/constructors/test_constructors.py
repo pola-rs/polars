@@ -4,30 +4,35 @@ from collections import OrderedDict, namedtuple
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from packaging.version import parse as parse_version
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
+import polars.selectors as cs
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
-from polars.exceptions import ShapeError
+from polars.exceptions import DuplicateError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Callable
-
-    from zoneinfo import ZoneInfo
 
     from polars._typing import PolarsDataType
 
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
 
 # -----------------------------------------------------------------------------------
@@ -150,7 +155,7 @@ def test_init_dict() -> None:
             data={"dt": dates, "dtm": datetimes},
             schema=coldefs,
         )
-        assert df.schema == {"dt": pl.Date, "dtm": pl.Datetime}
+        assert df.schema == {"dt": pl.Date, "dtm": pl.Datetime("us")}
         assert df.rows() == list(zip(py_dates, py_datetimes))
 
     # Overriding dict column names/types
@@ -215,10 +220,10 @@ def test_init_structured_objects() -> None:
     columns = ["timestamp", "ticker", "price", "size"]
 
     for TradeClass in (TradeDC, TradeNT, TradePD):
-        trades = [TradeClass(**dict(zip(columns, values))) for values in raw_data]
+        trades = [TradeClass(**dict(zip(columns, values))) for values in raw_data]  # type: ignore[arg-type]
 
         for DF in (pl.DataFrame, pl.from_records):
-            df = DF(data=trades)  # type: ignore[operator]
+            df = DF(data=trades)
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
                 "ticker": pl.String,
@@ -228,7 +233,7 @@ def test_init_structured_objects() -> None:
             assert df.rows() == raw_data
 
             # partial dtypes override
-            df = DF(  # type: ignore[operator]
+            df = DF(
                 data=trades,
                 schema_overrides={"timestamp": pl.Datetime("ms"), "size": pl.Int32},
             )
@@ -251,7 +256,7 @@ def test_init_structured_objects() -> None:
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
-            "tk": pl.Categorical,
+            "tk": pl.Categorical(ordering="physical"),
             "pc": pl.Decimal(scale=1),
             "sz": pl.UInt16,
         }
@@ -264,8 +269,8 @@ def test_init_structured_objects() -> None:
 def test_init_pydantic_2x() -> None:
     class PageView(BaseModel):
         user_id: str
-        ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, arg-type]
-        path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, arg-type]
+        ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, call-overload]
+        path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, call-overload]
         referer: str = Field("?", alias="referer")
         event: Literal["leave", "enter"] = Field("enter")
         time_on_page: int = Field(0, serialization_alias="top")
@@ -280,11 +285,10 @@ def test_init_pydantic_2x() -> None:
         "top": 123
     }]
     """
-    adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
+    adapter: TypeAdapter[Any] = TypeAdapter(list[PageView])
     models = adapter.validate_json(data_json)
 
     result = pl.DataFrame(models)
-
     expected = pl.DataFrame(
         {
             "user_id": ["x"],
@@ -457,9 +461,15 @@ def test_dataclasses_initvar_typing() -> None:
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
-def test_collections_namedtuple() -> None:
-    TestData = namedtuple("TestData", ["id", "info"])
-    nt_data = [TestData(1, "a"), TestData(2, "b"), TestData(3, "c")]
+@pytest.mark.parametrize(
+    "nt",
+    [
+        namedtuple("TestData", ["id", "info"]),  # noqa: PYI024
+        NamedTuple("TestData", [("id", int), ("info", str)]),
+    ],
+)
+def test_collections_namedtuple(nt: type) -> None:
+    nt_data = [nt(1, "a"), nt(2, "b"), nt(3, "c")]
 
     result = pl.DataFrame(nt_data)
     expected = pl.DataFrame({"id": [1, 2, 3], "info": ["a", "b", "c"]})
@@ -715,6 +725,26 @@ def test_init_arrow() -> None:
         pl.DataFrame(pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}), schema=["c", "d", "e"])
 
 
+def test_init_arrow_dupes() -> None:
+    tbl = pa.Table.from_arrays(
+        arrays=[
+            pa.array([1, 2, 3], type=pa.int32()),
+            pa.array([4, 5, 6], type=pa.int32()),
+            pa.array(
+                [7, 8, 9], type=pa.decimal128(38, 10)
+            ),  # included as this triggers a panic during construction alongside duplicate fields
+        ],
+        schema=pa.schema(
+            [("col", pa.int32()), ("col", pa.int32()), ("col3", pa.decimal128(38, 10))]
+        ),
+    )
+    with pytest.raises(
+        DuplicateError,
+        match=r"""column appears more than once; names must be unique: \["col"\]""",
+    ):
+        pl.DataFrame(tbl)
+
+
 def test_init_from_frame() -> None:
     df1 = pl.DataFrame({"id": [0, 1], "misc": ["a", "b"], "val": [-10, 10]})
     assert_frame_equal(df1, pl.DataFrame(df1))
@@ -912,7 +942,7 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
         schema={"ts": pl.Datetime("ms")},
     )
-    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
+    assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
 
 
 def test_init_pandas(monkeypatch: Any) -> None:
@@ -960,8 +990,16 @@ def test_init_pandas(monkeypatch: Any) -> None:
 
     # pandas is not available
     monkeypatch.setattr(pl.dataframe.frame, "_check_for_pandas", lambda x: False)
-    with pytest.raises(TypeError):
-        pl.DataFrame(pandas_df)
+
+    # pandas 2.2 and higher implement the Arrow PyCapsule Interface, so the constructor
+    # will still work even without using pandas APIs
+    if parse_version(pd.__version__) >= parse_version("2.2.0"):
+        df = pl.DataFrame(pandas_df)
+        assert_frame_equal(df, expected)
+
+    else:
+        with pytest.raises(TypeError):
+            pl.DataFrame(pandas_df)
 
 
 def test_init_errors() -> None:
@@ -1032,13 +1070,13 @@ def test_init_records_schema_order() -> None:
             shuffle(data)
             shuffle(cols)
 
-            df = constructor(data, schema=cols)  # type: ignore[operator]
+            df = constructor(data, schema=cols)
             for col in df.columns:
                 assert all(value in (None, lookup[col]) for value in df[col].to_list())
 
         # have schema override inferred types, omit some columns, add a new one
         schema = {"a": pl.Int8, "c": pl.Int16, "e": pl.Int32}
-        df = constructor(data, schema=schema)  # type: ignore[operator]
+        df = constructor(data, schema=schema)
 
         assert df.schema == schema
         for col in df.columns:
@@ -1148,6 +1186,43 @@ def test_from_dicts_schema_columns_do_not_match() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])
     expected = pl.DataFrame({"x": [None]})
+    assert_frame_equal(result, expected)
+
+
+def test_from_dicts_infer_integer_types() -> None:
+    data = [
+        {
+            "a": 2**7 - 1,
+            "b": 2**15 - 1,
+            "c": 2**31 - 1,
+            "d": 2**63 - 1,
+            "e": 2**127 - 1,
+        }
+    ]
+    result = pl.from_dicts(data).schema
+    # all values inferred as i64 except for values too large for i64
+    expected = {
+        "a": pl.Int64,
+        "b": pl.Int64,
+        "c": pl.Int64,
+        "d": pl.Int64,
+        "e": pl.Int128,
+    }
+    assert result == expected
+
+    with pytest.raises(OverflowError):
+        pl.from_dicts([{"too_big": 2**127}])
+
+
+def test_from_dicts_list_large_int_17006() -> None:
+    data = [{"x": [2**64 - 1]}]
+
+    result = pl.from_dicts(data, schema={"x": pl.List(pl.UInt64)})
+    expected = pl.DataFrame({"x": [[2**64 - 1]]}, schema={"x": pl.List(pl.UInt64)})
+    assert_frame_equal(result, expected)
+
+    result = pl.from_dicts(data, schema={"x": pl.Array(pl.UInt64, 1)})
+    expected = pl.DataFrame({"x": [[2**64 - 1]]}, schema={"x": pl.Array(pl.UInt64, 1)})
     assert_frame_equal(result, expected)
 
 
@@ -1341,24 +1416,23 @@ def test_from_records_nullable_structs() -> None:
     assert series.to_list() == []
 
 
-def test_from_categorical_in_struct_defined_by_schema() -> None:
+@pytest.mark.parametrize("unnest_column", ["a", pl.col("a"), cs.by_name("a")])
+def test_from_categorical_in_struct_defined_by_schema(unnest_column: Any) -> None:
     df = pl.DataFrame(
-        {
-            "a": [
-                {"value": "foo", "counts": 1},
-                {"value": "bar", "counts": 2},
-            ]
-        },
+        {"a": [{"value": "foo", "counts": 1}, {"value": "bar", "counts": 2}]},
         schema={"a": pl.Struct({"value": pl.Categorical, "counts": pl.UInt32})},
     )
-
-    result = df.unnest("a")
 
     expected = pl.DataFrame(
         {"value": ["foo", "bar"], "counts": [1, 2]},
         schema={"value": pl.Categorical, "counts": pl.UInt32},
     )
-    assert_frame_equal(result, expected, categorical_as_str=True)
+
+    res_eager = df.unnest(unnest_column)
+    assert_frame_equal(res_eager, expected, categorical_as_str=True)
+
+    res_lazy = df.lazy().unnest(unnest_column)
+    assert_frame_equal(res_lazy.collect(), expected, categorical_as_str=True)
 
 
 def test_nested_schema_construction() -> None:
@@ -1548,7 +1622,7 @@ def test_df_init_dict_raise_on_expression_input() -> None:
 
     # Passing a list of expressions is allowed
     df = pl.DataFrame({"a": [pl.int_range(0, 3)]})
-    assert df.get_column("a").dtype == pl.Object
+    assert df.get_column("a").dtype.is_object()
 
 
 def test_df_schema_sequences() -> None:
@@ -1629,3 +1703,155 @@ def test_array_construction() -> None:
     df = pl.from_dicts(rows, schema=schema)
     assert df.schema == schema
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_pycapsule_interface(df: pl.DataFrame) -> None:
+    df = df.rechunk()
+    pyarrow_table = df.to_arrow()
+
+    # Array via C data interface
+    pyarrow_array = pyarrow_table["bools"].chunk(0)
+    round_trip_series = pl.Series(PyCapsuleArrayHolder(pyarrow_array))
+    assert df["bools"].equals(round_trip_series, check_dtypes=True, check_names=False)
+
+    # empty Array via C data interface
+    empty_pyarrow_array = pa.array([], type=pyarrow_array.type)
+    round_trip_series = pl.Series(PyCapsuleArrayHolder(empty_pyarrow_array))
+    assert df["bools"].dtype == round_trip_series.dtype
+
+    # RecordBatch via C array interface
+    pyarrow_record_batch = pyarrow_table.to_batches()[0]
+    round_trip_df = pl.DataFrame(PyCapsuleArrayHolder(pyarrow_record_batch))
+    assert df.equals(round_trip_df)
+
+    # ChunkedArray via C stream interface
+    pyarrow_chunked_array = pyarrow_table["bools"]
+    round_trip_series = pl.Series(PyCapsuleStreamHolder(pyarrow_chunked_array))
+    assert df["bools"].equals(round_trip_series, check_dtypes=True, check_names=False)
+
+    # empty ChunkedArray via C stream interface
+    empty_chunked_array = pa.chunked_array([], type=pyarrow_chunked_array.type)
+    round_trip_series = pl.Series(PyCapsuleStreamHolder(empty_chunked_array))
+    assert df["bools"].dtype == round_trip_series.dtype
+
+    # Table via C stream interface
+    round_trip_df = pl.DataFrame(PyCapsuleStreamHolder(pyarrow_table))
+    assert df.equals(round_trip_df)
+
+    # empty Table via C stream interface
+    empty_df = df[:0].to_arrow()
+    round_trip_df = pl.DataFrame(PyCapsuleStreamHolder(empty_df))
+    orig_schema = df.schema
+    round_trip_schema = round_trip_df.schema
+
+    # The "enum" schema is not preserved because categories are lost via C data
+    # interface
+    orig_schema.pop("enum")
+    round_trip_schema.pop("enum")
+
+    assert orig_schema == round_trip_schema
+
+    # RecordBatchReader via C stream interface
+    pyarrow_reader = pa.RecordBatchReader.from_batches(
+        pyarrow_table.schema, pyarrow_table.to_batches()
+    )
+    round_trip_df = pl.DataFrame(PyCapsuleStreamHolder(pyarrow_reader))
+    assert df.equals(round_trip_df)
+
+
+@pytest.mark.parametrize(
+    "tz",
+    [
+        None,
+        ZoneInfo("Asia/Tokyo"),
+        ZoneInfo("Europe/Amsterdam"),
+        ZoneInfo("UTC"),
+        timezone.utc,
+    ],
+)
+def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
+    dt = datetime(2023, 1, 1, 0, 0, 0, 0, tzinfo=tz)
+
+    df = pl.DataFrame([{"dt": dt}, {"dt": dt}])
+    expected = pl.DataFrame({"dt": [dt, dt]})
+    assert_frame_equal(df, expected)
+
+    assert df.schema == {"dt": pl.Datetime("us", time_zone=tz)}
+
+
+@pytest.mark.parametrize(
+    "tz",
+    [
+        None,
+        ZoneInfo("Asia/Tokyo"),
+        ZoneInfo("Europe/Amsterdam"),
+        ZoneInfo("UTC"),
+        timezone.utc,
+    ],
+)
+def test_init_list_of_nested_dicts_with_timezone(tz: Any) -> None:
+    dt = datetime(2021, 1, 1, 0, 0, 0, 0, tzinfo=tz)
+    data = [{"timestamp": {"content": datetime(2021, 1, 1, 0, 0, tzinfo=tz)}}]
+
+    df = pl.DataFrame(data).unnest("timestamp")
+    expected = pl.DataFrame({"content": [dt]})
+    assert_frame_equal(df, expected)
+
+    assert df.schema == {"content": pl.Datetime("us", time_zone=tz)}
+
+
+def test_init_from_subclassed_types() -> None:
+    # more detailed test of one custom subclass...
+    import codecs
+
+    class SuperSecretString(str):
+        def __new__(cls, value: str) -> Self:
+            return super().__new__(cls, value)
+
+        def __repr__(self) -> str:
+            return codecs.encode(self, "rot_13")
+
+    w = "windmolen"
+    sstr = SuperSecretString(w)
+
+    assert sstr == w
+    assert isinstance(sstr, str)
+    assert repr(sstr) == "jvaqzbyra"
+    assert_series_equal(pl.Series([w, w]), pl.Series([sstr, sstr]))
+
+    # ...then validate across other basic types
+    for BaseType, value in (
+        (int, 42),
+        (float, 5.5),
+        (bytes, b"value"),
+        (str, "value"),
+    ):
+
+        class SubclassedType(BaseType):  # type: ignore[misc,valid-type]
+            def __new__(cls, value: Any) -> Self:
+                return super().__new__(cls, value)  # type: ignore[no-any-return]
+
+        assert (
+            pl.Series([value]).to_list() == pl.Series([SubclassedType(value)]).to_list()
+        )
+
+
+def test_series_init_with_python_type_7737() -> None:
+    assert pl.Series([], dtype=int).dtype == pl.Int64  # type: ignore[arg-type]
+    assert pl.Series([], dtype=float).dtype == pl.Float64  # type: ignore[arg-type]
+    assert pl.Series([], dtype=bool).dtype == pl.Boolean  # type: ignore[arg-type]
+    assert pl.Series([], dtype=str).dtype == pl.Utf8  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError):
+        pl.Series(["a"], dtype=int)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError):
+        pl.Series([True], dtype=str)  # type: ignore[arg-type]
+
+
+def test_init_from_list_shape_6968() -> None:
+    df1 = pl.DataFrame([[1, None], [2, None], [3, None]])
+    df2 = pl.DataFrame([[None, None], [2, None], [3, None]])
+    assert df1.shape == (2, 3)
+    assert df2.shape == (2, 3)

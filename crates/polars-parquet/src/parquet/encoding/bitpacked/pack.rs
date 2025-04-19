@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 /// Macro that generates a packing function taking the number of bits as a const generic
 macro_rules! pack_impl {
     ($t:ty, $bytes:literal, $bits:tt, $bits_minus_one:tt) => {
@@ -81,6 +82,7 @@ macro_rules! pack {
     };
 }
 
+pack!(pack16, u16, 2, 16, 15);
 pack!(pack32, u32, 4, 32, 31);
 pack!(pack64, u64, 8, 64, 63);
 

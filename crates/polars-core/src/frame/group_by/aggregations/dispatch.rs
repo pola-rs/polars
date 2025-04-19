@@ -15,7 +15,7 @@ impl Series {
     }
 
     #[doc(hidden)]
-    pub fn agg_valid_count(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_valid_count(&self, groups: &GroupsType) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 && self.null_count() > 0 {
             self.rechunk()
@@ -24,7 +24,7 @@ impl Series {
         };
 
         match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
+            GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
                 debug_assert!(idx.len() <= s.len());
                 if idx.is_empty() {
                     None
@@ -35,7 +35,7 @@ impl Series {
                     Some((take.len() - take.null_count()) as IdxSize)
                 }
             }),
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 _agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
                     debug_assert!(len <= s.len() as IdxSize);
                     if len == 0 {
@@ -52,7 +52,7 @@ impl Series {
     }
 
     #[doc(hidden)]
-    pub unsafe fn agg_first(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_first(&self, groups: &GroupsType) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 {
             self.rechunk()
@@ -61,27 +61,23 @@ impl Series {
         };
 
         let mut out = match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let indices = groups
                     .iter()
                     .map(
                         |(first, idx)| {
-                            if idx.is_empty() {
-                                None
-                            } else {
-                                Some(first)
-                            }
+                            if idx.is_empty() { None } else { Some(first) }
                         },
                     )
-                    .collect_ca("");
+                    .collect_ca(PlSmallStr::EMPTY);
                 // SAFETY: groups are always in bounds.
                 s.take_unchecked(&indices)
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 let indices = groups
                     .iter()
                     .map(|&[first, len]| if len == 0 { None } else { Some(first) })
-                    .collect_ca("");
+                    .collect_ca(PlSmallStr::EMPTY);
                 // SAFETY: groups are always in bounds.
                 s.take_unchecked(&indices)
             },
@@ -93,7 +89,7 @@ impl Series {
     }
 
     #[doc(hidden)]
-    pub unsafe fn agg_n_unique(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_n_unique(&self, groups: &GroupsType) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 {
             self.rechunk()
@@ -102,18 +98,16 @@ impl Series {
         };
 
         match groups {
-            GroupsProxy::Idx(groups) => {
-                agg_helper_idx_on_all_no_null::<IdxType, _>(groups, |idx| {
-                    debug_assert!(idx.len() <= s.len());
-                    if idx.is_empty() {
-                        0
-                    } else {
-                        let take = s.take_slice_unchecked(idx);
-                        take.n_unique().unwrap() as IdxSize
-                    }
-                })
-            },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Idx(groups) => agg_helper_idx_on_all_no_null::<IdxType, _>(groups, |idx| {
+                debug_assert!(idx.len() <= s.len());
+                if idx.is_empty() {
+                    0
+                } else {
+                    let take = s.take_slice_unchecked(idx);
+                    take.n_unique().unwrap() as IdxSize
+                }
+            }),
+            GroupsType::Slice { groups, .. } => {
                 _agg_helper_slice_no_null::<IdxType, _>(groups, |[first, len]| {
                     debug_assert!(len <= s.len() as IdxSize);
                     if len == 0 {
@@ -128,7 +122,7 @@ impl Series {
     }
 
     #[doc(hidden)]
-    pub unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_mean(&self, groups: &GroupsType) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 {
             self.rechunk()
@@ -141,7 +135,7 @@ impl Series {
             Boolean => s.cast(&Float64).unwrap().agg_mean(groups),
             Float32 => SeriesWrap(s.f32().unwrap().clone()).agg_mean(groups),
             Float64 => SeriesWrap(s.f64().unwrap().clone()).agg_mean(groups),
-            dt if dt.is_numeric() => apply_method_physical_integer!(s, agg_mean, groups),
+            dt if dt.is_primitive_numeric() => apply_method_physical_integer!(s, agg_mean, groups),
             #[cfg(feature = "dtype-datetime")]
             dt @ Datetime(_, _) => self
                 .to_physical_repr()
@@ -175,12 +169,12 @@ impl Series {
                 * (MS_IN_DAY as f64))
                 .cast(&Datetime(TimeUnit::Milliseconds, None))
                 .unwrap(),
-            _ => Series::full_null("", groups.len(), s.dtype()),
+            _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
     }
 
     #[doc(hidden)]
-    pub unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 {
             self.rechunk()
@@ -193,7 +187,9 @@ impl Series {
             Boolean => s.cast(&Float64).unwrap().agg_median(groups),
             Float32 => SeriesWrap(s.f32().unwrap().clone()).agg_median(groups),
             Float64 => SeriesWrap(s.f64().unwrap().clone()).agg_median(groups),
-            dt if dt.is_numeric() => apply_method_physical_integer!(s, agg_median, groups),
+            dt if dt.is_primitive_numeric() => {
+                apply_method_physical_integer!(s, agg_median, groups)
+            },
             #[cfg(feature = "dtype-datetime")]
             dt @ Datetime(_, _) => self
                 .to_physical_repr()
@@ -227,16 +223,16 @@ impl Series {
                 * (MS_IN_DAY as f64))
                 .cast(&Datetime(TimeUnit::Milliseconds, None))
                 .unwrap(),
-            _ => Series::full_null("", groups.len(), s.dtype()),
+            _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
     }
 
     #[doc(hidden)]
     pub unsafe fn agg_quantile(
         &self,
-        groups: &GroupsProxy,
+        groups: &GroupsType,
         quantile: f64,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     ) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 {
@@ -247,13 +243,12 @@ impl Series {
 
         use DataType::*;
         match s.dtype() {
-            Float32 => s.f32().unwrap().agg_quantile(groups, quantile, interpol),
-            Float64 => s.f64().unwrap().agg_quantile(groups, quantile, interpol),
-            dt if dt.is_numeric() || dt.is_temporal() => {
+            Float32 => s.f32().unwrap().agg_quantile(groups, quantile, method),
+            Float64 => s.f64().unwrap().agg_quantile(groups, quantile, method),
+            dt if dt.is_primitive_numeric() || dt.is_temporal() => {
                 let ca = s.to_physical_repr();
                 let physical_type = ca.dtype();
-                let s =
-                    apply_method_physical_integer!(ca, agg_quantile, groups, quantile, interpol);
+                let s = apply_method_physical_integer!(ca, agg_quantile, groups, quantile, method);
                 if dt.is_logical() {
                     // back to physical and then
                     // back to logical type
@@ -262,12 +257,12 @@ impl Series {
                     s
                 }
             },
-            _ => Series::full_null("", groups.len(), s.dtype()),
+            _ => Series::full_null(PlSmallStr::EMPTY, groups.len(), s.dtype()),
         }
     }
 
     #[doc(hidden)]
-    pub unsafe fn agg_last(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_last(&self, groups: &GroupsType) -> Series {
         // Prevent a rechunk for every individual group.
         let s = if groups.len() > 1 {
             self.rechunk()
@@ -276,7 +271,7 @@ impl Series {
         };
 
         let out = match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let indices = groups
                     .all()
                     .iter()
@@ -287,10 +282,10 @@ impl Series {
                             Some(idx[idx.len() - 1])
                         }
                     })
-                    .collect_ca("");
+                    .collect_ca(PlSmallStr::EMPTY);
                 s.take_unchecked(&indices)
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 let indices = groups
                     .iter()
                     .map(|&[first, len]| {
@@ -300,7 +295,7 @@ impl Series {
                             Some(first + len - 1)
                         }
                     })
-                    .collect_ca("");
+                    .collect_ca(PlSmallStr::EMPTY);
                 s.take_unchecked(&indices)
             },
         };

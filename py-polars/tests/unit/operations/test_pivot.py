@@ -11,7 +11,7 @@ from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PivotAgg
+    from polars._typing import PivotAgg, PolarsIntegerType
 
 
 def test_pivot() -> None:
@@ -285,6 +285,36 @@ def test_pivot_index_struct_14101() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_pivot_nested_struct_17065() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["one", "two", "one", "two"],
+            "bar": ["x", "x", "y", "y"],
+            "baz": [
+                {"a": 1, "b": {"c": 2}},
+                {"a": 3, "b": {"c": 4}},
+                {"a": 5, "b": {"c": 6}},
+                {"a": 7, "b": {"c": 8}},
+            ],
+        }
+    )
+    result = df.pivot(on="bar", index="foo", values="baz")
+    expected = pl.DataFrame(
+        {
+            "foo": ["one", "two"],
+            "x": [
+                {"a": 1, "b": {"c": 2}},
+                {"a": 3, "b": {"c": 4}},
+            ],
+            "y": [
+                {"a": 5, "b": {"c": 6}},
+                {"a": 7, "b": {"c": 8}},
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_pivot_name_already_exists() -> None:
     # This should be extremely rare...but still, good to check it
     df = pl.DataFrame(
@@ -443,22 +473,22 @@ def test_pivot_struct() -> None:
         "id": ["a", "b", "c"],
         "1": [
             {"num1": 1, "num2": 4},
-            {"num1": None, "num2": None},
+            None,
             {"num1": 6, "num2": 6},
         ],
         "2": [
             {"num1": 3, "num2": 5},
-            {"num1": None, "num2": None},
-            {"num1": None, "num2": None},
+            None,
+            None,
         ],
         "3": [
-            {"num1": None, "num2": None},
+            None,
             {"num1": 5, "num2": 3},
             {"num1": 3, "num2": 6},
         ],
         "4": [
-            {"num1": None, "num2": None},
-            {"num1": None, "num2": None},
+            None,
+            None,
             {"num1": 4, "num2": 4},
         ],
     }
@@ -466,7 +496,7 @@ def test_pivot_struct() -> None:
 
 def test_duplicate_column_names_which_should_raise_14305() -> None:
     df = pl.DataFrame({"a": [1, 3, 2], "c": ["a", "a", "a"], "d": [7, 8, 9]})
-    with pytest.raises(DuplicateError, match="has more than one occurrences"):
+    with pytest.raises(DuplicateError, match="has more than one occurrence"):
         df.pivot(index="a", on="c", values="d")
 
 
@@ -531,3 +561,15 @@ def test_pivot_invalid() -> None:
         match="`index` and `values` cannot both be None in `pivot` operation",
     ):
         pl.DataFrame({"a": [1, 2], "b": [2, 3], "c": [3, 4]}).pivot("a")
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
+)
+def test_pivot_empty_index_dtypes(dtype: PolarsIntegerType) -> None:
+    index = pl.Series([], dtype=dtype)
+    df = pl.DataFrame({"index": index, "on": [], "values": []})
+    result = df.pivot(index="index", on="on", values="values")
+    expected = pl.DataFrame({"index": index})
+    assert_frame_equal(result, expected)

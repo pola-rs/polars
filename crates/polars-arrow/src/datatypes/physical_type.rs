@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub use crate::types::PrimitiveType;
 
 /// The set of physical types: unique in-memory representations of an Arrow array.
+///
 /// A physical type has a one-to-many relationship with a [`crate::datatypes::ArrowDataType`] and
 /// a one-to-one mapping to each struct in this crate that implements [`crate::array::Array`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -56,6 +57,10 @@ impl PhysicalType {
             false
         }
     }
+
+    pub fn is_primitive(&self) -> bool {
+        matches!(self, Self::Primitive(_))
+    }
 }
 
 /// the set of valid indices types of a dictionary-encoded Array.
@@ -71,6 +76,8 @@ pub enum IntegerType {
     Int32,
     /// A signed 64-bit integer.
     Int64,
+    /// A signed 128-bit integer.
+    Int128,
     /// An unsigned 8-bit integer.
     UInt8,
     /// An unsigned 16-bit integer.

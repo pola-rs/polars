@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek, SeekFrom};
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 
 use super::super::compression;
 use super::super::endianness::is_native_little_endian;
@@ -17,10 +17,10 @@ fn read_swapped<T: NativeType, R: Read + Seek>(
     is_little_endian: bool,
 ) -> PolarsResult<()> {
     // slow case where we must reverse bits
-    let mut slice = vec![0u8; length * std::mem::size_of::<T>()];
+    let mut slice = vec![0u8; length * size_of::<T>()];
     reader.read_exact(&mut slice)?;
 
-    let chunks = slice.chunks_exact(std::mem::size_of::<T>());
+    let chunks = slice.chunks_exact(size_of::<T>());
     if !is_little_endian {
         // machine is little endian, file is big endian
         buffer
@@ -67,7 +67,7 @@ fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
     length: usize,
     is_little_endian: bool,
 ) -> PolarsResult<Vec<T>> {
-    let required_number_of_bytes = length.saturating_mul(std::mem::size_of::<T>());
+    let required_number_of_bytes = length.saturating_mul(size_of::<T>());
     if required_number_of_bytes > buffer_length {
         polars_bail!(
             oos = OutOfSpecKind::InvalidBuffer {
@@ -269,7 +269,7 @@ fn read_compressed_bitmap<R: Read + Seek>(
     reader: &mut R,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<u8>> {
-    let mut buffer = vec![0; (length + 7) / 8];
+    let mut buffer = vec![0; length.div_ceil(8)];
 
     scratch.clear();
     scratch.try_reserve(bytes)?;

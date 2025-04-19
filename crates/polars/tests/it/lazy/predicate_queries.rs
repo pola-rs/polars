@@ -1,6 +1,6 @@
 // used only if feature="is_in", feature="dtype-categorical"
-#[allow(unused_imports)]
-use polars_core::{disable_string_cache, StringCacheHolder, SINGLE_LOCK};
+#[cfg(all(feature = "is_in", feature = "dtype-categorical"))]
+use polars_core::{SINGLE_LOCK, StringCacheHolder, disable_string_cache};
 
 use super::*;
 
@@ -11,7 +11,7 @@ fn test_predicate_after_renaming() -> PolarsResult<()> {
         "bar" => [3, 2, 1]
     ]?
     .lazy()
-    .rename(["foo", "bar"], ["foo2", "bar2"])
+    .rename(["foo", "bar"], ["foo2", "bar2"], true)
     .filter(col("foo2").eq(col("bar2")))
     .collect()?;
 
@@ -135,12 +135,12 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
     disable_string_cache();
     let _sc = StringCacheHolder::hold();
 
-    let s = Series::new("x", ["a", "b", "c"])
+    let s = Series::new("x".into(), ["a", "b", "c"])
         .strict_cast(&DataType::Categorical(None, Default::default()))?;
     let out = df
         .lazy()
         .with_column(col("a").strict_cast(DataType::Categorical(None, Default::default())))
-        .filter(col("a").is_in(lit(s).alias("x")))
+        .filter(col("a").is_in(lit(s).alias("x"), false))
         .collect()?;
 
     let mut expected = df![
@@ -197,7 +197,7 @@ fn test_binaryexpr_pushdown_left_join_9506() -> PolarsResult<()> {
 fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
     let lf1 = df![
         "k" => ["x", "x", "y"],
-        "v" => [3, 2, 6,]
+        "v" => [3, 2, 6]
     ]?
     .lazy();
 

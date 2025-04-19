@@ -2,7 +2,8 @@ use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::parquet::page::DataPage;
 
 use super::dictionary::FixedLenByteArrayPageDict;
-use super::utils::{deserialize_optional, FixedLenBinaryPageState};
+use super::utils::{FixedLenBinaryPageState, deserialize_optional};
+use crate::io::parquet::read::hybrid_rle_iter;
 
 pub fn page_to_vec(
     page: &DataPage,
@@ -19,13 +20,11 @@ pub fn page_to_vec(
         FixedLenBinaryPageState::Required(values) => {
             Ok(values.map(|x| x.to_vec()).map(Some).collect())
         },
-        FixedLenBinaryPageState::RequiredDictionary(dict) => dict
-            .indexes
+        FixedLenBinaryPageState::RequiredDictionary(dict) => hybrid_rle_iter(dict.indexes)?
             .map(|x| dict.dict.value(x as usize).map(|x| x.to_vec()).map(Some))
             .collect(),
         FixedLenBinaryPageState::OptionalDictionary(validity, dict) => {
-            let values = dict
-                .indexes
+            let values = hybrid_rle_iter(dict.indexes)?
                 .map(|x| dict.dict.value(x as usize).map(|x| x.to_vec()));
             deserialize_optional(validity, values)
         },

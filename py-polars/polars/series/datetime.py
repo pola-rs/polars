@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import deprecate_function
+from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     import datetime as dt
+    from collections.abc import Iterable
 
-    from polars import Expr, Series
+    from polars import Series
     from polars._typing import (
         Ambiguous,
         EpochTimeUnit,
@@ -30,22 +31,28 @@ class DateTimeNameSpace:
 
     _accessor = "dt"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def __getitem__(self, item: int) -> dt.date | dt.datetime | dt.timedelta:
         s = wrap_s(self._s)
         return s[item]
 
+    @unstable()
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.27.0")
     def add_business_days(
         self,
         n: int | IntoExpr,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
         holidays: Iterable[dt.date] = (),
         roll: Roll = "raise",
-    ) -> Expr:
+    ) -> Series:
         """
         Offset by `n` business days.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -68,7 +75,7 @@ class DateTimeNameSpace:
 
                 my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
 
-            and pass `holidays=my_holidays` when you call `business_day_count`.
+            and pass `holidays=my_holidays` when you call `add_business_days`.
         roll
             What to do when the start date lands on a non-business day. Options are:
 
@@ -78,7 +85,7 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
+        Series
             Data type is preserved.
 
         Examples
@@ -96,7 +103,7 @@ class DateTimeNameSpace:
         You can pass a custom weekend - for example, if you only take Sunday off:
 
         >>> week_mask = (True, True, True, True, True, True, False)
-        >>> s.dt.add_business_days(5, week_mask)
+        >>> s.dt.add_business_days(5, week_mask=week_mask)
         shape: (2,)
         Series: 'start' [date]
         [
@@ -206,55 +213,110 @@ class DateTimeNameSpace:
         """
         return self._s.mean()
 
-    def to_string(self, format: str) -> Series:
+    def to_string(self, format: str | None = None) -> Series:
         """
         Convert a Date/Time/Datetime column into a String column with the given format.
 
-        Similar to `cast(pl.String)`, but this method allows you to customize the
-        formatting of the resulting string.
+        .. versionchanged:: 1.15.0
+            Added support for the use of "iso:strict" as a format string.
+        .. versionchanged:: 1.14.0
+            Added support for the `Duration` dtype, and use of "iso" as a format string.
 
         Parameters
         ----------
         format
-            Format to use, refer to the `chrono strftime documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: `"%y-%m-%d"`.
+            * Format to use, refer to the `chrono strftime documentation
+              <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+              for specification. Example: `"%y-%m-%d"`.
+
+            * If no format is provided, the appropriate ISO format for the underlying
+              data type is used. This can be made explicit by passing `"iso"` or
+              `"iso:strict"` as the format string (see notes below for details).
+
+        Notes
+        -----
+        * Similar to `cast(pl.String)`, but this method allows you to customize
+          the formatting of the resulting string; if no format is provided, the
+          appropriate ISO format for the underlying data type is used.
+
+        * Datetime dtype expressions distinguish between "iso" and "iso:strict"
+          format strings. The difference is in the inclusion of a "T" separator
+          between the date and time components ("iso" results in ISO compliant
+          date and time components, separated with a space; "iso:strict" returns
+          the same components separated with a "T"). All other temporal types
+          return the same value for both format strings.
+
+        * Duration dtype expressions cannot be formatted with `strftime`. Instead,
+          only "iso" and "polars" are supported as format strings. The "iso" format
+          string results in ISO8601 duration string output, and "polars" results
+          in the same form seen in the frame `repr`.
 
         Examples
         --------
         >>> from datetime import datetime
         >>> s = pl.Series(
-        ...     "datetime",
-        ...     [datetime(2020, 3, 1), datetime(2020, 4, 1), datetime(2020, 5, 1)],
+        ...     "dtm",
+        ...     [
+        ...         datetime(1999, 12, 31, 6, 12, 30, 800),
+        ...         datetime(2020, 7, 5, 10, 20, 45, 12345),
+        ...         datetime(2077, 10, 20, 18, 25, 10, 999999),
+        ...     ],
         ... )
-        >>> s.dt.to_string("%Y/%m/%d")
+
+        Default for temporal dtypes (if not specifying a format string) is ISO8601:
+
+        >>> s.dt.to_string()  # or s.dt.to_string("iso")
         shape: (3,)
-        Series: 'datetime' [str]
+        Series: 'dtm' [str]
         [
-            "2020/03/01"
-            "2020/04/01"
-            "2020/05/01"
+            "1999-12-31 06:12:30.000800"
+            "2020-07-05 10:20:45.012345"
+            "2077-10-20 18:25:10.999999"
         ]
 
-        If you're interested in the day name / month name, you can use
-        `'%A'` / `'%B'`:
+        For `Datetime` specifically you can choose between "iso" (where the date and
+        time components are ISO, separated by a space) and "iso:strict" (where these
+        components are separated by a "T"):
+
+        >>> s.dt.to_string("iso:strict")
+        shape: (3,)
+        Series: 'dtm' [str]
+        [
+            "1999-12-31T06:12:30.000800"
+            "2020-07-05T10:20:45.012345"
+            "2077-10-20T18:25:10.999999"
+        ]
+
+        The output can be customized by using a strftime-compatible format string:
+
+        >>> s.dt.to_string("%d/%m/%y")
+        shape: (3,)
+        Series: 'dtm' [str]
+        [
+            "31/12/99"
+            "05/07/20"
+            "20/10/77"
+        ]
+
+        If you're interested in using day or month names, you can use
+        the `'%A'` and/or `'%B'` format strings:
 
         >>> s.dt.to_string("%A")
         shape: (3,)
-        Series: 'datetime' [str]
+        Series: 'dtm' [str]
         [
-                "Sunday"
-                "Wednesday"
-                "Friday"
+            "Friday"
+            "Sunday"
+            "Wednesday"
         ]
 
         >>> s.dt.to_string("%B")
         shape: (3,)
-        Series: 'datetime' [str]
+        Series: 'dtm' [str]
         [
-                "March"
-                "April"
-                "May"
+            "December"
+            "July"
+            "October"
         ]
         """
 
@@ -317,7 +379,7 @@ class DateTimeNameSpace:
         """
         return self.to_string(format)
 
-    def millennium(self) -> Expr:
+    def millennium(self) -> Series:
         """
         Extract the millennium from underlying representation.
 
@@ -327,8 +389,8 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`Int32`.
+        Series
+            Series of data type :class:`Int32`.
 
         Examples
         --------
@@ -355,7 +417,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def century(self) -> Expr:
+    def century(self) -> Series:
         """
         Extract the century from underlying representation.
 
@@ -365,8 +427,8 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`Int32`.
+        Series
+            Series of data type :class:`Int32`.
 
         Examples
         --------
@@ -416,6 +478,81 @@ class DateTimeNameSpace:
         [
                 2001
                 2002
+        ]
+        """
+
+    @unstable()
+    def is_business_day(
+        self,
+        *,
+        week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
+        holidays: Iterable[dt.date] = (),
+    ) -> Series:
+        """
+        Determine whether each day lands on a business day.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        week_mask
+            Which days of the week to count. The default is Monday to Friday.
+            If you wanted to count only Monday to Thursday, you would pass
+            `(True, True, True, True, False, False, False)`.
+        holidays
+            Holidays to exclude from the count. The Python package
+            `python-holidays <https://github.com/vacanza/python-holidays>`_
+            may come in handy here. You can install it with ``pip install holidays``,
+            and then, to get all Dutch holidays for years 2020-2024:
+
+            .. code-block:: python
+
+                import holidays
+
+                my_holidays = holidays.country_holidays("NL", years=range(2020, 2025))
+
+            and pass `holidays=my_holidays` when you call `is_business_day`.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series([date(2020, 1, 3), date(2020, 1, 5)])
+        >>> s.dt.is_business_day()
+        shape: (2,)
+        Series: '' [bool]
+        [
+            true
+            false
+        ]
+
+        You can pass a custom weekend - for example, if you only take Sunday off:
+
+        >>> week_mask = (True, True, True, True, True, True, False)
+        >>> s.dt.is_business_day(week_mask=week_mask)
+        shape: (2,)
+        Series: '' [bool]
+        [
+            true
+            false
+        ]
+
+        You can also pass a list of holidays:
+
+        >>> from datetime import date
+        >>> holidays = [date(2020, 1, 3), date(2020, 1, 6)]
+        >>> s.dt.is_business_day(holidays=holidays)
+        shape: (2,)
+        Series: '' [bool]
+        [
+            false
+            false
         ]
         """
 
@@ -1566,7 +1703,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def offset_by(self, by: str | Expr) -> Series:
+    def offset_by(self, by: str | IntoExprColumn) -> Series:
         """
         Offset this date by a relative time offset.
 
@@ -1755,19 +1892,16 @@ class DateTimeNameSpace:
         ]
         """
 
-    @unstable()
     def round(self, every: str | dt.timedelta | IntoExprColumn) -> Series:
         """
         Divide the date/ datetime range into buckets.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        - Each date/datetime in the first half of the interval
+          is mapped to the start of its bucket.
+        - Each date/datetime in the second half of the interval
+          is mapped to the end of its bucket.
+        - Half-way points are mapped to the start of their bucket.
 
-        Each date/datetime in the first half of the interval is mapped to the start of
-        its bucket.
-        Each date/datetime in the second half of the interval is mapped to the end of
-        its bucket.
         Ambiguous results are localized using the DST offset of the original timestamp -
         for example, rounding `'2022-11-06 01:20:00 CST'` by `'1h'` results in
         `'2022-11-06 01:00:00 CST'`, whereas rounding `'2022-11-06 01:20:00 CDT'` by
@@ -1866,7 +2000,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def combine(self, time: dt.time | Series, time_unit: TimeUnit = "us") -> Expr:
+    def combine(self, time: dt.time | Series, time_unit: TimeUnit = "us") -> Series:
         """
         Create a naive Datetime from an existing Date/Datetime expression and a Time.
 
@@ -2036,5 +2170,63 @@ class DateTimeNameSpace:
         [
                 1h
                 0ms
+        ]
+        """
+
+    def replace(
+        self,
+        *,
+        year: int | Series | None = None,
+        month: int | Series | None = None,
+        day: int | Series | None = None,
+        hour: int | Series | None = None,
+        minute: int | Series | None = None,
+        second: int | Series | None = None,
+        microsecond: int | Series | None = None,
+        ambiguous: Ambiguous | Series = "raise",
+    ) -> Series:
+        """
+        Replace time unit.
+
+        Parameters
+        ----------
+        year
+            Literal or Series.
+        month
+            Literal or Series, ranging from 1-12.
+        day
+            Literal or Series, ranging from 1-31.
+        hour
+            Literal or Series, ranging from 0-23.
+        minute
+            Literal or Series, ranging from 0-59.
+        second
+            Literal or Series, ranging from 0-59.
+        microsecond
+            Literal or Series, ranging from 0-999999.
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
+            - `'null'`: set to null
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Date` or :class:`Datetime` with the specified
+            time units replaced.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series("date", [date(2013, 1, 1), date(2024, 1, 2)])
+        >>> s.dt.replace(year=1800)
+        shape: (2,)
+        Series: 'date' [date]
+        [
+                1800-01-01
+                1800-01-02
         ]
         """

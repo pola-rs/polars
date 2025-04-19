@@ -1,8 +1,14 @@
+use std::ops::{Add, Sub};
+
 use arrow::bitmap::MutableBitmap;
-use arrow::legacy::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use num_traits::{FromPrimitive, ToPrimitive};
+use polars_compute::rolling::RollingFnParams;
+use polars_compute::rolling::no_nulls::{self, RollingAggWindowNoNulls};
+use polars_compute::rolling::nulls::VarianceMoment;
+use polars_compute::rolling::quantile_filter::SealedRolling;
 
 use super::*;
 
@@ -12,7 +18,7 @@ pub(crate) fn rolling_apply_agg_window_sorted<'a, Agg, T, O>(
     values: &'a [T],
     offsets: O,
     min_periods: usize,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     // items (offset, len) -> so offsets are offset, offset + len
@@ -73,7 +79,7 @@ pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(
     values: &'a [T],
     offsets: O,
     min_periods: usize,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
@@ -144,7 +150,7 @@ pub(crate) fn rolling_min<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: DynArgs,
+    _params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
@@ -182,7 +188,7 @@ pub(crate) fn rolling_max<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: DynArgs,
+    _params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
@@ -220,11 +226,19 @@ pub(crate) fn rolling_sum<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: DynArgs,
+    _params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
+    T: NativeType
+        + std::iter::Sum
+        + NumCast
+        + Mul<Output = T>
+        + AddAssign
+        + SubAssign
+        + IsFloat
+        + Sub<Output = T>
+        + Add<Output = T>,
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
@@ -258,7 +272,7 @@ pub(crate) fn rolling_mean<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _params: DynArgs,
+    _params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
@@ -296,11 +310,11 @@ pub(crate) fn rolling_var<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
+    T: NativeType + Float + ToPrimitive + FromPrimitive + AddAssign + IsFloat,
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
@@ -308,14 +322,14 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<no_nulls::VarWindow<_>, _, _>(
+        rolling_apply_agg_window_sorted::<no_nulls::MomentWindow<_, VarianceMoment>, _, _>(
             values,
             offset_iter,
             min_periods,
             params,
         )
     } else {
-        rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(
+        rolling_apply_agg_window::<no_nulls::MomentWindow<_, VarianceMoment>, _, _>(
             values,
             offset_iter,
             min_periods,
@@ -334,11 +348,11 @@ pub(crate) fn rolling_quantile<T>(
     min_periods: usize,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    params: DynArgs,
+    params: Option<RollingFnParams>,
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
+    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat + SealedRolling,
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]

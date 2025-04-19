@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use parking_lot::{Condvar, Mutex};
 
@@ -149,7 +149,7 @@ pub struct ParkAttempt<'a> {
     worker: &'a mut ParkGroupWorker,
 }
 
-impl<'a> ParkAttempt<'a> {
+impl ParkAttempt<'_> {
     /// Actually park this worker.
     ///
     /// If there were calls to unpark between calling prepare_park() and park(),

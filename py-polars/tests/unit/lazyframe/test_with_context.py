@@ -3,7 +3,6 @@ from datetime import datetime
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -19,7 +18,7 @@ def test_with_context() -> None:
 
     with pytest.deprecated_call():
         context = df_a.with_context(df_b.lazy())
-    with pytest.raises(ComputeError):
+    with pytest.raises(pl.exceptions.ShapeError):
         context.select("a", "c").collect()
 
 
@@ -74,7 +73,7 @@ def test_streaming_11219() -> None:
         context = lf.with_context([lf_other, lf_other2])
 
     assert context.select(pl.col("b") + pl.col("c").first()).collect(
-        streaming=True
+        engine="old-streaming"  # type: ignore[call-overload]
     ).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
 
 

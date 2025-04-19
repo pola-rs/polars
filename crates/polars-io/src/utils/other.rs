@@ -1,18 +1,15 @@
-#[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
-use std::borrow::Cow;
 use std::io::Read;
+#[cfg(target_os = "emscripten")]
+use std::io::{Seek, SeekFrom};
 
-use once_cell::sync::Lazy;
 use polars_core::prelude::*;
-#[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
-use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
-use regex::{Regex, RegexBuilder};
+use polars_utils::mmap::{MMapSemaphore, MemSlice};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 
-pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
-    reader: &'a mut R,
-) -> PolarsResult<ReaderBytes<'a>> {
+pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
+    reader: &mut R,
+) -> PolarsResult<ReaderBytes<'_>> {
     // we have a file so we can mmap
     // only seekable files are mmap-able
     if let Some((file, offset)) = reader
@@ -20,13 +17,19 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
         .ok()
         .and_then(|offset| Some((reader.to_file()?, offset)))
     {
-        let mmap = unsafe { memmap::MmapOptions::new().offset(offset).map(file)? };
+        let mut options = memmap::MmapOptions::new();
+        options.offset(offset);
 
-        // somehow bck thinks borrows alias
-        // this is sound as file was already bound to 'a
-        use std::fs::File;
-        let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
-        Ok(ReaderBytes::Mapped(mmap, file))
+        // Set mmap size based on seek to end when running under Emscripten
+        #[cfg(target_os = "emscripten")]
+        {
+            let mut file = file;
+            let size = file.seek(SeekFrom::End(0)).unwrap();
+            options.len((size - offset) as usize);
+        }
+
+        let mmap = MMapSemaphore::new_from_file_with_options(file, options)?;
+        Ok(ReaderBytes::Owned(MemSlice::from_mmap(Arc::new(mmap))))
     } else {
         // we can get the bytes for free
         if reader.to_bytes().is_some() {
@@ -36,33 +39,9 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
             // we have to read to an owned buffer to get the bytes.
             let mut bytes = Vec::with_capacity(1024 * 128);
             reader.read_to_end(&mut bytes)?;
-            Ok(ReaderBytes::Owned(bytes))
+            Ok(ReaderBytes::Owned(bytes.into()))
         }
     }
-}
-
-/// Compute `remaining_rows_to_read` to be taken per file up front, so we can actually read
-/// concurrently/parallel
-///
-/// This takes an iterator over the number of rows per file.
-pub fn get_sequential_row_statistics<I>(
-    iter: I,
-    mut total_rows_to_read: usize,
-) -> Vec<(usize, usize)>
-where
-    I: Iterator<Item = usize>,
-{
-    let mut cumulative_read = 0;
-    iter.map(|rows_this_file| {
-        let remaining_rows_to_read = total_rows_to_read;
-        total_rows_to_read = total_rows_to_read.saturating_sub(rows_this_file);
-
-        let current_cumulative_read = cumulative_read;
-        cumulative_read += rows_this_file;
-
-        (remaining_rows_to_read, current_cumulative_read)
-    })
-    .collect()
 }
 
 #[cfg(any(
@@ -71,13 +50,12 @@ where
     feature = "parquet",
     feature = "avro"
 ))]
-pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
-    let fields = &schema.fields;
-    let fields = projection
+pub fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
+    projection
         .iter()
-        .map(|idx| fields[*idx].clone())
-        .collect::<Vec<_>>();
-    ArrowSchema::from(fields)
+        .map(|idx| schema.get_at_index(*idx).unwrap())
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
 }
 
 #[cfg(any(
@@ -86,49 +64,30 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
     feature = "avro",
     feature = "parquet"
 ))]
-pub(crate) fn columns_to_projection(
-    columns: &[String],
+pub fn columns_to_projection<T: AsRef<str>>(
+    columns: &[T],
     schema: &ArrowSchema,
 ) -> PolarsResult<Vec<usize>> {
     let mut prj = Vec::with_capacity(columns.len());
-    if columns.len() > 100 {
-        let mut column_names = PlHashMap::with_capacity(schema.fields.len());
-        schema.fields.iter().enumerate().for_each(|(i, c)| {
-            column_names.insert(c.name.as_str(), i);
-        });
 
-        for column in columns.iter() {
-            let Some(&i) = column_names.get(column.as_str()) else {
-                polars_bail!(
-                    ColumnNotFound:
-                    "unable to find column {:?}; valid columns: {:?}", column, schema.get_names(),
-                );
-            };
-            prj.push(i);
-        }
-    } else {
-        for column in columns.iter() {
-            let i = schema.try_index_of(column)?;
-            prj.push(i);
-        }
+    for column in columns {
+        let i = schema.try_index_of(column.as_ref())?;
+        prj.push(i);
     }
 
     Ok(prj)
 }
 
-/// Because of threading every row starts from `0` or from `offset`.
-/// We must correct that so that they are monotonically increasing.
-#[cfg(any(feature = "csv", feature = "json"))]
-pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSize) {
-    if !dfs.is_empty() {
-        let mut previous = dfs[0].1 + offset;
-        for (df, n_read) in &mut dfs[1..] {
-            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
-            }
-            previous += *n_read;
-        }
-    }
+#[cfg(debug_assertions)]
+fn check_offsets(dfs: &[DataFrame]) {
+    dfs.windows(2).for_each(|s| {
+        let a = &s[0].get_columns()[0];
+        let b = &s[1].get_columns()[0];
+
+        let prev = a.get(a.len() - 1).unwrap().extract::<usize>().unwrap();
+        let next = b.get(0).unwrap().extract::<usize>().unwrap();
+        assert_eq!(prev + 1, next);
+    })
 }
 
 /// Because of threading every row starts from `0` or from `offset`.
@@ -136,14 +95,25 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSiz
 #[cfg(any(feature = "csv", feature = "json"))]
 pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
     if !dfs.is_empty() {
-        let mut previous = dfs[0].height() as IdxSize + offset;
-        for df in &mut dfs[1..] {
+        let mut previous = offset;
+        for df in &mut *dfs {
+            if df.is_empty() {
+                continue;
+            }
             let n_read = df.height() as IdxSize;
             if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+                if let Ok(v) = s.get(0) {
+                    if v.extract::<usize>().unwrap() != previous as usize {
+                        *s = &*s + previous;
+                    }
+                }
             }
             previous += n_read;
         }
+    }
+    #[cfg(debug_assertions)]
+    {
+        check_offsets(dfs)
     }
 }
 
@@ -153,50 +123,43 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
 pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], offset: IdxSize) {
     assert_eq!(dfs.len(), heights.len());
     if !dfs.is_empty() {
-        let mut previous = heights[0] + offset;
-        for i in 1..dfs.len() {
+        let mut previous = offset;
+        for i in 0..dfs.len() {
             let df = &mut dfs[i];
-            let n_read = heights[i];
-
-            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
-                *s = &*s + previous;
+            if df.is_empty() {
+                continue;
             }
 
+            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
+                if let Ok(v) = s.get(0) {
+                    if v.extract::<usize>().unwrap() != previous as usize {
+                        *s = &*s + previous;
+                    }
+                }
+            }
+            let n_read = heights[i];
             previous += n_read;
         }
     }
 }
 
 #[cfg(feature = "json")]
-pub(crate) fn overwrite_schema(
-    schema: &mut Schema,
-    overwriting_schema: &Schema,
-) -> PolarsResult<()> {
+pub fn overwrite_schema(schema: &mut Schema, overwriting_schema: &Schema) -> PolarsResult<()> {
     for (k, value) in overwriting_schema.iter() {
         *schema.try_get_mut(k)? = value.clone();
     }
     Ok(())
 }
 
-pub static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$").unwrap()
-});
-
-pub static FLOAT_RE_DECIMAL: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[-+]?((\d*,\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+,)$").unwrap()
-});
-
-pub static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^-?(\d+)$").unwrap());
-
-pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
-    RegexBuilder::new(r"^(true|false)$")
-        .case_insensitive(true)
-        .build()
-        .unwrap()
-});
+polars_utils::regex_cache::cached_regex! {
+    pub static FLOAT_RE = r"^[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$";
+    pub static FLOAT_RE_DECIMAL = r"^[-+]?((\d*,\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+,)$";
+    pub static INTEGER_RE = r"^-?(\d+)$";
+    pub static BOOLEAN_RE = r"^(?i:true|false)$";
+}
 
 pub fn materialize_projection(
-    with_columns: Option<&[String]>,
+    with_columns: Option<&[PlSmallStr]>,
     schema: &Schema,
     hive_partitions: Option<&[Series]>,
     has_row_index: bool,
@@ -227,72 +190,27 @@ pub fn materialize_projection(
     }
 }
 
-/// Split DataFrame into chunks in preparation for writing. The chunks have a
-/// maximum number of rows per chunk to ensure reasonable memory efficiency when
-/// reading the resulting file, and a minimum size per chunk to ensure
-/// reasonable performance when writing.
-#[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
-pub(crate) fn chunk_df_for_writing(
-    df: &mut DataFrame,
-    row_group_size: usize,
-) -> PolarsResult<Cow<DataFrame>> {
-    // ensures all chunks are aligned.
-    df.align_chunks();
+/// Utility for decoding JSON that adds the response value to the error message if decoding fails.
+/// This makes it much easier to debug errors from parsing network responses.
+#[cfg(feature = "cloud")]
+pub fn decode_json_response<T>(bytes: &[u8]) -> PolarsResult<T>
+where
+    T: for<'de> serde::de::Deserialize<'de>,
+{
+    use polars_error::to_compute_err;
+    use polars_utils::error::TruncateErrorDetail;
 
-    // Accumulate many small chunks to the row group size.
-    // See: #16403
-    if !df.get_columns().is_empty()
-        && df.get_columns()[0]
-            .chunk_lengths()
-            .take(5)
-            .all(|len| len < row_group_size)
-    {
-        fn finish(scratch: &mut Vec<DataFrame>, new_chunks: &mut Vec<DataFrame>) {
-            let mut new = accumulate_dataframes_vertical_unchecked(scratch.drain(..));
-            new.as_single_chunk_par();
-            new_chunks.push(new);
-        }
-
-        let mut new_chunks = Vec::with_capacity(df.n_chunks()); // upper limit;
-        let mut scratch = vec![];
-        let mut remaining = row_group_size;
-
-        for df in df.split_chunks() {
-            remaining = remaining.saturating_sub(df.height());
-            scratch.push(df);
-
-            if remaining == 0 {
-                remaining = row_group_size;
-                finish(&mut scratch, &mut new_chunks);
-            }
-        }
-        if !scratch.is_empty() {
-            finish(&mut scratch, &mut new_chunks);
-        }
-        return Ok(Cow::Owned(accumulate_dataframes_vertical_unchecked(
-            new_chunks,
-        )));
-    }
-
-    let n_splits = df.height() / row_group_size;
-    let result = if n_splits > 0 {
-        let mut splits = split_df_as_ref(df, n_splits, false);
-
-        for df in splits.iter_mut() {
-            // If the chunks are small enough, writing many small chunks
-            // leads to slow writing performance, so in that case we
-            // merge them.
-            let n_chunks = df.n_chunks();
-            if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
-                df.as_single_chunk_par();
-            }
-        }
-
-        Cow::Owned(accumulate_dataframes_vertical_unchecked(splits))
-    } else {
-        Cow::Borrowed(df)
-    };
-    Ok(result)
+    serde_json::from_slice(bytes)
+        .map_err(to_compute_err)
+        .map_err(|e| {
+            e.wrap_msg(|e| {
+                format!(
+                    "error decoding response: {}, response value: {}",
+                    e,
+                    TruncateErrorDetail(&String::from_utf8_lossy(bytes))
+                )
+            })
+        })
 }
 
 #[cfg(test)]

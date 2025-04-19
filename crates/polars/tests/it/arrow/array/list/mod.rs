@@ -9,9 +9,9 @@ fn debug() {
     let values = Buffer::from(vec![1, 2, 3, 4, 5]);
     let values = PrimitiveArray::<i32>::new(ArrowDataType::Int32, values, None);
 
-    let data_type = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
+    let dtype = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
     let array = ListArray::<i32>::new(
-        data_type,
+        dtype,
         vec![0, 2, 2, 3, 5].try_into().unwrap(),
         Box::new(values),
         None,
@@ -25,9 +25,9 @@ fn split_at() {
     let values = Buffer::from(vec![1, 2, 3, 4, 5]);
     let values = PrimitiveArray::<i32>::new(ArrowDataType::Int32, values, None);
 
-    let data_type = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
+    let dtype = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
     let array = ListArray::<i32>::new(
-        data_type,
+        dtype,
         vec![0, 2, 2, 3, 5].try_into().unwrap(),
         Box::new(values),
         None,
@@ -45,9 +45,9 @@ fn test_nested_panic() {
     let values = Buffer::from(vec![1, 2, 3, 4, 5]);
     let values = PrimitiveArray::<i32>::new(ArrowDataType::Int32, values, None);
 
-    let data_type = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
+    let dtype = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
     let array = ListArray::<i32>::new(
-        data_type.clone(),
+        dtype.clone(),
         vec![0, 2, 2, 3, 5].try_into().unwrap(),
         Box::new(values),
         None,
@@ -56,7 +56,7 @@ fn test_nested_panic() {
     // The datatype for the nested array has to be created considering
     // the nested structure of the child data
     let _ = ListArray::<i32>::new(
-        data_type,
+        dtype,
         vec![0, 2, 4].try_into().unwrap(),
         Box::new(array),
         None,
@@ -68,17 +68,17 @@ fn test_nested_display() {
     let values = Buffer::from(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     let values = PrimitiveArray::<i32>::new(ArrowDataType::Int32, values, None);
 
-    let data_type = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
+    let dtype = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
     let array = ListArray::<i32>::new(
-        data_type,
+        dtype,
         vec![0, 2, 4, 7, 7, 8, 10].try_into().unwrap(),
         Box::new(values),
         None,
     );
 
-    let data_type = ListArray::<i32>::default_datatype(array.data_type().clone());
+    let dtype = ListArray::<i32>::default_datatype(array.dtype().clone());
     let nested = ListArray::<i32>::new(
-        data_type,
+        dtype,
         vec![0, 2, 5, 6].try_into().unwrap(),
         Box::new(array),
         None,

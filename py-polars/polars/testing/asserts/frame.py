@@ -36,13 +36,13 @@ def assert_frame_equal(
     right
         The second DataFrame or LazyFrame to compare.
     check_row_order
-        Require row order to match.
+        Requires row order to match.
     check_column_order
-        Require column order to match.
+        Requires column order to match.
     check_dtypes
-        Require data types to match.
+        Requires data types to match.
     check_exact
-        Require float values to match exactly. If set to `False`, values are considered
+        Requires float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
         Only affects columns with a Float data type.
     rtol
@@ -70,18 +70,12 @@ def assert_frame_equal(
     >>> from polars.testing import assert_frame_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 5, 3]})
-    >>> assert_frame_equal(df1, df2)  # doctest: +SKIP
+    >>> assert_frame_equal(df1, df2)
     Traceback (most recent call last):
     ...
-    AssertionError: Series are different (value mismatch)
+    AssertionError: DataFrames are different (value mismatch for column 'a')
     [left]:  [1, 2, 3]
     [right]: [1, 5, 3]
-
-    The above exception was the direct cause of the following exception:
-
-    Traceback (most recent call last):
-    ...
-    AssertionError: values for column 'a' are different
     """
     __tracebackhide__ = True
 
@@ -183,6 +177,7 @@ def _assert_frame_schema_equal(
     if check_dtypes:
         left_schema_dict, right_schema_dict = dict(left_schema), dict(right_schema)
         if check_column_order or left_schema_dict != right_schema_dict:
+            print(left_schema_dict, right_schema_dict)
             detail = "dtypes do not match"
             raise_assertion_error(objects, detail, left_schema_dict, right_schema_dict)
 
@@ -223,13 +218,13 @@ def assert_frame_not_equal(
     right
         The second DataFrame or LazyFrame to compare.
     check_row_order
-        Require row order to match.
+        Requires row order to match.
     check_column_order
-        Require column order to match.
+        Requires column order to match.
     check_dtypes
-        Require data types to match.
+        Requires data types to match.
     check_exact
-        Require float values to match exactly. If set to `False`, values are considered
+        Requires float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
         Only affects columns with a Float data type.
     rtol
@@ -250,13 +245,14 @@ def assert_frame_not_equal(
     >>> from polars.testing import assert_frame_not_equal
     >>> df1 = pl.DataFrame({"a": [1, 2, 3]})
     >>> df2 = pl.DataFrame({"a": [1, 2, 3]})
-    >>> assert_frame_not_equal(df1, df2)  # doctest: +SKIP
+    >>> assert_frame_not_equal(df1, df2)
     Traceback (most recent call last):
     ...
-    AssertionError: frames are equal
+    AssertionError: DataFrames are equal (but are expected not to be)
     """
     __tracebackhide__ = True
 
+    lazy = _assert_correct_input_type(left, right)
     try:
         assert_frame_equal(
             left=left,
@@ -272,5 +268,6 @@ def assert_frame_not_equal(
     except AssertionError:
         return
     else:
-        msg = "frames are equal"
+        objects = "LazyFrames" if lazy else "DataFrames"
+        msg = f"{objects} are equal (but are expected not to be)"
         raise AssertionError(msg)

@@ -14,15 +14,11 @@ use super::super::windows::calendar::*;
 use super::*;
 
 trait PolarsIso {
-    fn p_weekday(&self) -> i8;
     fn week(&self) -> i8;
     fn iso_year(&self) -> i32;
 }
 
 impl PolarsIso for NaiveDateTime {
-    fn p_weekday(&self) -> i8 {
-        self.weekday().number_from_monday().try_into().unwrap()
-    }
     fn week(&self) -> i8 {
         self.iso_week().week().try_into().unwrap()
     }
@@ -32,9 +28,6 @@ impl PolarsIso for NaiveDateTime {
 }
 
 impl PolarsIso for NaiveDate {
-    fn p_weekday(&self) -> i8 {
-        self.weekday().number_from_monday().try_into().unwrap()
-    }
     fn week(&self) -> i8 {
         self.iso_week().week().try_into().unwrap()
     }
@@ -101,15 +94,6 @@ to_temporal_unit!(
     i32,
     i32,
     ArrowDataType::Int32
-);
-#[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_iso_weekday,
-    p_weekday,
-    date32_to_datetime_opt,
-    i32,
-    i8,
-    ArrowDataType::Int8
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(

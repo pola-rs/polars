@@ -6,8 +6,7 @@ pub(super) fn process_hconcat(
     inputs: Vec<Node>,
     schema: SchemaRef,
     options: HConcatOptions,
-    acc_projections: Vec<ColumnNode>,
-    projections_seen: usize,
+    ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
@@ -15,10 +14,10 @@ pub(super) fn process_hconcat(
     // we apply pushdown to all of the inputs using the subset of accumulated projections relevant to each input,
     // then rebuild the concatenated schema.
 
-    let schema = if acc_projections.is_empty() {
+    let schema = if ctx.acc_projections.is_empty() {
         schema
     } else {
-        let mut remaining_projections: PlHashSet<_> = acc_projections.into_iter().collect();
+        let mut remaining_projections: PlHashSet<_> = ctx.acc_projections.into_iter().collect();
 
         for input in inputs.iter() {
             let mut input_pushdown = Vec::new();
@@ -37,14 +36,8 @@ pub(super) fn process_hconcat(
                     input_names.insert(name);
                 }
             }
-            proj_pd.pushdown_and_assign(
-                *input,
-                input_pushdown,
-                input_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            )?;
+            let ctx = ProjectionContext::new(input_pushdown, input_names, ctx.inner);
+            proj_pd.pushdown_and_assign(*input, ctx, lp_arena, expr_arena)?;
         }
 
         let mut schemas = Vec::with_capacity(inputs.len());

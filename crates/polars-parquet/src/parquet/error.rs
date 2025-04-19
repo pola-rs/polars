@@ -38,6 +38,11 @@ impl ParquetError {
     pub(crate) fn oos<I: Into<String>>(message: I) -> Self {
         Self::OutOfSpec(message.into())
     }
+
+    /// Create an FeatureNotSupported error from any Into<String>
+    pub(crate) fn not_supported<I: Into<String>>(message: I) -> Self {
+        Self::FeatureNotSupported(message.into())
+    }
 }
 
 impl std::error::Error for ParquetError {}
@@ -89,8 +94,8 @@ impl From<lz4_flex::block::CompressError> for ParquetError {
     }
 }
 
-impl From<parquet_format_safe::thrift::Error> for ParquetError {
-    fn from(e: parquet_format_safe::thrift::Error) -> ParquetError {
+impl From<polars_parquet_format::thrift::Error> for ParquetError {
+    fn from(e: polars_parquet_format::thrift::Error) -> ParquetError {
         ParquetError::OutOfSpec(format!("Invalid thrift: {}", e))
     }
 }

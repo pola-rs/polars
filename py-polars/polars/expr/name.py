@@ -11,7 +11,7 @@ class ExprNameNameSpace:
 
     _accessor = "name"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._from_pyexpr = expr._from_pyexpr
         self._pyexpr = expr._pyexpr
 
@@ -102,7 +102,9 @@ class ExprNameNameSpace:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.all().reverse().name.map(lambda c: c.rstrip("_reverse").lower())
+        ...     pl.all()
+        ...     .reverse()
+        ...     .name.map(lambda c: c.removesuffix("_reverse").lower())
         ... )
         shape: (3, 4)
         ┌───────────┬───────────┬─────┬─────┐
@@ -286,16 +288,21 @@ class ExprNameNameSpace:
 
     def map_fields(self, function: Callable[[str], str]) -> Expr:
         """
-        Rename fields of a struct by mapping a function over the field name.
+        Rename fields of a struct by mapping a function over the field name(s).
 
         Notes
         -----
-        This only take effects for struct.
+        This only takes effect for struct columns.
 
         Parameters
         ----------
         function
             Function that maps a field name to a new name.
+
+        See Also
+        --------
+        prefix_fields
+        suffix_fields
 
         Examples
         --------
@@ -307,16 +314,21 @@ class ExprNameNameSpace:
 
     def prefix_fields(self, prefix: str) -> Expr:
         """
-        Add a prefix to all fields name of a struct.
+        Add a prefix to all field names of a struct.
 
         Notes
         -----
-        This only take effects for struct.
+        This only takes effect for struct columns.
 
         Parameters
         ----------
         prefix
-            Prefix to add to the filed name
+            Prefix to add to the field name.
+
+        See Also
+        --------
+        map_fields
+        suffix_fields
 
         Examples
         --------
@@ -328,16 +340,21 @@ class ExprNameNameSpace:
 
     def suffix_fields(self, suffix: str) -> Expr:
         """
-        Add a suffix to all fields name of a struct.
+        Add a suffix to all field names of a struct.
 
         Notes
         -----
-        This only take effects for struct.
+        This only takes effect for struct columns.
 
         Parameters
         ----------
         suffix
-            Suffix to add to the filed name
+            Suffix to add to the field name.
+
+        See Also
+        --------
+        map_fields
+        prefix_fields
 
         Examples
         --------

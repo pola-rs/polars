@@ -39,50 +39,71 @@ impl Hash for RollingFunctionBy {
 }
 
 pub(super) fn rolling_min_by(
-    s: &[Series],
+    s: &[Column],
     options: RollingOptionsDynamicWindow,
-) -> PolarsResult<Series> {
-    s[0].rolling_min_by(&s[1], options)
+) -> PolarsResult<Column> {
+    // @scalar-opt
+    s[0].as_materialized_series()
+        .rolling_min_by(s[1].as_materialized_series(), options)
+        .map(Column::from)
 }
 
 pub(super) fn rolling_max_by(
-    s: &[Series],
+    s: &[Column],
     options: RollingOptionsDynamicWindow,
-) -> PolarsResult<Series> {
-    s[0].rolling_max_by(&s[1], options)
+) -> PolarsResult<Column> {
+    // @scalar-opt
+    s[0].as_materialized_series()
+        .rolling_max_by(s[1].as_materialized_series(), options)
+        .map(Column::from)
 }
 
 pub(super) fn rolling_mean_by(
-    s: &[Series],
+    s: &[Column],
     options: RollingOptionsDynamicWindow,
-) -> PolarsResult<Series> {
-    s[0].rolling_mean_by(&s[1], options)
+) -> PolarsResult<Column> {
+    // @scalar-opt
+    s[0].as_materialized_series()
+        .rolling_mean_by(s[1].as_materialized_series(), options)
+        .map(Column::from)
 }
 
 pub(super) fn rolling_sum_by(
-    s: &[Series],
+    s: &[Column],
     options: RollingOptionsDynamicWindow,
-) -> PolarsResult<Series> {
-    s[0].rolling_sum_by(&s[1], options)
+) -> PolarsResult<Column> {
+    // @scalar-opt
+    s[0].as_materialized_series()
+        .rolling_sum_by(s[1].as_materialized_series(), options)
+        .map(Column::from)
 }
 
 pub(super) fn rolling_quantile_by(
-    s: &[Series],
+    s: &[Column],
     options: RollingOptionsDynamicWindow,
-) -> PolarsResult<Series> {
-    s[0].rolling_quantile_by(&s[1], options)
+) -> PolarsResult<Column> {
+    // @scalar-opt
+    s[0].as_materialized_series()
+        .rolling_quantile_by(s[1].as_materialized_series(), options)
+        .map(Column::from)
 }
 
 pub(super) fn rolling_var_by(
-    s: &[Series],
+    s: &[Column],
     options: RollingOptionsDynamicWindow,
-) -> PolarsResult<Series> {
-    s[0].rolling_var_by(&s[1], options)
+) -> PolarsResult<Column> {
+    // @scalar-opt
+    s[0].as_materialized_series()
+        .rolling_var_by(s[1].as_materialized_series(), options)
+        .map(Column::from)
 }
 
 pub(super) fn rolling_std_by(
-    s: &[Series],
+    s: &[Column],
     options: RollingOptionsDynamicWindow,
-) -> PolarsResult<Series> {
-    s[0].rolling_std_by(&s[1], options)
+) -> PolarsResult<Column> {
+    // @scalar-opt
+    s[0].as_materialized_series()
+        .rolling_std_by(s[1].as_materialized_series(), options)
+        .map(Column::from)
 }

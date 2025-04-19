@@ -22,7 +22,7 @@ fn test_swap_rename() -> PolarsResult<()> {
         "b" => [2],
     ]?
     .lazy()
-    .rename(["a", "b"], ["b", "a"])
+    .rename(["a", "b"], ["b", "a"], true)
     .collect()?;
 
     let expected = df![
@@ -106,6 +106,7 @@ fn test_many_aliasing_projections_5070() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "cum_agg")]
 fn test_projection_5086() -> PolarsResult<()> {
     let df = df![
         "a" => ["a", "a", "a", "b"],
@@ -146,8 +147,8 @@ fn test_projection_5086() -> PolarsResult<()> {
 #[cfg(feature = "dtype-struct")]
 fn test_unnest_pushdown() -> PolarsResult<()> {
     let df = df![
-        "collection" => Series::full_null("", 1, &DataType::Int32),
-        "users" => Series::full_null("", 1, &DataType::List(Box::new(DataType::Struct(vec![Field::new("email", DataType::String)])))),
+        "collection" => Series::full_null("".into(), 1, &DataType::Int32),
+        "users" => Series::full_null("".into(), 1, &DataType::List(Box::new(DataType::Struct(vec![Field::new("email".into(), DataType::String)])))),
     ]?;
 
     let out = df

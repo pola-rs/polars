@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import date
+
 import hypothesis.strategies as st
+import pytest
 from hypothesis import given
 
 import polars as pl
@@ -43,3 +46,11 @@ def test_ewm_by(data: st.DataObject, half_life: int) -> None:
         .select("values")
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("length", [1, 3])
+def test_length_mismatch_22084(length: int) -> None:
+    s = pl.Series([0, None])
+    by = pl.Series([date(2020, 1, 5)] * length)
+    with pytest.raises(pl.exceptions.ShapeError):
+        s.ewm_mean_by(by, half_life="4d")

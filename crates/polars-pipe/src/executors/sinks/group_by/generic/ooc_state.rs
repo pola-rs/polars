@@ -2,13 +2,13 @@ use polars_core::config::verbose;
 
 use super::*;
 use crate::executors::sinks::memory::MemTracker;
-use crate::pipeline::{morsels_per_sink, FORCE_OOC};
+use crate::pipeline::{FORCE_OOC, morsels_per_sink};
 
 #[derive(Clone)]
 pub(super) struct OocState {
     // OOC
     // Stores available memory in the system at the start of this sink.
-    // and stores the memory used by this this sink.
+    // and stores the memory used by this sink.
     mem_track: MemTracker,
     // sort in-memory or out-of-core
     pub(super) ooc: bool,

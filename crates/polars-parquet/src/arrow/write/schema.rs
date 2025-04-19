@@ -1,46 +1,50 @@
-use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, TimeUnit};
+use arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Field, TimeUnit};
 use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
-use base64::engine::general_purpose;
 use base64::Engine as _;
-use polars_error::{polars_bail, PolarsResult};
+use base64::engine::general_purpose;
+use polars_error::{PolarsResult, polars_bail};
+use polars_utils::pl_str::PlSmallStr;
 
 use super::super::ARROW_SCHEMA_META_KEY;
 use crate::arrow::write::decimal_length_from_precision;
 use crate::parquet::metadata::KeyValue;
+use crate::parquet::schema::Repetition;
 use crate::parquet::schema::types::{
     GroupConvertedType, GroupLogicalType, IntegerType, ParquetType, PhysicalType,
     PrimitiveConvertedType, PrimitiveLogicalType, TimeUnit as ParquetTimeUnit,
 };
-use crate::parquet::schema::Repetition;
 
 fn convert_field(field: Field) -> Field {
     Field {
         name: field.name,
-        data_type: convert_data_type(field.data_type),
+        dtype: convert_dtype(field.dtype),
         is_nullable: field.is_nullable,
         metadata: field.metadata,
     }
 }
 
-fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
-    use ArrowDataType::*;
-    match data_type {
-        LargeList(field) => LargeList(Box::new(convert_field(*field))),
-        Struct(mut fields) => {
+fn convert_dtype(dtype: ArrowDataType) -> ArrowDataType {
+    use ArrowDataType as D;
+    match dtype {
+        D::LargeList(field) => D::LargeList(Box::new(convert_field(*field))),
+        D::Struct(mut fields) => {
             for field in &mut fields {
                 *field = convert_field(std::mem::take(field))
             }
-            Struct(fields)
+            D::Struct(fields)
         },
-        BinaryView => LargeBinary,
-        Utf8View => LargeUtf8,
-        Dictionary(it, data_type, sorted) => {
-            let dtype = convert_data_type(*data_type);
-            Dictionary(it, Box::new(dtype), sorted)
+        D::BinaryView => D::LargeBinary,
+        D::Utf8View => D::LargeUtf8,
+        D::Dictionary(it, dtype, sorted) => {
+            let dtype = convert_dtype(*dtype);
+            D::Dictionary(it, Box::new(dtype), sorted)
         },
-        Extension(name, data_type, metadata) => {
-            let data_type = convert_data_type(*data_type);
-            Extension(name, Box::new(data_type), metadata)
+        D::Extension(ext) => {
+            let dtype = convert_dtype(ext.inner);
+            D::Extension(Box::new(ExtensionType {
+                inner: dtype,
+                ..*ext
+            }))
         },
         dt => dt,
     }
@@ -48,16 +52,15 @@ fn convert_data_type(data_type: ArrowDataType) -> ArrowDataType {
 
 pub fn schema_to_metadata_key(schema: &ArrowSchema) -> KeyValue {
     // Convert schema until more arrow readers are aware of binview
-    let serialized_schema = if schema.fields.iter().any(|field| field.data_type.is_view()) {
-        let fields = schema
-            .fields
-            .iter()
+    let serialized_schema = if schema.iter_values().any(|field| field.dtype.is_view()) {
+        let schema = schema
+            .iter_values()
             .map(|field| convert_field(field.clone()))
-            .collect::<Vec<_>>();
-        let schema = ArrowSchema::from(fields);
-        schema_to_bytes(&schema, &default_ipc_fields(&schema.fields))
+            .map(|x| (x.name.clone(), x))
+            .collect();
+        schema_to_bytes(&schema, &default_ipc_fields(schema.iter_values()), None)
     } else {
-        schema_to_bytes(schema, &default_ipc_fields(&schema.fields))
+        schema_to_bytes(schema, &default_ipc_fields(schema.iter_values()), None)
     };
 
     // manually prepending the length to the schema as arrow uses the legacy IPC format
@@ -85,7 +88,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         Repetition::Required
     };
     // create type from field
-    match field.data_type().to_logical_type() {
+    match field.dtype().to_logical_type() {
         ArrowDataType::Null => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,
@@ -290,7 +293,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         ArrowDataType::Struct(fields) => {
             if fields.is_empty() {
                 polars_bail!(InvalidOperation:
-                    "Parquet does not support writing empty structs".to_string(),
+                    "Unable to write struct type with no child field to Parquet. Consider adding a dummy child field.".to_string(),
                 )
             }
             // recursively convert children to types/nodes
@@ -303,7 +306,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             ))
         },
         ArrowDataType::Dictionary(_, value, _) => {
-            let dict_field = Field::new(name.as_str(), value.as_ref().clone(), field.is_nullable);
+            let dict_field = Field::new(name.clone(), value.as_ref().clone(), field.is_nullable);
             to_parquet_type(&dict_field)
         },
         ArrowDataType::FixedSizeBinary(size) => Ok(ParquetType::try_from_primitive(
@@ -390,28 +393,33 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         )?),
         ArrowDataType::List(f)
         | ArrowDataType::FixedSizeList(f, _)
-        | ArrowDataType::LargeList(f) => Ok(ParquetType::from_group(
-            name,
-            repetition,
-            Some(GroupConvertedType::List),
-            Some(GroupLogicalType::List),
-            vec![ParquetType::from_group(
-                "list".to_string(),
-                Repetition::Repeated,
+        | ArrowDataType::LargeList(f) => {
+            let mut f = f.clone();
+            f.name = PlSmallStr::from_static("element");
+
+            Ok(ParquetType::from_group(
+                name,
+                repetition,
+                Some(GroupConvertedType::List),
+                Some(GroupLogicalType::List),
+                vec![ParquetType::from_group(
+                    PlSmallStr::from_static("list"),
+                    Repetition::Repeated,
+                    None,
+                    None,
+                    vec![to_parquet_type(&f)?],
+                    None,
+                )],
                 None,
-                None,
-                vec![to_parquet_type(f)?],
-                None,
-            )],
-            None,
-        )),
+            ))
+        },
         ArrowDataType::Map(f, _) => Ok(ParquetType::from_group(
             name,
             repetition,
             Some(GroupConvertedType::Map),
             Some(GroupLogicalType::Map),
             vec![ParquetType::from_group(
-                "map".to_string(),
+                PlSmallStr::from_static("map"),
                 Repetition::Repeated,
                 None,
                 None,

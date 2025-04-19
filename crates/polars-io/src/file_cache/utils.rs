@@ -1,20 +1,17 @@
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::UNIX_EPOCH;
 
-use once_cell::sync::Lazy;
 use polars_error::{PolarsError, PolarsResult};
 
-use super::cache::{get_env_file_cache_ttl, FILE_CACHE};
+use super::cache::{FILE_CACHE, get_env_file_cache_ttl};
 use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
-use crate::cloud::{
-    build_object_store, object_path_from_string, CloudLocation, CloudOptions, PolarsObjectStore,
-};
-use crate::path_utils::{ensure_directory_init, is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
+use crate::cloud::{CloudLocation, CloudOptions, build_object_store, object_path_from_str};
+use crate::path_utils::{POLARS_TEMP_DIR_BASE_PATH, ensure_directory_init, is_cloud_url};
 use crate::pl_async;
 
-pub static FILE_CACHE_PREFIX: Lazy<Box<Path>> = Lazy::new(|| {
+pub static FILE_CACHE_PREFIX: LazyLock<Box<Path>> = LazyLock::new(|| {
     let path = POLARS_TEMP_DIR_BASE_PATH
         .join("file-cache/")
         .into_boxed_path();
@@ -66,7 +63,7 @@ pub fn init_entries_from_uri_list(
         .unwrap_or_else(get_env_file_cache_ttl);
 
     if is_cloud_url(first_uri) {
-        let object_stores = pl_async::get_runtime().block_on_potential_spawn(async {
+        let object_stores = pl_async::get_runtime().block_in_place_on(async {
             futures::future::try_join_all(
                 (0..if first_uri.starts_with("http") {
                     // Object stores for http are tied to the path.
@@ -76,8 +73,8 @@ pub fn init_entries_from_uri_list(
                 })
                     .map(|i| async move {
                         let (_, object_store) =
-                            build_object_store(&uri_list[i], cloud_options).await?;
-                        PolarsResult::Ok(PolarsObjectStore::new(object_store))
+                            build_object_store(&uri_list[i], cloud_options, false).await?;
+                        PolarsResult::Ok(object_store)
                     }),
             )
             .await
@@ -90,17 +87,12 @@ pub fn init_entries_from_uri_list(
                 FILE_CACHE.init_entry(
                     uri.clone(),
                     || {
-                        let CloudLocation {
-                            prefix, expansion, ..
-                        } = CloudLocation::new(uri.as_ref()).unwrap();
-
-                        let cloud_path = {
-                            assert!(expansion.is_none(), "path should not contain wildcards");
-                            object_path_from_string(prefix)?
-                        };
+                        let CloudLocation { prefix, .. } =
+                            CloudLocation::new(uri.as_ref(), false).unwrap();
+                        let cloud_path = object_path_from_str(&prefix)?;
 
                         let object_store =
-                            object_stores[std::cmp::min(i, object_stores.len())].clone();
+                            object_stores[std::cmp::min(i, object_stores.len() - 1)].clone();
                         let uri = uri.clone();
 
                         Ok(Arc::new(CloudFileFetcher {

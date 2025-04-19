@@ -29,14 +29,14 @@ env:
   CARGO_LLVM_COV: 1
   CARGO_LLVM_COV_SHOW_ENV: 1
   CARGO_LLVM_COV_TARGET_DIR: ${{ github.workspace }}/target
+  # We use the stable ABI, silences error from PyO3 that the system Python is too new.
+  PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
 
 jobs:
   coverage-rust:
     # Running under ubuntu doesn't seem to work:
     # https://github.com/pola-rs/polars/issues/14255
-    # Pinned on macos-13 because latest does not work:
-    # https://github.com/pola-rs/polars/issues/15917
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -85,7 +85,7 @@ jobs:
   coverage-python:
     # Running under ubuntu doesn't seem to work:
     # https://github.com/pola-rs/polars/issues/14255
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -94,16 +94,25 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Create virtual environment
+      - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Create virtual environment
+        run: |
           uv venv
           echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt
+        run: |
+          # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
+          # doesn't have an up-to-date typing-extensions, see
+          # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
+          uv pip install -U typing-extensions 
+          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
@@ -124,9 +133,11 @@ jobs:
 
       - name: Run Python tests
         working-directory: py-polars
+        env:
+          POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
-          -n auto --dist loadgroup
+          -n auto
           -m "not release and not benchmark and not docs"
           -k 'not test_polars_import'
           --cov --cov-report xml:main.xml
@@ -135,9 +146,10 @@ jobs:
         working-directory: py-polars
         env:
           POLARS_FORCE_ASYNC: 1
+          POLARS_TIMEOUT_MS: 60000
         run: >
           pytest tests/unit/io/
-          -n auto --dist loadgroup
+          -n auto
           -m "not release and not benchmark and not docs"
           --cov --cov-report xml:async.xml --cov-fail-under=0
 
@@ -158,7 +170,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-        # Needed to fetch the Codecov config file
+      # Needed to fetch the Codecov config file
       - uses: actions/checkout@v4
 
       - name: Download coverage reports
@@ -167,7 +179,7 @@ jobs:
           merge-multiple: true
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage-rust.lcov,coverage-python.lcov,py-polars/main.xml,py-polars/async.xml

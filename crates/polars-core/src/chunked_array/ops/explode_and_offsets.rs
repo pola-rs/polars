@@ -1,14 +1,56 @@
-use arrow::compute::take::take_unchecked;
 use arrow::offset::OffsetsBuffer;
+use polars_compute::gather::take_unchecked;
 
 use super::*;
+
+impl ListChunked {
+    fn specialized(
+        &self,
+        values: ArrayRef,
+        offsets: &[i64],
+        offsets_buf: OffsetsBuffer<i64>,
+    ) -> (Series, OffsetsBuffer<i64>) {
+        // SAFETY: inner_dtype should be correct
+        let values = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                self.name().clone(),
+                vec![values],
+                &self.inner_dtype().to_physical(),
+            )
+        };
+
+        use crate::chunked_array::ops::explode::ExplodeByOffsets;
+
+        let mut values = match values.dtype() {
+            DataType::Boolean => {
+                let t = values.bool().unwrap();
+                ExplodeByOffsets::explode_by_offsets(t, offsets).into_series()
+            },
+            DataType::Null => {
+                let t = values.null().unwrap();
+                ExplodeByOffsets::explode_by_offsets(t, offsets).into_series()
+            },
+            dtype => {
+                with_match_physical_numeric_polars_type!(dtype, |$T| {
+                    let t: &ChunkedArray<$T> = values.as_ref().as_ref();
+                    ExplodeByOffsets::explode_by_offsets(t, offsets).into_series()
+                })
+            },
+        };
+
+        // let mut values = values.explode_by_offsets(offsets);
+        // restore logical type
+        values = unsafe { values.from_physical_unchecked(self.inner_dtype()) }.unwrap();
+
+        (values, offsets_buf)
+    }
+}
 
 impl ChunkExplode for ListChunked {
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {
         let ca = self.rechunk();
         let listarr: &LargeListArray = ca.downcast_iter().next().unwrap();
         let offsets = listarr.offsets().clone();
-
         Ok(offsets)
     }
 
@@ -40,7 +82,7 @@ impl ChunkExplode for ListChunked {
             (
                 unsafe {
                     Series::from_chunks_and_dtype_unchecked(
-                        self.name(),
+                        self.name().clone(),
                         vec![values],
                         &self.inner_dtype().to_physical(),
                     )
@@ -64,16 +106,37 @@ impl ChunkExplode for ListChunked {
                     panic!("could have fast exploded")
                 }
             }
-            if listarr.null_count() == 0 {
-                // SAFETY: inner_dtype should be correct
-                let values = unsafe {
-                    Series::from_chunks_and_dtype_unchecked(
-                        self.name(),
-                        vec![values],
-                        &self.inner_dtype().to_physical(),
-                    )
-                };
-                (values.explode_by_offsets(offsets), offsets_buf)
+            let (indices, new_offsets) = if listarr.null_count() == 0 {
+                // SPECIALIZED path.
+                let inner_phys = self.inner_dtype().to_physical();
+                if inner_phys.is_primitive_numeric() || inner_phys.is_null() || inner_phys.is_bool()
+                {
+                    return Ok(self.specialized(values, offsets, offsets_buf));
+                }
+                // Use gather
+                let mut indices =
+                    MutablePrimitiveArray::<IdxSize>::with_capacity(*offsets_buf.last() as usize);
+                let mut new_offsets = Vec::with_capacity(listarr.len() + 1);
+                let mut current_offset = 0i64;
+                let mut iter = offsets.iter();
+                if let Some(mut previous) = iter.next().copied() {
+                    new_offsets.push(current_offset);
+                    iter.for_each(|&offset| {
+                        let len = offset - previous;
+                        let start = previous as IdxSize;
+                        let end = offset as IdxSize;
+
+                        if len == 0 {
+                            indices.push_null();
+                        } else {
+                            indices.extend_trusted_len_values(start..end);
+                        }
+                        current_offset += len;
+                        previous = offset;
+                        new_offsets.push(current_offset);
+                    })
+                }
+                (indices, new_offsets)
             } else {
                 // we have already ensure that validity is not none.
                 let validity = listarr.validity().unwrap();
@@ -105,26 +168,26 @@ impl ChunkExplode for ListChunked {
                         new_offsets.push(current_offset);
                     })
                 }
-                // SAFETY: the indices we generate are in bounds
-                let chunk = unsafe { take_unchecked(values.as_ref(), &indices.into()) };
-                // SAFETY: inner_dtype should be correct
-                let s = unsafe {
-                    Series::from_chunks_and_dtype_unchecked(
-                        self.name(),
-                        vec![chunk],
-                        &self.inner_dtype().to_physical(),
-                    )
-                };
-                // SAFETY: monotonically increasing
-                let new_offsets = unsafe { OffsetsBuffer::new_unchecked(new_offsets.into()) };
-                (s, new_offsets)
-            }
+                (indices, new_offsets)
+            };
+
+            // SAFETY: the indices we generate are in bounds
+            let chunk = unsafe { take_unchecked(values.as_ref(), &indices.into()) };
+            // SAFETY: inner_dtype should be correct
+            let s = unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    self.name().clone(),
+                    vec![chunk],
+                    &self.inner_dtype().to_physical(),
+                )
+            };
+            // SAFETY: monotonically increasing
+            let new_offsets = unsafe { OffsetsBuffer::new_unchecked(new_offsets.into()) };
+            (s, new_offsets)
         };
         debug_assert_eq!(s.name(), self.name());
         // restore logical type
-        unsafe {
-            s = s.cast_unchecked(self.inner_dtype()).unwrap();
-        }
+        s = unsafe { s.from_physical_unchecked(self.inner_dtype()) }.unwrap();
 
         Ok((s, offsets))
     }
@@ -177,9 +240,13 @@ impl ChunkExplode for ArrayChunked {
         let arr = ca.downcast_iter().next().unwrap();
         // fast-path for non-null array.
         if arr.null_count() == 0 {
-            let s = Series::try_from((self.name(), arr.values().clone()))
-                .unwrap()
-                .cast(ca.inner_dtype())?;
+            let s = unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    self.name().clone(),
+                    vec![arr.values().clone()],
+                    ca.inner_dtype(),
+                )
+            };
             let width = self.width() as i64;
             let offsets = (0..self.len() + 1)
                 .map(|i| {
@@ -224,7 +291,11 @@ impl ChunkExplode for ArrayChunked {
         Ok((
             // SAFETY: inner_dtype should be correct
             unsafe {
-                Series::from_chunks_and_dtype_unchecked(ca.name(), vec![chunk], ca.inner_dtype())
+                Series::from_chunks_and_dtype_unchecked(
+                    ca.name().clone(),
+                    vec![chunk],
+                    ca.inner_dtype(),
+                )
             },
             offsets,
         ))

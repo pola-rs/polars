@@ -48,7 +48,7 @@ impl LogicalType for DateChunked {
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             },
-            dt if dt.is_numeric() => self.0.cast_with_options(dtype, cast_options),
+            dt if dt.is_primitive_numeric() => self.0.cast_with_options(dtype, cast_options),
             dt => {
                 polars_bail!(
                     InvalidOperation:

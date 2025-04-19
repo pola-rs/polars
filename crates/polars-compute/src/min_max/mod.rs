@@ -2,7 +2,7 @@ use polars_utils::min_max::MinMax;
 
 pub use self::dyn_array::{
     dyn_array_max_ignore_nan, dyn_array_max_propagate_nan, dyn_array_min_ignore_nan,
-    dyn_array_min_propagate_nan,
+    dyn_array_min_max_propagate_nan, dyn_array_min_propagate_nan,
 };
 
 /// Low-level min/max kernel.

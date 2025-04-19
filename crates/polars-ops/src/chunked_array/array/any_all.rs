@@ -1,5 +1,5 @@
 use arrow::array::{BooleanArray, FixedSizeListArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::Bitmap;
 use arrow::legacy::utils::CustomIterTools;
 
 use super::*;
@@ -10,7 +10,7 @@ where
 {
     let values = arr.values();
 
-    polars_ensure!(values.data_type() == &ArrowDataType::Boolean, ComputeError: "expected boolean elements in array");
+    polars_ensure!(values.dtype() == &ArrowDataType::Boolean, ComputeError: "expected boolean elements in array");
 
     let values = values.as_any().downcast_ref::<BooleanArray>().unwrap();
     let validity = arr.validity().cloned();
@@ -19,9 +19,8 @@ where
     if is_all {
         let all_set = arrow::compute::boolean::all(values);
         if all_set {
-            let mut bits = MutableBitmap::with_capacity(arr.len());
-            bits.extend_constant(arr.len(), true);
-            return Ok(BooleanArray::from_data_default(bits.into(), None).with_validity(validity));
+            let bits = Bitmap::new_with_value(true, arr.len());
+            return Ok(BooleanArray::from_data_default(bits, None).with_validity(validity));
         }
     }
 
@@ -43,12 +42,12 @@ pub(super) fn array_all(ca: &ArrayChunked) -> PolarsResult<Series> {
     let chunks = ca
         .downcast_iter()
         .map(|arr| array_all_any(arr, arrow::compute::boolean::all, true));
-    Ok(BooleanChunked::try_from_chunk_iter(ca.name(), chunks)?.into_series())
+    Ok(BooleanChunked::try_from_chunk_iter(ca.name().clone(), chunks)?.into_series())
 }
 
 pub(super) fn array_any(ca: &ArrayChunked) -> PolarsResult<Series> {
     let chunks = ca
         .downcast_iter()
         .map(|arr| array_all_any(arr, arrow::compute::boolean::any, false));
-    Ok(BooleanChunked::try_from_chunk_iter(ca.name(), chunks)?.into_series())
+    Ok(BooleanChunked::try_from_chunk_iter(ca.name().clone(), chunks)?.into_series())
 }

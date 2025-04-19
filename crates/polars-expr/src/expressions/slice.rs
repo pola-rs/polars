@@ -1,8 +1,8 @@
-use polars_core::prelude::*;
-use polars_core::utils::{slice_offsets, Container, CustomIterTools};
-use polars_core::POOL;
-use rayon::prelude::*;
 use AnyValue::Null;
+use polars_core::POOL;
+use polars_core::prelude::*;
+use polars_core::utils::{CustomIterTools, slice_offsets};
+use rayon::prelude::*;
 
 use super::*;
 use crate::expressions::{AggregationContext, PhysicalExpr};
@@ -14,7 +14,7 @@ pub struct SliceExpr {
     pub(crate) expr: Expr,
 }
 
-fn extract_offset(offset: &Series, expr: &Expr) -> PolarsResult<i64> {
+fn extract_offset(offset: &Column, expr: &Expr) -> PolarsResult<i64> {
     polars_ensure!(
         offset.len() <= 1, expr = expr, ComputeError:
         "invalid argument to slice; expected an offset literal, got series of length {}",
@@ -25,7 +25,7 @@ fn extract_offset(offset: &Series, expr: &Expr) -> PolarsResult<i64> {
     )
 }
 
-fn extract_length(length: &Series, expr: &Expr) -> PolarsResult<usize> {
+fn extract_length(length: &Column, expr: &Expr) -> PolarsResult<usize> {
     polars_ensure!(
         length.len() <= 1, expr = expr, ComputeError:
         "invalid argument to slice; expected a length literal, got series of length {}",
@@ -39,11 +39,11 @@ fn extract_length(length: &Series, expr: &Expr) -> PolarsResult<usize> {
     }
 }
 
-fn extract_args(offset: &Series, length: &Series, expr: &Expr) -> PolarsResult<(i64, usize)> {
+fn extract_args(offset: &Column, length: &Column, expr: &Expr) -> PolarsResult<(i64, usize)> {
     Ok((extract_offset(offset, expr)?, extract_length(length, expr)?))
 }
 
-fn check_argument(arg: &Series, groups: &GroupsProxy, name: &str, expr: &Expr) -> PolarsResult<()> {
+fn check_argument(arg: &Column, groups: &GroupsType, name: &str, expr: &Expr) -> PolarsResult<()> {
     polars_ensure!(
         !matches!(arg.dtype(), DataType::List(_)), expr = expr, ComputeError:
         "invalid slice argument: cannot use an array as {} argument", name,
@@ -60,9 +60,16 @@ fn check_argument(arg: &Series, groups: &GroupsProxy, name: &str, expr: &Expr) -
     Ok(())
 }
 
-fn slice_groups_idx(offset: i64, length: usize, first: IdxSize, idx: &[IdxSize]) -> IdxItem {
+fn slice_groups_idx(offset: i64, length: usize, mut first: IdxSize, idx: &[IdxSize]) -> IdxItem {
     let (offset, len) = slice_offsets(offset, length, idx.len());
-    (first + offset as IdxSize, idx[offset..offset + len].into())
+
+    // If slice isn't out of bounds, we replace first.
+    // If slice is oob, the `idx` vec will be empty and `first` will be ignored
+    if let Some(f) = idx.get(offset) {
+        first = *f;
+    }
+    // This is a clone of the vec, which is unfortunate. Maybe we have a `sliceable` unitvec one day.
+    (first, idx[offset..offset + len].into())
 }
 
 fn slice_groups_slice(offset: i64, length: usize, first: IdxSize, len: IdxSize) -> [IdxSize; 2] {
@@ -75,7 +82,7 @@ impl PhysicalExpr for SliceExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let results = POOL.install(|| {
             [&self.offset, &self.length, &self.input]
                 .par_iter()
@@ -93,7 +100,7 @@ impl PhysicalExpr for SliceExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut results = POOL.install(|| {
@@ -103,6 +110,11 @@ impl PhysicalExpr for SliceExpr {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
         let mut ac = results.pop().unwrap();
+
+        if let AggState::AggregatedScalar(_) = ac.agg_state() {
+            polars_bail!(InvalidOperation: "cannot slice() an aggregated scalar value")
+        }
+
         let mut ac_length = results.pop().unwrap();
         let mut ac_offset = results.pop().unwrap();
 
@@ -118,20 +130,20 @@ impl PhysicalExpr for SliceExpr {
                 }
                 let groups = ac.groups();
 
-                match groups.as_ref() {
-                    GroupsProxy::Idx(groups) => {
+                match groups.as_ref().as_ref() {
+                    GroupsType::Idx(groups) => {
                         let groups = groups
                             .iter()
                             .map(|(first, idx)| slice_groups_idx(offset, length, first, idx))
                             .collect();
-                        GroupsProxy::Idx(groups)
+                        GroupsType::Idx(groups)
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .map(|&[first, len]| slice_groups_slice(offset, length, first, len))
                             .collect_trusted();
-                        GroupsProxy::Slice {
+                        GroupsType::Slice {
                             groups,
                             rolling: false,
                         }
@@ -147,8 +159,8 @@ impl PhysicalExpr for SliceExpr {
                 let length = length.cast(&IDX_DTYPE)?;
                 let length = length.idx().unwrap();
 
-                match groups.as_ref() {
-                    GroupsProxy::Idx(groups) => {
+                match groups.as_ref().as_ref() {
+                    GroupsType::Idx(groups) => {
                         let groups = groups
                             .iter()
                             .zip(length.into_no_null_iter())
@@ -156,9 +168,9 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_idx(offset, length as usize, first, idx)
                             })
                             .collect();
-                        GroupsProxy::Idx(groups)
+                        GroupsType::Idx(groups)
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .zip(length.into_no_null_iter())
@@ -166,7 +178,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length as usize, first, len)
                             })
                             .collect_trusted();
-                        GroupsProxy::Slice {
+                        GroupsType::Slice {
                             groups,
                             rolling: false,
                         }
@@ -182,8 +194,8 @@ impl PhysicalExpr for SliceExpr {
                 let offset = offset.cast(&DataType::Int64)?;
                 let offset = offset.i64().unwrap();
 
-                match groups.as_ref() {
-                    GroupsProxy::Idx(groups) => {
+                match groups.as_ref().as_ref() {
+                    GroupsType::Idx(groups) => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -191,9 +203,9 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_idx(offset, length, first, idx)
                             })
                             .collect();
-                        GroupsProxy::Idx(groups)
+                        GroupsType::Idx(groups)
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -201,7 +213,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length, first, len)
                             })
                             .collect_trusted();
-                        GroupsProxy::Slice {
+                        GroupsType::Slice {
                             groups,
                             rolling: false,
                         }
@@ -221,8 +233,8 @@ impl PhysicalExpr for SliceExpr {
                 let length = length.cast(&IDX_DTYPE)?;
                 let length = length.idx().unwrap();
 
-                match groups.as_ref() {
-                    GroupsProxy::Idx(groups) => {
+                match groups.as_ref().as_ref() {
+                    GroupsType::Idx(groups) => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -231,9 +243,9 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_idx(offset, length as usize, first, idx)
                             })
                             .collect();
-                        GroupsProxy::Idx(groups)
+                        GroupsType::Idx(groups)
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -242,7 +254,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length as usize, first, len)
                             })
                             .collect_trusted();
-                        GroupsProxy::Slice {
+                        GroupsType::Slice {
                             groups,
                             rolling: false,
                         }
@@ -251,12 +263,17 @@ impl PhysicalExpr for SliceExpr {
             },
         };
 
-        ac.with_groups(groups).set_original_len(false);
+        ac.with_groups(groups.into_sliceable())
+            .set_original_len(false);
 
         Ok(ac)
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
+    }
+
+    fn is_scalar(&self) -> bool {
+        false
     }
 }

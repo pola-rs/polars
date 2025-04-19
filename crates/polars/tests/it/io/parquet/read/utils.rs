@@ -1,10 +1,9 @@
-use polars_parquet::parquet::deserialize::{HybridDecoderBitmapIter, HybridEncoded, HybridRleIter};
 use polars_parquet::parquet::encoding::hybrid_rle::{self, BitmapIter, HybridRleDecoder};
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
-use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
+use polars_parquet::parquet::page::{DataPage, EncodedSplitBuffer, split_buffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
 use polars_parquet::parquet::schema::Repetition;
-use polars_parquet::parquet::types::{decode, NativeType};
+use polars_parquet::parquet::types::{NativeType, decode};
 use polars_parquet::read::PhysicalType;
 use polars_parquet::write::Encoding;
 
@@ -34,10 +33,6 @@ pub(super) fn dict_indices_decoder(page: &DataPage) -> ParquetResult<HybridRleDe
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum DefLevelsDecoder<'a> {
-    /// When the maximum definition level is 1, the definition levels are RLE-encoded and
-    /// the bitpacked runs are bitmaps. This variant contains [`HybridDecoderBitmapIter`]
-    /// that decodes the runs, but not the individual values
-    Bitmap(HybridDecoderBitmapIter<'a>),
     /// When the maximum definition level is larger than 1
     Levels(HybridRleDecoder<'a>, u32),
 }
@@ -51,45 +46,11 @@ impl<'a> DefLevelsDecoder<'a> {
         } = split_buffer(page)?;
 
         let max_def_level = page.descriptor.max_def_level;
-        Ok(if max_def_level == 1 {
-            let iter = hybrid_rle::Decoder::new(def_levels, 1);
-            let iter = HybridRleIter::new(iter, page.num_values());
-            Self::Bitmap(iter)
-        } else {
+        Ok({
             let iter =
                 HybridRleDecoder::new(def_levels, get_bit_width(max_def_level), page.num_values());
             Self::Levels(iter, max_def_level as u32)
         })
-    }
-}
-
-/// Iterator adapter to convert an iterator of non-null values and an iterator over validity
-/// into an iterator of optional values.
-#[derive(Debug, Clone)]
-pub struct OptionalValues<T, V: Iterator<Item = bool>, I: Iterator<Item = T>> {
-    validity: V,
-    values: I,
-}
-
-impl<T, V: Iterator<Item = bool>, I: Iterator<Item = T>> OptionalValues<T, V, I> {
-    pub fn new(validity: V, values: I) -> Self {
-        Self { validity, values }
-    }
-}
-
-impl<T, V: Iterator<Item = bool>, I: Iterator<Item = T>> Iterator for OptionalValues<T, V, I> {
-    type Item = Option<T>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.validity
-            .next()
-            .map(|x| if x { self.values.next() } else { None })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.validity.size_hint()
     }
 }
 
@@ -98,43 +59,10 @@ pub fn deserialize_optional<C: Clone, I: Iterator<Item = ParquetResult<C>>>(
     values: I,
 ) -> ParquetResult<Vec<Option<C>>> {
     match validity {
-        DefLevelsDecoder::Bitmap(bitmap) => deserialize_bitmap(bitmap, values),
         DefLevelsDecoder::Levels(levels, max_level) => {
             deserialize_levels(levels, max_level, values)
         },
     }
-}
-
-fn deserialize_bitmap<C: Clone, I: Iterator<Item = Result<C, ParquetError>>>(
-    mut validity: HybridDecoderBitmapIter,
-    mut values: I,
-) -> Result<Vec<Option<C>>, ParquetError> {
-    let mut deserialized = Vec::with_capacity(validity.len());
-
-    validity.try_for_each(|run| match run {
-        HybridEncoded::Bitmap(bitmap, length) => {
-            BitmapIter::new(bitmap, 0, length).try_for_each(|x| {
-                if x {
-                    deserialized.push(values.next().transpose()?);
-                } else {
-                    deserialized.push(None);
-                }
-                Result::<_, ParquetError>::Ok(())
-            })
-        },
-        HybridEncoded::Repeated(is_set, length) => {
-            if is_set {
-                deserialized.reserve(length);
-                for x in values.by_ref().take(length) {
-                    deserialized.push(Some(x?))
-                }
-            } else {
-                deserialized.extend(std::iter::repeat(None).take(length))
-            }
-            Ok(())
-        },
-    })?;
-    Ok(deserialized)
 }
 
 fn deserialize_levels<C: Clone, I: Iterator<Item = Result<C, ParquetError>>>(
@@ -143,6 +71,7 @@ fn deserialize_levels<C: Clone, I: Iterator<Item = Result<C, ParquetError>>>(
     mut values: I,
 ) -> Result<Vec<Option<C>>, ParquetError> {
     levels
+        .collect()?
         .into_iter()
         .map(|x| {
             if x == max {
@@ -268,13 +197,11 @@ pub fn native_cast<T: NativeType>(page: &DataPage) -> ParquetResult<Casted<T>> {
         def: _,
         values,
     } = split_buffer(page)?;
-    if values.len() % std::mem::size_of::<T>() != 0 {
+    if values.len() % size_of::<T>() != 0 {
         panic!("A primitive page data's len must be a multiple of the type");
     }
 
-    Ok(values
-        .chunks_exact(std::mem::size_of::<T>())
-        .map(decode::<T>))
+    Ok(values.chunks_exact(size_of::<T>()).map(decode::<T>))
 }
 
 /// The deserialization state of a `DataPage` of `Primitive` parquet primitive type

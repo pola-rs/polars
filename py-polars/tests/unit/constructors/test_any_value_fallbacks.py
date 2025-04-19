@@ -11,6 +11,7 @@ import pytest
 import polars as pl
 from polars._utils.wrap import wrap_s
 from polars.polars import PySeries
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -299,7 +300,6 @@ def test_fallback_without_dtype(
         [timedelta(hours=0), 1_000],
         [D("12.345"), 100],
         [D("12.345"), 3.14],
-        [D("0.12345"), D("6789.0")],
         [{"a": 1, "b": "foo"}, {"a": -1, "b": date(2020, 12, 31)}],
         [{"a": None}, {"a": 1.0}, {"a": 1}],
     ],
@@ -352,27 +352,29 @@ def test_fallback_without_dtype_nonstrict_mixed_types(
 
 
 def test_fallback_without_dtype_large_int() -> None:
-    values = [1, 2**64, None]
+    values = [1, 2**128, None]
     with pytest.raises(
         OverflowError,
-        match="int value too large for Polars integer types: 18446744073709551616",
+        match="int value too large for Polars integer types",
     ):
         PySeries.new_from_any_values("", values, strict=True)
 
     result = wrap_s(PySeries.new_from_any_values("", values, strict=False))
     assert result.dtype == pl.Float64
-    assert result.to_list() == [1.0, 1.8446744073709552e19, None]
+    assert result.to_list() == [1.0, 340282366920938500000000000000000000000.0, None]
 
 
 def test_fallback_with_dtype_large_int() -> None:
-    values = [1, 2**64, None]
+    values = [1, 2**128, None]
     with pytest.raises(OverflowError):
-        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int64, strict=True)
+        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int128, strict=True)
 
     result = wrap_s(
-        PySeries.new_from_any_values_and_dtype("", values, dtype=pl.Int64, strict=False)
+        PySeries.new_from_any_values_and_dtype(
+            "", values, dtype=pl.Int128, strict=False
+        )
     )
-    assert result.dtype == pl.Int64
+    assert result.dtype == pl.Int128
     assert result.to_list() == [1, None, None]
 
 
@@ -380,7 +382,9 @@ def test_fallback_with_dtype_strict_failure_enum_casting() -> None:
     dtype = pl.Enum(["a", "b"])
     values = ["a", "b", "c", None]
 
-    with pytest.raises(TypeError, match="conversion from `str` to `enum` failed"):
+    with pytest.raises(
+        TypeError, match="cannot append 'c' to enum without that variant"
+    ):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 
@@ -392,3 +396,19 @@ def test_fallback_with_dtype_strict_failure_decimal_precision() -> None:
         TypeError, match="decimal precision 3 can't fit values with 5 digits"
     ):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.may_fail_auto_streaming
+def test_categorical_lit_18874() -> None:
+    assert_frame_equal(
+        pl.DataFrame(
+            {"a": [1, 2, 3]},
+        ).with_columns(b=pl.lit("foo").cast(pl.Categorical)),
+        pl.DataFrame(
+            [
+                pl.Series("a", [1, 2, 3]),
+                pl.Series("b", ["foo"] * 3, pl.Categorical),
+            ]
+        ),
+    )

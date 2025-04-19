@@ -9,7 +9,7 @@ from polars.exceptions import DuplicateError, SQLInterfaceError
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -132,6 +132,11 @@ def test_select_rename_exclude_sort(order_by: str, df: pl.DataFrame) -> None:
             [(333,), (222,), (111,)],
         ),
         (
+            "(ID // 3 AS ID) RENAME (ID AS Identifier)",
+            ["Identifier"],
+            [(333,), (222,), (111,)],
+        ),
+        (
             "((City || ':' || City) AS City, ID // -3 AS ID)",
             ["City", "ID"],
             [
@@ -151,10 +156,13 @@ def test_select_replace(
     for order_by in ("", "ORDER BY ID DESC", "ORDER BY -ID ASC"):
         res = df.sql(f"SELECT * REPLACE {replacements} FROM self {order_by}")
         if not order_by:
-            res = res.sort("ID", descending=True)
+            res = res.sort(check_cols[-1], descending=True)
 
         assert res.select(check_cols).rows() == expected
-        assert res.columns == df.columns
+        expected_columns = (
+            check_cols + df.columns[1:] if check_cols == ["Identifier"] else df.columns
+        )
+        assert res.columns == expected_columns
 
 
 def test_select_wildcard_errors(df: pl.DataFrame) -> None:
@@ -172,6 +180,6 @@ def test_select_wildcard_errors(df: pl.DataFrame) -> None:
     # note: missing "()" around the exclude option results in dupe col
     with pytest.raises(
         DuplicateError,
-        match="the name 'City' is duplicate",
+        match="City",
     ):
         assert df.sql("SELECT * EXCLUDE Address, City FROM self")

@@ -1,16 +1,52 @@
 use std::error::Error;
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
-use once_cell::sync::Lazy;
-use polars_core::config::verbose;
 use polars_core::POOL;
+use polars_core::config::{self, verbose};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Semaphore;
 
 static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
 pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
+
+/// Used to determine chunks when splitting large ranges, or combining small
+/// ranges.
+static DOWNLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    let v: usize = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE")
+        .as_deref()
+        .map(|x| x.parse().expect("integer"))
+        .unwrap_or(64 * 1024 * 1024);
+
+    if config::verbose() {
+        eprintln!("async download_chunk_size: {}", v)
+    }
+
+    v
+});
+
+pub(super) fn get_download_chunk_size() -> usize {
+    *DOWNLOAD_CHUNK_SIZE
+}
+
+static UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    let v: usize = std::env::var("POLARS_UPLOAD_CHUNK_SIZE")
+        .as_deref()
+        .map(|x| x.parse().expect("integer"))
+        .unwrap_or(64 * 1024 * 1024);
+
+    if config::verbose() {
+        eprintln!("async upload_chunk_size: {}", v)
+    }
+
+    v
+});
+
+pub(super) fn get_upload_chunk_size() -> usize {
+    *UPLOAD_CHUNK_SIZE
+}
 
 pub trait GetSize {
     fn size(&self) -> u64;
@@ -37,14 +73,16 @@ impl<T: GetSize, E: Error> GetSize for Result<T, E> {
     }
 }
 
+#[cfg(feature = "cloud")]
 pub(crate) struct Size(u64);
 
+#[cfg(feature = "cloud")]
 impl GetSize for Size {
     fn size(&self) -> u64 {
         self.0
     }
 }
-
+#[cfg(feature = "cloud")]
 impl From<u64> for Size {
     fn from(value: u64) -> Self {
         Self(value)
@@ -156,6 +194,10 @@ fn get_semaphore() -> &'static (Semaphore, u32) {
     })
 }
 
+pub(crate) fn get_concurrency_limit() -> u32 {
+    get_semaphore().1
+}
+
 pub async fn tune_with_concurrency_budget<F, Fut>(requested_budget: u32, callable: F) -> Fut::Output
 where
     F: FnOnce() -> Fut,
@@ -235,8 +277,16 @@ pub struct RuntimeManager {
 
 impl RuntimeManager {
     fn new() -> Self {
+        let n_threads = std::env::var("POLARS_ASYNC_THREAD_COUNT")
+            .map(|x| x.parse::<usize>().expect("integer"))
+            .unwrap_or(POOL.current_num_threads().clamp(1, 4));
+
+        if polars_core::config::verbose() {
+            eprintln!("async thread count: {}", n_threads);
+        }
+
         let rt = Builder::new_multi_thread()
-            .worker_threads(std::cmp::max(POOL.current_num_threads(), 4))
+            .worker_threads(n_threads)
             .enable_io()
             .enable_time()
             .build()
@@ -245,21 +295,20 @@ impl RuntimeManager {
         Self { rt }
     }
 
-    /// Keep track of rayon threads that drive the runtime. Every thread
-    /// only allows a single runtime. If this thread calls block_on and this
-    /// rayon thread is already driving an async execution we must start a new thread
-    /// otherwise we panic. This can happen when we parallelize reads over 100s of files.
-    ///
-    /// # Safety
-    /// The tokio runtime flavor is multi-threaded.
-    pub fn block_on_potential_spawn<F>(&'static self, future: F) -> F::Output
+    /// Forcibly blocks this thread to evaluate the given future. This can be
+    /// dangerous and lead to deadlocks if called re-entrantly on an async
+    /// worker thread as the entire thread pool can end up blocking, leading to
+    /// a deadlock. If you want to prevent this use block_on, which will panic
+    /// if called from an async thread.
+    pub fn block_in_place_on<F>(&self, future: F) -> F::Output
     where
-        F: Future + Send,
-        F::Output: Send,
+        F: Future,
     {
         tokio::task::block_in_place(|| self.rt.block_on(future))
     }
 
+    /// Blocks this thread to evaluate the given future. Panics if the current
+    /// thread is an async runtime worker thread.
     pub fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,
@@ -284,9 +333,37 @@ impl RuntimeManager {
     {
         self.rt.spawn_blocking(f)
     }
+
+    /// Run a task on the rayon threadpool. To avoid deadlocks, if the current thread is already a
+    /// rayon thread, the task is executed on the current thread after tokio's `block_in_place` is
+    /// used to spawn another thread to poll futures.
+    pub async fn spawn_rayon<F, O>(&self, func: F) -> O
+    where
+        F: FnOnce() -> O + Send + Sync + 'static,
+        O: Send + Sync + 'static,
+    {
+        if POOL.current_thread_index().is_some() {
+            // We are a rayon thread, so we can't use POOL.spawn as it would mean we spawn a task and block until
+            // another rayon thread executes it - we would deadlock if all rayon threads did this.
+            // Safety: The tokio runtime flavor is multi-threaded.
+            tokio::task::block_in_place(func)
+        } else {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+
+            let func = move || {
+                let out = func();
+                // Don't unwrap send attempt - async task could be cancelled.
+                let _ = tx.send(out);
+            };
+
+            POOL.spawn(func);
+
+            rx.await.unwrap()
+        }
+    }
 }
 
-static RUNTIME: Lazy<RuntimeManager> = Lazy::new(RuntimeManager::new);
+static RUNTIME: LazyLock<RuntimeManager> = LazyLock::new(RuntimeManager::new);
 
 pub fn get_runtime() -> &'static RuntimeManager {
     RUNTIME.deref()

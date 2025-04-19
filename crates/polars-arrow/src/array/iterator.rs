@@ -1,5 +1,5 @@
-use crate::bitmap::iterator::TrueIdxIter;
 use crate::bitmap::Bitmap;
+use crate::bitmap::iterator::TrueIdxIter;
 use crate::trusted_len::TrustedLen;
 
 mod private {
@@ -117,3 +117,12 @@ impl<'a, A: ArrayAccessor<'a> + ?Sized> Iterator for NonNullValuesIter<'a, A> {
 }
 
 unsafe impl<'a, A: ArrayAccessor<'a> + ?Sized> TrustedLen for NonNullValuesIter<'a, A> {}
+
+impl<A: ?Sized> Clone for NonNullValuesIter<'_, A> {
+    fn clone(&self) -> Self {
+        Self {
+            accessor: self.accessor,
+            idxs: self.idxs.clone(),
+        }
+    }
+}

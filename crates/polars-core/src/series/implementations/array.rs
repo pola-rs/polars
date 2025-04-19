@@ -1,11 +1,12 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use super::{private, MetadataFlags};
+use self::compare_inner::{TotalEqInner, TotalOrdInner};
+use self::sort::arg_sort_row_fmt;
+use super::{StatisticsFlags, private};
+use crate::chunked_array::AsSinglePtr;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
@@ -19,19 +20,15 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
         Cow::Borrowed(self.0.ref_field())
     }
     fn _dtype(&self) -> &DataType {
-        self.0.ref_field().data_type()
+        self.0.ref_field().dtype()
     }
 
-    fn _get_flags(&self) -> MetadataFlags {
+    fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
     }
 
-    fn _set_flags(&mut self, flags: MetadataFlags) {
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
-    }
-
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -44,13 +41,13 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+        IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
     }
 
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -70,17 +67,24 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         self.0.remainder(rhs)
     }
+
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        invalid_operation_panic!(into_total_eq_inner, self)
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        invalid_operation_panic!(into_total_ord_inner, self)
+    }
 }
 
 impl SeriesTrait for SeriesWrap<ArrayChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -92,6 +96,23 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     }
     fn shrink_to_fit(&mut self) {
         self.0.shrink_to_fit()
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        let slf = (*self).clone();
+        let slf = slf.into_column();
+        arg_sort_row_fmt(
+            &[slf],
+            options.descending,
+            options.nulls_last,
+            options.multithreaded,
+        )
+        .unwrap()
+    }
+
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        let idxs = self.arg_sort(options);
+        Ok(unsafe { self.take_unchecked(&idxs) })
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
@@ -107,6 +128,10 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         let other = other.array()?;
         self.0.append(other)
+    }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(other.take_inner())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -139,19 +164,15 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.0.rechunk().into_series()
+        self.0.rechunk().into_owned().into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, data_type: &DataType, options: CastOptions) -> PolarsResult<Series> {
-        self.0.cast_with_options(data_type, options)
-    }
-
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        self.0.get_any_value(index)
+    fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
+        self.0.cast_with_options(dtype, options)
     }
 
     #[inline]
@@ -190,13 +211,20 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
 
-    /// Get a hold to self as `Any` trait reference.
-    /// Only implemented for ObjectType
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_phys_any(&self) -> &dyn Any {
+        &self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }

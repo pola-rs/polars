@@ -10,7 +10,7 @@ from polars.testing import assert_frame_equal
 
 
 # TODO: Do not rely on I/O for these tests
-@pytest.fixture()
+@pytest.fixture
 def foods_ipc_path() -> Path:
     return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
@@ -249,6 +249,47 @@ def test_string_like(pattern: str, like: str, expected: list[int]) -> None:
             assert res == expected
 
 
+def test_string_like_multiline() -> None:
+    s1 = "Hello World"
+    s2 = "Hello\nWorld"
+    s3 = "hello\nWORLD"
+
+    df = pl.DataFrame({"idx": [0, 1, 2], "txt": [s1, s2, s3]})
+
+    # starts with...
+    res1 = df.sql("SELECT * FROM self WHERE txt LIKE 'Hello%' ORDER BY idx")
+    res2 = df.sql("SELECT * FROM self WHERE txt ILIKE 'HELLO%' ORDER BY idx")
+
+    assert res1["txt"].to_list() == [s1, s2]
+    assert res2["txt"].to_list() == [s1, s2, s3]
+
+    # ends with...
+    res3 = df.sql("SELECT * FROM self WHERE txt LIKE '%WORLD' ORDER BY idx")
+    res4 = df.sql("SELECT * FROM self WHERE txt ILIKE '%\nWORLD' ORDER BY idx")
+
+    assert res3["txt"].to_list() == [s3]
+    assert res4["txt"].to_list() == [s2, s3]
+
+    # exact match
+    for s in (s1, s2, s3):
+        assert df.sql(f"SELECT txt FROM self WHERE txt LIKE '{s}'").item() == s
+
+
+@pytest.mark.parametrize("form", ["NFKC", "NFKD"])
+def test_string_normalize(form: str) -> None:
+    df = pl.DataFrame({"txt": ["Ｔｅｓｔ", "𝕋𝕖𝕤𝕥", "𝕿𝖊𝖘𝖙", "𝗧𝗲𝘀𝘁", "Ⓣⓔⓢⓣ"]})  # noqa: RUF001
+    res = df.sql(
+        f"""
+        SELECT txt, NORMALIZE(txt,{form}) AS norm_txt
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "txt": ["Ｔｅｓｔ", "𝕋𝕖𝕤𝕥", "𝕿𝖊𝖘𝖙", "𝗧𝗲𝘀𝘁", "Ⓣⓔⓢⓣ"],  # noqa: RUF001
+        "norm_txt": ["Test", "Test", "Test", "Test", "Test"],
+    }
+
+
 def test_string_position() -> None:
     df = pl.Series(
         name="city",
@@ -329,6 +370,35 @@ def test_string_replace() -> None:
             ctx.execute("SELECT REPLACE(words,'coffee') FROM df")
 
 
+def test_string_split() -> None:
+    df = pl.DataFrame({"s": ["xx,yy,zz", "abc,,xyz", "", None]})
+    res = df.sql("SELECT *, STRING_TO_ARRAY(s,',') AS s_array FROM self")
+
+    assert res.schema == {"s": pl.String, "s_array": pl.List(pl.String)}
+    assert res.to_dict(as_series=False) == {
+        "s": ["xx,yy,zz", "abc,,xyz", "", None],
+        "s_array": [["xx", "yy", "zz"], ["abc", "", "xyz"], [""], None],
+    }
+
+
+def test_string_split_part() -> None:
+    df = pl.DataFrame({"s": ["xx,yy,zz", "abc,,xyz,???,hmm", "", None]})
+    res = df.sql(
+        """
+        SELECT
+          SPLIT_PART(s,',',1) AS "s+1",
+          SPLIT_PART(s,',',3) AS "s+3",
+          SPLIT_PART(s,',',-2) AS "s-2",
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "s+1": ["xx", "abc", "", None],
+        "s+3": ["zz", "xyz", "", None],
+        "s-2": ["yy", "???", "", None],
+    }
+
+
 def test_string_substr() -> None:
     df = pl.DataFrame(
         {"scol": ["abcdefg", "abcde", "abc", None], "n": [-2, 3, 2, None]}
@@ -338,13 +408,13 @@ def test_string_substr() -> None:
             """
             SELECT
               -- note: sql is 1-indexed
-              SUBSTR(scol,1)    AS s1,
-              SUBSTR(scol,2)    AS s2,
-              SUBSTR(scol,3)    AS s3,
-              SUBSTR(scol,1,5)  AS s1_5,
-              SUBSTR(scol,2,2)  AS s2_2,
-              SUBSTR(scol,3,1)  AS s3_1,
-              SUBSTR(scol,-3)   AS "s-3",
+              SUBSTR(scol,1) AS s1,
+              SUBSTR(scol,2) AS s2,
+              SUBSTR(scol,3) AS s3,
+              SUBSTR(scol,1,5) AS s1_5,
+              SUBSTR(scol,2,2) AS s2_2,
+              SUBSTR(scol,3,1) AS s3_1,
+              SUBSTR(scol,-3) AS "s-3",
               SUBSTR(scol,-3,3) AS "s-3_3",
               SUBSTR(scol,-3,4) AS "s-3_4",
               SUBSTR(scol,-3,5) AS "s-3_5",

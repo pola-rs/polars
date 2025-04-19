@@ -1,7 +1,10 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+use bytes::Bytes;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -31,7 +34,7 @@ pub enum AggExpr {
     Quantile {
         expr: Arc<Expr>,
         quantile: Arc<Expr>,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     },
     Sum(Arc<Expr>),
     AggGroups(Arc<Expr>),
@@ -61,16 +64,18 @@ impl AsRef<Expr> for AggExpr {
     }
 }
 
-/// Expressions that can be used in various contexts. Queries consist of multiple expressions. When using the polars
-/// lazy API, don't construct an `Expr` directly; instead, create one using the functions in the `polars_lazy::dsl`
-/// module. See that module's docs for more info.
+/// Expressions that can be used in various contexts.
+///
+/// Queries consist of multiple expressions.
+/// When using the polars lazy API, don't construct an `Expr` directly; instead, create one using
+/// the functions in the `polars_lazy::dsl` module. See that module's docs for more info.
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Expr {
-    Alias(Arc<Expr>, ColumnName),
-    Column(ColumnName),
-    Columns(Arc<[ColumnName]>),
+    Alias(Arc<Expr>, PlSmallStr),
+    Column(PlSmallStr),
+    Columns(Arc<[PlSmallStr]>),
     DtypeColumn(Vec<DataType>),
     IndexColumn(Arc<[i64]>),
     Literal(LiteralValue),
@@ -81,7 +86,7 @@ pub enum Expr {
     },
     Cast {
         expr: Arc<Expr>,
-        data_type: DataType,
+        dtype: DataType,
         options: CastOptions,
     },
     Sort {
@@ -134,27 +139,25 @@ pub enum Expr {
         length: Arc<Expr>,
     },
     /// Can be used in a select statement to exclude a column from selection
+    /// TODO: See if we can replace `Vec<Excluded>` with `Arc<Excluded>`
     Exclude(Arc<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Arc<Expr>),
     Len,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
-    // skipped fields must be last otherwise serde fails in pickle
-    #[cfg_attr(feature = "serde", serde(skip))]
     RenameAlias {
         function: SpecialEq<Arc<dyn RenameAliasFn>>,
         expr: Arc<Expr>,
     },
     #[cfg(feature = "dtype-struct")]
-    Field(Arc<[ColumnName]>),
+    Field(Arc<[PlSmallStr]>),
     AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: OpaqueColumnUdf,
         /// output dtype of the function
-        #[cfg_attr(feature = "serde", serde(skip))]
         output_type: GetOutput,
         options: FunctionOptions,
     },
@@ -166,6 +169,50 @@ pub enum Expr {
     /// `Expr::Wildcard`
     /// `Expr::Exclude`
     Selector(super::selector::Selector),
+}
+
+pub type OpaqueColumnUdf = LazySerde<SpecialEq<Arc<dyn ColumnsUdf>>>;
+pub(crate) fn new_column_udf<F: ColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
+    LazySerde::Deserialized(SpecialEq::new(Arc::new(func)))
+}
+
+#[derive(Clone)]
+pub enum LazySerde<T: Clone> {
+    Deserialized(T),
+    Bytes(Bytes),
+}
+
+impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
+    fn eq(&self, other: &Self) -> bool {
+        use LazySerde as L;
+        match (self, other) {
+            (L::Deserialized(a), L::Deserialized(b)) => a == b,
+            (L::Bytes(a), L::Bytes(b)) => a.as_ptr() == b.as_ptr() && a.len() == b.len(),
+            _ => false,
+        }
+    }
+}
+
+impl<T: Clone> Debug for LazySerde<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bytes(_) => write!(f, "lazy-serde<Bytes>"),
+            Self::Deserialized(_) => write!(f, "lazy-serde<T>"),
+        }
+    }
+}
+
+impl OpaqueColumnUdf {
+    pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn ColumnsUdf>>> {
+        match self {
+            Self::Deserialized(t) => Ok(t),
+            Self::Bytes(_b) => {
+                feature_gated!("serde";"python", {
+                    crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(_b.as_ref()).map(SpecialEq::new)
+                })
+            },
+        }
+    }
 }
 
 #[allow(clippy::derived_hash_with_manual_eq)]
@@ -192,11 +239,11 @@ impl Hash for Expr {
             },
             Expr::Cast {
                 expr,
-                data_type,
+                dtype,
                 options: strict,
             } => {
                 expr.hash(state);
-                data_type.hash(state);
+                dtype.hash(state);
                 strict.hash(state)
             },
             Expr::Sort { expr, options } => {
@@ -293,7 +340,7 @@ impl Eq for Expr {}
 
 impl Default for Expr {
     fn default() -> Self {
-        Expr::Literal(LiteralValue::Null)
+        Expr::Literal(LiteralValue::Scalar(Scalar::default()))
     }
 }
 
@@ -301,7 +348,7 @@ impl Default for Expr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 
 pub enum Excluded {
-    Name(ColumnName),
+    Name(PlSmallStr),
     Dtype(DataType),
 }
 
@@ -318,8 +365,81 @@ impl Expr {
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let root = to_aexpr(self.clone(), expr_arena);
-        expr_arena.get(root).to_field(schema, ctxt, expr_arena)
+        let root = to_aexpr(self.clone(), expr_arena)?;
+        expr_arena
+            .get(root)
+            .to_field_and_validate(schema, ctxt, expr_arena)
+    }
+
+    /// Extract a constant usize from an expression.
+    pub fn extract_usize(&self) -> PolarsResult<usize> {
+        match self {
+            Expr::Literal(n) => n.extract_usize(),
+            Expr::Cast { expr, dtype, .. } => {
+                // lit(x, dtype=...) are Cast expressions. We verify the inner expression is literal.
+                if dtype.is_integer() {
+                    expr.extract_usize()
+                } else {
+                    polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+                }
+            },
+            _ => {
+                polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+            },
+        }
+    }
+
+    #[inline]
+    pub fn map_unary(self, function: impl Into<FunctionExpr>) -> Self {
+        Expr::n_ary(function, vec![self])
+    }
+    #[inline]
+    pub fn map_binary(self, function: impl Into<FunctionExpr>, rhs: Self) -> Self {
+        Expr::n_ary(function, vec![self, rhs])
+    }
+
+    #[inline]
+    pub fn map_ternary(self, function: impl Into<FunctionExpr>, arg1: Expr, arg2: Expr) -> Expr {
+        Expr::n_ary(function, vec![self, arg1, arg2])
+    }
+
+    #[inline]
+    pub fn try_map_n_ary(
+        self,
+        function: impl Into<FunctionExpr>,
+        exprs: impl IntoIterator<Item = PolarsResult<Expr>>,
+    ) -> PolarsResult<Expr> {
+        let exprs = exprs.into_iter();
+        let mut input = Vec::with_capacity(exprs.size_hint().0 + 1);
+        input.push(self);
+        for e in exprs {
+            input.push(e?);
+        }
+        Ok(Expr::n_ary(function, input))
+    }
+
+    #[inline]
+    pub fn map_n_ary(
+        self,
+        function: impl Into<FunctionExpr>,
+        exprs: impl IntoIterator<Item = Expr>,
+    ) -> Expr {
+        let exprs = exprs.into_iter();
+        let mut input = Vec::with_capacity(exprs.size_hint().0 + 1);
+        input.push(self);
+        input.extend(exprs);
+        Expr::n_ary(function, input)
+    }
+
+    #[inline]
+    pub fn n_ary(function: impl Into<FunctionExpr>, input: Vec<Expr>) -> Expr {
+        let function = function.into();
+        let options = function.function_options();
+        Expr::Function {
+            input,
+            function,
+            options,
+        }
     }
 }
 
@@ -376,7 +496,7 @@ impl Display for Operator {
 }
 
 impl Operator {
-    pub(crate) fn is_comparison(&self) -> bool {
+    pub fn is_comparison(&self) -> bool {
         matches!(
             self,
             Self::Eq
@@ -385,15 +505,43 @@ impl Operator {
                 | Self::LtEq
                 | Self::Gt
                 | Self::GtEq
-                | Self::And
-                | Self::Or
-                | Self::Xor
                 | Self::EqValidity
                 | Self::NotEqValidity
         )
     }
 
+    pub fn is_bitwise(&self) -> bool {
+        matches!(self, Self::And | Self::Or | Self::Xor)
+    }
+
+    pub fn is_comparison_or_bitwise(&self) -> bool {
+        self.is_comparison() || self.is_bitwise()
+    }
+
+    pub fn swap_operands(self) -> Self {
+        match self {
+            Operator::Eq => Operator::Eq,
+            Operator::Gt => Operator::Lt,
+            Operator::GtEq => Operator::LtEq,
+            Operator::LtEq => Operator::GtEq,
+            Operator::Or => Operator::Or,
+            Operator::LogicalAnd => Operator::LogicalAnd,
+            Operator::LogicalOr => Operator::LogicalOr,
+            Operator::Xor => Operator::Xor,
+            Operator::NotEq => Operator::NotEq,
+            Operator::EqValidity => Operator::EqValidity,
+            Operator::NotEqValidity => Operator::NotEqValidity,
+            Operator::Divide => Operator::Multiply,
+            Operator::Multiply => Operator::Divide,
+            Operator::And => Operator::And,
+            Operator::Plus => Operator::Minus,
+            Operator::Minus => Operator::Plus,
+            Operator::Lt => Operator::Gt,
+            _ => unimplemented!(),
+        }
+    }
+
     pub fn is_arithmetic(&self) -> bool {
-        !(self.is_comparison())
+        !(self.is_comparison_or_bitwise())
     }
 }

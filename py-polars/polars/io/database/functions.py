@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Iterable, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 from polars.datatypes import N_INFER_DEFAULT
 from polars.dependencies import import_optional
@@ -9,25 +9,18 @@ from polars.io.database._cursor_proxies import ODBCCursorProxy
 from polars.io.database._executor import ConnectionExecutor
 
 if TYPE_CHECKING:
-    import sys
+    from collections.abc import Iterator
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
+    from sqlalchemy.sql.elements import TextClause
+    from sqlalchemy.sql.expression import Selectable
 
     from polars import DataFrame
     from polars._typing import ConnectionOrCursor, DbReadEngine, SchemaDict
 
-    try:
-        from sqlalchemy.sql.expression import Selectable
-    except ImportError:
-        Selectable: TypeAlias = Any  # type: ignore[no-redef]
-
 
 @overload
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: Literal[False] = ...,
@@ -40,7 +33,7 @@ def read_database(
 
 @overload
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: Literal[True],
@@ -48,12 +41,12 @@ def read_database(
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     execute_options: dict[str, Any] | None = ...,
-) -> Iterable[DataFrame]: ...
+) -> Iterator[DataFrame]: ...
 
 
 @overload
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: bool,
@@ -61,11 +54,11 @@ def read_database(
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
     execute_options: dict[str, Any] | None = ...,
-) -> DataFrame | Iterable[DataFrame]: ...
+) -> DataFrame | Iterator[DataFrame]: ...
 
 
 def read_database(
-    query: str | Selectable,
+    query: str | TextClause | Selectable,
     connection: ConnectionOrCursor | str,
     *,
     iter_batches: bool = False,
@@ -73,7 +66,7 @@ def read_database(
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     execute_options: dict[str, Any] | None = None,
-) -> DataFrame | Iterable[DataFrame]:
+) -> DataFrame | Iterator[DataFrame]:
     """
     Read the results of a SQL query into a DataFrame, given a connection object.
 
@@ -216,18 +209,19 @@ def read_database(
     ...     connection=async_engine,
     ... )  # doctest: +SKIP
 
-    Load data from an asynchronous SurrealDB client connection object; note that
-    both the WS (`Surreal`) and HTTP (`SurrealHTTP`) clients are supported:
+    Load data from an `AsyncSurrealDB` client connection object; note that both the "ws"
+    and "http" protocols are supported, as is the synchronous `SurrealDB` client. The
+    async loop can be run with standard `asyncio` or with `uvloop`:
 
-    >>> import asyncio
+    >>> import asyncio  # (or uvloop)
     >>> async def surreal_query_to_frame(query: str, url: str):
-    ...     async with Surreal(url) as client:
+    ...     async with AsyncSurrealDB(url) as client:
     ...         await client.use(namespace="test", database="test")
     ...         return pl.read_database(query=query, connection=client)
     >>> df = asyncio.run(
     ...     surreal_query_to_frame(
-    ...         query="SELECT * FROM test_data",
-    ...         url="ws://localhost:8000/rpc",
+    ...         query="SELECT * FROM test",
+    ...         url="http://localhost:8000",
     ...     )
     ... )  # doctest: +SKIP
 
@@ -243,7 +237,7 @@ def read_database(
             connection = ODBCCursorProxy(connection)
         elif "://" in connection:
             # otherwise looks like a mistaken call to read_database_uri
-            msg = "use of string URI is invalid here; call `read_database_uri` instead"
+            msg = "string URI is invalid here; call `read_database_uri` instead"
             raise ValueError(msg)
         else:
             msg = "unable to identify string connection as valid ODBC (no driver)"
@@ -260,6 +254,51 @@ def read_database(
             schema_overrides=schema_overrides,
             infer_schema_length=infer_schema_length,
         )
+
+
+@overload
+def read_database_uri(
+    query: str,
+    uri: str,
+    *,
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
+    engine: Literal["adbc"],
+    schema_overrides: SchemaDict | None = None,
+    execute_options: dict[str, Any] | None = None,
+) -> DataFrame: ...
+
+
+@overload
+def read_database_uri(
+    query: list[str] | str,
+    uri: str,
+    *,
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
+    engine: Literal["connectorx"] | None = None,
+    schema_overrides: SchemaDict | None = None,
+    execute_options: None = None,
+) -> DataFrame: ...
+
+
+@overload
+def read_database_uri(
+    query: str,
+    uri: str,
+    *,
+    partition_on: str | None = None,
+    partition_range: tuple[int, int] | None = None,
+    partition_num: int | None = None,
+    protocol: str | None = None,
+    engine: DbReadEngine | None = None,
+    schema_overrides: None = None,
+    execute_options: dict[str, Any] | None = None,
+) -> DataFrame: ...
 
 
 def read_database_uri(

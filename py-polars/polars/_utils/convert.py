@@ -8,10 +8,9 @@ from typing import (
     Any,
     Callable,
     NoReturn,
-    Sequence,
-    no_type_check,
     overload,
 )
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from polars._utils.constants import (
     EPOCH,
@@ -23,9 +22,9 @@ from polars._utils.constants import (
     SECONDS_PER_HOUR,
     US_PER_SECOND,
 )
-from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import date, tzinfo
     from decimal import Decimal
 
@@ -161,36 +160,21 @@ def to_py_datetime(
 
     if time_zone is None:
         return EPOCH + td
-    elif _ZONEINFO_AVAILABLE:
+    else:
         dt = EPOCH_UTC + td
         return _localize_datetime(dt, time_zone)
-    else:
-        msg = "install polars[timezone] to handle datetimes with time zone information"
-        raise ImportError(msg)
 
 
 def _localize_datetime(dt: datetime, time_zone: str) -> datetime:
     # zone info installation should already be checked
+    tz: ZoneInfo | tzinfo
     try:
-        tz = string_to_zoneinfo(time_zone)
-    except zoneinfo.ZoneInfoNotFoundError:
+        tz = ZoneInfo(time_zone)
+    except ZoneInfoNotFoundError:
         # try fixed offset, which is not supported by ZoneInfo
         tz = _parse_fixed_tz_offset(time_zone)
 
     return dt.astimezone(tz)
-
-
-@no_type_check
-@lru_cache(None)
-def string_to_zoneinfo(key: str) -> Any:
-    """
-    Convert a time zone string to a Python ZoneInfo object.
-
-    This is a simple wrapper for the zoneinfo.ZoneInfo constructor.
-    The wrapper is useful because zoneinfo is not available on Python 3.8
-    and the backports module may not be installed.
-    """
-    return zoneinfo.ZoneInfo(key)
 
 
 # cache here as we have a single tz per column

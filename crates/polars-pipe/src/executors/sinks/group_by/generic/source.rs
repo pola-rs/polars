@@ -1,6 +1,6 @@
 use polars_core::utils::flatten::flatten_df_iter;
-use polars_io::ipc::IpcReader;
 use polars_io::SerReader;
+use polars_io::ipc::IpcReader;
 
 use super::*;
 use crate::executors::sinks::group_by::generic::global::GlobalTable;
@@ -64,10 +64,10 @@ impl Source for GroupBySource {
         if partition_dir.exists() {
             for file in std::fs::read_dir(partition_dir).expect("should be there") {
                 let spilled = file.unwrap().path();
-                let file = polars_utils::open_file(spilled)?;
+                let file = polars_utils::open_file(&spilled)?;
                 let reader = IpcReader::new(file);
                 let spilled = reader.finish().unwrap();
-                if spilled.n_chunks() > 1 {
+                if spilled.first_col_n_chunks() > 1 {
                     for spilled in flatten_df_iter(&spilled) {
                         self.global_table
                             .process_partition_from_dumped(partition, &spilled)

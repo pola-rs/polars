@@ -10,9 +10,10 @@ import pytest
 
 import polars as pl
 from polars.io.iceberg import _convert_predicate, _to_ast
+from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def iceberg_path(io_files_path: Path) -> str:
     # Iceberg requires absolute paths, so we'll symlink
     # the test table into /tmp/iceberg/t1/
@@ -26,12 +27,12 @@ def iceberg_path(io_files_path: Path) -> str:
     return f"file://{iceberg_path.resolve()}"
 
 
-@pytest.mark.slow()
-@pytest.mark.write_disk()
+@pytest.mark.slow
+@pytest.mark.write_disk
 @pytest.mark.filterwarnings(
     "ignore:No preferred file implementation for scheme*:UserWarning"
 )
-@pytest.mark.ci_only()
+@pytest.mark.ci_only
 class TestIcebergScanIO:
     """Test coverage for `iceberg` scan ops."""
 
@@ -43,6 +44,19 @@ class TestIcebergScanIO:
             "str": pl.String,
             "ts": pl.Datetime(time_unit="us", time_zone=None),
         }
+
+    def test_scan_iceberg_snapshot_id(self, iceberg_path: str) -> None:
+        df = pl.scan_iceberg(iceberg_path, snapshot_id=7051579356916758811)
+        assert len(df.collect()) == 3
+        assert df.collect_schema() == {
+            "id": pl.Int32,
+            "str": pl.String,
+            "ts": pl.Datetime(time_unit="us", time_zone=None),
+        }
+
+    def test_scan_iceberg_snapshot_id_not_found(self, iceberg_path: str) -> None:
+        with pytest.raises(ValueError, match="Snapshot ID not found"):
+            pl.scan_iceberg(iceberg_path, snapshot_id=1234567890)
 
     def test_scan_iceberg_filter_on_partition(self, iceberg_path: str) -> None:
         ts1 = datetime(2023, 3, 1, 18, 15)
@@ -88,7 +102,7 @@ class TestIcebergScanIO:
         ]
 
 
-@pytest.mark.ci_only()
+@pytest.mark.ci_only
 class TestIcebergExpressions:
     """Test coverage for `iceberg` expressions comprehension."""
 
@@ -163,3 +177,50 @@ class TestIcebergExpressions:
 
         expr = _to_ast("(pa.compute.field('ts') <= '2023-08-08')")
         assert _convert_predicate(expr) == LessThanOrEqual("ts", "2023-08-08")
+
+    def test_compare_boolean(self) -> None:
+        from pyiceberg.expressions import EqualTo
+
+        expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(True))")
+        assert _convert_predicate(expr) == EqualTo("ts", True)
+
+        expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(False))")
+        assert _convert_predicate(expr) == EqualTo("ts", False)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.filterwarnings("ignore:Delete operation did not match any records")
+@pytest.mark.filterwarnings(
+    "ignore:Iceberg does not have a dictionary type. <class 'pyarrow.lib.DictionaryType'> will be inferred as large_string on read."
+)
+def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    # time64[ns] type is currently not supported in pyiceberg.
+    # https://github.com/apache/iceberg-python/issues/1169
+    df = df.drop("time", "cat", "enum")
+
+    # in-memory catalog
+    catalog = SqlCatalog(
+        "default", uri="sqlite:///:memory:", warehouse=f"file://{tmp_path}"
+    )
+    catalog.create_namespace("foo")
+    table = catalog.create_table(
+        "foo.bar",
+        schema=df.to_arrow().schema,
+    )
+
+    df.write_iceberg(table, mode="overwrite")
+    actual = pl.scan_iceberg(table).collect()
+    print(df, actual)
+
+    assert_frame_equal(df, actual)
+
+    # append on top of already written data, expecting twice the data
+    df.write_iceberg(table, mode="append")
+    # double the `df` by vertically stacking the dataframe on top of itself
+    expected = df.vstack(df)
+    actual = pl.scan_iceberg(table).collect()
+    print(expected, actual)
+    assert_frame_equal(expected, actual, check_dtypes=False)

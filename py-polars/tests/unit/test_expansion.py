@@ -138,6 +138,20 @@ def test_struct_field_expand_star() -> None:
     assert_frame_equal(struct_df.select(pl.col("struct_col").struct.field("*")), df)
 
 
+def test_struct_unnest() -> None:
+    """Same as test_struct_field_expand_star but using the unnest alias."""
+    df = pl.DataFrame(
+        {
+            "aaa": [1, 2],
+            "bbb": ["ab", "cd"],
+            "ccc": [True, None],
+            "ddd": [[1, 2], [3]],
+        }
+    )
+    struct_df = df.select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
+    assert_frame_equal(struct_df.select(pl.col("struct_col").struct.unnest()), df)
+
+
 def test_struct_field_expand_rewrite() -> None:
     df = pl.DataFrame({"A": [1], "B": [2]})
     assert df.select(

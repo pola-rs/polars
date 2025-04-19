@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use arrow::temporal_conversions::{time64ns_to_time, NANOSECONDS};
+use arrow::temporal_conversions::{NANOSECONDS, time64ns_to_time};
 use chrono::Timelike;
 
 use super::*;
@@ -23,6 +23,11 @@ impl TimeChunked {
     pub fn to_string(&self, format: &str) -> StringChunked {
         let mut ca: StringChunked = self.apply_kernel_cast(&|arr| {
             let mut buf = String::new();
+            let format = if format == "iso" || format == "iso:strict" {
+                "%T%.9f"
+            } else {
+                format
+            };
             let mut mutarr = MutablePlString::with_capacity(arr.len());
 
             for opt in arr.into_iter() {
@@ -40,7 +45,7 @@ impl TimeChunked {
             mutarr.freeze().boxed()
         });
 
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         ca
     }
 
@@ -65,7 +70,7 @@ impl TimeChunked {
     }
 
     /// Construct a new [`TimeChunked`] from an iterator over [`NaiveTime`].
-    pub fn from_naive_time<I: IntoIterator<Item = NaiveTime>>(name: &str, v: I) -> Self {
+    pub fn from_naive_time<I: IntoIterator<Item = NaiveTime>>(name: PlSmallStr, v: I) -> Self {
         let vals = v
             .into_iter()
             .map(|nt| time_to_time64ns(&nt))
@@ -75,7 +80,7 @@ impl TimeChunked {
 
     /// Construct a new [`TimeChunked`] from an iterator over optional [`NaiveTime`].
     pub fn from_naive_time_options<I: IntoIterator<Item = Option<NaiveTime>>>(
-        name: &str,
+        name: PlSmallStr,
         v: I,
     ) -> Self {
         let vals = v.into_iter().map(|opt| opt.map(|nt| time_to_time64ns(&nt)));

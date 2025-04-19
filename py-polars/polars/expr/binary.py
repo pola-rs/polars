@@ -3,11 +3,19 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars._utils.parse import parse_into_expression
+from polars._utils.various import scale_bytes
 from polars._utils.wrap import wrap_expr
+from polars.datatypes import parse_into_dtype
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars._typing import IntoExpr, TransferEncoding
+    from polars._typing import (
+        Endianness,
+        IntoExpr,
+        PolarsDataType,
+        SizeUnit,
+        TransferEncoding,
+    )
 
 
 class ExprBinaryNameSpace:
@@ -15,7 +23,7 @@ class ExprBinaryNameSpace:
 
     _accessor = "bin"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def contains(self, literal: IntoExpr) -> Expr:
@@ -176,7 +184,7 @@ class ExprBinaryNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`String`.
+            Expression of data type :class:`Binary`.
 
         Examples
         --------
@@ -220,7 +228,7 @@ class ExprBinaryNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`String`.
+            Expression of data type :class:`Binary`.
 
         Examples
         --------
@@ -251,3 +259,82 @@ class ExprBinaryNameSpace:
         else:
             msg = f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
             raise ValueError(msg)
+
+    def size(self, unit: SizeUnit = "b") -> Expr:
+        r"""
+        Get the size of binary values in the given unit.
+
+        Parameters
+        ----------
+        unit : {'b', 'kb', 'mb', 'gb', 'tb'}
+            Scale the returned size to the given unit.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32` or `Float64`.
+
+        Examples
+        --------
+        >>> from os import urandom
+        >>> df = pl.DataFrame({"data": [urandom(n) for n in (512, 256, 1024)]})
+        >>> df.with_columns(  # doctest: +IGNORE_RESULT
+        ...     n_bytes=pl.col("data").bin.size(),
+        ...     n_kilobytes=pl.col("data").bin.size("kb"),
+        ... )
+        shape: (4, 3)
+        ┌─────────────────────────────────┬─────────┬─────────────┐
+        │ data                            ┆ n_bytes ┆ n_kilobytes │
+        │ ---                             ┆ ---     ┆ ---         │
+        │ binary                          ┆ u32     ┆ f64         │
+        ╞═════════════════════════════════╪═════════╪═════════════╡
+        │ b"y?~B\x83\xf4V\x07\xd3\xfb\xb… ┆ 512     ┆ 0.5         │
+        │ b"\xee$4@f\xc14\x07\x8e\x88\x1… ┆ 256     ┆ 0.25        │
+        │ b"\x80\xbd\xb9nEq;2\x99$\xf9\x… ┆ 1024    ┆ 1.0         │
+        └─────────────────────────────────┴─────────┴─────────────┘
+        """
+        sz = wrap_expr(self._pyexpr.bin_size_bytes())
+        sz = scale_bytes(sz, unit)
+        return sz
+
+    def reinterpret(
+        self, *, dtype: PolarsDataType, endianness: Endianness = "little"
+    ) -> Expr:
+        r"""
+        Interpret a buffer as a numerical Polars type.
+
+        Parameters
+        ----------
+        dtype : PolarsDataType
+            Which type to interpret binary column into.
+        endianness : {"big", "little"}, optional
+            Which endianness to use when interpreting bytes, by default "little".
+
+        Returns
+        -------
+        Expr
+            Expression of data type `dtype`.
+            Note that if binary array is too short value will be null.
+            If binary array is too long, remainder will be ignored.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"data": [b"\x05\x00\x00\x00", b"\x10\x00\x01\x00"]})
+        >>> df.with_columns(  # doctest: +IGNORE_RESULT
+        ...     bin2int=pl.col("data").bin.reinterpret(
+        ...         dtype=pl.Int32, endianness="little"
+        ...     ),
+        ... )
+        shape: (2, 2)
+        ┌─────────────────────┬─────────┐
+        │ data                ┆ bin2int │
+        │ ---                 ┆ ---     │
+        │ binary              ┆ i32     │
+        ╞═════════════════════╪═════════╡
+        │ b"\x05\x00\x00\x00" ┆ 5       │
+        │ b"\x10\x00\x01\x00" ┆ 65552   │
+        └─────────────────────┴─────────┘
+        """
+        dtype = parse_into_dtype(dtype)
+
+        return wrap_expr(self._pyexpr.from_buffer(dtype, endianness))

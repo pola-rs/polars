@@ -4,8 +4,8 @@
     feature = "dtype-duration",
     feature = "dtype-time"
 ))]
-use arrow::compute::cast::cast_default as cast;
-use arrow::compute::cast::cast_unchecked;
+use polars_compute::cast::cast_default as cast;
+use polars_compute::cast::cast_unchecked;
 
 use crate::prelude::*;
 
@@ -34,17 +34,23 @@ impl Series {
                         let dtype = &field.dtype;
                         let s = unsafe {
                             Series::from_chunks_and_dtype_unchecked(
-                                "",
+                                PlSmallStr::EMPTY,
                                 vec![values.clone()],
                                 &dtype.to_physical(),
                             )
-                            .cast_unchecked(dtype)
+                            .from_physical_unchecked(dtype)
                             .unwrap()
                         };
                         s.to_arrow(0, compat_level)
                     })
                     .collect::<Vec<_>>();
-                StructArray::new(dt.to_arrow(compat_level), values, arr.validity().cloned()).boxed()
+                StructArray::new(
+                    dt.to_arrow(compat_level),
+                    arr.len(),
+                    values,
+                    arr.validity().cloned(),
+                )
+                .boxed()
             },
             // special list branch to
             // make sure that we recursively apply all logical types.
@@ -59,24 +65,52 @@ impl Series {
                     // We pass physical arrays and cast to logical before we convert to arrow.
                     let s = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
-                            "",
+                            PlSmallStr::EMPTY,
                             vec![arr.values().clone()],
                             &inner.to_physical(),
                         )
-                        .cast_unchecked(inner)
+                        .from_physical_unchecked(inner)
                         .unwrap()
                     };
 
                     s.to_arrow(0, compat_level)
                 };
 
-                let data_type = ListArray::<i64>::default_datatype(inner.to_arrow(compat_level));
+                let dtype = ListArray::<i64>::default_datatype(inner.to_arrow(compat_level));
                 let arr = ListArray::<i64>::new(
-                    data_type,
+                    dtype,
                     arr.offsets().clone(),
                     new_values,
                     arr.validity().cloned(),
                 );
+                Box::new(arr)
+            },
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, width) => {
+                let ca = self.array().unwrap();
+                let arr = ca.chunks[chunk_idx].clone();
+                let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+
+                let new_values = if let DataType::Null = &**inner {
+                    arr.values().clone()
+                } else {
+                    let s = unsafe {
+                        Series::from_chunks_and_dtype_unchecked(
+                            PlSmallStr::EMPTY,
+                            vec![arr.values().clone()],
+                            &inner.to_physical(),
+                        )
+                        .from_physical_unchecked(inner)
+                        .unwrap()
+                    };
+
+                    s.to_arrow(0, compat_level)
+                };
+
+                let dtype =
+                    FixedSizeListArray::default_datatype(inner.to_arrow(compat_level), *width);
+                let arr =
+                    FixedSizeListArray::new(dtype, arr.len(), new_values, arr.validity().cloned());
                 Box::new(arr)
             },
             #[cfg(feature = "dtype-categorical")]
@@ -84,7 +118,7 @@ impl Series {
                 let ca = self.categorical().unwrap();
                 let arr = ca.physical().chunks()[chunk_idx].clone();
                 // SAFETY: categoricals are always u32's.
-                let cats = unsafe { UInt32Chunked::from_chunks("", vec![arr]) };
+                let cats = unsafe { UInt32Chunked::from_chunks(PlSmallStr::EMPTY, vec![arr]) };
 
                 // SAFETY: we only take a single chunk and change nothing about the index/rev_map mapping.
                 let new = unsafe {
@@ -122,8 +156,16 @@ impl Series {
                 &DataType::Time.to_arrow(compat_level),
             )
             .unwrap(),
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => self.decimal().unwrap().chunks()[chunk_idx]
+                .as_any()
+                .downcast_ref::<PrimitiveArray<i128>>()
+                .unwrap()
+                .clone()
+                .to(self.dtype().to_arrow(CompatLevel::newest()))
+                .to_boxed(),
             #[cfg(feature = "object")]
-            DataType::Object(_, None) => {
+            DataType::Object(_) => {
                 use crate::chunked_array::object::builder::object_series_to_arrow_array;
                 if self.chunks().len() == 1 && chunk_idx == 0 {
                     object_series_to_arrow_array(self)

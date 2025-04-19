@@ -36,10 +36,14 @@ fn join_nans_outer() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "lazy")]
 fn join_empty_datasets() -> PolarsResult<()> {
-    let a = DataFrame::new(Vec::from([Series::new_empty("foo", &DataType::Int64)])).unwrap();
+    let a = DataFrame::new(Vec::from([Column::new_empty(
+        "foo".into(),
+        &DataType::Int64,
+    )]))
+    .unwrap();
     let b = DataFrame::new(Vec::from([
-        Series::new_empty("foo", &DataType::Int64),
-        Series::new_empty("bar", &DataType::Int64),
+        Column::new_empty("foo".into(), &DataType::Int64),
+        Column::new_empty("bar".into(), &DataType::Int64),
     ]))
     .unwrap();
 

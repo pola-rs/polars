@@ -116,27 +116,6 @@ def test_sample_series() -> None:
     assert len(s.sample(n=10, with_replacement=True, seed=0)) == 10
 
 
-def test_rank_random_expr() -> None:
-    df = pl.from_dict(
-        {"a": [1] * 5, "b": [1, 2, 3, 4, 5], "c": [200, 100, 100, 50, 100]}
-    )
-
-    df_ranks1 = df.with_columns(
-        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
-    )
-    df_ranks2 = df.with_columns(
-        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
-    )
-    assert_frame_equal(df_ranks1, df_ranks2)
-
-
-def test_rank_random_series() -> None:
-    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
-    assert_series_equal(
-        s.rank("random", seed=1), pl.Series("a", [2, 4, 7, 3, 5, 6, 1], dtype=pl.UInt32)
-    )
-
-
 def test_shuffle_expr() -> None:
     # pl.set_random_seed should lead to reproducible results.
     s = pl.Series("a", range(20))

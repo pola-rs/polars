@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any
 
 from polars.datatypes.classes import (
     Array,
@@ -16,6 +16,7 @@ from polars.datatypes.classes import (
     Int16,
     Int32,
     Int64,
+    Int128,
     List,
     Struct,
     Time,
@@ -26,11 +27,19 @@ from polars.datatypes.classes import (
 )
 
 if TYPE_CHECKING:
+    import sys
+    from collections.abc import Iterable
+
     from polars._typing import (
         PolarsDataType,
         PolarsIntegerType,
         PolarsTemporalType,
     )
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
 
 class DataTypeGroup(frozenset):  # type: ignore[type-arg]
@@ -40,7 +49,7 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
 
     def __new__(
         cls, items: Iterable[DataType | DataTypeClass], *, match_base_type: bool = True
-    ) -> DataTypeGroup:
+    ) -> Self:
         """
         Construct a DataTypeGroup.
 
@@ -71,6 +80,7 @@ SIGNED_INTEGER_DTYPES: frozenset[PolarsIntegerType] = DataTypeGroup(
         Int16,
         Int32,
         Int64,
+        Int128,
     ]
 )
 UNSIGNED_INTEGER_DTYPES: frozenset[PolarsIntegerType] = DataTypeGroup(

@@ -78,12 +78,6 @@ def test_duration_aggs() -> None:
     }
 
 
-def test_mean_horizontal_with_str_column() -> None:
-    assert pl.DataFrame(
-        {"int": [1, 2, 3], "bool": [True, True, None], "str": ["a", "b", "c"]}
-    ).mean_horizontal().to_list() == [1.0, 1.5, 3.0]
-
-
 def test_list_aggregation_that_filters_all_data_6017() -> None:
     out = (
         pl.DataFrame({"col_to_group_by": [2], "flt": [1672740910.967138], "col3": [1]})
@@ -113,7 +107,7 @@ def test_quantile() -> None:
     assert s.quantile(0.5, "higher") == 2
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("tp", [int, float])
 @pytest.mark.parametrize("n", [1, 2, 10, 100])
 def test_quantile_vs_numpy(tp: type, n: int) -> None:
@@ -243,7 +237,7 @@ def test_online_variance() -> None:
     )
 
 
-def test_err_on_implode_and_agg() -> None:
+def test_implode_and_agg() -> None:
     df = pl.DataFrame({"type": ["water", "fire", "water", "earth"]})
 
     # this would OOB
@@ -258,15 +252,11 @@ def test_err_on_implode_and_agg() -> None:
         pl.col("type").implode().list.head().alias("foo")
     ).to_dict(as_series=False) == {
         "type": ["water", "fire", "earth"],
-        "foo": [[["water", "water"]], [["fire"]], [["earth"]]],
+        "foo": [["water", "water"], ["fire"], ["earth"]],
     }
-
-    # but not during a window function as the groups cannot be mapped back
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"'implode' followed by an aggregation is not allowed",
-    ):
-        df.lazy().select(pl.col("type").implode().list.head(1).over("type")).collect()
+    assert df.select(pl.col("type").implode().list.head(1).over("type")).to_dict(
+        as_series=False
+    ) == {"type": [["water"], ["fire"], ["water"], ["earth"]]}
 
 
 def test_mapped_literal_to_literal_9217() -> None:
@@ -437,7 +427,7 @@ def test_agg_filter_over_empty_df_13610() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_agg_empty_sum_after_filter_14734() -> None:
     f = (
         pl.DataFrame({"a": [1, 2], "b": [1, 2]})
@@ -462,7 +452,7 @@ def test_agg_empty_sum_after_filter_14734() -> None:
     assert_frame_equal(expect, curr.select("b"))
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_grouping_hash_14749() -> None:
     n_groups = 251
     rows_per_group = 4
@@ -543,7 +533,7 @@ def test_group_count_over_null_column_15705() -> None:
     assert out["c"].to_list() == [0, 0, 0]
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_min_max_2850() -> None:
     # https://github.com/pola-rs/polars/issues/2850
     df = pl.DataFrame(
@@ -748,3 +738,39 @@ def test_sort_by_over_multiple_nulls_last() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_slice_after_agg_raises() -> None:
+    with pytest.raises(
+        InvalidOperationError, match=r"cannot slice\(\) an aggregated scalar value"
+    ):
+        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(99, 0))
+
+
+def test_agg_scalar_empty_groups_20115() -> None:
+    assert_frame_equal(
+        (
+            pl.DataFrame({"key": [123], "value": [456]})
+            .group_by("key")
+            .agg(pl.col("value").slice(1, 1).first())
+        ),
+        pl.select(key=pl.lit(123, pl.Int64), value=pl.lit(None, pl.Int64)),
+    )
+
+
+def test_agg_expr_returns_list_type_15574() -> None:
+    assert (
+        pl.LazyFrame({"a": [1, None], "b": [1, 2]})
+        .group_by("b")
+        .agg(pl.col("a").drop_nulls())
+        .collect_schema()
+    ) == {"b": pl.Int64, "a": pl.List(pl.Int64)}
+
+
+def test_empty_agg_22005() -> None:
+    out = (
+        pl.concat([pl.LazyFrame({"a": [1, 2]}), pl.LazyFrame({"a": [1, 2]})])
+        .limit(0)
+        .select(pl.col("a").sum())
+    )
+    assert_frame_equal(out.collect(), pl.DataFrame({"a": 0}))

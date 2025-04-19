@@ -170,13 +170,13 @@ def test_dataframes_columns(lf: pl.LazyFrame) -> None:
     assert all(v in xyz for v in df["d"].to_list())
 
 
-@pytest.mark.hypothesis()
+@pytest.mark.hypothesis
 def test_column_invalid_probability() -> None:
     with pytest.deprecated_call(), pytest.raises(InvalidArgument):
         column("col", null_probability=2.0)
 
 
-@pytest.mark.hypothesis()
+@pytest.mark.hypothesis
 def test_column_null_probability_deprecated() -> None:
     with pytest.deprecated_call():
         col = column("col", allow_null=False, null_probability=0.5)

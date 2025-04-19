@@ -1,5 +1,4 @@
 //! Testing utilities.
-use std::ops::Deref;
 
 use crate::prelude::*;
 
@@ -35,21 +34,6 @@ impl Series {
                 Err(_) => false,
             }
         }
-    }
-
-    /// Get a pointer to the underlying data of this [`Series`].
-    /// Can be useful for fast comparisons.
-    pub fn get_data_ptr(&self) -> usize {
-        let object = self.0.deref();
-
-        // SAFETY:
-        // A fat pointer consists of a data ptr and a ptr to the vtable.
-        // we specifically check that we only transmute &dyn SeriesTrait e.g.
-        // a trait object, therefore this is sound.
-        #[allow(clippy::transmute_undefined_repr)]
-        let (data_ptr, _vtable_ptr) =
-            unsafe { std::mem::transmute::<&dyn SeriesTrait, (usize, usize)>(object) };
-        data_ptr
     }
 }
 
@@ -128,26 +112,6 @@ impl DataFrame {
         }
         true
     }
-
-    /// Checks if the Arc ptrs of the [`Series`] are equal
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use polars_core::prelude::*;
-    /// let df1: DataFrame = df!("Atomic number" => &[1, 51, 300],
-    ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
-    /// let df2: &DataFrame = &df1;
-    ///
-    /// assert!(df1.ptr_equal(df2));
-    /// # Ok::<(), PolarsError>(())
-    /// ```
-    pub fn ptr_equal(&self, other: &DataFrame) -> bool {
-        self.columns
-            .iter()
-            .zip(other.columns.iter())
-            .all(|(a, b)| a.get_data_ptr() == b.get_data_ptr())
-    }
 }
 
 impl PartialEq for DataFrame {
@@ -162,7 +126,9 @@ impl PartialEq for DataFrame {
 }
 
 /// Asserts that two expressions of type [`DataFrame`] are equal according to [`DataFrame::equals`]
-/// at runtime. If the expression are not equal, the program will panic with a message that displays
+/// at runtime.
+///
+/// If the expression are not equal, the program will panic with a message that displays
 /// both dataframes.
 #[macro_export]
 macro_rules! assert_df_eq {
@@ -179,26 +145,26 @@ mod test {
 
     #[test]
     fn test_series_equals() {
-        let a = Series::new("a", &[1_u32, 2, 3]);
-        let b = Series::new("a", &[1_u32, 2, 3]);
+        let a = Series::new("a".into(), &[1_u32, 2, 3]);
+        let b = Series::new("a".into(), &[1_u32, 2, 3]);
         assert!(a.equals(&b));
 
-        let s = Series::new("foo", &[None, Some(1i64)]);
+        let s = Series::new("foo".into(), &[None, Some(1i64)]);
         assert!(s.equals_missing(&s));
     }
 
     #[test]
     fn test_series_dtype_not_equal() {
-        let s_i32 = Series::new("a", &[1_i32, 2_i32]);
-        let s_i64 = Series::new("a", &[1_i64, 2_i64]);
+        let s_i32 = Series::new("a".into(), &[1_i32, 2_i32]);
+        let s_i64 = Series::new("a".into(), &[1_i64, 2_i64]);
         assert!(s_i32.dtype() != s_i64.dtype());
         assert!(s_i32.equals(&s_i64));
     }
 
     #[test]
     fn test_df_equal() {
-        let a = Series::new("a", [1, 2, 3].as_ref());
-        let b = Series::new("b", [1, 2, 3].as_ref());
+        let a = Column::new("a".into(), [1, 2, 3].as_ref());
+        let b = Column::new("b".into(), [1, 2, 3].as_ref());
 
         let df1 = DataFrame::new(vec![a, b]).unwrap();
         assert!(df1.equals(&df1))

@@ -7,7 +7,6 @@ pub struct StreamingSliceNode {
     start_offset: usize,
     length: usize,
     stream_offset: usize,
-    num_pipelines: usize,
 }
 
 impl StreamingSliceNode {
@@ -16,7 +15,6 @@ impl StreamingSliceNode {
             start_offset,
             length,
             stream_offset: 0,
-            num_pipelines: 0,
         }
     }
 }
@@ -26,30 +24,32 @@ impl ComputeNode for StreamingSliceNode {
         "streaming_slice"
     }
 
-    fn initialize(&mut self, num_pipelines: usize) {
-        self.num_pipelines = num_pipelines;
-    }
-
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        _state: &StreamingExecutionState,
+    ) -> PolarsResult<()> {
         if self.stream_offset >= self.start_offset + self.length || self.length == 0 {
             recv[0] = PortState::Done;
             send[0] = PortState::Done;
         } else {
             recv.swap_with_slice(send);
         }
+        Ok(())
     }
 
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv.len() == 1 && send.len() == 1);
-        let mut recv = recv[0].take().unwrap().serial();
-        let mut send = send[0].take().unwrap().serial();
+        assert!(recv_ports.len() == 1 && send_ports.len() == 1);
+        let mut recv = recv_ports[0].take().unwrap().serial();
+        let mut send = send_ports[0].take().unwrap().serial();
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let stop_offset = self.start_offset + self.length;
 
@@ -74,7 +74,14 @@ impl ComputeNode for StreamingSliceNode {
                     }
                 });
 
-                if !morsel.df().is_empty() && send.send(morsel).await.is_err() {
+                // Technically not necessary, but it's nice to already tell the
+                // source to stop producing more morsels as we won't be
+                // interested in the results anyway.
+                if self.stream_offset >= stop_offset {
+                    morsel.source_token().stop();
+                }
+
+                if morsel.df().height() > 0 && send.send(morsel).await.is_err() {
                     break;
                 }
 

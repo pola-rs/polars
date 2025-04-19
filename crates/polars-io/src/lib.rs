@@ -1,9 +1,12 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![allow(ambiguous_glob_reexports)]
+extern crate core;
 
 #[cfg(feature = "avro")]
 pub mod avro;
+#[cfg(feature = "catalog")]
+pub mod catalog;
 pub mod cloud;
 #[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;

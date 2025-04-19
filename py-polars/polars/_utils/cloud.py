@@ -8,23 +8,31 @@ if TYPE_CHECKING:
     from polars import LazyFrame
 
 
-def assert_cloud_eligible(lf: LazyFrame) -> None:
+def prepare_cloud_plan(
+    lf: LazyFrame,
+    **optimizations: bool,
+) -> bytes:
     """
-    Assert that the given LazyFrame is eligible to be executed on Polars Cloud.
-
-    The following conditions will disqualify a LazyFrame from being eligible:
-
-    - Contains a user-defined function
-    - Scans a local filesystem
+    Prepare the given LazyFrame for execution on Polars Cloud.
 
     Parameters
     ----------
     lf
-        The LazyFrame to check.
+        The LazyFrame to prepare.
+    **optimizations
+        Optimizations to enable or disable in the query optimizer, e.g.
+        `projection_pushdown=False`.
 
     Raises
     ------
-    AssertionError
+    InvalidOperationError
         If the given LazyFrame is not eligible to be run on Polars Cloud.
+        The following conditions will disqualify a LazyFrame from being eligible:
+
+        - Contains a user-defined function
+        - Scans or sinks to a local filesystem
+    ComputeError
+        If the given LazyFrame cannot be serialized.
     """
-    plr.assert_cloud_eligible(lf._ldf)
+    pylf = lf._set_sink_optimizations(engine="old-streaming", **optimizations)  # type: ignore[arg-type]
+    return plr.prepare_cloud_plan(pylf)

@@ -4,6 +4,7 @@
 //! We could use [serde_1712](https://github.com/serde-rs/serde/issues/1712), but that gave problems caused by
 //! [rust_96956](https://github.com/rust-lang/rust/issues/96956), so we make a dummy type without static
 
+#[cfg(feature = "dtype-categorical")]
 use serde::de::SeqAccess;
 use serde::{Deserialize, Serialize};
 
@@ -84,6 +85,7 @@ enum SerializableDataType {
     Int16,
     Int32,
     Int64,
+    Int128,
     Float32,
     Float64,
     String,
@@ -107,11 +109,11 @@ enum SerializableDataType {
     // some logical types we cannot know statically, e.g. Datetime
     Unknown(UnknownKind),
     #[cfg(feature = "dtype-categorical")]
-    Categorical(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
+    Categorical(Option<Series>, CategoricalOrdering),
     #[cfg(feature = "dtype-decimal")]
     Decimal(Option<usize>, Option<usize>),
     #[cfg(feature = "dtype-categorical")]
-    Enum(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
+    Enum(Option<Series>, CategoricalOrdering),
     #[cfg(feature = "object")]
     Object(String),
 }
@@ -129,6 +131,7 @@ impl From<&DataType> for SerializableDataType {
             Int16 => Self::Int16,
             Int32 => Self::Int32,
             Int64 => Self::Int64,
+            Int128 => Self::Int128,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
             String => Self::String,
@@ -145,17 +148,29 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, ordering) => Self::Categorical(None, *ordering),
+            Categorical(Some(rev_map), ordering) => Self::Categorical(
+                Some(
+                    StringChunked::with_chunk(PlSmallStr::EMPTY, rev_map.get_categories().clone())
+                        .into_series(),
+                ),
+                *ordering,
+            ),
             #[cfg(feature = "dtype-categorical")]
-            Enum(Some(rev_map), ordering) => {
-                Self::Enum(Some(Wrap(rev_map.get_categories().clone())), *ordering)
-            },
+            Categorical(None, ordering) => Self::Categorical(None, *ordering),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(Some(rev_map), ordering) => Self::Enum(
+                Some(
+                    StringChunked::with_chunk(PlSmallStr::EMPTY, rev_map.get_categories().clone())
+                        .into_series(),
+                ),
+                *ordering,
+            ),
             #[cfg(feature = "dtype-categorical")]
             Enum(None, ordering) => Self::Enum(None, *ordering),
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             #[cfg(feature = "object")]
-            Object(name, _) => Self::Object(name.to_string()),
+            Object(name) => Self::Object(name.to_string()),
             dt => panic!("{dt:?} not supported"),
         }
     }
@@ -173,6 +188,7 @@ impl From<SerializableDataType> for DataType {
             Int16 => Self::Int16,
             Int32 => Self::Int32,
             Int64 => Self::Int64,
+            Int128 => Self::Int128,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
             String => Self::String,
@@ -189,15 +205,32 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, ordering) => Self::Categorical(None, ordering),
+            Categorical(Some(categories), ordering) => Self::Categorical(
+                Some(Arc::new(RevMapping::build_local(
+                    categories.0.rechunk().chunks()[0]
+                        .as_any()
+                        .downcast_ref::<Utf8ViewArray>()
+                        .unwrap()
+                        .clone(),
+                ))),
+                ordering,
+            ),
             #[cfg(feature = "dtype-categorical")]
-            Enum(Some(categories), _) => create_enum_data_type(categories.0),
+            Categorical(None, ordering) => Self::Categorical(None, ordering),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(Some(categories), _) => create_enum_dtype(
+                categories.rechunk().chunks()[0]
+                    .as_any()
+                    .downcast_ref::<Utf8ViewArray>()
+                    .unwrap()
+                    .clone(),
+            ),
             #[cfg(feature = "dtype-categorical")]
             Enum(None, ordering) => Self::Enum(None, ordering),
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(precision, scale),
             #[cfg(feature = "object")]
-            Object(_) => Self::Object("unknown", None),
+            Object(_) => Self::Object("unknown"),
         }
     }
 }

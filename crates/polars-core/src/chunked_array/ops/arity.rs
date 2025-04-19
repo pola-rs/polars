@@ -1,12 +1,14 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::error::Error;
 
-use arrow::array::{Array, StaticArray};
+use arrow::array::{Array, MutablePlString, StaticArray};
 use arrow::compute::utils::combine_validities_and;
 use polars_error::PolarsResult;
+use polars_utils::pl_str::PlSmallStr;
 
-use crate::chunked_array::metadata::MetadataProperties;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
-use crate::prelude::{ChunkedArray, CompatLevel, PolarsDataType, Series};
+use crate::prelude::{ChunkedArray, CompatLevel, PolarsDataType, Series, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
 
 // We need this helper because for<'a> notation can't yet be applied properly
@@ -49,7 +51,7 @@ where
     F: FnMut(&T::Array) -> Arr,
 {
     let iter = ca.downcast_iter().map(op);
-    ChunkedArray::from_chunk_iter(ca.name(), iter)
+    ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
 /// Applies a kernel that produces `Array` types.
@@ -61,9 +63,9 @@ where
     Arr: Array,
     F: FnMut(T::Array) -> Arr,
 {
-    let name = ca.name().to_owned();
+    let name = ca.name().clone();
     let iter = ca.downcast_into_iter().map(op);
-    ChunkedArray::from_chunk_iter(&name, iter)
+    ChunkedArray::from_chunk_iter(name, iter)
 }
 
 #[inline]
@@ -74,10 +76,17 @@ where
     F: UnaryFnMut<Option<T::Physical<'a>>>,
     V::Array: ArrayFromIter<<F as UnaryFnMut<Option<T::Physical<'a>>>>::Ret>,
 {
-    let iter = ca
-        .downcast_iter()
-        .map(|arr| arr.iter().map(&mut op).collect_arr());
-    ChunkedArray::from_chunk_iter(ca.name(), iter)
+    if ca.has_nulls() {
+        let iter = ca
+            .downcast_iter()
+            .map(|arr| arr.iter().map(&mut op).collect_arr());
+        ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+    } else {
+        let iter = ca
+            .downcast_iter()
+            .map(|arr| arr.values_iter().map(|x| op(Some(x))).collect_arr());
+        ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+    }
 }
 
 #[inline]
@@ -94,7 +103,7 @@ where
     let iter = ca
         .downcast_iter()
         .map(|arr| arr.iter().map(&mut op).try_collect_arr());
-    ChunkedArray::try_from_chunk_iter(ca.name(), iter)
+    ChunkedArray::try_from_chunk_iter(ca.name().clone(), iter)
 }
 
 #[inline]
@@ -107,7 +116,7 @@ where
 {
     if ca.null_count() == ca.len() {
         let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow(CompatLevel::newest()));
-        return ChunkedArray::with_chunk(ca.name(), arr);
+        return ChunkedArray::with_chunk(ca.name().clone(), arr);
     }
 
     let iter = ca.downcast_iter().map(|arr| {
@@ -115,7 +124,7 @@ where
         let arr: V::Array = arr.values_iter().map(&mut op).collect_arr();
         arr.with_validity_typed(validity)
     });
-    ChunkedArray::from_chunk_iter(ca.name(), iter)
+    ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
 #[inline]
@@ -131,7 +140,7 @@ where
 {
     if ca.null_count() == ca.len() {
         let arr = V::Array::full_null(ca.len(), V::get_dtype().to_arrow(CompatLevel::newest()));
-        return Ok(ChunkedArray::with_chunk(ca.name(), arr));
+        return Ok(ChunkedArray::with_chunk(ca.name().clone(), arr));
     }
 
     let iter = ca.downcast_iter().map(|arr| {
@@ -139,7 +148,7 @@ where
         let arr: V::Array = arr.values_iter().map(&mut op).try_collect_arr()?;
         Ok(arr.with_validity_typed(validity))
     });
-    ChunkedArray::try_from_chunk_iter(ca.name(), iter)
+    ChunkedArray::try_from_chunk_iter(ca.name().clone(), iter)
 }
 
 /// Applies a kernel that produces `Array` types.
@@ -157,7 +166,7 @@ where
     let iter = ca
         .downcast_iter()
         .map(|arr| op(arr).with_validity_typed(arr.validity().cloned()));
-    ChunkedArray::from_chunk_iter(ca.name(), iter)
+    ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
 /// Applies a kernel that produces `Array` types.
@@ -169,7 +178,7 @@ where
     Arr: Array + StaticArray,
     F: FnMut(&T::Array) -> Arr,
 {
-    ChunkedArray::from_chunk_iter(ca.name(), ca.downcast_iter().map(op))
+    ChunkedArray::from_chunk_iter(ca.name().clone(), ca.downcast_iter().map(op))
 }
 
 #[inline]
@@ -184,7 +193,7 @@ where
     F: FnMut(&T::Array) -> Result<Arr, E>,
     E: Error,
 {
-    ChunkedArray::try_from_chunk_iter(ca.name(), ca.downcast_iter().map(op))
+    ChunkedArray::try_from_chunk_iter(ca.name().clone(), ca.downcast_iter().map(op))
 }
 
 #[inline]
@@ -213,7 +222,7 @@ where
                 .map(|(lhs_opt_val, rhs_opt_val)| op(lhs_opt_val, rhs_opt_val));
             element_iter.collect_arr()
         });
-    ChunkedArray::from_chunk_iter(lhs.name(), iter)
+    ChunkedArray::from_chunk_iter(lhs.name().clone(), iter)
 }
 
 #[inline]
@@ -290,7 +299,7 @@ where
                 .map(|(lhs_opt_val, rhs_opt_val)| op(lhs_opt_val, rhs_opt_val));
             element_iter.try_collect_arr()
         });
-    ChunkedArray::try_from_chunk_iter(lhs.name(), iter)
+    ChunkedArray::try_from_chunk_iter(lhs.name().clone(), iter)
 }
 
 #[inline]
@@ -310,7 +319,7 @@ where
         let len = lhs.len().min(rhs.len());
         let arr = V::Array::full_null(len, V::get_dtype().to_arrow(CompatLevel::newest()));
 
-        return ChunkedArray::with_chunk(lhs.name(), arr);
+        return ChunkedArray::with_chunk(lhs.name().clone(), arr);
     }
 
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -329,7 +338,44 @@ where
             let array: V::Array = element_iter.collect_arr();
             array.with_validity_typed(validity)
         });
-    ChunkedArray::from_chunk_iter(lhs.name(), iter)
+    ChunkedArray::from_chunk_iter(lhs.name().clone(), iter)
+}
+
+/// Apply elementwise binary function which produces string, amortising allocations.
+///
+/// Currently unused within Polars itself, but it's a useful utility for plugin authors.
+#[inline]
+pub fn binary_elementwise_into_string_amortized<T, U, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+) -> StringChunked
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>, &mut String),
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let mut buf = String::new();
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| {
+            let mut mutarr = MutablePlString::with_capacity(lhs_arr.len());
+            lhs_arr
+                .iter()
+                .zip(rhs_arr.iter())
+                .for_each(|(lhs_opt, rhs_opt)| match (lhs_opt, rhs_opt) {
+                    (None, _) | (_, None) => mutarr.push_null(),
+                    (Some(lhs_val), Some(rhs_val)) => {
+                        buf.clear();
+                        op(lhs_val, rhs_val, &mut buf);
+                        mutarr.push_value(&buf)
+                    },
+                });
+            mutarr.freeze()
+        });
+    ChunkedArray::from_chunk_iter(lhs.name().clone(), iter)
 }
 
 /// Applies a kernel that produces `Array` types.
@@ -341,7 +387,7 @@ pub fn binary_mut_values<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
-    name: &str,
+    name: PlSmallStr,
 ) -> ChunkedArray<V>
 where
     T: PolarsDataType,
@@ -369,7 +415,7 @@ pub fn binary_mut_with_options<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
-    name: &str,
+    name: PlSmallStr,
 ) -> ChunkedArray<V>
 where
     T: PolarsDataType,
@@ -391,7 +437,7 @@ pub fn try_binary_mut_with_options<T, U, V, F, Arr, E>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
-    name: &str,
+    name: PlSmallStr,
 ) -> Result<ChunkedArray<V>, E>
 where
     T: PolarsDataType,
@@ -422,7 +468,7 @@ where
     Arr: Array,
     F: FnMut(&T::Array, &U::Array) -> Arr,
 {
-    binary_mut_with_options(lhs, rhs, op, lhs.name())
+    binary_mut_with_options(lhs, rhs, op, lhs.name().clone())
 }
 
 /// Applies a kernel that produces `Array` types.
@@ -438,13 +484,13 @@ where
     Arr: Array,
     F: FnMut(L::Array, R::Array) -> Arr,
 {
-    let name = lhs.name().to_owned();
+    let name = lhs.name().clone();
     let (lhs, rhs) = align_chunks_binary_owned(lhs, rhs);
     let iter = lhs
         .downcast_into_iter()
         .zip(rhs.downcast_into_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr));
-    ChunkedArray::from_chunk_iter(&name, iter)
+    ChunkedArray::from_chunk_iter(name, iter)
 }
 
 /// Applies a kernel that produces `Array` types.
@@ -466,7 +512,7 @@ where
         .downcast_iter()
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr));
-    ChunkedArray::try_from_chunk_iter(lhs.name(), iter)
+    ChunkedArray::try_from_chunk_iter(lhs.name().clone(), iter)
 }
 
 /// Applies a kernel that produces `ArrayRef` of the same type.
@@ -495,12 +541,11 @@ where
 
     let mut ca = lhs.copy_with_chunks(chunks);
 
-    use MetadataProperties as P;
-
-    let mut properties = P::empty();
-    properties.set(P::SORTED, keep_sorted);
-    properties.set(P::FAST_EXPLODE_LIST, keep_fast_explode);
-    ca.copy_metadata(&lhs, properties);
+    let mut retain_flags = StatisticsFlags::empty();
+    use StatisticsFlags as F;
+    retain_flags.set(F::IS_SORTED_ANY, keep_sorted);
+    retain_flags.set(F::CAN_FAST_EXPLODE_LIST, keep_fast_explode);
+    ca.retain_flags_from(lhs.as_ref(), retain_flags);
 
     ca
 }
@@ -522,7 +567,7 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
         .collect::<Vec<_>>();
-    Series::try_from((lhs.name(), chunks))
+    Series::try_from((lhs.name().clone(), chunks))
 }
 
 /// Applies a kernel that produces `ArrayRef` of the same type.
@@ -551,11 +596,11 @@ where
         .collect::<Result<Vec<_>, E>>()?;
     let mut ca = lhs.copy_with_chunks(chunks);
 
-    use MetadataProperties as P;
-    let mut properties = P::empty();
-    properties.set(P::SORTED, keep_sorted);
-    properties.set(P::FAST_EXPLODE_LIST, keep_fast_explode);
-    ca.copy_metadata(&lhs, properties);
+    let mut retain_flags = StatisticsFlags::empty();
+    use StatisticsFlags as F;
+    retain_flags.set(F::IS_SORTED_ANY, keep_sorted);
+    retain_flags.set(F::CAN_FAST_EXPLODE_LIST, keep_fast_explode);
+    ca.retain_flags_from(lhs.as_ref(), retain_flags);
 
     Ok(ca)
 }
@@ -592,7 +637,7 @@ where
             );
             element_iter.try_collect_arr()
         });
-    ChunkedArray::try_from_chunk_iter(ca1.name(), iter)
+    ChunkedArray::try_from_chunk_iter(ca1.name().clone(), iter)
 }
 
 #[inline]
@@ -608,10 +653,10 @@ where
     G: PolarsDataType,
     V: PolarsDataType,
     F: for<'a> TernaryFnMut<
-        Option<T::Physical<'a>>,
-        Option<U::Physical<'a>>,
-        Option<G::Physical<'a>>,
-    >,
+            Option<T::Physical<'a>>,
+            Option<U::Physical<'a>>,
+            Option<G::Physical<'a>>,
+        >,
     V::Array: for<'a> ArrayFromIter<
         <F as TernaryFnMut<
             Option<T::Physical<'a>>,
@@ -633,7 +678,7 @@ where
             );
             element_iter.collect_arr()
         });
-    ChunkedArray::from_chunk_iter(ca1.name(), iter)
+    ChunkedArray::from_chunk_iter(ca1.name().clone(), iter)
 }
 
 pub fn broadcast_binary_elementwise<T, U, V, F>(
@@ -653,7 +698,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.get_unchecked(0) };
-            unary_elementwise(rhs, |b| op(a.clone(), b)).with_name(lhs.name())
+            unary_elementwise(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
         },
         (_, 1) => {
             let b = unsafe { rhs.get_unchecked(0) };
@@ -678,7 +723,7 @@ where
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.get_unchecked(0) };
-            Ok(try_unary_elementwise(rhs, |b| op(a.clone(), b))?.with_name(lhs.name()))
+            Ok(try_unary_elementwise(rhs, |b| op(a.clone(), b))?.with_name(lhs.name().clone()))
         },
         (_, 1) => {
             let b = unsafe { rhs.get_unchecked(0) };
@@ -706,13 +751,13 @@ where
         let len = if min == 1 { max } else { min };
         let arr = V::Array::full_null(len, V::get_dtype().to_arrow(CompatLevel::newest()));
 
-        return ChunkedArray::with_chunk(lhs.name(), arr);
+        return ChunkedArray::with_chunk(lhs.name().clone(), arr);
     }
 
     match (lhs.len(), rhs.len()) {
         (1, _) => {
             let a = unsafe { lhs.value_unchecked(0) };
-            unary_elementwise_values(rhs, |b| op(a.clone(), b)).with_name(lhs.name())
+            unary_elementwise_values(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
         },
         (_, 1) => {
             let b = unsafe { rhs.value_unchecked(0) };
@@ -749,7 +794,7 @@ where
                         lhs.len(),
                         O::get_dtype().to_arrow(CompatLevel::newest()),
                     );
-                    ChunkedArray::<O>::with_chunk(lhs.name(), arr)
+                    ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },
                 Some(rhs) => unary_kernel(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
             }
@@ -762,14 +807,14 @@ where
                         rhs.len(),
                         O::get_dtype().to_arrow(CompatLevel::newest()),
                     );
-                    ChunkedArray::<O>::with_chunk(lhs.name(), arr)
+                    ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },
                 Some(lhs) => unary_kernel(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
             }
         },
         _ => panic!("Cannot apply operation on arrays of different lengths"),
     };
-    out.with_name(name)
+    out.with_name(name.clone())
 }
 
 pub fn apply_binary_kernel_broadcast_owned<L, R, O, K, LK, RK>(
@@ -799,7 +844,7 @@ where
                         lhs.len(),
                         O::get_dtype().to_arrow(CompatLevel::newest()),
                     );
-                    ChunkedArray::<O>::with_chunk(lhs.name(), arr)
+                    ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },
                 Some(rhs) => unary_kernel_owned(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
             }
@@ -812,12 +857,12 @@ where
                         rhs.len(),
                         O::get_dtype().to_arrow(CompatLevel::newest()),
                     );
-                    ChunkedArray::<O>::with_chunk(lhs.name(), arr)
+                    ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
                 },
                 Some(lhs) => unary_kernel_owned(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
             }
         },
         _ => panic!("Cannot apply operation on arrays of different lengths"),
     };
-    out.with_name(&name)
+    out.with_name(name)
 }

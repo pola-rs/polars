@@ -36,6 +36,7 @@ pub(crate) trait FromFfi<T: ffi::ArrowArrayRef>: Sized {
 macro_rules! ffi_dyn {
     ($array:expr, $ty:ty) => {{
         let array = $array.as_any().downcast_ref::<$ty>().unwrap();
+
         (
             array.offset().unwrap(),
             array.buffers(),
@@ -54,7 +55,8 @@ type BuffersChildren = (
 
 pub fn offset_buffers_children_dictionary(array: &dyn Array) -> BuffersChildren {
     use PhysicalType::*;
-    match array.data_type().to_physical_type() {
+
+    match array.dtype().to_physical_type() {
         Null => ffi_dyn!(array, NullArray),
         Boolean => ffi_dyn!(array, BooleanArray),
         Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {

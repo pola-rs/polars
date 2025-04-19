@@ -1,3 +1,5 @@
+from typing import Callable
+
 import pytest
 from hypothesis import given
 from hypothesis.strategies import booleans
@@ -397,3 +399,148 @@ def test_bottom_k_nulls(s: pl.Series, should_sort: bool) -> None:
 def test_top_k_descending_deprecated() -> None:
     with pytest.deprecated_call():
         pl.col("a").top_k_by("b", descending=True)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    ("sort_function"),
+    [
+        lambda x: x,
+        lambda x: x.sort("a", descending=False, maintain_order=True),
+        lambda x: x.sort("a", descending=True, maintain_order=True),
+    ],
+)
+@pytest.mark.parametrize(
+    ("df", "df2"),
+    [
+        (
+            pl.LazyFrame({"a": [3, 4, 1, 2, 5]}),
+            pl.LazyFrame({"a": [1, None, None, 4, 5]}),
+        ),
+        (
+            pl.LazyFrame({"a": [3, 4, 1, 2, 5], "b": [1, 2, 3, 4, 5]}),
+            pl.LazyFrame({"a": [1, None, None, 4, 5], "b": [1, 2, 3, 4, 5]}),
+        ),
+    ],
+)
+def test_top_k_df(
+    sort_function: Callable[[pl.LazyFrame], pl.LazyFrame],
+    df: pl.LazyFrame,
+    df2: pl.LazyFrame,
+) -> None:
+    df = sort_function(df)
+    expected = [5, 4, 3]
+    assert df.sort("a", descending=True).limit(3).collect()["a"].to_list() == expected
+    assert df.top_k(3, by="a").collect()["a"].to_list() == expected
+    expected = [1, 2, 3]
+    assert df.sort("a", descending=False).limit(3).collect()["a"].to_list() == expected
+    assert df.bottom_k(3, by="a").collect()["a"].to_list() == expected
+
+    df = sort_function(df2)
+    expected2 = [5, 4, 1, None]
+    assert (
+        df.sort("a", descending=True, nulls_last=True).limit(4).collect()["a"].to_list()
+        == expected2
+    )
+    assert df.top_k(4, by="a").collect()["a"].to_list() == expected2
+    expected2 = [1, 4, 5, None]
+    assert (
+        df.sort("a", descending=False, nulls_last=True)
+        .limit(4)
+        .collect()["a"]
+        .to_list()
+        == expected2
+    )
+    assert df.bottom_k(4, by="a").collect()["a"].to_list() == expected2
+
+    assert df.sort("a", descending=False, nulls_last=False).limit(4).collect()[
+        "a"
+    ].to_list() == [None, None, 1, 4]
+    assert df.sort("a", descending=True, nulls_last=False).limit(4).collect()[
+        "a"
+    ].to_list() == [None, None, 5, 4]
+
+
+@pytest.mark.parametrize("descending", [True, False])
+def test_sorted_top_k_20719(descending: bool) -> None:
+    df = pl.DataFrame(
+        [
+            {"a": 1, "b": 1},
+            {"a": 5, "b": 5},
+            {"a": 9, "b": 9},
+            {"a": 10, "b": 20},
+        ]
+    ).sort(by="a", descending=descending)
+
+    # Note: Output stability is guaranteed by the input sortedness as an
+    # implementation detail.
+
+    for func, reverse in [
+        [pl.DataFrame.top_k, False],
+        [pl.DataFrame.bottom_k, True],
+    ]:
+        assert_frame_equal(
+            df.pipe(func, 2, by="a", reverse=reverse),  # type: ignore[arg-type]
+            pl.DataFrame(
+                [
+                    {"a": 10, "b": 20},
+                    {"a": 9, "b": 9},
+                ]
+            ),
+        )
+
+    for func, reverse in [
+        [pl.DataFrame.top_k, True],
+        [pl.DataFrame.bottom_k, False],
+    ]:
+        assert_frame_equal(
+            df.pipe(func, 2, by="a", reverse=reverse),  # type: ignore[arg-type]
+            pl.DataFrame(
+                [
+                    {"a": 1, "b": 1},
+                    {"a": 5, "b": 5},
+                ]
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("func", "reverse", "expect"),
+    [
+        (pl.DataFrame.top_k, False, pl.DataFrame({"a": [2, 2]})),
+        (pl.DataFrame.bottom_k, True, pl.DataFrame({"a": [2, 2]})),
+        (pl.DataFrame.top_k, True, pl.DataFrame({"a": [1, 2]})),
+        (pl.DataFrame.bottom_k, False, pl.DataFrame({"a": [1, 2]})),
+    ],
+)
+@pytest.mark.parametrize("descending", [True, False])
+def test_sorted_top_k_duplicates(
+    func: Callable[[pl.DataFrame], pl.DataFrame],
+    reverse: bool,
+    expect: pl.DataFrame,
+    descending: bool,
+) -> None:
+    assert_frame_equal(
+        pl.DataFrame({"a": [1, 2, 2]})  # type: ignore[call-arg]
+        .sort("a", descending=descending)
+        .pipe(func, 2, by="a", reverse=reverse),
+        expect,
+    )
+
+
+def test_top_k_list_dtype() -> None:
+    s = pl.Series([[1, 2], [3, 4], [], [0]], dtype=pl.List(pl.Int64))
+    assert s.top_k(2).to_list() == [[3, 4], [1, 2]]
+
+    s = pl.Series([[[1, 2], [3]], [[4], []], [[0]]], dtype=pl.List(pl.List(pl.Int64)))
+    assert s.top_k(2).to_list() == [[[4], []], [[1, 2], [3]]]
+
+
+def test_top_k_sorted_21260() -> None:
+    s = pl.Series([1, 2, 3, 4, 5])
+    assert s.top_k(3).sort().to_list() == [3, 4, 5]
+    assert s.sort(descending=False).top_k(3).sort().to_list() == [3, 4, 5]
+    assert s.sort(descending=True).top_k(3).sort().to_list() == [3, 4, 5]
+
+    assert s.bottom_k(3).sort().to_list() == [1, 2, 3]
+    assert s.sort(descending=False).bottom_k(3).sort().to_list() == [1, 2, 3]
+    assert s.sort(descending=True).bottom_k(3).sort().to_list() == [1, 2, 3]

@@ -1,3 +1,7 @@
+use polars_ops::series::ClosedInterval;
+#[cfg(feature = "temporal")]
+use polars_time::ClosedWindow;
+
 use super::*;
 
 /// Generate a range of integers.
@@ -9,62 +13,30 @@ pub fn arange(start: Expr, end: Expr, step: i64, dtype: DataType) -> Expr {
 
 /// Generate a range of integers.
 pub fn int_range(start: Expr, end: Expr, step: i64, dtype: DataType) -> Expr {
-    let input = vec![start, end];
-
-    Expr::Function {
-        input,
-        function: FunctionExpr::Range(RangeFunction::IntRange { step, dtype }),
-        options: FunctionOptions {
-            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
-            ..Default::default()
-        },
-    }
+    Expr::n_ary(RangeFunction::IntRange { step, dtype }, vec![start, end])
 }
 
 /// Generate a range of integers for each row of the input columns.
 pub fn int_ranges(start: Expr, end: Expr, step: Expr) -> Expr {
-    let input = vec![start, end, step];
-
-    Expr::Function {
-        input,
-        function: FunctionExpr::Range(RangeFunction::IntRanges),
-        options: FunctionOptions {
-            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
-            ..Default::default()
-        },
-    }
+    Expr::n_ary(RangeFunction::IntRanges, vec![start, end, step])
 }
 
 /// Create a date range from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
 pub fn date_range(start: Expr, end: Expr, interval: Duration, closed: ClosedWindow) -> Expr {
-    let input = vec![start, end];
-
-    Expr::Function {
-        input,
-        function: FunctionExpr::Range(RangeFunction::DateRange { interval, closed }),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
-            ..Default::default()
-        },
-    }
+    Expr::n_ary(
+        RangeFunction::DateRange { interval, closed },
+        vec![start, end],
+    )
 }
 
 /// Create a column of date ranges from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
 pub fn date_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWindow) -> Expr {
-    let input = vec![start, end];
-
-    Expr::Function {
-        input,
-        function: FunctionExpr::Range(RangeFunction::DateRanges { interval, closed }),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
-            ..Default::default()
-        },
-    }
+    Expr::n_ary(
+        RangeFunction::DateRanges { interval, closed },
+        vec![start, end],
+    )
 }
 
 /// Create a datetime range from a `start` and `stop` expression.
@@ -77,23 +49,15 @@ pub fn datetime_range(
     time_unit: Option<TimeUnit>,
     time_zone: Option<TimeZone>,
 ) -> Expr {
-    let input = vec![start, end];
-
-    Expr::Function {
-        input,
-        function: FunctionExpr::Range(RangeFunction::DatetimeRange {
+    Expr::n_ary(
+        RangeFunction::DatetimeRange {
             interval,
             closed,
             time_unit,
             time_zone,
-        }),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: Some(Default::default()),
-            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
-            ..Default::default()
         },
-    }
+        vec![start, end],
+    )
 }
 
 /// Create a column of datetime ranges from a `start` and `stop` expression.
@@ -106,53 +70,68 @@ pub fn datetime_ranges(
     time_unit: Option<TimeUnit>,
     time_zone: Option<TimeZone>,
 ) -> Expr {
-    let input = vec![start, end];
-
-    Expr::Function {
-        input,
-        function: FunctionExpr::Range(RangeFunction::DatetimeRanges {
+    Expr::n_ary(
+        RangeFunction::DatetimeRanges {
             interval,
             closed,
             time_unit,
             time_zone,
-        }),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: Some(Default::default()),
-            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
-            ..Default::default()
         },
-    }
+        vec![start, end],
+    )
 }
 
 /// Generate a time range.
 #[cfg(feature = "dtype-time")]
 pub fn time_range(start: Expr, end: Expr, interval: Duration, closed: ClosedWindow) -> Expr {
-    let input = vec![start, end];
-
-    Expr::Function {
-        input,
-        function: FunctionExpr::Range(RangeFunction::TimeRange { interval, closed }),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
-            ..Default::default()
-        },
-    }
+    Expr::n_ary(
+        RangeFunction::TimeRange { interval, closed },
+        vec![start, end],
+    )
 }
 
 /// Create a column of time ranges from a `start` and `stop` expression.
 #[cfg(feature = "dtype-time")]
 pub fn time_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWindow) -> Expr {
-    let input = vec![start, end];
+    Expr::n_ary(
+        RangeFunction::TimeRanges { interval, closed },
+        vec![start, end],
+    )
+}
 
-    Expr::Function {
-        input,
-        function: FunctionExpr::Range(RangeFunction::TimeRanges { interval, closed }),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
-            ..Default::default()
+/// Generate a series of equally-spaced points.
+pub fn linear_space(start: Expr, end: Expr, num_samples: Expr, closed: ClosedInterval) -> Expr {
+    Expr::n_ary(
+        RangeFunction::LinearSpace { closed },
+        vec![start, end, num_samples],
+    )
+}
+
+/// Create a column of linearly-spaced sequences from 'start', 'end', and 'num_samples' expressions.
+pub fn linear_spaces(
+    start: Expr,
+    end: Expr,
+    num_samples: Expr,
+    closed: ClosedInterval,
+    as_array: bool,
+) -> PolarsResult<Expr> {
+    let mut input = Vec::<Expr>::with_capacity(3);
+    input.push(start);
+    input.push(end);
+    let array_width = if as_array {
+        Some(num_samples.extract_usize().map_err(|_| {
+            polars_err!(InvalidOperation: "'as_array' is only valid when 'num_samples' is a constant integer")
+        })?)
+    } else {
+        input.push(num_samples);
+        None
+    };
+
+    Ok(Expr::n_ary(
+        RangeFunction::LinearSpaces {
+            closed,
+            array_width,
         },
-    }
+        input,
+    ))
 }

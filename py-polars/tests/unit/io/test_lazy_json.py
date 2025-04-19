@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_ndjson_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.ndjson"
 
@@ -66,7 +66,7 @@ def test_scan_ndjson_batch_size_zero() -> None:
         pl.scan_ndjson("test.ndjson", batch_size=0)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_with_projection(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -172,3 +172,140 @@ def test_glob_single_scan(io_files_path: Path) -> None:
 
     assert explain.count("SCAN") == 1
     assert "UNION" not in explain
+
+
+def test_scan_ndjson_empty_lines_in_middle() -> None:
+    assert_frame_equal(
+        pl.scan_ndjson(
+            f"""\
+{{"a": 1}}
+{"              "}
+{{"a": 2}}{"              "}
+{"              "}
+{{"a": 3}}
+""".encode()
+        ).collect(),
+        pl.DataFrame({"a": [1, 2, 3]}),
+    )
+
+
+@pytest.mark.parametrize("row_index_offset", [None, 0, 20])
+def test_scan_ndjson_slicing(
+    foods_ndjson_path: Path, row_index_offset: int | None
+) -> None:
+    lf = pl.scan_ndjson(foods_ndjson_path)
+
+    if row_index_offset is not None:
+        lf = lf.with_row_index(offset=row_index_offset)
+
+    for q in [
+        lf.head(5),
+        lf.tail(5),
+        lf.head(0),
+        lf.tail(0),
+        lf.slice(-999, 3),
+        lf.slice(999, 3),
+        lf.slice(-999, 0),
+        lf.slice(999, 0),
+        lf.slice(-999),
+        lf.slice(-3, 999),
+    ]:
+        assert_frame_equal(q.collect(), q.collect(no_optimization=True))
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Boolean,
+        pl.Int32,
+        pl.Int64,
+        pl.UInt64,
+        pl.UInt32,
+        pl.Float32,
+        pl.Float64,
+        pl.Datetime,
+        pl.Date,
+        pl.Null,
+    ],
+)
+def test_scan_ndjson_raises_on_parse_error(dtype: pl.DataType) -> None:
+    buf = b"""\
+{"a": "AAAA"}
+"""
+
+    cx = (
+        pytest.raises(
+            pl.exceptions.ComputeError,
+            match="got non-null value for NULL-typed column: AAAA",
+        )
+        if str(dtype) == "Null"
+        else pytest.raises(pl.exceptions.ComputeError, match="cannot parse 'AAAA' as ")
+    )
+
+    with cx:
+        pl.scan_ndjson(
+            buf,
+            schema={"a": dtype},
+        ).collect()
+
+    assert_frame_equal(
+        pl.scan_ndjson(buf, schema={"a": dtype}, ignore_errors=True).collect(),
+        pl.DataFrame({"a": [None]}, schema={"a": dtype}),
+    )
+
+
+def test_scan_ndjson_parse_string() -> None:
+    assert_frame_equal(
+        pl.scan_ndjson(
+            b"""\
+{"a": "123"}
+""",
+            schema={"a": pl.String},
+        ).collect(),
+        pl.DataFrame({"a": "123"}),
+    )
+
+
+def test_scan_ndjson_raises_on_parse_error_nested() -> None:
+    buf = b"""\
+{"a": {"b": "AAAA"}}
+"""
+    q = pl.scan_ndjson(
+        buf,
+        schema={"a": pl.Struct({"b": pl.Int64})},
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        q.collect()
+
+    q = pl.scan_ndjson(
+        buf, schema={"a": pl.Struct({"b": pl.Int64})}, ignore_errors=True
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [{"b": None}]}, schema={"a": pl.Struct({"b": pl.Int64})}),
+    )
+
+
+def test_scan_ndjson_nested_as_string() -> None:
+    buf = b"""\
+{"a": {"x": 1}, "b": [1,2,3], "c": {"y": null}, "d": [{"k": "abc"}, {"j": "123"}, {"l": 7}]}
+"""
+
+    df = pl.scan_ndjson(
+        buf,
+        schema={"a": pl.String, "b": pl.String, "c": pl.String, "d": pl.String},
+    ).collect()
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": '{"x": 1}',
+                "b": "[1, 2, 3]",
+                "c": '{"y": null}',
+                "d": '[{"k": "abc"}, {"j": "123"}, {"l": 7}]',
+            }
+        ),
+    )

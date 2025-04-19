@@ -3,6 +3,7 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, BinaryArray, StaticArray};
 use arrow::compute::utils::combine_validities_and_many;
 use polars_core::error::PolarsResult;
+use polars_core::prelude::row_encode::get_row_encoding_context;
 use polars_row::RowsEncoded;
 
 use crate::expressions::PhysicalPipedExpr;
@@ -41,13 +42,14 @@ impl RowValues {
         &mut self,
         context: &PExecutionContext,
         chunk: &DataChunk,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> PolarsResult<BinaryArray<i64>> {
         // Memory should already be cleared on previous iteration.
         debug_assert!(self.join_columns_material.is_empty());
         let determine_idx = self.det_join_idx && self.join_column_idx.is_none();
         let mut names = vec![];
 
+        let mut ctxts = Vec::with_capacity(self.join_column_eval.len());
         for phys_e in self.join_column_eval.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let mut s = s.to_physical_repr().rechunk();
@@ -58,6 +60,7 @@ impl RowValues {
                 names.push(s.name().to_string());
             }
             self.join_columns_material.push(s.array_ref(0).clone());
+            ctxts.push(get_row_encoding_context(s.dtype(), false));
         }
 
         // We determine the indices of the columns that have to be removed
@@ -74,13 +77,15 @@ impl RowValues {
             self.join_column_idx = Some(idx);
         }
         polars_row::convert_columns_amortized_no_order(
+            self.join_columns_material[0].len(), // @NOTE: does not work for ZFS
             &self.join_columns_material,
+            &ctxts,
             &mut self.current_rows,
         );
 
         // SAFETY: we keep rows-encode alive
         let array = unsafe { self.current_rows.borrow_array() };
-        Ok(if join_nulls {
+        Ok(if nulls_equal {
             array
         } else {
             let validities = self

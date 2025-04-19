@@ -1,3 +1,7 @@
+use std::ops::Deref;
+use std::sync::Arc;
+
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +22,39 @@ pub struct Descriptor {
     pub max_rep_level: i16,
 }
 
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+pub enum BaseType {
+    Owned(ParquetType),
+    Arc(Arc<ParquetType>),
+}
+
+impl BaseType {
+    pub fn into_arc(self) -> Self {
+        match self {
+            BaseType::Owned(t) => Self::Arc(Arc::new(t)),
+            BaseType::Arc(t) => Self::Arc(t),
+        }
+    }
+}
+
+impl PartialEq for BaseType {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl Deref for BaseType {
+    type Target = ParquetType;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            BaseType::Owned(i) => i,
+            BaseType::Arc(i) => i.as_ref(),
+        }
+    }
+}
+
 /// A descriptor for leaf-level primitive columns.
 /// This encapsulates information such as definition and repetition levels and is used to
 /// re-assemble nested data.
@@ -28,18 +65,18 @@ pub struct ColumnDescriptor {
     pub descriptor: Descriptor,
 
     /// The path of this column. For instance, "a.b.c.d".
-    pub path_in_schema: Vec<String>,
+    pub path_in_schema: Vec<PlSmallStr>,
 
     /// The [`ParquetType`] this descriptor is a leaf of
-    pub base_type: ParquetType,
+    pub base_type: BaseType,
 }
 
 impl ColumnDescriptor {
     /// Creates new descriptor for leaf-level column.
     pub fn new(
         descriptor: Descriptor,
-        path_in_schema: Vec<String>,
-        base_type: ParquetType,
+        path_in_schema: Vec<PlSmallStr>,
+        base_type: BaseType,
     ) -> Self {
         Self {
             descriptor,

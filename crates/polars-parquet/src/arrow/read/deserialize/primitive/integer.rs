@@ -1,201 +1,96 @@
-use std::collections::VecDeque;
-
-use arrow::array::MutablePrimitiveArray;
-use arrow::bitmap::MutableBitmap;
+use arrow::array::PrimitiveArray;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
-use num_traits::AsPrimitive;
-use polars_error::PolarsResult;
 
-use super::super::utils::MaybeNext;
-use super::super::{utils, PagesIter};
-use super::basic::{
-    finish, DecoderFunction, PlainDecoderFnCollector, PrimitiveDecoder, ValuesDictionary,
+use super::super::utils;
+use super::{
+    AsDecoderFunction, ClosureDecoderFunction, DecoderFunction, IntoDecoderFunction,
+    PrimitiveDecoder, UnitDecoderFunction,
 };
-use crate::parquet::encoding::hybrid_rle::DictionaryTranslator;
-use crate::parquet::encoding::{byte_stream_split, delta_bitpacked, Encoding};
+use crate::parquet::encoding::{Encoding, byte_stream_split, delta_bitpacked, hybrid_rle};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::types::{decode, NativeType as ParquetNativeType};
-use crate::read::deserialize::utils::array_chunks::ArrayChunks;
-use crate::read::deserialize::utils::filter::Filter;
-use crate::read::deserialize::utils::{BatchableCollector, PageValidity, TranslatedHybridRle};
+use crate::parquet::page::{DataPage, DictPage, split_buffer};
+use crate::parquet::types::{NativeType as ParquetNativeType, decode};
+use crate::read::deserialize::dictionary_encoded;
+use crate::read::deserialize::utils::{
+    dict_indices_decoder, freeze_validity, unspecialized_decode,
+};
+use crate::read::{Filter, PredicateFilter};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(super) enum StateTranslation<'a, P: ParquetNativeType, T: NativeType> {
-    Unit(ArrayChunks<'a, P>),
-    Dictionary(ValuesDictionary<'a, T>),
+pub(crate) enum StateTranslation<'a> {
+    Plain(&'a [u8]),
+    Dictionary(hybrid_rle::HybridRleDecoder<'a>),
     ByteStreamSplit(byte_stream_split::Decoder<'a>),
     DeltaBinaryPacked(delta_bitpacked::Decoder<'a>),
 }
 
-impl<'a, P, T, D> utils::StateTranslation<'a, IntDecoder<P, T, D>> for StateTranslation<'a, P, T>
+impl<'a, P, T, D> utils::StateTranslation<'a, IntDecoder<P, T, D>> for StateTranslation<'a>
 where
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
+    type PlainDecoder = &'a [u8];
+
     fn new(
         _decoder: &IntDecoder<P, T, D>,
         page: &'a DataPage,
         dict: Option<&'a <IntDecoder<P, T, D> as utils::Decoder>::Dict>,
-        _page_validity: Option<&PageValidity<'a>>,
-        _filter: Option<&Filter<'a>>,
-    ) -> PolarsResult<Self> {
+        page_validity: Option<&Bitmap>,
+    ) -> ParquetResult<Self> {
         match (page.encoding(), dict) {
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict)) => {
-                Ok(Self::Dictionary(ValuesDictionary::try_new(page, dict)?))
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(_)) => {
+                let values =
+                    dict_indices_decoder(page, page_validity.map_or(0, |bm| bm.unset_bits()))?;
+                Ok(Self::Dictionary(values))
             },
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
-                Ok(Self::Unit(ArrayChunks::new(values).unwrap()))
+                Ok(Self::Plain(values))
             },
             (Encoding::ByteStreamSplit, _) => {
                 let values = split_buffer(page)?.values;
                 Ok(Self::ByteStreamSplit(byte_stream_split::Decoder::try_new(
                     values,
-                    std::mem::size_of::<P>(),
+                    size_of::<P>(),
                 )?))
             },
             (Encoding::DeltaBinaryPacked, _) => {
                 let values = split_buffer(page)?.values;
-                Ok(Self::DeltaBinaryPacked(delta_bitpacked::Decoder::try_new(
-                    values,
-                )?))
+                Ok(Self::DeltaBinaryPacked(
+                    delta_bitpacked::Decoder::try_new(values)?.0,
+                ))
             },
             _ => Err(utils::not_implemented(page)),
         }
     }
-
-    fn len_when_not_nullable(&self) -> usize {
+    fn num_rows(&self) -> usize {
         match self {
-            Self::Unit(v) => v.len(),
-            Self::Dictionary(v) => v.len(),
-            Self::ByteStreamSplit(v) => v.len(),
-            Self::DeltaBinaryPacked(v) => v.size_hint().0,
+            Self::Plain(v) => v.len() / size_of::<P>(),
+            Self::Dictionary(i) => i.len(),
+            Self::ByteStreamSplit(i) => i.len(),
+            Self::DeltaBinaryPacked(i) => i.len(),
         }
-    }
-
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if n == 0 {
-            return Ok(());
-        }
-
-        match self {
-            Self::Unit(v) => _ = v.nth(n - 1),
-            Self::Dictionary(v) => v.values.skip_in_place(n)?,
-            Self::ByteStreamSplit(v) => _ = v.iter_converted(|_| ()).nth(n - 1),
-            Self::DeltaBinaryPacked(v) => _ = v.nth(n - 1),
-        }
-
-        Ok(())
-    }
-
-    fn extend_from_state(
-        &mut self,
-        decoder: &IntDecoder<P, T, D>,
-        decoded: &mut <IntDecoder<P, T, D> as utils::Decoder>::DecodedState,
-        page_validity: &mut Option<PageValidity<'a>>,
-        additional: usize,
-    ) -> ParquetResult<()> {
-        let (values, validity) = decoded;
-        match (self, page_validity) {
-            (Self::Unit(page), Some(page_validity)) => {
-                let collector = PlainDecoderFnCollector {
-                    chunks: page,
-                    decoder: decoder.0.decoder,
-                    _pd: Default::default(),
-                };
-
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    collector,
-                )?;
-            },
-            (Self::Unit(page), None) => {
-                PlainDecoderFnCollector {
-                    chunks: page,
-                    decoder: decoder.0.decoder,
-                    _pd: Default::default(),
-                }
-                .push_n(values, additional)?;
-            },
-            (Self::Dictionary(page), Some(page_validity)) => {
-                let translator = DictionaryTranslator(page.dict);
-                let translated_hybridrle = TranslatedHybridRle::new(&mut page.values, &translator);
-
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    translated_hybridrle,
-                )?;
-            },
-            (Self::Dictionary(page), None) => {
-                let translator = DictionaryTranslator(page.dict);
-                page.values
-                    .translate_and_collect_n_into(values, additional, &translator)?;
-            },
-            (Self::ByteStreamSplit(page_values), Some(page_validity)) => {
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    &mut page_values.iter_converted(|v| decoder.0.decoder.decode(decode(v))),
-                )?
-            },
-            (Self::ByteStreamSplit(page_values), None) => {
-                values.extend(
-                    page_values
-                        .iter_converted(|v| decoder.0.decoder.decode(decode(v)))
-                        .take(additional),
-                );
-            },
-            (Self::DeltaBinaryPacked(page_values), None) => {
-                values.extend(
-                    page_values
-                        .by_ref()
-                        .map(|x| decoder.0.decoder.decode(x.unwrap().as_()))
-                        .take(additional),
-                );
-            },
-            (Self::DeltaBinaryPacked(page_values), Some(page_validity)) => {
-                utils::extend_from_decoder(
-                    validity,
-                    page_validity,
-                    Some(additional),
-                    values,
-                    &mut page_values
-                        .by_ref()
-                        .map(|x| decoder.0.decoder.decode(x.unwrap().as_())),
-                )?
-            },
-        }
-
-        Ok(())
     }
 }
 
 /// Decoder of integer parquet type
 #[derive(Debug)]
-struct IntDecoder<P, T, D>(PrimitiveDecoder<P, T, D>)
+pub(crate) struct IntDecoder<P, T, D>(PrimitiveDecoder<P, T, D>)
 where
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>;
 
-impl<T, P, D> IntDecoder<P, T, D>
+impl<P, T, D> IntDecoder<P, T, D>
 where
-    T: NativeType,
     P: ParquetNativeType,
+    T: NativeType,
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
@@ -205,102 +100,206 @@ where
     }
 }
 
-impl<'a, P, T, D> utils::Decoder<'a> for IntDecoder<P, T, D>
+impl<T> IntDecoder<T, T, UnitDecoderFunction<T>>
+where
+    T: NativeType + ParquetNativeType,
+    i64: num_traits::AsPrimitive<T>,
+    UnitDecoderFunction<T>: Default + DecoderFunction<T, T>,
+{
+    pub(crate) fn unit() -> Self {
+        Self::new(UnitDecoderFunction::<T>::default())
+    }
+}
+
+impl<P, T> IntDecoder<P, T, AsDecoderFunction<P, T>>
+where
+    P: ParquetNativeType,
+    T: NativeType,
+    i64: num_traits::AsPrimitive<P>,
+    AsDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
+{
+    pub(crate) fn cast_as() -> Self {
+        Self::new(AsDecoderFunction::<P, T>::default())
+    }
+}
+
+impl<P, T> IntDecoder<P, T, IntoDecoderFunction<P, T>>
+where
+    P: ParquetNativeType,
+    T: NativeType,
+    i64: num_traits::AsPrimitive<P>,
+    IntoDecoderFunction<P, T>: Default + DecoderFunction<P, T>,
+{
+    pub(crate) fn cast_into() -> Self {
+        Self::new(IntoDecoderFunction::<P, T>::default())
+    }
+}
+
+impl<P, T, F> IntDecoder<P, T, ClosureDecoderFunction<P, T, F>>
+where
+    P: ParquetNativeType,
+    T: NativeType,
+    i64: num_traits::AsPrimitive<P>,
+    F: Copy + Fn(P) -> T,
+{
+    pub(crate) fn closure(f: F) -> Self {
+        Self::new(ClosureDecoderFunction(f, std::marker::PhantomData))
+    }
+}
+
+impl<P, T, D> utils::Decoder for IntDecoder<P, T, D>
 where
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
     D: DecoderFunction<P, T>,
 {
-    type Translation = StateTranslation<'a, P, T>;
-    type Dict = Vec<T>;
-    type DecodedState = (Vec<T>, MutableBitmap);
+    type Translation<'a> = StateTranslation<'a>;
+    type Dict = PrimitiveArray<T>;
+    type DecodedState = (Vec<T>, BitmapBuilder);
+    type Output = PrimitiveArray<T>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
-        self.0.with_capacity(capacity)
+        (
+            Vec::<T>::with_capacity(capacity),
+            BitmapBuilder::with_capacity(capacity),
+        )
     }
 
-    fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {
-        self.0.deserialize_dict(page)
+    fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
+        let values = page.buffer.as_ref();
+
+        let mut target = Vec::with_capacity(page.num_values);
+        super::plain::decode(
+            values,
+            false,
+            None,
+            None,
+            &mut BitmapBuilder::new(),
+            &mut self.0.intermediate,
+            &mut target,
+            &mut BitmapBuilder::new(),
+            self.0.decoder,
+        )?;
+        Ok(PrimitiveArray::new(
+            T::PRIMITIVE.into(),
+            target.into(),
+            None,
+        ))
     }
-}
 
-/// An [`Iterator`] adapter over [`PagesIter`] assumed to be encoded as primitive arrays
-/// encoded as parquet integer types
-#[derive(Debug)]
-pub struct IntegerIter<T, I, P, D>
-where
-    I: PagesIter,
-    T: NativeType,
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    iter: I,
-    data_type: ArrowDataType,
-    items: VecDeque<(Vec<T>, MutableBitmap)>,
-    remaining: usize,
-    chunk_size: Option<usize>,
-    dict: Option<Vec<T>>,
-    decoder: D,
-    phantom: std::marker::PhantomData<P>,
-}
+    fn has_predicate_specialization(
+        &self,
+        state: &utils::State<'_, Self>,
+        predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        let mut has_predicate_specialization = false;
 
-impl<T, I, P, D> IntegerIter<T, I, P, D>
-where
-    I: PagesIter,
-    T: NativeType,
+        has_predicate_specialization |=
+            matches!(state.translation, StateTranslation::Dictionary(_));
+        has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
+            && predicate.predicate.to_equals_scalar().is_some();
 
-    P: ParquetNativeType,
-    D: DecoderFunction<P, T>,
-{
-    pub fn new(
-        iter: I,
-        data_type: ArrowDataType,
-        num_rows: usize,
-        chunk_size: Option<usize>,
-        decoder: D,
-    ) -> Self {
-        Self {
-            iter,
-            data_type,
-            items: VecDeque::new(),
-            dict: None,
-            remaining: num_rows,
-            chunk_size,
-            decoder,
-            phantom: Default::default(),
+        // @TODO: This should be implemented
+        has_predicate_specialization &= state.page_validity.is_none();
+
+        Ok(has_predicate_specialization)
+    }
+
+    fn finalize(
+        &self,
+        dtype: ArrowDataType,
+        _dict: Option<Self::Dict>,
+        (values, validity): Self::DecodedState,
+    ) -> ParquetResult<Self::Output> {
+        let validity = freeze_validity(validity);
+        Ok(PrimitiveArray::try_new(dtype, values.into(), validity).unwrap())
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T>>()
+            .unwrap();
+        decoded.0.extend(additional.values().iter().copied());
+        match additional.validity() {
+            Some(v) => decoded.1.extend_from_bitmap(v),
+            None if is_optional => decoded.1.extend_constant(additional.len(), true),
+            None => {},
         }
+
+        Ok(())
     }
-}
 
-impl<T, I, P, D> Iterator for IntegerIter<T, I, P, D>
-where
-    I: PagesIter,
-    T: NativeType,
-    P: ParquetNativeType,
-    i64: num_traits::AsPrimitive<P>,
-    D: DecoderFunction<P, T>,
-{
-    type Item = PolarsResult<MutablePrimitiveArray<T>>;
+    fn extend_filtered_with_state(
+        &mut self,
+        mut state: utils::State<'_, Self>,
+        decoded: &mut Self::DecodedState,
+        pred_true_mask: &mut BitmapBuilder,
+        filter: Option<Filter>,
+    ) -> ParquetResult<()> {
+        match state.translation {
+            StateTranslation::Plain(ref mut values) => super::plain::decode(
+                values,
+                state.is_optional,
+                state.page_validity.as_ref(),
+                filter,
+                &mut decoded.1,
+                &mut self.0.intermediate,
+                &mut decoded.0,
+                pred_true_mask,
+                self.0.decoder,
+            ),
+            StateTranslation::Dictionary(ref mut indexes) => dictionary_encoded::decode_dict(
+                indexes.clone(),
+                state.dict.unwrap().values().as_slice(),
+                state.dict_mask,
+                state.is_optional,
+                state.page_validity.as_ref(),
+                filter,
+                &mut decoded.1,
+                &mut decoded.0,
+                pred_true_mask,
+            ),
+            StateTranslation::ByteStreamSplit(mut decoder) => {
+                let num_rows = decoder.len();
+                let mut iter = decoder.iter_converted(|v| self.0.decoder.decode(decode(v)));
 
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = utils::next(
-                &mut self.iter,
-                &mut self.items,
-                &mut self.dict,
-                &mut self.remaining,
-                self.chunk_size,
-                &IntDecoder::new(self.decoder),
-            );
-            match maybe_state {
-                MaybeNext::Some(Ok((values, validity))) => {
-                    return Some(Ok(finish(&self.data_type, values, validity)))
-                },
-                MaybeNext::Some(Err(e)) => return Some(Err(e)),
-                MaybeNext::None => return None,
-                MaybeNext::More => continue,
-            }
+                unspecialized_decode(
+                    num_rows,
+                    || Ok(iter.next().unwrap()),
+                    filter,
+                    state.page_validity,
+                    state.is_optional,
+                    &mut decoded.1,
+                    &mut decoded.0,
+                )
+            },
+            StateTranslation::DeltaBinaryPacked(decoder) => {
+                let num_rows = decoder.len();
+                let values = decoder.collect::<Vec<i64>>()?;
+
+                let mut i = 0;
+                unspecialized_decode(
+                    num_rows,
+                    || {
+                        use num_traits::AsPrimitive;
+                        let value = values[i];
+                        i += 1;
+                        Ok(self.0.decoder.decode(value.as_()))
+                    },
+                    filter,
+                    state.page_validity,
+                    state.is_optional,
+                    &mut decoded.1,
+                    &mut decoded.0,
+                )
+            },
         }
     }
 }

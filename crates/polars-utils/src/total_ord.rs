@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 use bytemuck::TransparentWrapper;
 
@@ -86,6 +86,21 @@ pub trait TotalHash {
         }
     }
 }
+
+pub trait BuildHasherTotalExt: BuildHasher {
+    fn tot_hash_one<T>(&self, x: T) -> u64
+    where
+        T: TotalHash,
+        Self: Sized,
+        <Self as BuildHasher>::Hasher: Hasher,
+    {
+        let mut hasher = self.build_hasher();
+        x.tot_hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl<T: BuildHasher> BuildHasherTotalExt for T {}
 
 #[repr(transparent)]
 pub struct TotalOrdWrap<T>(pub T);
@@ -453,7 +468,7 @@ impl<T: TotalOrd, U: TotalOrd> TotalOrd for (T, U) {
     }
 }
 
-impl<'a> TotalHash for BytesHash<'a> {
+impl TotalHash for BytesHash<'_> {
     #[inline(always)]
     fn tot_hash<H>(&self, state: &mut H)
     where
@@ -463,7 +478,7 @@ impl<'a> TotalHash for BytesHash<'a> {
     }
 }
 
-impl<'a> TotalEq for BytesHash<'a> {
+impl TotalEq for BytesHash<'_> {
     #[inline(always)]
     fn tot_eq(&self, other: &Self) -> bool {
         self == other
@@ -472,7 +487,7 @@ impl<'a> TotalEq for BytesHash<'a> {
 
 /// This elides creating a [`TotalOrdWrap`] for types that don't need it.
 pub trait ToTotalOrd {
-    type TotalOrdItem;
+    type TotalOrdItem: Hash + Eq;
     type SourceItem;
 
     fn to_total_ord(&self) -> Self::TotalOrdItem;
@@ -564,7 +579,7 @@ impl_to_total_ord_wrapped!(f64);
 /// `TotalOrdWrap<Option<T>>` implements `Eq + Hash`, iff:
 /// `Option<T>` implements `TotalEq + TotalHash`, iff:
 /// `T` implements `TotalEq + TotalHash`
-impl<T: Copy> ToTotalOrd for Option<T> {
+impl<T: Copy + TotalEq + TotalHash> ToTotalOrd for Option<T> {
     type TotalOrdItem = TotalOrdWrap<Option<T>>;
     type SourceItem = Option<T>;
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
@@ -25,11 +26,9 @@ from polars._utils.various import (
 )
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
+    from collections.abc import Sequence
 
     from polars._typing import TimeUnit
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.mark.parametrize(
@@ -186,7 +185,7 @@ def test_parse_version(v1: Any, v2: Any) -> None:
     assert parse_version(v2) < parse_version(v1)
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 def test_in_notebook() -> None:
     # private function, but easier to test this separately and mock it in the callers
     assert not _in_notebook()

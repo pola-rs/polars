@@ -2,8 +2,8 @@ use std::ops::{Add, Div, Mul, Sub};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
+use num_traits::{NumCast, Zero};
 use polars_core::downcast_as_macro_arg_physical;
-use polars_core::export::num::{NumCast, Zero};
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -103,9 +103,9 @@ where
             out.into(),
             Some(validity.into()),
         );
-        ChunkedArray::with_chunk(chunked_arr.name(), array)
+        ChunkedArray::with_chunk(chunked_arr.name().clone(), array)
     } else {
-        ChunkedArray::from_vec(chunked_arr.name(), out)
+        ChunkedArray::from_vec(chunked_arr.name().clone(), out)
     }
 }
 
@@ -122,9 +122,7 @@ fn interpolate_nearest(s: &Series) -> Series {
             let s = s.to_physical_repr();
 
             macro_rules! dispatch {
-                ($ca:expr) => {{
-                    interpolate_impl($ca, near_interp).into_series()
-                }};
+                ($ca:expr) => {{ interpolate_impl($ca, near_interp).into_series() }};
             }
             let out = downcast_as_macro_arg_physical!(s, dispatch);
             out.cast(logical).unwrap()
@@ -164,6 +162,7 @@ fn interpolate_linear(s: &Series) -> Series {
                     | DataType::Int16
                     | DataType::Int32
                     | DataType::Int64
+                    | DataType::Int128
                     | DataType::UInt8
                     | DataType::UInt16
                     | DataType::UInt32
@@ -211,7 +210,7 @@ mod test {
 
     #[test]
     fn test_interpolate() {
-        let ca = UInt32Chunked::new("", &[Some(1), None, None, Some(4), Some(5)]);
+        let ca = UInt32Chunked::new("".into(), &[Some(1), None, None, Some(4), Some(5)]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
         let out = out.f64().unwrap();
         assert_eq!(
@@ -219,7 +218,7 @@ mod test {
             &[Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0)]
         );
 
-        let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5)]);
+        let ca = UInt32Chunked::new("".into(), &[None, Some(1), None, None, Some(4), Some(5)]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
         let out = out.f64().unwrap();
         assert_eq!(
@@ -227,7 +226,10 @@ mod test {
             &[None, Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0)]
         );
 
-        let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5), None]);
+        let ca = UInt32Chunked::new(
+            "".into(),
+            &[None, Some(1), None, None, Some(4), Some(5), None],
+        );
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
         let out = out.f64().unwrap();
         assert_eq!(
@@ -242,7 +244,10 @@ mod test {
                 None
             ]
         );
-        let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5), None]);
+        let ca = UInt32Chunked::new(
+            "".into(),
+            &[None, Some(1), None, None, Some(4), Some(5), None],
+        );
         let out = interpolate(&ca.into_series(), InterpolationMethod::Nearest);
         let out = out.u32().unwrap();
         assert_eq!(
@@ -253,7 +258,7 @@ mod test {
 
     #[test]
     fn test_interpolate_decreasing_unsigned() {
-        let ca = UInt32Chunked::new("", &[Some(4), None, None, Some(1)]);
+        let ca = UInt32Chunked::new("".into(), &[Some(4), None, None, Some(1)]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
         let out = out.f64().unwrap();
         assert_eq!(
@@ -265,7 +270,7 @@ mod test {
     #[test]
     fn test_interpolate2() {
         let ca = Float32Chunked::new(
-            "",
+            "".into(),
             &[
                 Some(4653f32),
                 None,

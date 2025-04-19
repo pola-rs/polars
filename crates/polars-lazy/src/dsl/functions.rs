@@ -2,6 +2,7 @@
 //!
 //! Function on multiple expressions.
 //!
+
 use polars_core::prelude::*;
 pub use polars_plan::dsl::functions::*;
 use polars_plan::prelude::UnionArgs;
@@ -21,15 +22,13 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
             .ok_or_else(|| polars_err!(NoData: "empty container given"))?,
     );
 
-    let mut opt_state = lf.opt_state;
+    let opt_state = lf.opt_state;
     let cached_arenas = lf.cached_arena.clone();
 
     let mut lps = Vec::with_capacity(inputs.len());
     lps.push(lf.logical_plan);
 
     for lf in &mut inputs[1..] {
-        // ensure we enable file caching if any lf has it enabled
-        opt_state.file_caching |= lf.opt_state.file_caching;
         let lp = std::mem::take(&mut lf.logical_plan);
         lps.push(lp)
     }
@@ -55,17 +54,12 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
     args: UnionArgs,
 ) -> PolarsResult<LazyFrame> {
     let lfs = inputs.as_ref();
-    let (mut opt_state, cached_arena) = lfs
+    let (opt_state, cached_arena) = lfs
         .first()
         .map(|lf| (lf.opt_state, lf.cached_arena.clone()))
         .ok_or_else(
             || polars_err!(NoData: "Require at least one LazyFrame for horizontal concatenation"),
         )?;
-
-    for lf in &lfs[1..] {
-        // ensure we enable file caching if any lf has it enabled
-        opt_state.file_caching |= lf.opt_state.file_caching;
-    }
 
     let options = HConcatOptions {
         parallel: args.parallel,

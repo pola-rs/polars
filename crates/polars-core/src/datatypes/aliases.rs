@@ -1,5 +1,7 @@
 pub use arrow::legacy::index::IdxArr;
-pub use polars_utils::aliases::{InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet};
+pub use polars_utils::aliases::{
+    InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet, PlRandomState,
+};
 
 use super::*;
 use crate::hashing::IdBuildHasher;
@@ -19,7 +21,7 @@ pub type IdxType = UInt32Type;
 #[cfg(feature = "bigidx")]
 pub type IdxType = UInt64Type;
 
-pub use smartstring::alias::String as SmartString;
+pub use polars_utils::pl_str::PlSmallStr;
 
 /// This hashmap uses an IdHasher
 pub type PlIdHashMap<K, V> = hashbrown::HashMap<K, V, IdBuildHasher>;

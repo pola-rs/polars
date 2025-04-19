@@ -21,6 +21,7 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.dst_offset
     Expr.dt.epoch
     Expr.dt.hour
+    Expr.dt.is_business_day
     Expr.dt.is_leap_year
     Expr.dt.iso_year
     Expr.dt.microsecond
@@ -34,6 +35,7 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.offset_by
     Expr.dt.ordinal_day
     Expr.dt.quarter
+    Expr.dt.replace
     Expr.dt.replace_time_zone
     Expr.dt.round
     Expr.dt.second

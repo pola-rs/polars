@@ -6,17 +6,14 @@ pub(crate) fn row_index_at_scan(q: LazyFrame) -> bool {
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
     (&lp_arena).iter(lp).any(|(_, lp)| {
-        use IR::*;
-        matches!(
-            lp,
-            Scan {
-                file_options: FileScanOptions {
-                    row_index: Some(_),
-                    ..
-                },
-                ..
-            }
-        )
+        if let IR::Scan {
+            unified_scan_args, ..
+        } = lp
+        {
+            unified_scan_args.row_index.is_some()
+        } else {
+            false
+        }
     })
 }
 
@@ -24,18 +21,14 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
-    (&lp_arena).iter(lp).any(|(_, lp)| {
-        use IR::*;
-        matches!(
-            lp,
-            DataFrameScan {
-                filter: Some(_),
-                ..
-            } | Scan {
-                predicate: Some(_),
-                ..
-            }
-        )
+    (&lp_arena).iter(lp).any(|(_, lp)| match lp {
+        IR::Filter { input, .. } => {
+            matches!(lp_arena.get(*input), IR::DataFrameScan { .. })
+        },
+        IR::Scan {
+            predicate: Some(_), ..
+        } => true,
+        _ => false,
     })
 }
 
@@ -43,46 +36,14 @@ pub(crate) fn predicate_at_all_scans(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
-    (&lp_arena).iter(lp).all(|(_, lp)| {
-        use IR::*;
-        matches!(
-            lp,
-            DataFrameScan {
-                filter: Some(_),
-                ..
-            } | Scan {
-                predicate: Some(_),
-                ..
-            }
-        )
-    })
-}
-
-#[cfg(feature = "streaming")]
-pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
-    let (mut expr_arena, mut lp_arena) = get_arenas();
-    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    matches!(
-        lp_arena.get(lp),
-        IR::MapFunction {
-            function: FunctionNode::Pipeline { .. },
-            ..
-        }
-    )
-}
-
-#[cfg(feature = "streaming")]
-pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
-    let (mut expr_arena, mut lp_arena) = get_arenas();
-    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    (&lp_arena).iter(lp).any(|(_, lp)| {
-        matches!(
-            lp,
-            IR::MapFunction {
-                function: FunctionNode::Pipeline { .. },
-                ..
-            }
-        )
+    (&lp_arena).iter(lp).all(|(_, lp)| match lp {
+        IR::Filter { input, .. } => {
+            matches!(lp_arena.get(*input), IR::DataFrameScan { .. })
+        },
+        IR::Scan {
+            predicate: Some(_), ..
+        } => true,
+        _ => false,
     })
 }
 
@@ -93,7 +54,9 @@ fn slice_at_scan(q: LazyFrame) -> bool {
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use IR::*;
         match lp {
-            Scan { file_options, .. } => file_options.n_rows.is_some(),
+            Scan {
+                unified_scan_args, ..
+            } => unified_scan_args.pre_slice.is_some(),
             _ => false,
         }
     })
@@ -128,11 +91,6 @@ fn test_pred_pd_1() -> PolarsResult<()> {
         .filter(col("B").gt(lit(1)));
 
     assert!(predicate_at_scan(q));
-
-    // check if we do not pass slice
-    let q = df.lazy().limit(10).filter(col("B").gt(lit(1)));
-
-    assert!(!predicate_at_scan(q));
 
     Ok(())
 }
@@ -308,7 +266,10 @@ pub fn test_predicate_block_cast() -> PolarsResult<()> {
 
         let out = lf.collect()?;
         let s = out.column("value").unwrap();
-        assert_eq!(s, &Series::new("value", [1.0f32, 2.0]));
+        assert_eq!(
+            s,
+            &Column::new(PlSmallStr::from_static("value"), [1.0f32, 2.0])
+        );
     }
 
     Ok(())
@@ -320,9 +281,9 @@ fn test_lazy_filter_and_rename() {
     let lf = df
         .clone()
         .lazy()
-        .rename(["a"], ["x"])
+        .rename(["a"], ["x"], true)
         .filter(col("x").map(
-            |s: Series| Ok(Some(s.gt(3)?.into_series())),
+            |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
             GetOutput::from_type(DataType::Boolean),
         ))
         .select([col("x")]);
@@ -334,8 +295,8 @@ fn test_lazy_filter_and_rename() {
     assert!(lf.collect().unwrap().equals(&correct));
 
     // now we check if the column is rename or added when we don't select
-    let lf = df.lazy().rename(["a"], ["x"]).filter(col("x").map(
-        |s: Series| Ok(Some(s.gt(3)?.into_series())),
+    let lf = df.lazy().rename(["a"], ["x"], true).filter(col("x").map(
+        |s: Column| Ok(Some(s.as_materialized_series().gt(3)?.into_column())),
         GetOutput::from_type(DataType::Boolean),
     ));
     // the rename function should not interfere with the predicate pushdown
@@ -495,8 +456,8 @@ fn test_with_column_prune() -> PolarsResult<()> {
         matches!(lp, SimpleProjection { .. } | DataFrameScan { .. })
     }));
     assert_eq!(
-        q.schema().unwrap().as_ref(),
-        &Schema::from_iter([Field::new("c1", DataType::Int32)])
+        q.collect_schema().unwrap().as_ref(),
+        &Schema::from_iter([Field::new(PlSmallStr::from_static("c1"), DataType::Int32)])
     );
     Ok(())
 }

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Collection, Sequence
+from typing import TYPE_CHECKING
 
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
@@ -35,6 +35,8 @@ from polars.datatypes import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Collection, Sequence
+
     from hypothesis.strategies import DrawFn, SearchStrategy
 
     from polars._typing import CategoricalOrdering, PolarsDataType, TimeUnit
@@ -327,8 +329,12 @@ def _time_units() -> SearchStrategy[TimeUnit]:
 
 def _time_zones() -> SearchStrategy[str]:
     """Create a strategy for generating valid time zones."""
+    # Not available when building docs, so just import here.
+    from polars.polars import _known_timezones
+
+    chrono_known_tz = set(_known_timezones())
     return st.timezone_keys(allow_prefix=False).filter(
-        lambda tz: tz not in {"Factory", "localtime"}
+        lambda tz: tz not in {"Factory", "localtime"} and tz in chrono_known_tz
     )
 
 

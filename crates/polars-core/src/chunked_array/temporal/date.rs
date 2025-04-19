@@ -25,47 +25,38 @@ impl DateChunked {
     }
 
     /// Construct a new [`DateChunked`] from an iterator over [`NaiveDate`].
-    pub fn from_naive_date<I: IntoIterator<Item = NaiveDate>>(name: &str, v: I) -> Self {
+    pub fn from_naive_date<I: IntoIterator<Item = NaiveDate>>(name: PlSmallStr, v: I) -> Self {
         let unit = v.into_iter().map(naive_date_to_date).collect::<Vec<_>>();
         Int32Chunked::from_vec(name, unit).into()
     }
 
     /// Convert from Date into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn to_string(&self, format: &str) -> StringChunked {
-        let mut ca: StringChunked = self.apply_kernel_cast(&|arr| {
-            let mut buf = String::new();
-            let mut mutarr = MutablePlString::with_capacity(arr.len());
-
-            for opt in arr.into_iter() {
-                match opt {
-                    None => mutarr.push_null(),
-                    Some(v) => {
-                        buf.clear();
-                        let datefmt = date32_to_date(*v).format(format);
-                        write!(buf, "{datefmt}").unwrap();
-                        mutarr.push_value(&buf)
-                    },
-                }
-            }
-
-            mutarr.freeze().boxed()
-        });
-        ca.rename(self.name());
-        ca
+    pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
+        let format = if format == "iso" || format == "iso:strict" {
+            "%F"
+        } else {
+            format
+        };
+        let datefmt_f = |ndt: NaiveDate| ndt.format(format);
+        self.try_apply_into_string_amortized(|val, buf| {
+            let ndt = date32_to_date(val);
+            write!(buf, "{}", datefmt_f(ndt))
+        })
+        .map_err(|_| polars_err!(ComputeError: "cannot format Date with format '{}'", format))
     }
 
     /// Convert from Date into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     ///
     /// Alias for `to_string`.
-    pub fn strftime(&self, format: &str) -> StringChunked {
+    pub fn strftime(&self, format: &str) -> PolarsResult<StringChunked> {
         self.to_string(format)
     }
 
     /// Construct a new [`DateChunked`] from an iterator over optional [`NaiveDate`].
     pub fn from_naive_date_options<I: IntoIterator<Item = Option<NaiveDate>>>(
-        name: &str,
+        name: PlSmallStr,
         v: I,
     ) -> Self {
         let unit = v.into_iter().map(|opt| opt.map(naive_date_to_date));

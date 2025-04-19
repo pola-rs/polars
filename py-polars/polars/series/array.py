@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Sequence
+from typing import TYPE_CHECKING, Callable
 
 from polars import functions as F
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import date, datetime, time
 
     from polars import Series
@@ -16,11 +17,11 @@ if TYPE_CHECKING:
 
 @expr_dispatch
 class ArrayNameSpace:
-    """Namespace for list related methods."""
+    """Namespace for array related methods."""
 
     _accessor = "arr"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def min(self) -> Series:
@@ -206,6 +207,27 @@ class ArrayNameSpace:
             false
             false
             null
+        ]
+        """
+
+    def len(self) -> Series:
+        """
+        Return the number of elements in each array.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.len()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            2
+            2
         ]
         """
 
@@ -403,7 +425,7 @@ class ArrayNameSpace:
         Examples
         --------
         >>> s = pl.Series(
-        ...     "a", [[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=pl.Array(pl.Int32, 3)
+        ...     "a", [[1, 2, 3], [4, 5, 6], [7, 9, 8]], dtype=pl.Array(pl.Int32, 3)
         ... )
         >>> s.arr.last()
         shape: (3,)
@@ -411,7 +433,7 @@ class ArrayNameSpace:
         [
             3
             6
-            9
+            8
         ]
 
         """

@@ -39,7 +39,7 @@ unsafe impl<T: NativeType> ToFfi for PrimitiveArray<T> {
         });
 
         Self {
-            data_type: self.data_type.clone(),
+            dtype: self.dtype.clone(),
             validity,
             values: self.values.clone(),
         }
@@ -48,10 +48,10 @@ unsafe impl<T: NativeType> ToFfi for PrimitiveArray<T> {
 
 impl<T: NativeType, A: ffi::ArrowArrayRef> FromFfi<A> for PrimitiveArray<T> {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
-        let data_type = array.data_type().clone();
+        let dtype = array.dtype().clone();
         let validity = unsafe { array.validity() }?;
         let values = unsafe { array.buffer::<T>(1) }?;
 
-        Self::try_new(data_type, values, validity)
+        Self::try_new(dtype, values, validity)
     }
 }

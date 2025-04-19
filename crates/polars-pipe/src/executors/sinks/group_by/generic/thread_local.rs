@@ -1,6 +1,6 @@
+use std::sync::LazyLock;
+
 use arrow::array::MutableBinaryArray;
-use once_cell::sync::Lazy;
-use polars_core::export::once_cell;
 use polars_utils::hashing::hash_to_partition;
 
 use super::*;
@@ -8,7 +8,7 @@ use crate::pipeline::PARTITION_SIZE;
 
 const OB_SIZE: usize = 2048;
 
-static SPILL_SIZE: Lazy<usize> = Lazy::new(|| {
+static SPILL_SIZE: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("POLARS_STREAMING_GROUPBY_SPILL_SIZE")
         .map(|v| v.parse::<usize>().unwrap())
         .unwrap_or(10_000)
@@ -102,11 +102,9 @@ impl SpillPartitions {
         let partition = hash_to_partition(hash, self.aggs_partitioned.len());
         self.spilled = true;
         unsafe {
-            let agg_values = self.aggs_partitioned.get_unchecked_release_mut(partition);
-            let hashes = self.hash_partitioned.get_unchecked_release_mut(partition);
-            let chunk_indexes = self
-                .chunk_index_partitioned
-                .get_unchecked_release_mut(partition);
+            let agg_values = self.aggs_partitioned.get_unchecked_mut(partition);
+            let hashes = self.hash_partitioned.get_unchecked_mut(partition);
+            let chunk_indexes = self.chunk_index_partitioned.get_unchecked_mut(partition);
             let key_builder = self.keys_partitioned.get_unchecked_mut(partition);
 
             hashes.push(hash);
@@ -115,7 +113,7 @@ impl SpillPartitions {
             // amortize the loop counter
             key_builder.push(Some(row));
             for (i, agg) in agg_iters.iter_mut().enumerate() {
-                let av = agg.next().unwrap_unchecked_release();
+                let av = agg.next().unwrap_unchecked();
                 let buf = agg_values.get_unchecked_mut(i);
                 buf.add_unchecked_borrowed_physical(&av);
             }
@@ -138,8 +136,8 @@ impl SpillPartitions {
                             .iter_mut()
                             .zip(self.output_schema.iter_names())
                             .map(|(b, name)| {
-                                let mut s = b.reset(OB_SIZE);
-                                s.rename(name);
+                                let mut s = b.reset(OB_SIZE, false).unwrap();
+                                s.rename(name.clone());
                                 s
                             })
                             .collect(),
@@ -196,11 +194,9 @@ impl SpillPartitions {
 
         (0..PARTITION_SIZE)
             .map(|partition| unsafe {
-                let spilled_aggs = self.aggs_partitioned.get_unchecked_release_mut(partition);
-                let hashes = self.hash_partitioned.get_unchecked_release_mut(partition);
-                let chunk_indexes = self
-                    .chunk_index_partitioned
-                    .get_unchecked_release_mut(partition);
+                let spilled_aggs = self.aggs_partitioned.get_unchecked_mut(partition);
+                let hashes = self.hash_partitioned.get_unchecked_mut(partition);
+                let chunk_indexes = self.chunk_index_partitioned.get_unchecked_mut(partition);
                 let keys_builder =
                     std::mem::take(self.keys_partitioned.get_unchecked_mut(partition));
                 let hashes = std::mem::take(hashes);
@@ -212,7 +208,10 @@ impl SpillPartitions {
                         hashes,
                         chunk_idx,
                         keys: keys_builder.into(),
-                        aggs: spilled_aggs.iter_mut().map(|b| b.reset(0)).collect(),
+                        aggs: spilled_aggs
+                            .iter_mut()
+                            .map(|b| b.reset(0, false).unwrap())
+                            .collect(),
                     },
                 )
             })

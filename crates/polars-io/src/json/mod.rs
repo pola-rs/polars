@@ -71,6 +71,7 @@ use std::ops::Deref;
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
+use polars_error::{PolarsResult, polars_bail};
 use polars_json::json::write::FallibleStreamingIterator;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -81,14 +82,13 @@ use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct JsonWriterOptions {
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
-}
+pub struct JsonWriterOptions {}
 
-/// The format to use to write the DataFrame to JSON: `Json` (a JSON array) or `JsonLines` (each row output on a
-/// separate line). In either case, each row is serialized as a JSON object whose keys are the column names and whose
-/// values are the row's corresponding values.
+/// The format to use to write the DataFrame to JSON: `Json` (a JSON array)
+/// or `JsonLines` (each row output on a separate line).
+///
+/// In either case, each row is serialized as a JSON object whose keys are the column names and
+/// whose values are the row's corresponding values.
 pub enum JsonFormat {
     /// A single JSON array containing each DataFrame row as an object. The length of the array is the number of rows in
     /// the DataFrame.
@@ -140,12 +140,12 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        df.align_chunks();
+        df.align_chunks_par();
         let fields = df
             .iter()
             .map(|s| {
                 #[cfg(feature = "object")]
-                polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
+                polars_ensure!(!matches!(s.dtype(), DataType::Object(_)), ComputeError: "cannot write 'Object' datatype to json");
                 Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
@@ -190,7 +190,7 @@ where
             .iter()
             .map(|s| {
                 #[cfg(feature = "object")]
-                polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
+                polars_ensure!(!matches!(s.dtype(), DataType::Object(_)), ComputeError: "cannot write 'Object' datatype to json");
                 Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
@@ -216,13 +216,24 @@ where
     ignore_errors: bool,
     infer_schema_len: Option<NonZeroUsize>,
     batch_size: NonZeroUsize,
-    projection: Option<Vec<String>>,
+    projection: Option<Vec<PlSmallStr>>,
     schema: Option<SchemaRef>,
     schema_overwrite: Option<&'a Schema>,
     json_format: JsonFormat,
 }
 
-impl<'a, R> SerReader<R> for JsonReader<'a, R>
+pub fn remove_bom(bytes: &[u8]) -> PolarsResult<&[u8]> {
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        // UTF-8 BOM
+        Ok(&bytes[3..])
+    } else if bytes.starts_with(&[0xFE, 0xFF]) || bytes.starts_with(&[0xFF, 0xFE]) {
+        // UTF-16 BOM
+        polars_bail!(ComputeError: "utf-16 not supported")
+    } else {
+        Ok(bytes)
+    }
+}
+impl<R> SerReader<R> for JsonReader<'_, R>
 where
     R: MmapBytesReader,
 {
@@ -251,14 +262,29 @@ where
     /// incompatible types in the input. In the event that a column contains mixed dtypes, is it unspecified whether an
     /// error is returned or whether elements of incompatible dtypes are replaced with `null`.
     fn finish(mut self) -> PolarsResult<DataFrame> {
-        let rb: ReaderBytes = (&mut self.reader).into();
-
+        let pre_rb: ReaderBytes = (&mut self.reader).into();
+        let bytes = remove_bom(pre_rb.deref())?;
+        let rb = ReaderBytes::Borrowed(bytes);
         let out = match self.json_format {
             JsonFormat::Json => {
                 polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");
                 let mut bytes = rb.deref().to_vec();
-                let json_value =
-                    simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?;
+                let owned = &mut vec![];
+                compression::maybe_decompress_bytes(&bytes, owned)?;
+                // the easiest way to avoid ownership issues is by implicitly figuring out if
+                // decompression happened (owned is only populated on decompress), then pick which bytes to parse
+                let json_value = if owned.is_empty() {
+                    simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?
+                } else {
+                    simd_json::to_borrowed_value(owned).map_err(to_compute_err)?
+                };
+                if let BorrowedValue::Array(array) = &json_value {
+                    if array.is_empty() & self.schema.is_none() & self.schema_overwrite.is_none() {
+                        return Ok(DataFrame::empty());
+                    }
+                }
+
+                let allow_extra_fields_in_struct = self.schema.is_some();
 
                 // struct type
                 let dtype = if let Some(mut schema) = self.schema {
@@ -286,13 +312,13 @@ where
                             polars_bail!(ComputeError: "can only deserialize json objects")
                         };
 
-                        let mut schema = Schema::from_iter(fields.iter());
+                        let mut schema = Schema::from_iter(fields.iter().map(Into::<Field>::into));
                         overwrite_schema(&mut schema, overwrite)?;
 
                         DataType::Struct(
                             schema
                                 .into_iter()
-                                .map(|(name, dt)| Field::new(&name, dt))
+                                .map(|(name, dt)| Field::new(name, dt))
                                 .collect(),
                         )
                         .to_arrow(CompatLevel::newest())
@@ -303,13 +329,19 @@ where
 
                 let dtype = if let BorrowedValue::Array(_) = &json_value {
                     ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                        "item", dtype, true,
+                        PlSmallStr::from_static("item"),
+                        dtype,
+                        true,
                     )))
                 } else {
                     dtype
                 };
 
-                let arr = polars_json::json::deserialize(&json_value, dtype)?;
+                let arr = polars_json::json::deserialize(
+                    &json_value,
+                    dtype,
+                    allow_extra_fields_in_struct,
+                )?;
                 let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(
                     || polars_err!(ComputeError: "can only deserialize json objects"),
                 )?;
@@ -340,8 +372,8 @@ where
         }?;
 
         // TODO! Ensure we don't materialize the columns we don't need
-        if let Some(proj) = &self.projection {
-            out.select(proj)
+        if let Some(proj) = self.projection.as_deref() {
+            out.select(proj.iter().cloned())
         } else {
             Ok(out)
         }
@@ -390,7 +422,7 @@ where
     ///
     /// Setting `projection` to the columns you want to keep is more efficient than deserializing all of the columns and
     /// then dropping the ones you don't want.
-    pub fn with_projection(mut self, projection: Option<Vec<String>>) -> Self {
+    pub fn with_projection(mut self, projection: Option<Vec<PlSmallStr>>) -> Self {
         self.projection = projection;
         self
     }

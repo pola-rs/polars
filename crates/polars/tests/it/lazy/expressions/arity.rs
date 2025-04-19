@@ -58,14 +58,14 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
                     s.str()?
                         .to_lowercase()
                         .contains("not_exist", true)
-                        .map(|ca| Some(ca.into_series()))
+                        .map(|ca| Some(ca.into_column()))
                 },
                 GetOutput::from_type(DataType::Boolean),
             ))
             .then(lit("unexpected"))
             .when(col("a").eq(lit("a1".to_string())))
             .then(lit("good hit"))
-            .otherwise(Expr::Literal(LiteralValue::Null))
+            .otherwise(Expr::Literal(LiteralValue::untyped_null()))
             .alias("b"),
         )
         .collect()?;
@@ -88,7 +88,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
                     s.str()?
                         .to_lowercase()
                         .contains_literal("non-existent")
-                        .map(|ca| Some(ca.into_series()))
+                        .map(|ca| Some(ca.into_column()))
                 },
                 GetOutput::from_type(DataType::Boolean),
             ))
@@ -99,7 +99,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
             .then(lit("ok2"))
             .when(lit(true))
             .then(lit("ft"))
-            .otherwise(Expr::Literal(LiteralValue::Null))
+            .otherwise(Expr::Literal(LiteralValue::untyped_null()))
             .alias("c"),
         )
         .collect()?;
@@ -146,7 +146,9 @@ fn test_when_then_otherwise_cats() -> PolarsResult<()> {
             .iter_str()
             .flatten()
             .collect::<Vec<_>>(),
-        &["bookA", "bob", "bookB", "tim", "bookA", "bookC", "bookC", "bookC"]
+        &[
+            "bookA", "bob", "bookB", "tim", "bookA", "bookC", "bookC", "bookC"
+        ]
     );
 
     Ok(())
@@ -197,7 +199,7 @@ fn test_update_groups_in_cast() -> PolarsResult<()> {
 
     let expected = df![
         "group" =>  ["A" ,"B"],
-        "id"=> [AnyValue::List(Series::new("", [-2i64, -1])), AnyValue::List(Series::new("", [-2i64, -1, -1]))]
+        "id"=> [AnyValue::List(Series::new("".into(), [-2i64, -1])), AnyValue::List(Series::new("".into(), [-2i64, -1, -1]))]
     ]?;
 
     assert!(out.equals(&expected));
@@ -217,7 +219,7 @@ fn test_when_then_otherwise_sum_in_agg() -> PolarsResult<()> {
         .group_by([col("groups")])
         .agg([when(all().exclude(["groups"]).sum().eq(lit(1)))
             .then(all().exclude(["groups"]).sum())
-            .otherwise(lit(NULL))])
+            .otherwise(lit(LiteralValue::untyped_null()))])
         .sort(["groups"], Default::default());
 
     let expected = df![
@@ -273,18 +275,18 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .group_by([col("name")])
         .agg([when(col("value").sum().eq(lit(3)))
             .then(col("value").rank(Default::default(), None))
-            .otherwise(lit(Series::new("", &[10 as IdxSize])))])
+            .otherwise(lit(Series::new("".into(), &[10 as IdxSize])))])
         .sort(["name"], Default::default())
         .collect()?;
 
     let out = out.column("value")?;
     assert_eq!(
         out.get(0)?,
-        AnyValue::List(Series::new("", &[1 as IdxSize, 2 as IdxSize]))
+        AnyValue::List(Series::new("".into(), &[1 as IdxSize, 2 as IdxSize]))
     );
     assert_eq!(
         out.get(1)?,
-        AnyValue::List(Series::new("", &[10 as IdxSize, 10 as IdxSize]))
+        AnyValue::List(Series::new("".into(), &[10 as IdxSize, 10 as IdxSize]))
     );
 
     let out = df
@@ -292,7 +294,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
         .lazy()
         .group_by([col("name")])
         .agg([when(col("value").sum().eq(lit(3)))
-            .then(lit(Series::new("", &[10 as IdxSize])).alias("value"))
+            .then(lit(Series::new("".into(), &[10 as IdxSize])).alias("value"))
             .otherwise(col("value").rank(Default::default(), None))])
         .sort(["name"], Default::default())
         .collect()?;
@@ -300,11 +302,11 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     let out = out.column("value")?;
     assert_eq!(
         out.get(1)?,
-        AnyValue::List(Series::new("", &[1 as IdxSize, 2]))
+        AnyValue::List(Series::new("".into(), &[1 as IdxSize, 2]))
     );
     assert_eq!(
         out.get(0)?,
-        AnyValue::List(Series::new("", &[10 as IdxSize, 10 as IdxSize]))
+        AnyValue::List(Series::new("".into(), &[10 as IdxSize, 10 as IdxSize]))
     );
 
     let out = df

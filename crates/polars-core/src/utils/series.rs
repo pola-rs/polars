@@ -9,7 +9,7 @@ pub fn with_unstable_series<F, T>(dtype: &DataType, f: F) -> T
 where
     F: Fn(&mut AmortSeries) -> T,
 {
-    let container = Series::full_null("", 0, dtype);
+    let container = Series::full_null(PlSmallStr::EMPTY, 0, dtype);
     let mut us = AmortSeries::new(Rc::new(container));
 
     f(&mut us)
@@ -26,9 +26,9 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
             - using `str.strptime`, `str.to_date`, or `str.to_datetime` and providing a format string"
         },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Enum(_,_)) => {
+        (DataType::String, DataType::Enum(_, _)) => {
             "\n\nEnsure that all values in the input column are present in the categories of the enum datatype."
-        }
+        },
         _ => "",
     };
 

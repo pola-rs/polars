@@ -63,8 +63,10 @@ fn test_cse_unions() -> PolarsResult<()> {
                 cache_count += 1;
                 true
             },
-            Scan { file_options, .. } => {
-                if let Some(columns) = &file_options.with_columns {
+            Scan {
+                unified_scan_args, ..
+            } => {
+                if let Some(columns) = &unified_scan_args.projection {
                     columns.len() == 2
                 } else {
                     false
@@ -204,7 +206,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = c.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
-    // Ensure we get only one cache and the it is not above the join
+    // Ensure we get only one cache and it is not above the join
     // and ensure that every cache only has 1 hit.
     let cache_ids = (&lp_arena)
         .iter(lp)
@@ -218,7 +220,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
                     ..
                 } => {
                     assert_eq!(*cache_hits, 1);
-                    assert!(matches!(lp_arena.get(*input), IR::DataFrameScan { .. }));
+                    assert!(matches!(lp_arena.get(*input), IR::SimpleProjection { .. }));
 
                     Some(*id)
                 },
@@ -307,7 +309,7 @@ fn test_cse_columns_projections() -> PolarsResult<()> {
 
     let left = left.cross_join(right.clone().select([col("A")]), None);
     let q = left.join(
-        right.rename(["B"], ["C"]),
+        right.rename(["B"], ["C"], true),
         [col("A"), col("C")],
         [col("A"), col("C")],
         JoinType::Left.into(),

@@ -68,7 +68,7 @@ where
 }
 
 pub(super) fn array_dispatch(
-    name: &str,
+    name: PlSmallStr,
     values: &Series,
     width: usize,
     agg_type: AggType,

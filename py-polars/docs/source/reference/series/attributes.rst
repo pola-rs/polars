@@ -5,9 +5,8 @@ Attributes
 .. currentmodule:: polars
 .. autosummary::
    :toctree: api/
-   :template: autosummary/accessor_attribute.rst
 
    Series.dtype
+   Series.flags
    Series.name
    Series.shape
-   Series.flags

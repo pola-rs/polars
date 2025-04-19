@@ -10,7 +10,7 @@ pub struct MutableNullArray {
 }
 
 impl MutableArray for MutableNullArray {
-    fn data_type(&self) -> &ArrowDataType {
+    fn dtype(&self) -> &ArrowDataType {
         &ArrowDataType::Null
     }
 

@@ -3,7 +3,7 @@ use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, slice_offsets};
 
 use crate::executors::sinks::group_by::ooc::GroupBySource;
-use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
+use crate::executors::sinks::io::{IOThread, block_thread_until_io_thread_done};
 use crate::operators::{DataChunk, FinalizedSink, Sink};
 
 pub(super) fn default_slices<K, V, HB>(
@@ -59,9 +59,9 @@ pub(super) fn finalize_group_by(
     let df = if dfs.is_empty() {
         DataFrame::empty_with_schema(output_schema)
     } else {
-        let mut df = accumulate_dataframes_vertical_unchecked(dfs);
+        let df = accumulate_dataframes_vertical_unchecked(dfs);
         // re init to check duplicates
-        unsafe { DataFrame::new(std::mem::take(df.get_columns_mut())) }?
+        DataFrame::new(df.take_columns())?
     };
 
     match ooc_payload {

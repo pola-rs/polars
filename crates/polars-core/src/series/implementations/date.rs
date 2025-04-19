@@ -31,16 +31,12 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
         self.0.dtype()
     }
 
-    fn _get_flags(&self) -> MetadataFlags {
+    fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
     }
 
-    fn _set_flags(&mut self, flags: MetadataFlags) {
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
-    }
-
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets).into_date().into_series()
     }
 
     #[cfg(feature = "zip_with")]
@@ -51,28 +47,43 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
             .map(|ca| ca.into_date().into_series())
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        self.0.physical().into_total_eq_inner()
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        self.0.physical().into_total_ord_inner()
+    }
+
+    fn vec_hash(
+        &self,
+        random_state: PlSeedableRandomStateQuality,
+        buf: &mut Vec<u64>,
+    ) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlSeedableRandomStateQuality,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         self.0.agg_min(groups).into_date().into_series()
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         self.0.agg_max(groups).into_date().into_series()
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
             .agg_list(groups)
@@ -126,13 +137,13 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
         polars_bail!(opq = rem, self.0.dtype(), rhs.dtype());
     }
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.0.group_tuples(multithreaded, sorted)
     }
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.deref().arg_sort_multiple(by, options)
@@ -140,14 +151,14 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DateChunked> {
-    fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkLenIter {
         self.0.chunk_lengths()
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
 
@@ -170,6 +181,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         (a.into_date().into_series(), b.into_date().into_series())
     }
 
+    fn _sum_as_f64(&self) -> f64 {
+        self.0._sum_as_f64()
+    }
+
     fn mean(&self) -> Option<f64> {
         self.0.mean()
     }
@@ -180,13 +195,20 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        let other = other.to_physical_repr();
-        // 3 refs
-        // ref Cow
-        // ref SeriesTrait
-        // ref ChunkedArray
-        self.0.append(other.as_ref().as_ref().as_ref());
-        Ok(())
+        let mut other = other.to_physical_repr().into_owned();
+        self.0
+            .append_owned(std::mem::take(other._get_inner_mut().as_mut()))
+    }
+    fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(std::mem::take(
+            &mut other
+                ._get_inner_mut()
+                .as_any_mut()
+                .downcast_mut::<DateChunked>()
+                .unwrap()
+                .0,
+        ))
     }
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
@@ -195,7 +217,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         // ref SeriesTrait
         // ref ChunkedArray
         let other = other.to_physical_repr();
-        self.0.extend(other.as_ref().as_ref().as_ref());
+        self.0.extend(other.as_ref().as_ref().as_ref())?;
         Ok(())
     }
 
@@ -224,7 +246,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.0.rechunk().into_date().into_series()
+        self.0.rechunk().into_owned().into_date().into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -234,30 +256,24 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             .into_series()
     }
 
-    fn cast(&self, data_type: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
-        match data_type {
+    fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
+        match dtype {
             DataType::String => Ok(self
                 .0
                 .clone()
                 .into_series()
                 .date()
                 .unwrap()
-                .to_string("%Y-%m-%d")
+                .to_string("%Y-%m-%d")?
                 .into_series()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
-                let mut out = self
-                    .0
-                    .cast_with_options(data_type, CastOptions::NonStrict)?;
+                let mut out = self.0.cast_with_options(dtype, CastOptions::NonStrict)?;
                 out.set_sorted_flag(self.0.is_sorted_flag());
                 Ok(out)
             },
-            _ => self.0.cast_with_options(data_type, cast_options),
+            _ => self.0.cast_with_options(dtype, cast_options),
         }
-    }
-
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        self.0.get_any_value(index)
     }
 
     #[inline]
@@ -318,13 +334,13 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.max_reduce();
-        let av = sc.value().cast(self.dtype()).into_static().unwrap();
+        let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.min_reduce();
-        let av = sc.value().cast(self.dtype()).into_static().unwrap();
+        let av = sc.value().cast(self.dtype()).into_static();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
@@ -345,6 +361,18 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
+    fn as_phys_any(&self) -> &dyn Any {
+        self.0.physical()
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }
 

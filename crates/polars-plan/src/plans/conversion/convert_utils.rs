@@ -18,10 +18,10 @@ pub(super) fn convert_st_union(
             let mut exprs = vec![];
             let input_schema = lp_arena.get(*input).schema(lp_arena);
 
-            let to_cast = input_schema.iter().zip(schema.iter_dtypes()).flat_map(
+            let to_cast = input_schema.iter().zip(schema.iter_values()).flat_map(
                 |((left_name, left_type), st)| {
                     if left_type != st {
-                        Some(col(left_name.as_ref()).cast(st.clone()))
+                        Some(col(left_name.clone()).cast(st.clone()))
                     } else {
                         None
                     }
@@ -30,7 +30,7 @@ pub(super) fn convert_st_union(
             exprs.extend(to_cast);
 
             if !exprs.is_empty() {
-                let expr = to_expr_irs(exprs, expr_arena);
+                let expr = to_expr_irs(exprs, expr_arena)?;
                 let lp = IRBuilder::new(*input, expr_arena, lp_arena)
                     .with_columns(expr, Default::default())
                     .build();
@@ -54,7 +54,7 @@ pub(super) fn convert_diagonal_concat(
     mut inputs: Vec<Node>,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> Vec<Node> {
+) -> PolarsResult<Vec<Node>> {
     let schemas = nodes_to_schemas(&inputs, lp_arena);
 
     let upper_bound_width = schemas.iter().map(|sch| sch.len()).sum();
@@ -69,7 +69,7 @@ pub(super) fn convert_diagonal_concat(
         });
     }
     if total_schema.is_empty() {
-        return inputs;
+        return Ok(inputs);
     }
 
     let mut has_empty = false;
@@ -84,10 +84,10 @@ pub(super) fn convert_diagonal_concat(
         for (name, dtype) in total_schema.iter() {
             // If a name from Total Schema is not present - append
             if lf_schema.get_field(name).is_none() {
-                columns_to_add.push(NULL.lit().cast(dtype.clone()).alias(name))
+                columns_to_add.push(NULL.lit().cast(dtype.clone()).alias(name.clone()))
             }
         }
-        let expr = to_expr_irs(columns_to_add, expr_arena);
+        let expr = to_expr_irs(columns_to_add, expr_arena)?;
         *node = IRBuilder::new(*node, expr_arena, lp_arena)
             // Add the missing columns
             .with_columns(expr, Default::default())
@@ -98,13 +98,13 @@ pub(super) fn convert_diagonal_concat(
     }
 
     if has_empty {
-        inputs
+        Ok(inputs
             .into_iter()
             .zip(schemas)
             .filter_map(|(input, schema)| if schema.is_empty() { None } else { Some(input) })
-            .collect()
+            .collect())
     } else {
-        inputs
+        Ok(inputs)
     }
 }
 

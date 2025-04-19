@@ -4,6 +4,7 @@ mod expand;
 mod filter;
 #[cfg(feature = "is_in")]
 mod is_in;
+mod literals;
 mod slice;
 mod window;
 

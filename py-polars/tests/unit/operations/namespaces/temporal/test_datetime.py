@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import pytest
 from hypothesis import given
@@ -13,19 +15,15 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
-    from polars._typing import TemporalLiteral, TimeUnit
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
+    from polars._typing import PolarsDataType, TemporalLiteral, TimeUnit
 
 
-@pytest.fixture()
+@pytest.fixture
 def series_of_int_dates() -> pl.Series:
     return pl.Series([10000, 20000, 30000], dtype=pl.Date)
 
 
-@pytest.fixture()
+@pytest.fixture
 def series_of_str_dates() -> pl.Series:
     return pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
 
@@ -55,12 +53,21 @@ def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
         ("ordinal_day", pl.Series(values=[139, 278, 51], dtype=pl.Int16)),
     ],
 )
+@pytest.mark.parametrize("time_zone", ["Asia/Kathmandu", None])
 def test_dt_extract_datetime_component(
     unit_attr: str,
     expected: pl.Series,
     series_of_int_dates: pl.Series,
+    time_zone: str | None,
 ) -> None:
     assert_series_equal(getattr(series_of_int_dates.dt, unit_attr)(), expected)
+    assert_series_equal(
+        getattr(
+            series_of_int_dates.cast(pl.Datetime).dt.replace_time_zone(time_zone).dt,
+            unit_attr,
+        )(),
+        expected,
+    )
 
 
 @pytest.mark.parametrize(
@@ -124,28 +131,19 @@ def test_dt_datetime_deprecated() -> None:
     assert result.item() == expected
 
 
-@pytest.mark.parametrize(
-    ("time_zone", "expected"),
-    [
-        (None, True),
-        ("Asia/Kathmandu", False),
-        ("UTC", True),
-    ],
-)
-def test_local_date_sortedness(time_zone: str | None, expected: bool) -> None:
-    # singleton - always sorted
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
+def test_local_date_sortedness(time_zone: str | None) -> None:
+    # singleton
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
     result = ser.dt.date()
     assert result.flags["SORTED_ASC"]
-    assert result.flags["SORTED_DESC"] is False
 
-    # 2 elements - depends on time zone
+    # 2 elements
     ser = (
         pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
     ).sort()
     result = ser.dt.date()
-    assert result.flags["SORTED_ASC"] == expected
-    assert result.flags["SORTED_DESC"] is False
+    assert result.flags["SORTED_ASC"]
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
@@ -154,11 +152,16 @@ def test_local_time_sortedness(time_zone: str | None) -> None:
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
     result = ser.dt.time()
     assert result.flags["SORTED_ASC"]
-    assert not result.flags["SORTED_DESC"]
 
-    # two elements - not sorted
+    # three elements - not sorted
     ser = (
-        pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
+        pl.Series(
+            [
+                datetime(2022, 1, 1, 23),
+                datetime(2022, 1, 2, 21),
+                datetime(2022, 1, 3, 22),
+            ]
+        ).dt.replace_time_zone(time_zone)
     ).sort()
     result = ser.dt.time()
     assert not result.flags["SORTED_ASC"]
@@ -179,31 +182,69 @@ def test_local_time_before_epoch(time_unit: TimeUnit) -> None:
     ("time_zone", "offset", "expected"),
     [
         (None, "1d", True),
-        ("Asia/Kathmandu", "1d", False),
+        ("Europe/London", "1d", False),
         ("UTC", "1d", True),
-        (None, "1mo", True),
-        ("Asia/Kathmandu", "1mo", False),
-        ("UTC", "1mo", True),
+        (None, "1m", True),
+        ("Europe/London", "1m", True),
+        ("UTC", "1m", True),
         (None, "1w", True),
-        ("Asia/Kathmandu", "1w", False),
+        ("Europe/London", "1w", False),
         ("UTC", "1w", True),
         (None, "1h", True),
-        ("Asia/Kathmandu", "1h", True),
+        ("Europe/London", "1h", True),
         ("UTC", "1h", True),
     ],
 )
 def test_offset_by_sortedness(
     time_zone: str | None, offset: str, expected: bool
 ) -> None:
-    # create 2 values, as a single value is always sorted
-    ser = (
-        pl.Series(
-            [datetime(2022, 1, 1, 22), datetime(2022, 1, 1, 22)]
-        ).dt.replace_time_zone(time_zone)
+    s = pl.datetime_range(
+        datetime(2020, 10, 25),
+        datetime(2020, 10, 25, 3),
+        "30m",
+        time_zone=time_zone,
+        eager=True,
     ).sort()
-    result = ser.dt.offset_by(offset)
+    assert s.flags["SORTED_ASC"]
+    assert not s.flags["SORTED_DESC"]
+    result = s.dt.offset_by(offset)
     assert result.flags["SORTED_ASC"] == expected
-    assert result.flags["SORTED_DESC"] is False
+    assert not result.flags["SORTED_DESC"]
+
+
+def test_offset_by_invalid_duration() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="expected leading integer in the duration string"
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("P")
+
+
+def test_offset_by_missing_unit() -> None:
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected a unit to follow integer in the duration string '1'",
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("1")
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected a unit to follow integer in the duration string '1mo23d4'",
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("1mo23d4")
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected a unit to follow integer in the duration string '-2d1'",
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.offset_by("-2d1")
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected a unit to follow integer in the duration string '1d2'",
+    ):
+        pl.DataFrame(
+            {"a": [datetime(2022, 3, 20, 5, 7)] * 2, "b": ["1d", "1d2"]}
+        ).select(pl.col("a").dt.offset_by(pl.col("b")))
 
 
 def test_dt_datetime_date_time_invalid() -> None:
@@ -622,6 +663,13 @@ def test_round_negative() -> None:
         pl.Series([datetime(1895, 5, 7)]).dt.round("-1m")
 
 
+def test_round_invalid_duration() -> None:
+    with pytest.raises(
+        InvalidOperationError, match="expected leading integer in the duration string"
+    ):
+        pl.Series([datetime(2022, 3, 20, 5, 7)]).dt.round("P")
+
+
 @pytest.mark.parametrize(
     ("time_unit", "date_in_that_unit"),
     [
@@ -939,7 +987,7 @@ def test_offset_by_expressions() -> None:
     }
 
     # Check single-row cases
-    for i in range(len(df)):
+    for i in range(df.height):
         df_slice = df[i : i + 1]
         result = df_slice.select(
             c=pl.col("a").dt.offset_by(pl.col("b")),
@@ -1350,3 +1398,123 @@ def test_dt_mean_deprecated() -> None:
     with pytest.deprecated_call():
         result = s.dt.mean()
     assert result == s.mean()
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("ms", "EST"),
+        pl.Datetime("us"),
+        pl.Datetime("us", "EST"),
+        pl.Datetime("ns"),
+        pl.Datetime("ns", "EST"),
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [
+        # date(1677, 9, 22), # See test_literal_from_datetime.
+        date(1970, 1, 1),
+        date(2024, 2, 29),
+        date(2262, 4, 11),
+    ],
+)
+def test_literal_from_date(
+    value: date,
+    dtype: PolarsDataType,
+) -> None:
+    out = pl.select(pl.lit(value, dtype=dtype))
+    assert out.schema == OrderedDict({"literal": dtype})
+    if dtype == pl.Datetime:
+        tz = ZoneInfo(dtype.time_zone) if dtype.time_zone is not None else None  # type: ignore[union-attr]
+        value = datetime(value.year, value.month, value.day, tzinfo=tz)
+    assert out.item() == value
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Date,
+        pl.Datetime("ms"),
+        pl.Datetime("ms", "EST"),
+        pl.Datetime("us"),
+        pl.Datetime("us", "EST"),
+        pl.Datetime("ns"),
+        pl.Datetime("ns", "EST"),
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [
+        # Very old dates with a timezone like EST caused problems for the CI due
+        # to the IANA timezone database updating their historical offset, so
+        # these have been disabled for now. A mismatch between the timezone
+        # database that chrono_tz crate uses vs. the one that Python uses (which
+        # differs from platform to platform) will cause this to fail.
+        # datetime(1677, 9, 22),
+        # datetime(1677, 9, 22, tzinfo=ZoneInfo("EST")),
+        datetime(1970, 1, 1),
+        datetime(1970, 1, 1, tzinfo=ZoneInfo("EST")),
+        datetime(2024, 2, 29),
+        datetime(2024, 2, 29, tzinfo=ZoneInfo("EST")),
+        datetime(2262, 4, 11),
+        datetime(2262, 4, 11, tzinfo=ZoneInfo("EST")),
+    ],
+)
+def test_literal_from_datetime(
+    value: datetime,
+    dtype: pl.Date | pl.Datetime,
+) -> None:
+    out = pl.select(pl.lit(value, dtype=dtype))
+    if dtype == pl.Date:
+        value = value.date()  # type: ignore[assignment]
+    elif dtype.time_zone is None and value.tzinfo is not None:  # type: ignore[union-attr]
+        # update the dtype with the supplied time zone in the value
+        dtype = pl.Datetime(dtype.time_unit, str(value.tzinfo))  # type: ignore[union-attr]
+    elif dtype.time_zone is not None and value.tzinfo is None:  # type: ignore[union-attr]
+        # cast from dt without tz to dtype with tz
+        value = value.replace(tzinfo=ZoneInfo(dtype.time_zone))  # type: ignore[union-attr]
+
+    assert out.schema == OrderedDict({"literal": dtype})
+    assert out.item() == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        time(0),
+        time(hour=1),
+        time(hour=16, minute=43, microsecond=500),
+        time(hour=23, minute=59, second=59, microsecond=999999),
+    ],
+)
+def test_literal_from_time(value: time) -> None:
+    out = pl.select(pl.lit(value))
+    assert out.schema == OrderedDict({"literal": pl.Time})
+    assert out.item() == value
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        None,
+        pl.Duration("ms"),
+        pl.Duration("us"),
+        pl.Duration("ns"),
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [
+        timedelta(0),
+        timedelta(hours=1),
+        timedelta(days=-99999),
+        timedelta(days=99999),
+    ],
+)
+def test_literal_from_timedelta(value: time, dtype: pl.Duration | None) -> None:
+    out = pl.select(pl.lit(value, dtype=dtype))
+    assert out.schema == OrderedDict({"literal": dtype or pl.Duration("us")})
+    assert out.item() == value

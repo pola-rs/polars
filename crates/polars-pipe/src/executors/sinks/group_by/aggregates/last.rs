@@ -2,7 +2,6 @@ use std::any::Any;
 
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{AnyValue, Series};
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::executors::sinks::group_by::aggregates::AggregateFn;
 use crate::operators::IdxSize;
@@ -25,9 +24,9 @@ impl LastAgg {
 
 impl AggregateFn for LastAgg {
     fn pre_agg(&mut self, chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
-        let item = unsafe { item.next().unwrap_unchecked_release() };
+        let item = unsafe { item.next().unwrap_unchecked() };
         self.chunk_idx = chunk_idx;
-        self.last = Some(unsafe { item.into_static().unwrap_unchecked() });
+        self.last = Some(item.into_static());
     }
     fn pre_agg_ordered(
         &mut self,
@@ -37,12 +36,8 @@ impl AggregateFn for LastAgg {
         values: &Series,
     ) {
         self.chunk_idx = chunk_idx;
-        self.last = Some(unsafe {
-            values
-                .get_unchecked((offset + length - 1) as usize)
-                .into_static()
-                .unwrap_unchecked()
-        })
+        self.last =
+            Some(unsafe { values.get_unchecked((offset + length - 1) as usize) }.into_static())
     }
 
     fn dtype(&self) -> DataType {
@@ -50,7 +45,7 @@ impl AggregateFn for LastAgg {
     }
 
     fn combine(&mut self, other: &dyn Any) {
-        let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked_release() };
+        let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked() };
         if other.last.is_some() && other.chunk_idx >= self.chunk_idx {
             self.last.clone_from(&other.last);
             self.chunk_idx = other.chunk_idx;

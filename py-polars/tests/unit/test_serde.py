@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import pickle
 from datetime import datetime, timedelta
 
@@ -207,3 +208,26 @@ def test_serde_data_type_instantiated_with_attributes() -> None:
     deserialized = pickle.loads(serialized)
     assert deserialized == dtype
     assert isinstance(deserialized, pl.DataType)
+
+
+def test_serde_udf() -> None:
+    lf = pl.LazyFrame({"a": [[1, 2], [3, 4, 5]], "b": [3, 4]}).select(
+        pl.col("a").map_elements(lambda x: sum(x), return_dtype=pl.Int32)
+    )
+    result = pl.LazyFrame.deserialize(io.BytesIO(lf.serialize()))
+
+    assert_frame_equal(lf, result)
+
+
+def test_serde_empty_df_lazy_frame() -> None:
+    lf = pl.LazyFrame()
+    f = io.BytesIO()
+    f.write(lf.serialize())
+    f.seek(0)
+    assert pl.LazyFrame.deserialize(f).collect().shape == (0, 0)
+
+
+def test_pickle_class_objects_21021() -> None:
+    assert isinstance(pickle.loads(pickle.dumps(pl.col))("A"), pl.Expr)
+    assert isinstance(pickle.loads(pickle.dumps(pl.DataFrame))(), pl.DataFrame)
+    assert isinstance(pickle.loads(pickle.dumps(pl.LazyFrame))(), pl.LazyFrame)

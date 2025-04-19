@@ -63,7 +63,7 @@ fn check_decimal_invariants(
         _ => {
             return Err(ParquetError::oos(
                 "DECIMAL can only annotate INT32, INT64, BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY",
-            ))
+            ));
         },
     };
     Ok(())
@@ -127,13 +127,8 @@ pub fn check_converted_invariants(
 
 pub fn check_logical_invariants(
     physical_type: &PhysicalType,
-    logical_type: &Option<PrimitiveLogicalType>,
+    logical_type: PrimitiveLogicalType,
 ) -> ParquetResult<()> {
-    if logical_type.is_none() {
-        return Ok(());
-    };
-    let logical_type = logical_type.unwrap();
-
     // Check that logical type and physical type are compatible
     use PrimitiveLogicalType::*;
     match (logical_type, physical_type) {
@@ -170,11 +165,12 @@ pub fn check_logical_invariants(
         (String | Json | Bson, PhysicalType::ByteArray) => {},
         // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#uuid
         (Uuid, PhysicalType::FixedLenByteArray(16)) => {},
+        (Float16, PhysicalType::FixedLenByteArray(2)) => {},
         (a, b) => {
             return Err(ParquetError::oos(format!(
                 "Cannot annotate {:?} from {:?} fields",
                 a, b
-            )))
+            )));
         },
     };
     Ok(())

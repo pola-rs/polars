@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import sys
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, Sequence, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, get_type_hints
 
 from polars.dependencies import _check_for_pydantic, pydantic
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import pandas as pd
 
 PANDAS_SIMPLE_NUMPY_DTYPES = {
@@ -34,20 +35,15 @@ def _get_annotations(obj: type) -> dict[str, Any]:
     return getattr(obj, "__annotations__", {})
 
 
-if sys.version_info >= (3, 10):
-
-    def try_get_type_hints(obj: type) -> dict[str, Any]:
-        try:
-            # often the same as obj.__annotations__, but handles forward references
-            # encoded as string literals, adds Optional[t] if a default value equal
-            # to None is set and recursively replaces 'Annotated[T, ...]' with 'T'.
-            return get_type_hints(obj)
-        except TypeError:
-            # fallback on edge-cases (eg: InitVar inference on python 3.10).
-            return _get_annotations(obj)
-
-else:
-    try_get_type_hints = _get_annotations
+def try_get_type_hints(obj: type) -> dict[str, Any]:
+    try:
+        # often the same as obj.__annotations__, but handles forward references
+        # encoded as string literals, adds Optional[t] if a default value equal
+        # to None is set and recursively replaces 'Annotated[T, ...]' with 'T'.
+        return get_type_hints(obj)
+    except TypeError:
+        # fallback on edge-cases (eg: InitVar inference on python 3.10).
+        return _get_annotations(obj)
 
 
 @lru_cache(64)
@@ -63,6 +59,11 @@ def is_namedtuple(cls: Any, *, annotated: bool = False) -> bool:
 def is_pydantic_model(value: Any) -> bool:
     """Check whether value derives from a pydantic.BaseModel."""
     return _check_for_pydantic(value) and isinstance(value, pydantic.BaseModel)
+
+
+def is_sqlalchemy(value: Any) -> bool:
+    """Check whether value is an instance of a SQLAlchemy object."""
+    return getattr(value, "__module__", "").startswith("sqlalchemy.")
 
 
 def get_first_non_none(values: Sequence[Any | None]) -> Any:

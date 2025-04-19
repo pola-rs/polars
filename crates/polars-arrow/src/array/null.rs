@@ -1,8 +1,10 @@
 use std::any::Any;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
+use polars_utils::IdxSize;
 
 use super::Splitable;
+use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::array::{Array, FromFfi, MutableArray, ToFfi};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{ArrowDataType, PhysicalType};
@@ -11,7 +13,11 @@ use crate::ffi;
 /// The concrete [`Array`] of [`ArrowDataType::Null`].
 #[derive(Clone)]
 pub struct NullArray {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
+
+    /// Validity mask. This is always all-zeroes.
+    validity: Bitmap,
+
     length: usize,
 }
 
@@ -19,31 +25,37 @@ impl NullArray {
     /// Returns a new [`NullArray`].
     /// # Errors
     /// This function errors iff:
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
-    pub fn try_new(data_type: ArrowDataType, length: usize) -> PolarsResult<Self> {
-        if data_type.to_physical_type() != PhysicalType::Null {
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
+    pub fn try_new(dtype: ArrowDataType, length: usize) -> PolarsResult<Self> {
+        if dtype.to_physical_type() != PhysicalType::Null {
             polars_bail!(ComputeError: "NullArray can only be initialized with a DataType whose physical type is Null");
         }
 
-        Ok(Self { data_type, length })
+        let validity = Bitmap::new_zeroed(length);
+
+        Ok(Self {
+            dtype,
+            validity,
+            length,
+        })
     }
 
     /// Returns a new [`NullArray`].
     /// # Panics
     /// This function errors iff:
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
-    pub fn new(data_type: ArrowDataType, length: usize) -> Self {
-        Self::try_new(data_type, length).unwrap()
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
+    pub fn new(dtype: ArrowDataType, length: usize) -> Self {
+        Self::try_new(dtype, length).unwrap()
     }
 
     /// Returns a new empty [`NullArray`].
-    pub fn new_empty(data_type: ArrowDataType) -> Self {
-        Self::new(data_type, 0)
+    pub fn new_empty(dtype: ArrowDataType) -> Self {
+        Self::new(dtype, 0)
     }
 
     /// Returns a new [`NullArray`].
-    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
-        Self::new(data_type, length)
+    pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
+        Self::new(dtype, length)
     }
 
     impl_sliced!();
@@ -66,12 +78,13 @@ impl NullArray {
     ///
     /// # Safety
     /// The caller must ensure that `offset + length < self.len()`.
-    pub unsafe fn slice_unchecked(&mut self, _offset: usize, length: usize) {
+    pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         self.length = length;
+        self.validity.slice_unchecked(offset, length);
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.length
     }
 }
@@ -80,7 +93,7 @@ impl Array for NullArray {
     impl_common_array!();
 
     fn validity(&self) -> Option<&Bitmap> {
-        None
+        Some(&self.validity)
     }
 
     fn with_validity(&self, _: Option<Bitmap>) -> Box<dyn Array> {
@@ -100,9 +113,9 @@ impl MutableNullArray {
     /// Returns a new [`MutableNullArray`].
     /// # Panics
     /// This function errors iff:
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
-    pub fn new(data_type: ArrowDataType, length: usize) -> Self {
-        let inner = NullArray::try_new(data_type, length).unwrap();
+    /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
+    pub fn new(dtype: ArrowDataType, length: usize) -> Self {
+        let inner = NullArray::try_new(dtype, length).unwrap();
         Self { inner }
     }
 }
@@ -114,7 +127,7 @@ impl From<MutableNullArray> for NullArray {
 }
 
 impl MutableArray for MutableNullArray {
-    fn data_type(&self) -> &ArrowDataType {
+    fn dtype(&self) -> &ArrowDataType {
         &ArrowDataType::Null
     }
 
@@ -179,13 +192,17 @@ impl Splitable for NullArray {
     }
 
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (lhs, rhs) = self.validity.split_at(offset);
+
         (
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
+                validity: lhs,
                 length: offset,
             },
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
+                validity: rhs,
                 length: self.len() - offset,
             },
         )
@@ -194,28 +211,80 @@ impl Splitable for NullArray {
 
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for NullArray {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
-        let data_type = array.data_type().clone();
-        Self::try_new(data_type, array.array().len())
+        let dtype = array.dtype().clone();
+        Self::try_new(dtype, array.array().len())
     }
 }
 
-#[cfg(feature = "arrow_rs")]
-mod arrow {
-    use arrow_data::{ArrayData, ArrayDataBuilder};
+pub struct NullArrayBuilder {
+    dtype: ArrowDataType,
+    length: usize,
+}
 
-    use super::*;
-    impl NullArray {
-        /// Convert this array into [`arrow_data::ArrayData`]
-        pub fn to_data(&self) -> ArrayData {
-            let builder = ArrayDataBuilder::new(arrow_schema::DataType::Null).len(self.len());
+impl NullArrayBuilder {
+    pub fn new(dtype: ArrowDataType) -> Self {
+        Self { dtype, length: 0 }
+    }
+}
 
-            // SAFETY: safe by construction
-            unsafe { builder.build_unchecked() }
-        }
+impl StaticArrayBuilder for NullArrayBuilder {
+    type Array = NullArray;
 
-        /// Create this array from [`ArrayData`]
-        pub fn from_data(data: &ArrayData) -> Self {
-            Self::new(ArrowDataType::Null, data.len())
-        }
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
+    }
+
+    fn reserve(&mut self, _additional: usize) {}
+
+    fn freeze(self) -> NullArray {
+        NullArray::new(self.dtype, self.length)
+    }
+
+    fn freeze_reset(&mut self) -> Self::Array {
+        let out = NullArray::new(self.dtype.clone(), self.length);
+        self.length = 0;
+        out
+    }
+
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        self.length += length;
+    }
+
+    fn subslice_extend(
+        &mut self,
+        _other: &NullArray,
+        _start: usize,
+        length: usize,
+        _share: ShareStrategy,
+    ) {
+        self.length += length;
+    }
+
+    fn subslice_extend_repeated(
+        &mut self,
+        _other: &NullArray,
+        _start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        self.length += length * repeats;
+    }
+
+    unsafe fn gather_extend(
+        &mut self,
+        _other: &NullArray,
+        idxs: &[IdxSize],
+        _share: ShareStrategy,
+    ) {
+        self.length += idxs.len();
+    }
+
+    fn opt_gather_extend(&mut self, _other: &NullArray, idxs: &[IdxSize], _share: ShareStrategy) {
+        self.length += idxs.len();
     }
 }

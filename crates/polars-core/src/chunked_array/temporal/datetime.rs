@@ -3,54 +3,12 @@ use std::fmt::Write;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
-use chrono::format::{DelayedFormat, StrftimeItems};
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as TimeZoneTrait;
 
 use super::*;
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
-
-fn apply_datefmt_f<'a>(
-    arr: &PrimitiveArray<i64>,
-    conversion_f: fn(i64) -> NaiveDateTime,
-    datefmt_f: impl Fn(NaiveDateTime) -> DelayedFormat<StrftimeItems<'a>>,
-) -> ArrayRef {
-    let mut buf = String::new();
-    let mut mutarr = MutableBinaryViewArray::<str>::with_capacity(arr.len());
-    for opt in arr.into_iter() {
-        match opt {
-            None => mutarr.push_null(),
-            Some(v) => {
-                buf.clear();
-                let converted = conversion_f(*v);
-                let datefmt = datefmt_f(converted);
-                write!(buf, "{datefmt}").unwrap();
-                mutarr.push_value(&buf)
-            },
-        }
-    }
-    mutarr.freeze().boxed()
-}
-
-#[cfg(feature = "timezones")]
-fn format_tz(
-    tz: Tz,
-    arr: &PrimitiveArray<i64>,
-    fmt: &str,
-    conversion_f: fn(i64) -> NaiveDateTime,
-) -> ArrayRef {
-    let datefmt_f = |ndt| tz.from_utc_datetime(&ndt).format(fmt);
-    apply_datefmt_f(arr, conversion_f, datefmt_f)
-}
-fn format_naive(
-    arr: &PrimitiveArray<i64>,
-    fmt: &str,
-    conversion_f: fn(i64) -> NaiveDateTime,
-) -> ArrayRef {
-    let datefmt_f = |ndt: NaiveDateTime| ndt.format(fmt);
-    apply_datefmt_f(arr, conversion_f, datefmt_f)
-}
 
 impl DatetimeChunked {
     pub fn as_datetime_iter(&self) -> impl TrustedLen<Item = Option<NaiveDateTime>> + '_ {
@@ -84,42 +42,37 @@ impl DatetimeChunked {
     /// Convert from Datetime into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
-        #[cfg(feature = "timezones")]
-        use chrono::Utc;
         let conversion_f = match self.time_unit() {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
             TimeUnit::Microseconds => timestamp_us_to_datetime,
             TimeUnit::Milliseconds => timestamp_ms_to_datetime,
         };
-
-        let dt = NaiveDate::from_ymd_opt(2001, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let mut fmted = String::new();
-        match self.time_zone() {
-            #[cfg(feature = "timezones")]
-            Some(_) => write!(
-                fmted,
-                "{}",
-                Utc.from_local_datetime(&dt).earliest().unwrap().format(format)
-            )
-            .map_err(
-                |_| polars_err!(ComputeError: "cannot format DateTime with format '{}'", format),
-            )?,
-            _ => write!(fmted, "{}", dt.format(format)).map_err(
-                |_| polars_err!(ComputeError: "cannot format NaiveDateTime with format '{}'", format),
-            )?,
-        };
-
+        let format = get_strftime_format(format, self.dtype())?;
         let mut ca: StringChunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
-            Some(time_zone) => self.apply_kernel_cast(&|arr| {
-                format_tz(time_zone.parse::<Tz>().unwrap(), arr, format, conversion_f)
-            }),
-            _ => self.apply_kernel_cast(&|arr| format_naive(arr, format, conversion_f)),
+            Some(time_zone) => {
+                let parsed_time_zone = time_zone.parse::<Tz>().expect("already validated");
+                let datefmt_f = |ndt| parsed_time_zone.from_utc_datetime(&ndt).format(&format);
+                self.try_apply_into_string_amortized(|val, buf| {
+                    let ndt = conversion_f(val);
+                    write!(buf, "{}", datefmt_f(ndt))
+                    }
+                ).map_err(
+                |_| polars_err!(ComputeError: "cannot format timezone-aware Datetime with format '{}'", format),
+                )?
+            },
+            _ => {
+                let datefmt_f = |ndt: NaiveDateTime| ndt.format(&format);
+                self.try_apply_into_string_amortized(|val, buf| {
+                    let ndt = conversion_f(val);
+                    write!(buf, "{}", datefmt_f(ndt))
+                    }
+                ).map_err(
+                |_| polars_err!(ComputeError: "cannot format timezone-naive Datetime with format '{}'", format),
+                )?
+            },
         };
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         Ok(ca)
     }
 
@@ -133,7 +86,7 @@ impl DatetimeChunked {
 
     /// Construct a new [`DatetimeChunked`] from an iterator over [`NaiveDateTime`].
     pub fn from_naive_datetime<I: IntoIterator<Item = NaiveDateTime>>(
-        name: &str,
+        name: PlSmallStr,
         v: I,
         tu: TimeUnit,
     ) -> Self {
@@ -147,7 +100,7 @@ impl DatetimeChunked {
     }
 
     pub fn from_naive_datetime_options<I: IntoIterator<Item = Option<NaiveDateTime>>>(
-        name: &str,
+        name: PlSmallStr,
         v: I,
         tu: TimeUnit,
     ) -> Self {
@@ -170,12 +123,12 @@ impl DatetimeChunked {
         use TimeUnit::*;
         match (current_unit, tu) {
             (Nanoseconds, Microseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
+                let ca = (&self.0).wrapping_floor_div_scalar(1_000);
                 out.0 = ca;
                 out
             },
             (Nanoseconds, Milliseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000_000);
+                let ca = (&self.0).wrapping_floor_div_scalar(1_000_000);
                 out.0 = ca;
                 out
             },
@@ -185,7 +138,7 @@ impl DatetimeChunked {
                 out
             },
             (Microseconds, Milliseconds) => {
-                let ca = (&self.0).wrapping_trunc_div_scalar(1_000);
+                let ca = (&self.0).wrapping_floor_div_scalar(1_000);
                 out.0 = ca;
                 out
             },
@@ -252,7 +205,7 @@ mod test {
 
         // NOTE: the values are checked and correct.
         let dt = DatetimeChunked::from_naive_datetime(
-            "name",
+            PlSmallStr::from_static("name"),
             datetimes.iter().copied(),
             TimeUnit::Nanoseconds,
         );

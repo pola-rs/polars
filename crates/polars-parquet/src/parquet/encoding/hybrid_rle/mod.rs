@@ -1,39 +1,12 @@
 // See https://github.com/apache/parquet-format/blob/master/Encodings.md#run-length-encoding--bit-packing-hybrid-rle--3
 mod bitmap;
-mod buffered;
-mod decoder;
 mod encoder;
-pub mod gatherer;
 
-#[cfg(test)]
-mod fuzz;
+pub use bitmap::{BitmapIter, encode_bool as bitpacked_encode};
+pub use encoder::{Encoder, encode};
 
-pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
-pub use buffered::BufferedBitpacked;
-pub use decoder::Decoder;
-pub use encoder::encode;
-pub use gatherer::{
-    DictionaryTranslator, FnTranslator, Translator, TryFromUsizeTranslator, UnitTranslator,
-};
-use polars_utils::iter::FallibleIterator;
-use polars_utils::slice::GetSaferUnchecked;
-
-use self::buffered::HybridRleBuffered;
-use self::gatherer::HybridRleGatherer;
-use super::{bitpacked, ceil8, uleb128};
-use crate::parquet::encoding::bitpacked::{Unpackable, Unpacked};
-use crate::parquet::encoding::hybrid_rle::buffered::BufferedRle;
+use super::{bitpacked, uleb128};
 use crate::parquet::error::{ParquetError, ParquetResult};
-
-/// The two possible states of an RLE-encoded run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HybridEncoded<'a> {
-    /// A bitpacked slice. The consumer must know its bit-width to unpack it.
-    Bitpacked(&'a [u8]),
-    /// A RLE-encoded slice. The first attribute corresponds to the slice (that can be interpreted)
-    /// the second attribute corresponds to the number of repetitions.
-    Rle(&'a [u8], usize),
-}
 
 /// A [`Iterator`] for Hybrid Run-Length Encoding
 ///
@@ -50,64 +23,35 @@ pub struct HybridRleDecoder<'a> {
     data: &'a [u8],
     num_bits: usize,
     num_values: usize,
-
-    buffered: Option<HybridRleBuffered<'a>>,
-    /// The result after iterating.
-    ///
-    /// This is only needed because we iterate over individual elements.
-    result: Option<ParquetError>,
 }
 
-impl<'a> FallibleIterator<ParquetError> for HybridRleDecoder<'a> {
-    fn get_result(&mut self) -> Result<(), ParquetError> {
-        match self.result.take() {
-            None => Ok(()),
-            Some(err) => Err(err),
-        }
-    }
+pub struct HybridRleChunkIter<'a> {
+    decoder: HybridRleDecoder<'a>,
 }
 
-impl<'a> Iterator for HybridRleDecoder<'a> {
-    type Item = u32;
+#[derive(Debug)]
+pub enum HybridRleChunk<'a> {
+    Rle(u32, usize),
+    Bitpacked(bitpacked::Decoder<'a, u32>),
+}
+
+impl<'a> Iterator for HybridRleChunkIter<'a> {
+    type Item = ParquetResult<HybridRleChunk<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.num_values == 0 {
-            return None;
-        }
-
-        if self.num_bits == 0 {
-            self.num_values -= 1;
-            return Some(0);
-        }
-
-        if let Some(buffered) = self.buffered.as_mut() {
-            match buffered.next() {
-                None => self.buffered = None,
-                Some(value) => {
-                    self.num_values -= 1;
-                    return Some(value);
-                },
-            }
-        }
-
-        let mut buffer = Vec::with_capacity(1);
-        let result = self.gather_limited_once(&mut buffer, Some(1), &UnitTranslator);
-
-        match result {
-            Ok(_) => Some(buffer[0]),
-            Err(err) => {
-                self.result = Some(err);
-                None
-            },
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.num_values, Some(self.num_values))
+        self.decoder.next_chunk().transpose()
     }
 }
 
-impl<'a> ExactSizeIterator for HybridRleDecoder<'a> {}
+impl HybridRleChunk<'_> {
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self {
+            HybridRleChunk::Rle(_, size) => *size,
+            HybridRleChunk::Bitpacked(decoder) => decoder.len(),
+        }
+    }
+}
 
 impl<'a> HybridRleDecoder<'a> {
     /// Returns a new [`HybridRleDecoder`]
@@ -116,348 +60,145 @@ impl<'a> HybridRleDecoder<'a> {
             data,
             num_bits: num_bits as usize,
             num_values,
-
-            buffered: None,
-            result: None,
         }
     }
 
-    fn gather_limited_once<O: Clone, G: HybridRleGatherer<O>>(
-        &mut self,
-        target: &mut G::Target,
-        limit: Option<usize>,
-        gatherer: &G,
-    ) -> ParquetResult<usize> {
-        if limit == Some(0) {
-            return Ok(0);
+    pub fn len(&self) -> usize {
+        self.num_values
+    }
+
+    pub fn num_bits(&self) -> usize {
+        self.num_bits
+    }
+
+    pub fn into_chunk_iter(self) -> HybridRleChunkIter<'a> {
+        HybridRleChunkIter { decoder: self }
+    }
+
+    pub fn next_chunk(&mut self) -> ParquetResult<Option<HybridRleChunk<'a>>> {
+        if self.len() == 0 {
+            return Ok(None);
         }
 
-        let start_target_length = gatherer.target_num_elements(target);
-        let start_num_values = self.num_values;
+        if self.num_bits == 0 {
+            let num_values = self.num_values;
+            self.num_values = 0;
+            return Ok(Some(HybridRleChunk::Rle(0, num_values)));
+        }
 
-        // @NOTE:
-        // This is basically a collapsed version of the `decoder::Decoder`. Any change here
-        // probably also applies there. In a microbenchmark this collapse did around 3x for this
-        // specific piece of code, but I think this actually also makes the code more readable.
-
-        debug_assert!(
-            self.num_values > 0,
-            "{:?}",
-            gatherer.target_num_elements(target)
-        );
-        debug_assert!(self.num_bits > 0);
+        if self.data.is_empty() {
+            return Ok(None);
+        }
 
         let (indicator, consumed) = uleb128::decode(self.data);
-        self.data = unsafe { self.data.get_unchecked_release(consumed..) };
+        self.data = unsafe { self.data.get_unchecked(consumed..) };
 
-        if consumed == 0 {
-            let step_size =
-                limit.map_or(self.num_values, |limit| usize::min(self.num_values, limit));
-            // In this case, we take the value encoded by `0`. For example, if the HybridRle
-            // encodes a dictionary. We should take the 0-th value.
-            let value = gatherer.hybridrle_to_target(0)?;
-            gatherer.gather_repeated(target, value, step_size)?;
-            self.num_values -= step_size;
-
-            return Ok(step_size);
-        }
-
-        let num_processed = if indicator & 1 == 1 {
+        Ok(Some(if indicator & 1 == 1 {
             // is bitpacking
             let bytes = (indicator as usize >> 1) * self.num_bits;
             let bytes = std::cmp::min(bytes, self.data.len());
-            let (packed, remaining) = self.data.split_at(bytes);
+            let Some((packed, remaining)) = self.data.split_at_checked(bytes) else {
+                return Err(ParquetError::oos("Not enough bytes for bitpacked data"));
+            };
             self.data = remaining;
 
             let length = std::cmp::min(packed.len() * 8 / self.num_bits, self.num_values);
             let decoder = bitpacked::Decoder::<u32>::try_new(packed, self.num_bits, length)?;
 
-            let (num_processed, buffered) = gatherer.gather_bitpacked(target, decoder, limit)?;
-            debug_assert!(limit.map_or(true, |limit| limit >= num_processed));
-            self.buffered = buffered;
+            self.num_values -= length;
 
-            num_processed
+            HybridRleChunk::Bitpacked(decoder)
         } else {
             // is rle
             let run_length = indicator as usize >> 1;
             // repeated-value := value that is repeated, using a fixed-width of round-up-to-next-byte(bit-width)
-            let rle_bytes = ceil8(self.num_bits);
-            let (pack, remaining) = self.data.split_at(rle_bytes);
+            let rle_bytes = self.num_bits.div_ceil(8);
+            let Some((pack, remaining)) = self.data.split_at_checked(rle_bytes) else {
+                return Err(ParquetError::oos("Not enough bytes for RLE encoded data"));
+            };
             self.data = remaining;
 
-            if run_length == 0 {
-                0
-            } else {
-                let mut bytes = [0u8; std::mem::size_of::<u32>()];
-                pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
-                    *dst = *src;
-                });
-                let value = u32::from_le_bytes(bytes);
+            let mut bytes = [0u8; std::mem::size_of::<u32>()];
+            pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
+                *dst = *src;
+            });
+            let value = u32::from_le_bytes(bytes);
 
-                let num_elements = limit.map_or(run_length, |limit| usize::min(run_length, limit));
+            let length = std::cmp::min(run_length, self.num_values);
 
-                // Only translate once. Then, just do a memset.
-                let translated = gatherer.hybridrle_to_target(value)?;
-                gatherer.gather_repeated(target, translated, num_elements)?;
+            self.num_values -= length;
 
-                if let Some(limit) = limit {
-                    if run_length > limit {
-                        self.buffered = (run_length != limit).then_some({
-                            HybridRleBuffered::Rle(BufferedRle {
-                                value,
-                                length: run_length - num_elements,
-                            })
-                        });
-                    }
-                }
-
-                num_elements
-            }
-        };
-
-        self.num_values -= num_processed;
-
-        debug_assert_eq!(num_processed, start_num_values - self.num_values);
-        debug_assert_eq!(
-            num_processed,
-            gatherer.target_num_elements(target) - start_target_length
-        );
-        debug_assert!(limit.map_or(true, |limit| num_processed <= limit));
-
-        Ok(num_processed)
+            HybridRleChunk::Rle(value, length)
+        }))
     }
 
-    #[inline(always)]
-    pub fn gather_into<O: Clone, G: HybridRleGatherer<O>>(
-        mut self,
-        target: &mut G::Target,
-        gatherer: &G,
-    ) -> ParquetResult<()> {
-        if self.num_values == 0 {
-            return Ok(());
-        }
-
-        gatherer.target_reserve(target, self.num_values);
-
-        if self.num_bits == 0 {
-            let value = gatherer.hybridrle_to_target(0)?;
-            gatherer.gather_repeated(target, value, self.num_values)?;
-            return Ok(());
-        }
-
-        if let Some(buffered) = self.buffered.take() {
-            let num_buffered = buffered.gather_into(target, gatherer)?;
-            self.num_values -= num_buffered;
-        }
-
-        while self.num_values > 0 {
-            self.gather_limited_once(target, None, gatherer)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn gather_n_into<O: Clone, G: HybridRleGatherer<O>>(
-        &mut self,
-        target: &mut G::Target,
-        n: usize,
-        gatherer: &G,
-    ) -> ParquetResult<()> {
-        if self.num_values == 0 || n == 0 {
-            return Ok(());
+    pub fn next_chunk_length(&mut self) -> ParquetResult<Option<usize>> {
+        if self.len() == 0 {
+            return Ok(None);
         }
 
         if self.num_bits == 0 {
-            let value = gatherer.hybridrle_to_target(0)?;
-            gatherer.gather_repeated(target, value, n)?;
-            self.num_values -= n;
-            return Ok(());
-        }
-
-        let target_length = gatherer.target_num_elements(target) + n;
-        gatherer.target_reserve(target, n);
-
-        if let Some(buffered) = self.buffered.as_mut() {
-            let num_buffered = buffered.gather_limited_into(target, n, gatherer)?;
-            debug_assert!(num_buffered <= n);
-            self.num_values -= num_buffered;
-
-            if num_buffered < n {
-                self.buffered = None;
-            }
-        }
-
-        while gatherer.target_num_elements(target) < target_length && self.num_values > 0 {
-            self.gather_limited_once(
-                target,
-                Some(target_length - gatherer.target_num_elements(target)),
-                gatherer,
-            )?;
-        }
-
-        Ok(())
-    }
-
-    #[inline(always)]
-    pub fn translate_and_collect_into<O: Clone, T: Translator<O>>(
-        self,
-        target: &mut <T as HybridRleGatherer<O>>::Target,
-        translator: &T,
-    ) -> ParquetResult<()> {
-        self.gather_into(target, translator)
-    }
-
-    pub fn translate_and_collect_n_into<O: Clone, T: Translator<O>>(
-        &mut self,
-        target: &mut <T as HybridRleGatherer<O>>::Target,
-        n: usize,
-        translator: &T,
-    ) -> ParquetResult<()> {
-        self.gather_n_into(target, n, translator)
-    }
-
-    #[inline(always)]
-    pub fn translate_and_collect<O: Clone, T: Translator<O>>(
-        self,
-        translator: &T,
-    ) -> ParquetResult<<T as HybridRleGatherer<O>>::Target> {
-        let mut vec = Vec::new();
-        self.translate_and_collect_into(&mut vec, translator)?;
-        Ok(vec)
-    }
-
-    #[inline(always)]
-    pub fn collect_into(
-        self,
-        target: &mut <UnitTranslator as HybridRleGatherer<u32>>::Target,
-    ) -> Result<(), ParquetError> {
-        self.translate_and_collect_into(target, &UnitTranslator)
-    }
-
-    #[inline(always)]
-    pub fn collect_n_into(
-        &mut self,
-        target: &mut <UnitTranslator as HybridRleGatherer<u32>>::Target,
-        n: usize,
-    ) -> ParquetResult<()> {
-        self.translate_and_collect_n_into(target, n, &UnitTranslator)
-    }
-
-    #[inline(always)]
-    pub fn collect(self) -> ParquetResult<<UnitTranslator as HybridRleGatherer<u32>>::Target> {
-        let mut vec = Vec::new();
-        self.collect_into(&mut vec)?;
-        Ok(vec)
-    }
-
-    pub fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if self.num_values == 0 || n == 0 {
-            return Ok(());
-        }
-
-        if n >= self.num_values {
-            self.data = &[];
+            let num_values = self.num_values;
             self.num_values = 0;
-            self.buffered = None;
-            return Ok(());
+            return Ok(Some(num_values));
         }
 
-        if self.num_bits == 0 {
-            self.num_values -= n;
-            return Ok(());
+        if self.data.is_empty() {
+            return Ok(None);
         }
 
-        let mut n = n;
-        if let Some(buffered) = self.buffered.as_mut() {
-            let num_skipped = buffered.skip_in_place(n);
+        let (indicator, consumed) = uleb128::decode(self.data);
+        self.data = unsafe { self.data.get_unchecked(consumed..) };
 
-            if num_skipped < n {
-                self.buffered = None;
-            }
-
-            self.num_values -= num_skipped;
-            n -= num_skipped;
-        }
-
-        while n > 0 && self.num_values > 0 {
-            let start_num_values = self.num_values;
-
-            let (indicator, consumed) = uleb128::decode(self.data);
-            self.data = unsafe { self.data.get_unchecked_release(consumed..) };
-
-            let num_skipped = if consumed == 0 {
-                n
-            } else if indicator & 1 == 1 {
-                // is bitpacking
-                let bytes = (indicator as usize >> 1) * self.num_bits;
-                let bytes = std::cmp::min(bytes, self.data.len());
-                let (packed, remaining) = self.data.split_at(bytes);
-                self.data = remaining;
-
-                let length = std::cmp::min(packed.len() * 8 / self.num_bits, self.num_values);
-                let mut decoder =
-                    bitpacked::Decoder::<u32>::try_new(packed, self.num_bits, length)?;
-
-                // Skip the whole decoder if it is possible
-                if decoder.len() <= n {
-                    decoder.len()
-                } else {
-                    const CHUNK_SIZE: usize = <u32 as Unpackable>::Unpacked::LENGTH;
-
-                    let num_full_chunks = n / CHUNK_SIZE;
-                    decoder.skip_chunks(num_full_chunks);
-
-                    let (unpacked, unpacked_length) = decoder.chunked().next_inexact().unwrap();
-                    let unpacked_offset = n % CHUNK_SIZE;
-                    debug_assert!(unpacked_offset < unpacked_length);
-
-                    self.buffered = Some(HybridRleBuffered::Bitpacked(BufferedBitpacked {
-                        unpacked,
-
-                        unpacked_start: unpacked_offset,
-                        unpacked_end: unpacked_length,
-                        decoder,
-                    }));
-
-                    n
-                }
-            } else {
-                // is rle
-                let run_length = indicator as usize >> 1;
-                // repeated-value := value that is repeated, using a fixed-width of round-up-to-next-byte(bit-width)
-                let rle_bytes = ceil8(self.num_bits);
-                let (pack, remaining) = self.data.split_at(rle_bytes);
-                self.data = remaining;
-
-                // Skip the whole run-length encoded value if it is possible
-                if run_length <= n {
-                    run_length
-                } else {
-                    let mut bytes = [0u8; std::mem::size_of::<u32>()];
-                    pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
-                        *dst = *src;
-                    });
-                    let value = u32::from_le_bytes(bytes);
-
-                    self.buffered = Some(HybridRleBuffered::Rle(BufferedRle {
-                        value,
-                        length: run_length - n,
-                    }));
-
-                    n
-                }
+        Ok(Some(if indicator & 1 == 1 {
+            // is bitpacking
+            let bytes = (indicator as usize >> 1) * self.num_bits;
+            let bytes = std::cmp::min(bytes, self.data.len());
+            let Some((packed, remaining)) = self.data.split_at_checked(bytes) else {
+                return Err(ParquetError::oos("Not enough bytes for bitpacked data"));
             };
+            self.data = remaining;
 
-            self.num_values -= num_skipped;
+            let length = std::cmp::min(packed.len() * 8 / self.num_bits, self.num_values);
+            self.num_values -= length;
 
-            debug_assert_eq!(num_skipped, start_num_values - self.num_values);
-            debug_assert!(num_skipped <= n, "{num_skipped} <= {n}");
-            debug_assert!(num_skipped > 0, "{num_skipped} > 0");
+            length
+        } else {
+            // is rle
+            let run_length = indicator as usize >> 1;
+            // repeated-value := value that is repeated, using a fixed-width of round-up-to-next-byte(bit-width)
+            let rle_bytes = self.num_bits.div_ceil(8);
+            let Some(remaining) = self.data.get(rle_bytes..) else {
+                return Err(ParquetError::oos("Not enough bytes for RLE encoded data"));
+            };
+            self.data = remaining;
 
-            n -= num_skipped;
+            let length = std::cmp::min(run_length, self.num_values);
+            self.num_values -= length;
+
+            length
+        }))
+    }
+
+    pub fn limit_to(&mut self, length: usize) {
+        self.num_values = self.num_values.min(length);
+    }
+
+    pub fn collect(self) -> ParquetResult<Vec<u32>> {
+        let mut target = Vec::with_capacity(self.len());
+
+        for chunk in self.into_chunk_iter() {
+            match chunk? {
+                HybridRleChunk::Rle(value, size) => {
+                    target.resize(target.len() + size, value);
+                },
+                HybridRleChunk::Bitpacked(decoder) => {
+                    decoder.collect_into(&mut target);
+                },
+            }
         }
 
-        Ok(())
+        Ok(target)
     }
 }
 
@@ -561,11 +302,7 @@ mod tests {
         let decoder = HybridRleDecoder::new(&data, num_bits, 1000);
         let result = decoder.collect()?;
 
-        let mut decoder = HybridRleDecoder::new(&data, num_bits, 1000);
-        let iterator_result: Vec<_> = Iterator::collect(&mut decoder);
-
         assert_eq!(result, (0..1000).collect::<Vec<_>>());
-        assert_eq!(iterator_result, (0..1000).collect::<Vec<_>>());
         Ok(())
     }
 
@@ -601,7 +338,7 @@ mod tests {
     fn empty_values() -> ParquetResult<()> {
         let data = [];
 
-        let num_bits = 1;
+        let num_bits = 0;
 
         let decoder = HybridRleDecoder::new(&data, num_bits, 100);
 

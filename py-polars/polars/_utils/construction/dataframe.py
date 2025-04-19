@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Generator, Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 from functools import singledispatch
 from itertools import islice, zip_longest
@@ -9,11 +10,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Generator,
-    Iterable,
-    Mapping,
-    MutableMapping,
-    Sequence,
 )
 
 import polars._reexport as pl
@@ -24,6 +20,7 @@ from polars._utils.construction.utils import (
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
+    is_sqlalchemy,
     nt_unpack,
     try_get_type_hints,
 )
@@ -33,7 +30,6 @@ from polars._utils.various import (
     issue_warning,
     parse_version,
 )
-from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
@@ -62,6 +58,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, MutableMapping
+
     from polars import DataFrame, Series
     from polars._typing import (
         Orientation,
@@ -125,9 +123,11 @@ def dict_to_pydf(
                         zip(
                             column_names,
                             pool.map(
-                                lambda t: pl.Series(t[0], t[1], nan_to_null=nan_to_null)
-                                if isinstance(t[1], np.ndarray)
-                                else t[1],
+                                lambda t: (
+                                    pl.Series(t[0], t[1], nan_to_null=nan_to_null)
+                                    if isinstance(t[1], np.ndarray)
+                                    else t[1]
+                                ),
                                 list(data.items()),
                             ),
                         )
@@ -208,7 +208,7 @@ def _unpack_schema(
 
     schema_overrides = _parse_schema_overrides(schema_overrides)
 
-    # Fast path for empty schema
+    # fast path for empty schema
     if not schema:
         columns = (
             [f"column_{i}" for i in range(n_expected)] if n_expected is not None else []
@@ -331,7 +331,7 @@ def _post_apply_columns(
             pydf = pydf.with_columns(column_casts)
         if column_subset:
             pydf = pydf.select([F.col(col)._pyexpr for col in column_subset])
-        pydf = pydf.collect()
+        pydf = pydf.collect(engine="in-memory")
 
     return pydf
 
@@ -365,7 +365,7 @@ def _expand_dict_values(
                 if isinstance(val, dict) and dtype != Struct:
                     vdf = pl.DataFrame(val, strict=strict)
                     if (
-                        len(vdf) == 1
+                        vdf.height == 1
                         and array_len > 1
                         and all(not d.is_nested() for d in vdf.schema.values())
                     ):
@@ -451,6 +451,7 @@ def sequence_to_pydf(
     strict: bool = True,
     orient: Orientation | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    nan_to_null: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a sequence."""
     if not data:
@@ -464,6 +465,7 @@ def sequence_to_pydf(
         strict=strict,
         orient=orient,
         infer_schema_length=infer_schema_length,
+        nan_to_null=nan_to_null,
     )
 
 
@@ -477,11 +479,12 @@ def _sequence_to_pydf_dispatcher(
     strict: bool = True,
     orient: Orientation | None,
     infer_schema_length: int | None,
+    nan_to_null: bool = False,
 ) -> PyDataFrame:
     # note: ONLY python-native data should participate in singledispatch registration
-    # via top-level decorators. third-party libraries (such as numpy/pandas) should
-    # first be identified inline (here) and THEN registered for dispatch dynamically
-    # so as not to break lazy-loading behaviour.
+    # via top-level decorators, otherwise we have to import the associated module.
+    # third-party libraries (such as numpy/pandas) should instead be identified inline
+    # and THEN registered for dispatch (here) so as not to break lazy-loading behaviour.
 
     common_params = {
         "data": data,
@@ -490,8 +493,8 @@ def _sequence_to_pydf_dispatcher(
         "strict": strict,
         "orient": orient,
         "infer_schema_length": infer_schema_length,
+        "nan_to_null": nan_to_null,
     }
-
     to_pydf: Callable[..., PyDataFrame]
     register_with_singledispatch = True
 
@@ -517,6 +520,12 @@ def _sequence_to_pydf_dispatcher(
 
     elif is_pydantic_model(first_element):
         to_pydf = _sequence_of_pydantic_models_to_pydf
+
+    elif is_sqlalchemy(first_element):
+        to_pydf = _sequence_of_tuple_to_pydf
+
+    elif isinstance(first_element, Sequence) and not isinstance(first_element, str):
+        to_pydf = _sequence_of_sequence_to_pydf
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
@@ -537,6 +546,7 @@ def _sequence_of_sequence_to_pydf(
     strict: bool,
     orient: Orientation | None,
     infer_schema_length: int | None,
+    nan_to_null: bool = False,
 ) -> PyDataFrame:
     if orient is None:
         if schema is None:
@@ -601,6 +611,7 @@ def _sequence_of_sequence_to_pydf(
                 element,
                 dtype=schema_overrides.get(column_names[i]),
                 strict=strict,
+                nan_to_null=nan_to_null,
             )._s
             for i, element in enumerate(data)
         ]
@@ -649,9 +660,10 @@ def _sequence_of_tuple_to_pydf(
     strict: bool,
     orient: Orientation | None,
     infer_schema_length: int | None,
+    nan_to_null: bool = False,
 ) -> PyDataFrame:
     # infer additional meta information if namedtuple
-    if is_namedtuple(first_element.__class__):
+    if is_namedtuple(first_element.__class__) or is_sqlalchemy(first_element):
         if schema is None:
             schema = first_element._fields  # type: ignore[attr-defined]
             annotations = getattr(first_element, "__annotations__", None)
@@ -672,12 +684,13 @@ def _sequence_of_tuple_to_pydf(
         strict=strict,
         orient=orient,
         infer_schema_length=infer_schema_length,
+        nan_to_null=nan_to_null,
     )
 
 
 @_sequence_to_pydf_dispatcher.register(dict)
 def _sequence_of_dict_to_pydf(
-    first_element: Any,
+    first_element: dict[str, Any],
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,
@@ -694,6 +707,7 @@ def _sequence_of_dict_to_pydf(
         if column_names
         else None
     )
+
     pydf = PyDataFrame.from_dicts(
         data,
         dicts_schema,
@@ -831,7 +845,9 @@ def _sequence_of_pydantic_models_to_pydf(
 
     old_pydantic = parse_version(pydantic.__version__) < (2, 0)
     model_fields = list(
-        first_element.__fields__ if old_pydantic else first_element.model_fields
+        first_element.__fields__
+        if old_pydantic
+        else first_element.__class__.model_fields
     )
     (
         unpack_nested,
@@ -931,9 +947,7 @@ def _include_unknowns(
 ) -> MutableMapping[str, PolarsDataType]:
     """Complete partial schema dict by including Unknown type."""
     return {
-        col: (
-            schema.get(col, Unknown) or Unknown  # type: ignore[truthy-bool]
-        )
+        col: (schema.get(col, Unknown) or Unknown)  # type: ignore[truthy-bool]
         for col in cols
     }
 
@@ -947,6 +961,7 @@ def iterable_to_pydf(
     orient: Orientation | None = None,
     chunk_size: int | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    rechunk: bool = True,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an iterable/generator."""
     original_schema = schema
@@ -1014,7 +1029,7 @@ def iterable_to_pydf(
             if not original_schema:
                 original_schema = list(df.schema.items())
             if chunk_size != adaptive_chunk_size:
-                if (n_columns := len(df.columns)) > 0:
+                if (n_columns := df.width) > 0:
                     chunk_size = adaptive_chunk_size = n_chunk_elems // n_columns
         else:
             df.vstack(frame_chunk, in_place=True)
@@ -1023,19 +1038,23 @@ def iterable_to_pydf(
     if df is None:
         df = to_frame_chunk([], original_schema)
 
-    if n_chunks > 0:
+    if n_chunks > 0 and rechunk:
         df = df.rechunk()
 
     return df._df
 
 
-def _check_pandas_columns(data: pd.DataFrame) -> None:
+def _check_pandas_columns(data: pd.DataFrame, *, include_index: bool) -> None:
     """Check pandas dataframe columns can be converted to polars."""
     stringified_cols: set[str] = {str(col) for col in data.columns}
-    stringified_index: set[str] = {str(idx) for idx in data.index.names}
+    stringified_index: set[str] = (
+        {str(idx) for idx in data.index.names} if include_index else set()
+    )
 
     non_unique_cols: bool = len(stringified_cols) < len(data.columns)
-    non_unique_indices: bool = len(stringified_index) < len(data.index.names)
+    non_unique_indices: bool = (
+        (len(stringified_index) < len(data.index.names)) if include_index else False
+    )
     if non_unique_cols or non_unique_indices:
         msg = (
             "Pandas dataframe contains non-unique indices and/or column names. "
@@ -1060,7 +1079,7 @@ def pandas_to_pydf(
     include_index: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a pandas DataFrame."""
-    _check_pandas_columns(data)
+    _check_pandas_columns(data, include_index=include_index)
 
     convert_index = include_index and not _pandas_has_default_index(data)
     if not convert_index and all(
@@ -1093,9 +1112,9 @@ def pandas_to_pydf(
                 length=length,
             )
 
-    for col in data.columns:
-        arrow_dict[str(col)] = plc.pandas_series_to_arrow(
-            data[col], nan_to_null=nan_to_null, length=length
+    for col_idx, col_data in data.items():
+        arrow_dict[str(col_idx)] = plc.pandas_series_to_arrow(
+            col_data, nan_to_null=nan_to_null, length=length
         )
 
     arrow_table = pa.table(arrow_dict)
@@ -1138,87 +1157,35 @@ def arrow_to_pydf(
     rechunk: bool = True,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an Arrow Table or RecordBatch."""
-    original_schema = schema
-    data_column_names = data.schema.names
     column_names, schema_overrides = _unpack_schema(
-        (schema or data_column_names), schema_overrides=schema_overrides
+        (schema or data.schema.names), schema_overrides=schema_overrides
     )
     try:
-        if column_names != data_column_names:
-            if isinstance(data, pa.RecordBatch):
-                data = pa.Table.from_batches([data])
+        if column_names != data.schema.names:
             data = data.rename_columns(column_names)
     except pa.lib.ArrowInvalid as e:
         msg = "dimensions of columns arg must match data dimensions"
         raise ValueError(msg) from e
 
-    data_dict = {}
-    # dictionaries cannot be built in different batches (categorical does not allow
-    # that) so we rechunk them and create them separately.
-    dictionary_cols = {}
-    # struct columns don't work properly if they contain multiple chunks.
-    struct_cols = {}
-    names = []
-    for i, column in enumerate(data):
-        # extract the name before casting
-        name = f"column_{i}" if column._name is None else column._name
-        names.append(name)
-
-        column = plc.coerce_arrow(column)
-        if pa.types.is_dictionary(column.type):
-            ps = plc.arrow_to_pyseries(name, column, rechunk=rechunk)
-            dictionary_cols[i] = wrap_s(ps)
-        elif isinstance(column.type, pa.StructType) and column.num_chunks > 1:
-            ps = plc.arrow_to_pyseries(name, column, rechunk=rechunk)
-            struct_cols[i] = wrap_s(ps)
-        else:
-            data_dict[name] = column
-
-    if len(data_dict) > 0:
-        tbl = pa.table(data_dict)
-
-        # path for table without rows that keeps datatype
-        if tbl.shape[0] == 0:
-            pydf = pl.DataFrame(
-                [pl.Series(name, c) for (name, c) in zip(tbl.column_names, tbl.columns)]
-            )._df
-        else:
-            pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches())
+    batches: list[pa.RecordBatch]
+    if isinstance(data, pa.RecordBatch):
+        batches = [data]
     else:
-        pydf = pl.DataFrame([])._df
+        batches = data.to_batches()
+
+    # supply the arrow schema so the metadata is intact
+    pydf = PyDataFrame.from_arrow_record_batches(batches, data.schema)
+
     if rechunk:
         pydf = pydf.rechunk()
 
-    reset_order = False
-    if len(dictionary_cols) > 0:
-        df = wrap_df(pydf)
-        df = df.with_columns([F.lit(s).alias(s.name) for s in dictionary_cols.values()])
-        reset_order = True
-
-    if len(struct_cols) > 0:
-        df = wrap_df(pydf)
-        df = df.with_columns([F.lit(s).alias(s.name) for s in struct_cols.values()])
-        reset_order = True
-
-    if reset_order:
-        df = df[names]
-        pydf = df._df
-
-    if column_names != original_schema and (schema_overrides or original_schema):
+    if schema_overrides is not None:
         pydf = _post_apply_columns(
             pydf,
-            original_schema,
+            column_names,
             schema_overrides=schema_overrides,
             strict=strict,
         )
-    elif schema_overrides:
-        for col, dtype in zip(pydf.columns(), pydf.dtypes()):
-            override_dtype = schema_overrides.get(col)
-            if override_dtype is not None and dtype != override_dtype:
-                pydf = _post_apply_columns(
-                    pydf, original_schema, schema_overrides=schema_overrides
-                )
-                break
 
     return pydf
 
@@ -1312,7 +1279,7 @@ def numpy_to_pydf(
             )._s
             for series_name, record_name in zip(column_names, record_names)
         ]
-    elif shape == (0,):
+    elif shape == (0,) and n_columns == 0:
         data_series = []
 
     elif len(shape) == 1:

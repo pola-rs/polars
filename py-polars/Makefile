@@ -23,39 +23,27 @@ requirements-all: .venv  ## Install/refresh all Python requirements (including t
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build
-build: .venv  ## Compile and install Polars for development
-	@$(MAKE) -s -C .. $@
-
-.PHONY: build-debug-opt
-build-debug-opt: .venv  ## Compile and install Polars with minimal optimizations turned on
-	@$(MAKE) -s -C .. $@
-
-.PHONY: build-debug-opt-subset
-build-debug-opt-subset: .venv  ## Compile and install Polars with minimal optimizations turned on and no default features
-	@$(MAKE) -s -C .. $@
-
-.PHONY: build-opt
-build-opt: .venv  ## Compile and install Polars with nearly full optimization on and debug assertions turned off, but with debug symbols on
+build: .venv  ## Compile and install Python Polars for development
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build-release
-build-release: .venv  ## Compile and install a faster Polars binary with full optimizations
+build-release: .venv  ## Compile and install Python Polars binary with optimizations, with minimal debug symbols
 	@$(MAKE) -s -C .. $@
 
-.PHONY: build-native
-build-native: .venv  ## Same as build, except with native CPU optimizations turned on
+.PHONY: build-nodebug-release
+build-nodebug-release: .venv  ## Same as build-release, but without any debug symbols at all (a bit faster to build)
 	@$(MAKE) -s -C .. $@
 
-.PHONY: build-debug-opt-native
-build-debug-opt-native: .venv  ## Same as build-debug-opt, except with native CPU optimizations turned on
+.PHONY: build-debug-release
+build-debug-release: .venv  ## Same as build-release, but with full debug symbols turned on (a bit slower to build)
 	@$(MAKE) -s -C .. $@
 
-.PHONY: build-opt-native
-build-opt-native: .venv  ## Same as build-opt, except with native CPU optimizations turned on
+.PHONY: build-dist-release
+build-dist-release: .venv  ## Compile and install Python Polars binary with super slow extra optimization turned on, for distribution
 	@$(MAKE) -s -C .. $@
-
-.PHONY: build-release-native
-build-release-native: .venv  ## Same as build-release, except with native CPU optimizations turned on
+	
+.PHONY: fix
+fix:
 	@$(MAKE) -s -C .. $@
 
 .PHONY: lint
@@ -67,7 +55,7 @@ lint: .venv  ## Run lint checks (only)
 fmt: .venv  ## Run autoformatting (and lint)
 	$(VENV_BIN)/ruff check
 	$(VENV_BIN)/ruff format
-	$(VENV_BIN)/typos
+	$(VENV_BIN)/typos ..
 	cargo fmt --all
 	-dprint fmt
 	-$(VENV_BIN)/mypy
@@ -81,11 +69,11 @@ pre-commit: fmt clippy  ## Run all code formatting and lint/quality checks
 
 .PHONY: test
 test: .venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest -n auto --dist loadgroup $(PYTEST_ARGS)
+	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest -n auto $(PYTEST_ARGS)
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests
-	$(VENV_BIN)/pytest -n auto --dist loadgroup -m "slow or not slow"
+	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest -n auto -m "slow or not slow"
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: doctest
@@ -104,7 +92,7 @@ docs-clean: .venv  ## Build Python docs (full rebuild)
 
 .PHONY: coverage
 coverage: .venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not release and not benchmark"
+	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest --cov -n auto -m "not release and not benchmark"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
@@ -113,7 +101,7 @@ clean:  ## Clean up caches and build artifacts
 	@rm -rf .mypy_cache/
 	@rm -rf .pytest_cache/
 	@$(VENV_BIN)/ruff clean
-	@rm -rf tests/data/tpch/sf*
+	@rm -rf tests/data/pdsh/sf*
 	@rm -f .coverage
 	@rm -f coverage.xml
 	@rm -f polars/polars.abi3.so

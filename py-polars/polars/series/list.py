@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 from polars import functions as F
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    from collections.abc import Collection, Sequence
     from datetime import date, datetime, time
 
     from polars import Expr, Series
     from polars._typing import (
         IntoExpr,
         IntoExprColumn,
+        ListToStructWidthStrategy,
         NullBehavior,
-        ToStructStrategy,
     )
     from polars.polars import PySeries
 
@@ -25,7 +26,7 @@ class ListNameSpace:
 
     _accessor = "list"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def all(self) -> Series:
@@ -854,7 +855,7 @@ class ListNameSpace:
 
     def to_struct(
         self,
-        n_field_strategy: ToStructStrategy = "first_non_null",
+        n_field_strategy: ListToStructWidthStrategy = "first_non_null",
         fields: Callable[[int], str] | Sequence[str] | None = None,
     ) -> Series:
         """
@@ -919,6 +920,7 @@ class ListNameSpace:
                     n_field_strategy,
                     fields,
                     upper_bound=0,
+                    _eager=True,
                 )
             )
             .to_series()
@@ -953,7 +955,7 @@ class ListNameSpace:
         ]
         """
 
-    def set_union(self, other: Series) -> Series:
+    def set_union(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET UNION between the elements in this list and the elements of `other`.
 
@@ -977,7 +979,7 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def set_difference(self, other: Series) -> Series:
+    def set_difference(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
 
@@ -1005,7 +1007,7 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def set_intersection(self, other: Series) -> Series:
+    def set_intersection(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
@@ -1029,7 +1031,7 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def set_symmetric_difference(self, other: Series) -> Series:
+    def set_symmetric_difference(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
 

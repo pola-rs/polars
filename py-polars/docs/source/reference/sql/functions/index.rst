@@ -34,6 +34,18 @@ SQL Functions
 
     .. grid-item-card::
 
+        **Bitwise**
+        ^^^^^^^^^^^
+
+        .. toctree::
+           :maxdepth: 2
+
+           bitwise
+
+.. grid::
+
+    .. grid-item-card::
+
         **Conditional**
         ^^^^^^^^^^^^^^^
 
@@ -52,8 +64,6 @@ SQL Functions
 
            math
 
-.. grid::
-
     .. grid-item-card::
 
         **String**
@@ -63,6 +73,8 @@ SQL Functions
            :maxdepth: 2
 
            string
+
+.. grid::
 
     .. grid-item-card::
 

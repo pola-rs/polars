@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Mutex, OnceLock, RwLock};
+use std::time::Duration;
 
 use bitflags::bitflags;
-use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;
@@ -11,7 +11,52 @@ use polars_ops::prelude::ChunkJoinOptIds;
 use super::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
-pub type GroupsProxyCache = Arc<RwLock<PlHashMap<String, GroupsProxy>>>;
+
+#[derive(Default)]
+pub struct WindowCache {
+    groups: RwLock<PlHashMap<String, GroupPositions>>,
+    join_tuples: RwLock<PlHashMap<String, Arc<ChunkJoinOptIds>>>,
+    map_idx: RwLock<PlHashMap<String, Arc<IdxCa>>>,
+}
+
+impl WindowCache {
+    pub(crate) fn clear(&self) {
+        let mut g = self.groups.write().unwrap();
+        g.clear();
+        let mut g = self.join_tuples.write().unwrap();
+        g.clear();
+    }
+
+    pub fn get_groups(&self, key: &str) -> Option<GroupPositions> {
+        let g = self.groups.read().unwrap();
+        g.get(key).cloned()
+    }
+
+    pub fn insert_groups(&self, key: String, groups: GroupPositions) {
+        let mut g = self.groups.write().unwrap();
+        g.insert(key, groups);
+    }
+
+    pub fn get_join(&self, key: &str) -> Option<Arc<ChunkJoinOptIds>> {
+        let g = self.join_tuples.read().unwrap();
+        g.get(key).cloned()
+    }
+
+    pub fn insert_join(&self, key: String, join_tuples: Arc<ChunkJoinOptIds>) {
+        let mut g = self.join_tuples.write().unwrap();
+        g.insert(key, join_tuples);
+    }
+
+    pub fn get_map(&self, key: &str) -> Option<Arc<IdxCa>> {
+        let g = self.map_idx.read().unwrap();
+        g.get(key).cloned()
+    }
+
+    pub fn insert_map(&self, key: String, idx: Arc<IdxCa>) {
+        let mut g = self.map_idx.write().unwrap();
+        g.insert(key, idx);
+    }
+}
 
 bitflags! {
     #[repr(transparent)]
@@ -55,17 +100,15 @@ impl From<u8> for StateFlags {
     }
 }
 
-type CachedValue = Arc<(AtomicI64, OnceCell<DataFrame>)>;
+type CachedValue = Arc<(AtomicI64, OnceLock<DataFrame>)>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<Mutex<PlHashMap<usize, CachedValue>>>,
+    df_cache: Arc<RwLock<PlHashMap<usize, CachedValue>>>,
     pub schema_cache: RwLock<Option<SchemaRef>>,
-    /// Used by Window Expression to prevent redundant grouping
-    pub group_tuples: GroupsProxyCache,
-    /// Used by Window Expression to prevent redundant joins
-    pub join_tuples: JoinTuplesCache,
+    /// Used by Window Expressions to cache intermediate state
+    pub window_cache: Arc<WindowCache>,
     // every join/union split gets an increment to distinguish between schema state
     pub branch_idx: usize,
     pub flags: AtomicU8,
@@ -83,8 +126,7 @@ impl ExecutionState {
         Self {
             df_cache: Default::default(),
             schema_cache: Default::default(),
-            group_tuples: Default::default(),
-            join_tuples: Default::default(),
+            window_cache: Default::default(),
             branch_idx: 0,
             flags: AtomicU8::new(StateFlags::init().as_u8()),
             ext_contexts: Default::default(),
@@ -94,8 +136,8 @@ impl ExecutionState {
     }
 
     /// Toggle this to measure execution times.
-    pub fn time_nodes(&mut self) {
-        self.node_timer = Some(NodeTimer::new())
+    pub fn time_nodes(&mut self, start: std::time::Instant) {
+        self.node_timer = Some(NodeTimer::new(start))
     }
     pub fn has_node_timer(&self) -> bool {
         self.node_timer.is_some()
@@ -105,8 +147,21 @@ impl ExecutionState {
         self.node_timer.unwrap().finish()
     }
 
+    // Timings should be a list of (start, end, name) where the start
+    // and end are raw durations since the query start as nanoseconds.
+    pub fn record_raw_timings(&self, timings: &[(u64, u64, String)]) {
+        for &(start, end, ref name) in timings {
+            self.node_timer.as_ref().unwrap().store_duration(
+                Duration::from_nanos(start),
+                Duration::from_nanos(end),
+                name.to_string(),
+            );
+        }
+    }
+
     // This is wrong when the U64 overflows which will never happen.
     pub fn should_stop(&self) -> PolarsResult<()> {
+        try_raise_keyboard_interrupt();
         polars_ensure!(!self.stop.load(Ordering::Relaxed), ComputeError: "query interrupted");
         Ok(())
     }
@@ -135,8 +190,7 @@ impl ExecutionState {
         Self {
             df_cache: self.df_cache.clone(),
             schema_cache: Default::default(),
-            group_tuples: Default::default(),
-            join_tuples: Default::default(),
+            window_cache: Default::default(),
             branch_idx: self.branch_idx,
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             ext_contexts: self.ext_contexts.clone(),
@@ -163,26 +217,32 @@ impl ExecutionState {
     }
 
     pub fn get_df_cache(&self, key: usize, cache_hits: u32) -> CachedValue {
-        let mut guard = self.df_cache.lock().unwrap();
-        guard
-            .entry(key)
-            .or_insert_with(|| Arc::new((AtomicI64::new(cache_hits as i64), OnceCell::new())))
-            .clone()
+        let guard = self.df_cache.read().unwrap();
+
+        match guard.get(&key) {
+            Some(v) => v.clone(),
+            None => {
+                drop(guard);
+                let mut guard = self.df_cache.write().unwrap();
+
+                guard
+                    .entry(key)
+                    .or_insert_with(|| {
+                        Arc::new((AtomicI64::new(cache_hits as i64), OnceLock::new()))
+                    })
+                    .clone()
+            },
+        }
     }
 
     pub fn remove_df_cache(&self, key: usize) {
-        let mut guard = self.df_cache.lock().unwrap();
+        let mut guard = self.df_cache.write().unwrap();
         let _ = guard.remove(&key).unwrap();
     }
 
     /// Clear the cache used by the Window expressions
     pub fn clear_window_expr_cache(&self) {
-        {
-            let mut lock = self.group_tuples.write().unwrap();
-            lock.clear();
-        }
-        let mut lock = self.join_tuples.lock().unwrap();
-        lock.clear();
+        self.window_cache.clear();
     }
 
     fn set_flags(&self, f: &dyn Fn(StateFlags) -> StateFlags) {
@@ -243,8 +303,7 @@ impl Clone for ExecutionState {
         Self {
             df_cache: self.df_cache.clone(),
             schema_cache: self.schema_cache.read().unwrap().clone().into(),
-            group_tuples: self.group_tuples.clone(),
-            join_tuples: self.join_tuples.clone(),
+            window_cache: self.window_cache.clone(),
             branch_idx: self.branch_idx,
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             ext_contexts: self.ext_contexts.clone(),

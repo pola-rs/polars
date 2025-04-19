@@ -1,5 +1,5 @@
 use arrow::array::{Array, DictionaryArray, DictionaryKey};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 
 use super::TotalEqKernel;
 use crate::comparisons::dyn_array::{array_tot_eq_missing_kernel, array_tot_ne_missing_kernel};
@@ -10,11 +10,11 @@ impl<K: DictionaryKey> TotalEqKernel for DictionaryArray<K> {
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         assert_eq!(self.len(), other.len());
 
-        let mut bitmap = MutableBitmap::with_capacity(self.len());
+        let mut bitmap = BitmapBuilder::with_capacity(self.len());
 
         for i in 0..self.len() {
-            let lval = self.validity().map_or(true, |v| v.get(i).unwrap());
-            let rval = other.validity().map_or(true, |v| v.get(i).unwrap());
+            let lval = self.validity().is_none_or(|v| v.get(i).unwrap());
+            let rval = other.validity().is_none_or(|v| v.get(i).unwrap());
 
             if !lval || !rval {
                 bitmap.push(true);
@@ -39,11 +39,11 @@ impl<K: DictionaryKey> TotalEqKernel for DictionaryArray<K> {
     fn tot_ne_kernel(&self, other: &Self) -> Bitmap {
         assert_eq!(self.len(), other.len());
 
-        let mut bitmap = MutableBitmap::with_capacity(self.len());
+        let mut bitmap = BitmapBuilder::with_capacity(self.len());
 
         for i in 0..self.len() {
-            let lval = self.validity().map_or(true, |v| v.get(i).unwrap());
-            let rval = other.validity().map_or(true, |v| v.get(i).unwrap());
+            let lval = self.validity().is_none_or(|v| v.get(i).unwrap());
+            let rval = other.validity().is_none_or(|v| v.get(i).unwrap());
 
             if !lval || !rval {
                 bitmap.push(false);

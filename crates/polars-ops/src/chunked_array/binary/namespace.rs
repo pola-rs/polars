@@ -1,13 +1,16 @@
 #[cfg(feature = "binary_encoding")]
 use std::borrow::Cow;
 
-#[cfg(feature = "binary_encoding")]
-use base64::engine::general_purpose;
+use arrow::with_match_primitive_type;
 #[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
+#[cfg(feature = "binary_encoding")]
+use base64::engine::general_purpose;
 use memchr::memmem::find;
-use polars_core::prelude::arity::broadcast_binary_elementwise_values;
+use polars_compute::size::binary_size_bytes;
+use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
 
+use super::cast_binary_to_numerical::cast_binview_to_primitive_dyn;
 use super::*;
 
 pub trait BinaryNameSpaceImpl: AsBinary {
@@ -15,58 +18,84 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     fn contains(&self, lit: &[u8]) -> BooleanChunked {
         let ca = self.as_binary();
         let f = |s: &[u8]| find(s, lit).is_some();
-        ca.apply_values_generic(f)
+        unary_elementwise_values(ca, f)
     }
 
-    fn contains_chunked(&self, lit: &BinaryChunked) -> BooleanChunked {
+    fn contains_chunked(&self, lit: &BinaryChunked) -> PolarsResult<BooleanChunked> {
         let ca = self.as_binary();
-        match lit.len() {
+        Ok(match lit.len() {
             1 => match lit.get(0) {
                 Some(lit) => ca.contains(lit),
-                None => BooleanChunked::full_null(ca.name(), ca.len()),
+                None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
             },
-            _ => broadcast_binary_elementwise_values(ca, lit, |src, lit| find(src, lit).is_some()),
-        }
+            _ => {
+                polars_ensure!(
+                    ca.len() == lit.len() || ca.len() == 1,
+                    length_mismatch = "bin.contains",
+                    ca.len(),
+                    lit.len()
+                );
+                broadcast_binary_elementwise_values(ca, lit, |src, lit| find(src, lit).is_some())
+            },
+        })
     }
 
     /// Check if strings ends with a substring
     fn ends_with(&self, sub: &[u8]) -> BooleanChunked {
         let ca = self.as_binary();
         let f = |s: &[u8]| s.ends_with(sub);
-        let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
-        out.rename(ca.name());
-        out
+        ca.apply_nonnull_values_generic(DataType::Boolean, f)
     }
 
     /// Check if strings starts with a substring
     fn starts_with(&self, sub: &[u8]) -> BooleanChunked {
         let ca = self.as_binary();
         let f = |s: &[u8]| s.starts_with(sub);
-        let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
-        out.rename(ca.name());
-        out
+        ca.apply_nonnull_values_generic(DataType::Boolean, f)
     }
 
-    fn starts_with_chunked(&self, prefix: &BinaryChunked) -> BooleanChunked {
+    fn starts_with_chunked(&self, prefix: &BinaryChunked) -> PolarsResult<BooleanChunked> {
         let ca = self.as_binary();
-        match prefix.len() {
+        Ok(match prefix.len() {
             1 => match prefix.get(0) {
                 Some(s) => self.starts_with(s),
-                None => BooleanChunked::full_null(ca.name(), ca.len()),
+                None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
             },
-            _ => broadcast_binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub)),
-        }
+            _ => {
+                polars_ensure!(
+                    ca.len() == prefix.len() || ca.len() == 1,
+                    length_mismatch = "bin.starts_with",
+                    ca.len(),
+                    prefix.len()
+                );
+                broadcast_binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub))
+            },
+        })
     }
 
-    fn ends_with_chunked(&self, suffix: &BinaryChunked) -> BooleanChunked {
+    fn ends_with_chunked(&self, suffix: &BinaryChunked) -> PolarsResult<BooleanChunked> {
         let ca = self.as_binary();
-        match suffix.len() {
+        Ok(match suffix.len() {
             1 => match suffix.get(0) {
                 Some(s) => self.ends_with(s),
-                None => BooleanChunked::full_null(ca.name(), ca.len()),
+                None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
             },
-            _ => broadcast_binary_elementwise_values(ca, suffix, |s, sub| s.ends_with(sub)),
-        }
+            _ => {
+                polars_ensure!(
+                    ca.len() == suffix.len() || ca.len() == 1,
+                    length_mismatch = "bin.ends_with",
+                    ca.len(),
+                    suffix.len()
+                );
+                broadcast_binary_elementwise_values(ca, suffix, |s, sub| s.ends_with(sub))
+            },
+        })
+    }
+
+    /// Get the size of the binary values in bytes.
+    fn size_bytes(&self) -> UInt32Chunked {
+        let ca = self.as_binary();
+        ca.apply_kernel_cast(&binary_size_bytes)
     }
 
     #[cfg(feature = "binary_encoding")]
@@ -122,6 +151,36 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             ca.apply_values(|s| general_purpose::STANDARD.encode(s).into_bytes().into())
                 .cast_unchecked(&DataType::String)
                 .unwrap()
+        }
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    #[allow(clippy::wrong_self_convention)]
+    fn from_buffer(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Series> {
+        let ca = self.as_binary();
+        let arrow_type = dtype.to_arrow(CompatLevel::newest());
+
+        match arrow_type.to_physical_type() {
+            arrow::datatypes::PhysicalType::Primitive(ty) => {
+                with_match_primitive_type!(ty, |$T| {
+                    unsafe {
+                        Ok(Series::from_chunks_and_dtype_unchecked(
+                            ca.name().clone(),
+                            ca.chunks().iter().map(|chunk| {
+                                cast_binview_to_primitive_dyn::<$T>(
+                                    &**chunk,
+                                    &arrow_type,
+                                    is_little_endian,
+                                )
+                            }).collect::<PolarsResult<Vec<_>>>()?,
+                            dtype
+                        ))
+                    }
+                })
+            },
+            _ => Err(
+                polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed."),
+            ),
         }
     }
 }

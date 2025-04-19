@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence
+import sys
+from typing import TYPE_CHECKING
 
 from polars._utils.various import BUILDING_SPHINX_DOCS, sphinx_accessor
 from polars._utils.wrap import wrap_df
@@ -8,10 +9,15 @@ from polars.schema import Schema
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from polars import DataFrame, Series
     from polars.polars import PySeries
 elif BUILDING_SPHINX_DOCS:
-    property = sphinx_accessor
+    # note: we assign this way to work around an autocomplete issue in ipython/jedi
+    # (ref: https://github.com/davidhalter/jedi/issues/2057)
+    current_module = sys.modules[__name__]
+    current_module.property = sphinx_accessor
 
 
 @expr_dispatch
@@ -20,7 +26,7 @@ class StructNameSpace:
 
     _accessor = "struct"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def __getitem__(self, item: int | str) -> Series:
@@ -105,7 +111,7 @@ class StructNameSpace:
             return Schema({})
 
         schema = self._s.dtype().to_schema()
-        return Schema(schema)
+        return Schema(schema, check_dtypes=False)
 
     def unnest(self) -> DataFrame:
         """

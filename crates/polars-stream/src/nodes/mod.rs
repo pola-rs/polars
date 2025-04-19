@@ -1,13 +1,24 @@
 pub mod filter;
+pub mod group_by;
 pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;
+pub mod input_independent_select;
+pub mod io_sinks;
+pub mod io_sources;
+pub mod joins;
 pub mod map;
+#[cfg(feature = "merge_sorted")]
+pub mod merge_sorted;
+pub mod multiplexer;
+pub mod negative_slice;
 pub mod ordered_union;
 pub mod reduce;
 pub mod select;
 pub mod simple_projection;
 pub mod streaming_slice;
+pub mod with_row_index;
+pub mod zip;
 
 /// The imports you'll always need for implementing a ComputeNode.
 mod compute_node_prelude {
@@ -17,6 +28,7 @@ mod compute_node_prelude {
 
     pub use super::ComputeNode;
     pub use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
+    pub use crate::execute::StreamingExecutionState;
     pub use crate::graph::PortState;
     pub use crate::morsel::{Morsel, MorselSeq};
     pub use crate::pipe::{RecvPort, SendPort};
@@ -24,13 +36,11 @@ mod compute_node_prelude {
 
 use compute_node_prelude::*;
 
+use crate::execute::StreamingExecutionState;
+
 pub trait ComputeNode: Send {
     /// The name of this node.
     fn name(&self) -> &str;
-
-    /// Called once before the first execution phase to indicate with how many
-    /// pipelines we will execute the graph.
-    fn initialize(&mut self, _num_pipelines: usize) {}
 
     /// Update the state of this node given the state of our input and output
     /// ports. May be called multiple times until fully resolved for each
@@ -43,7 +53,12 @@ pub trait ComputeNode: Send {
     /// Similarly, for each output pipe `send` will contain the respective
     /// state of the input port that pipe is connected to when called, and you
     /// must update it to contain the desired state of your output port.
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]);
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        send: &mut [PortState],
+        state: &StreamingExecutionState,
+    ) -> PolarsResult<()>;
 
     /// If this node (in its current state) is a pipeline blocker, and whether
     /// this is memory intensive or not.
@@ -56,9 +71,9 @@ pub trait ComputeNode: Send {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
-        state: &'s ExecutionState,
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
+        state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
 

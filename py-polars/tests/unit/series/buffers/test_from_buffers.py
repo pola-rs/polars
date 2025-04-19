@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import pytest
 from hypothesis import given
@@ -11,12 +11,6 @@ from polars.exceptions import PanicException
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 from tests.unit.conftest import NUMERIC_DTYPES
-
-if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @given(

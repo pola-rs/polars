@@ -4,17 +4,16 @@ use std::sync::Mutex;
 
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
-use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::utils::_set_partition_size;
 use polars_core::{IdBuildHasher, POOL};
+use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::hashing::hash_to_partition;
-use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
+use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::group_by::aggregates::AggregateFunction;
 use crate::executors::sinks::group_by::ooc_state::OocState;
 use crate::executors::sinks::group_by::physical_agg_to_logical;
@@ -22,7 +21,6 @@ use crate::executors::sinks::group_by::primitive::apply_aggregation;
 use crate::executors::sinks::group_by::utils::{compute_slices, finalize_group_by, prepare_key};
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::load_vec;
-use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
@@ -62,13 +60,13 @@ pub struct StringGroupbySink {
     // by:
     //      * offset = (idx)
     //      * end = (offset + 1)
-    keys: Vec<Option<smartstring::alias::String>>,
+    keys: Vec<Option<PlSmallStr>>,
     aggregators: Vec<AggregateFunction>,
     // the key that will be aggregated on
     key_column: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: RandomState,
+    hb: PlSeedableRandomStateQuality,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
     // to populate the buffer where the hashmap points to
@@ -187,13 +185,11 @@ impl StringGroupbySink {
                             .collect::<Vec<_>>();
 
                         let cap = std::cmp::min(slice_len, agg_map.len());
-                        let mut key_builder = StringChunkedBuilder::new("", cap);
+                        let mut key_builder = StringChunkedBuilder::new(PlSmallStr::EMPTY, cap);
                         agg_map.into_iter().skip(offset).take(slice_len).for_each(
                             |(k, &offset)| {
                                 let key_offset = k.idx as usize;
-                                let key = unsafe {
-                                    self.keys.get_unchecked_release(key_offset).as_deref()
-                                };
+                                let key = unsafe { self.keys.get_unchecked(key_offset).as_deref() };
                                 key_builder.append_option(key);
 
                                 for (i, buffer) in (offset as usize
@@ -201,7 +197,7 @@ impl StringGroupbySink {
                                     .zip(buffers.iter_mut())
                                 {
                                     unsafe {
-                                        let agg_fn = aggregators.get_unchecked_release_mut(i);
+                                        let agg_fn = aggregators.get_unchecked_mut(i);
                                         let av = agg_fn.finalize();
                                         buffer.add(av);
                                     }
@@ -210,10 +206,14 @@ impl StringGroupbySink {
                         );
 
                         let mut cols = Vec::with_capacity(1 + self.number_of_aggs());
-                        cols.push(key_builder.finish().into_series());
-                        cols.extend(buffers.into_iter().map(|buf| buf.into_series()));
+                        cols.push(key_builder.finish().into_series().into_column());
+                        cols.extend(
+                            buffers
+                                .into_iter()
+                                .map(|buf| buf.into_series().into_column()),
+                        );
                         physical_agg_to_logical(&mut cols, &self.output_schema);
-                        Some(unsafe { DataFrame::new_no_checks(cols) })
+                        Some(unsafe { DataFrame::new_no_checks_height_from_first(cols) })
                     })
                     .collect::<Vec<_>>();
 
@@ -229,22 +229,19 @@ impl StringGroupbySink {
         let s = s.to_physical_repr();
         let s = prepare_key(&s, chunk);
 
-        // todo! ammortize allocation
+        // TODO: Amortize allocation.
         for phys_e in self.aggregation_columns.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        s.vec_hash(self.hb, &mut self.hashes).unwrap();
         Ok(s)
     }
     #[inline]
     fn get_partitions(&mut self, h: u64) -> &mut PlIdHashMap<Key, IdxSize> {
         let partition = hash_to_partition(h, self.pre_agg_partitions.len());
-        let current_partition =
-            unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
-
-        current_partition
+        unsafe { self.pre_agg_partitions.get_unchecked_mut(partition) }
     }
 
     fn sink_ooc(
@@ -262,7 +259,7 @@ impl StringGroupbySink {
         let mut aggregators = std::mem::take(&mut self.aggregators);
 
         // write the hashes to self.hashes buffer
-        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // s.vec_hash(self.hb, &mut self.hashes).unwrap();
         // now we have written hashes, we take the pointer to this buffer
         // we will write the aggregation_function indexes in the same buffer
         // this is unsafe and we must check that we only write the hashes that
@@ -340,7 +337,7 @@ impl Sink for StringGroupbySink {
         let mut aggregators = std::mem::take(&mut self.aggregators);
 
         // write the hashes to self.hashes buffer
-        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // s.vec_hash(self.hb, &mut self.hashes).unwrap();
         // now we have written hashes, we take the pointer to this buffer
         // we will write the aggregation_function indexes in the same buffer
         // this is unsafe and we must check that we only write the hashes that
@@ -356,10 +353,9 @@ impl Sink for StringGroupbySink {
             let agg_idx = match entry {
                 RawEntryMut::Vacant(entry) => {
                     let value_offset =
-                        unsafe { NumCast::from(aggregators.len()).unwrap_unchecked_release() };
-                    let keys_offset = unsafe {
-                        Key::new(h, NumCast::from(keys.len()).unwrap_unchecked_release())
-                    };
+                        unsafe { NumCast::from(aggregators.len()).unwrap_unchecked() };
+                    let keys_offset =
+                        unsafe { Key::new(h, NumCast::from(keys.len()).unwrap_unchecked()) };
                     entry.insert(keys_offset, value_offset);
 
                     keys.push(key_val.map(|s| s.into()));
@@ -417,7 +413,7 @@ impl Sink for StringGroupbySink {
                     // the offset in the keys of other
                     let idx_other = k_other.idx as usize;
                     // slice to the keys of other
-                    let key_other = unsafe { other.keys.get_unchecked_release(idx_other) };
+                    let key_other = unsafe { other.keys.get_unchecked(idx_other) };
 
                     let entry = map_self.raw_entry_mut().from_hash(h, |k_self| {
                         h == k_self.hash && {
@@ -426,7 +422,7 @@ impl Sink for StringGroupbySink {
                             // slice to the keys of self
                             // SAFETY:
                             // in bounds
-                            let key_self = unsafe { self.keys.get_unchecked_release(idx_self) };
+                            let key_self = unsafe { self.keys.get_unchecked(idx_self) };
                             // compare the keys
                             key_self == key_other
                         }
@@ -436,15 +432,11 @@ impl Sink for StringGroupbySink {
                         // the keys of other are not in this table, so we must update this table
                         RawEntryMut::Vacant(entry) => {
                             // get the current offset in the values buffer
-                            let values_offset = unsafe {
-                                NumCast::from(self.aggregators.len()).unwrap_unchecked_release()
-                            };
+                            let values_offset =
+                                unsafe { NumCast::from(self.aggregators.len()).unwrap_unchecked() };
                             // get the key, comprised of the hash and the current offset in the keys buffer
                             let key = unsafe {
-                                Key::new(
-                                    h,
-                                    NumCast::from(self.keys.len()).unwrap_unchecked_release(),
-                                )
+                                Key::new(h, NumCast::from(self.keys.len()).unwrap_unchecked())
                             };
 
                             // extend the keys buffer with the new key from other
@@ -464,12 +456,11 @@ impl Sink for StringGroupbySink {
                     // combine the aggregation functions
                     for i in 0..self.aggregation_columns.len() {
                         unsafe {
-                            let agg_fn_other = other
-                                .aggregators
-                                .get_unchecked_release(agg_idx_other as usize + i);
+                            let agg_fn_other =
+                                other.aggregators.get_unchecked(agg_idx_other as usize + i);
                             let agg_fn_self = self
                                 .aggregators
-                                .get_unchecked_release_mut(agg_idx_self as usize + i);
+                                .get_unchecked_mut(agg_idx_self as usize + i);
                             agg_fn_self.combine(agg_fn_other.as_any())
                         }
                     }
@@ -488,7 +479,7 @@ impl Sink for StringGroupbySink {
             Some(self.ooc_state.io_thread.clone()),
             self.ooc_state.ooc,
         );
-        new.hb = self.hb.clone();
+        new.hb = self.hb;
         new.thread_no = thread_no;
         Box::new(new)
     }
@@ -553,14 +544,14 @@ pub(super) fn apply_aggregate(
                 }};
             }
 
-    if has_physical_agg && aggregation_s.dtype().is_numeric() {
+    if has_physical_agg && aggregation_s.dtype().is_primitive_numeric() {
         macro_rules! dispatch {
             ($ca:expr, $name:ident) => {{
                 let arr = $ca.downcast_iter().next().unwrap();
 
                 for (&agg_idx, av) in agg_idxs.iter().zip(arr.into_iter()) {
                     let i = agg_idx as usize + agg_i;
-                    let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
+                    let agg_fn = unsafe { aggregators.get_unchecked_mut(i) };
 
                     agg_fn.$name(chunk_idx, av.copied())
                 }
@@ -572,7 +563,7 @@ pub(super) fn apply_aggregate(
         let mut iter = aggregation_s.phys_iter();
         for &agg_idx in agg_idxs.iter() {
             let i = agg_idx as usize + agg_i;
-            let agg_fn = unsafe { aggregators.get_unchecked_release_mut(i) };
+            let agg_fn = unsafe { aggregators.get_unchecked_mut(i) };
             agg_fn.pre_agg(chunk_idx, &mut iter)
         }
     }
@@ -583,13 +574,13 @@ fn get_entry<'a>(
     key_val: Option<&str>,
     h: u64,
     current_partition: &'a mut PlIdHashMap<Key, IdxSize>,
-    keys: &[Option<smartstring::alias::String>],
+    keys: &[Option<PlSmallStr>],
 ) -> RawEntryMut<'a, Key, IdxSize, IdBuildHasher> {
     current_partition.raw_entry_mut().from_hash(h, |key| {
         // first compare the hash before we incur the cache miss
         key.hash == h && {
             let idx = key.idx as usize;
-            unsafe { keys.get_unchecked_release(idx).as_deref() == key_val }
+            unsafe { keys.get_unchecked(idx).as_deref() == key_val }
         }
     })
 }

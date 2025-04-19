@@ -34,7 +34,7 @@ def test_cse_rename_cross_join_5405() -> None:
             "D": [5, None, None, 6],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_union_duplicates() -> None:
@@ -106,7 +106,7 @@ def test_cse_schema_6081() -> None:
             "min_value": [1, 1, 2],
         }
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_row_order=False)
 
 
 def test_cse_9630() -> None:
@@ -145,28 +145,20 @@ def test_cse_9630() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_schema_row_index_cse() -> None:
-    csv_a = NamedTemporaryFile()
-    csv_a.write(
-        b"""
-A,B
-Gr1,A
-Gr1,B
-    """.strip()
-    )
-    csv_a.seek(0)
+    with NamedTemporaryFile() as csv_a:
+        csv_a.write(b"A,B\nGr1,A\nGr1,B")
+        csv_a.seek(0)
 
-    df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
+        df_a = pl.scan_csv(csv_a.name).with_row_index("Idx")
 
-    result = (
-        df_a.join(df_a, on="B")
-        .group_by("A", maintain_order=True)
-        .all()
-        .collect(comm_subexpr_elim=True)
-    )
-
-    csv_a.close()
+        result = (
+            df_a.join(df_a, on="B")
+            .group_by("A", maintain_order=True)
+            .all()
+            .collect(comm_subexpr_elim=True)
+        )
 
     expected = pl.DataFrame(
         {
@@ -181,7 +173,7 @@ Gr1,B
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.debug()
+@pytest.mark.debug
 def test_cse_expr_selection_context() -> None:
     q = pl.LazyFrame(
         {
@@ -634,7 +626,7 @@ def test_cse_15548() -> None:
     assert len(ldf3.collect(comm_subplan_elim=True)) == 4
 
 
-@pytest.mark.debug()
+@pytest.mark.debug
 def test_cse_and_schema_update_projection_pd() -> None:
     df = pl.LazyFrame({"a": [1, 2], "b": [99, 99]})
 
@@ -654,7 +646,8 @@ def test_cse_and_schema_update_projection_pd() -> None:
     assert num_cse_occurrences(q.explain(comm_subexpr_elim=True)) == 1
 
 
-@pytest.mark.debug()
+@pytest.mark.debug
+@pytest.mark.may_fail_auto_streaming
 def test_cse_predicate_self_join(capfd: Any, monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})
@@ -677,6 +670,8 @@ def test_cse_manual_cache_15688() -> None:
     df2 = df.filter(id=1).join(df1, on=["a", "b"], how="semi")
     df2 = df2.cache()
     res = df2.group_by("b").agg(pl.all().sum())
+
+    print(res.cache().with_columns(foo=1).explain(comm_subplan_elim=True))
     assert res.cache().with_columns(foo=1).collect().to_dict(as_series=False) == {
         "b": [1],
         "a": [6],
@@ -702,7 +697,7 @@ def test_cse_no_projection_15980() -> None:
     ) == {"x": ["a", "a"]}
 
 
-@pytest.mark.debug()
+@pytest.mark.debug
 def test_cse_series_collision_16138() -> None:
     holdings = pl.DataFrame(
         {
@@ -744,3 +739,107 @@ def test_hash_empty_series_16577() -> None:
     s = pl.Series(values=None)
     out = pl.LazyFrame().select(s).collect()
     assert out.equals(s.to_frame())
+
+
+def test_cse_non_scalar_length_mismatch_17732() -> None:
+    df = pl.LazyFrame({"a": pl.Series(range(30), dtype=pl.Int32)})
+    got = (
+        df.lazy()
+        .with_columns(
+            pl.col("a").head(5).min().alias("b"),
+            pl.col("a").head(5).max().alias("c"),
+        )
+        .collect(comm_subexpr_elim=True)
+    )
+    expect = pl.DataFrame(
+        {
+            "a": pl.Series(range(30), dtype=pl.Int32),
+            "b": pl.Series([0] * 30, dtype=pl.Int32),
+            "c": pl.Series([4] * 30, dtype=pl.Int32),
+        }
+    )
+
+    assert_frame_equal(expect, got)
+
+
+def test_cse_chunks_18124() -> None:
+    df = pl.DataFrame(
+        {
+            "ts_diff": [timedelta(seconds=60)] * 2,
+            "ts_diff_after": [timedelta(seconds=120)] * 2,
+        }
+    )
+    df = pl.concat([df, df], rechunk=False)
+    assert (
+        df.lazy()
+        .with_columns(
+            ts_diff_sign=pl.col("ts_diff") > pl.duration(seconds=0),
+            ts_diff_after_sign=pl.col("ts_diff_after") > pl.duration(seconds=0),
+        )
+        .filter(pl.col("ts_diff") > 1)
+    ).collect().shape == (4, 4)
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_eager_cse_during_struct_expansion_18411() -> None:
+    df = pl.DataFrame({"foo": [0, 0, 0, 1, 1]})
+    vc = pl.col("foo").value_counts()
+    classes = vc.struct[0]
+    counts = vc.struct[1]
+    # Check if output is stable
+    assert (
+        df.select(pl.col("foo").replace(classes, counts))
+        == df.select(pl.col("foo").replace(classes, counts))
+    )["foo"].all()
+
+
+def test_cse_as_struct_19253() -> None:
+    df = pl.LazyFrame({"x": [1, 2], "y": [4, 5]})
+
+    assert (
+        df.with_columns(
+            q1=pl.struct(pl.col.x - pl.col.y.mean()),
+            q2=pl.struct(pl.col.x - pl.col.y.mean().over("y")),
+        ).collect()
+    ).to_dict(as_series=False) == {
+        "x": [1, 2],
+        "y": [4, 5],
+        "q1": [{"x": -3.5}, {"x": -2.5}],
+        "q2": [{"x": -3.0}, {"x": -3.0}],
+    }
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_cse_as_struct_value_counts_20927() -> None:
+    assert pl.DataFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
+        pl.struct("x").value_counts().struct.unnest()
+    ).sort("count").to_dict(as_series=False) == {
+        "x": [{"x": 1}, {"x": 2}, {"x": 3}, {"x": 4}, {"x": 5}],
+        "count": [1, 2, 3, 4, 5],
+    }
+
+
+def test_cse_union_19227() -> None:
+    lf = pl.LazyFrame({"A": [1], "B": [2]})
+    lf_1 = lf.select(C="A", B="B")
+    lf_2 = lf.select(C="A", A="B")
+
+    direct = lf_2.join(lf, on=["A"]).select("C", "A", "B")
+
+    indirect = lf_1.join(direct, on=["C", "B"]).select("C", "A", "B")
+
+    out = pl.concat([direct, indirect])
+    assert out.collect().schema == pl.Schema(
+        [("C", pl.Int64), ("A", pl.Int64), ("B", pl.Int64)]
+    )
+
+
+def test_cse_21115() -> None:
+    lf = pl.LazyFrame({"x": 1, "y": 5})
+
+    assert lf.with_columns(
+        pl.all().exp() + pl.min_horizontal(pl.all().exp())
+    ).collect().to_dict(as_series=False) == {
+        "x": [5.43656365691809],
+        "y": [151.13144093103566],
+    }

@@ -1,4 +1,4 @@
-use parquet_format_safe::ConvertedType;
+use polars_parquet_format::ConvertedType;
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
@@ -12,16 +12,15 @@ pub enum PrimitiveConvertedType {
     Enum,
     /// A decimal value.
     ///
-    /// This may be used to annotate binary or fixed primitive types. The
-    /// underlying byte array stores the unscaled value encoded as two's
-    /// complement using big-endian byte order (the most significant byte is the
-    /// zeroth element). The value of the decimal is the value * 10^{-scale}.
+    /// This may be used to annotate binary or fixed primitive types. The underlying byte array
+    /// stores the unscaled value encoded as two's complement using big-endian byte order (the most
+    /// significant byte is the zeroth element). The value of the decimal is the value *
+    /// 10^{-scale}.
     ///
-    /// This must be accompanied by a (maximum) precision and a scale in the
-    /// SchemaElement. The precision specifies the number of digits in the decimal
-    /// and the scale stores the location of the decimal point. For example 1.23
-    /// would have precision 3 (3 total digits) and scale 2 (the decimal point is
-    /// 2 digits over).
+    /// This must be accompanied by a (maximum) precision and a scale in the SchemaElement. The
+    /// precision specifies the number of digits in the decimal and the scale stores the location
+    /// of the decimal point. For example 1.23 would have precision 3 (3 total digits) and scale 2
+    /// (the decimal point is 2 digits over).
     // (precision, scale)
     Decimal(usize, usize),
     /// A Date
@@ -31,41 +30,38 @@ pub enum PrimitiveConvertedType {
     Date,
     /// A time
     ///
-    /// The total number of milliseconds since midnight.  The value is stored
-    /// as an INT32 physical type.
+    /// The total number of milliseconds since midnight.  The value is stored as an INT32 physical
+    /// type.
     TimeMillis,
     /// A time.
     ///
-    /// The total number of microseconds since midnight.  The value is stored as
-    /// an INT64 physical type.
+    /// The total number of microseconds since midnight.  The value is stored as an INT64 physical
+    /// type.
     TimeMicros,
     /// A date/time combination
     ///
-    /// Date and time recorded as milliseconds since the Unix epoch.  Recorded as
-    /// a physical type of INT64.
+    /// Date and time recorded as milliseconds since the Unix epoch.  Recorded as a physical type
+    /// of INT64.
     TimestampMillis,
     /// A date/time combination
     ///
-    /// Date and time recorded as microseconds since the Unix epoch.  The value is
-    /// stored as an INT64 physical type.
+    /// Date and time recorded as microseconds since the Unix epoch.  The value is stored as an
+    /// INT64 physical type.
     TimestampMicros,
     /// An unsigned integer value.
     ///
-    /// The number describes the maximum number of meainful data bits in
-    /// the stored value. 8, 16 and 32 bit values are stored using the
-    /// INT32 physical type.  64 bit values are stored using the INT64
-    /// physical type.
-    ///
+    /// The number describes the maximum number of meaningful data bits in the stored value. 8, 16
+    /// and 32 bit values are stored using the INT32 physical type.  64 bit values are stored using
+    /// the INT64 physical type.
     Uint8,
     Uint16,
     Uint32,
     Uint64,
     /// A signed integer value.
     ///
-    /// The number describes the maximum number of meainful data bits in
-    /// the stored value. 8, 16 and 32 bit values are stored using the
-    /// INT32 physical type.  64 bit values are stored using the INT64
-    /// physical type.
+    /// The number describes the maximum number of meainful data bits in the stored value. 8, 16
+    /// and 32 bit values are stored using the INT32 physical type.  64 bit values are stored using
+    /// the INT64 physical type.
     ///
     Int8,
     Int16,
@@ -81,14 +77,12 @@ pub enum PrimitiveConvertedType {
     Bson,
     /// An interval of time
     ///
-    /// This type annotates data stored as a FIXED_LEN_BYTE_ARRAY of length 12
-    /// This data is composed of three separate little endian unsigned
-    /// integers.  Each stores a component of a duration of time.  The first
-    /// integer identifies the number of months associated with the duration,
-    /// the second identifies the number of days associated with the duration
-    /// and the third identifies the number of milliseconds associated with
-    /// the provided duration.  This duration of time is independent of any
-    /// particular timezone or date.
+    /// This type annotates data stored as a FIXED_LEN_BYTE_ARRAY of length 12 This data is
+    /// composed of three separate little endian unsigned integers.  Each stores a component of a
+    /// duration of time.  The first integer identifies the number of months associated with the
+    /// duration, the second identifies the number of days associated with the duration and the
+    /// third identifies the number of milliseconds associated with the provided duration.  This
+    /// duration of time is independent of any particular timezone or date.
     Interval,
 }
 
@@ -99,8 +93,7 @@ pub enum GroupConvertedType {
     Map,
     /// a key/value pair is converted into a group of two fields
     MapKeyValue,
-    /// a list is converted into an optional field containing a repeated field for its
-    /// values
+    /// a list is converted into an optional field containing a repeated field for its values
     List,
 }
 
@@ -141,7 +134,7 @@ impl TryFrom<(ConvertedType, Option<(i32, i32)>)> for PrimitiveConvertedType {
                 return Err(ParquetError::oos(format!(
                     "Converted type \"{:?}\" cannot be applied to a primitive type",
                     ty
-                )))
+                )));
             },
         })
     }

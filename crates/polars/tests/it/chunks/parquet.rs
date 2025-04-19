@@ -11,7 +11,7 @@ fn test_cast_join_14872() {
 
     let mut df2 = df![
         "ints" => [0, 1],
-        "strings" => vec![Series::new("", ["a"]); 2],
+        "strings" => vec![Series::new("".into(), ["a"]); 2],
     ]
     .unwrap();
 
@@ -25,12 +25,18 @@ fn test_cast_join_14872() {
     let df2 = ParquetReader::new(buf).finish().unwrap();
 
     let out = df1
-        .join(&df2, ["ints"], ["ints"], JoinArgs::new(JoinType::Left))
+        .join(
+            &df2,
+            ["ints"],
+            ["ints"],
+            JoinArgs::new(JoinType::Left),
+            None,
+        )
         .unwrap();
 
     let expected = df![
         "ints" => [1],
-        "strings" => vec![Series::new("", ["a"]); 1],
+        "strings" => vec![Series::new("".into(), ["a"]); 1],
     ]
     .unwrap();
 

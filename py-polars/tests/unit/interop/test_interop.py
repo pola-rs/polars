@@ -5,7 +5,6 @@ from typing import Any, cast
 
 import numpy as np
 import pandas as pd
-import pyarrow
 import pyarrow as pa
 import pytest
 
@@ -13,6 +12,7 @@ import polars as pl
 from polars.exceptions import ComputeError, UnstableWarning
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 
 def test_arrow_list_roundtrip() -> None:
@@ -68,7 +68,6 @@ def test_arrow_dict_to_polars() -> None:
         name="pa_dict",
         values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
     )
-
     assert_series_equal(s, pl.Series("pa_dict", pa_dict))
 
 
@@ -77,6 +76,32 @@ def test_arrow_list_chunked_array() -> None:
     ca = pa.chunked_array([a, a, a])
     s = cast(pl.Series, pl.from_arrow(ca))
     assert s.dtype == pl.List
+
+
+# Test that polars convert Arrays of logical types correctly to arrow
+def test_arrow_array_logical() -> None:
+    # cast to large string and uint32 indices because polars converts to those
+    pa_data1 = (
+        pa.array(["a", "b", "c", "d"])
+        .dictionary_encode()
+        .cast(pa.dictionary(pa.uint32(), pa.large_string()))
+    )
+    pa_array_logical1 = pa.FixedSizeListArray.from_arrays(pa_data1, 2)
+
+    s1 = pl.Series(
+        values=[["a", "b"], ["c", "d"]],
+        dtype=pl.Array(pl.Enum(["a", "b", "c", "d"]), shape=2),
+    )
+    assert s1.to_arrow() == pa_array_logical1
+
+    pa_data2 = pa.array([date(2024, 1, 1), date(2024, 1, 2)])
+    pa_array_logical2 = pa.FixedSizeListArray.from_arrays(pa_data2, 1)
+
+    s2 = pl.Series(
+        values=[[date(2024, 1, 1)], [date(2024, 1, 2)]],
+        dtype=pl.Array(pl.Date, shape=1),
+    )
+    assert s2.to_arrow() == pa_array_logical2
 
 
 def test_from_dict() -> None:
@@ -96,7 +121,7 @@ def test_from_dict_struct() -> None:
     assert df.shape == (2, 2)
     assert df["a"][0] == {"b": 1, "c": 2}
     assert df["a"][1] == {"b": 3, "c": 4}
-    assert df.schema == {"a": pl.Struct, "d": pl.Int64}
+    assert df.schema == {"a": pl.Struct({"b": pl.Int64, "c": pl.Int64}), "d": pl.Int64}
 
 
 def test_from_dicts() -> None:
@@ -208,6 +233,31 @@ def test_from_arrow() -> None:
     )
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]  # type: ignore[union-attr]
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt64}  # type: ignore[union-attr]
+
+
+def test_from_arrow_with_bigquery_metadata() -> None:
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64()).with_metadata(
+                {"ARROW:extension:name": "google:sqlType:integer"}
+            ),
+            pa.field(
+                "misc",
+                pa.struct([("num", pa.int32()), ("val", pa.string())]),
+            ).with_metadata({"ARROW:extension:name": "google:sqlType:struct"}),
+        ]
+    )
+    arrow_tbl = pa.Table.from_pylist(
+        [{"id": 1, "misc": None}, {"id": 2, "misc": None}],
+        schema=arrow_schema,
+    )
+
+    expected_data = {"id": [1, 2], "num": [None, None], "val": [None, None]}
+    expected_schema = {"id": pl.Int64, "num": pl.Int32, "val": pl.String}
+    assert_frame_equal(
+        pl.DataFrame(expected_data, schema=expected_schema),
+        pl.from_arrow(arrow_tbl).unnest("misc"),  # type: ignore[union-attr]
+    )
 
 
 def test_from_optional_not_available() -> None:
@@ -323,7 +373,11 @@ def test_from_pyarrow_map() -> None:
         ),
     )
 
-    result = cast(pl.DataFrame, pl.from_arrow(pa_table))
+    # Convert from an empty table to trigger an ArrowSchema -> native schema
+    # conversion (checks that ArrowDataType::Map is handled in Rust).
+    pl.DataFrame(pa_table.slice(0, 0))
+
+    result = pl.DataFrame(pa_table)
     assert result.to_dict(as_series=False) == {
         "idx": [1, 2],
         "mapping": [
@@ -371,7 +425,7 @@ def test_dataframe_from_repr() -> None:
         assert frame.schema == {
             "a": pl.Int64,
             "b": pl.Float64,
-            "c": pl.Categorical,
+            "c": pl.Categorical(ordering="physical"),
             "d": pl.Boolean,
             "e": pl.String,
             "f": pl.Date,
@@ -386,13 +440,13 @@ def test_dataframe_from_repr() -> None:
         pl.DataFrame,
         pl.from_repr(
             """
-        ┌─────┬─────┬─────┬─────┬─────┬───────┐
-        │ id  ┆ q1  ┆ q2  ┆ q3  ┆ q4  ┆ total │
-        │ --- ┆ --- ┆ --- ┆ --- ┆ --- ┆ ---   │
-        │ str ┆ i8  ┆ i16 ┆ i32 ┆ i64 ┆ f64   │
-        ╞═════╪═════╪═════╪═════╪═════╪═══════╡
-        └─────┴─────┴─────┴─────┴─────┴───────┘
-        """
+            ┌─────┬─────┬─────┬─────┬─────┬───────┐
+            │ id  ┆ q1  ┆ q2  ┆ q3  ┆ q4  ┆ total │
+            │ --- ┆ --- ┆ --- ┆ --- ┆ --- ┆ ---   │
+            │ str ┆ i8  ┆ i16 ┆ i32 ┆ i64 ┆ f64   │
+            ╞═════╪═════╪═════╪═════╪═════╪═══════╡
+            └─────┴─────┴─────┴─────┴─────┴───────┘
+            """
         ),
     )
     assert df.shape == (0, 6)
@@ -411,11 +465,11 @@ def test_dataframe_from_repr() -> None:
         pl.DataFrame,
         pl.from_repr(
             """
-        ┌──────┬───────┐
-        │ misc ┆ other │
-        ╞══════╪═══════╡
-        └──────┴───────┘
-        """
+            ┌──────┬───────┐
+            │ misc ┆ other │
+            ╞══════╪═══════╡
+            └──────┴───────┘
+            """
         ),
     )
     assert_frame_equal(df, pl.DataFrame(schema={"misc": pl.String, "other": pl.String}))
@@ -446,17 +500,17 @@ def test_dataframe_from_repr() -> None:
         pl.DataFrame,
         pl.from_repr(
             """
-        # >>> Missing cols with old-style ellipsis, nulls, commented out
-        # ┌────────────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬──────┐
-        # │ dt         ┆ c1  ┆ c2  ┆ c3  ┆ ... ┆ c96 ┆ c97 ┆ c98 ┆ c99  │
-        # │ ---        ┆ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- ┆ --- ┆ ---  │
-        # │ date       ┆ i32 ┆ i32 ┆ i32 ┆     ┆ i64 ┆ i64 ┆ i64 ┆ i64  │
-        # ╞════════════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╪══════╡
-        # │ 2023-03-25 ┆ 1   ┆ 2   ┆ 3   ┆ ... ┆ 96  ┆ 97  ┆ 98  ┆ 99   │
-        # │ 1999-12-31 ┆ 3   ┆ 6   ┆ 9   ┆ ... ┆ 288 ┆ 291 ┆ 294 ┆ null │
-        # │ null       ┆ 9   ┆ 18  ┆ 27  ┆ ... ┆ 864 ┆ 873 ┆ 882 ┆ 891  │
-        # └────────────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴──────┘
-        """
+            # >>> Missing cols with old-style ellipsis, nulls, commented out
+            # ┌────────────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬──────┐
+            # │ dt         ┆ c1  ┆ c2  ┆ c3  ┆ ... ┆ c96 ┆ c97 ┆ c98 ┆ c99  │
+            # │ ---        ┆ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- ┆ --- ┆ ---  │
+            # │ date       ┆ i32 ┆ i32 ┆ i32 ┆     ┆ i64 ┆ i64 ┆ i64 ┆ i64  │
+            # ╞════════════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╪══════╡
+            # │ 2023-03-25 ┆ 1   ┆ 2   ┆ 3   ┆ ... ┆ 96  ┆ 97  ┆ 98  ┆ 99   │
+            # │ 1999-12-31 ┆ 3   ┆ 6   ┆ 9   ┆ ... ┆ 288 ┆ 291 ┆ 294 ┆ null │
+            # │ null       ┆ 9   ┆ 18  ┆ 27  ┆ ... ┆ 864 ┆ 873 ┆ 882 ┆ 891  │
+            # └────────────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴──────┘
+            """
         ),
     )
     assert df.schema == {
@@ -479,15 +533,15 @@ def test_dataframe_from_repr() -> None:
         pl.DataFrame,
         pl.from_repr(
             """
-        # >>> no dtypes:
-        # ┌────────────┬──────┐
-        # │ dt         ┆ c99  │
-        # ╞════════════╪══════╡
-        # │ 2023-03-25 ┆ 99   │
-        # │ 1999-12-31 ┆ null │
-        # │ null       ┆ 891  │
-        # └────────────┴──────┘
-        """
+            # >>> no dtypes:
+            # ┌────────────┬──────┐
+            # │ dt         ┆ c99  │
+            # ╞════════════╪══════╡
+            # │ 2023-03-25 ┆ 99   │
+            # │ 1999-12-31 ┆ null │
+            # │ null       ┆ 891  │
+            # └────────────┴──────┘
+            """
         ),
     )
     assert df.schema == {"dt": pl.Date, "c99": pl.Int64}
@@ -501,25 +555,25 @@ def test_dataframe_from_repr() -> None:
         pl.DataFrame,
         pl.from_repr(
             """
-        In [2]: with pl.Config() as cfg:
-           ...:     pl.Config.set_tbl_formatting("UTF8_FULL", rounded_corners=True)
-           ...:     print(df)
-           ...:
-        shape: (1, 5)
-        ╭───────────┬────────────┬───┬───────┬────────────────────────────────╮
-        │ source_ac ┆ source_cha ┆ … ┆ ident ┆ timestamp                      │
-        │ tor_id    ┆ nnel_id    ┆   ┆ ---   ┆ ---                            │
-        │ ---       ┆ ---        ┆   ┆ str   ┆ datetime[μs, Asia/Tokyo]       │
-        │ i32       ┆ i64        ┆   ┆       ┆                                │
-        ╞═══════════╪════════════╪═══╪═══════╪════════════════════════════════╡
-        │ 123456780 ┆ 9876543210 ┆ … ┆ a:b:c ┆ 2023-03-25 10:56:59.663053 JST │
-        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ …         ┆ …          ┆ … ┆ …     ┆ …                              │
-        ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 803065983 ┆ 2055938745 ┆ … ┆ x:y:z ┆ 2023-03-25 12:38:18.050545 JST │
-        ╰───────────┴────────────┴───┴───────┴────────────────────────────────╯
-        # "Een fluitje van een cent..." :)
-        """
+            In [2]: with pl.Config() as cfg:
+               ...:     pl.Config.set_tbl_formatting("UTF8_FULL", rounded_corners=True)
+               ...:     print(df)
+               ...:
+            shape: (1, 5)
+            ╭───────────┬────────────┬───┬───────┬────────────────────────────────╮
+            │ source_ac ┆ source_cha ┆ … ┆ ident ┆ timestamp                      │
+            │ tor_id    ┆ nnel_id    ┆   ┆ ---   ┆ ---                            │
+            │ ---       ┆ ---        ┆   ┆ str   ┆ datetime[μs, Asia/Tokyo]       │
+            │ i32       ┆ i64        ┆   ┆       ┆                                │
+            ╞═══════════╪════════════╪═══╪═══════╪════════════════════════════════╡
+            │ 123456780 ┆ 9876543210 ┆ … ┆ a:b:c ┆ 2023-03-25 10:56:59.663053 JST │
+            ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ …         ┆ …          ┆ … ┆ …     ┆ …                              │
+            ├╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+            │ 803065983 ┆ 2055938745 ┆ … ┆ x:y:z ┆ 2023-03-25 12:38:18.050545 JST │
+            ╰───────────┴────────────┴───┴───────┴────────────────────────────────╯
+            # "Een fluitje van een cent..." :)
+            """
         ),
     )
     assert df.shape == (2, 4)
@@ -589,6 +643,33 @@ def test_series_from_repr() -> None:
         ),
     )
     assert_series_equal(s, pl.Series("flt", [], dtype=pl.Float32))
+
+    s = cast(
+        pl.Series,
+        pl.from_repr(
+            """
+            Series: 'flt' [f64]
+            [
+                null
+                +inf
+                -inf
+                inf
+                0.0
+                NaN
+            ]
+            >>> print("stuff")
+            """
+        ),
+    )
+    inf, nan = float("inf"), float("nan")
+    assert_series_equal(
+        s,
+        pl.Series(
+            name="flt",
+            dtype=pl.Float64,
+            values=[None, inf, -inf, inf, 0.0, nan],
+        ),
+    )
 
 
 def test_dataframe_from_repr_custom_separators() -> None:
@@ -720,27 +801,27 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
     str_col = pl.Series(["awd"])
     bin_col = pl.Series([b"dwa"])
     assert str_col._newest_compat_level() == newest._version  # type: ignore[attr-defined]
-    assert isinstance(str_col.to_arrow(), pyarrow.LargeStringArray)
-    assert isinstance(str_col.to_arrow(compat_level=oldest), pyarrow.LargeStringArray)
-    assert isinstance(str_col.to_arrow(compat_level=newest), pyarrow.StringViewArray)
-    assert isinstance(bin_col.to_arrow(), pyarrow.LargeBinaryArray)
-    assert isinstance(bin_col.to_arrow(compat_level=oldest), pyarrow.LargeBinaryArray)
-    assert isinstance(bin_col.to_arrow(compat_level=newest), pyarrow.BinaryViewArray)
+    assert isinstance(str_col.to_arrow(), pa.LargeStringArray)
+    assert isinstance(str_col.to_arrow(compat_level=oldest), pa.LargeStringArray)
+    assert isinstance(str_col.to_arrow(compat_level=newest), pa.StringViewArray)
+    assert isinstance(bin_col.to_arrow(), pa.LargeBinaryArray)
+    assert isinstance(bin_col.to_arrow(compat_level=oldest), pa.LargeBinaryArray)
+    assert isinstance(bin_col.to_arrow(compat_level=newest), pa.BinaryViewArray)
 
     df = pl.DataFrame({"str_col": str_col, "bin_col": bin_col})
-    assert isinstance(df.to_arrow()["str_col"][0], pyarrow.LargeStringScalar)
+    assert isinstance(df.to_arrow()["str_col"][0], pa.LargeStringScalar)
     assert isinstance(
-        df.to_arrow(compat_level=oldest)["str_col"][0], pyarrow.LargeStringScalar
+        df.to_arrow(compat_level=oldest)["str_col"][0], pa.LargeStringScalar
     )
     assert isinstance(
-        df.to_arrow(compat_level=newest)["str_col"][0], pyarrow.StringViewScalar
+        df.to_arrow(compat_level=newest)["str_col"][0], pa.StringViewScalar
     )
-    assert isinstance(df.to_arrow()["bin_col"][0], pyarrow.LargeBinaryScalar)
+    assert isinstance(df.to_arrow()["bin_col"][0], pa.LargeBinaryScalar)
     assert isinstance(
-        df.to_arrow(compat_level=oldest)["bin_col"][0], pyarrow.LargeBinaryScalar
+        df.to_arrow(compat_level=oldest)["bin_col"][0], pa.LargeBinaryScalar
     )
     assert isinstance(
-        df.to_arrow(compat_level=newest)["bin_col"][0], pyarrow.BinaryViewScalar
+        df.to_arrow(compat_level=newest)["bin_col"][0], pa.BinaryViewScalar
     )
 
     assert len(df.write_ipc(None).getbuffer()) == 786
@@ -749,3 +830,73 @@ def test_compat_level(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(df.write_ipc_stream(None).getbuffer()) == 544
     assert len(df.write_ipc_stream(None, compat_level=oldest).getbuffer()) == 672
     assert len(df.write_ipc_stream(None, compat_level=newest).getbuffer()) == 544
+
+
+def test_df_pycapsule_interface() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["a", "b", "c"],
+            "c": ["fooooooooooooooooooooo", "bar", "looooooooooooooooong string"],
+        }
+    )
+
+    capsule_df = PyCapsuleStreamHolder(df)
+    out = pa.table(capsule_df)
+    assert df.shape == out.shape
+    assert df.schema.names() == out.schema.names
+
+    schema_overrides = {"a": pl.Int128}
+    expected_schema = pl.Schema([("a", pl.Int128), ("b", pl.String), ("c", pl.String)])
+
+    for arrow_obj in (
+        pl.from_arrow(capsule_df),  # capsule
+        out,  # table loaded from capsule
+    ):
+        df_res = pl.from_arrow(arrow_obj, schema_overrides=schema_overrides)
+        assert expected_schema == df_res.schema  # type: ignore[union-attr]
+        assert isinstance(df_res, pl.DataFrame)
+        assert df.equals(df_res)
+
+
+def test_misaligned_nested_arrow_19097() -> None:
+    a = pl.Series("a", [1, 2, 3])
+    a = a.slice(1, 2)  # by slicing we offset=1 the values
+    a = a.replace(2, None)  # then we add a validity mask with offset=0
+    a = a.reshape((2, 1))  # then we make it nested
+    assert_series_equal(pl.Series("a", a.to_arrow()), a)
+
+
+def test_arrow_roundtrip_lex_cat_20288() -> None:
+    tb = (
+        pl.Series("a", ["A", "B"], pl.Categorical(ordering="lexical"))
+        .to_frame()
+        .to_arrow()
+    )
+    df = pl.from_arrow(tb)
+    assert isinstance(df, pl.DataFrame)
+    dt = df.schema["a"]
+    assert isinstance(dt, pl.Categorical)
+    assert dt.ordering == "lexical"
+
+
+def test_from_arrow_string_cache_20271() -> None:
+    with pl.StringCache():
+        s = pl.Series("a", ["A", "B", "C"], pl.Categorical)
+        df = pl.from_arrow(
+            pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
+        )
+        assert isinstance(df, pl.DataFrame)
+
+        assert_series_equal(
+            s.to_physical(), pl.Series("a", [0, 1, 2]), check_dtypes=False
+        )
+        assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
+        assert_series_equal(
+            df.to_series().to_physical(), pl.Series("b", [3, 4]), check_dtypes=False
+        )
+
+
+def test_to_arrow_empty_chunks_20627() -> None:
+    df = pl.concat(2 * [pl.Series([1])]).filter(pl.Series([False, True])).to_frame()
+    assert df.to_arrow().shape == (1, 1)

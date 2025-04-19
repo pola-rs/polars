@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::Array;
-use arrow::legacy::kernels::rolling;
-use arrow::legacy::kernels::rolling::no_nulls::{MaxWindow, MinWindow};
 use arrow::legacy::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
+use polars_compute::rolling;
+use polars_compute::rolling::no_nulls::{MaxWindow, MinWindow};
 use polars_core::frame::group_by::aggregations::{
     _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
@@ -30,7 +31,7 @@ where
         .reduce(min_or_max_fn)
 }
 
-pub fn nan_min_s(s: &Series, name: &str) -> Series {
+pub fn nan_min_s(s: &Series, name: PlSmallStr) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
@@ -44,7 +45,7 @@ pub fn nan_min_s(s: &Series, name: &str) -> Series {
     }
 }
 
-pub fn nan_max_s(s: &Series, name: &str) -> Series {
+pub fn nan_max_s(s: &Series, name: PlSmallStr) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
@@ -58,13 +59,13 @@ pub fn nan_max_s(s: &Series, name: &str) -> Series {
     }
 }
 
-unsafe fn group_nan_max<T>(ca: &ChunkedArray<T>, groups: &GroupsProxy) -> Series
+unsafe fn group_nan_max<T>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
 where
     T: PolarsFloatType,
     ChunkedArray<T>: IntoSeries,
 {
     match groups {
-        GroupsProxy::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
+        GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
             debug_assert!(idx.len() <= ca.len());
             if idx.is_empty() {
                 None
@@ -89,7 +90,7 @@ where
                 }
             }
         }),
-        GroupsProxy::Slice {
+        GroupsType::Slice {
             groups: groups_slice,
             ..
         } => {
@@ -127,13 +128,13 @@ where
     }
 }
 
-unsafe fn group_nan_min<T>(ca: &ChunkedArray<T>, groups: &GroupsProxy) -> Series
+unsafe fn group_nan_min<T>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
 where
     T: PolarsFloatType,
     ChunkedArray<T>: IntoSeries,
 {
     match groups {
-        GroupsProxy::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
+        GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
             debug_assert!(idx.len() <= ca.len());
             if idx.is_empty() {
                 None
@@ -158,7 +159,7 @@ where
                 }
             }
         }),
-        GroupsProxy::Slice {
+        GroupsType::Slice {
             groups: groups_slice,
             ..
         } => {
@@ -198,7 +199,7 @@ where
 
 /// # Safety
 /// `groups` must be in bounds.
-pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsProxy) -> Series {
+pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsType) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
@@ -214,7 +215,7 @@ pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsProxy) -> Series {
 
 /// # Safety
 /// `groups` must be in bounds.
-pub unsafe fn group_agg_nan_max_s(s: &Series, groups: &GroupsProxy) -> Series {
+pub unsafe fn group_agg_nan_max_s(s: &Series, groups: &GroupsType) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();

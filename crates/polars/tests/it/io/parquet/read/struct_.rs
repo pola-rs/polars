@@ -1,7 +1,9 @@
 use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use polars_parquet::parquet::error::ParquetResult;
-use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
+use polars_parquet::parquet::page::{DataPage, EncodedSplitBuffer, split_buffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
+
+use super::hybrid_rle_iter;
 
 pub fn extend_validity(val: &mut Vec<bool>, page: &DataPage) -> ParquetResult<()> {
     let EncodedSplitBuffer {
@@ -20,12 +22,11 @@ pub fn extend_validity(val: &mut Vec<bool>, page: &DataPage) -> ParquetResult<()
         page.descriptor.max_def_level,
     );
 
-    let mut def_levels =
-        HybridRleDecoder::new(def_levels, get_bit_width(def_level_encoding.1), length);
+    let def_levels = HybridRleDecoder::new(def_levels, get_bit_width(def_level_encoding.1), length);
 
     val.reserve(length);
-    def_levels.try_for_each(|x| {
+    hybrid_rle_iter(def_levels)?.for_each(|x| {
         val.push(x != 0);
-        Ok(())
-    })
+    });
+    Ok(())
 }

@@ -24,6 +24,7 @@ These functions are available from the Polars module root and can be used as exp
    arg_where
    business_day_count
    coalesce
+   concat_arr
    concat_list
    concat_str
    corr
@@ -35,9 +36,9 @@ These functions are available from the Polars module root and can be used as exp
    cum_sum
    cum_sum_horizontal
    date
-   datetime
    date_range
    date_ranges
+   datetime
    datetime_range
    datetime_ranges
    duration
@@ -54,6 +55,8 @@ These functions are available from the Polars module root and can be used as exp
    int_ranges
    last
    len
+   linear_space
+   linear_spaces
    lit
    map_batches
    map_groups
@@ -73,12 +76,12 @@ These functions are available from the Polars module root and can be used as exp
    rolling_corr
    rolling_cov
    select
+   sql
+   sql_expr
    std
    struct
    sum
    sum_horizontal
-   sql
-   sql_expr
    tail
    time
    time_range
@@ -97,7 +100,6 @@ These functions are available from the Polars module root and can be used as exp
    Expr.any
    Expr.approx_n_unique
    Expr.count
-   Expr.exclude
    Expr.first
    Expr.head
    Expr.implode

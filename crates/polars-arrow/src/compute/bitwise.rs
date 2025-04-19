@@ -12,7 +12,7 @@ pub fn or<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArray
 where
     T: NativeType + BitOr<Output = T>,
 {
-    binary(lhs, rhs, lhs.data_type().clone(), |a, b| a | b)
+    binary(lhs, rhs, lhs.dtype().clone(), |a, b| a | b)
 }
 
 /// Performs `XOR` operation between two [`PrimitiveArray`]s.
@@ -22,7 +22,7 @@ pub fn xor<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArra
 where
     T: NativeType + BitXor<Output = T>,
 {
-    binary(lhs, rhs, lhs.data_type().clone(), |a, b| a ^ b)
+    binary(lhs, rhs, lhs.dtype().clone(), |a, b| a ^ b)
 }
 
 /// Performs `AND` operation on two [`PrimitiveArray`]s.
@@ -32,7 +32,7 @@ pub fn and<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArra
 where
     T: NativeType + BitAnd<Output = T>,
 {
-    binary(lhs, rhs, lhs.data_type().clone(), |a, b| a & b)
+    binary(lhs, rhs, lhs.dtype().clone(), |a, b| a & b)
 }
 
 /// Returns a new [`PrimitiveArray`] with the bitwise `not`.
@@ -41,7 +41,7 @@ where
     T: NativeType + Not<Output = T>,
 {
     let op = move |a: T| !a;
-    unary(array, op, array.data_type().clone())
+    unary(array, op, array.dtype().clone())
 }
 
 /// Performs `OR` operation between a [`PrimitiveArray`] and scalar.
@@ -51,7 +51,7 @@ pub fn or_scalar<T>(lhs: &PrimitiveArray<T>, rhs: &T) -> PrimitiveArray<T>
 where
     T: NativeType + BitOr<Output = T>,
 {
-    unary(lhs, |a| a | *rhs, lhs.data_type().clone())
+    unary(lhs, |a| a | *rhs, lhs.dtype().clone())
 }
 
 /// Performs `XOR` operation between a [`PrimitiveArray`] and scalar.
@@ -61,7 +61,7 @@ pub fn xor_scalar<T>(lhs: &PrimitiveArray<T>, rhs: &T) -> PrimitiveArray<T>
 where
     T: NativeType + BitXor<Output = T>,
 {
-    unary(lhs, |a| a ^ *rhs, lhs.data_type().clone())
+    unary(lhs, |a| a ^ *rhs, lhs.dtype().clone())
 }
 
 /// Performs `AND` operation between a [`PrimitiveArray`] and scalar.
@@ -71,5 +71,5 @@ pub fn and_scalar<T>(lhs: &PrimitiveArray<T>, rhs: &T) -> PrimitiveArray<T>
 where
     T: NativeType + BitAnd<Output = T>,
 {
-    unary(lhs, |a| a & *rhs, lhs.data_type().clone())
+    unary(lhs, |a| a & *rhs, lhs.dtype().clone())
 }

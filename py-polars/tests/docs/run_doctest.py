@@ -37,11 +37,12 @@ import unittest
 import warnings
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
-import polars
+import polars as pl
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from types import ModuleType
 
 
@@ -67,15 +68,15 @@ SKIP_METHODS: set[str] = set()
 for mod, methods in OPTIONAL_MODULES_AND_METHODS.items():
     try:
         importlib.import_module(mod)
-    except ImportError:
+    except ImportError:  # noqa: PERF203
         SKIP_METHODS.update(methods)
         OPTIONAL_MODULES.add(mod)
 
 
 def doctest_teardown(d: doctest.DocTest) -> None:
     # don't let config changes or string cache state leak between tests
-    polars.Config.restore_defaults()
-    polars.disable_string_cache()
+    pl.Config.restore_defaults()
+    pl.disable_string_cache()
 
 
 def modules_in_path(p: Path) -> Iterator[ModuleType]:
@@ -86,7 +87,7 @@ def modules_in_path(p: Path) -> Iterator[ModuleType]:
             file_name_import = ".".join(file.relative_to(p).parts)[:-3]
             temp_module = importlib.import_module(p.name + "." + file_name_import)
             yield temp_module
-        except ImportError as err:
+        except ImportError as err:  # noqa: PERF203
             if not any(re.search(rf"\b{mod}\b", str(err)) for mod in OPTIONAL_MODULES):
                 raise
 
@@ -152,14 +153,14 @@ if __name__ == "__main__":
     # doctest.REPORT_NDIFF = True
 
     # __file__ returns the __init__.py, so grab the parent
-    src_dir = Path(polars.__file__).parent
+    src_dir = Path(pl.__file__).parent
 
     with TemporaryDirectory() as tmpdir:
         # collect all tests
         tests = [
             doctest.DocTestSuite(
                 m,
-                extraglobs={"pl": polars, "dirpath": Path(tmpdir)},
+                extraglobs={"pl": pl, "dirpath": Path(tmpdir)},
                 tearDown=doctest_teardown,
                 optionflags=1,
             )
@@ -168,7 +169,7 @@ if __name__ == "__main__":
         test_suite = FilteredTestSuite(tests)
 
         # Ensure that we clean up any artifacts produced by the doctests
-        # with patch(polars.DataFrame.write_csv):
+        # with patch(pl.DataFrame.write_csv):
         # run doctests and report
         result = unittest.TextTestRunner().run(test_suite)
         success_flag = (result.testsRun > 0) & (len(result.failures) == 0)

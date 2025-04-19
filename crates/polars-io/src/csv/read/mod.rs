@@ -26,8 +26,15 @@ mod splitfields;
 mod utils;
 
 pub use options::{CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues};
-pub use parser::count_rows;
+pub use parser::{count_rows, count_rows_from_slice, count_rows_from_slice_par};
 pub use read_impl::batched::{BatchedCsvReader, OwnedBatchedCsvReader};
 pub use reader::CsvReader;
 pub use schema_inference::infer_file_schema;
-pub use utils::is_compressed;
+
+pub mod _csv_read_internal {
+    pub use super::buffer::validate_utf8;
+    pub use super::options::NullValuesCompiled;
+    pub use super::parser::CountLines;
+    pub use super::read_impl::{cast_columns, find_starting_point, read_chunk};
+    pub use super::reader::prepare_csv_schema;
+}

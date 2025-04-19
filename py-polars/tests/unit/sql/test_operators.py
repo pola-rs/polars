@@ -9,7 +9,7 @@ import polars.selectors as cs
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_ipc_path() -> Path:
     return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
@@ -37,7 +37,7 @@ def test_div() -> None:
             [
                 [-0.0995024875621891, 2.85714285714286, 12.0, None, -15.92356687898089],
                 [-1, 2, 12, None, -16],
-                [-1, 1, 1, None, -1],
+                [-1.0, 1.0, 1.0, None, -1.0],
             ],
             schema=["a_div_b", "a_floordiv_b", "b_sign"],
         ),

@@ -1,3 +1,5 @@
+use polars_utils::format_pl_smallstr;
+
 use super::*;
 
 pub(crate) struct SortExec {
@@ -16,19 +18,27 @@ impl SortExec {
         state.should_stop()?;
         df.as_single_chunk_par();
 
+        let height = df.height();
+
         let by_columns = self
             .by_column
             .iter()
             .enumerate()
             .map(|(i, e)| {
-                let mut s = e.evaluate(&df, state)?;
+                let mut s = e.evaluate(&df, state)?.into_column();
                 // Polars core will try to set the sorted columns as sorted.
                 // This should only be done with simple col("foo") expressions,
                 // therefore we rename more complex expressions so that
                 // polars core does not match these.
                 if !matches!(e.as_expression(), Some(&Expr::Column(_))) {
-                    s.rename(&format!("_POLARS_SORT_BY_{i}"));
+                    s.rename(format_pl_smallstr!("_POLARS_SORT_BY_{i}"));
                 }
+                polars_ensure!(
+                    s.len() == height,
+                    ShapeMismatch: "sort expressions must have same \
+                    length as DataFrame, got DataFrame height: {} and Series length: {}",
+                    height, s.len()
+                );
                 Ok(s)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
@@ -51,7 +61,7 @@ impl Executor for SortExec {
             let by = self
                 .by_column
                 .iter()
-                .map(|s| Ok(s.to_field(&df.schema())?.name))
+                .map(|s| Ok(s.to_field(df.schema())?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
             let name = comma_delimited("sort".to_string(), &by);
             Cow::Owned(name)

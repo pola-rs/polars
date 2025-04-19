@@ -1,6 +1,6 @@
 use arrow::legacy::is_valid::IsValid;
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
@@ -24,7 +24,8 @@ impl PhysicalExpr for FilterExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let s_f = || self.input.evaluate(df, state);
         let predicate_f = || self.by.evaluate(df, state);
 
@@ -37,7 +38,7 @@ impl PhysicalExpr for FilterExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let ac_s_f = || self.input.evaluate_on_groups(df, groups, state);
@@ -45,15 +46,20 @@ impl PhysicalExpr for FilterExpr {
 
         let (ac_s, ac_predicate) = POOL.install(|| rayon::join(ac_s_f, ac_predicate_f));
         let (mut ac_s, mut ac_predicate) = (ac_s?, ac_predicate?);
+        // Check if the groups are still equal, otherwise aggregate.
+        // TODO! create a special group iters that don't materialize
+        if ac_s.groups.as_ref() as *const _ != ac_predicate.groups.as_ref() as *const _ {
+            let _ = ac_s.aggregated();
+            let _ = ac_predicate.aggregated();
+        }
 
         if ac_predicate.is_aggregated() || ac_s.is_aggregated() {
-            // SAFETY: unstable series never lives longer than the iterator.
-            let preds = unsafe { ac_predicate.iter_groups(false) };
+            let preds = ac_predicate.iter_groups(false);
             let s = ac_s.aggregated();
             let ca = s.list()?;
             let out = if ca.is_empty() {
                 // return an empty list if ca is empty.
-                ListChunked::full_null_with_dtype(ca.name(), 0, ca.inner_dtype())
+                ListChunked::full_null_with_dtype(ca.name().clone(), 0, ca.inner_dtype())
             } else {
                 {
                     ca.amortized_iter()
@@ -65,10 +71,10 @@ impl PhysicalExpr for FilterExpr {
                             _ => Ok(None),
                         })
                         .collect::<PolarsResult<ListChunked>>()?
-                        .with_name(s.name())
+                        .with_name(s.name().clone())
                 }
             };
-            ac_s.with_series(out.into_series(), true, Some(&self.expr))?;
+            ac_s.with_values(out.into_column(), true, Some(&self.expr))?;
             ac_s.update_groups = WithSeriesLen;
             Ok(ac_s)
         } else {
@@ -83,7 +89,7 @@ impl PhysicalExpr for FilterExpr {
             // All values false - create empty groups.
             let groups = if !predicate.any() {
                 let groups = groups.iter().map(|gi| [gi.first(), 0]).collect::<Vec<_>>();
-                GroupsProxy::Slice {
+                GroupsType::Slice {
                     groups,
                     rolling: false,
                 }
@@ -91,10 +97,10 @@ impl PhysicalExpr for FilterExpr {
             // Filter the indexes that are true.
             else {
                 let predicate = predicate.rechunk();
-                let predicate = predicate.downcast_iter().next().unwrap();
+                let predicate = predicate.downcast_as_array();
                 POOL.install(|| {
-                    match groups.as_ref() {
-                        GroupsProxy::Idx(groups) => {
+                    match groups.as_ref().as_ref() {
+                        GroupsType::Idx(groups) => {
                             let groups = groups
                                 .par_iter()
                                 .map(|(first, idx)| unsafe {
@@ -112,9 +118,9 @@ impl PhysicalExpr for FilterExpr {
                                 })
                                 .collect();
 
-                            GroupsProxy::Idx(groups)
+                            GroupsType::Idx(groups)
                         },
-                        GroupsProxy::Slice { groups, .. } => {
+                        GroupsType::Slice { groups, .. } => {
                             let groups = groups
                                 .par_iter()
                                 .map(|&[first, len]| unsafe {
@@ -129,18 +135,23 @@ impl PhysicalExpr for FilterExpr {
                                     (*idx.first().unwrap_or(&first), idx)
                                 })
                                 .collect();
-                            GroupsProxy::Idx(groups)
+                            GroupsType::Idx(groups)
                         },
                     }
                 })
             };
 
-            ac_s.with_groups(groups).set_original_len(false);
+            ac_s.with_groups(groups.into_sliceable())
+                .set_original_len(false);
             Ok(ac_s)
         }
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
+    }
+
+    fn is_scalar(&self) -> bool {
+        false
     }
 }

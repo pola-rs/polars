@@ -1,16 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping, Sequence
 from datetime import timezone
 from functools import reduce
 from operator import or_
 from typing import (
     TYPE_CHECKING,
     Any,
-    Collection,
     Literal,
-    Mapping,
     NoReturn,
-    Sequence,
     overload,
 )
 
@@ -42,9 +40,10 @@ from polars.expr import Expr
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable
 
     from polars import DataFrame, LazyFrame
-    from polars._typing import PolarsDataType, SelectorType, TimeUnit
+    from polars._typing import PolarsDataType, PythonDataType, SelectorType, TimeUnit
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -87,8 +86,7 @@ __all__ = [
 
 
 @overload
-def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[overload-overlap]
-    ...
+def is_selector(obj: _selector_proxy_) -> Literal[True]: ...
 
 
 @overload
@@ -112,6 +110,8 @@ def is_selector(obj: Any) -> bool:
     return isinstance(obj, _selector_proxy_) and hasattr(obj, "_attrs")
 
 
+# TODO: Don't use this as it collects a schema (can be very expensive for LazyFrame).
+#  This should move to IR conversion / Rust.
 def expand_selector(
     target: DataFrame | LazyFrame | Mapping[str, PolarsDataType],
     selector: SelectorType | Expr,
@@ -127,13 +127,13 @@ def expand_selector(
     Parameters
     ----------
     target
-        A polars DataFrame, LazyFrame or schema.
+        A Polars DataFrame, LazyFrame or Schema.
     selector
         An arbitrary polars selector (or compound selector).
     strict
-        Setting False will additionally allow for a broader range of column selection
-        expressions (such as bare columns or use of `.exclude()`) to be expanded, not
-        just the dedicated selectors.
+        Setting False additionally allows for a broader range of column selection
+        expressions (such as bare columns or use of `.exclude()`) to be expanded,
+        not just the dedicated selectors.
 
     Examples
     --------
@@ -158,7 +158,7 @@ def expand_selector(
     >>> cs.expand_selector(df.lazy(), ~(cs.first() | cs.last()))
     ('coly',)
 
-    Expand selector with respect to a standalone schema:
+    Expand selector with respect to a standalone `Schema` dict:
 
     >>> schema = {
     ...     "id": pl.Int64,
@@ -191,6 +191,8 @@ def expand_selector(
     return tuple(target.select(selector).collect_schema())
 
 
+# TODO: Don't use this as it collects a schema (can be very expensive for LazyFrame).
+#  This should move to IR conversion / Rust.
 def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> list[Any]:
     """
     Internal function that expands any selectors to column names in the given input.
@@ -245,7 +247,7 @@ def _expand_selector_dicts(
             if tuple_keys:
                 expanded[cols] = value
             else:
-                expanded.update({c: value for c in cols})
+                expanded.update(dict.fromkeys(cols, value))
         else:
             expanded[key] = value
     return expanded
@@ -316,7 +318,7 @@ class _selector_proxy_(Expr):
         expr: Expr,
         name: str,
         parameters: dict[str, Any] | None = None,
-    ):
+    ) -> None:
         self._pyexpr = expr._pyexpr
         self._attrs = {
             "params": parameters,
@@ -356,6 +358,71 @@ class _selector_proxy_(Expr):
                 return f"cs.{selector_name}({str_params})"
 
     @overload
+    def __add__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __add__(self, other: Any) -> Expr: ...
+
+    def __add__(self, other: Any) -> SelectorType | Expr:
+        if is_selector(other):
+            msg = "unsupported operand type(s) for op: ('Selector' + 'Selector')"
+            raise TypeError(msg)
+        else:
+            return self.as_expr().__add__(other)
+
+    def __radd__(self, other: Any) -> Expr:
+        msg = "unsupported operand type(s) for op: ('Expr' + 'Selector')"
+        raise TypeError(msg)
+
+    @overload
+    def __and__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __and__(self, other: Any) -> Expr: ...
+
+    def __and__(self, other: Any) -> SelectorType | Expr:
+        if is_column(other):
+            colname = other.meta.output_name()
+            other = by_name(colname)
+        if is_selector(other):
+            return _selector_proxy_(
+                self.meta._as_selector().meta._selector_and(other),
+                parameters={"self": self, "other": other},
+                name="and",
+            )
+        else:
+            return self.as_expr().__and__(other)
+
+    def __rand__(self, other: Any) -> Expr:
+        if is_column(other):
+            colname = other.meta.output_name()
+            return by_name(colname) & self
+        return self.as_expr().__rand__(other)
+
+    @overload
+    def __or__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __or__(self, other: Any) -> Expr: ...
+
+    def __or__(self, other: Any) -> SelectorType | Expr:
+        if is_column(other):
+            other = by_name(other.meta.output_name())
+        if is_selector(other):
+            return _selector_proxy_(
+                self.meta._as_selector().meta._selector_add(other),
+                parameters={"self": self, "other": other},
+                name="or",
+            )
+        else:
+            return self.as_expr().__or__(other)
+
+    def __ror__(self, other: Any) -> Expr:
+        if is_column(other):
+            other = by_name(other.meta.output_name())
+        return self.as_expr().__ror__(other)
+
+    @overload
     def __sub__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
@@ -376,47 +443,6 @@ class _selector_proxy_(Expr):
         raise TypeError(msg)
 
     @overload
-    def __and__(self, other: SelectorType) -> SelectorType: ...
-
-    @overload
-    def __and__(self, other: Any) -> Expr: ...
-
-    def __and__(self, other: Any) -> SelectorType | Expr:
-        if is_column(other):
-            colname = other.meta.output_name()
-            if self._attrs["name"] == "by_name" and (
-                params := self._attrs["params"]
-            ).get("require_all", True):
-                return by_name(*params["*names"], colname)
-            other = by_name(colname)
-        if is_selector(other):
-            return _selector_proxy_(
-                self.meta._as_selector().meta._selector_and(other),
-                parameters={"self": self, "other": other},
-                name="and",
-            )
-        else:
-            return self.as_expr().__and__(other)
-
-    @overload
-    def __or__(self, other: SelectorType) -> SelectorType: ...
-
-    @overload
-    def __or__(self, other: Any) -> Expr: ...
-
-    def __or__(self, other: Any) -> SelectorType | Expr:
-        if is_column(other):
-            other = by_name(other.meta.output_name())
-        if is_selector(other):
-            return _selector_proxy_(
-                self.meta._as_selector().meta._selector_add(other),
-                parameters={"self": self, "other": other},
-                name="or",
-            )
-        else:
-            return self.as_expr().__or__(other)
-
-    @overload
     def __xor__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
@@ -432,22 +458,7 @@ class _selector_proxy_(Expr):
                 name="xor",
             )
         else:
-            return self.as_expr().__or__(other)
-
-    def __rand__(self, other: Any) -> Expr:
-        if is_column(other):
-            colname = other.meta.output_name()
-            if self._attrs["name"] == "by_name" and (
-                params := self._attrs["params"]
-            ).get("require_all", True):
-                return by_name(colname, *params["*names"])
-            other = by_name(colname)
-        return self.as_expr().__rand__(other)
-
-    def __ror__(self, other: Any) -> Expr:
-        if is_column(other):
-            other = by_name(other.meta.output_name())
-        return self.as_expr().__ror__(other)
+            return self.as_expr().__xor__(other)
 
     def __rxor__(self, other: Any) -> Expr:
         if is_column(other):
@@ -507,7 +518,7 @@ class _selector_proxy_(Expr):
 def _re_string(string: str | Collection[str], *, escape: bool = True) -> str:
     """Return escaped regex, potentially representing multiple string fragments."""
     if isinstance(string, str):
-        rx = f"{re_escape(string)}" if escape else string
+        rx = re_escape(string) if escape else string
     else:
         strings: list[str] = []
         for st in string:
@@ -875,7 +886,12 @@ def boolean() -> SelectorType:
 
 
 def by_dtype(
-    *dtypes: PolarsDataType | Collection[PolarsDataType],
+    *dtypes: (
+        PolarsDataType
+        | PythonDataType
+        | Iterable[PolarsDataType]
+        | Iterable[PythonDataType]
+    ),
 ) -> SelectorType:
     """
     Select all columns matching the given dtypes.
@@ -938,13 +954,13 @@ def by_dtype(
     │ foo   ┆ -3265500 │
     └───────┴──────────┘
     """
-    all_dtypes: list[PolarsDataType] = []
+    all_dtypes: list[PolarsDataType | PythonDataType] = []
     for tp in dtypes:
-        if is_polars_dtype(tp):
+        if is_polars_dtype(tp) or isinstance(tp, type):
             all_dtypes.append(tp)
         elif isinstance(tp, Collection):
             for t in tp:
-                if not is_polars_dtype(t):
+                if not (is_polars_dtype(t) or isinstance(t, type)):
                     msg = f"invalid dtype: {t!r}"
                     raise TypeError(msg)
                 all_dtypes.append(t)
@@ -1834,7 +1850,7 @@ def exclude(
         | Collection[str | PolarsDataType | SelectorType | Expr]
     ),
     *more_columns: str | PolarsDataType | SelectorType | Expr,
-) -> Expr:
+) -> SelectorType:
     """
     Select all columns except those matching the given columns, datatypes, or selectors.
 
@@ -2491,7 +2507,7 @@ def starts_with(*prefix: str) -> SelectorType:
 
 def string(*, include_categorical: bool = False) -> SelectorType:
     """
-    Select all String (and, optionally, Categorical) string columns .
+    Select all String (and, optionally, Categorical) string columns.
 
     See Also
     --------

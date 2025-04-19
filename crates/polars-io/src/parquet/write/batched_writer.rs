@@ -2,20 +2,23 @@ use std::io::Write;
 use std::sync::Mutex;
 
 use arrow::record_batch::RecordBatch;
-use polars_core::prelude::*;
 use polars_core::POOL;
-use polars_parquet::read::ParquetError;
+use polars_core::prelude::*;
+use polars_parquet::read::{ParquetError, fallible_streaming_iterator};
 use polars_parquet::write::{
-    array_to_columns, CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding,
-    FallibleStreamingIterator, FileWriter, Page, ParquetType, RowGroupIterColumns,
-    SchemaDescriptor, WriteOptions,
+    CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding, FallibleStreamingIterator,
+    FileWriter, Page, ParquetType, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
+    array_to_columns,
 };
 use rayon::prelude::*;
 
 pub struct BatchedWriter<W: Write> {
     // A mutex so that streaming engine can get concurrent read access to
     // compress pages.
+    //
+    // @TODO: Remove mutex when old streaming engine is removed
     pub(super) writer: Mutex<FileWriter<W>>,
+    // @TODO: Remove when old streaming engine is removed
     pub(super) parquet_schema: SchemaDescriptor,
     pub(super) encodings: Vec<Vec<Encoding>>,
     pub(super) options: WriteOptions,
@@ -23,6 +26,21 @@ pub struct BatchedWriter<W: Write> {
 }
 
 impl<W: Write> BatchedWriter<W> {
+    pub fn new(
+        writer: Mutex<FileWriter<W>>,
+        encodings: Vec<Vec<Encoding>>,
+        options: WriteOptions,
+        parallel: bool,
+    ) -> Self {
+        Self {
+            writer,
+            parquet_schema: SchemaDescriptor::new(PlSmallStr::EMPTY, vec![]),
+            encodings,
+            options,
+            parallel,
+        }
+    }
+
     pub fn encode_and_compress<'a>(
         &'a self,
         df: &'a DataFrame,
@@ -60,6 +78,22 @@ impl<W: Write> BatchedWriter<W> {
         for group in row_group_iter {
             writer.write(group?)?;
         }
+        Ok(())
+    }
+
+    pub fn parquet_schema(&mut self) -> &SchemaDescriptor {
+        let writer = self.writer.get_mut().unwrap();
+        writer.parquet_schema()
+    }
+
+    pub fn write_row_group(&mut self, rg: &[Vec<CompressedPage>]) -> PolarsResult<()> {
+        let writer = self.writer.get_mut().unwrap();
+        let rg = DynIter::new(rg.iter().map(|col_pages| {
+            Ok(DynStreamingIterator::new(
+                fallible_streaming_iterator::convert(col_pages.iter().map(PolarsResult::Ok)),
+            ))
+        }));
+        writer.write(rg)?;
         Ok(())
     }
 

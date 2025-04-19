@@ -33,7 +33,7 @@ fn to() {
     )
     .unwrap();
     let a = a.to(ArrowDataType::Date32);
-    assert_eq!(a.data_type(), &ArrowDataType::Date32);
+    assert_eq!(a.dtype(), &ArrowDataType::Date32);
 }
 
 #[test]
@@ -305,13 +305,13 @@ fn set_values() {
 
 #[test]
 fn try_from_trusted_len_iter() {
-    let iter = std::iter::repeat(Some(1)).take(2).map(PolarsResult::Ok);
+    let iter = std::iter::repeat_n(Some(1), 2).map(PolarsResult::Ok);
     let a = MutablePrimitiveArray::try_from_trusted_len_iter(iter).unwrap();
     assert_eq!(a, MutablePrimitiveArray::from([Some(1), Some(1)]));
 }
 
 #[test]
-fn wrong_data_type() {
+fn wrong_dtype() {
     assert!(MutablePrimitiveArray::<i32>::try_new(ArrowDataType::Utf8, vec![], None).is_err());
 }
 

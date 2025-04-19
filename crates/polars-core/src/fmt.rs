@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::{fmt, str};
 
 #[cfg(any(
@@ -23,6 +24,7 @@ use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
 use num_traits::{Num, NumCast};
+use polars_error::feature_gated;
 
 use crate::config::*;
 use crate::prelude::*;
@@ -103,11 +105,7 @@ fn parse_env_var_limit(name: &str, default: usize) -> usize {
     parse_env_var(name).map_or(
         default,
         |n: i64| {
-            if n < 0 {
-                usize::MAX
-            } else {
-                n as usize
-            }
+            if n < 0 { usize::MAX } else { n as usize }
         },
     )
 }
@@ -125,6 +123,30 @@ fn get_str_len_limit() -> usize {
 fn get_list_len_limit() -> usize {
     parse_env_var_limit(FMT_TABLE_CELL_LIST_LEN, DEFAULT_LIST_LEN_LIMIT)
 }
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+fn get_ellipsis() -> &'static str {
+    match std::env::var(FMT_TABLE_FORMATTING).as_deref().unwrap_or("") {
+        preset if preset.starts_with("ASCII") => "...",
+        _ => "…",
+    }
+}
+#[cfg(not(any(feature = "fmt", feature = "fmt_no_tty")))]
+fn get_ellipsis() -> &'static str {
+    "…"
+}
+
+fn estimate_string_width(s: &str) -> usize {
+    // get a slightly more accurate estimate of a string's screen
+    // width, accounting (very roughly) for multibyte characters
+    let n_chars = s.chars().count();
+    let n_bytes = s.len();
+    if n_bytes == n_chars {
+        n_chars
+    } else {
+        let adjust = n_bytes as f64 / n_chars as f64;
+        std::cmp::min(n_chars * 2, (n_chars as f64 * adjust).ceil() as usize)
+    }
+}
 
 macro_rules! format_array {
     ($f:ident, $a:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
@@ -137,6 +159,7 @@ macro_rules! format_array {
             $dtype
         )?;
 
+        let ellipsis = get_ellipsis();
         let truncate = match $a.dtype() {
             DataType::String => true,
             #[cfg(feature = "dtype-categorical")]
@@ -158,10 +181,10 @@ macro_rules! format_array {
                 if v_no_quotes == v_trunc {
                     write!(f, "\t{}\n", v)?;
                 } else {
-                    write!(f, "\t\"{}…\n", v_trunc)?;
+                    write!(f, "\t\"{v_trunc}{ellipsis}\n")?;
                 }
             } else {
-                write!(f, "\t{}\n", v)?;
+                write!(f, "\t{v}\n")?;
             };
             Ok(())
         };
@@ -176,7 +199,7 @@ macro_rules! format_array {
                 let v = $a.get_any_value(i).unwrap();
                 write_fn(v, $f)?;
             }
-            write!($f, "\t…\n")?;
+            write!($f, "\t{ellipsis}\n")?;
             for i in ($a.len() - half)..$a.len() {
                 let v = $a.get_any_value(i).unwrap();
                 write_fn(v, $f)?;
@@ -200,7 +223,7 @@ fn format_object_array(
     array_type: &str,
 ) -> fmt::Result {
     match object.dtype() {
-        DataType::Object(inner_type, _) => {
+        DataType::Object(inner_type) => {
             let limit = std::cmp::min(DEFAULT_ROW_LIMIT, object.len());
             write!(
                 f,
@@ -268,6 +291,7 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = std::cmp::min(DEFAULT_ROW_LIMIT, self.len());
+        let ellipsis = get_ellipsis();
         let inner_type = T::type_name();
         write!(
             f,
@@ -283,7 +307,7 @@ where
                     Some(val) => writeln!(f, "\t{val}")?,
                 };
             }
-            writeln!(f, "\t…")?;
+            writeln!(f, "\t{ellipsis}")?;
             for i in (0..limit / 2).rev() {
                 match self.get(self.len() - i - 1) {
                     None => writeln!(f, "\tnull")?,
@@ -335,6 +359,12 @@ impl Debug for Series {
             DataType::Int64 => {
                 format_array!(f, self.i64().unwrap(), "i64", self.name(), "Series")
             },
+            DataType::Int128 => {
+                feature_gated!(
+                    "dtype-i128",
+                    format_array!(f, self.i128().unwrap(), "i128", self.name(), "Series")
+                )
+            },
             DataType::Float32 => {
                 format_array!(f, self.f32().unwrap(), "f32", self.name(), "Series")
             },
@@ -370,7 +400,7 @@ impl Debug for Series {
                 format_array!(f, self.list().unwrap(), &dt, self.name(), "Series")
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => format_object_array(f, self, self.name(), "Series"),
+            DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => {
                 format_array!(f, self.categorical().unwrap(), "cat", self.name(), "Series")
@@ -424,7 +454,7 @@ impl Debug for DataFrame {
     }
 }
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
-fn make_str_val(v: &str, truncate: usize) -> String {
+fn make_str_val(v: &str, truncate: usize, ellipsis: &String) -> String {
     let v_trunc = &v[..v
         .char_indices()
         .take(truncate)
@@ -434,28 +464,33 @@ fn make_str_val(v: &str, truncate: usize) -> String {
     if v == v_trunc {
         v.to_string()
     } else {
-        format!("{v_trunc}…")
+        format!("{v_trunc}{ellipsis}")
     }
 }
 
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
-fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
-    let name = make_str_val(f.name(), str_truncate);
-    let name_length = name.len();
+fn field_to_str(
+    f: &Field,
+    str_truncate: usize,
+    ellipsis: &String,
+    padding: usize,
+) -> (String, usize) {
+    let name = make_str_val(f.name(), str_truncate, ellipsis);
+    let name_length = estimate_string_width(name.as_str());
     let mut column_name = name;
     if env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES) {
         column_name = "".to_string();
     }
-    let column_data_type = if env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
+    let column_dtype = if env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES) {
         "".to_string()
     } else if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
         | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
     {
-        format!("{}", f.data_type())
+        format!("{}", f.dtype())
     } else {
-        format!("\n{}", f.data_type())
+        format!("\n{}", f.dtype())
     };
-    let mut dtype_length = column_data_type.trim_start().len();
+    let mut dtype_length = column_dtype.trim_start().len();
     let mut separator = "\n---";
     if env_is_true(FMT_TABLE_HIDE_COLUMN_SEPARATOR)
         | env_is_true(FMT_TABLE_HIDE_COLUMN_NAMES)
@@ -466,18 +501,18 @@ fn field_to_str(f: &Field, str_truncate: usize) -> (String, usize) {
     let s = if env_is_true(FMT_TABLE_INLINE_COLUMN_DATA_TYPE)
         & !env_is_true(FMT_TABLE_HIDE_COLUMN_DATA_TYPES)
     {
-        let inline_name_dtype = format!("{column_name} ({column_data_type})");
+        let inline_name_dtype = format!("{column_name} ({column_dtype})");
         dtype_length = inline_name_dtype.len();
         inline_name_dtype
     } else {
-        format!("{column_name}{separator}{column_data_type}")
+        format!("{column_name}{separator}{column_dtype}")
     };
     let mut s_len = std::cmp::max(name_length, dtype_length);
-    let separator_length = separator.trim().len();
+    let separator_length = estimate_string_width(separator.trim());
     if s_len < separator_length {
         s_len = separator_length;
     }
-    (s, s_len + 2)
+    (s, s_len + padding)
 }
 
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -487,27 +522,29 @@ fn prepare_row(
     n_last: usize,
     str_truncate: usize,
     max_elem_lengths: &mut [usize],
+    ellipsis: &String,
+    padding: usize,
 ) -> Vec<String> {
     let reduce_columns = n_first + n_last < row.len();
     let n_elems = n_first + n_last + reduce_columns as usize;
     let mut row_strings = Vec::with_capacity(n_elems);
 
     for (idx, v) in row[0..n_first].iter().enumerate() {
-        let elem_str = make_str_val(v, str_truncate);
-        let elem_len = elem_str.len() + 2;
+        let elem_str = make_str_val(v, str_truncate, ellipsis);
+        let elem_len = estimate_string_width(elem_str.as_str()) + padding;
         if max_elem_lengths[idx] < elem_len {
             max_elem_lengths[idx] = elem_len;
         };
         row_strings.push(elem_str);
     }
     if reduce_columns {
-        row_strings.push("…".to_string());
-        max_elem_lengths[n_first] = 3;
+        row_strings.push(ellipsis.to_string());
+        max_elem_lengths[n_first] = ellipsis.chars().count() + padding;
     }
     let elem_offset = n_first + reduce_columns as usize;
     for (idx, v) in row[row.len() - n_last..].iter().enumerate() {
-        let elem_str = make_str_val(v, str_truncate);
-        let elem_len = elem_str.len() + 2;
+        let elem_str = make_str_val(v, str_truncate, ellipsis);
+        let elem_len = estimate_string_width(elem_str.as_str()) + padding;
         let elem_idx = elem_offset + idx;
         if max_elem_lengths[elem_idx] < elem_len {
             max_elem_lengths[elem_idx] = elem_len;
@@ -542,16 +579,36 @@ impl Display for DataFrame {
                 "The column lengths in the DataFrame are not equal."
             );
 
+            let table_style = std::env::var(FMT_TABLE_FORMATTING).unwrap_or("DEFAULT".to_string());
+            let is_utf8 = !table_style.starts_with("ASCII");
+            let preset = match table_style.as_str() {
+                "ASCII_FULL" => ASCII_FULL,
+                "ASCII_FULL_CONDENSED" => ASCII_FULL_CONDENSED,
+                "ASCII_NO_BORDERS" => ASCII_NO_BORDERS,
+                "ASCII_BORDERS_ONLY" => ASCII_BORDERS_ONLY,
+                "ASCII_BORDERS_ONLY_CONDENSED" => ASCII_BORDERS_ONLY_CONDENSED,
+                "ASCII_HORIZONTAL_ONLY" => ASCII_HORIZONTAL_ONLY,
+                "ASCII_MARKDOWN" | "MARKDOWN" => ASCII_MARKDOWN,
+                "UTF8_FULL" => UTF8_FULL,
+                "UTF8_FULL_CONDENSED" => UTF8_FULL_CONDENSED,
+                "UTF8_NO_BORDERS" => UTF8_NO_BORDERS,
+                "UTF8_BORDERS_ONLY" => UTF8_BORDERS_ONLY,
+                "UTF8_HORIZONTAL_ONLY" => UTF8_HORIZONTAL_ONLY,
+                "NOTHING" => NOTHING,
+                _ => UTF8_FULL_CONDENSED,
+            };
+            let ellipsis = get_ellipsis().to_string();
+            let ellipsis_len = ellipsis.chars().count();
             let max_n_cols = get_col_limit();
             let max_n_rows = get_row_limit();
             let str_truncate = get_str_len_limit();
+            let padding = 2; // eg: one char either side of the value
 
             let (n_first, n_last) = if self.width() > max_n_cols {
-                ((max_n_cols + 1) / 2, max_n_cols / 2)
+                (max_n_cols.div_ceil(2), max_n_cols / 2)
             } else {
                 (self.width(), 0)
             };
-
             let reduce_columns = n_first + n_last < self.width();
             let n_tbl_cols = n_first + n_last + reduce_columns as usize;
             let mut names = Vec::with_capacity(n_tbl_cols);
@@ -559,39 +616,19 @@ impl Display for DataFrame {
 
             let fields = self.fields();
             for field in fields[0..n_first].iter() {
-                let (s, l) = field_to_str(field, str_truncate);
+                let (s, l) = field_to_str(field, str_truncate, &ellipsis, padding);
                 names.push(s);
                 name_lengths.push(l);
             }
             if reduce_columns {
-                names.push("…".into());
-                name_lengths.push(3);
+                names.push(ellipsis.clone());
+                name_lengths.push(ellipsis_len);
             }
             for field in fields[self.width() - n_last..].iter() {
-                let (s, l) = field_to_str(field, str_truncate);
+                let (s, l) = field_to_str(field, str_truncate, &ellipsis, padding);
                 names.push(s);
                 name_lengths.push(l);
             }
-            let (preset, is_utf8) = match std::env::var(FMT_TABLE_FORMATTING)
-                .as_deref()
-                .unwrap_or("DEFAULT")
-            {
-                "ASCII_FULL" => (ASCII_FULL, false),
-                "ASCII_FULL_CONDENSED" => (ASCII_FULL_CONDENSED, false),
-                "ASCII_NO_BORDERS" => (ASCII_NO_BORDERS, false),
-                "ASCII_BORDERS_ONLY" => (ASCII_BORDERS_ONLY, false),
-                "ASCII_BORDERS_ONLY_CONDENSED" => (ASCII_BORDERS_ONLY_CONDENSED, false),
-                "ASCII_HORIZONTAL_ONLY" => (ASCII_HORIZONTAL_ONLY, false),
-                "ASCII_MARKDOWN" => (ASCII_MARKDOWN, false),
-                "UTF8_FULL" => (UTF8_FULL, true),
-                "UTF8_FULL_CONDENSED" => (UTF8_FULL_CONDENSED, true),
-                "UTF8_NO_BORDERS" => (UTF8_NO_BORDERS, true),
-                "UTF8_BORDERS_ONLY" => (UTF8_BORDERS_ONLY, true),
-                "UTF8_HORIZONTAL_ONLY" => (UTF8_HORIZONTAL_ONLY, true),
-                "NOTHING" => (NOTHING, false),
-                "DEFAULT" => (UTF8_FULL_CONDENSED, true),
-                _ => (UTF8_FULL_CONDENSED, true),
-            };
 
             let mut table = Table::new();
             table
@@ -601,7 +638,6 @@ impl Display for DataFrame {
             if is_utf8 && env_is_true(FMT_TABLE_ROUNDED_CORNERS) {
                 table.apply_modifier(UTF8_ROUND_CORNERS);
             }
-
             let mut constraints = Vec::with_capacity(n_tbl_cols);
             let mut max_elem_lengths: Vec<usize> = vec![0; n_tbl_cols];
 
@@ -610,33 +646,46 @@ impl Display for DataFrame {
                     // Truncate the table if we have more rows than the
                     // configured maximum number of rows
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
-
                     let half = max_n_rows / 2;
                     let rest = max_n_rows % 2;
 
                     for i in 0..(half + rest) {
                         let row = self
-                            .columns
+                            .get_columns()
                             .iter()
-                            .map(|s| s.str_value(i).unwrap())
+                            .map(|c| c.str_value(i).unwrap())
                             .collect();
 
-                        let row_strings =
-                            prepare_row(row, n_first, n_last, str_truncate, &mut max_elem_lengths);
-
+                        let row_strings = prepare_row(
+                            row,
+                            n_first,
+                            n_last,
+                            str_truncate,
+                            &mut max_elem_lengths,
+                            &ellipsis,
+                            padding,
+                        );
                         rows.push(row_strings);
                     }
-                    let dots = rows[0].iter().map(|_| "…".to_string()).collect();
+                    let dots = vec![ellipsis.clone(); rows[0].len()];
                     rows.push(dots);
+
                     for i in (height - half)..height {
                         let row = self
-                            .columns
+                            .get_columns()
                             .iter()
-                            .map(|s| s.str_value(i).unwrap())
+                            .map(|c| c.str_value(i).unwrap())
                             .collect();
 
-                        let row_strings =
-                            prepare_row(row, n_first, n_last, str_truncate, &mut max_elem_lengths);
+                        let row_strings = prepare_row(
+                            row,
+                            n_first,
+                            n_last,
+                            str_truncate,
+                            &mut max_elem_lengths,
+                            &ellipsis,
+                            padding,
+                        );
                         rows.push(row_strings);
                     }
                     table.add_rows(rows);
@@ -644,8 +693,7 @@ impl Display for DataFrame {
                     for i in 0..height {
                         if self.width() > 0 {
                             let row = self
-                                .columns
-                                .iter()
+                                .materialized_column_iter()
                                 .map(|s| s.str_value(i).unwrap())
                                 .collect();
 
@@ -655,6 +703,8 @@ impl Display for DataFrame {
                                 n_last,
                                 str_truncate,
                                 &mut max_elem_lengths,
+                                &ellipsis,
+                                padding,
                             );
                             table.add_row(row_strings);
                         } else {
@@ -663,17 +713,21 @@ impl Display for DataFrame {
                     }
                 }
             } else if height > 0 {
-                let dots: Vec<String> = self.columns.iter().map(|_| "…".to_string()).collect();
+                let dots: Vec<String> = vec![ellipsis.clone(); self.columns.len()];
                 table.add_row(dots);
             }
-
             let tbl_fallback_width = 100;
             let tbl_width = std::env::var("POLARS_TABLE_WIDTH")
                 .map(|s| {
-                    Some(
-                        s.parse::<u16>()
-                            .expect("could not parse table width argument"),
-                    )
+                    let n = s
+                        .parse::<i64>()
+                        .expect("could not parse table width argument");
+                    let w = if n < 0 {
+                        u16::MAX
+                    } else {
+                        u16::try_from(n).expect("table width argument does not fit in u16")
+                    };
+                    Some(w)
                 })
                 .unwrap_or(None);
 
@@ -684,14 +738,18 @@ impl Display for DataFrame {
                 lower: Width::Fixed(l as u16),
                 upper: Width::Fixed(u as u16),
             };
-            let min_col_width = 5;
+            let min_col_width = std::cmp::max(5, 3 + padding);
             for (idx, elem_len) in max_elem_lengths.iter().enumerate() {
                 let mx = std::cmp::min(
-                    str_truncate + 3, // (3 = 2 space chars of padding + ellipsis char)
+                    str_truncate + ellipsis_len + padding,
                     std::cmp::max(name_lengths[idx], *elem_len),
                 );
-                if mx <= min_col_width {
+                if (mx <= min_col_width) && !(max_n_rows > 0 && height > max_n_rows) {
+                    // col width is less than min width + table is not truncated
                     constraints.push(col_width_exact(mx));
+                } else if mx <= min_col_width {
+                    // col width is less than min width + table is truncated (w/ ellipsis)
+                    constraints.push(col_width_bounds(mx, min_col_width));
                 } else {
                     constraints.push(col_width_bounds(min_col_width, mx));
                 }
@@ -729,9 +787,9 @@ impl Display for DataFrame {
                 let num_preset = std::env::var(FMT_TABLE_CELL_NUMERIC_ALIGNMENT)
                     .unwrap_or_else(|_| str_preset.to_string());
                 for (column_index, column) in table.column_iter_mut().enumerate() {
-                    let dtype = fields[column_index].data_type();
+                    let dtype = fields[column_index].dtype();
                     let mut preset = str_preset.as_str();
-                    if dtype.is_numeric() || dtype.is_decimal() {
+                    if dtype.is_primitive_numeric() || dtype.is_decimal() {
                         preset = num_preset.as_str();
                     }
                     match preset {
@@ -778,15 +836,14 @@ fn fmt_int_string_custom(num: &str, group_size: u8, group_separator: &str) -> St
         } else {
             0
         };
-        let int_body = num[sign_offset..]
-            .as_bytes()
+        let int_body = &num.as_bytes()[sign_offset..]
             .rchunks(group_size as usize)
             .rev()
             .map(str::from_utf8)
             .collect::<Result<Vec<&str>, _>>()
             .unwrap()
             .join(group_separator);
-        out.push_str(&int_body);
+        out.push_str(int_body);
         out
     }
 }
@@ -908,14 +965,34 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
+#[cfg(feature = "dtype-datetime")]
+fn fmt_datetime(
+    f: &mut Formatter<'_>,
+    v: i64,
+    tu: TimeUnit,
+    tz: Option<&self::datatypes::TimeZone>,
+) -> fmt::Result {
+    let ndt = match tu {
+        TimeUnit::Nanoseconds => timestamp_ns_to_datetime(v),
+        TimeUnit::Microseconds => timestamp_us_to_datetime(v),
+        TimeUnit::Milliseconds => timestamp_ms_to_datetime(v),
+    };
+    match tz {
+        None => std::fmt::Display::fmt(&ndt, f),
+        Some(tz) => PlTzAware::new(ndt, tz).fmt(f),
+    }
+}
+
 #[cfg(feature = "dtype-duration")]
-const NAMES: [&str; 4] = ["d", "h", "m", "s"];
+const DURATION_PARTS: [&str; 4] = ["d", "h", "m", "s"];
+#[cfg(feature = "dtype-duration")]
+const ISO_DURATION_PARTS: [&str; 4] = ["D", "H", "M", "S"];
 #[cfg(feature = "dtype-duration")]
 const SIZES_NS: [i64; 4] = [
-    86_400_000_000_000,
-    3_600_000_000_000,
-    60_000_000_000,
-    1_000_000_000,
+    86_400_000_000_000, // per day
+    3_600_000_000_000,  // per hour
+    60_000_000_000,     // per minute
+    1_000_000_000,      // per second
 ];
 #[cfg(feature = "dtype-duration")]
 const SIZES_US: [i64; 4] = [86_400_000_000, 3_600_000_000, 60_000_000, 1_000_000];
@@ -923,66 +1000,133 @@ const SIZES_US: [i64; 4] = [86_400_000_000, 3_600_000_000, 60_000_000, 1_000_000
 const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
 
 #[cfg(feature = "dtype-duration")]
-fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
+pub fn fmt_duration_string<W: Write>(f: &mut W, v: i64, unit: TimeUnit) -> fmt::Result {
+    // take the physical/integer duration value and return a
+    // friendly/readable duration string, eg: "3d 22m 55s 1ms"
     if v == 0 {
-        return write!(f, "0ns");
-    }
-    format_duration(f, v, SIZES_NS.as_slice(), NAMES.as_slice())?;
-    if v % 1000 != 0 {
-        write!(f, "{}ns", v % 1_000_000_000)?;
-    } else if v % 1_000_000 != 0 {
-        write!(f, "{}µs", (v % 1_000_000_000) / 1000)?;
-    } else if v % 1_000_000_000 != 0 {
-        write!(f, "{}ms", (v % 1_000_000_000) / 1_000_000)?;
-    }
-    Ok(())
-}
-
-#[cfg(feature = "dtype-duration")]
-fn fmt_duration_us(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
-    if v == 0 {
-        return write!(f, "0µs");
-    }
-    format_duration(f, v, SIZES_US.as_slice(), NAMES.as_slice())?;
-    if v % 1000 != 0 {
-        write!(f, "{}µs", (v % 1_000_000))?;
-    } else if v % 1_000_000 != 0 {
-        write!(f, "{}ms", (v % 1_000_000) / 1_000)?;
-    }
-    Ok(())
-}
-
-#[cfg(feature = "dtype-duration")]
-fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
-    if v == 0 {
-        return write!(f, "0ms");
-    }
-    format_duration(f, v, SIZES_MS.as_slice(), NAMES.as_slice())?;
-    if v % 1_000 != 0 {
-        write!(f, "{}ms", (v % 1_000))?;
-    }
-    Ok(())
-}
-
-#[cfg(feature = "dtype-duration")]
-fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> fmt::Result {
-    for i in 0..4 {
-        let whole_num = if i == 0 {
-            v / sizes[i]
-        } else {
-            (v % sizes[i - 1]) / sizes[i]
+        return match unit {
+            TimeUnit::Nanoseconds => f.write_str("0ns"),
+            TimeUnit::Microseconds => f.write_str("0µs"),
+            TimeUnit::Milliseconds => f.write_str("0ms"),
         };
-        if whole_num <= -1 || whole_num >= 1 {
-            write!(f, "{}{}", whole_num, names[i])?;
-            if v % sizes[i] != 0 {
-                write!(f, " ")?;
+    };
+    // iterate over dtype-specific sizes to appropriately scale
+    // and extract 'days', 'hours', 'minutes', and 'seconds' parts.
+    let sizes = match unit {
+        TimeUnit::Nanoseconds => SIZES_NS.as_slice(),
+        TimeUnit::Microseconds => SIZES_US.as_slice(),
+        TimeUnit::Milliseconds => SIZES_MS.as_slice(),
+    };
+    let mut buffer = itoa::Buffer::new();
+    for (i, &size) in sizes.iter().enumerate() {
+        let whole_num = if i == 0 {
+            v / size
+        } else {
+            (v % sizes[i - 1]) / size
+        };
+        if whole_num != 0 {
+            f.write_str(buffer.format(whole_num))?;
+            f.write_str(DURATION_PARTS[i])?;
+            if v % size != 0 {
+                f.write_char(' ')?;
             }
         }
     }
+    // write fractional seconds as integer nano/micro/milliseconds.
+    let (v, units) = match unit {
+        TimeUnit::Nanoseconds => (v % 1_000_000_000, ["ns", "µs", "ms"]),
+        TimeUnit::Microseconds => (v % 1_000_000, ["µs", "ms", ""]),
+        TimeUnit::Milliseconds => (v % 1_000, ["ms", "", ""]),
+    };
+    if v != 0 {
+        let (value, suffix) = if v % 1_000 != 0 {
+            (v, units[0])
+        } else if v % 1_000_000 != 0 {
+            (v / 1_000, units[1])
+        } else {
+            (v / 1_000_000, units[2])
+        };
+        f.write_str(buffer.format(value))?;
+        f.write_str(suffix)?;
+    }
     Ok(())
 }
 
+#[cfg(feature = "dtype-duration")]
+pub fn iso_duration_string(s: &mut String, mut v: i64, unit: TimeUnit) {
+    if v == 0 {
+        s.push_str("PT0S");
+        return;
+    }
+    let mut buffer = itoa::Buffer::new();
+    let mut wrote_part = false;
+    if v < 0 {
+        // negative sign before "P" indicates entire ISO duration is negative.
+        s.push_str("-P");
+        v = v.abs();
+    } else {
+        s.push('P');
+    }
+    // iterate over dtype-specific sizes to appropriately scale
+    // and extract 'days', 'hours', 'minutes', and 'seconds' parts.
+    let sizes = match unit {
+        TimeUnit::Nanoseconds => SIZES_NS.as_slice(),
+        TimeUnit::Microseconds => SIZES_US.as_slice(),
+        TimeUnit::Milliseconds => SIZES_MS.as_slice(),
+    };
+    for (i, &size) in sizes.iter().enumerate() {
+        let whole_num = if i == 0 {
+            v / size
+        } else {
+            (v % sizes[i - 1]) / size
+        };
+        if whole_num != 0 || i == 3 {
+            if i != 3 {
+                // days, hours, minutes
+                s.push_str(buffer.format(whole_num));
+                s.push_str(ISO_DURATION_PARTS[i]);
+            } else {
+                // (index 3 => 'seconds' part): the ISO version writes
+                // fractional seconds, not integer nano/micro/milliseconds.
+                // if zero, only write out if no other parts written yet.
+                let fractional_part = v % size;
+                if whole_num == 0 && fractional_part == 0 {
+                    if !wrote_part {
+                        s.push_str("0S")
+                    }
+                } else {
+                    s.push_str(buffer.format(whole_num));
+                    if fractional_part != 0 {
+                        let secs = match unit {
+                            TimeUnit::Nanoseconds => format!(".{:09}", fractional_part),
+                            TimeUnit::Microseconds => format!(".{:06}", fractional_part),
+                            TimeUnit::Milliseconds => format!(".{:03}", fractional_part),
+                        };
+                        s.push_str(secs.trim_end_matches('0'));
+                    }
+                    s.push_str(ISO_DURATION_PARTS[i]);
+                }
+            }
+            // (index 0 => 'days' part): after writing days above (if non-zero)
+            // the ISO duration string requires a `T` before the time part.
+            if i == 0 {
+                s.push('T');
+            }
+            wrote_part = true;
+        } else if i == 0 {
+            // always need to write the `T` separator for ISO
+            // durations, even if there is no 'days' part.
+            s.push('T');
+        }
+    }
+    // if there was only a 'days' component, no need for time separator.
+    if s.ends_with('T') {
+        s.pop();
+    }
+}
+
 fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
+    let ellipsis = get_ellipsis();
     let width = get_str_len_limit() * 2;
     write!(f, "b\"")?;
 
@@ -994,9 +1138,9 @@ fn format_blob(f: &mut Formatter<'_>, bytes: &[u8]) -> fmt::Result {
         }
     }
     if bytes.len() > width {
-        write!(f, "\"...")?;
+        write!(f, "\"{ellipsis}")?;
     } else {
-        write!(f, "\"")?;
+        f.write_str("\"")?;
     }
     Ok(())
 }
@@ -1014,6 +1158,7 @@ impl Display for AnyValue<'_> {
             AnyValue::Int16(v) => fmt_integer(f, width, *v),
             AnyValue::Int32(v) => fmt_integer(f, width, *v),
             AnyValue::Int64(v) => fmt_integer(f, width, *v),
+            AnyValue::Int128(v) => feature_gated!("dtype-i128", fmt_integer(f, width, *v)),
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
@@ -1024,32 +1169,23 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v, tu, tz) => {
-                let ndt = match tu {
-                    TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
-                    TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
-                    TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
-                };
-                match tz {
-                    None => write!(f, "{ndt}"),
-                    Some(tz) => {
-                        write!(f, "{}", PlTzAware::new(ndt, tz))
-                    },
-                }
+            AnyValue::Datetime(v, tu, tz) => fmt_datetime(f, *v, *tu, *tz),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::DatetimeOwned(v, tu, tz) => {
+                fmt_datetime(f, *v, *tu, tz.as_ref().map(|v| v.as_ref()))
             },
             #[cfg(feature = "dtype-duration")]
-            AnyValue::Duration(v, tu) => match tu {
-                TimeUnit::Nanoseconds => fmt_duration_ns(f, *v),
-                TimeUnit::Microseconds => fmt_duration_us(f, *v),
-                TimeUnit::Milliseconds => fmt_duration_ms(f, *v),
-            },
+            AnyValue::Duration(v, tu) => fmt_duration_string(f, *v, *tu),
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
                 let nt: chrono::NaiveTime = self.into();
                 write!(f, "{nt}")
             },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(_, _, _) | AnyValue::Enum(_, _, _) => {
+            AnyValue::Categorical(_, _, _)
+            | AnyValue::CategoricalOwned(_, _, _)
+            | AnyValue::Enum(_, _, _)
+            | AnyValue::EnumOwned(_, _, _) => {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             },
@@ -1126,57 +1262,45 @@ impl Series {
         if self.is_empty() {
             return "[]".to_owned();
         }
-
+        let mut result = "[".to_owned();
         let max_items = get_list_len_limit();
+        let ellipsis = get_ellipsis();
 
         match max_items {
-            0 => "[…]".to_owned(),
+            0 => write!(result, "{ellipsis}]").unwrap(),
             _ if max_items >= self.len() => {
-                let mut result = "[".to_owned();
-
-                for i in 0..self.len() {
-                    let item = self.get(i).unwrap();
-                    write!(result, "{item}").unwrap();
-                    // this will always leave a trailing ", " after the last item
-                    // but for long lists, this is faster than checking against the length each time
-                    result.push_str(", ");
+                // this will always leave a trailing ", " after the last item
+                // but for long lists, this is faster than checking against the length each time
+                for item in self.rechunk().iter() {
+                    write!(result, "{item}, ").unwrap();
                 }
                 // remove trailing ", " and replace with closing brace
-                result.pop();
-                result.pop();
+                result.truncate(result.len() - 2);
                 result.push(']');
-
-                result
             },
             _ => {
-                let mut result = "[".to_owned();
                 let s = self.slice(0, max_items).rechunk();
                 for (i, item) in s.iter().enumerate() {
                     if i == max_items.saturating_sub(1) {
-                        result.push_str("… ");
-                        write!(result, "{}", self.get(self.len() - 1).unwrap()).unwrap();
+                        write!(result, "{ellipsis} {}", self.get(self.len() - 1).unwrap()).unwrap();
                         break;
                     } else {
-                        write!(result, "{item}").unwrap();
-                        result.push_str(", ");
+                        write!(result, "{item}, ").unwrap();
                     }
                 }
                 result.push(']');
-
-                result
             },
-        }
+        };
+        result
     }
 }
 
 #[inline]
 #[cfg(feature = "dtype-decimal")]
-pub fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-    use arrow::compute::decimal::format_decimal;
-
+fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
+    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
     let trim_zeros = get_trim_decimal_zeros();
-    let repr = format_decimal(v, scale, trim_zeros);
-    f.write_str(fmt_float_string(repr.as_str()).as_str())
+    f.write_str(fmt_float_string(fmt_buf.format(v, scale, trim_zeros)).as_str())
 }
 
 #[cfg(all(
@@ -1185,13 +1309,18 @@ pub fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result 
     feature = "dtype-date",
     feature = "dtype-datetime"
 ))]
+#[allow(unsafe_op_in_unsafe_fn)]
 mod test {
     use crate::prelude::*;
 
     #[test]
     fn test_fmt_list() {
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[1, 2, 3, 4, 5, 6]));
         builder.append_opt_slice(None);
         let list_long = builder.finish().into_series();
@@ -1206,7 +1335,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1218,7 +1347,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1230,7 +1359,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1242,7 +1371,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1254,7 +1383,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "4");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "4") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1266,13 +1395,17 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[1]));
         builder.append_opt_slice(None);
         let list_short = builder.finish().into_series();
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1284,7 +1417,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_short)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1296,7 +1429,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_short)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1308,13 +1441,17 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_short)
         );
 
-        let mut builder =
-            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+            PlSmallStr::from_static("a"),
+            10,
+            10,
+            DataType::Int32,
+        );
         builder.append_opt_slice(Some(&[]));
         builder.append_opt_slice(None);
         let list_empty = builder.finish().into_series();
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1329,7 +1466,8 @@ Series: 'a' [list[i32]]
 
     #[test]
     fn test_fmt_temporal() {
-        let s = Int32Chunked::new("Date", &[Some(1), None, Some(3)]).into_date();
+        let s = Int32Chunked::new(PlSmallStr::from_static("Date"), &[Some(1), None, Some(3)])
+            .into_date();
         assert_eq!(
             r#"shape: (3,)
 Series: 'Date' [date]
@@ -1341,7 +1479,7 @@ Series: 'Date' [date]
             format!("{:?}", s.into_series())
         );
 
-        let s = Int64Chunked::new("", &[Some(1), None, Some(1_000_000_000_000)])
+        let s = Int64Chunked::new(PlSmallStr::EMPTY, &[Some(1), None, Some(1_000_000_000_000)])
             .into_datetime(TimeUnit::Nanoseconds, None);
         assert_eq!(
             r#"shape: (3,)
@@ -1357,7 +1495,7 @@ Series: '' [datetime[ns]]
 
     #[test]
     fn test_fmt_chunkedarray() {
-        let ca = Int32Chunked::new("Date", &[Some(1), None, Some(3)]);
+        let ca = Int32Chunked::new(PlSmallStr::from_static("Date"), &[Some(1), None, Some(3)]);
         assert_eq!(
             r#"shape: (3,)
 ChunkedArray: 'Date' [i32]
@@ -1368,7 +1506,7 @@ ChunkedArray: 'Date' [i32]
 ]"#,
             format!("{:?}", ca)
         );
-        let ca = StringChunked::new("name", &["a", "b"]);
+        let ca = StringChunked::new(PlSmallStr::from_static("name"), &["a", "b"]);
         assert_eq!(
             r#"shape: (2,)
 ChunkedArray: 'name' [str]

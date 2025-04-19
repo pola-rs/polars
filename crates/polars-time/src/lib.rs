@@ -13,6 +13,8 @@ mod month_start;
 #[cfg(feature = "offset_by")]
 mod offset_by;
 pub mod prelude;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+pub mod replace;
 mod round;
 pub mod series;
 mod truncate;
@@ -33,9 +35,14 @@ pub use month_end::*;
 pub use month_start::*;
 #[cfg(feature = "offset_by")]
 pub use offset_by::*;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+pub use replace::*;
 pub use round::*;
+#[cfg(feature = "dtype-date")]
 pub use truncate::*;
 pub use upsample::*;
+#[cfg(feature = "timezones")]
+pub use utils::known_timezones;
 pub use windows::duration::Duration;
 pub use windows::group_by::ClosedWindow;
 pub use windows::window::Window;

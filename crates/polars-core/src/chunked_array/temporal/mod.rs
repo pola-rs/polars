@@ -8,6 +8,7 @@ mod datetime;
 mod duration;
 #[cfg(feature = "dtype-time")]
 mod time;
+
 #[cfg(feature = "dtype-date")]
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
@@ -16,15 +17,13 @@ use chrono::NaiveTime;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
-use once_cell::sync::Lazy;
-#[cfg(all(feature = "regex", feature = "timezones"))]
-use regex::Regex;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "dtype-time")]
 pub use time::time_to_time64ns;
 
 pub use self::conversion::*;
 #[cfg(feature = "timezones")]
-use crate::prelude::{polars_bail, PolarsResult};
+use crate::prelude::{PolarsResult, polars_bail};
 
 #[cfg(feature = "timezones")]
 static FIXED_OFFSET_PATTERN: &str = r#"(?x)
@@ -36,7 +35,9 @@ static FIXED_OFFSET_PATTERN: &str = r#"(?x)
     $
     "#;
 #[cfg(feature = "timezones")]
-static FIXED_OFFSET_RE: Lazy<Regex> = Lazy::new(|| Regex::new(FIXED_OFFSET_PATTERN).unwrap());
+polars_utils::regex_cache::cached_regex! {
+    static FIXED_OFFSET_RE = FIXED_OFFSET_PATTERN;
+}
 
 #[cfg(feature = "timezones")]
 pub fn validate_time_zone(tz: &str) -> PolarsResult<()> {
@@ -62,20 +63,22 @@ pub fn parse_time_zone(tz: &str) -> PolarsResult<Tz> {
 ///
 /// E.g. +01:00 -> Etc/GMT-1
 ///
-/// Note: the sign appears reversed, but is correct, see https://en.wikipedia.org/wiki/Tz_database#Area:
+/// Note: the sign appears reversed, but is correct, see <https://en.wikipedia.org/wiki/Tz_database#Area>:
 /// > In order to conform with the POSIX style, those zone names beginning with
 /// > "Etc/GMT" have their sign reversed from the standard ISO 8601 convention.
 /// > In the "Etc" area, zones west of GMT have a positive sign and those east
 /// > have a negative sign in their name (e.g "Etc/GMT-14" is 14 hours ahead of GMT).
 #[cfg(feature = "timezones")]
-pub fn parse_fixed_offset(tz: &str) -> PolarsResult<String> {
+pub fn parse_fixed_offset(tz: &str) -> PolarsResult<PlSmallStr> {
+    use polars_utils::format_pl_smallstr;
+
     if let Some(caps) = FIXED_OFFSET_RE.captures(tz) {
         let sign = match caps.name("sign").map(|s| s.as_str()) {
             Some("-") => "+",
             _ => "-",
         };
         let hour = caps.name("hour").unwrap().as_str().parse::<i32>().unwrap();
-        let etc_tz = format!("Etc/GMT{}{}", sign, hour);
+        let etc_tz = format_pl_smallstr!("Etc/GMT{}{}", sign, hour);
         if etc_tz.parse::<Tz>().is_ok() {
             return Ok(etc_tz);
         }

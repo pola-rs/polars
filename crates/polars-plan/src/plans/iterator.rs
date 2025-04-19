@@ -112,10 +112,9 @@ impl<'a> Iterator for ExprIter<'a> {
     type Item = &'a Expr;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.stack.pop().map(|current_expr| {
-            current_expr.nodes(&mut self.stack);
-            current_expr
-        })
+        self.stack
+            .pop()
+            .inspect(|current_expr| current_expr.nodes(&mut self.stack))
     }
 }
 
@@ -177,7 +176,7 @@ impl<'a> Iterator for AExprIter<'a> {
             // take the arena because the bchk doesn't allow a mutable borrow to the field.
             let arena = self.arena.unwrap();
             let current_expr = arena.get(node);
-            current_expr.nodes(&mut self.stack);
+            current_expr.inputs_rev(&mut self.stack);
 
             self.arena = Some(arena);
             (node, current_expr)

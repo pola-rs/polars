@@ -1,3 +1,5 @@
+#[cfg(feature = "python")]
+use self::python_dsl::PythonScanSource;
 use super::*;
 
 pub struct FusedArithmetic {}
@@ -10,7 +12,7 @@ fn get_expr(input: &[Node], op: FusedOperator, expr_arena: &Arena<AExpr>) -> AEx
         .collect();
     let mut options = FunctionOptions {
         collect_groups: ApplyOptions::ElementWise,
-        cast_to_supertypes: Some(Default::default()),
+        cast_options: Some(CastingRules::cast_to_supertypes()),
         ..Default::default()
     };
     // order of operations change because of FMA
@@ -45,8 +47,8 @@ fn check_eligible(
     // Exclude literals for now as these will not benefit from fused operations downstream #9857
     // This optimization would also interfere with the `col -> lit` type-coercion rules
     // And it might also interfere with constant folding which is a more suitable optimizations here
-    if type_left.is_numeric()
-        && type_right.is_numeric()
+    if type_left.is_primitive_numeric()
+        && type_right.is_primitive_numeric()
         && !has_aexpr_literal(*left, expr_arena)
         && !has_aexpr_literal(*right, expr_arena)
     {
@@ -65,6 +67,16 @@ impl OptimizationRule for FusedArithmetic {
         lp_arena: &Arena<IR>,
         lp_node: Node,
     ) -> PolarsResult<Option<AExpr>> {
+        // We don't want to fuse arithmetic that we send to pyarrow.
+        #[cfg(feature = "python")]
+        if let IR::PythonScan { options } = lp_arena.get(lp_node) {
+            if matches!(
+                options.python_source,
+                PythonScanSource::Pyarrow | PythonScanSource::IOPlugin
+            ) {
+                return Ok(None);
+            }
+        };
         let expr = expr_arena.get(expr_node);
 
         use AExpr::*;
@@ -96,10 +108,7 @@ impl OptimizationRule for FusedArithmetic {
                             let node = expr_arena.add(fma);
                             // we reordered the arguments, so we don't obey the left expression output name
                             // rule anymore, that's why we alias
-                            Ok(Some(Alias(
-                                node,
-                                ColumnName::from(output_field.name.as_str()),
-                            )))
+                            Ok(Some(Alias(node, output_field.name.clone())))
                         },
                         _ => unreachable!(),
                     },

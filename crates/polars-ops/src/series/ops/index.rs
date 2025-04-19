@@ -1,6 +1,9 @@
 use num_traits::{Signed, Zero};
-use polars_core::error::{polars_ensure, PolarsResult};
-use polars_core::prelude::{ChunkedArray, DataType, IdxCa, PolarsIntegerType, Series, IDX_DTYPE};
+use polars_core::error::{PolarsResult, polars_ensure};
+use polars_core::prelude::arity::unary_elementwise_values;
+use polars_core::prelude::{
+    ChunkedArray, Column, DataType, IDX_DTYPE, IdxCa, PolarsIntegerType, Series,
+};
 use polars_utils::index::ToIdx;
 
 fn convert<T>(ca: &ChunkedArray<T>, target_len: usize) -> PolarsResult<IdxCa>
@@ -9,7 +12,7 @@ where
     T::Native: ToIdx,
 {
     let target_len = target_len as u64;
-    Ok(ca.apply_values_generic(|v| v.to_idx(target_len)))
+    Ok(unary_elementwise_values(ca, |v| v.to_idx(target_len)))
 }
 
 pub fn convert_to_unsigned_index(s: &Series, target_len: usize) -> PolarsResult<IdxCa> {
@@ -95,4 +98,11 @@ pub fn is_positive_idx_uncertain(s: &Series) -> bool {
         },
         _ => unreachable!(),
     }
+}
+
+/// May give false negatives because it ignores the null values.
+pub fn is_positive_idx_uncertain_col(c: &Column) -> bool {
+    // @scalar-opt
+    // @partition-opt
+    is_positive_idx_uncertain(c.as_materialized_series())
 }

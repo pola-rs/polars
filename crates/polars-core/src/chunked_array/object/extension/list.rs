@@ -6,7 +6,7 @@ use crate::prelude::*;
 
 impl<T: PolarsObject> ObjectChunked<T> {
     pub(crate) fn get_list_builder(
-        name: &str,
+        name: PlSmallStr,
         values_capacity: usize,
         list_capacity: usize,
     ) -> Box<dyn ListBuilderTrait> {
@@ -18,14 +18,14 @@ impl<T: PolarsObject> ObjectChunked<T> {
     }
 }
 
-struct ExtensionListBuilder<T: PolarsObject> {
+pub(crate) struct ExtensionListBuilder<T: PolarsObject> {
     values_builder: ObjectChunkedBuilder<T>,
     offsets: Vec<i64>,
     fast_explode: bool,
 }
 
 impl<T: PolarsObject> ExtensionListBuilder<T> {
-    pub(crate) fn new(name: &str, values_capacity: usize, list_capacity: usize) -> Self {
+    pub(crate) fn new(name: PlSmallStr, values_capacity: usize, list_capacity: usize) -> Self {
         let mut offsets = Vec::with_capacity(list_capacity + 1);
         offsets.push(0);
         Self {
@@ -69,18 +69,18 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
         let mut pe = create_extension(obj_arr.into_iter_cloned());
         unsafe { pe.set_to_series_fn::<T>() };
         let extension_array = Box::new(pe.take_and_forget()) as ArrayRef;
-        let extension_dtype = extension_array.data_type();
+        let extension_dtype = extension_array.dtype();
 
-        let data_type = ListArray::<i64>::default_datatype(extension_dtype.clone());
+        let dtype = ListArray::<i64>::default_datatype(extension_dtype.clone());
         let arr = ListArray::<i64>::new(
-            data_type,
+            dtype,
             // SAFETY: offsets are monotonically increasing.
             unsafe { Offsets::new_unchecked(offsets).into() },
             extension_array,
             None,
         );
 
-        let mut listarr = ListChunked::with_chunk(ca.name(), arr);
+        let mut listarr = ListChunked::with_chunk(ca.name().clone(), arr);
         if self.fast_explode {
             listarr.set_fast_explode()
         }

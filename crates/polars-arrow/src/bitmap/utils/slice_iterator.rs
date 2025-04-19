@@ -9,7 +9,8 @@ enum State {
     Finished,
 }
 
-/// Iterator over a bitmap that returns slices of set regions
+/// Iterator over a bitmap that returns slices of set regions.
+///
 /// This is the most efficient method to extract slices of values from arrays
 /// with a validity bitmap.
 /// For example, the bitmap `00101111` returns `[(0,4), (6,1)]`
@@ -73,7 +74,7 @@ impl<'a> SlicesIterator<'a> {
     }
 }
 
-impl<'a> Iterator for SlicesIterator<'a> {
+impl Iterator for SlicesIterator<'_> {
     type Item = (usize, usize);
 
     #[inline]

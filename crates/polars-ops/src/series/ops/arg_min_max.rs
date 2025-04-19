@@ -17,6 +17,30 @@ pub trait ArgAgg {
     fn arg_max(&self) -> Option<usize>;
 }
 
+macro_rules! with_match_physical_numeric_polars_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use DataType::*;
+    match $key_type {
+            #[cfg(feature = "dtype-i8")]
+        Int8 => __with_ty__! { Int8Type },
+            #[cfg(feature = "dtype-i16")]
+        Int16 => __with_ty__! { Int16Type },
+        Int32 => __with_ty__! { Int32Type },
+        Int64 => __with_ty__! { Int64Type },
+            #[cfg(feature = "dtype-u8")]
+        UInt8 => __with_ty__! { UInt8Type },
+            #[cfg(feature = "dtype-u16")]
+        UInt16 => __with_ty__! { UInt16Type },
+        UInt32 => __with_ty__! { UInt32Type },
+        UInt64 => __with_ty__! { UInt64Type },
+        Float32 => __with_ty__! { Float32Type },
+        Float64 => __with_ty__! { Float64Type },
+        dt => panic!("not implemented for dtype {:?}", dt),
+    }
+})}
+
 impl ArgAgg for Series {
     fn arg_min(&self) -> Option<usize> {
         use DataType::*;
@@ -55,7 +79,7 @@ impl ArgAgg for Series {
                 let ca = s.i64().unwrap();
                 arg_min_numeric_dispatch(ca)
             },
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                     arg_min_numeric_dispatch(ca)
@@ -101,7 +125,7 @@ impl ArgAgg for Series {
                 let ca = s.i64().unwrap();
                 arg_max_numeric_dispatch(ca)
             },
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                     arg_max_numeric_dispatch(ca)

@@ -1,6 +1,3 @@
-use polars_parquet::parquet::deserialize::{
-    FilteredHybridBitmapIter, FilteredHybridEncoded, HybridEncoded,
-};
 use polars_parquet::parquet::indexes::Interval;
 
 #[test]

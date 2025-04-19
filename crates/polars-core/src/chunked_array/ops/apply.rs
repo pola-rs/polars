@@ -1,6 +1,8 @@
 //! Implementations of the ChunkApply Trait.
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
+use crate::chunked_array::arity::{unary_elementwise, unary_elementwise_values};
 use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -9,23 +11,6 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    // Applies a function to all elements, regardless of whether they
-    // are null or not, after which the null mask is copied from the
-    // original array.
-    pub fn apply_values_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
-    where
-        U: PolarsDataType,
-        F: FnMut(T::Physical<'a>) -> K,
-        U::Array: ArrayFromIter<K>,
-    {
-        let iter = self.downcast_iter().map(|arr| {
-            let out: U::Array = arr.values_iter().map(&mut op).collect_arr();
-            out.with_validity_typed(arr.validity().cloned())
-        });
-
-        ChunkedArray::from_chunk_iter(self.name(), iter)
-    }
-
     /// Applies a function only to the non-null elements, propagating nulls.
     pub fn apply_nonnull_values_generic<'a, U, K, F>(
         &'a self,
@@ -53,7 +38,7 @@ where
             }
         });
 
-        ChunkedArray::from_chunk_iter(self.name(), iter)
+        ChunkedArray::from_chunk_iter(self.name().clone(), iter)
     }
 
     /// Applies a function only to the non-null elements, propagating nulls.
@@ -80,44 +65,59 @@ where
             Ok(arr)
         });
 
-        ChunkedArray::try_from_chunk_iter(self.name(), iter)
+        ChunkedArray::try_from_chunk_iter(self.name().clone(), iter)
     }
 
-    pub fn apply_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
+    pub fn apply_into_string_amortized<'a, F>(&'a self, mut f: F) -> StringChunked
     where
-        U: PolarsDataType,
-        F: FnMut(Option<T::Physical<'a>>) -> Option<K>,
-        U::Array: ArrayFromIter<Option<K>>,
+        F: FnMut(T::Physical<'a>, &mut String),
     {
-        if self.null_count() == 0 {
-            let iter = self
-                .downcast_iter()
-                .map(|arr| arr.values_iter().map(|x| op(Some(x))).collect_arr());
-            ChunkedArray::from_chunk_iter(self.name(), iter)
-        } else {
-            let iter = self
-                .downcast_iter()
-                .map(|arr| arr.iter().map(&mut op).collect_arr());
-            ChunkedArray::from_chunk_iter(self.name(), iter)
-        }
+        let mut buf = String::new();
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let mut mutarr = MutablePlString::with_capacity(arr.len());
+                arr.iter().for_each(|opt| match opt {
+                    None => mutarr.push_null(),
+                    Some(v) => {
+                        buf.clear();
+                        f(v, &mut buf);
+                        mutarr.push_value(&buf)
+                    },
+                });
+                mutarr.freeze()
+            })
+            .collect::<Vec<_>>();
+        ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 
-    pub fn try_apply_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
+    pub fn try_apply_into_string_amortized<'a, F, E>(&'a self, mut f: F) -> Result<StringChunked, E>
     where
-        U: PolarsDataType,
-        F: FnMut(Option<T::Physical<'a>>) -> Result<Option<K>, E> + Copy,
-        U::Array: ArrayFromIter<Option<K>>,
+        F: FnMut(T::Physical<'a>, &mut String) -> Result<(), E>,
     {
-        let iter = self.downcast_iter().map(|arr| {
-            let array: U::Array = arr.iter().map(op).try_collect_arr()?;
-            Ok(array.with_validity_typed(arr.validity().cloned()))
-        });
-
-        ChunkedArray::try_from_chunk_iter(self.name(), iter)
+        let mut buf = String::new();
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let mut mutarr = MutablePlString::with_capacity(arr.len());
+                for opt in arr.iter() {
+                    match opt {
+                        None => mutarr.push_null(),
+                        Some(v) => {
+                            buf.clear();
+                            f(v, &mut buf)?;
+                            mutarr.push_value(&buf)
+                        },
+                    };
+                }
+                Ok(mutarr.freeze())
+            })
+            .collect::<Vec<_>>();
+        ChunkedArray::try_from_chunk_iter(self.name().clone(), chunks)
     }
 }
 
-fn apply_in_place_impl<S, F>(name: &str, chunks: Vec<ArrayRef>, f: F) -> ChunkedArray<S>
+fn apply_in_place_impl<S, F>(name: PlSmallStr, chunks: Vec<ArrayRef>, f: F) -> ChunkedArray<S>
 where
     F: Fn(S::Native) -> S::Native + Copy,
     S: PolarsNumericType,
@@ -162,7 +162,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         S: PolarsNumericType,
     {
         // if we cast, we create a new arrow buffer
-        // then we clone the arrays and drop the casted arrays
+        // then we clone the arrays and drop the cast arrays
         // this will ensure we have a single ref count
         // and we can mutate in place
         let chunks = {
@@ -171,7 +171,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
                 .unwrap();
             s.chunks().clone()
         };
-        apply_in_place_impl(self.name(), chunks, f)
+        apply_in_place_impl(self.name().clone(), chunks, f)
     }
 
     /// Cast a numeric array to another numeric data type and apply a function in place.
@@ -181,7 +181,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         F: Fn(T::Native) -> T::Native + Copy,
     {
         let chunks = std::mem::take(&mut self.chunks);
-        apply_in_place_impl(self.name(), chunks, f)
+        apply_in_place_impl(self.name().clone(), chunks, f)
     }
 }
 
@@ -218,7 +218,7 @@ where
                 let arr: T::Array = slice.iter().copied().map(f).collect_arr();
                 arr.with_validity(validity.cloned())
             });
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
+        ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -229,7 +229,7 @@ where
             let iter = arr.into_iter().map(|opt_v| f(opt_v.copied()));
             PrimitiveArray::<T::Native>::from_trusted_len_iter(iter)
         });
-        Self::from_chunk_iter(self.name(), chunks)
+        Self::from_chunk_iter(self.name().clone(), chunks)
     }
 
     fn apply_to_slice<F, V>(&'a self, f: F, slice: &mut [V])
@@ -281,7 +281,7 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     where
         F: Fn(Option<bool>) -> Option<bool> + Copy,
     {
-        self.apply_generic(f)
+        unary_elementwise(self, f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -313,22 +313,7 @@ impl StringChunked {
             let new = Utf8ViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().cloned())
         });
-        StringChunked::from_chunk_iter(self.name(), chunks)
-    }
-
-    /// Utility that reuses an string buffer to amortize allocations.
-    /// Prefer this over an `apply` that returns an owned `String`.
-    pub fn apply_to_buffer<'a, F>(&'a self, mut f: F) -> Self
-    where
-        F: FnMut(&'a str, &mut String),
-    {
-        let mut buf = String::new();
-        let outer = |s: &'a str| {
-            buf.clear();
-            f(s, &mut buf);
-            unsafe { std::mem::transmute::<&str, &'a str>(buf.as_str()) }
-        };
-        self.apply_mut(outer)
+        StringChunked::from_chunk_iter(self.name().clone(), chunks)
     }
 }
 
@@ -342,7 +327,7 @@ impl BinaryChunked {
             let new = BinaryViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().cloned())
         });
-        BinaryChunked::from_chunk_iter(self.name(), chunks)
+        BinaryChunked::from_chunk_iter(self.name().clone(), chunks)
     }
 }
 
@@ -353,14 +338,14 @@ impl<'a> ChunkApply<'a, &'a str> for StringChunked {
     where
         F: Fn(&'a str) -> Cow<'a, str> + Copy,
     {
-        ChunkedArray::apply_values_generic(self, f)
+        unary_elementwise_values(self, f)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<&'a str>) -> Option<Cow<'a, str>> + Copy,
     {
-        self.apply_generic(f)
+        unary_elementwise(self, f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -389,14 +374,14 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
     where
         F: Fn(&'a [u8]) -> Cow<'a, [u8]> + Copy,
     {
-        self.apply_values_generic(f)
+        unary_elementwise_values(self, f)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<&'a [u8]>) -> Option<Cow<'a, [u8]>> + Copy,
     {
-        self.apply_generic(f)
+        unary_elementwise(self, f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -421,7 +406,7 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
 impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
     fn apply_kernel(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> Self {
         let chunks = self.downcast_iter().map(f).collect();
-        unsafe { Self::from_chunks(self.name(), chunks) }
+        unsafe { Self::from_chunks(self.name().clone(), chunks) }
     }
 
     fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> ChunkedArray<S>
@@ -429,7 +414,7 @@ impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::<S>::from_chunks(self.name(), chunks) }
+        unsafe { ChunkedArray::<S>::from_chunks(self.name().clone(), chunks) }
     }
 }
 
@@ -448,7 +433,7 @@ where
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
     }
 }
 
@@ -462,7 +447,7 @@ impl ChunkApplyKernel<Utf8ViewArray> for StringChunked {
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
     }
 }
 
@@ -476,7 +461,7 @@ impl ChunkApplyKernel<BinaryViewArray> for BinaryChunked {
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
     }
 }
 
@@ -535,7 +520,8 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.iter().for_each(|opt_val| {
-                let opt_val = opt_val.map(|arrayref| Series::try_from(("", arrayref)).unwrap());
+                let opt_val = opt_val
+                    .map(|arrayref| Series::try_from((PlSmallStr::EMPTY, arrayref)).unwrap());
 
                 // SAFETY:
                 // length asserted above
@@ -559,7 +545,7 @@ where
         F: Fn(&'a T) -> T + Copy,
     {
         let mut ca: ObjectChunked<T> = self.into_iter().map(|opt_v| opt_v.map(f)).collect();
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         ca
     }
 
@@ -568,7 +554,7 @@ where
         F: Fn(Option<&'a T>) -> Option<T> + Copy,
     {
         let mut ca: ObjectChunked<T> = self.into_iter().map(f).collect();
-        ca.rename(self.name());
+        ca.rename(self.name().clone());
         ca
     }
 
@@ -587,5 +573,17 @@ where
                 idx += 1;
             })
         });
+    }
+}
+
+impl StringChunked {
+    /// # Safety
+    /// Update the views. All invariants of the views apply.
+    pub unsafe fn apply_views<F: FnMut(View, &str) -> View + Copy>(&self, update_view: F) -> Self {
+        let mut out = self.clone();
+        for arr in out.downcast_iter_mut() {
+            *arr = arr.apply_views(update_view);
+        }
+        out
     }
 }

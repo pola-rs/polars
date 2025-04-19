@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.fixture()
+@pytest.fixture
 def foods_ipc_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.ipc"
 
@@ -89,7 +89,6 @@ def test_ipc_list_arg(io_files_path: Path) -> None:
 
 
 def test_scan_ipc_local_with_async(
-    capfd: Any,
     monkeypatch: Any,
     io_files_path: Path,
 ) -> None:
@@ -107,6 +106,3 @@ def test_scan_ipc_local_with_async(
             }
         ),
     )
-
-    captured = capfd.readouterr().err
-    assert "ASYNC READING FORCED" in captured

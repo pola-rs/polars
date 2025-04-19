@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-from datetime import date, datetime, time
+from datetime import date, datetime, time, tzinfo
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -16,9 +16,9 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     OutOfBoundsError,
-    PanicException,
     SchemaError,
     SchemaFieldNotFoundError,
+    ShapeError,
     StructFieldNotFoundError,
 )
 from tests.unit.conftest import TEMPORAL_DTYPES
@@ -115,7 +115,7 @@ def test_string_numeric_comp_err() -> None:
 
 def test_panic_error() -> None:
     with pytest.raises(
-        PanicException,
+        InvalidOperationError,
         match="unit: 'k' not supported",
     ):
         pl.datetime_range(
@@ -233,7 +233,7 @@ def test_error_on_double_agg() -> None:
 def test_filter_not_of_type_bool() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     with pytest.raises(
-        ComputeError, match="filter predicate must be of type `Boolean`, got"
+        InvalidOperationError, match="filter predicate must be of type `Boolean`, got"
     ):
         df.filter(pl.col("json_val").str.json_path_match("$.a"))
 
@@ -268,7 +268,7 @@ def test_invalid_concat_type_err() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="DataFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}, got 'sausage'",
+        match="DataFrame `how` must be one of {'vertical', '.+', 'align_right'}, got 'sausage'",
     ):
         pl.concat([df, df], how="sausage")  # type: ignore[arg-type]
 
@@ -293,10 +293,7 @@ def test_invalid_sort_by() -> None:
     )
 
     # `select a where b order by c desc`
-    with pytest.raises(
-        ComputeError,
-        match=r"`sort_by` produced different length \(5\) than the Series that has to be sorted \(3\)",
-    ):
+    with pytest.raises(ShapeError):
         df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", descending=True))
 
 
@@ -326,9 +323,15 @@ def test_datetime_time_add_err() -> None:
 def test_invalid_dtype() -> None:
     with pytest.raises(
         TypeError,
-        match="cannot parse input of type 'str' into Polars data type: 'mayonnaise'",
+        match=r"cannot parse input of type 'str' into Polars data type \(given: 'mayonnaise'\)",
     ):
         pl.Series([1, 2], dtype="mayonnaise")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="cannot parse input <class 'datetime.tzinfo'> into Polars data type",
+    ):
+        pl.Series([None], dtype=tzinfo)  # type: ignore[arg-type]
 
 
 def test_arr_eval_named_cols() -> None:
@@ -343,7 +346,7 @@ def test_arr_eval_named_cols() -> None:
 def test_alias_in_join_keys() -> None:
     df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
     with pytest.raises(
-        ComputeError,
+        InvalidOperationError,
         match=r"'alias' is not allowed in a join key, use 'with_columns' first",
     ):
         df.join(df, on=pl.col("A").alias("foo"))
@@ -441,9 +444,7 @@ def test_compare_different_len() -> None:
     )
 
     s = pl.Series([2, 5, 8])
-    with pytest.raises(
-        ComputeError, match=r"cannot evaluate two Series of different lengths"
-    ):
+    with pytest.raises(ShapeError):
         df.filter(pl.col("idx") == s)
 
 
@@ -484,7 +485,7 @@ def test_skip_nulls_err() -> None:
 
     with pytest.raises(
         ComputeError,
-        match=r"The output type of the 'apply' function cannot be determined",
+        match=r"The output type of the 'map_elements' function cannot be determined",
     ):
         df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 
@@ -542,7 +543,7 @@ def test_sort_by_err_9259() -> None:
 def test_empty_inputs_error() -> None:
     df = pl.DataFrame({"col1": [1]})
     with pytest.raises(
-        ComputeError, match="expression: 'sum_horizontal' didn't get any inputs"
+        pl.exceptions.InvalidOperationError, match="expected at least 1 input"
     ):
         df.select(pl.sum_horizontal(pl.exclude("col1")))
 
@@ -587,7 +588,7 @@ def test_invalid_is_in_dtypes(
     if expected is None:
         with pytest.raises(
             InvalidOperationError,
-            match="`is_in` cannot check for .*? values in .*? data",
+            match="'is_in' cannot check for .*? values in .*? data",
         ):
             df.select(pl.col(colname).is_in(values))
     else:
@@ -650,7 +651,7 @@ def test_invalid_product_type() -> None:
 
 def test_fill_null_invalid_supertype() -> None:
     df = pl.DataFrame({"date": [date(2022, 1, 1), None]})
-    with pytest.raises(InvalidOperationError, match="could not determine supertype of"):
+    with pytest.raises(InvalidOperationError, match="got invalid or ambiguous"):
         df.select(pl.col("date").fill_null(1.0))
 
 
@@ -691,3 +692,46 @@ def test_no_panic_pandas_nat() -> None:
     # we don't want to support pd.nat, but don't want to panic.
     with pytest.raises(Exception):  # noqa: B017
         pl.DataFrame({"x": [pd.NaT]})
+
+
+def test_list_to_struct_invalid_type() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.DataFrame({"a": 1}).to_series().list.to_struct()
+
+
+def test_raise_invalid_agg() -> None:
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        (
+            pl.LazyFrame({"foo": [1]})
+            .with_row_index()
+            .group_by("index")
+            .agg(pl.col("foo").filter(pl.col("i_do_not_exist")))
+        ).collect()
+
+
+def test_err_mean_horizontal_lists() -> None:
+    df = pl.DataFrame(
+        {
+            "experiment_id": [1, 2],
+            "sensor1": [[1, 2, 3], [7, 8, 9]],
+            "sensor2": [[4, 5, 6], [10, 11, 12]],
+        }
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.with_columns(pl.mean_horizontal("sensor1", "sensor2").alias("avg_sensor"))
+
+
+def test_raise_column_not_found_in_join_arg() -> None:
+    a = pl.DataFrame({"x": [1, 2, 3]})
+    b = pl.DataFrame({"y": [1, 2, 3]})
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        a.join(b, on="y")
+
+
+def test_raise_on_different_results_20104() -> None:
+    df = pl.DataFrame({"x": [1, 2]})
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        df.rolling("x", period="3i").agg(
+            result=pl.col("x").gather_every(2, offset=1).map_batches(pl.Series.min)
+        )

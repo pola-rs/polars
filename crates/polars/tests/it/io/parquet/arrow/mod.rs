@@ -1,63 +1,46 @@
 mod read;
-mod read_indexes;
 mod write;
 
 use std::io::{Cursor, Read, Seek};
+use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::*;
-use arrow::legacy::prelude::LargeListArray;
 use arrow::record_batch::RecordBatchT;
-use arrow::types::{i256, NativeType};
+use arrow::types::{NativeType, i256};
 use ethnum::AsI256;
 use polars_error::PolarsResult;
-use polars_parquet::read as p_read;
-use polars_parquet::read::statistics::*;
+use polars_parquet::read::{self as p_read};
 use polars_parquet::write::*;
 
-type ArrayStats = (Box<dyn Array>, Statistics);
+use super::read::file::FileReader;
 
 fn new_struct(
     arrays: Vec<Box<dyn Array>>,
+    length: usize,
     names: Vec<String>,
     validity: Option<Bitmap>,
 ) -> StructArray {
     let fields = names
         .into_iter()
         .zip(arrays.iter())
-        .map(|(n, a)| Field::new(n, a.data_type().clone(), true))
+        .map(|(n, a)| Field::new(n.into(), a.dtype().clone(), true))
         .collect();
-    StructArray::new(ArrowDataType::Struct(fields), arrays, validity)
+    StructArray::new(ArrowDataType::Struct(fields), length, arrays, validity)
 }
 
-pub fn read_column<R: Read + Seek>(mut reader: R, column: &str) -> PolarsResult<ArrayStats> {
+pub fn read_column<R: Read + Seek>(mut reader: R, column: &str) -> PolarsResult<Box<dyn Array>> {
     let metadata = p_read::read_metadata(&mut reader)?;
     let schema = p_read::infer_schema(&metadata)?;
 
-    let row_group = &metadata.row_groups[0];
-
-    // verify that we can read indexes
-    if p_read::indexes::has_indexes(row_group) {
-        let _indexes = p_read::indexes::read_filtered_pages(
-            &mut reader,
-            row_group,
-            &schema.fields,
-            |_, _| vec![],
-        )?;
-    }
-
     let schema = schema.filter(|_, f| f.name == column);
 
-    let field = &schema.fields[0];
-
-    let statistics = deserialize(field, row_group)?;
-
-    let mut reader = p_read::FileReader::new(reader, metadata.row_groups, schema, None, None, None);
+    let mut reader = FileReader::new(reader, metadata.row_groups, schema, None);
 
     let array = reader.next().unwrap()?.into_arrays().pop().unwrap();
 
-    Ok((array, statistics))
+    Ok(array)
 }
 
 pub fn pyarrow_nested_edge(column: &str) -> Box<dyn Array> {
@@ -92,7 +75,7 @@ pub fn pyarrow_nested_edge(column: &str) -> Box<dyn Array> {
             // ]
             let a = ListArray::<i64>::new(
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "item",
+                    "item".into(),
                     ArrowDataType::Utf8View,
                     true,
                 ))),
@@ -101,7 +84,8 @@ pub fn pyarrow_nested_edge(column: &str) -> Box<dyn Array> {
                 None,
             );
             StructArray::new(
-                ArrowDataType::Struct(vec![Field::new("f1", a.data_type().clone(), true)]),
+                ArrowDataType::Struct(vec![Field::new("f1".into(), a.dtype().clone(), true)]),
+                a.len(),
                 vec![a.boxed()],
                 None,
             )
@@ -111,8 +95,8 @@ pub fn pyarrow_nested_edge(column: &str) -> Box<dyn Array> {
             let values = pyarrow_nested_edge("struct_list_nullable");
             ListArray::<i64>::new(
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "item",
-                    values.data_type().clone(),
+                    "item".into(),
+                    values.dtype().clone(),
                     true,
                 ))),
                 vec![0, 1].try_into().unwrap(),
@@ -277,8 +261,11 @@ pub fn pyarrow_nested_nullable(column: &str) -> Box<dyn Array> {
                 Some("e"),
             ])
             .boxed();
+
+            let len = array.len();
             new_struct(
                 vec![array],
+                len,
                 vec!["a".to_string()],
                 Some(
                     [
@@ -322,8 +309,8 @@ pub fn pyarrow_nested_nullable(column: &str) -> Box<dyn Array> {
 
             let array = ListArray::<i64>::new(
                 ArrowDataType::LargeList(Box::new(Field::new(
-                    "item",
-                    array.data_type().clone(),
+                    "item".into(),
+                    array.dtype().clone(),
                     true,
                 ))),
                 vec![0, 1, 2, 3, 3, 4, 4, 4, 4, 5, 6, 8, 8]
@@ -339,8 +326,10 @@ pub fn pyarrow_nested_nullable(column: &str) -> Box<dyn Array> {
             )
             .boxed();
 
+            let len = array.len();
             new_struct(
                 vec![array],
+                len,
                 vec!["a".to_string()],
                 Some(
                     [
@@ -361,15 +350,21 @@ pub fn pyarrow_nested_nullable(column: &str) -> Box<dyn Array> {
     match column {
         "list_int64_required_required" => {
             // [[0, 1], [], [2, 0, 3], [4, 5, 6], [], [7, 8, 9], [], [10]]
-            let data_type =
-                ArrowDataType::LargeList(Box::new(Field::new("item", ArrowDataType::Int64, false)));
-            ListArray::<i64>::new(data_type, offsets, values, None).boxed()
+            let dtype = ArrowDataType::LargeList(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::Int64,
+                false,
+            )));
+            ListArray::<i64>::new(dtype, offsets, values, None).boxed()
         },
         "list_int64_optional_required" => {
             // [[0, 1], [], [2, 0, 3], [4, 5, 6], [], [7, 8, 9], [], [10]]
-            let data_type =
-                ArrowDataType::LargeList(Box::new(Field::new("item", ArrowDataType::Int64, true)));
-            ListArray::<i64>::new(data_type, offsets, values, None).boxed()
+            let dtype = ArrowDataType::LargeList(Box::new(Field::new(
+                "item".into(),
+                ArrowDataType::Int64,
+                true,
+            )));
+            ListArray::<i64>::new(dtype, offsets, values, None).boxed()
         },
         "list_nested_i64" => {
             // [[0, 1]], None, [[2, None], [3]], [[4, 5], [6]], [], [[7], None, [9]], [[], [None], None], [[10]]
@@ -427,19 +422,26 @@ pub fn pyarrow_nested_nullable(column: &str) -> Box<dyn Array> {
             let array: ListArray<i64> = a.into();
             Box::new(array)
         },
-        "struct_list_nullable" => new_struct(vec![values], vec!["a".to_string()], None).boxed(),
+        "struct_list_nullable" => {
+            let len = values.len();
+            new_struct(vec![values], len, vec!["a".to_string()], None).boxed()
+        },
         _ => {
             let field = match column {
-                "list_int64" => Field::new("item", ArrowDataType::Int64, true),
-                "list_int64_required" => Field::new("item", ArrowDataType::Int64, false),
-                "list_int16" => Field::new("item", ArrowDataType::Int16, true),
-                "list_bool" => Field::new("item", ArrowDataType::Boolean, true),
-                "list_utf8" => Field::new("item", ArrowDataType::Utf8View, true),
-                "list_large_binary" => Field::new("item", ArrowDataType::LargeBinary, true),
-                "list_decimal" => Field::new("item", ArrowDataType::Decimal(9, 0), true),
-                "list_decimal256" => Field::new("item", ArrowDataType::Decimal256(9, 0), true),
-                "list_struct_nullable" => Field::new("item", values.data_type().clone(), true),
-                "list_struct_list_nullable" => Field::new("item", values.data_type().clone(), true),
+                "list_int64" => Field::new("item".into(), ArrowDataType::Int64, true),
+                "list_int64_required" => Field::new("item".into(), ArrowDataType::Int64, false),
+                "list_int16" => Field::new("item".into(), ArrowDataType::Int16, true),
+                "list_bool" => Field::new("item".into(), ArrowDataType::Boolean, true),
+                "list_utf8" => Field::new("item".into(), ArrowDataType::Utf8View, true),
+                "list_large_binary" => Field::new("item".into(), ArrowDataType::LargeBinary, true),
+                "list_decimal" => Field::new("item".into(), ArrowDataType::Decimal(9, 0), true),
+                "list_decimal256" => {
+                    Field::new("item".into(), ArrowDataType::Decimal256(9, 0), true)
+                },
+                "list_struct_nullable" => Field::new("item".into(), values.dtype().clone(), true),
+                "list_struct_list_nullable" => {
+                    Field::new("item".into(), values.dtype().clone(), true)
+                },
                 other => unreachable!("{}", other),
             };
 
@@ -448,8 +450,8 @@ pub fn pyarrow_nested_nullable(column: &str) -> Box<dyn Array> {
             ]));
             // [0, 2, 2, 5, 8, 8, 11, 11, 12]
             // [[a1, a2], None, [a3, a4, a5], [a6, a7, a8], [], [a9, a10, a11], None, [a12]]
-            let data_type = ArrowDataType::LargeList(Box::new(field));
-            ListArray::<i64>::new(data_type, offsets, values, validity).boxed()
+            let dtype = ArrowDataType::LargeList(Box::new(field));
+            ListArray::<i64>::new(dtype, offsets, values, validity).boxed()
         },
     }
 }
@@ -537,102 +539,8 @@ pub fn pyarrow_nullable(column: &str) -> Box<dyn Array> {
                 .to(ArrowDataType::Timestamp(TimeUnit::Second, None)),
         ),
         "timestamp_s_utc" => Box::new(PrimitiveArray::<i64>::from(i64_values).to(
-            ArrowDataType::Timestamp(TimeUnit::Second, Some("UTC".to_string())),
+            ArrowDataType::Timestamp(TimeUnit::Second, Some("UTC".into())),
         )),
-        _ => unreachable!(),
-    }
-}
-
-pub fn pyarrow_nullable_statistics(column: &str) -> Statistics {
-    match column {
-        "int64" => Statistics {
-            distinct_count: UInt64Array::from([None]).boxed(),
-            null_count: UInt64Array::from([Some(3)]).boxed(),
-            min_value: Box::new(Int64Array::from_slice([-256])),
-            max_value: Box::new(Int64Array::from_slice([9])),
-        },
-        "float64" => Statistics {
-            distinct_count: UInt64Array::from([None]).boxed(),
-            null_count: UInt64Array::from([Some(3)]).boxed(),
-            min_value: Box::new(Float64Array::from_slice([0.0])),
-            max_value: Box::new(Float64Array::from_slice([9.0])),
-        },
-        "string" => Statistics {
-            distinct_count: UInt64Array::from([None]).boxed(),
-            null_count: UInt64Array::from([Some(4)]).boxed(),
-            min_value: Box::new(Utf8ViewArray::from_slice([Some("")])),
-            max_value: Box::new(Utf8ViewArray::from_slice([Some("def")])),
-        },
-        "bool" => Statistics {
-            distinct_count: UInt64Array::from([Some(2)]).boxed(),
-            null_count: UInt64Array::from([Some(4)]).boxed(),
-            min_value: Box::new(BooleanArray::from_slice([false])),
-            max_value: Box::new(BooleanArray::from_slice([true])),
-        },
-        "timestamp_ms" => Statistics {
-            distinct_count: UInt64Array::from([None]).boxed(),
-            null_count: UInt64Array::from([Some(3)]).boxed(),
-            min_value: Box::new(
-                Int64Array::from_slice([0])
-                    .to(ArrowDataType::Timestamp(TimeUnit::Millisecond, None)),
-            ),
-            max_value: Box::new(
-                Int64Array::from_slice([9])
-                    .to(ArrowDataType::Timestamp(TimeUnit::Millisecond, None)),
-            ),
-        },
-        "uint32" => Statistics {
-            distinct_count: UInt64Array::from([None]).boxed(),
-            null_count: UInt64Array::from([Some(3)]).boxed(),
-            min_value: Box::new(UInt32Array::from_slice([0])),
-            max_value: Box::new(UInt32Array::from_slice([9])),
-        },
-        "int32_dict" => {
-            let new_dict = |array: Box<dyn Array>| -> Box<dyn Array> {
-                Box::new(DictionaryArray::try_from_keys(vec![Some(0)].into(), array).unwrap())
-            };
-
-            Statistics {
-                distinct_count: UInt64Array::from([None]).boxed(),
-                null_count: UInt64Array::from([Some(1)]).boxed(),
-                min_value: new_dict(Box::new(Int32Array::from_slice([10]))),
-                max_value: new_dict(Box::new(Int32Array::from_slice([200]))),
-            }
-        },
-        "timestamp_us" => Statistics {
-            distinct_count: UInt64Array::from([None]).boxed(),
-            null_count: UInt64Array::from([Some(3)]).boxed(),
-            min_value: Box::new(
-                Int64Array::from_slice([-256])
-                    .to(ArrowDataType::Timestamp(TimeUnit::Microsecond, None)),
-            ),
-            max_value: Box::new(
-                Int64Array::from_slice([9])
-                    .to(ArrowDataType::Timestamp(TimeUnit::Microsecond, None)),
-            ),
-        },
-        "timestamp_s" => Statistics {
-            distinct_count: UInt64Array::from([None]).boxed(),
-            null_count: UInt64Array::from([Some(3)]).boxed(),
-            min_value: Box::new(
-                Int64Array::from_slice([-256]).to(ArrowDataType::Timestamp(TimeUnit::Second, None)),
-            ),
-            max_value: Box::new(
-                Int64Array::from_slice([9]).to(ArrowDataType::Timestamp(TimeUnit::Second, None)),
-            ),
-        },
-        "timestamp_s_utc" => Statistics {
-            distinct_count: UInt64Array::from([None]).boxed(),
-            null_count: UInt64Array::from([Some(3)]).boxed(),
-            min_value: Box::new(Int64Array::from_slice([-256]).to(ArrowDataType::Timestamp(
-                TimeUnit::Second,
-                Some("UTC".to_string()),
-            ))),
-            max_value: Box::new(Int64Array::from_slice([9]).to(ArrowDataType::Timestamp(
-                TimeUnit::Second,
-                Some("UTC".to_string()),
-            ))),
-        },
         _ => unreachable!(),
     }
 }
@@ -673,349 +581,6 @@ pub fn pyarrow_required(column: &str) -> Box<dyn Array> {
     }
 }
 
-pub fn pyarrow_required_statistics(column: &str) -> Statistics {
-    let mut s = pyarrow_nullable_statistics(column);
-    s.null_count = UInt64Array::from([Some(0)]).boxed();
-    s
-}
-
-pub fn pyarrow_nested_nullable_statistics(column: &str) -> Statistics {
-    let new_list = |array: Box<dyn Array>, nullable: bool| {
-        ListArray::<i64>::new(
-            ArrowDataType::LargeList(Box::new(Field::new(
-                "item",
-                array.data_type().clone(),
-                nullable,
-            ))),
-            vec![0, array.len() as i64].try_into().unwrap(),
-            array,
-            None,
-        )
-    };
-
-    match column {
-        "list_int16" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed(), true).boxed(),
-            null_count: new_list(UInt64Array::from([Some(1)]).boxed(), true).boxed(),
-            min_value: new_list(Box::new(Int16Array::from_slice([0])), true).boxed(),
-            max_value: new_list(Box::new(Int16Array::from_slice([10])), true).boxed(),
-        },
-        "list_bool" => Statistics {
-            distinct_count: new_list(UInt64Array::from([Some(2)]).boxed(), true).boxed(),
-            null_count: new_list(UInt64Array::from([Some(1)]).boxed(), true).boxed(),
-            min_value: new_list(Box::new(BooleanArray::from_slice([false])), true).boxed(),
-            max_value: new_list(Box::new(BooleanArray::from_slice([true])), true).boxed(),
-        },
-        "list_utf8" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed(), true).boxed(),
-            null_count: new_list(UInt64Array::from([Some(1)]).boxed(), true).boxed(),
-            min_value: new_list(Box::new(Utf8ViewArray::from_slice([Some("")])), true).boxed(),
-            max_value: new_list(Box::new(Utf8ViewArray::from_slice([Some("ccc")])), true).boxed(),
-        },
-        "list_large_binary" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed(), true).boxed(),
-            null_count: new_list(UInt64Array::from([Some(1)]).boxed(), true).boxed(),
-            min_value: new_list(Box::new(BinaryArray::<i64>::from_slice([b""])), true).boxed(),
-            max_value: new_list(Box::new(BinaryArray::<i64>::from_slice([b"ccc"])), true).boxed(),
-        },
-        "list_decimal" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed(), true).boxed(),
-            null_count: new_list(UInt64Array::from([Some(1)]).boxed(), true).boxed(),
-            min_value: new_list(
-                Box::new(Int128Array::from_slice([0]).to(ArrowDataType::Decimal(9, 0))),
-                true,
-            )
-            .boxed(),
-            max_value: new_list(
-                Box::new(Int128Array::from_slice([10]).to(ArrowDataType::Decimal(9, 0))),
-                true,
-            )
-            .boxed(),
-        },
-        "list_decimal256" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed(), true).boxed(),
-            null_count: new_list(UInt64Array::from([Some(1)]).boxed(), true).boxed(),
-            min_value: new_list(
-                Box::new(
-                    Int256Array::from_slice([i256(0.as_i256())])
-                        .to(ArrowDataType::Decimal256(9, 0)),
-                ),
-                true,
-            )
-            .boxed(),
-            max_value: new_list(
-                Box::new(
-                    Int256Array::from_slice([i256(10.as_i256())])
-                        .to(ArrowDataType::Decimal256(9, 0)),
-                ),
-                true,
-            )
-            .boxed(),
-        },
-        "list_int64" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed(), true).boxed(),
-            null_count: new_list(UInt64Array::from([Some(1)]).boxed(), true).boxed(),
-            min_value: new_list(Box::new(Int64Array::from_slice([0])), true).boxed(),
-            max_value: new_list(Box::new(Int64Array::from_slice([10])), true).boxed(),
-        },
-        "list_int64_required" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed(), true).boxed(),
-            null_count: new_list(UInt64Array::from([Some(1)]).boxed(), true).boxed(),
-            min_value: new_list(Box::new(Int64Array::from_slice([0])), false).boxed(),
-            max_value: new_list(Box::new(Int64Array::from_slice([10])), false).boxed(),
-        },
-        "list_int64_required_required" | "list_int64_optional_required" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed(), false).boxed(),
-            null_count: new_list(UInt64Array::from([Some(0)]).boxed(), false).boxed(),
-            min_value: new_list(Box::new(Int64Array::from_slice([0])), false).boxed(),
-            max_value: new_list(Box::new(Int64Array::from_slice([10])), false).boxed(),
-        },
-        "list_nested_i64" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed(), true).boxed(),
-            null_count: new_list(UInt64Array::from([Some(2)]).boxed(), true).boxed(),
-            min_value: new_list(
-                new_list(Box::new(Int64Array::from_slice([0])), true).boxed(),
-                true,
-            )
-            .boxed(),
-            max_value: new_list(
-                new_list(Box::new(Int64Array::from_slice([10])), true).boxed(),
-                true,
-            )
-            .boxed(),
-        },
-        "list_nested_inner_required_required_i64" => Statistics {
-            distinct_count: UInt64Array::from([None]).boxed(),
-            null_count: UInt64Array::from([Some(0)]).boxed(),
-            min_value: new_list(
-                new_list(Box::new(Int64Array::from_slice([0])), true).boxed(),
-                true,
-            )
-            .boxed(),
-            max_value: new_list(
-                new_list(Box::new(Int64Array::from_slice([10])), true).boxed(),
-                true,
-            )
-            .boxed(),
-        },
-        "list_nested_inner_required_i64" => Statistics {
-            distinct_count: UInt64Array::from([None]).boxed(),
-            null_count: UInt64Array::from([Some(0)]).boxed(),
-            min_value: new_list(
-                new_list(Box::new(Int64Array::from_slice([0])), true).boxed(),
-                true,
-            )
-            .boxed(),
-            max_value: new_list(
-                new_list(Box::new(Int64Array::from_slice([10])), true).boxed(),
-                true,
-            )
-            .boxed(),
-        },
-        "list_struct_nullable" => Statistics {
-            distinct_count: new_list(
-                new_struct(
-                    vec![UInt64Array::from([None]).boxed()],
-                    vec!["a".to_string()],
-                    None,
-                )
-                .boxed(),
-                true,
-            )
-            .boxed(),
-            null_count: new_list(
-                new_struct(
-                    vec![UInt64Array::from([Some(4)]).boxed()],
-                    vec!["a".to_string()],
-                    None,
-                )
-                .boxed(),
-                true,
-            )
-            .boxed(),
-            min_value: new_list(
-                new_struct(
-                    vec![Utf8ViewArray::from_slice([Some("a")]).boxed()],
-                    vec!["a".to_string()],
-                    None,
-                )
-                .boxed(),
-                true,
-            )
-            .boxed(),
-            max_value: new_list(
-                new_struct(
-                    vec![Utf8ViewArray::from_slice([Some("e")]).boxed()],
-                    vec!["a".to_string()],
-                    None,
-                )
-                .boxed(),
-                true,
-            )
-            .boxed(),
-        },
-        "list_struct_list_nullable" => Statistics {
-            distinct_count: new_list(
-                new_struct(
-                    vec![new_list(UInt64Array::from([None]).boxed(), true).boxed()],
-                    vec!["a".to_string()],
-                    None,
-                )
-                .boxed(),
-                true,
-            )
-            .boxed(),
-            null_count: new_list(
-                new_struct(
-                    vec![new_list(UInt64Array::from([Some(1)]).boxed(), true).boxed()],
-                    vec!["a".to_string()],
-                    None,
-                )
-                .boxed(),
-                true,
-            )
-            .boxed(),
-            min_value: new_list(
-                new_struct(
-                    vec![new_list(Utf8ViewArray::from_slice([Some("a")]).boxed(), true).boxed()],
-                    vec!["a".to_string()],
-                    None,
-                )
-                .boxed(),
-                true,
-            )
-            .boxed(),
-            max_value: new_list(
-                new_struct(
-                    vec![new_list(Utf8ViewArray::from_slice([Some("d")]).boxed(), true).boxed()],
-                    vec!["a".to_string()],
-                    None,
-                )
-                .boxed(),
-                true,
-            )
-            .boxed(),
-        },
-        "struct_list_nullable" => Statistics {
-            distinct_count: new_struct(
-                vec![new_list(UInt64Array::from([None]).boxed(), true).boxed()],
-                vec!["a".to_string()],
-                None,
-            )
-            .boxed(),
-            null_count: new_struct(
-                vec![new_list(UInt64Array::from([Some(1)]).boxed(), true).boxed()],
-                vec!["a".to_string()],
-                None,
-            )
-            .boxed(),
-            min_value: new_struct(
-                vec![new_list(Utf8ViewArray::from_slice([Some("")]).boxed(), true).boxed()],
-                vec!["a".to_string()],
-                None,
-            )
-            .boxed(),
-            max_value: new_struct(
-                vec![new_list(Utf8ViewArray::from_slice([Some("ccc")]).boxed(), true).boxed()],
-                vec!["a".to_string()],
-                None,
-            )
-            .boxed(),
-        },
-        other => todo!("{}", other),
-    }
-}
-
-pub fn pyarrow_nested_edge_statistics(column: &str) -> Statistics {
-    let new_list = |array: Box<dyn Array>| {
-        ListArray::<i64>::new(
-            ArrowDataType::LargeList(Box::new(Field::new(
-                "item",
-                array.data_type().clone(),
-                true,
-            ))),
-            vec![0, array.len() as i64].try_into().unwrap(),
-            array,
-            None,
-        )
-    };
-
-    let new_struct = |arrays: Vec<Box<dyn Array>>, names: Vec<String>| {
-        let fields = names
-            .into_iter()
-            .zip(arrays.iter())
-            .map(|(n, a)| Field::new(n, a.data_type().clone(), true))
-            .collect();
-        StructArray::new(ArrowDataType::Struct(fields), arrays, None)
-    };
-
-    let names = vec!["f1".to_string()];
-
-    match column {
-        "simple" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed()).boxed(),
-            null_count: new_list(UInt64Array::from([Some(0)]).boxed()).boxed(),
-            min_value: new_list(Box::new(Int64Array::from([Some(0)]))).boxed(),
-            max_value: new_list(Box::new(Int64Array::from([Some(1)]))).boxed(),
-        },
-        "null" | "empty" => Statistics {
-            distinct_count: new_list(UInt64Array::from([None]).boxed()).boxed(),
-            null_count: new_list(UInt64Array::from([Some(0)]).boxed()).boxed(),
-            min_value: new_list(Box::new(Int64Array::from([None]))).boxed(),
-            max_value: new_list(Box::new(Int64Array::from([None]))).boxed(),
-        },
-        "struct_list_nullable" => Statistics {
-            distinct_count: new_struct(
-                vec![new_list(Box::new(UInt64Array::from([None]))).boxed()],
-                names.clone(),
-            )
-            .boxed(),
-            null_count: new_struct(
-                vec![new_list(Box::new(UInt64Array::from([Some(1)]))).boxed()],
-                names.clone(),
-            )
-            .boxed(),
-            min_value: Box::new(new_struct(
-                vec![new_list(Box::new(Utf8ViewArray::from_slice([Some("a")]))).boxed()],
-                names.clone(),
-            )),
-            max_value: Box::new(new_struct(
-                vec![new_list(Box::new(Utf8ViewArray::from_slice([Some("c")]))).boxed()],
-                names,
-            )),
-        },
-        "list_struct_list_nullable" => Statistics {
-            distinct_count: new_list(
-                new_struct(
-                    vec![new_list(Box::new(UInt64Array::from([None]))).boxed()],
-                    names.clone(),
-                )
-                .boxed(),
-            )
-            .boxed(),
-            null_count: new_list(
-                new_struct(
-                    vec![new_list(Box::new(UInt64Array::from([Some(1)]))).boxed()],
-                    names.clone(),
-                )
-                .boxed(),
-            )
-            .boxed(),
-            min_value: new_list(Box::new(new_struct(
-                vec![new_list(Box::new(Utf8ViewArray::from_slice([Some("a")]))).boxed()],
-                names.clone(),
-            )))
-            .boxed(),
-            max_value: new_list(Box::new(new_struct(
-                vec![new_list(Box::new(Utf8ViewArray::from_slice([Some("c")]))).boxed()],
-                names,
-            )))
-            .boxed(),
-        },
-        _ => unreachable!(),
-    }
-}
-
 pub fn pyarrow_struct(column: &str) -> Box<dyn Array> {
     let boolean = [
         Some(true),
@@ -1048,24 +613,36 @@ pub fn pyarrow_struct(column: &str) -> Box<dyn Array> {
     let mask = [true, true, false, true, true, true, true, true, true, true];
 
     let fields = vec![
-        Field::new("f1", ArrowDataType::Utf8View, true),
-        Field::new("f2", ArrowDataType::Boolean, true),
+        Field::new("f1".into(), ArrowDataType::Utf8View, true),
+        Field::new("f2".into(), ArrowDataType::Boolean, true),
     ];
     match column {
-        "struct" => {
-            StructArray::new(ArrowDataType::Struct(fields), vec![string, boolean], None).boxed()
-        },
+        "struct" => StructArray::new(
+            ArrowDataType::Struct(fields),
+            string.len(),
+            vec![string, boolean],
+            None,
+        )
+        .boxed(),
         "struct_nullable" => {
+            let len = string.len();
             let values = vec![string, boolean];
-            StructArray::new(ArrowDataType::Struct(fields), values, Some(mask.into())).boxed()
+            StructArray::new(
+                ArrowDataType::Struct(fields),
+                len,
+                values,
+                Some(mask.into()),
+            )
+            .boxed()
         },
         "struct_struct" => {
             let struct_ = pyarrow_struct("struct");
             Box::new(StructArray::new(
                 ArrowDataType::Struct(vec![
-                    Field::new("f1", ArrowDataType::Struct(fields), true),
-                    Field::new("f2", ArrowDataType::Boolean, true),
+                    Field::new("f1".into(), ArrowDataType::Struct(fields), true),
+                    Field::new("f2".into(), ArrowDataType::Boolean, true),
                 ]),
+                struct_.len(),
                 vec![struct_, boolean],
                 None,
             ))
@@ -1074,179 +651,13 @@ pub fn pyarrow_struct(column: &str) -> Box<dyn Array> {
             let struct_ = pyarrow_struct("struct");
             Box::new(StructArray::new(
                 ArrowDataType::Struct(vec![
-                    Field::new("f1", ArrowDataType::Struct(fields), true),
-                    Field::new("f2", ArrowDataType::Boolean, true),
+                    Field::new("f1".into(), ArrowDataType::Struct(fields), true),
+                    Field::new("f2".into(), ArrowDataType::Boolean, true),
                 ]),
+                struct_.len(),
                 vec![struct_, boolean],
                 Some(mask.into()),
             ))
-        },
-        _ => todo!(),
-    }
-}
-
-pub fn pyarrow_struct_statistics(column: &str) -> Statistics {
-    let new_struct =
-        |arrays: Vec<Box<dyn Array>>, names: Vec<String>| new_struct(arrays, names, None);
-
-    let names = vec!["f1".to_string(), "f2".to_string()];
-
-    match column {
-        "struct" | "struct_nullable" => Statistics {
-            distinct_count: new_struct(
-                vec![
-                    Box::new(UInt64Array::from([None])),
-                    Box::new(UInt64Array::from([Some(2)])),
-                ],
-                names.clone(),
-            )
-            .boxed(),
-            null_count: new_struct(
-                vec![
-                    Box::new(UInt64Array::from([Some(4)])),
-                    Box::new(UInt64Array::from([Some(4)])),
-                ],
-                names.clone(),
-            )
-            .boxed(),
-            min_value: Box::new(new_struct(
-                vec![
-                    Box::new(Utf8ViewArray::from_slice([Some("")])),
-                    Box::new(BooleanArray::from_slice([false])),
-                ],
-                names.clone(),
-            )),
-            max_value: Box::new(new_struct(
-                vec![
-                    Box::new(Utf8ViewArray::from_slice([Some("def")])),
-                    Box::new(BooleanArray::from_slice([true])),
-                ],
-                names,
-            )),
-        },
-        "struct_struct" => Statistics {
-            distinct_count: new_struct(
-                vec![
-                    new_struct(
-                        vec![
-                            Box::new(UInt64Array::from([None])),
-                            Box::new(UInt64Array::from([Some(2)])),
-                        ],
-                        names.clone(),
-                    )
-                    .boxed(),
-                    UInt64Array::from([None]).boxed(),
-                ],
-                names.clone(),
-            )
-            .boxed(),
-            null_count: new_struct(
-                vec![
-                    new_struct(
-                        vec![
-                            Box::new(UInt64Array::from([Some(4)])),
-                            Box::new(UInt64Array::from([Some(4)])),
-                        ],
-                        names.clone(),
-                    )
-                    .boxed(),
-                    UInt64Array::from([Some(4)]).boxed(),
-                ],
-                names.clone(),
-            )
-            .boxed(),
-            min_value: new_struct(
-                vec![
-                    new_struct(
-                        vec![
-                            Utf8ViewArray::from_slice([Some("")]).boxed(),
-                            BooleanArray::from_slice([false]).boxed(),
-                        ],
-                        names.clone(),
-                    )
-                    .boxed(),
-                    BooleanArray::from_slice([false]).boxed(),
-                ],
-                names.clone(),
-            )
-            .boxed(),
-            max_value: new_struct(
-                vec![
-                    new_struct(
-                        vec![
-                            Utf8ViewArray::from_slice([Some("def")]).boxed(),
-                            BooleanArray::from_slice([true]).boxed(),
-                        ],
-                        names.clone(),
-                    )
-                    .boxed(),
-                    BooleanArray::from_slice([true]).boxed(),
-                ],
-                names,
-            )
-            .boxed(),
-        },
-        "struct_struct_nullable" => Statistics {
-            distinct_count: new_struct(
-                vec![
-                    new_struct(
-                        vec![
-                            Box::new(UInt64Array::from([None])),
-                            Box::new(UInt64Array::from([None])),
-                        ],
-                        names.clone(),
-                    )
-                    .boxed(),
-                    UInt64Array::from([None]).boxed(),
-                ],
-                names.clone(),
-            )
-            .boxed(),
-            null_count: new_struct(
-                vec![
-                    new_struct(
-                        vec![
-                            Box::new(UInt64Array::from([Some(5)])),
-                            Box::new(UInt64Array::from([Some(5)])),
-                        ],
-                        names.clone(),
-                    )
-                    .boxed(),
-                    UInt64Array::from([Some(5)]).boxed(),
-                ],
-                names.clone(),
-            )
-            .boxed(),
-            min_value: new_struct(
-                vec![
-                    new_struct(
-                        vec![
-                            Utf8ViewArray::from_slice([Some("")]).boxed(),
-                            BooleanArray::from_slice([false]).boxed(),
-                        ],
-                        names.clone(),
-                    )
-                    .boxed(),
-                    BooleanArray::from_slice([false]).boxed(),
-                ],
-                names.clone(),
-            )
-            .boxed(),
-            max_value: new_struct(
-                vec![
-                    new_struct(
-                        vec![
-                            Utf8ViewArray::from_slice([Some("def")]).boxed(),
-                            BooleanArray::from_slice([true]).boxed(),
-                        ],
-                        names.clone(),
-                    )
-                    .boxed(),
-                    BooleanArray::from_slice([true]).boxed(),
-                ],
-                names,
-            )
-            .boxed(),
         },
         _ => todo!(),
     }
@@ -1264,10 +675,9 @@ fn integration_write(
     };
 
     let encodings = schema
-        .fields
-        .iter()
+        .iter_values()
         .map(|f| {
-            transverse(&f.data_type, |x| {
+            transverse(&f.dtype, |x| {
                 if let ArrowDataType::Dictionary(..) = x {
                     Encoding::RleDictionary
                 } else {
@@ -1299,94 +709,16 @@ fn integration_read(data: &[u8], limit: Option<usize>) -> PolarsResult<Integrati
     let metadata = p_read::read_metadata(&mut reader)?;
     let schema = p_read::infer_schema(&metadata)?;
 
-    for (field, row_group) in schema.fields.iter().zip(metadata.row_groups.iter()) {
-        let mut _statistics = deserialize(field, row_group)?;
-    }
-
-    let reader = p_read::FileReader::new(
+    let reader = FileReader::new(
         Cursor::new(data),
         metadata.row_groups,
         schema.clone(),
-        None,
         limit,
-        None,
     );
 
     let batches = reader.collect::<PolarsResult<Vec<_>>>()?;
 
     Ok((schema, batches))
-}
-
-fn generic_data() -> PolarsResult<(ArrowSchema, RecordBatchT<Box<dyn Array>>)> {
-    let array1 = PrimitiveArray::<i64>::from([Some(1), None, Some(2)])
-        .to(ArrowDataType::Duration(TimeUnit::Second));
-    let array2 = Utf8ViewArray::from_slice([Some("a"), None, Some("bb")]);
-
-    let indices = PrimitiveArray::from_values((0..3u64).map(|x| x % 2));
-    let values = PrimitiveArray::from_slice([1.0f32, 3.0]).boxed();
-    let array3 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let array4 = BinaryViewArray::from_slice([Some(b"ab"), Some(b"aa"), Some(b"ac")]);
-
-    let values = PrimitiveArray::from_slice([1i16, 3]).boxed();
-    let array6 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1i64, 3])
-        .to(ArrowDataType::Timestamp(
-            TimeUnit::Millisecond,
-            Some("UTC".to_string()),
-        ))
-        .boxed();
-    let array7 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1.0f64, 3.0]).boxed();
-    let array8 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1u8, 3]).boxed();
-    let array9 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1u16, 3]).boxed();
-    let array10 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1u32, 3]).boxed();
-    let array11 = DictionaryArray::try_from_keys(indices.clone(), values).unwrap();
-
-    let values = PrimitiveArray::from_slice([1u64, 3]).boxed();
-    let array12 = DictionaryArray::try_from_keys(indices, values).unwrap();
-
-    let array13 = PrimitiveArray::<i32>::from_slice([1, 2, 3])
-        .to(ArrowDataType::Interval(IntervalUnit::YearMonth));
-
-    let schema = ArrowSchema::from(vec![
-        Field::new("a1", array1.data_type().clone(), true),
-        Field::new("a2", array2.data_type().clone(), true),
-        Field::new("a3", array3.data_type().clone(), true),
-        Field::new("a4", array4.data_type().clone(), true),
-        Field::new("a6", array6.data_type().clone(), true),
-        Field::new("a7", array7.data_type().clone(), true),
-        Field::new("a8", array8.data_type().clone(), true),
-        Field::new("a9", array9.data_type().clone(), true),
-        Field::new("a10", array10.data_type().clone(), true),
-        Field::new("a11", array11.data_type().clone(), true),
-        Field::new("a12", array12.data_type().clone(), true),
-        Field::new("a13", array13.data_type().clone(), true),
-    ]);
-    let chunk = RecordBatchT::try_new(vec![
-        array1.boxed(),
-        array2.boxed(),
-        array3.boxed(),
-        array4.boxed(),
-        array6.boxed(),
-        array7.boxed(),
-        array8.boxed(),
-        array9.boxed(),
-        array10.boxed(),
-        array11.boxed(),
-        array12.boxed(),
-        array13.boxed(),
-    ])?;
-
-    Ok((schema, chunk))
 }
 
 fn assert_roundtrip(
@@ -1399,12 +731,13 @@ fn assert_roundtrip(
     let (new_schema, new_chunks) = integration_read(&r, limit)?;
 
     let expected = if let Some(limit) = limit {
+        let length = chunk.len().min(limit);
         let expected = chunk
             .into_arrays()
             .into_iter()
             .map(|x| x.sliced(0, limit))
             .collect::<Vec<_>>();
-        RecordBatchT::new(expected)
+        RecordBatchT::new(length, Arc::new(schema.clone()), expected)
     } else {
         chunk
     };
@@ -1412,14 +745,6 @@ fn assert_roundtrip(
     assert_eq!(new_schema, schema);
     assert_eq!(new_chunks, vec![expected]);
     Ok(())
-}
-
-/// Tests that when arrow-specific types (Duration and LargeUtf8) are written to parquet, we can roundtrip its
-/// logical types.
-#[test]
-fn arrow_type() -> PolarsResult<()> {
-    let (schema, chunk) = generic_data()?;
-    assert_roundtrip(schema, chunk, None)
 }
 
 fn data<T: NativeType, I: Iterator<Item = T>>(
@@ -1451,7 +776,7 @@ fn data<T: NativeType, I: Iterator<Item = T>>(
     ];
     let mut array = MutableListArray::<i64, _>::new_with_field(
         MutablePrimitiveArray::<T>::new(),
-        "item",
+        "item".into(),
         inner_is_nullable,
     );
     array.try_extend(data).unwrap();
@@ -1463,12 +788,9 @@ fn assert_array_roundtrip(
     array: Box<dyn Array>,
     limit: Option<usize>,
 ) -> PolarsResult<()> {
-    let schema = ArrowSchema::from(vec![Field::new(
-        "a1",
-        array.data_type().clone(),
-        is_nullable,
-    )]);
-    let chunk = RecordBatchT::try_new(vec![array])?;
+    let schema =
+        ArrowSchema::from_iter([Field::new("a1".into(), array.dtype().clone(), is_nullable)]);
+    let chunk = RecordBatchT::try_new(array.len(), Arc::new(schema.clone()), vec![array])?;
 
     assert_roundtrip(schema, chunk, limit)
 }
@@ -1519,7 +841,7 @@ fn list_slice() -> PolarsResult<()> {
     ];
     let mut array = MutableListArray::<i64, _>::new_with_field(
         MutablePrimitiveArray::<i64>::new(),
-        "item",
+        "item".into(),
         true,
     );
     array.try_extend(data).unwrap();
@@ -1556,7 +878,7 @@ fn list_int_nullable() -> PolarsResult<()> {
     ];
     let mut array = MutableListArray::<i64, _>::new_with_field(
         MutablePrimitiveArray::<i64>::new(),
-        "item",
+        "item".into(),
         true,
     );
     array.try_extend(data).unwrap();
@@ -1564,70 +886,24 @@ fn list_int_nullable() -> PolarsResult<()> {
 }
 
 #[test]
-fn limit() -> PolarsResult<()> {
-    let (schema, chunk) = generic_data()?;
-    assert_roundtrip(schema, chunk, Some(2))
-}
-
-#[test]
 fn limit_list() -> PolarsResult<()> {
     test_list_array_required_required(Some(2))
 }
 
-fn nested_dict_data(
-    data_type: ArrowDataType,
-) -> PolarsResult<(ArrowSchema, RecordBatchT<Box<dyn Array>>)> {
-    let values = match data_type {
-        ArrowDataType::Float32 => PrimitiveArray::from_slice([1.0f32, 3.0]).boxed(),
-        ArrowDataType::Utf8View => Utf8ViewArray::from_slice([Some("a"), Some("b")]).boxed(),
-        _ => unreachable!(),
-    };
-
-    let indices = PrimitiveArray::from_values((0..3u64).map(|x| x % 2));
-    let values = DictionaryArray::try_from_keys(indices, values).unwrap();
-    let values = LargeListArray::try_new(
-        ArrowDataType::LargeList(Box::new(Field::new(
-            "item",
-            values.data_type().clone(),
-            false,
-        ))),
-        vec![0i64, 0, 0, 2, 3].try_into().unwrap(),
-        values.boxed(),
-        Some([true, false, true, true].into()),
-    )?;
-
-    let schema = ArrowSchema::from(vec![Field::new("c1", values.data_type().clone(), true)]);
-    let chunk = RecordBatchT::try_new(vec![values.boxed()])?;
-
-    Ok((schema, chunk))
-}
-
-#[test]
-fn nested_dict() -> PolarsResult<()> {
-    let (schema, chunk) = nested_dict_data(ArrowDataType::Float32)?;
-
-    assert_roundtrip(schema, chunk, None)
-}
-
-#[test]
-fn nested_dict_utf8() -> PolarsResult<()> {
-    let (schema, chunk) = nested_dict_data(ArrowDataType::Utf8View)?;
-
-    assert_roundtrip(schema, chunk, None)
-}
-
-#[test]
-fn nested_dict_limit() -> PolarsResult<()> {
-    let (schema, chunk) = nested_dict_data(ArrowDataType::Float32)?;
-
-    assert_roundtrip(schema, chunk, Some(2))
-}
-
 #[test]
 fn filter_chunk() -> PolarsResult<()> {
-    let chunk1 = RecordBatchT::new(vec![PrimitiveArray::from_slice([1i16, 3]).boxed()]);
-    let chunk2 = RecordBatchT::new(vec![PrimitiveArray::from_slice([2i16, 4]).boxed()]);
-    let schema = ArrowSchema::from(vec![Field::new("c1", ArrowDataType::Int16, true)]);
+    let field = Field::new("c1".into(), ArrowDataType::Int16, true);
+    let schema = ArrowSchema::from_iter([field]);
+    let chunk1 = RecordBatchT::new(
+        2,
+        Arc::new(schema.clone()),
+        vec![PrimitiveArray::from_slice([1i16, 3]).boxed()],
+    );
+    let chunk2 = RecordBatchT::new(
+        2,
+        Arc::new(schema.clone()),
+        vec![PrimitiveArray::from_slice([2i16, 4]).boxed()],
+    );
 
     let r = integration_write(&schema, &[chunk1.clone(), chunk2.clone()])?;
 
@@ -1647,7 +923,7 @@ fn filter_chunk() -> PolarsResult<()> {
         .map(|(_, row_group)| row_group)
         .collect();
 
-    let reader = p_read::FileReader::new(reader, row_groups, schema, None, None, None);
+    let reader = FileReader::new(reader, row_groups, schema, None);
 
     let new_chunks = reader.collect::<PolarsResult<Vec<_>>>()?;
 

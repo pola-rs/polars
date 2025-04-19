@@ -1,9 +1,11 @@
 use num_traits::Bounded;
 #[cfg(feature = "dtype-struct")]
-use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
+use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_ca;
+use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::total_ord::TotalOrd;
 
 use crate::series::ops::SeriesSealed;
@@ -15,29 +17,32 @@ pub trait SeriesMethods: SeriesSealed {
         &self,
         sort: bool,
         parallel: bool,
-        name: String,
+        name: PlSmallStr,
         normalize: bool,
     ) -> PolarsResult<DataFrame> {
         let s = self.as_series();
         polars_ensure!(
-            s.name() != name,
-            Duplicate: "using `value_counts` on a column/series named '{}' would lead to duplicate column names; change `name` to fix", name,
+            s.name() != &name,
+            Duplicate: "using `value_counts` on a column/series named '{}' would lead to duplicate \
+            column names; change `name` to fix", name,
         );
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
         let groups = s.group_tuples(parallel, sort)?;
-        let values = unsafe { s.agg_first(&groups) };
-        let counts = groups.group_count().with_name(name.as_str());
+        let values = unsafe { s.agg_first(&groups) }.into();
+        let counts = groups.group_count().with_name(name.clone());
 
         let counts = if normalize {
             let len = s.len() as f64;
-            let counts: Float64Chunked = counts.apply_values_generic(|count| count as f64 / len);
-            counts.into_series()
+            let counts: Float64Chunked =
+                unary_elementwise_values(&counts, |count| count as f64 / len);
+            counts.into_column()
         } else {
-            counts.into_series()
+            counts.into_column()
         };
 
-        let cols = vec![values, counts.into_series()];
-        let df = unsafe { DataFrame::new_no_checks(cols) };
+        let height = counts.len();
+        let cols = vec![values, counts];
+        let df = unsafe { DataFrame::new_no_checks(height, cols) };
         if sort {
             df.sort(
                 [name],
@@ -51,7 +56,7 @@ pub trait SeriesMethods: SeriesSealed {
     }
 
     #[cfg(feature = "hash")]
-    fn hash(&self, build_hasher: ahash::RandomState) -> UInt64Chunked {
+    fn hash(&self, build_hasher: PlSeedableRandomStateQuality) -> UInt64Chunked {
         let s = self.as_series().to_physical_repr();
         match s.dtype() {
             DataType::List(_) => {
@@ -61,7 +66,7 @@ pub trait SeriesMethods: SeriesSealed {
             _ => {
                 let mut h = vec![];
                 s.0.vec_hash(build_hasher, &mut h).unwrap();
-                UInt64Chunked::from_vec(s.name(), h)
+                UInt64Chunked::from_vec(s.name().clone(), h)
             },
         }
     }
@@ -91,8 +96,8 @@ pub trait SeriesMethods: SeriesSealed {
         #[cfg(feature = "dtype-struct")]
         if matches!(s.dtype(), DataType::Struct(_)) {
             let encoded = _get_rows_encoded_ca(
-                "",
-                &[s.clone()],
+                PlSmallStr::EMPTY,
+                &[s.clone().into()],
                 &[options.descending],
                 &[options.nulls_last],
             )?;
@@ -119,7 +124,7 @@ pub trait SeriesMethods: SeriesSealed {
             }
         }
 
-        if s.dtype().is_numeric() {
+        if s.dtype().is_primitive_numeric() {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 return Ok(is_sorted_ca_num::<$T>(ca, options))
@@ -127,8 +132,8 @@ pub trait SeriesMethods: SeriesSealed {
         }
 
         let cmp_len = s_len - null_count - 1; // Number of comparisons we might have to do
-                                              // TODO! Change this, allocation of a full boolean series is too expensive and doesn't fail fast.
-                                              // Compare adjacent elements with no-copy slices that don't include any nulls
+        // TODO! Change this, allocation of a full boolean series is too expensive and doesn't fail fast.
+        // Compare adjacent elements with no-copy slices that don't include any nulls
         let offset = !options.nulls_last as i64 * null_count as i64;
         let (s1, s2) = (s.slice(offset, cmp_len), s.slice(offset + 1, cmp_len));
         let cmp_op = if options.descending {

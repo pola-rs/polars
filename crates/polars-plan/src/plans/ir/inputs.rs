@@ -7,9 +7,8 @@ impl IR {
 
         match self {
             #[cfg(feature = "python")]
-            PythonScan { options, predicate } => PythonScan {
+            PythonScan { options } => PythonScan {
                 options: options.clone(),
-                predicate: predicate.clone(),
             },
             Union { options, .. } => Union {
                 inputs,
@@ -30,11 +29,6 @@ impl IR {
             Filter { .. } => Filter {
                 input: inputs[0],
                 predicate: exprs.pop().unwrap(),
-            },
-            Reduce { schema, .. } => Reduce {
-                input: inputs[0],
-                exprs,
-                schema: schema.clone(),
             },
             Select {
                 schema, options, ..
@@ -102,24 +96,25 @@ impl IR {
                 options: *options,
             },
             Scan {
-                paths,
+                sources,
                 file_info,
                 hive_parts,
                 output_schema,
                 predicate,
-                file_options: options,
+                unified_scan_args,
                 scan_type,
             } => {
                 let mut new_predicate = None;
                 if predicate.is_some() {
                     new_predicate = exprs.pop()
                 }
+
                 Scan {
-                    paths: paths.clone(),
+                    sources: sources.clone(),
                     file_info: file_info.clone(),
                     hive_parts: hive_parts.clone(),
                     output_schema: output_schema.clone(),
-                    file_options: options.clone(),
+                    unified_scan_args: unified_scan_args.clone(),
                     predicate: new_predicate,
                     scan_type: scan_type.clone(),
                 }
@@ -128,19 +123,10 @@ impl IR {
                 df,
                 schema,
                 output_schema,
-                filter: selection,
-            } => {
-                let mut new_selection = None;
-                if selection.is_some() {
-                    new_selection = exprs.pop()
-                }
-
-                DataFrameScan {
-                    df: df.clone(),
-                    schema: schema.clone(),
-                    output_schema: output_schema.clone(),
-                    filter: new_selection,
-                }
+            } => DataFrameScan {
+                df: df.clone(),
+                schema: schema.clone(),
+                output_schema: output_schema.clone(),
             },
             MapFunction { function, .. } => MapFunction {
                 input: inputs[0],
@@ -155,9 +141,20 @@ impl IR {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
+            SinkMultiple { .. } => SinkMultiple { inputs },
             SimpleProjection { columns, .. } => SimpleProjection {
                 input: inputs.pop().unwrap(),
                 columns: columns.clone(),
+            },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left: _,
+                input_right: _,
+                key,
+            } => MergeSorted {
+                input_left: inputs[0],
+                input_right: inputs[1],
+                key: key.clone(),
             },
             Invalid => unreachable!(),
         }
@@ -167,10 +164,14 @@ impl IR {
     pub fn copy_exprs(&self, container: &mut Vec<ExprIR>) {
         use IR::*;
         match self {
-            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {},
+            Slice { .. }
+            | Cache { .. }
+            | Distinct { .. }
+            | Union { .. }
+            | MapFunction { .. }
+            | SinkMultiple { .. } => {},
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Filter { predicate, .. } => container.push(predicate.clone()),
-            Reduce { exprs, .. } => container.extend_from_slice(exprs),
             Select { expr, .. } => container.extend_from_slice(expr),
             GroupBy { keys, aggs, .. } => {
                 let iter = keys.iter().cloned().chain(aggs.iter().cloned());
@@ -188,17 +189,24 @@ impl IR {
                     container.push(pred.clone())
                 }
             },
-            DataFrameScan {
-                filter: selection, ..
-            } => {
-                if let Some(expr) = selection {
-                    container.push(expr.clone())
-                }
-            },
+            DataFrameScan { .. } => {},
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
+            Sink { payload, .. } => {
+                if let SinkTypeIR::Partition(p) = payload {
+                    match &p.variant {
+                        PartitionVariantIR::Parted { key_exprs, .. }
+                        | PartitionVariantIR::ByKey { key_exprs, .. } => {
+                            container.extend_from_slice(key_exprs)
+                        },
+                        _ => (),
+                    }
+                }
+            },
             HConcat { .. } => {},
-            ExtContext { .. } | Sink { .. } | SimpleProjection { .. } => {},
+            ExtContext { .. } | SimpleProjection { .. } => {},
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => {},
             Invalid => unreachable!(),
         }
     }
@@ -215,26 +223,17 @@ impl IR {
     /// or an in-memory DataFrame has none. A Union has multiple.
     pub fn copy_inputs<T>(&self, container: &mut T)
     where
-        T: PushNode,
+        T: Extend<Node>,
     {
         use IR::*;
         let input = match self {
-            Union { inputs, .. } => {
-                for node in inputs {
-                    container.push_node(*node);
-                }
-                return;
-            },
-            HConcat { inputs, .. } => {
-                for node in inputs {
-                    container.push_node(*node);
-                }
+            Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
+                container.extend(inputs.iter().cloned());
                 return;
             },
             Slice { input, .. } => *input,
             Filter { input, .. } => *input,
             Select { input, .. } => *input,
-            Reduce { input, .. } => *input,
             SimpleProjection { input, .. } => *input,
             Sort { input, .. } => *input,
             Cache { input, .. } => *input,
@@ -244,8 +243,7 @@ impl IR {
                 input_right,
                 ..
             } => {
-                container.push_node(*input_left);
-                container.push_node(*input_right);
+                container.extend([*input_left, *input_right]);
                 return;
             },
             HStack { input, .. } => *input,
@@ -255,18 +253,25 @@ impl IR {
             ExtContext {
                 input, contexts, ..
             } => {
-                for n in contexts {
-                    container.push_node(*n)
-                }
+                container.extend(contexts.iter().cloned());
                 *input
             },
             Scan { .. } => return,
             DataFrameScan { .. } => return,
             #[cfg(feature = "python")]
             PythonScan { .. } => return,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                ..
+            } => {
+                container.extend([*input_left, *input_right]);
+                return;
+            },
             Invalid => unreachable!(),
         };
-        container.push_node(input)
+        container.extend([input])
     }
 
     pub fn get_inputs(&self) -> UnitVec<Node> {

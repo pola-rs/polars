@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -10,6 +11,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import ColumnNotFoundError
+from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -47,7 +49,7 @@ def test_group_by() -> None:
     )
 
     # check if this query runs and thus column names propagate
-    df.group_by("b").agg(pl.col("c").forward_fill()).explode("c")
+    df.group_by("b").agg(pl.col("c").fill_null(strategy="forward")).explode("c")
 
     # get a specific column
     result = df.group_by("b", maintain_order=True).agg(pl.count("a"))
@@ -249,7 +251,7 @@ def test_group_by_median_by_dtype(
     assert_frame_equal(result, df_expected)
 
 
-@pytest.fixture()
+@pytest.fixture
 def df() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -371,7 +373,7 @@ def test_group_by_iteration() -> None:
 def test_group_by_iteration_selector() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
     result = dict(df.group_by(cs.string()))
-    result_first = result[("one",)]
+    result_first = result["one",]
     assert result_first.to_dict(as_series=False) == {"a": ["one", "one"], "b": [1, 3]}
 
 
@@ -402,11 +404,11 @@ def test_group_by_sorted_empty_dataframe_3680() -> None:
         .sort("key")
         .group_by("key")
         .tail(1)
-        .collect()
+        .collect(_check_order=False)
     )
     assert df.rows() == []
     assert df.shape == (0, 2)
-    assert df.schema == {"key": pl.Categorical, "val": pl.Float64}
+    assert df.schema == {"key": pl.Categorical(ordering="physical"), "val": pl.Float64}
 
 
 def test_group_by_custom_agg_empty_list() -> None:
@@ -642,7 +644,7 @@ def test_group_by_binary_agg_with_literal() -> None:
     assert out.to_dict(as_series=False) == {"id": ["a", "b"], "value": [[4, 6], [4, 6]]}
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt32])
 def test_overflow_mean_partitioned_group_by_5194(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(
@@ -861,7 +863,7 @@ def test_group_by_apply_first_input_is_literal() -> None:
     pow = df.group_by("g").agg(2 ** pl.col("x"))
     assert pow.sort("g").to_dict(as_series=False) == {
         "g": [1, 2],
-        "x": [[2.0, 4.0], [8.0, 16.0, 32.0]],
+        "literal": [[2.0, 4.0], [8.0, 16.0, 32.0]],
     }
 
 
@@ -909,6 +911,17 @@ def test_partitioned_group_by_14954(monkeypatch: Any) -> None:
     }
 
 
+def test_partitioned_group_by_nulls_mean_21838() -> None:
+    size = 10
+    a = [1 for i in range(size)] + [2 for i in range(size)] + [3 for i in range(size)]
+    b = [1 for i in range(size)] + [None for i in range(size * 2)]
+    df = pl.DataFrame({"a": a, "b": b})
+    assert df.group_by("a").mean().sort("a").to_dict(as_series=False) == {
+        "a": [1, 2, 3],
+        "b": [1.0, None, None],
+    }
+
+
 def test_aggregated_scalar_elementwise_15602() -> None:
     df = pl.DataFrame({"group": [1, 2, 1]})
 
@@ -924,7 +937,8 @@ def test_group_by_multiple_null_cols_15623() -> None:
     assert df.is_empty()
 
 
-@pytest.mark.release()
+@pytest.mark.release
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_vs_str_group_by() -> None:
     # this triggers the perfect hash table
     s = pl.Series("a", np.random.randint(0, 50, 100))
@@ -951,7 +965,7 @@ def test_categorical_vs_str_group_by() -> None:
         )
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_boolean_min_max_agg() -> None:
     np.random.seed(0)
     idx = np.random.randint(0, 500, 1000)
@@ -1146,3 +1160,94 @@ def test_positional_by_with_list_or_tuple_17540() -> None:
         pl.DataFrame({"a": [1, 2, 3]}).group_by(by=["a"])
     with pytest.raises(TypeError, match="Hint: if you"):
         pl.LazyFrame({"a": [1, 2, 3]}).group_by(by=["a"])
+
+
+def test_group_by_agg_19173() -> None:
+    df = pl.DataFrame({"x": [1.0], "g": [0]})
+    out = df.head(0).group_by("g").agg((pl.col.x - pl.col.x.sum() * pl.col.x) ** 2)
+    assert out.to_dict(as_series=False) == {"g": [], "x": []}
+    assert out.schema == pl.Schema([("g", pl.Int64), ("x", pl.List(pl.Float64))])
+
+
+def test_group_by_map_groups_slice_pushdown_20002() -> None:
+    schema = {
+        "a": pl.Int8,
+        "b": pl.UInt8,
+    }
+
+    df = (
+        pl.LazyFrame(
+            data={"a": [1, 2, 3, 4, 5], "b": [90, 80, 70, 60, 50]},
+            schema=schema,
+        )
+        .group_by("a", maintain_order=True)
+        .map_groups(lambda df: df * 2.0, schema=schema)
+        .head(3)
+        .collect()
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": [2.0, 4.0, 6.0],
+                "b": [180.0, 160.0, 140.0],
+            }
+        ),
+    )
+
+
+@typing.no_type_check
+def test_group_by_lit_series(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    n = 10
+    df = pl.DataFrame({"x": np.ones(2 * n), "y": n * list(range(2))})
+    a = np.ones(n, dtype=float)
+    df.lazy().group_by("y").agg(pl.col("x").dot(a)).collect()
+    captured = capfd.readouterr().err
+    assert "are not partitionable" in captured
+
+
+def test_group_by_list_column() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 2], [3], [1, 2]]})
+    result = df.group_by("b").agg(pl.sum("a")).sort("b")
+    expected = pl.DataFrame({"b": [[1, 2], [3]], "a": [4, 2]})
+    assert_frame_equal(result, expected)
+
+
+def test_enum_perfect_group_by_21360() -> None:
+    dtype = pl.Enum(categories=["a", "b"])
+
+    assert_frame_equal(
+        pl.from_dicts([{"col": "a"}], schema={"col": dtype})
+        .group_by("col")
+        .agg(pl.len()),
+        pl.DataFrame(
+            [
+                pl.Series("col", ["a"], dtype),
+                pl.Series("len", [1], get_index_type()),
+            ]
+        ),
+    )
+
+
+def test_partitioned_group_by_21634(partition_limit: int) -> None:
+    n = partition_limit
+    df = pl.DataFrame({"grp": [1] * n, "x": [1] * n})
+    assert df.group_by("grp", True).agg().to_dict(as_series=False) == {
+        "grp": [1],
+        "literal": [True],
+    }
+
+
+def test_group_by_cse_dup_key_alias_22238() -> None:
+    df = pl.LazyFrame({"a": [1, 1, 2, 2, -1], "x": [0, 1, 2, 3, 10]})
+    result = df.group_by(
+        pl.col("a").abs(),
+        pl.col("a").abs().alias("a_with_alias"),
+    ).agg(pl.col("x").sum())
+    assert_frame_equal(
+        result.collect(),
+        pl.DataFrame({"a": [1, 2], "a_with_alias": [1, 2], "x": [11, 5]}),
+        check_row_order=False,
+    )

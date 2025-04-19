@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 pub mod version_0;
 
 use std::mem::ManuallyDrop;
@@ -29,6 +30,6 @@ unsafe fn import_array(
     schema: &ffi::ArrowSchema,
 ) -> PolarsResult<ArrayRef> {
     let field = ffi::import_field_from_c(schema)?;
-    let out = ffi::import_array_from_c(array, field.data_type)?;
+    let out = ffi::import_array_from_c(array, field.dtype)?;
     Ok(out)
 }

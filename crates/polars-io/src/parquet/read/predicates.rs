@@ -1,61 +1,38 @@
-use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
-use polars_parquet::read::statistics::{deserialize, Statistics};
-use polars_parquet::read::RowGroupMetaData;
+use polars_parquet::read::RowGroupMetadata;
+use polars_parquet::read::statistics::{ArrowColumnStatisticsArrays, deserialize_all};
 
-use crate::predicates::{BatchStats, ColumnStats, PhysicalIoExpr};
-
-impl ColumnStats {
-    fn from_arrow_stats(stats: Statistics, field: &ArrowField) -> Self {
-        Self::new(
-            field.into(),
-            Some(Series::try_from(("", stats.null_count)).unwrap()),
-            Some(Series::try_from(("", stats.min_value)).unwrap()),
-            Some(Series::try_from(("", stats.max_value)).unwrap()),
-        )
-    }
-}
-
-/// Collect the statistics in a column chunk.
-pub(crate) fn collect_statistics(
-    md: &RowGroupMetaData,
+/// Collect the statistics in a row-group
+pub fn collect_statistics_with_live_columns(
+    row_groups: &[RowGroupMetadata],
     schema: &ArrowSchema,
-) -> PolarsResult<Option<BatchStats>> {
-    let mut stats = vec![];
-
-    for field in schema.fields.iter() {
-        let st = deserialize(field, md)?;
-        stats.push(ColumnStats::from_arrow_stats(st, field));
+    live_columns: &PlIndexSet<PlSmallStr>,
+) -> PolarsResult<Vec<Option<ArrowColumnStatisticsArrays>>> {
+    if row_groups.is_empty() {
+        return Ok((0..live_columns.len()).map(|_| None).collect());
     }
 
-    Ok(if stats.is_empty() {
-        None
-    } else {
-        Some(BatchStats::new(
-            Arc::new(schema.into()),
-            stats,
-            Some(md.num_rows()),
-        ))
-    })
-}
+    let md = &row_groups[0];
+    live_columns
+        .iter()
+        .map(|c| {
+            let field = schema.get(c).unwrap();
 
-pub(super) fn read_this_row_group(
-    predicate: Option<&dyn PhysicalIoExpr>,
-    md: &RowGroupMetaData,
-    schema: &ArrowSchemaRef,
-) -> PolarsResult<bool> {
-    if let Some(pred) = predicate {
-        if let Some(pred) = pred.as_stats_evaluator() {
-            if let Some(stats) = collect_statistics(md, schema)? {
-                let should_read = pred.should_read(&stats);
-                // a parquet file may not have statistics of all columns
-                if matches!(should_read, Ok(false)) {
-                    return Ok(false);
-                } else if !matches!(should_read, Err(PolarsError::ColumnNotFound(_))) {
-                    let _ = should_read?;
-                }
+            // This can be None in the allow_missing_columns case.
+            let Some(idxs) = md.columns_idxs_under_root_iter(&field.name) else {
+                return Ok(None);
+            };
+
+            // 0 is possible for possible for empty structs.
+            //
+            // 2+ is for structs. We don't support reading nested statistics for now. It does not
+            // really make any sense at the moment with how we structure statistics.
+            if idxs.is_empty() || idxs.len() > 1 {
+                return Ok(None);
             }
-        }
-    }
-    Ok(true)
+
+            let idx = idxs[0];
+            Ok(deserialize_all(field, row_groups, idx)?)
+        })
+        .collect::<PolarsResult<Vec<_>>>()
 }

@@ -1,9 +1,12 @@
-use arrow::legacy::prelude::DynArgs;
+use std::hash::{Hash, Hasher};
+
+use polars_compute::rolling::RollingFnParams;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "rolling_window", derive(PartialEq))]
 pub struct RollingOptionsFixedWindow {
     /// The length of the window.
     pub window_size: usize,
@@ -14,19 +17,17 @@ pub struct RollingOptionsFixedWindow {
     pub weights: Option<Vec<f64>>,
     /// Set the labels at the center of the window.
     pub center: bool,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub fn_params: DynArgs,
+    /// Optional parameters for the rolling
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub fn_params: Option<RollingFnParams>,
 }
 
-#[cfg(feature = "rolling_window")]
-impl PartialEq for RollingOptionsFixedWindow {
-    fn eq(&self, other: &Self) -> bool {
-        self.window_size == other.window_size
-            && self.min_periods == other.min_periods
-            && self.weights == other.weights
-            && self.center == other.center
-            && self.fn_params.is_none()
-            && other.fn_params.is_none()
+impl Hash for RollingOptionsFixedWindow {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.window_size.hash(state);
+        self.min_periods.hash(state);
+        self.center.hash(state);
+        self.weights.is_some().hash(state);
     }
 }
 
@@ -46,8 +47,8 @@ impl Default for RollingOptionsFixedWindow {
 mod inner_mod {
     use std::ops::SubAssign;
 
-    use arrow::bitmap::utils::set_bit_unchecked;
     use arrow::bitmap::MutableBitmap;
+    use arrow::bitmap::utils::set_bit_unchecked;
     use arrow::legacy::trusted_len::TrustedLenPush;
     use num_traits::pow::Pow;
     use num_traits::{Float, Zero};
@@ -69,7 +70,7 @@ mod inner_mod {
     /// utility
     fn window_edges(idx: usize, len: usize, window_size: usize, center: bool) -> (usize, usize) {
         let (start, end) = if center {
-            let right_window = (window_size + 1) / 2;
+            let right_window = window_size.div_ceil(2);
             (
                 idx.saturating_sub(window_size - right_window),
                 len.min(idx + right_window),
@@ -105,15 +106,16 @@ mod inner_mod {
             options.window_size = std::cmp::min(self.len(), options.window_size);
 
             let len = self.len();
-            let arr = ca.downcast_iter().next().unwrap();
-            let mut ca = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
+            let arr = ca.downcast_as_array();
+            let mut ca = ChunkedArray::<T>::from_slice(PlSmallStr::EMPTY, &[T::Native::zero()]);
             let ptr = ca.chunks[0].as_mut() as *mut dyn Array as *mut PrimitiveArray<T::Native>;
             let mut series_container = ca.into_series();
 
-            let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
+            let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name().clone(), self.len());
 
             if let Some(weights) = options.weights {
-                let weights_series = Float64Chunked::new("weights", &weights).into_series();
+                let weights_series =
+                    Float64Chunked::new(PlSmallStr::from_static("weights"), &weights).into_series();
 
                 let weights_series = weights_series.cast(self.dtype()).unwrap();
 
@@ -221,15 +223,16 @@ mod inner_mod {
             F: FnMut(&mut ChunkedArray<T>) -> Option<T::Native>,
         {
             if window_size > self.len() {
-                return Ok(Self::full_null(self.name(), self.len()));
+                return Ok(Self::full_null(self.name().clone(), self.len()));
             }
             let ca = self.rechunk();
-            let arr = ca.downcast_iter().next().unwrap();
+            let arr = ca.downcast_as_array();
 
             // We create a temporary dummy ChunkedArray. This will be a
             // container where we swap the window contents every iteration doing
             // so will save a lot of heap allocations.
-            let mut heap_container = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
+            let mut heap_container =
+                ChunkedArray::<T>::from_slice(PlSmallStr::EMPTY, &[T::Native::zero()]);
             let ptr = heap_container.chunks[0].as_mut() as *mut dyn Array
                 as *mut PrimitiveArray<T::Native>;
 
@@ -239,13 +242,13 @@ mod inner_mod {
             let validity_slice = validity.as_mut_slice();
 
             let mut values = Vec::with_capacity(ca.len());
-            values.extend(std::iter::repeat(T::Native::default()).take(window_size - 1));
+            values.extend(std::iter::repeat_n(T::Native::default(), window_size - 1));
 
             for offset in 0..self.len() + 1 - window_size {
                 debug_assert!(offset + window_size <= arr.len());
                 let arr_window = unsafe { arr.slice_typed_unchecked(offset, window_size) };
                 // The lengths are cached, so we must update them.
-                heap_container.length = arr_window.len() as IdxSize;
+                heap_container.length = arr_window.len();
 
                 // SAFETY: ptr is not dropped as we are in scope. We are also the only
                 // owner of the contents of the Arc (we do this to reduce heap allocs).
@@ -274,7 +277,7 @@ mod inner_mod {
                 values.into(),
                 Some(validity.into()),
             );
-            Ok(Self::with_chunk(self.name(), arr))
+            Ok(Self::with_chunk(self.name().clone(), arr))
         }
     }
 }

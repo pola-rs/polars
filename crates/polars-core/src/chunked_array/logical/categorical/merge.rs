@@ -97,8 +97,8 @@ fn merge_local_rhs_categorical<'a>(
     polars_warn!(
         CategoricalRemappingWarning,
         "Local categoricals have different encodings, expensive re-encoding is done \
-    to perform this merge operation. Consider using a StringCache or an Enum type \
-    if the categories are known in advance"
+        to perform this merge operation. Consider using a StringCache or an Enum type \
+        if the categories are known in advance"
     );
 
     let RevMapping::Local(cats_right, _) = &**ca_right.get_rev_map() else {
@@ -143,7 +143,7 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
 ) -> PolarsResult<CategoricalChunked> {
     let rev_map_left = cat_left.get_rev_map();
     let rev_map_right = cat_right.get_rev_map();
-    let (new_physical, new_rev_map) = match (&**rev_map_left, &**rev_map_right) {
+    let (mut new_physical, new_rev_map) = match (&**rev_map_left, &**rev_map_right) {
         (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
             let mut rev_map_merger = GlobalRevMapMerger::new(rev_map_left.clone());
             rev_map_merger.merge_map(rev_map_right)?;
@@ -176,6 +176,12 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
         },
         _ => polars_bail!(string_cache_mismatch),
     };
+    // During merge operation, the sorted flag might get set on the underlying physical.
+    // Ensure that the sorted flag is not set if we use lexical order
+    if cat_left.uses_lexical_ordering() {
+        new_physical.set_sorted_flag(IsSorted::Not)
+    }
+
     // SAFETY: physical and rev map are correctly constructed above
     unsafe {
         Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
@@ -195,7 +201,7 @@ impl CategoricalMergeOperation for DoNothing {
 }
 
 // Make the right categorical compatible with the left
-pub fn make_categoricals_compatible(
+pub fn make_rhs_categoricals_compatible(
     ca_left: &CategoricalChunked,
     ca_right: &CategoricalChunked,
 ) -> PolarsResult<(CategoricalChunked, CategoricalChunked)> {
@@ -214,7 +220,7 @@ pub fn make_categoricals_compatible(
     Ok((new_ca_left, new_ca_right))
 }
 
-pub fn make_list_categoricals_compatible(
+pub fn make_rhs_list_categoricals_compatible(
     mut list_ca_left: ListChunked,
     list_ca_right: ListChunked,
 ) -> PolarsResult<(ListChunked, ListChunked)> {
@@ -223,7 +229,7 @@ pub fn make_list_categoricals_compatible(
     let cat_left = list_ca_left.get_inner();
     let cat_right = list_ca_right.get_inner();
     let (cat_left, cat_right) =
-        make_categoricals_compatible(cat_left.categorical()?, cat_right.categorical()?)?;
+        make_rhs_categoricals_compatible(cat_left.categorical()?, cat_right.categorical()?)?;
 
     // we only appended categories to the rev_map at the end, so only change the inner dtype
     list_ca_left.set_inner_dtype(cat_left.dtype().clone());
@@ -240,7 +246,7 @@ pub fn make_list_categoricals_compatible(
             .zip(cat_physical.chunks())
             .for_each(|(arr, new_phys)| {
                 *arr = ListArray::new(
-                    arr.data_type().clone(),
+                    arr.dtype().clone(),
                     arr.offsets().clone(),
                     new_phys.clone(),
                     arr.validity().cloned(),

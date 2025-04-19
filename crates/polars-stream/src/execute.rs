@@ -1,5 +1,5 @@
-use polars_core::frame::DataFrame;
 use polars_core::POOL;
+use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;
@@ -8,6 +8,24 @@ use slotmap::{SecondaryMap, SparseSecondaryMap};
 use crate::async_executor;
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
 use crate::pipe::PhysicalPipe;
+
+#[derive(Clone)]
+pub struct StreamingExecutionState {
+    // The number of parallel pipelines we have within each stream.
+    pub num_pipelines: usize,
+
+    // The ExecutionState passed to any non-streaming operations.
+    pub in_memory_exec_state: ExecutionState,
+}
+
+impl Default for StreamingExecutionState {
+    fn default() -> Self {
+        Self {
+            num_pipelines: POOL.current_num_threads(),
+            in_memory_exec_state: ExecutionState::default(),
+        }
+    }
+}
 
 /// Finds all runnable pipeline blockers in the graph, that is, nodes which:
 ///  - Only have blocked output ports.
@@ -77,12 +95,12 @@ fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<Lo
     // TODO: choose which expensive pipeline blocker to run more intelligently.
     expensive.sort_by_key(|node_key| {
         // Prefer to run nodes whose outputs are ready to be consumed.
-        let outputs_ready_to_receive = graph.nodes[*node_key]
+        // outputs_ready_to_receive
+        graph.nodes[*node_key]
             .outputs
             .iter()
             .filter(|o| graph.pipes[**o].recv_state == PortState::Ready)
-            .count();
-        outputs_ready_to_receive
+            .count()
     });
 
     let mut to_run = cheap;
@@ -104,12 +122,12 @@ fn run_subgraph(
     graph: &mut Graph,
     nodes: &PlHashSet<GraphNodeKey>,
     pipes: &[LogicalPipeKey],
-    num_pipelines: usize,
+    state: &StreamingExecutionState,
 ) -> PolarsResult<()> {
     // Construct physical pipes for the logical pipes we'll use.
     let mut physical_pipes = SecondaryMap::new();
     for pipe_key in pipes.iter().copied() {
-        physical_pipes.insert(pipe_key, PhysicalPipe::new(num_pipelines));
+        physical_pipes.insert(pipe_key, PhysicalPipe::new(state.num_pipelines));
     }
 
     // We do a topological sort of the graph: we want to spawn each node,
@@ -131,7 +149,6 @@ fn run_subgraph(
         }
     }
 
-    let execution_state = ExecutionState::default();
     async_executor::task_scope(|scope| {
         // Using SlotMap::iter_mut we can get simultaneous mutable references. By storing them and
         // removing the references from the secondary map as we do our topological sort we ensure
@@ -170,7 +187,7 @@ fn run_subgraph(
                 scope,
                 &mut recv_ports[..],
                 &mut send_ports[..],
-                &execution_state,
+                state,
                 &mut join_handles,
             );
 
@@ -186,6 +203,20 @@ fn run_subgraph(
             for (input, input_pipe) in node.inputs.iter().zip(input_pipes.drain(..)) {
                 if let Some(pipe) = input_pipe {
                     physical_pipes.insert(*input, pipe);
+
+                    // For all the receive ports we just initialized inside spawn(), decrement
+                    // the num_send_ports_not_yet_ready for the node it was connected to and mark
+                    // the node as ready to spawn if all its send ports are connected to
+                    // initialized recv ports.
+                    let sender = graph.pipes[*input].sender;
+                    if let Some(count) = num_send_ports_not_yet_ready.get_mut(sender) {
+                        if *count > 0 {
+                            *count -= 1;
+                            if *count == 0 {
+                                ready.push(sender);
+                            }
+                        }
+                    }
                 }
             }
             for (output, output_pipe) in node.outputs.iter().zip(output_pipes.drain(..)) {
@@ -197,21 +228,6 @@ fn run_subgraph(
             // Reuse the pipe vectors, clearing the borrow it has for next iteration.
             input_pipes = reuse_vec(input_pipes);
             output_pipes = reuse_vec(output_pipes);
-
-            // For all the receive ports we just initialized inside spawn(), decrement
-            // the num_send_ports_not_yet_ready for the node it was connected to and mark
-            // the node as ready to spawn if all its send ports are connected to
-            // initialized recv ports.
-            for input in &node.inputs {
-                let sender = graph.pipes[*input].sender;
-                if let Some(count) = num_send_ports_not_yet_ready.get_mut(sender) {
-                    assert!(*count > 0);
-                    *count -= 1;
-                    if *count == 0 {
-                        ready.push(sender);
-                    }
-                }
-            }
         }
 
         // Spawn tasks for all the physical pipes (no-op on most, but needed for
@@ -221,12 +237,21 @@ fn run_subgraph(
         }
 
         // Wait until all tasks are done.
-        polars_io::pl_async::get_runtime().block_on(async move {
+        // Only now do we turn on/off wait statistics tracking to reduce noise
+        // from task startup.
+        if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
+            async_executor::track_task_wait_statistics(true);
+        }
+        let ret = polars_io::pl_async::get_runtime().block_on(async move {
             for handle in join_handles {
                 handle.await?;
             }
             PolarsResult::Ok(())
-        })
+        });
+        if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
+            async_executor::track_task_wait_statistics(false);
+        }
+        ret
     })?;
 
     Ok(())
@@ -239,15 +264,28 @@ pub fn execute_graph(
     let num_pipelines = POOL.current_num_threads();
     async_executor::set_num_threads(num_pipelines);
 
-    for node in graph.nodes.values_mut() {
-        node.compute.initialize(num_pipelines);
+    let state = StreamingExecutionState {
+        num_pipelines,
+        in_memory_exec_state: ExecutionState::default(),
+    };
+
+    // Ensure everything is properly connected.
+    for (node_key, node) in &graph.nodes {
+        for (i, input) in node.inputs.iter().enumerate() {
+            assert!(graph.pipes[*input].receiver == node_key);
+            assert!(graph.pipes[*input].recv_port == i);
+        }
+        for (i, output) in node.outputs.iter().enumerate() {
+            assert!(graph.pipes[*output].sender == node_key);
+            assert!(graph.pipes[*output].send_port == i);
+        }
     }
 
     loop {
         if polars_core::config::verbose() {
             eprintln!("polars-stream: updating graph state");
         }
-        graph.update_all_states();
+        graph.update_all_states(&state)?;
         let (nodes, pipes) = find_runnable_subgraph(graph);
         if polars_core::config::verbose() {
             for node in &nodes {
@@ -260,7 +298,7 @@ pub fn execute_graph(
         if nodes.is_empty() {
             break;
         }
-        run_subgraph(graph, &nodes, &pipes, num_pipelines)?;
+        run_subgraph(graph, &nodes, &pipes, &state)?;
         if polars_core::config::verbose() {
             eprintln!("polars-stream: done running graph phase");
         }

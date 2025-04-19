@@ -1,7 +1,6 @@
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -52,9 +51,9 @@ def test_empty_count_window() -> None:
 
 
 def test_empty_sort_by_args() -> None:
-    df = pl.DataFrame([1, 2, 3])
-    with pytest.raises(InvalidOperationError):
-        df.select(pl.all().sort_by([]))
+    df = pl.DataFrame({"x": [2, 1, 3]})
+    assert_frame_equal(df, df.select(pl.col.x.sort_by([])))
+    assert_frame_equal(df, df.sort([]))
 
 
 def test_empty_9137() -> None:
@@ -105,7 +104,7 @@ def test_empty_set_union() -> None:
     assert_series_equal(full.rename("empty"), empty.list.set_union(full))
 
 
-def test_empty_set_symteric_difference() -> None:
+def test_empty_set_symmetric_difference() -> None:
     full = pl.Series("full", [[1, 2, 3]], pl.List(pl.UInt32))
     empty = pl.Series("empty", [[]], pl.List(pl.UInt32))
 
@@ -148,3 +147,21 @@ def test_empty_list_cat_16405() -> None:
 def test_empty_list_concat_16924() -> None:
     df = pl.DataFrame(schema={"a": pl.Int16, "b": pl.List(pl.String)})
     df.with_columns(pl.col("b").list.concat([pl.col("a").cast(pl.String)]))
+
+
+def test_empty_input_expansion() -> None:
+    df = pl.DataFrame({"A": [1], "B": [2]})
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        (
+            df.select("A", "B").with_columns(
+                pl.col("B").sort_by(pl.struct(pl.exclude("A", "B")))
+            )
+        )
+
+
+def test_empty_list_15523() -> None:
+    s = pl.Series("", [["a"], []], dtype=pl.List)
+    assert s.dtype == pl.List(pl.String)
+    s = pl.Series("", [[], ["a"]], dtype=pl.List)
+    assert s.dtype == pl.List(pl.String)

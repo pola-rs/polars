@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use polars_core::schema::Schema;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::format::ExprIRSliceDisplay;
 use crate::constants::UNLIMITED_CACHE;
@@ -32,9 +33,9 @@ impl fmt::Display for DotNode {
 
 #[inline(always)]
 fn write_label<'a, 'b>(
-    f: &'b mut fmt::Formatter<'a>,
+    f: &'a mut fmt::Formatter<'b>,
     id: DotNode,
-    mut w: impl FnMut(&mut EscapeLabel<'a, 'b>) -> fmt::Result,
+    mut w: impl FnMut(&mut EscapeLabel<'a>) -> fmt::Result,
 ) -> fmt::Result {
     write!(f, "{INDENT}{id}[label=\"")?;
 
@@ -153,11 +154,14 @@ impl<'a> IRDotDisplay<'a> {
                 write_label(f, id, |f| write!(f, "FILTER BY {pred}"))?;
             },
             #[cfg(feature = "python")]
-            PythonScan { predicate, options } => {
-                let predicate = predicate.as_ref().map(|e| self.display_expr(e));
+            PythonScan { options } => {
+                let predicate = match &options.predicate {
+                    PythonPredicate::Polars(e) => format!("{}", self.display_expr(e)),
+                    PythonPredicate::PyArrow(s) => s.clone(),
+                    PythonPredicate::None => "none".to_string(),
+                };
                 let with_columns = NumColumns(options.with_columns.as_ref().map(|s| s.as_ref()));
                 let total_columns = options.schema.len();
-                let predicate = OptionExprIRDisplay(predicate);
 
                 write_label(f, id, |f| {
                     write!(
@@ -195,11 +199,6 @@ impl<'a> IRDotDisplay<'a> {
                 self.with_root(*input)._format(f, Some(id), last)?;
                 write_label(f, id, |f| write!(f, "WITH COLUMNS {exprs}"))?;
             },
-            Reduce { input, exprs, .. } => {
-                let exprs = self.display_exprs(exprs);
-                self.with_root(*input)._format(f, Some(id), last)?;
-                write_label(f, id, |f| write!(f, "REDUCE {exprs}"))?;
-            },
             Slice { input, offset, len } => {
                 self.with_root(*input)._format(f, Some(id), last)?;
                 write_label(f, id, |f| write!(f, "SLICE offset: {offset}; len: {len}"))?;
@@ -230,33 +229,33 @@ impl<'a> IRDotDisplay<'a> {
             DataFrameScan {
                 schema,
                 output_schema,
-                filter: selection,
                 ..
             } => {
                 let num_columns = NumColumnsSchema(output_schema.as_ref().map(|p| p.as_ref()));
-                let selection = selection.as_ref().map(|e| self.display_expr(e));
-                let selection = OptionExprIRDisplay(selection);
                 let total_columns = schema.len();
 
                 write_label(f, id, |f| {
-                    write!(f, "TABLE\nπ {num_columns}/{total_columns};\nσ {selection}")
+                    write!(f, "TABLE\nπ {num_columns}/{total_columns}")
                 })?;
             },
             Scan {
-                paths,
+                sources,
                 file_info,
                 hive_parts: _,
                 predicate,
                 scan_type,
-                file_options: options,
+                unified_scan_args,
                 output_schema: _,
             } => {
-                let name: &str = scan_type.into();
-                let path = PathsDisplay(paths.as_ref());
-                let with_columns = options.with_columns.as_ref().map(|cols| cols.as_ref());
+                let name: &str = (&**scan_type).into();
+                let path = ScanSourcesDisplay(sources);
+                let with_columns = unified_scan_args
+                    .projection
+                    .as_ref()
+                    .map(|cols| cols.as_ref());
                 let with_columns = NumColumns(with_columns);
                 let total_columns =
-                    file_info.schema.len() - usize::from(options.row_index.is_some());
+                    file_info.schema.len() - usize::from(unified_scan_args.row_index.is_some());
 
                 write_label(f, id, |f| {
                     write!(f, "{name} SCAN {path}\nπ {with_columns}/{total_columns};",)?;
@@ -265,7 +264,7 @@ impl<'a> IRDotDisplay<'a> {
                         write!(f, "\nσ {}", self.display_expr(predicate))?;
                     }
 
-                    if let Some(row_index) = options.row_index.as_ref() {
+                    if let Some(row_index) = unified_scan_args.row_index.as_ref() {
                         write!(f, "\nrow index: {} (+{})", row_index.name, row_index.offset)?;
                     }
 
@@ -313,12 +312,18 @@ impl<'a> IRDotDisplay<'a> {
 
                 write_label(f, id, |f| {
                     f.write_str(match payload {
-                        SinkType::Memory => "SINK (MEMORY)",
-                        SinkType::File { .. } => "SINK (FILE)",
-                        #[cfg(feature = "cloud")]
-                        SinkType::Cloud { .. } => "SINK (CLOUD)",
+                        SinkTypeIR::Memory => "SINK (MEMORY)",
+                        SinkTypeIR::File { .. } => "SINK (FILE)",
+                        SinkTypeIR::Partition { .. } => "SINK (PARTITION)",
                     })
                 })?;
+            },
+            SinkMultiple { inputs } => {
+                for input in inputs {
+                    self.with_root(*input)._format(f, Some(id), last)?;
+                }
+
+                write_label(f, id, |f| f.write_str("SINK MULTIPLE"))?;
             },
             SimpleProjection { input, columns } => {
                 let num_columns = columns.as_ref().len();
@@ -330,6 +335,17 @@ impl<'a> IRDotDisplay<'a> {
                     write!(f, "simple π {num_columns}/{total_columns}\n[{columns}]")
                 })?;
             },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                self.with_root(*input_left)._format(f, Some(id), last)?;
+                self.with_root(*input_right)._format(f, Some(id), last)?;
+
+                write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
+            },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }
 
@@ -338,10 +354,36 @@ impl<'a> IRDotDisplay<'a> {
 }
 
 // A few utility structures for formatting
-pub(crate) struct PathsDisplay<'a>(pub &'a [PathBuf]);
-struct NumColumns<'a>(Option<&'a [String]>);
+pub struct PathsDisplay<'a>(pub &'a [PathBuf]);
+pub struct ScanSourcesDisplay<'a>(pub &'a ScanSources);
+struct NumColumns<'a>(Option<&'a [PlSmallStr]>);
 struct NumColumnsSchema<'a>(Option<&'a Schema>);
-struct OptionExprIRDisplay<'a>(Option<ExprIRDisplay<'a>>);
+
+impl fmt::Display for ScanSourceRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ScanSourceRef::Path(path) => path.display().fmt(f),
+            ScanSourceRef::File(_) => f.write_str("open-file"),
+            ScanSourceRef::Buffer(buff) => write!(f, "{} in-mem bytes", buff.len()),
+        }
+    }
+}
+
+impl fmt::Display for ScanSourcesDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0.len() {
+            0 => write!(f, "[]"),
+            1 => write!(f, "[{}]", self.0.at(0)),
+            2 => write!(f, "[{}, {}]", self.0.at(0), self.0.at(1)),
+            _ => write!(
+                f,
+                "[{}, ... {} other sources]",
+                self.0.at(0),
+                self.0.len() - 1,
+            ),
+        }
+    }
+}
 
 impl fmt::Display for PathsDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -352,7 +394,7 @@ impl fmt::Display for PathsDisplay<'_> {
             _ => write!(
                 f,
                 "[{}, ... {} other files]",
-                self.0[0].to_string_lossy(),
+                self.0[0].display(),
                 self.0.len() - 1,
             ),
         }
@@ -377,19 +419,10 @@ impl fmt::Display for NumColumnsSchema<'_> {
     }
 }
 
-impl fmt::Display for OptionExprIRDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            None => f.write_str("None"),
-            Some(expr) => expr.fmt(f),
-        }
-    }
-}
-
 /// Utility structure to write to a [`fmt::Formatter`] whilst escaping the output as a label name
-struct EscapeLabel<'a, 'b>(&'b mut fmt::Formatter<'a>);
+pub struct EscapeLabel<'a>(pub &'a mut dyn fmt::Write);
 
-impl<'a, 'b> fmt::Write for EscapeLabel<'a, 'b> {
+impl fmt::Write for EscapeLabel<'_> {
     fn write_str(&mut self, mut s: &str) -> fmt::Result {
         loop {
             let mut char_indices = s.char_indices();

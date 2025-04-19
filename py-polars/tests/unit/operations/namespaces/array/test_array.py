@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -61,6 +61,33 @@ def test_arr_sum(
 ) -> None:
     s = pl.Series("a", data, dtype=pl.Array(dtype, 2))
     assert s.arr.sum().to_list() == expected_sum
+
+
+def test_array_lengths() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [[1, 2, 3]], dtype=pl.Array(pl.Int64, 3)),
+            pl.Series("b", [[4, 5]], dtype=pl.Array(pl.Int64, 2)),
+        ]
+    )
+    out = df.select(pl.col("a").arr.len(), pl.col("b").arr.len())
+    expected_df = pl.DataFrame(
+        {"a": [3], "b": [2]}, schema={"a": pl.UInt32, "b": pl.UInt32}
+    )
+    assert_frame_equal(out, expected_df)
+
+    assert pl.Series("a", [[], []], pl.Array(pl.Null, 0)).arr.len().to_list() == [0, 0]
+    assert pl.Series("a", [None, []], pl.Array(pl.Null, 0)).arr.len().to_list() == [
+        None,
+        0,
+    ]
+    assert pl.Series("a", [None], pl.Array(pl.Null, 0)).arr.len().to_list() == [None]
+
+    assert pl.Series("a", [], pl.Array(pl.Null, 0)).arr.len().to_list() == []
+    assert pl.Series("a", [], pl.Array(pl.Null, 1)).arr.len().to_list() == []
+    assert pl.Series(
+        "a", [[1, 2, 3], None, [7, 8, 9]], pl.Array(pl.Int32, 3)
+    ).arr.len().to_list() == [3, None, 3]
 
 
 def test_arr_unique() -> None:
@@ -393,6 +420,17 @@ def test_array_count_matches(
     assert out.to_dict(as_series=False) == {"count_matches": expected}
 
 
+def test_array_count_matches_wildcard_expansion() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2]], "b": [[3, 4]]},
+        schema={"a": pl.Array(pl.Int64, 2), "b": pl.Array(pl.Int64, 2)},
+    )
+    assert df.select(pl.all().arr.count_matches(3)).to_dict(as_series=False) == {
+        "a": [0],
+        "b": [1],
+    }
+
+
 def test_array_to_struct() -> None:
     df = pl.DataFrame(
         {"a": [[1, 2, 3], [4, 5, None]]}, schema={"a": pl.Array(pl.Int8, 3)}
@@ -449,3 +487,65 @@ def test_array_n_unique() -> None:
         {"n_unique": [2, 1, 1, None]}, schema={"n_unique": pl.UInt32}
     )
     assert_frame_equal(out, expected)
+
+
+def test_explode_19049() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3]]}, schema={"a": pl.Array(pl.Int64, 3)})
+    result_df = df.select(pl.col.a.arr.explode())
+    expected_df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
+    assert_frame_equal(result_df, expected_df)
+
+    df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
+    with pytest.raises(InvalidOperationError, match="expected Array type, got: i64"):
+        df.select(pl.col.a.arr.explode())
+
+
+def test_array_join_unequal_lengths_22018() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [
+                    ["a", "b", "d"],
+                    ["ya", "x", "y"],
+                    ["ya", "x", "y"],
+                ],
+                pl.Array(pl.String, 3),
+            ),
+        ]
+    )
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.select(pl.col.a.arr.join(pl.Series([",", "-"])))
+
+
+def test_array_shift_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series(
+            "a",
+            [
+                ["a", "b", "d"],
+                ["a", "b", "d"],
+                ["a", "b", "d"],
+            ],
+            pl.Array(pl.String, 3),
+        ).arr.shift(pl.Series([1, 2]))
+
+
+def test_array_shift_self_broadcast_22124() -> None:
+    assert_series_equal(
+        pl.Series(
+            "a",
+            [
+                ["a", "b", "d"],
+            ],
+            pl.Array(pl.String, 3),
+        ).arr.shift(pl.Series([1, 2])),
+        pl.Series(
+            "a",
+            [
+                [None, "a", "b"],
+                [None, None, "a"],
+            ],
+            pl.Array(pl.String, 3),
+        ),
+    )

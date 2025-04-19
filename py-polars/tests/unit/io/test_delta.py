@@ -7,15 +7,15 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.fs
 import pytest
-from deltalake import DeltaTable
-from deltalake.exceptions import TableNotFoundError
+from deltalake import DeltaTable, write_deltalake
+from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 
-@pytest.fixture()
+@pytest.fixture
 def delta_table_path(io_files_path: Path) -> Path:
     return io_files_path / "delta-table"
 
@@ -34,7 +34,7 @@ def test_scan_delta_version(delta_table_path: Path) -> None:
     assert_frame_not_equal(df1, df2)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_scan_delta_timestamp_version(tmp_path: Path) -> None:
     df_sample = pl.DataFrame({"name": ["Joey"], "age": [14]})
     df_sample.write_delta(tmp_path, mode="append")
@@ -69,18 +69,6 @@ def test_scan_delta_columns(delta_table_path: Path) -> None:
     assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
 
 
-def test_scan_delta_filesystem(delta_table_path: Path) -> None:
-    raw_filesystem = pyarrow.fs.LocalFileSystem()
-    fs = pyarrow.fs.SubTreeFileSystem(str(delta_table_path), raw_filesystem)
-
-    ldf = pl.scan_delta(
-        str(delta_table_path), version=0, pyarrow_options={"filesystem": fs}
-    )
-
-    expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
-
-
 def test_scan_delta_relative(delta_table_path: Path) -> None:
     rel_delta_table_path = str(delta_table_path / ".." / "delta-table")
 
@@ -107,7 +95,7 @@ def test_read_delta_version(delta_table_path: Path) -> None:
     assert_frame_not_equal(df1, df2)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_read_delta_timestamp_version(tmp_path: Path) -> None:
     df_sample = pl.DataFrame({"name": ["Joey"], "age": [14]})
     df_sample.write_delta(tmp_path, mode="append")
@@ -142,18 +130,6 @@ def test_read_delta_columns(delta_table_path: Path) -> None:
     assert_frame_equal(expected, df, check_dtypes=False)
 
 
-def test_read_delta_filesystem(delta_table_path: Path) -> None:
-    raw_filesystem = pyarrow.fs.LocalFileSystem()
-    fs = pyarrow.fs.SubTreeFileSystem(str(delta_table_path), raw_filesystem)
-
-    df = pl.read_delta(
-        str(delta_table_path), version=0, pyarrow_options={"filesystem": fs}
-    )
-
-    expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
-    assert_frame_equal(expected, df, check_dtypes=False)
-
-
 def test_read_delta_relative(delta_table_path: Path) -> None:
     rel_delta_table_path = str(delta_table_path / ".." / "delta-table")
 
@@ -163,7 +139,7 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
     assert_frame_equal(expected, df, check_dtypes=False)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     v0 = df.select(pl.col(pl.String))
     v1 = df.select(pl.col(pl.Int64))
@@ -173,8 +149,8 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     v0.write_delta(tmp_path)
 
     # Case: Error if table exists
-    with pytest.raises(ValueError):
-        v1.write_delta(tmp_path)
+    with pytest.raises(DeltaError, match="A table already exists"):
+        v0.write_delta(tmp_path)
 
     # Case: Overwrite with new version (version 1)
     v1.write_delta(
@@ -208,7 +184,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     assert v1.columns == pl_df_1.columns
 
     assert df_supported.shape == pl_df_partitioned.shape
-    assert df_supported.columns == pl_df_partitioned.columns
+    assert sorted(df_supported.columns) == sorted(pl_df_partitioned.columns)
 
     assert tbl.version() == 1
     assert partitioned_tbl.version() == 0
@@ -240,23 +216,23 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
 
     assert partitioned_tbl.version() == 1
     assert pl_df_partitioned.shape == (6, 14)  # Rows are doubled
-    assert df_supported.columns == pl_df_partitioned.columns
+    assert sorted(df_supported.columns) == sorted(pl_df_partitioned.columns)
 
     df_supported.write_delta(partitioned_tbl_uri, mode="overwrite")
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_delta_overwrite_schema_deprecated(
     df: pl.DataFrame, tmp_path: Path
 ) -> None:
     df = df.select(pl.col(pl.Int64))
     with pytest.deprecated_call():
-        df.write_delta(tmp_path, overwrite_schema=True)
+        df.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
     result = pl.read_delta(str(tmp_path))
     assert_frame_equal(df, result)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     "series",
     [
@@ -410,7 +386,7 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
     assert tbl.version() == 1
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -418,7 +394,7 @@ def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
     df.write_delta(tmp_path, delta_write_options={"schema": pa_schema})
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     "expr",
     [
@@ -455,7 +431,7 @@ def test_write_delta_with_merge_and_no_table(tmp_path: Path) -> None:
         )
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_write_delta_with_merge(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -472,9 +448,8 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
     )
 
     assert isinstance(merger, TableMerger)
-    assert merger.predicate == "s.a = t.a"
-    assert merger.source_alias == "s"
-    assert merger.target_alias == "t"
+    assert merger._builder.source_alias == "s"
+    assert merger._builder.target_alias == "t"
 
     merger.when_matched_delete(predicate="t.a > 2").execute()
 
@@ -484,7 +459,7 @@ def test_write_delta_with_merge(tmp_path: Path) -> None:
     assert_frame_equal(result, expected, check_row_order=False)
 
 
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_unsupported_dtypes(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [None]}, schema={"a": pl.Null})
     with pytest.raises(TypeError, match="unsupported data type"):
@@ -495,7 +470,11 @@ def test_unsupported_dtypes(tmp_path: Path) -> None:
         df.write_delta(tmp_path / "time")
 
 
-@pytest.mark.write_disk()
+@pytest.mark.skip(
+    reason="upstream bug in delta-rs causing categorical to be written as categorical in parquet"
+)
+@pytest.mark.write_disk
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_becomes_string(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Categorical})
     df.write_delta(tmp_path)
@@ -503,17 +482,47 @@ def test_categorical_becomes_string(tmp_path: Path) -> None:
     assert_frame_equal(df2, pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Utf8}))
 
 
-@pytest.mark.write_disk()
-@pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
-def test_read_parquet_respects_rechunk_16982(
-    rechunk_and_expected_chunks: tuple[bool, int], tmp_path: Path
-) -> None:
-    # Create a delta lake table with 3 chunks:
-    df = pl.DataFrame({"a": [1]})
-    df.write_delta(str(tmp_path))
-    df.write_delta(str(tmp_path), mode="append")
-    df.write_delta(str(tmp_path), mode="append")
+def test_scan_delta_DT_input(delta_table_path: Path) -> None:
+    DT = DeltaTable(str(delta_table_path), version=0)
+    ldf = pl.scan_delta(DT)
 
-    rechunk, expected_chunks = rechunk_and_expected_chunks
-    result = pl.read_delta(str(tmp_path), rechunk=rechunk)
-    assert result.n_chunks() == expected_chunks
+    expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
+    assert_frame_equal(expected, ldf.collect(), check_dtypes=False)
+
+
+@pytest.mark.write_disk
+def test_read_delta_empty(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = str(tmp_path)
+
+    DeltaTable.create(path, pl.DataFrame(schema={"x": pl.Int64}).to_arrow().schema)
+    assert_frame_equal(pl.read_delta(path), pl.DataFrame(schema={"x": pl.Int64}))
+
+
+@pytest.mark.write_disk
+def test_read_delta_arrow_map_type(tmp_path: Path) -> None:
+    payload = [
+        {"id": 1, "account_id": {17: "100.01.001 Cash"}},
+        {"id": 2, "account_id": {18: "180.01.001 Cash", 19: "foo"}},
+    ]
+
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("account_id", pa.map_(pa.int32(), pa.string())),
+        ]
+    )
+    table = pa.Table.from_pylist(payload, schema)
+
+    expect = pl.DataFrame(table)
+
+    table_path = str(tmp_path)
+    write_deltalake(
+        table_path,
+        table,
+        mode="overwrite",
+        engine="rust",
+    )
+
+    assert_frame_equal(pl.scan_delta(table_path).collect(), expect)
+    assert_frame_equal(pl.read_delta(table_path), expect)

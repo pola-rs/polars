@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import string
 from decimal import Decimal as D
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -10,6 +10,8 @@ import polars as pl
 from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from polars._typing import PolarsDataType
 
 
@@ -81,7 +83,7 @@ def test_fmt_series(
     s = pl.Series(name="foo", values=values)
     with pl.Config(fmt_str_lengths=15):
         print(s)
-    out, err = capfd.readouterr()
+    out, _err = capfd.readouterr()
     assert out == expected
 
 
@@ -246,7 +248,7 @@ def test_fmt_unsigned_int_thousands_sep(
 def test_fmt_float(capfd: pytest.CaptureFixture[str]) -> None:
     s = pl.Series(name="foo", values=[7.966e-05, 7.9e-05, 8.4666e-05, 8.00007966])
     print(s)
-    out, err = capfd.readouterr()
+    out, _err = capfd.readouterr()
     expected = """shape: (4,)
 Series: 'foo' [f64]
 [
@@ -290,8 +292,9 @@ def test_fmt_float_full() -> None:
 
 def test_fmt_list_12188() -> None:
     # set max_items to 1 < 4(size of failed list) to touch the testing branch.
-    with pl.Config(fmt_table_cell_list_len=1), pytest.raises(
-        InvalidOperationError, match="from `i64` to `u8` failed"
+    with (
+        pl.Config(fmt_table_cell_list_len=1),
+        pytest.raises(InvalidOperationError, match="from `i64` to `u8` failed"),
     ):
         pl.DataFrame(
             {
@@ -470,3 +473,41 @@ Series: '' [decimal[38,38]]
 def test_simple_project_format(lf: pl.LazyFrame, expected: str) -> None:
     result = lf.explain()
     assert expected in result
+
+
+@pytest.mark.parametrize(
+    ("df", "expected"),
+    [
+        pytest.param(
+            pl.DataFrame({"A": range(4)}),
+            """shape: (4, 1)
++-----+
+| A   |
++=====+
+| 0   |
+| 1   |
+| ... |
+| 3   |
++-----+""",
+            id="Ellipsis correctly aligned",
+        ),
+        pytest.param(
+            pl.DataFrame({"A": range(2)}),
+            """shape: (2, 1)
++---+
+| A |
++===+
+| 0 |
+| 1 |
++---+""",
+            id="No ellipsis needed",
+        ),
+    ],
+)
+def test_format_ascii_table_truncation(df: pl.DataFrame, expected: str) -> None:
+    with pl.Config(tbl_rows=3, tbl_hide_column_data_types=True, ascii_tables=True):
+        assert str(df) == expected
+
+
+def test_format_21393() -> None:
+    assert pl.select(pl.format("{}", pl.lit(1, pl.Int128))).item() == "1"

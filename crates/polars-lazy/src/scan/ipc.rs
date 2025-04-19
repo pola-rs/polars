@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::{HiveOptions, RowIndex};
+use polars_utils::slice_enum::Slice;
 
 use crate::prelude::*;
 
@@ -13,10 +14,9 @@ pub struct ScanArgsIpc {
     pub cache: bool,
     pub rechunk: bool,
     pub row_index: Option<RowIndex>,
-    pub memory_map: bool,
     pub cloud_options: Option<CloudOptions>,
     pub hive_options: HiveOptions,
-    pub include_file_paths: Option<Arc<str>>,
+    pub include_file_paths: Option<PlSmallStr>,
 }
 
 impl Default for ScanArgsIpc {
@@ -26,7 +26,6 @@ impl Default for ScanArgsIpc {
             cache: true,
             rechunk: false,
             row_index: None,
-            memory_map: true,
             cloud_options: Default::default(),
             hive_options: Default::default(),
             include_file_paths: None,
@@ -37,41 +36,52 @@ impl Default for ScanArgsIpc {
 #[derive(Clone)]
 struct LazyIpcReader {
     args: ScanArgsIpc,
-    paths: Arc<[PathBuf]>,
+    sources: ScanSources,
 }
 
 impl LazyIpcReader {
     fn new(args: ScanArgsIpc) -> Self {
         Self {
             args,
-            paths: Arc::new([]),
+            sources: ScanSources::default(),
         }
     }
 }
 
 impl LazyFileListReader for LazyIpcReader {
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let paths = self.paths;
         let args = self.args;
 
-        let options = IpcScanOptions {
-            memory_map: args.memory_map,
-        };
+        let options = IpcScanOptions {};
+        let pre_slice = args.n_rows.map(|len| Slice::Positive { offset: 0, len });
 
-        let mut lf: LazyFrame = DslBuilder::scan_ipc(
-            paths,
+        let cloud_options = args.cloud_options;
+        let hive_options = args.hive_options;
+        let rechunk = args.rechunk;
+        let cache = args.cache;
+        let row_index = args.row_index;
+        let include_file_paths = args.include_file_paths;
+
+        let lf: LazyFrame = DslBuilder::scan_ipc(
+            self.sources,
             options,
-            args.n_rows,
-            args.cache,
-            args.row_index,
-            args.rechunk,
-            args.cloud_options,
-            args.hive_options,
-            args.include_file_paths,
+            UnifiedScanArgs {
+                schema: None,
+                cloud_options,
+                hive_options,
+                rechunk,
+                cache,
+                glob: true,
+                projection: None,
+                row_index,
+                pre_slice,
+                cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
+                missing_columns_policy: MissingColumnsPolicy::Raise,
+                include_file_paths,
+            },
         )?
         .build()
         .into();
-        lf.opt_state.file_caching = true;
 
         Ok(lf)
     }
@@ -80,12 +90,12 @@ impl LazyFileListReader for LazyIpcReader {
         unreachable!()
     }
 
-    fn paths(&self) -> &[PathBuf] {
-        &self.paths
+    fn sources(&self) -> &ScanSources {
+        &self.sources
     }
 
-    fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
-        self.paths = paths;
+    fn with_sources(mut self, sources: ScanSources) -> Self {
+        self.sources = sources;
         self
     }
 
@@ -125,12 +135,17 @@ impl LazyFileListReader for LazyIpcReader {
 impl LazyFrame {
     /// Create a LazyFrame directly from a ipc scan.
     pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
-        LazyIpcReader::new(args)
-            .with_paths(Arc::new([path.as_ref().to_path_buf()]))
-            .finish()
+        Self::scan_ipc_sources(
+            ScanSources::Paths([path.as_ref().to_path_buf()].into()),
+            args,
+        )
     }
 
     pub fn scan_ipc_files(paths: Arc<[PathBuf]>, args: ScanArgsIpc) -> PolarsResult<Self> {
-        LazyIpcReader::new(args).with_paths(paths).finish()
+        Self::scan_ipc_sources(ScanSources::Paths(paths), args)
+    }
+
+    pub fn scan_ipc_sources(sources: ScanSources, args: ScanArgsIpc) -> PolarsResult<Self> {
+        LazyIpcReader::new(args).with_sources(sources).finish()
     }
 }

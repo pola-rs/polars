@@ -6,7 +6,7 @@ pub struct ProjectionSimple {
 }
 
 impl ProjectionSimple {
-    fn execute_impl(&mut self, df: DataFrame, columns: &[SmartString]) -> PolarsResult<DataFrame> {
+    fn execute_impl(&mut self, df: DataFrame, columns: &[PlSmallStr]) -> PolarsResult<DataFrame> {
         // No duplicate check as that an invariant of this node.
         df._select_impl_unchecked(columns.as_ref())
     }
@@ -15,10 +15,10 @@ impl ProjectionSimple {
 impl Executor for ProjectionSimple {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;
-        let columns = self.columns.iter_names().cloned().collect::<Vec<_>>();
+        let columns = self.columns.iter_names_cloned().collect::<Vec<_>>();
 
         let profile_name = if state.has_node_timer() {
-            let name = comma_delimited("simple-projection".to_string(), &columns);
+            let name = comma_delimited("simple-projection".to_string(), columns.as_slice());
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")
@@ -26,9 +26,9 @@ impl Executor for ProjectionSimple {
         let df = self.input.execute(state)?;
 
         if state.has_node_timer() {
-            state.record(|| self.execute_impl(df, &columns), profile_name)
+            state.record(|| self.execute_impl(df, columns.as_slice()), profile_name)
         } else {
-            self.execute_impl(df, &columns)
+            self.execute_impl(df, columns.as_slice())
         }
     }
 }

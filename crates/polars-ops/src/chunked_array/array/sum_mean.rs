@@ -2,7 +2,7 @@ use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
-use polars_core::export::num::{NumCast, ToPrimitive};
+use num_traits::{NumCast, ToPrimitive};
 use polars_core::prelude::*;
 
 use crate::chunked_array::sum::sum_slice;
@@ -42,6 +42,7 @@ pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> S
                 Int16 => dispatch_sum::<i16, i64>(values, width, arr.validity()),
                 Int32 => dispatch_sum::<i32, i32>(values, width, arr.validity()),
                 Int64 => dispatch_sum::<i64, i64>(values, width, arr.validity()),
+                Int128 => dispatch_sum::<i128, i128>(values, width, arr.validity()),
                 UInt8 => dispatch_sum::<u8, i64>(values, width, arr.validity()),
                 UInt16 => dispatch_sum::<u16, i64>(values, width, arr.validity()),
                 UInt32 => dispatch_sum::<u32, u32>(values, width, arr.validity()),
@@ -53,7 +54,7 @@ pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> S
         })
         .collect::<Vec<_>>();
 
-    Series::try_from((ca.name(), chunks)).unwrap()
+    Series::try_from((ca.name().clone(), chunks)).unwrap()
 }
 
 pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
@@ -96,6 +97,14 @@ pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> Polar
                     .collect();
                 out.into_series()
             },
+            #[cfg(feature = "dtype-i128")]
+            Int128 => {
+                let out: Int128Chunked = ca
+                    .amortized_iter()
+                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
+                    .collect();
+                out.into_series()
+            },
             Float32 => {
                 let out: Float32Chunked = ca
                     .amortized_iter()
@@ -115,6 +124,6 @@ pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> Polar
             },
         }
     };
-    out.rename(ca.name());
+    out.rename(ca.name().clone());
     Ok(out)
 }

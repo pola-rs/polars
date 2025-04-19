@@ -122,7 +122,7 @@ Specifies the table(s) from which to retrieve or delete data.
 
 JOIN
 ----
-Combines rows from two or more tables based on a related column. 
+Combines rows from two or more tables based on a related column.
 
 **Join Types**
 

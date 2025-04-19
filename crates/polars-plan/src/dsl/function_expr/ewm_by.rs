@@ -2,7 +2,7 @@ use polars_ops::series::SeriesMethods;
 
 use super::*;
 
-pub(super) fn ewm_mean_by(s: &[Series], half_life: Duration) -> PolarsResult<Series> {
+pub(super) fn ewm_mean_by(s: &[Column], half_life: Duration) -> PolarsResult<Column> {
     let time_zone = match s[1].dtype() {
         DataType::Datetime(_, Some(time_zone)) => Some(time_zone.as_str()),
         _ => None,
@@ -13,6 +13,14 @@ pub(super) fn ewm_mean_by(s: &[Series], half_life: Duration) -> PolarsResult<Ser
     let half_life = half_life.duration_ns();
     let values = &s[0];
     let times = &s[1];
-    let times_is_sorted = times.is_sorted(Default::default())?;
-    polars_ops::prelude::ewm_mean_by(values, times, half_life, times_is_sorted)
+    let times_is_sorted = times
+        .as_materialized_series()
+        .is_sorted(Default::default())?;
+    polars_ops::prelude::ewm_mean_by(
+        values.as_materialized_series(),
+        times.as_materialized_series(),
+        half_life,
+        times_is_sorted,
+    )
+    .map(Column::from)
 }

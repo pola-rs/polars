@@ -4,15 +4,13 @@ use std::rc::Rc;
 use hashbrown::hash_map::Entry;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
-#[cfg(feature = "parquet")]
-use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_ops::prelude::JoinType;
 use polars_plan::prelude::expr_ir::{ExprIR, OutputName};
 use polars_plan::prelude::*;
 
 use crate::executors::operators::{HstackOperator, PlaceHolder};
-use crate::executors::sinks::group_by::aggregates::convert_to_hash_agg;
 use crate::executors::sinks::group_by::GenericGroupby2;
+use crate::executors::sinks::group_by::aggregates::convert_to_hash_agg;
 use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
@@ -26,10 +24,10 @@ fn exprs_to_physical<F>(
     exprs: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
-    schema: Option<&SchemaRef>,
+    schema: &SchemaRef,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalPipedExpr>>>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     exprs
         .iter()
@@ -41,71 +39,66 @@ where
 fn get_source<F>(
     source: IR,
     operator_objects: &mut Vec<Box<dyn Operator>>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
     push_predicate: bool,
     verbose: bool,
 ) -> PolarsResult<Box<dyn Source>>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use IR::*;
     match source {
         DataFrameScan {
-            df,
-            filter: selection,
-            output_schema,
-            ..
+            df, output_schema, ..
         } => {
             let mut df = (*df).clone();
+            let schema = output_schema.clone().unwrap_or_else(|| df.schema().clone());
             if push_predicate {
-                if let Some(predicate) = selection {
-                    let predicate = to_physical(&predicate, expr_arena, output_schema.as_ref())?;
-                    let op = operators::FilterOperator { predicate };
-                    let op = Box::new(op) as Box<dyn Operator>;
-                    operator_objects.push(op)
-                }
                 // projection is free
                 if let Some(schema) = output_schema {
-                    let columns = schema.iter_names().cloned().collect::<Vec<_>>();
+                    let columns = schema.iter_names_cloned().collect::<Vec<_>>();
                     df = df._select_impl_unchecked(&columns)?;
                 }
             }
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
         },
         Scan {
-            paths,
+            sources,
             file_info,
             hive_parts,
-            file_options,
+            unified_scan_args,
             predicate,
             output_schema,
             scan_type,
         } => {
+            let paths = sources.into_paths();
+            let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
+
             // Add predicate to operators.
             // Except for parquet, as that format can use statistics to prune file/row-groups.
             #[cfg(feature = "parquet")]
-            let is_parquet = matches!(scan_type, FileScan::Parquet { .. });
+            let is_parquet = matches!(&*scan_type, FileScan::Parquet { .. });
             #[cfg(not(feature = "parquet"))]
             let is_parquet = false;
 
             if let (false, true, Some(predicate)) = (is_parquet, push_predicate, predicate.clone())
             {
                 #[cfg(feature = "parquet")]
-                debug_assert!(!matches!(scan_type, FileScan::Parquet { .. }));
-                let predicate = to_physical(&predicate, expr_arena, output_schema.as_ref())?;
+                debug_assert!(!matches!(&*scan_type, FileScan::Parquet { .. }));
+                let predicate = to_physical(&predicate, expr_arena, schema)?;
                 let op = operators::FilterOperator { predicate };
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            match scan_type {
+            match *scan_type {
                 #[cfg(feature = "csv")]
                 FileScan::Csv { options, .. } => {
                     let src = sources::CsvSource::new(
-                        paths,
-                        file_info.schema,
+                        sources,
+                        file_info.reader_schema.clone().unwrap().unwrap_right(),
                         options,
-                        file_options,
+                        unified_scan_args,
                         verbose,
                     )?;
                     Ok(Box::new(src) as Box<dyn Source>)
@@ -113,44 +106,8 @@ where
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {
                     options: parquet_options,
-                    cloud_options,
                     metadata,
-                } => {
-                    let predicate = predicate
-                        .as_ref()
-                        .map(|predicate| {
-                            let p = to_physical(predicate, expr_arena, output_schema.as_ref())?;
-                            // Arc's all the way down. :(
-                            // Temporarily until: https://github.com/rust-lang/rust/issues/65991
-                            // stabilizes
-                            struct Wrap {
-                                p: Arc<dyn PhysicalPipedExpr>,
-                            }
-                            impl PhysicalIoExpr for Wrap {
-                                fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
-                                    self.p.evaluate_io(df)
-                                }
-                                fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
-                                    self.p.as_stats_evaluator()
-                                }
-                            }
-
-                            PolarsResult::Ok(Arc::new(Wrap { p }) as Arc<dyn PhysicalIoExpr>)
-                        })
-                        .transpose()?;
-                    let src = sources::ParquetSource::new(
-                        paths,
-                        parquet_options,
-                        cloud_options,
-                        metadata,
-                        file_options,
-                        file_info,
-                        hive_parts,
-                        verbose,
-                        predicate,
-                    )?;
-                    Ok(Box::new(src) as Box<dyn Source>)
-                },
+                } => panic!("Parquet no longer supported for old streaming engine"),
                 _ => todo!(),
             }
         },
@@ -166,75 +123,64 @@ pub fn get_sink<F>(
     callbacks: &mut CallBacks,
 ) -> PolarsResult<Box<dyn SinkTrait>>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use IR::*;
     let out = match lp_arena.get(node) {
         Sink { input, payload } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             match payload {
-                SinkType::Memory => {
+                SinkTypeIR::Memory => {
                     Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn SinkTrait>
                 },
                 #[allow(unused_variables)]
-                SinkType::File {
-                    path, file_type, ..
-                } => {
+                SinkTypeIR::File(FileSinkType {
+                    target,
+                    file_type,
+                    sink_options: _,
+                    cloud_options,
+                }) => {
+                    let SinkTarget::Path(path) = target else {
+                        polars_bail!(InvalidOperation: "in-memory sinks are not supported for the old streaming engine");
+                    };
                     let path = path.as_ref().as_path();
                     match &file_type {
                         #[cfg(feature = "parquet")]
-                        FileType::Parquet(options) => {
-                            Box::new(ParquetSink::new(path, *options, input_schema.as_ref())?)
-                                as Box<dyn SinkTrait>
-                        },
+                        FileType::Parquet(options) => Box::new(ParquetSink::new(
+                            path,
+                            *options,
+                            input_schema.as_ref(),
+                            cloud_options.as_ref(),
+                        )?)
+                            as Box<dyn SinkTrait>,
                         #[cfg(feature = "ipc")]
-                        FileType::Ipc(options) => {
-                            Box::new(IpcSink::new(path, *options, input_schema.as_ref())?)
-                                as Box<dyn SinkTrait>
-                        },
+                        FileType::Ipc(options) => Box::new(IpcSink::new(
+                            path,
+                            *options,
+                            input_schema.as_ref(),
+                            cloud_options.as_ref(),
+                        )?) as Box<dyn SinkTrait>,
                         #[cfg(feature = "csv")]
-                        FileType::Csv(options) => {
-                            Box::new(CsvSink::new(path, options.clone(), input_schema.as_ref())?)
-                                as Box<dyn SinkTrait>
-                        },
+                        FileType::Csv(options) => Box::new(CsvSink::new(
+                            path,
+                            options.clone(),
+                            input_schema.as_ref(),
+                            cloud_options.as_ref(),
+                        )?) as Box<dyn SinkTrait>,
                         #[cfg(feature = "json")]
-                        FileType::Json(options) => {
-                            Box::new(JsonSink::new(path, *options, input_schema.as_ref())?)
-                                as Box<dyn SinkTrait>
-                        },
+                        FileType::Json(options) => Box::new(JsonSink::new(
+                            path,
+                            *options,
+                            input_schema.as_ref(),
+                            cloud_options.as_ref(),
+                        )?)
+                            as Box<dyn SinkTrait>,
                         #[allow(unreachable_patterns)]
                         _ => unreachable!(),
                     }
                 },
-                #[cfg(feature = "cloud")]
-                SinkType::Cloud {
-                    #[cfg(any(feature = "parquet", feature = "ipc"))]
-                    uri,
-                    file_type,
-                    #[cfg(any(feature = "parquet", feature = "ipc"))]
-                    cloud_options,
-                    ..
-                } => {
-                    match &file_type {
-                        #[cfg(feature = "parquet")]
-                        FileType::Parquet(parquet_options) => Box::new(ParquetCloudSink::new(
-                            uri.as_ref().as_str(),
-                            cloud_options.as_ref(),
-                            *parquet_options,
-                            lp_arena.get(*input).schema(lp_arena).as_ref(),
-                        )?)
-                            as Box<dyn SinkTrait>,
-                        #[cfg(feature = "ipc")]
-                        FileType::Ipc(ipc_options) => Box::new(IpcCloudSink::new(
-                            uri.as_ref().as_str(),
-                            cloud_options.as_ref(),
-                            *ipc_options,
-                            lp_arena.get(*input).schema(lp_arena).as_ref(),
-                        )?)
-                            as Box<dyn SinkTrait>,
-                        #[allow(unreachable_patterns)]
-                        other_file_type => todo!("Cloud-sinking of the file type {other_file_type:?} is not (yet) supported."),
-                    }
+                SinkTypeIR::Partition { .. } => {
+                    polars_bail!(InvalidOperation: "partitioning sink not supported in old streaming engine")
                 },
             }
         },
@@ -254,7 +200,7 @@ where
             match &options.args.how {
                 #[cfg(feature = "cross_join")]
                 JoinType::Cross => Box::new(CrossJoin::new(
-                    options.args.suffix().into(),
+                    options.args.suffix().clone(),
                     swapped,
                     node,
                     placeholder,
@@ -265,14 +211,14 @@ where
                         left_on,
                         expr_arena,
                         to_physical,
-                        Some(input_schema_left.as_ref()),
+                        input_schema_left.as_ref(),
                     )?);
                     let input_schema_right = lp_arena.get(*input_right).schema(lp_arena);
                     let join_columns_right = Arc::new(exprs_to_physical(
                         right_on,
                         expr_arena,
                         to_physical,
-                        Some(input_schema_right.as_ref()),
+                        input_schema_right.as_ref(),
                     )?);
 
                     let swap_eval = || {
@@ -288,12 +234,12 @@ where
                             let (join_columns_left, join_columns_right) = swap_eval();
 
                             Box::new(GenericBuild::<()>::new(
-                                Arc::from(options.args.suffix()),
+                                options.args.suffix().clone(),
                                 options.args.clone(),
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,
-                                options.args.join_nulls,
+                                options.args.nulls_equal,
                                 node,
                                 // We don't need the key names for these joins.
                                 vec![].into(),
@@ -301,7 +247,7 @@ where
                                 placeholder,
                             )) as Box<dyn SinkTrait>
                         },
-                        JoinType::Full { .. } => {
+                        JoinType::Full => {
                             // First get the names before we (potentially) swap.
                             let key_names_left = join_columns_left
                                 .iter()
@@ -315,12 +261,12 @@ where
                             let (join_columns_left, join_columns_right) = swap_eval();
 
                             Box::new(GenericBuild::<Tracker>::new(
-                                Arc::from(options.args.suffix()),
+                                options.args.suffix().clone(),
                                 options.args.clone(),
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,
-                                options.args.join_nulls,
+                                options.args.nulls_equal,
                                 node,
                                 key_names_left,
                                 key_names_right,
@@ -336,13 +282,6 @@ where
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             let slice = SliceSink::new(*offset as u64, *len as usize, input_schema.into_owned());
             Box::new(slice) as Box<dyn SinkTrait>
-        },
-        Reduce {
-            input: _,
-            exprs: _,
-            schema: _,
-        } => {
-            todo!()
         },
         Sort {
             input,
@@ -385,7 +324,7 @@ where
                     let keys = input_schema
                         .iter_names()
                         .map(|name| {
-                            let name: Arc<str> = Arc::from(name.as_str());
+                            let name: PlSmallStr = name.clone();
                             let node = expr_arena.add(AExpr::Column(name.clone()));
                             ExprIR::new(node, OutputName::Alias(name))
                         })
@@ -399,11 +338,10 @@ where
                     let keys = keys
                         .iter()
                         .map(|key| {
-                            let (_, name, dtype) = input_schema.get_full(key.as_str()).unwrap();
+                            let (_, name, dtype) = input_schema.get_full(key.as_ref()).unwrap();
                             group_by_out_schema.with_column(name.clone(), dtype.clone());
-                            let name: Arc<str> = Arc::from(key.as_str());
-                            let node = expr_arena.add(AExpr::Column(name.clone()));
-                            ExprIR::new(node, OutputName::Alias(name))
+                            let node = expr_arena.add(AExpr::Column(key.clone()));
+                            ExprIR::new(node, OutputName::Alias(key.clone()))
                         })
                         .collect::<Vec<_>>();
 
@@ -417,7 +355,7 @@ where
                                     input_schema.get_full(name.as_str()).unwrap();
                                 group_by_out_schema.with_column(name.clone(), dtype.clone());
 
-                                let name: Arc<str> = Arc::from(name.as_str());
+                                let name: PlSmallStr = name.clone();
                                 let col = expr_arena.add(AExpr::Column(name.clone()));
                                 let node = match options.keep_strategy {
                                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any => {
@@ -442,7 +380,7 @@ where
                 &keys,
                 expr_arena,
                 to_physical,
-                Some(&input_schema),
+                &input_schema,
             )?);
 
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
@@ -482,7 +420,7 @@ where
                 keys,
                 expr_arena,
                 to_physical,
-                Some(&input_schema),
+                &input_schema,
             )?);
 
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
@@ -562,10 +500,10 @@ fn get_hstack<F>(
     options: ProjectionOptions,
 ) -> PolarsResult<HstackOperator>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
-    Ok(operators::HstackOperator {
-        exprs: exprs_to_physical(exprs, expr_arena, &to_physical, Some(&input_schema))?,
+    Ok(HstackOperator {
+        exprs: exprs_to_physical(exprs, expr_arena, &to_physical, &input_schema)?,
         input_schema,
         options,
     })
@@ -578,13 +516,13 @@ pub fn get_operator<F>(
     to_physical: &F,
 ) -> PolarsResult<Box<dyn Operator>>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use IR::*;
     let op = match lp_arena.get(node) {
         SimpleProjection { input, columns, .. } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
-            let columns = columns.iter_names().cloned().collect();
+            let columns = columns.iter_names_cloned().collect();
             let op = operators::SimpleProjectionOperator::new(columns, input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         },
@@ -596,7 +534,7 @@ where
         } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             let op = operators::ProjectionOperator {
-                exprs: exprs_to_physical(expr, expr_arena, &to_physical, Some(&input_schema))?,
+                exprs: exprs_to_physical(expr, expr_arena, &to_physical, input_schema.as_ref())?,
                 options: *options,
             };
             Box::new(op) as Box<dyn Operator>
@@ -621,7 +559,7 @@ where
         },
         Filter { predicate, input } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
-            let predicate = to_physical(predicate, expr_arena, Some(input_schema.as_ref()))?;
+            let predicate = to_physical(predicate, expr_arena, input_schema.as_ref())?;
             let op = operators::FilterOperator { predicate };
             Box::new(op) as Box<dyn Operator>
         },
@@ -656,7 +594,7 @@ pub fn create_pipeline<F>(
     callbacks: &mut CallBacks,
 ) -> PolarsResult<PipeLine>
 where
-    F: Fn(&ExprIR, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
+    F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use IR::*;
 

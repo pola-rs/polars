@@ -1,7 +1,7 @@
 use polars_core::utils::flatten;
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::idx_vec::IdxVec;
-use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::itertools::Itertools;
 use polars_utils::nulls::IsNull;
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
@@ -43,7 +43,9 @@ pub(super) fn hash_join_tuples_inner<T, I>(
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
     swapped: bool,
     validate: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
+    // Null count is required for join validation
+    build_null_count: usize,
 ) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)>
 where
     I: IntoIterator<Item = T> + Send + Sync + Clone,
@@ -53,17 +55,21 @@ where
     // NOTE: see the left join for more elaborate comments
     // first we hash one relation
     let hash_tbls = if validate.needs_checks() {
-        let expected_size = build
+        let mut expected_size = build
             .iter()
             .map(|v| v.clone().into_iter().size_hint().1.unwrap())
             .sum();
-        let hash_tbls = build_tables(build, join_nulls);
+        if !nulls_equal {
+            expected_size -= build_null_count;
+        }
+        let hash_tbls = build_tables(build, nulls_equal);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
         validate.validate_build(build_size, expected_size, swapped)?;
         hash_tbls
     } else {
-        build_tables(build, join_nulls)
+        build_tables(build, nulls_equal)
     };
+    try_raise_keyboard_interrupt();
 
     let n_tables = hash_tbls.len();
     let offsets = probe_to_offsets(&probe);

@@ -51,20 +51,20 @@ impl<T: chrono::TimeZone> Int8IsoWeek for chrono::DateTime<T> {}
 // Macro to avoid repetition in functions, that apply
 // `chrono::Datelike` methods on Arrays
 macro_rules! date_like {
-    ($extract:ident, $array:ident, $data_type:path) => {
-        match $array.data_type().to_logical_type() {
+    ($extract:ident, $array:ident, $dtype:path) => {
+        match $array.dtype().to_logical_type() {
             ArrowDataType::Date32 | ArrowDataType::Date64 | ArrowDataType::Timestamp(_, None) => {
-                date_variants($array, $data_type, |x| x.$extract().try_into().unwrap())
+                date_variants($array, $dtype, |x| x.$extract().try_into().unwrap())
             },
             ArrowDataType::Timestamp(time_unit, Some(timezone_str)) => {
                 let array = $array.as_any().downcast_ref().unwrap();
 
-                if let Ok(timezone) = parse_offset(timezone_str) {
+                if let Ok(timezone) = parse_offset(timezone_str.as_str()) {
                     Ok(extract_impl(array, *time_unit, timezone, |x| {
                         x.$extract().try_into().unwrap()
                     }))
                 } else {
-                    chrono_tz(array, *time_unit, timezone_str, |x| {
+                    chrono_tz(array, *time_unit, timezone_str.as_str(), |x| {
                         x.$extract().try_into().unwrap()
                     })
                 }
@@ -75,35 +75,34 @@ macro_rules! date_like {
 }
 
 /// Extracts the years of a temporal array as [`PrimitiveArray<i32>`].
-/// Use [`can_year`] to check if this operation is supported for the target [`ArrowDataType`].
 pub fn year(array: &dyn Array) -> PolarsResult<PrimitiveArray<i32>> {
     date_like!(year, array, ArrowDataType::Int32)
 }
 
 /// Extracts the months of a temporal array as [`PrimitiveArray<i8>`].
+///
 /// Value ranges from 1 to 12.
-/// Use [`can_month`] to check if this operation is supported for the target [`ArrowDataType`].
 pub fn month(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
     date_like!(month, array, ArrowDataType::Int8)
 }
 
 /// Extracts the days of a temporal array as [`PrimitiveArray<i8>`].
+///
 /// Value ranges from 1 to 32 (Last day depends on month).
-/// Use [`can_day`] to check if this operation is supported for the target [`ArrowDataType`].
 pub fn day(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
     date_like!(day, array, ArrowDataType::Int8)
 }
 
 /// Extracts weekday of a temporal array as [`PrimitiveArray<i8>`].
+///
 /// Monday is 1, Tuesday is 2, ..., Sunday is 7.
-/// Use [`can_weekday`] to check if this operation is supported for the target [`ArrowDataType`]
 pub fn weekday(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
     date_like!(i8_weekday, array, ArrowDataType::Int8)
 }
 
-/// Extracts ISO week of a temporal array as [`PrimitiveArray<i8>`]
+/// Extracts ISO week of a temporal array as [`PrimitiveArray<i8>`].
+///
 /// Value ranges from 1 to 53 (Last week depends on the year).
-/// Use [`can_iso_week`] to check if this operation is supported for the target [`ArrowDataType`]
 pub fn iso_week(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
     date_like!(i8_iso_week, array, ArrowDataType::Int8)
 }
@@ -111,10 +110,10 @@ pub fn iso_week(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
 // Macro to avoid repetition in functions, that apply
 // `chrono::Timelike` methods on Arrays
 macro_rules! time_like {
-    ($extract:ident, $array:ident, $data_type:path) => {
-        match $array.data_type().to_logical_type() {
+    ($extract:ident, $array:ident, $dtype:path) => {
+        match $array.dtype().to_logical_type() {
             ArrowDataType::Date32 | ArrowDataType::Date64 | ArrowDataType::Timestamp(_, None) => {
-                date_variants($array, $data_type, |x| x.$extract().try_into().unwrap())
+                date_variants($array, $dtype, |x| x.$extract().try_into().unwrap())
             },
             ArrowDataType::Time32(_) | ArrowDataType::Time64(_) => {
                 time_variants($array, ArrowDataType::UInt32, |x| {
@@ -124,12 +123,12 @@ macro_rules! time_like {
             ArrowDataType::Timestamp(time_unit, Some(timezone_str)) => {
                 let array = $array.as_any().downcast_ref().unwrap();
 
-                if let Ok(timezone) = parse_offset(timezone_str) {
+                if let Ok(timezone) = parse_offset(timezone_str.as_str()) {
                     Ok(extract_impl(array, *time_unit, timezone, |x| {
                         x.$extract().try_into().unwrap()
                     }))
                 } else {
-                    chrono_tz(array, *time_unit, timezone_str, |x| {
+                    chrono_tz(array, *time_unit, timezone_str.as_str(), |x| {
                         x.$extract().try_into().unwrap()
                     })
                 }
@@ -161,6 +160,7 @@ pub fn second(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
 }
 
 /// Extracts the nanoseconds of a temporal array as [`PrimitiveArray<i32>`].
+///
 /// Value ranges from 0 to 1_999_999_999.
 /// The range from 1_000_000_000 to 1_999_999_999 represents the leap second.
 /// Use [`can_nanosecond`] to check if this operation is supported for the target [`ArrowDataType`].
@@ -170,27 +170,27 @@ pub fn nanosecond(array: &dyn Array) -> PolarsResult<PrimitiveArray<i32>> {
 
 fn date_variants<F, O>(
     array: &dyn Array,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     op: F,
 ) -> PolarsResult<PrimitiveArray<O>>
 where
     O: NativeType,
     F: Fn(chrono::NaiveDateTime) -> O,
 {
-    match array.data_type().to_logical_type() {
+    match array.dtype().to_logical_type() {
         ArrowDataType::Date32 => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i32>>()
                 .unwrap();
-            Ok(unary(array, |x| op(date32_to_datetime(x)), data_type))
+            Ok(unary(array, |x| op(date32_to_datetime(x)), dtype))
         },
         ArrowDataType::Date64 => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i64>>()
                 .unwrap();
-            Ok(unary(array, |x| op(date64_to_datetime(x)), data_type))
+            Ok(unary(array, |x| op(date64_to_datetime(x)), dtype))
         },
         ArrowDataType::Timestamp(time_unit, None) => {
             let array = array
@@ -213,41 +213,41 @@ where
 
 fn time_variants<F, O>(
     array: &dyn Array,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     op: F,
 ) -> PolarsResult<PrimitiveArray<O>>
 where
     O: NativeType,
     F: Fn(chrono::NaiveTime) -> O,
 {
-    match array.data_type().to_logical_type() {
+    match array.dtype().to_logical_type() {
         ArrowDataType::Time32(TimeUnit::Second) => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i32>>()
                 .unwrap();
-            Ok(unary(array, |x| op(time32s_to_time(x)), data_type))
+            Ok(unary(array, |x| op(time32s_to_time(x)), dtype))
         },
         ArrowDataType::Time32(TimeUnit::Millisecond) => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i32>>()
                 .unwrap();
-            Ok(unary(array, |x| op(time32ms_to_time(x)), data_type))
+            Ok(unary(array, |x| op(time32ms_to_time(x)), dtype))
         },
         ArrowDataType::Time64(TimeUnit::Microsecond) => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i64>>()
                 .unwrap();
-            Ok(unary(array, |x| op(time64us_to_time(x)), data_type))
+            Ok(unary(array, |x| op(time64us_to_time(x)), dtype))
         },
         ArrowDataType::Time64(TimeUnit::Nanosecond) => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i64>>()
                 .unwrap();
-            Ok(unary(array, |x| op(time64ns_to_time(x)), data_type))
+            Ok(unary(array, |x| op(time64ns_to_time(x)), dtype))
         },
         _ => unreachable!(),
     }
@@ -338,87 +338,4 @@ where
             unary(array, op, A::PRIMITIVE.into())
         },
     }
-}
-
-/// Checks if an array of type `datatype` can perform year operation
-///
-/// # Examples
-/// ```
-/// use polars_arrow::compute::temporal::can_year;
-/// use polars_arrow::datatypes::{ArrowDataType};
-///
-/// assert_eq!(can_year(&ArrowDataType::Date32), true);
-/// assert_eq!(can_year(&ArrowDataType::Int8), false);
-/// ```
-pub fn can_year(data_type: &ArrowDataType) -> bool {
-    can_date(data_type)
-}
-
-/// Checks if an array of type `datatype` can perform month operation
-pub fn can_month(data_type: &ArrowDataType) -> bool {
-    can_date(data_type)
-}
-
-/// Checks if an array of type `datatype` can perform day operation
-pub fn can_day(data_type: &ArrowDataType) -> bool {
-    can_date(data_type)
-}
-
-/// Checks if an array of type `data_type` can perform weekday operation
-pub fn can_weekday(data_type: &ArrowDataType) -> bool {
-    can_date(data_type)
-}
-
-/// Checks if an array of type `data_type` can perform ISO week operation
-pub fn can_iso_week(data_type: &ArrowDataType) -> bool {
-    can_date(data_type)
-}
-
-fn can_date(data_type: &ArrowDataType) -> bool {
-    matches!(
-        data_type,
-        ArrowDataType::Date32 | ArrowDataType::Date64 | ArrowDataType::Timestamp(_, _)
-    )
-}
-
-/// Checks if an array of type `datatype` can perform hour operation
-///
-/// # Examples
-/// ```
-/// use polars_arrow::compute::temporal::can_hour;
-/// use polars_arrow::datatypes::{ArrowDataType, TimeUnit};
-///
-/// assert_eq!(can_hour(&ArrowDataType::Time32(TimeUnit::Second)), true);
-/// assert_eq!(can_hour(&ArrowDataType::Int8), false);
-/// ```
-pub fn can_hour(data_type: &ArrowDataType) -> bool {
-    can_time(data_type)
-}
-
-/// Checks if an array of type `datatype` can perform minute operation
-pub fn can_minute(data_type: &ArrowDataType) -> bool {
-    can_time(data_type)
-}
-
-/// Checks if an array of type `datatype` can perform second operation
-pub fn can_second(data_type: &ArrowDataType) -> bool {
-    can_time(data_type)
-}
-
-/// Checks if an array of type `datatype` can perform nanosecond operation
-pub fn can_nanosecond(data_type: &ArrowDataType) -> bool {
-    can_time(data_type)
-}
-
-fn can_time(data_type: &ArrowDataType) -> bool {
-    matches!(
-        data_type,
-        ArrowDataType::Time32(TimeUnit::Second)
-            | ArrowDataType::Time32(TimeUnit::Millisecond)
-            | ArrowDataType::Time64(TimeUnit::Microsecond)
-            | ArrowDataType::Time64(TimeUnit::Nanosecond)
-            | ArrowDataType::Date32
-            | ArrowDataType::Date64
-            | ArrowDataType::Timestamp(_, _)
-    )
 }

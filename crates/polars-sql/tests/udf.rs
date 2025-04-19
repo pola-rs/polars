@@ -1,8 +1,8 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::IntoLazy;
 use polars_plan::prelude::{GetOutput, UserDefinedFunction};
-use polars_sql::function_registry::FunctionRegistry;
 use polars_sql::SQLContext;
+use polars_sql::function_registry::FunctionRegistry;
 
 struct MyFunctionRegistry {
     functions: PlHashMap<String, UserDefinedFunction>,
@@ -33,16 +33,21 @@ impl FunctionRegistry for MyFunctionRegistry {
 #[test]
 fn test_udfs() -> PolarsResult<()> {
     let my_custom_sum = UserDefinedFunction::new(
-        "my_custom_sum",
-        vec![
-            Field::new("a", DataType::Int32),
-            Field::new("b", DataType::Int32),
-        ],
-        GetOutput::same_type(),
-        move |s: &mut [Series]| {
-            let first = s[0].clone();
-            let second = s[1].clone();
-            (first + second).map(Some)
+        "my_custom_sum".into(),
+        GetOutput::map_dtypes(|dtypes| {
+            // UDF is responsible for schema validation
+            let Ok([first, second]) = <[&DataType; 2]>::try_from(dtypes) else {
+                polars_bail!(SchemaMismatch: "expected two arguments")
+            };
+            if first != second {
+                polars_bail!(SchemaMismatch: "mismatched types")
+            }
+            Ok(first.clone())
+        }),
+        move |c: &mut [Column]| {
+            let first = c[0].as_materialized_series().clone();
+            let second = c[1].as_materialized_series().clone();
+            (first + second).map(Column::from).map(Some)
         },
     );
 
@@ -62,22 +67,28 @@ fn test_udfs() -> PolarsResult<()> {
     assert!(res.is_ok());
 
     // schema is invalid so it will fail
-    assert!(ctx
-        .execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo")
-        .is_err());
+    assert!(matches!(
+        ctx.execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo"),
+        Err(PolarsError::SchemaMismatch(_))
+    ));
 
     // create a new UDF to be registered on the context
     let my_custom_divide = UserDefinedFunction::new(
-        "my_custom_divide",
-        vec![
-            Field::new("a", DataType::Int32),
-            Field::new("b", DataType::Int32),
-        ],
-        GetOutput::same_type(),
-        move |s: &mut [Series]| {
-            let first = s[0].clone();
-            let second = s[1].clone();
-            (first / second).map(Some)
+        "my_custom_divide".into(),
+        GetOutput::map_dtypes(|dtypes| {
+            // UDF is responsible for schema validation
+            let Ok([first, second]) = <[&DataType; 2]>::try_from(dtypes) else {
+                polars_bail!(SchemaMismatch: "expected two arguments")
+            };
+            if first != second {
+                polars_bail!(SchemaMismatch: "mismatched types")
+            }
+            Ok(first.clone())
+        }),
+        move |c: &mut [Column]| {
+            let first = c[0].as_materialized_series().clone();
+            let second = c[1].as_materialized_series().clone();
+            (first / second).map(Column::from).map(Some)
         },
     );
 

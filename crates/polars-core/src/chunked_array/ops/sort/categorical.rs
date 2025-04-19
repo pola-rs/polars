@@ -3,11 +3,6 @@ use super::*;
 impl CategoricalChunked {
     #[must_use]
     pub fn sort_with(&self, options: SortOptions) -> CategoricalChunked {
-        assert!(
-            !options.nulls_last,
-            "null last not yet supported for categorical dtype"
-        );
-
         if self.uses_lexical_ordering() {
             let mut vals = self
                 .physical()
@@ -16,10 +11,41 @@ impl CategoricalChunked {
                 .collect_trusted::<Vec<_>>();
 
             sort_unstable_by_branch(vals.as_mut_slice(), options, |a, b| a.1.cmp(&b.1));
-            let cats: UInt32Chunked = vals
-                .into_iter()
-                .map(|(idx, _v)| idx)
-                .collect_ca_trusted(self.name());
+
+            let mut cats = Vec::with_capacity(self.len());
+            let mut validity =
+                (self.null_count() > 0).then(|| BitmapBuilder::with_capacity(self.len()));
+
+            if self.null_count() > 0 && !options.nulls_last {
+                cats.resize(self.null_count(), 0);
+                if let Some(validity) = &mut validity {
+                    validity.extend_constant(self.null_count(), false);
+                }
+            }
+
+            let valid_slice = if options.descending {
+                &vals[..self.len() - self.null_count()]
+            } else {
+                &vals[self.null_count()..]
+            };
+            cats.extend(valid_slice.iter().map(|(idx, _v)| idx.unwrap()));
+            if let Some(validity) = &mut validity {
+                validity.extend_constant(self.len() - self.null_count(), true);
+            }
+
+            if self.null_count() > 0 && options.nulls_last {
+                cats.resize(self.len(), 0);
+                if let Some(validity) = &mut validity {
+                    validity.extend_constant(self.null_count(), false);
+                }
+            }
+
+            let cats = PrimitiveArray::<u32>::new(
+                ArrowDataType::UInt32,
+                cats.into(),
+                validity.map(|v| v.freeze()),
+            );
+            let cats = UInt32Chunked::from_chunk_iter(self.name().clone(), Some(cats));
 
             // SAFETY:
             // we only reordered the indexes so we are still in bounds
@@ -53,6 +79,7 @@ impl CategoricalChunked {
             descending,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
@@ -61,26 +88,28 @@ impl CategoricalChunked {
         if self.uses_lexical_ordering() {
             let iters = [self.iter_str()];
             arg_sort::arg_sort(
-                self.name(),
+                self.name().clone(),
                 iters,
                 options,
                 self.physical().null_count(),
                 self.len(),
+                IsSorted::Not,
+                false,
             )
         } else {
             self.physical().arg_sort(options)
         }
     }
 
-    /// Retrieve the indexes need to sort this and the other arrays.
-
+    /// Retrieve the indices needed to sort this and the other arrays.
     pub(crate) fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         if self.uses_lexical_ordering() {
-            args_validate(self.physical(), by, &options.descending)?;
+            args_validate(self.physical(), by, &options.descending, "descending")?;
+            args_validate(self.physical(), by, &options.nulls_last, "nulls_last")?;
             let mut count: IdxSize = 0;
 
             // we use bytes to save a monomorphisized str impl
@@ -104,7 +133,7 @@ impl CategoricalChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
+    use crate::{SINGLE_LOCK, disable_string_cache, enable_string_cache};
 
     fn assert_order(ca: &CategoricalChunked, cmp: &[&str]) {
         let s = ca.cast(&DataType::String).unwrap();
@@ -123,7 +152,7 @@ mod test {
                 enable_string_cache();
             }
 
-            let s = Series::new("", init)
+            let s = Series::new(PlSmallStr::EMPTY, init)
                 .cast(&DataType::Categorical(None, CategoricalOrdering::Lexical))?;
             let ca = s.categorical()?;
             let ca_lexical = ca.clone();
@@ -131,7 +160,8 @@ mod test {
             let out = ca_lexical.sort(false);
             assert_order(&out, &["a", "b", "c", "d"]);
 
-            let s = Series::new("", init).cast(&DataType::Categorical(None, Default::default()))?;
+            let s = Series::new(PlSmallStr::EMPTY, init)
+                .cast(&DataType::Categorical(None, Default::default()))?;
             let ca = s.categorical()?;
 
             let out = ca.sort(false);
@@ -158,7 +188,7 @@ mod test {
                 enable_string_cache();
             }
 
-            let s = Series::new("", init)
+            let s = Series::new(PlSmallStr::EMPTY, init)
                 .cast(&DataType::Categorical(None, CategoricalOrdering::Lexical))?;
             let ca = s.categorical()?;
             let ca_lexical: CategoricalChunked = ca.clone();
@@ -175,7 +205,7 @@ mod test {
                 SortMultipleOptions::default().with_order_descending_multi([false, false]),
             )?;
             let out = out.column("cat")?;
-            let cat = out.categorical()?;
+            let cat = out.as_materialized_series().categorical()?;
             assert_order(cat, &["a", "a", "b", "c"]);
 
             let out = df.sort(
@@ -183,7 +213,7 @@ mod test {
                 SortMultipleOptions::default().with_order_descending_multi([false, false]),
             )?;
             let out = out.column("cat")?;
-            let cat = out.categorical()?;
+            let cat = out.as_materialized_series().categorical()?;
             assert_order(cat, &["b", "c", "a", "a"]);
         }
         Ok(())

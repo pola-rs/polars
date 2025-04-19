@@ -9,6 +9,7 @@ pub struct JoinExec {
     right_on: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
     args: JoinArgs,
+    options: Option<JoinTypeOptions>,
 }
 
 impl JoinExec {
@@ -20,6 +21,7 @@ impl JoinExec {
         right_on: Vec<Arc<dyn PhysicalExpr>>,
         parallel: bool,
         args: JoinArgs,
+        options: Option<JoinTypeOptions>,
     ) -> Self {
         JoinExec {
             input_left: Some(input_left),
@@ -28,6 +30,7 @@ impl JoinExec {
             right_on,
             parallel,
             args,
+            options,
         }
     }
 }
@@ -75,7 +78,7 @@ impl Executor for JoinExec {
             let by = self
                 .left_on
                 .iter()
-                .map(|s| Ok(s.to_field(&df_left.schema())?.name))
+                .map(|s| Ok(s.to_field(df_left.schema())?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
             let name = comma_delimited("join".to_string(), &by);
             Cow::Owned(name)
@@ -104,7 +107,7 @@ impl Executor for JoinExec {
                 if let JoinType::AsOf(options) = &mut self.args.how {
                     use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
                     if let Some(tol) = &options.tolerance_str {
-                        let duration = polars_time::Duration::parse(tol);
+                        let duration = polars_time::Duration::try_parse(tol)?;
                         polars_ensure!(
                             duration.months() == 0,
                             ComputeError: "cannot use month offset in timedelta of an asof join; \
@@ -139,9 +142,10 @@ impl Executor for JoinExec {
 
             let df = df_left._join_impl(
                 &df_right,
-                left_on_series,
-                right_on_series,
+                left_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
+                right_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
                 self.args.clone(),
+                self.options.clone(),
                 true,
                 state.verbose(),
             );

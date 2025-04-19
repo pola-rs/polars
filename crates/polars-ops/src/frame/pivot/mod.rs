@@ -1,12 +1,15 @@
 mod positioning;
+mod unpivot;
 
 use std::borrow::Cow;
 
-use polars_core::export::rayon::prelude::*;
 use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
-use polars_core::{downcast_as_macro_arg_physical, POOL};
+use polars_core::{POOL, downcast_as_macro_arg_physical};
+use polars_utils::format_pl_smallstr;
+use rayon::prelude::*;
+pub use unpivot::UnpivotDF;
 
 const HASHMAP_INIT_SIZE: usize = 512;
 
@@ -73,7 +76,11 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
             let ca = s.u32().unwrap();
             ca.reinterpret_signed().cast(logical_type).unwrap()
         },
-        _ => unsafe { s.cast_unchecked(logical_type).unwrap() },
+        (dt, DataType::Null) => {
+            let ca = Series::full_null(s.name().clone(), s.len(), dt);
+            ca.into_series()
+        },
+        _ => unsafe { s.from_physical_unchecked(logical_type).unwrap() },
     }
 }
 
@@ -95,14 +102,11 @@ where
     I0: IntoIterator<Item = S0>,
     I1: IntoIterator<Item = S1>,
     I2: IntoIterator<Item = S2>,
-    S0: AsRef<str>,
-    S1: AsRef<str>,
-    S2: AsRef<str>,
+    S0: Into<PlSmallStr>,
+    S1: Into<PlSmallStr>,
+    S2: Into<PlSmallStr>,
 {
-    let on = on
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
+    let on = on.into_iter().map(Into::into).collect::<Vec<_>>();
     let (index, values) = assign_remaining_columns(pivot_df, &on, index, values)?;
     pivot_impl(
         pivot_df,
@@ -134,20 +138,17 @@ where
     I0: IntoIterator<Item = S0>,
     I1: IntoIterator<Item = S1>,
     I2: IntoIterator<Item = S2>,
-    S0: AsRef<str>,
-    S1: AsRef<str>,
-    S2: AsRef<str>,
+    S0: Into<PlSmallStr>,
+    S1: Into<PlSmallStr>,
+    S2: Into<PlSmallStr>,
 {
-    let on = on
-        .into_iter()
-        .map(|s| s.as_ref().to_string())
-        .collect::<Vec<_>>();
+    let on = on.into_iter().map(Into::into).collect::<Vec<_>>();
     let (index, values) = assign_remaining_columns(pivot_df, &on, index, values)?;
     pivot_impl(
         pivot_df,
-        &on,
-        &index,
-        &values,
+        on.as_slice(),
+        index.as_slice(),
+        values.as_slice(),
         agg_fn,
         sort_columns,
         true,
@@ -162,39 +163,39 @@ where
 /// - At least one of `index` and `values` must be non-null.
 fn assign_remaining_columns<I1, I2, S1, S2>(
     df: &DataFrame,
-    on: &[String],
+    on: &[PlSmallStr],
     index: Option<I1>,
     values: Option<I2>,
-) -> PolarsResult<(Vec<String>, Vec<String>)>
+) -> PolarsResult<(Vec<PlSmallStr>, Vec<PlSmallStr>)>
 where
     I1: IntoIterator<Item = S1>,
     I2: IntoIterator<Item = S2>,
-    S1: AsRef<str>,
-    S2: AsRef<str>,
+    S1: Into<PlSmallStr>,
+    S2: Into<PlSmallStr>,
 {
     match (index, values) {
         (Some(index), Some(values)) => {
-            let index = index.into_iter().map(|s| s.as_ref().to_string()).collect();
-            let values = values.into_iter().map(|s| s.as_ref().to_string()).collect();
+            let index = index.into_iter().map(Into::into).collect();
+            let values = values.into_iter().map(Into::into).collect();
             Ok((index, values))
         },
         (Some(index), None) => {
-            let index: Vec<String> = index.into_iter().map(|s| s.as_ref().to_string()).collect();
+            let index: Vec<PlSmallStr> = index.into_iter().map(Into::into).collect();
             let values = df
                 .get_column_names()
                 .into_iter()
-                .map(|s| s.to_string())
                 .filter(|c| !(index.contains(c) | on.contains(c)))
+                .cloned()
                 .collect();
             Ok((index, values))
         },
         (None, Some(values)) => {
-            let values: Vec<String> = values.into_iter().map(|s| s.as_ref().to_string()).collect();
+            let values: Vec<PlSmallStr> = values.into_iter().map(Into::into).collect();
             let index = df
                 .get_column_names()
                 .into_iter()
-                .map(|s| s.to_string())
                 .filter(|c| !(values.contains(c) | on.contains(c)))
+                .cloned()
                 .collect();
             Ok((index, values))
         },
@@ -208,12 +209,12 @@ where
 fn pivot_impl(
     pivot_df: &DataFrame,
     // keys of the first group_by operation
-    on: &[String],
+    on: &[PlSmallStr],
     // these columns will be aggregated in the nested group_by
-    index: &[String],
+    index: &[PlSmallStr],
     // these columns will be used for a nested group_by
     // the rows of this nested group_by will be pivoted as header column values
-    values: &[String],
+    values: &[PlSmallStr],
     // aggregation function
     agg_fn: Option<PivotAgg>,
     sort_columns: bool,
@@ -228,16 +229,17 @@ fn pivot_impl(
     };
     if on.len() > 1 {
         let schema = Arc::new(pivot_df.schema());
-        let binding = pivot_df.select_with_schema(on, &schema)?;
+        let binding = pivot_df.select_with_schema(on.iter().cloned(), &schema)?;
         let fields = binding.get_columns();
-        let column = format!("{{\"{}\"}}", on.join("\",\""));
+        let column = format_pl_smallstr!("{{\"{}\"}}", on.join("\",\""));
         if schema.contains(column.as_str()) {
             polars_bail!(ComputeError: "cannot use column name {column} that \
             already exists in the DataFrame. Please rename it prior to calling `pivot`.")
         }
-        let columns_struct = StructChunked::from_series(&column, fields)
+        // @scalar-opt
+        let columns_struct = StructChunked::from_columns(column.clone(), fields[0].len(), fields)
             .unwrap()
-            .into_series();
+            .into_column();
         let mut binding = pivot_df.clone();
         let pivot_df = unsafe { binding.with_column_unchecked(columns_struct) };
         pivot_impl_single_column(
@@ -264,9 +266,9 @@ fn pivot_impl(
 
 fn pivot_impl_single_column(
     pivot_df: &DataFrame,
-    index: &[String],
-    column: &str,
-    values: &[String],
+    index: &[PlSmallStr],
+    column: &PlSmallStr,
+    values: &[PlSmallStr],
     agg_fn: Option<PivotAgg>,
     sort_columns: bool,
     separator: Option<&str>,
@@ -276,7 +278,7 @@ fn pivot_impl_single_column(
     let mut count = 0;
     let out: PolarsResult<()> = POOL.install(|| {
         let mut group_by = index.to_vec();
-        group_by.push(column.to_string());
+        group_by.push(column.clone());
 
         let groups = pivot_df.group_by_stable(group_by)?.take_groups();
 
@@ -294,9 +296,13 @@ fn pivot_impl_single_column(
             let value_agg = unsafe {
                 match &agg_fn {
                     None => match value_col.len() > groups.len() {
-                        true => polars_bail!(ComputeError: "found multiple elements in the same group, please specify an aggregation function"),
+                        true => polars_bail!(
+                            ComputeError:
+                            "found multiple elements in the same group, \
+                            please specify an aggregation function"
+                        ),
                         false => value_col.agg_first(&groups),
-                    }
+                    },
                     Some(agg_fn) => match agg_fn {
                         Sum => value_col.agg_sum(&groups),
                         Min => value_col.agg_min(&groups),
@@ -305,16 +311,16 @@ fn pivot_impl_single_column(
                         First => value_col.agg_first(&groups),
                         Mean => value_col.agg_mean(&groups),
                         Median => value_col.agg_median(&groups),
-                        Count => groups.group_count().into_series(),
-                        Expr(ref expr) => {
-                            let name = expr.root_name()?;
+                        Count => groups.group_count().into_column(),
+                        Expr(expr) => {
+                            let name = expr.root_name()?.clone();
                             let mut value_col = value_col.clone();
                             value_col.rename(name);
                             let tmp_df = value_col.into_frame();
-                            let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
-                            aggregated.rename(value_col_name);
+                            let mut aggregated = Column::from(expr.evaluate(&tmp_df, &groups)?);
+                            aggregated.rename(value_col_name.clone());
                             aggregated
-                        }
+                        },
                     },
                 }
             };
@@ -332,7 +338,7 @@ fn pivot_impl_single_column(
             debug_assert_eq!(row_locations.len(), col_locations.len());
             debug_assert_eq!(value_agg_phys.len(), row_locations.len());
 
-            let mut cols = if value_agg_phys.dtype().is_numeric() {
+            let mut cols = if value_agg_phys.dtype().is_primitive_numeric() {
                 macro_rules! dispatch {
                     ($ca:expr) => {{
                         positioning::position_aggregates_numeric(
@@ -353,7 +359,7 @@ fn pivot_impl_single_column(
                     n_cols,
                     &row_locations,
                     &col_locations,
-                    &value_agg_phys,
+                    value_agg_phys.as_materialized_series(),
                     logical_type,
                     &headers,
                 )
@@ -377,6 +383,5 @@ fn pivot_impl_single_column(
     });
     out?;
 
-    // SAFETY: length has already been checked.
-    unsafe { DataFrame::new_no_length_checks(final_cols) }
+    DataFrame::new(final_cols)
 }

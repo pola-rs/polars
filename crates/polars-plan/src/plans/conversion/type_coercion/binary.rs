@@ -16,7 +16,7 @@ macro_rules! unpack {
 fn compares_cat_to_string(type_left: &DataType, type_right: &DataType, op: Operator) -> bool {
     #[cfg(feature = "dtype-categorical")]
     {
-        op.is_comparison()
+        op.is_comparison_or_bitwise()
             && matches_any_order!(
                 type_left,
                 type_right,
@@ -47,53 +47,6 @@ fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
     }
 }
 
-fn process_list_arithmetic(
-    type_left: DataType,
-    type_right: DataType,
-    node_left: Node,
-    node_right: Node,
-    op: Operator,
-    expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<Option<AExpr>> {
-    match (&type_left, &type_right) {
-        (DataType::List(inner), _) => {
-            if type_right != **inner {
-                let new_node_right = expr_arena.add(AExpr::Cast {
-                    expr: node_right,
-                    data_type: *inner.clone(),
-                    options: CastOptions::NonStrict,
-                });
-
-                Ok(Some(AExpr::BinaryExpr {
-                    left: node_left,
-                    op,
-                    right: new_node_right,
-                }))
-            } else {
-                Ok(None)
-            }
-        },
-        (_, DataType::List(inner)) => {
-            if type_left != **inner {
-                let new_node_left = expr_arena.add(AExpr::Cast {
-                    expr: node_left,
-                    data_type: *inner.clone(),
-                    options: CastOptions::NonStrict,
-                });
-
-                Ok(Some(AExpr::BinaryExpr {
-                    left: new_node_left,
-                    op,
-                    right: node_right,
-                }))
-            } else {
-                Ok(None)
-            }
-        },
-        _ => unreachable!(),
-    }
-}
-
 #[cfg(feature = "dtype-struct")]
 // Ensure we don't cast to supertype
 // otherwise we will fill a struct with null fields
@@ -110,7 +63,7 @@ fn process_struct_numeric_arithmetic(
             if let Some(first) = fields.first() {
                 let new_node_right = expr_arena.add(AExpr::Cast {
                     expr: node_right,
-                    data_type: DataType::Struct(vec![first.clone()]),
+                    dtype: DataType::Struct(vec![first.clone()]),
                     options: CastOptions::NonStrict,
                 });
                 Ok(Some(AExpr::BinaryExpr {
@@ -126,7 +79,7 @@ fn process_struct_numeric_arithmetic(
             if let Some(first) = fields.first() {
                 let new_node_left = expr_arena.add(AExpr::Cast {
                     expr: node_left,
-                    data_type: DataType::Struct(vec![first.clone()]),
+                    dtype: DataType::Struct(vec![first.clone()]),
                     options: CastOptions::NonStrict,
                 });
 
@@ -214,40 +167,40 @@ pub(super) fn process_binary(
     match (&type_left, &type_right, op) {
         #[cfg(not(feature = "dtype-categorical"))]
         (DataType::String, dt, op) | (dt, DataType::String, op)
-            if op.is_comparison() && dt.is_numeric() =>
+            if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-categorical")]
         (String | Unknown(UnknownKind::Str) | Categorical(_, _), dt, op)
         | (dt, Unknown(UnknownKind::Str) | String | Categorical(_, _), op)
-            if op.is_comparison() && dt.is_numeric() =>
+            if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-categorical")]
         (Unknown(UnknownKind::Str) | String | Enum(_, _), dt, op)
         | (dt, Unknown(UnknownKind::Str) | String | Enum(_, _), op)
-            if op.is_comparison() && dt.is_numeric() =>
+            if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-date")]
         (Date, String | Unknown(UnknownKind::Str), op)
         | (String | Unknown(UnknownKind::Str), Date, op)
-            if op.is_comparison() =>
+            if op.is_comparison_or_bitwise() =>
         {
             err_date_str_compare()?
         },
         #[cfg(feature = "dtype-datetime")]
         (Datetime(_, _), String | Unknown(UnknownKind::Str), op)
         | (String | Unknown(UnknownKind::Str), Datetime(_, _), op)
-            if op.is_comparison() =>
+            if op.is_comparison_or_bitwise() =>
         {
             err_date_str_compare()?
         },
         #[cfg(feature = "dtype-time")]
-        (Time | Unknown(UnknownKind::Str), String, op) if op.is_comparison() => {
+        (Time | Unknown(UnknownKind::Str), String, op) if op.is_comparison_or_bitwise() => {
             err_date_str_compare()?
         },
         // structs can be arbitrarily nested, leave the complexity to the caller for now.
@@ -259,14 +212,9 @@ pub(super) fn process_binary(
     if op.is_arithmetic() {
         match (&type_left, &type_right) {
             (Duration(_), Duration(_)) => return Ok(None),
-            (Duration(_), r) if r.is_numeric() => return Ok(None),
-            (String, a) | (a, String) if a.is_numeric() => {
+            (Duration(_), r) if r.is_primitive_numeric() => return Ok(None),
+            (String, a) | (a, String) if a.is_primitive_numeric() => {
                 polars_bail!(InvalidOperation: "arithmetic on string and numeric not allowed, try an explicit cast first")
-            },
-            (List(_), _) | (_, List(_)) => {
-                return process_list_arithmetic(
-                    type_left, type_right, node_left, node_right, op, expr_arena,
-                )
             },
             (Datetime(_, _), _)
             | (_, Datetime(_, _))
@@ -275,12 +223,16 @@ pub(super) fn process_binary(
             | (Duration(_), _)
             | (_, Duration(_))
             | (Time, _)
-            | (_, Time) => return Ok(None),
+            | (_, Time)
+            | (List(_), _)
+            | (_, List(_)) => return Ok(None),
+            #[cfg(feature = "dtype-array")]
+            (Array(..), _) | (_, Array(..)) => return Ok(None),
             #[cfg(feature = "dtype-struct")]
-            (Struct(_), a) | (a, Struct(_)) if a.is_numeric() => {
+            (Struct(_), a) | (a, Struct(_)) if a.is_primitive_numeric() => {
                 return process_struct_numeric_arithmetic(
                     type_left, type_right, node_left, node_right, op, expr_arena,
-                )
+                );
             },
             _ => {},
         }
@@ -296,14 +248,20 @@ pub(super) fn process_binary(
         st = String
     }
 
-    // only cast if the type is not already the super type.
+    // TODO! raise here?
+    // We should at least never cast to Unknown.
+    if matches!(st, DataType::Unknown(UnknownKind::Any)) {
+        return Ok(None);
+    }
+
+    // Only cast if the type is not already the super type.
     // this can prevent an expensive flattening and subsequent aggregation
     // in a group_by context. To be able to cast the groups need to be
     // flattened
     let new_node_left = if type_left != st {
         expr_arena.add(AExpr::Cast {
             expr: node_left,
-            data_type: st.clone(),
+            dtype: st.clone(),
             options: CastOptions::NonStrict,
         })
     } else {
@@ -312,7 +270,7 @@ pub(super) fn process_binary(
     let new_node_right = if type_right != st {
         expr_arena.add(AExpr::Cast {
             expr: node_right,
-            data_type: st,
+            dtype: st,
             options: CastOptions::NonStrict,
         })
     } else {

@@ -1,36 +1,37 @@
 use arrow::bitmap::Bitmap;
 
 use super::*;
-use crate::chunked_array::metadata::MetadataProperties;
+use crate::chunked_array::flags::StatisticsFlags;
 
 impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get a mask of the null values.
     pub fn is_null(&self) -> BooleanChunked {
         if !self.has_nulls() {
-            return BooleanChunked::full(self.name(), false, self.len());
+            return BooleanChunked::full(self.name().clone(), false, self.len());
         }
         // dispatch to non-generic function
-        is_null(self.name(), &self.chunks)
+        is_null(self.name().clone(), &self.chunks)
     }
 
     /// Get a mask of the valid values.
     pub fn is_not_null(&self) -> BooleanChunked {
         if self.null_count() == 0 {
-            return BooleanChunked::full(self.name(), true, self.len());
+            return BooleanChunked::full(self.name().clone(), true, self.len());
         }
         // dispatch to non-generic function
-        is_not_null(self.name(), &self.chunks)
+        is_not_null(self.name().clone(), &self.chunks)
     }
 
     pub(crate) fn coalesce_nulls(&self, other: &[ArrayRef]) -> Self {
         let chunks = coalesce_nulls(&self.chunks, other);
         let mut ca = unsafe { self.copy_with_chunks(chunks) };
-        ca.copy_metadata(self, MetadataProperties::SORTED);
+        use StatisticsFlags as F;
+        ca.retain_flags_from(self, F::IS_SORTED_ANY);
         ca
     }
 }
 
-pub fn is_not_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {
+pub fn is_not_null(name: PlSmallStr, chunks: &[ArrayRef]) -> BooleanChunked {
     let chunks = chunks.iter().map(|arr| {
         let bitmap = arr
             .validity()
@@ -41,7 +42,7 @@ pub fn is_not_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {
     BooleanChunked::from_chunk_iter(name, chunks)
 }
 
-pub fn is_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {
+pub fn is_null(name: PlSmallStr, chunks: &[ArrayRef]) -> BooleanChunked {
     let chunks = chunks.iter().map(|arr| {
         let bitmap = arr
             .validity()
@@ -52,7 +53,7 @@ pub fn is_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {
     BooleanChunked::from_chunk_iter(name, chunks)
 }
 
-pub fn replace_non_null(name: &str, chunks: &[ArrayRef], default: bool) -> BooleanChunked {
+pub fn replace_non_null(name: PlSmallStr, chunks: &[ArrayRef], default: bool) -> BooleanChunked {
     BooleanChunked::from_chunk_iter(
         name,
         chunks.iter().map(|el| {

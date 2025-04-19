@@ -1,6 +1,7 @@
 use polars_io::RowIndex;
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
+use polars_utils::slice_enum::Slice;
 
 use super::*;
 
@@ -115,7 +116,7 @@ fn test_parquet_statistics_no_skip() {
 fn test_parquet_statistics() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     init_files();
-    std::env::set_var("POLARS_PANIC_IF_PARQUET_PARSED", "1");
+    unsafe { std::env::set_var("POLARS_PANIC_IF_PARQUET_PARSED", "1") };
     let par = true;
 
     // Test single predicates
@@ -136,7 +137,7 @@ fn test_parquet_statistics() -> PolarsResult<()> {
 
     // issue: 13427
     let out = scan_foods_parquet(par)
-        .filter(col("calories").is_in(lit(Series::new("", [0, 500]))))
+        .filter(col("calories").is_in(lit(Series::new("".into(), [0, 500])), false))
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
 
@@ -350,7 +351,7 @@ fn test_parquet_statistics() -> PolarsResult<()> {
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
 
-    std::env::remove_var("POLARS_PANIC_IF_PARQUET_PARSED");
+    unsafe { std::env::remove_var("POLARS_PANIC_IF_PARQUET_PARSED") };
 
     Ok(())
 }
@@ -399,7 +400,9 @@ fn test_scan_parquet_limit_9001() {
             let sliced = options.slice.unwrap();
             sliced.1 == 3
         },
-        IR::Scan { file_options, .. } => file_options.n_rows == Some(3),
+        IR::Scan {
+            unified_scan_args, ..
+        } => unified_scan_args.pre_slice == Some(Slice::Positive { offset: 0, len: 3 }),
         _ => true,
     });
 }
@@ -417,7 +420,6 @@ fn test_ipc_globbing() -> PolarsResult<()> {
             cache: true,
             rechunk: false,
             row_index: None,
-            memory_map: true,
             cloud_options: None,
             hive_options: Default::default(),
             include_file_paths: None,
@@ -590,7 +592,7 @@ fn test_row_index_on_files() -> PolarsResult<()> {
     for offset in [0 as IdxSize, 10] {
         let lf = LazyCsvReader::new(FOODS_CSV)
             .with_row_index(Some(RowIndex {
-                name: Arc::from("index"),
+                name: PlSmallStr::from_static("index"),
                 offset,
             }))
             .finish()?;
@@ -650,21 +652,6 @@ fn scan_predicate_on_set_null_values() -> PolarsResult<()> {
 }
 
 #[test]
-fn scan_anonymous_fn() -> PolarsResult<()> {
-    let function = Arc::new(|_scan_opts: AnonymousScanArgs| Ok(fruits_cars()));
-
-    let args = ScanArgsAnonymous {
-        schema: Some(Arc::new(fruits_cars().schema())),
-        ..ScanArgsAnonymous::default()
-    };
-
-    let df = LazyFrame::anonymous_scan(function, args)?.collect()?;
-
-    assert_eq!(df.shape(), (5, 4));
-    Ok(())
-}
-
-#[test]
 fn scan_anonymous_fn_with_options() -> PolarsResult<()> {
     struct MyScan {}
 
@@ -680,7 +667,7 @@ fn scan_anonymous_fn_with_options() -> PolarsResult<()> {
         fn scan(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<DataFrame> {
             assert_eq!(scan_opts.with_columns.clone().unwrap().len(), 2);
             assert_eq!(scan_opts.n_rows, Some(3));
-            let out = fruits_cars().select(scan_opts.with_columns.unwrap().as_ref())?;
+            let out = fruits_cars().select(scan_opts.with_columns.unwrap().iter().cloned())?;
             Ok(out.slice(0, scan_opts.n_rows.unwrap()))
         }
     }
@@ -688,7 +675,7 @@ fn scan_anonymous_fn_with_options() -> PolarsResult<()> {
     let function = Arc::new(MyScan {});
 
     let args = ScanArgsAnonymous {
-        schema: Some(Arc::new(fruits_cars().schema())),
+        schema: Some(fruits_cars().schema().clone()),
         ..ScanArgsAnonymous::default()
     };
 
@@ -716,7 +703,7 @@ fn scan_small_dtypes() -> PolarsResult<()> {
         let df = LazyCsvReader::new(FOODS_CSV)
             .with_has_header(true)
             .with_dtype_overwrite(Some(Arc::new(Schema::from_iter([Field::new(
-                "sugars_g",
+                "sugars_g".into(),
                 dt.clone(),
             )]))))
             .finish()?

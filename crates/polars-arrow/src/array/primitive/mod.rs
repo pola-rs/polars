@@ -4,15 +4,13 @@ use either::Either;
 
 use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::buffer::Buffer;
 use crate::datatypes::*;
 use crate::trusted_len::TrustedLen;
-use crate::types::{days_ms, f16, i256, months_days_ns, NativeType};
+use crate::types::{NativeType, days_ms, f16, i256, months_days_ns};
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from_natural;
@@ -20,9 +18,11 @@ pub mod iterator;
 
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
+mod builder;
+pub use builder::*;
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::index::{Bounded, Indexable, NullCount};
-use polars_utils::slice::{GetSaferUnchecked, SliceAble};
+use polars_utils::slice::SliceAble;
 
 /// A [`PrimitiveArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<T>>` where
 /// T is [`NativeType`] (e.g. [`i32`]). It implements [`Array`].
@@ -51,21 +51,21 @@ use polars_utils::slice::{GetSaferUnchecked, SliceAble};
 /// ```
 #[derive(Clone)]
 pub struct PrimitiveArray<T: NativeType> {
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     values: Buffer<T>,
     validity: Option<Bitmap>,
 }
 
 pub(super) fn check<T: NativeType>(
-    data_type: &ArrowDataType,
+    dtype: &ArrowDataType,
     values: &[T],
     validity_len: Option<usize>,
 ) -> PolarsResult<()> {
-    if validity_len.map_or(false, |len| len != values.len()) {
+    if validity_len.is_some_and(|len| len != values.len()) {
         polars_bail!(ComputeError: "validity mask length must match the number of values")
     }
 
-    if data_type.to_physical_type() != PhysicalType::Primitive(T::PRIMITIVE) {
+    if dtype.to_physical_type() != PhysicalType::Primitive(T::PRIMITIVE) {
         polars_bail!(ComputeError: "PrimitiveArray can only be initialized with a DataType whose physical type is Primitive")
     }
     Ok(())
@@ -79,15 +79,15 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// # Errors
     /// This function errors iff:
     /// * The validity is not `None` and its length is different from `values`'s length
-    /// * The `data_type`'s [`PhysicalType`] is not equal to [`PhysicalType::Primitive(T::PRIMITIVE)`]
+    /// * The `dtype`'s [`PhysicalType`] is not equal to [`PhysicalType::Primitive(T::PRIMITIVE)`]
     pub fn try_new(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         values: Buffer<T>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
-        check(&data_type, &values, validity.as_ref().map(|v| v.len()))?;
+        check(&dtype, &values, validity.as_ref().map(|v| v.len()))?;
         Ok(Self {
-            data_type,
+            dtype,
             values,
             validity,
         })
@@ -96,12 +96,16 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// # Safety
     /// Doesn't check invariants
     pub unsafe fn new_unchecked(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         values: Buffer<T>,
         validity: Option<Bitmap>,
     ) -> Self {
+        if cfg!(debug_assertions) {
+            check(&dtype, &values, validity.as_ref().map(|v| v.len())).unwrap();
+        }
+
         Self {
-            data_type,
+            dtype,
             values,
             validity,
         }
@@ -123,18 +127,18 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// );
     /// ```
     /// # Panics
-    /// Panics iff the `data_type`'s [`PhysicalType`] is not equal to [`PhysicalType::Primitive(T::PRIMITIVE)`]
+    /// Panics iff the `dtype`'s [`PhysicalType`] is not equal to [`PhysicalType::Primitive(T::PRIMITIVE)`]
     #[inline]
     #[must_use]
-    pub fn to(self, data_type: ArrowDataType) -> Self {
+    pub fn to(self, dtype: ArrowDataType) -> Self {
         check(
-            &data_type,
+            &dtype,
             &self.values,
             self.validity.as_ref().map(|v| v.len()),
         )
         .unwrap();
         Self {
-            data_type,
+            dtype,
             values: self.values,
             validity: self.validity,
         }
@@ -192,8 +196,8 @@ impl<T: NativeType> PrimitiveArray<T> {
 
     /// Returns the arrays' [`ArrowDataType`].
     #[inline]
-    pub fn data_type(&self) -> &ArrowDataType {
-        &self.data_type
+    pub fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
     }
 
     /// Returns the value at slot `i`.
@@ -213,7 +217,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// Caller must be sure that `i < self.len()`
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> T {
-        *self.values.get_unchecked_release(i)
+        *self.values.get_unchecked(i)
     }
 
     // /// Returns the element at index `i` or `None` if it is null
@@ -302,36 +306,36 @@ impl<T: NativeType> PrimitiveArray<T> {
     #[must_use]
     pub fn into_inner(self) -> (ArrowDataType, Buffer<T>, Option<Bitmap>) {
         let Self {
-            data_type,
+            dtype,
             values,
             validity,
         } = self;
-        (data_type, values, validity)
+        (dtype, values, validity)
     }
 
-    /// Creates a `[PrimitiveArray]` from its internal representation.
-    /// This is the inverted from `[PrimitiveArray::into_inner]`
+    /// Creates a [`PrimitiveArray`] from its internal representation.
+    /// This is the inverted from [`PrimitiveArray::into_inner`]
     pub fn from_inner(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         values: Buffer<T>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
-        check(&data_type, &values, validity.as_ref().map(|v| v.len()))?;
-        Ok(unsafe { Self::from_inner_unchecked(data_type, values, validity) })
+        check(&dtype, &values, validity.as_ref().map(|v| v.len()))?;
+        Ok(unsafe { Self::from_inner_unchecked(dtype, values, validity) })
     }
 
-    /// Creates a `[PrimitiveArray]` from its internal representation.
-    /// This is the inverted from `[PrimitiveArray::into_inner]`
+    /// Creates a [`PrimitiveArray`] from its internal representation.
+    /// This is the inverted from [`PrimitiveArray::into_inner`]
     ///
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.
     pub unsafe fn from_inner_unchecked(
-        data_type: ArrowDataType,
+        dtype: ArrowDataType,
         values: Buffer<T>,
         validity: Option<Bitmap>,
     ) -> Self {
         Self {
-            data_type,
+            dtype,
             values,
             validity,
         }
@@ -350,22 +354,14 @@ impl<T: NativeType> PrimitiveArray<T> {
 
         if let Some(bitmap) = self.validity {
             match bitmap.into_mut() {
-                Left(bitmap) => Left(PrimitiveArray::new(
-                    self.data_type,
-                    self.values,
-                    Some(bitmap),
-                )),
+                Left(bitmap) => Left(PrimitiveArray::new(self.dtype, self.values, Some(bitmap))),
                 Right(mutable_bitmap) => match self.values.into_mut() {
                     Right(values) => Right(
-                        MutablePrimitiveArray::try_new(
-                            self.data_type,
-                            values,
-                            Some(mutable_bitmap),
-                        )
-                        .unwrap(),
+                        MutablePrimitiveArray::try_new(self.dtype, values, Some(mutable_bitmap))
+                            .unwrap(),
                     ),
                     Left(values) => Left(PrimitiveArray::new(
-                        self.data_type,
+                        self.dtype,
                         values,
                         Some(mutable_bitmap.into()),
                     )),
@@ -374,23 +370,23 @@ impl<T: NativeType> PrimitiveArray<T> {
         } else {
             match self.values.into_mut() {
                 Right(values) => {
-                    Right(MutablePrimitiveArray::try_new(self.data_type, values, None).unwrap())
+                    Right(MutablePrimitiveArray::try_new(self.dtype, values, None).unwrap())
                 },
-                Left(values) => Left(PrimitiveArray::new(self.data_type, values, None)),
+                Left(values) => Left(PrimitiveArray::new(self.dtype, values, None)),
             }
         }
     }
 
     /// Returns a new empty (zero-length) [`PrimitiveArray`].
-    pub fn new_empty(data_type: ArrowDataType) -> Self {
-        Self::new(data_type, Buffer::new(), None)
+    pub fn new_empty(dtype: ArrowDataType) -> Self {
+        Self::new(dtype, Buffer::new(), None)
     }
 
     /// Returns a new [`PrimitiveArray`] where all slots are null / `None`.
     #[inline]
-    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
+    pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
         Self::new(
-            data_type,
+            dtype,
             vec![T::default(); length].into(),
             Some(Bitmap::new_zeroed(length)),
         )
@@ -448,9 +444,9 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// # Panics
     /// This function errors iff:
     /// * The validity is not `None` and its length is different from `values`'s length
-    /// * The `data_type`'s [`PhysicalType`] is not equal to [`PhysicalType::Primitive`].
-    pub fn new(data_type: ArrowDataType, values: Buffer<T>, validity: Option<Bitmap>) -> Self {
-        Self::try_new(data_type, values, validity).unwrap()
+    /// * The `dtype`'s [`PhysicalType`] is not equal to [`PhysicalType::Primitive`].
+    pub fn new(dtype: ArrowDataType, values: Buffer<T>, validity: Option<Bitmap>) -> Self {
+        Self::try_new(dtype, values, validity).unwrap()
     }
 
     /// Transmute this PrimitiveArray into another PrimitiveArray.
@@ -463,8 +459,8 @@ impl<T: NativeType> PrimitiveArray<T> {
 
         // SAFETY: this is fine, we checked size and alignment, and NativeType
         // is always Pod.
-        assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<U>());
-        assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<U>());
+        assert_eq!(size_of::<T>(), size_of::<U>());
+        assert_eq!(align_of::<T>(), align_of::<U>());
         let new_values = unsafe { std::mem::transmute::<Buffer<T>, Buffer<U>>(values) };
         PrimitiveArray::new(U::PRIMITIVE.into(), new_values, validity)
     }
@@ -510,12 +506,12 @@ impl<T: NativeType> Splitable for PrimitiveArray<T> {
 
         (
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 values: lhs_values,
                 validity: lhs_validity,
             },
             Self {
-                data_type: self.data_type.clone(),
+                dtype: self.dtype.clone(),
                 values: rhs_values,
                 validity: rhs_validity,
             },

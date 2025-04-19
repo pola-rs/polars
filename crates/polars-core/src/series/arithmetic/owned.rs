@@ -19,7 +19,9 @@ pub fn coerce_lhs_rhs_owned(lhs: Series, rhs: Series) -> PolarsResult<(Series, S
 }
 
 fn is_eligible(lhs: &DataType, rhs: &DataType) -> bool {
-    !lhs.is_logical() && lhs.to_physical().is_numeric() && rhs.to_physical().is_numeric()
+    !lhs.is_logical()
+        && lhs.to_physical().is_primitive_numeric()
+        && rhs.to_physical().is_primitive_numeric()
 }
 
 #[cfg(feature = "performant")]

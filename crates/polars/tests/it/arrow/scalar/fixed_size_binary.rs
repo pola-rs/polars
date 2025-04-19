@@ -19,7 +19,7 @@ fn basics() {
     let a = FixedSizeBinaryScalar::new(ArrowDataType::FixedSizeBinary(1), Some("a"));
 
     assert_eq!(a.value(), Some(b"a".as_ref()));
-    assert_eq!(a.data_type(), &ArrowDataType::FixedSizeBinary(1));
+    assert_eq!(a.dtype(), &ArrowDataType::FixedSizeBinary(1));
     assert!(a.is_valid());
 
     let _: &dyn std::any::Any = a.as_any();

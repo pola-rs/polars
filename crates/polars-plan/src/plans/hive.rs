@@ -1,33 +1,28 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
-use polars_io::predicates::{BatchStats, ColumnStats};
 use polars_io::prelude::schema_inference::{finish_infer_field_schema, infer_field_schema};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
-pub struct HivePartitions {
-    /// Single value Series that can be used to run the predicate against.
-    /// They are to be broadcasted if the predicates don't filter them out.
-    stats: BatchStats,
-}
+pub struct HivePartitionsDf(DataFrame);
 
-impl HivePartitions {
+impl HivePartitionsDf {
     pub fn get_projection_schema_and_indices(
         &self,
-        names: &PlHashSet<String>,
+        names: &PlHashSet<PlSmallStr>,
     ) -> (SchemaRef, Vec<usize>) {
-        let mut out_schema = Schema::with_capacity(self.stats.schema().len());
-        let mut out_indices = Vec::with_capacity(self.stats.column_stats().len());
+        let mut out_schema = Schema::with_capacity(self.schema().len());
+        let mut out_indices = Vec::with_capacity(self.0.get_columns().len());
 
-        for (i, cs) in self.stats.column_stats().iter().enumerate() {
-            let name = cs.field_name();
+        for (i, column) in self.0.get_columns().iter().enumerate() {
+            let name = column.name();
             if names.contains(name.as_str()) {
                 out_indices.push(i);
                 out_schema
-                    .insert_at_index(out_schema.len(), name.clone(), cs.dtype().clone())
+                    .insert_at_index(out_schema.len(), name.clone(), column.dtype().clone())
                     .unwrap();
             }
         }
@@ -35,28 +30,41 @@ impl HivePartitions {
         (out_schema.into(), out_indices)
     }
 
-    pub fn apply_projection(&mut self, new_schema: SchemaRef, column_indices: &[usize]) {
-        self.stats.with_schema(new_schema);
-        self.stats.take_indices(column_indices);
+    pub fn apply_projection(&mut self, column_indices: &[usize]) {
+        let schema = self.schema();
+        let projected_schema = schema.try_project_indices(column_indices).unwrap();
+        self.0 = self.0.select(projected_schema.iter_names_cloned()).unwrap();
     }
 
-    pub fn get_statistics(&self) -> &BatchStats {
-        &self.stats
+    pub fn take_indices(&self, row_indexes: &[IdxSize]) -> Self {
+        if !row_indexes.is_empty() {
+            let mut max_idx = 0;
+            for &i in row_indexes {
+                max_idx = max_idx.max(i);
+            }
+            assert!(max_idx < self.0.height() as IdxSize);
+        }
+        // SAFETY: Checked bounds before.
+        Self(unsafe { self.0.take_slice_unchecked(row_indexes) })
     }
 
-    pub(crate) fn schema(&self) -> &SchemaRef {
-        self.get_statistics().schema()
+    pub fn df(&self) -> &DataFrame {
+        &self.0
     }
 
-    pub fn materialize_partition_columns(&self) -> Vec<Series> {
-        self.get_statistics()
-            .column_stats()
-            .iter()
-            .map(|cs| cs.get_min_state().unwrap().clone())
-            .collect()
+    pub fn schema(&self) -> &SchemaRef {
+        self.0.schema()
     }
 }
 
+impl From<DataFrame> for HivePartitionsDf {
+    fn from(value: DataFrame) -> Self {
+        Self(value)
+    }
+}
+
+/// Note: Returned hive partitions are ordered by their position in the `reader_schema`
+///
 /// # Safety
 /// `hive_start_idx <= [min path length]`
 pub fn hive_partitions_from_paths(
@@ -65,7 +73,7 @@ pub fn hive_partitions_from_paths(
     schema: Option<SchemaRef>,
     reader_schema: &Schema,
     try_parse_dates: bool,
-) -> PolarsResult<Option<Arc<[HivePartitions]>>> {
+) -> PolarsResult<Option<HivePartitionsDf>> {
     let Some(path) = paths.first() else {
         return Ok(None);
     };
@@ -114,7 +122,7 @@ pub fn hive_partitions_from_paths(
                     dtype.clone()
                 };
 
-                Ok(Field::new(name, dtype))
+                Ok(Field::new(PlSmallStr::from_str(name), dtype))
             }).collect::<PolarsResult<Schema>>()?)
     } else {
         let mut hive_schema = Schema::with_capacity(16);
@@ -197,50 +205,29 @@ pub fn hive_partitions_from_paths(
         }
     }
 
-    let mut hive_partitions = Vec::with_capacity(paths.len());
-    let buffers = buffers
+    let mut buffers = buffers
         .into_iter()
-        .map(|x| x.into_series())
+        .map(|x| Ok(x.into_series()?.into_column()))
         .collect::<PolarsResult<Vec<_>>>()?;
+    buffers.sort_by_key(|s| reader_schema.index_of(s.name()).unwrap_or(usize::MAX));
 
-    #[allow(clippy::needless_range_loop)]
-    for i in 0..paths.len() {
-        let column_stats = buffers
-            .iter()
-            .map(|x| {
-                ColumnStats::from_column_literal(unsafe { x.take_slice_unchecked(&[i as IdxSize]) })
-            })
-            .collect::<Vec<_>>();
+    Ok(Some(HivePartitionsDf(DataFrame::new_with_height(
+        paths.len(),
+        buffers,
+    )?)))
+}
 
-        if column_stats.is_empty() {
-            polars_bail!(
-                ComputeError: "expected Hive partitioned path, got {}\n\n\
-                This error occurs if some paths are Hive partitioned and some paths are not.",
-                paths[i].to_str().unwrap(),
-            )
+/// Determine the path separator for identifying Hive partitions.
+fn separator(url: &Path) -> &[char] {
+    if cfg!(target_family = "windows") {
+        if polars_io::path_utils::is_cloud_url(url) {
+            &['/']
+        } else {
+            &['/', '\\']
         }
-
-        let stats = BatchStats::new(hive_schema.clone(), column_stats, None);
-        hive_partitions.push(HivePartitions { stats });
-    }
-
-    Ok(Some(Arc::from(hive_partitions)))
-}
-
-/// Determine the path separator for identifying Hive partitions.
-#[cfg(target_os = "windows")]
-fn separator(url: &Path) -> char {
-    if polars_io::path_utils::is_cloud_url(url) {
-        '/'
     } else {
-        '\\'
+        &['/']
     }
-}
-
-/// Determine the path separator for identifying Hive partitions.
-#[cfg(not(target_os = "windows"))]
-fn separator(_url: &Path) -> char {
-    '/'
 }
 
 /// Parse a Hive partition string (e.g. "column=1.5") into a name and value part.

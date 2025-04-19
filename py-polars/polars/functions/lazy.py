@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils.deprecation import deprecate_function, issue_deprecation_warning
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_renamed_parameter,
+    deprecate_streaming_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
@@ -15,16 +21,19 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
+from polars.lazyframe.opt_flags import OptFlags
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from typing import Awaitable, Collection, Literal
+    from collections.abc import Awaitable, Collection, Iterable
+    from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import (
         CorrelationMethod,
+        EngineType,
         EpochTimeUnit,
         IntoExpr,
         PolarsDataType,
@@ -179,9 +188,6 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     Return the cumulative count of the non-null values in the column.
 
     This function is syntactic sugar for `col(columns).cum_count()`.
-
-    If no arguments are passed, returns the cumulative count of a context.
-    Rows containing null values count towards the result.
 
     Parameters
     ----------
@@ -777,16 +783,41 @@ def tail(column: str, n: int = 10) -> Expr:
     return F.col(column).tail(n)
 
 
+@overload
+def corr(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    method: CorrelationMethod = ...,
+    ddof: int | None = ...,
+    propagate_nans: bool = ...,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def corr(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    method: CorrelationMethod = ...,
+    ddof: int | None = ...,
+    propagate_nans: bool = ...,
+    eager: Literal[True],
+) -> Series: ...
+
+
 def corr(
     a: IntoExpr,
     b: IntoExpr,
     *,
     method: CorrelationMethod = "pearson",
-    ddof: int = 1,
+    ddof: int | None = None,
     propagate_nans: bool = False,
-) -> Expr:
+    eager: bool = False,
+) -> Expr | Series:
     """
-    Compute the Pearson's or Spearman rank correlation correlation between two columns.
+    Compute the Pearson's or Spearman rank correlation between two columns.
 
     Parameters
     ----------
@@ -795,15 +826,20 @@ def corr(
     b
         Column name or Expression.
     ddof
-        "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
+        Has no effect, do not use.
+
+        .. deprecated:: 1.17.0
+
     method : {'pearson', 'spearman'}
         Correlation method.
     propagate_nans
         If `True` any `NaN` encountered will lead to `NaN` in the output.
         Defaults to `False` where `NaN` are regarded as larger than any finite number
         and thus lead to the highest rank.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
 
     Examples
     --------
@@ -828,13 +864,6 @@ def corr(
 
     Spearman rank correlation:
 
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "a": [1, 8, 3],
-    ...         "b": [4, 5, 2],
-    ...         "c": ["foo", "bar", "foo"],
-    ...     }
-    ... )
     >>> df.select(pl.corr("a", "b", method="spearman"))
     shape: (1, 1)
     ┌─────┐
@@ -844,20 +873,80 @@ def corr(
     ╞═════╡
     │ 0.5 │
     └─────┘
+
+    Eager evaluation:
+
+    >>> s1 = pl.Series("a", [1, 8, 3])
+    >>> s2 = pl.Series("b", [4, 5, 2])
+    >>> pl.corr(s1, s2, eager=True)
+    shape: (1,)
+    Series: 'a' [f64]
+    [
+        0.544705
+    ]
+    >>> pl.corr(s1, s2, method="spearman", eager=True)
+    shape: (1,)
+    Series: 'a' [f64]
+    [
+        0.5
+    ]
     """
-    a = parse_into_expression(a)
-    b = parse_into_expression(b)
+    if ddof is not None:
+        issue_deprecation_warning(
+            "The `ddof` parameter has no effect. Do not use it.",
+            version="1.17.0",
+        )
 
-    if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a, b, ddof))
-    elif method == "spearman":
-        return wrap_expr(plr.spearman_rank_corr(a, b, ddof, propagate_nans))
+    if eager:
+        if not (isinstance(a, pl.Series) or isinstance(b, pl.Series)):
+            msg = "expected at least one Series in 'corr' inputs if 'eager=True'"
+            raise ValueError(msg)
+
+        frame = pl.DataFrame([e for e in (a, b) if isinstance(e, pl.Series)])
+        exprs = ((e.name if isinstance(e, pl.Series) else e) for e in (a, b))
+        return frame.select(
+            corr(*exprs, eager=False, method=method, propagate_nans=propagate_nans)
+        ).to_series()
     else:
-        msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
-        raise ValueError(msg)
+        a = parse_into_expression(a)
+        b = parse_into_expression(b)
+
+        if method == "pearson":
+            return wrap_expr(plr.pearson_corr(a, b))
+        elif method == "spearman":
+            return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
+        else:
+            msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
+            raise ValueError(msg)
 
 
-def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
+@overload
+def cov(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    ddof: int = ...,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def cov(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    ddof: int = ...,
+    eager: Literal[True],
+) -> Series: ...
+
+
+def cov(
+    a: IntoExpr,
+    b: IntoExpr,
+    *,
+    ddof: int = 1,
+    eager: bool = False,
+) -> Expr | Series:
     """
     Compute the covariance between two columns/ expressions.
 
@@ -871,6 +960,10 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
         "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
         where N represents the number of elements.
         By default ddof is 1.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
 
     Examples
     --------
@@ -881,19 +974,43 @@ def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
     ...         "c": ["foo", "bar", "foo"],
     ...     },
     ... )
-    >>> df.select(pl.cov("a", "b"))
-    shape: (1, 1)
-    ┌─────┐
-    │ a   │
-    │ --- │
-    │ f64 │
-    ╞═════╡
-    │ 3.0 │
-    └─────┘
+
+    >>> df.select(
+    ...     x=pl.cov("a", "b"),
+    ...     y=pl.cov("a", "b", ddof=2),
+    ... )
+    shape: (1, 2)
+    ┌─────┬─────┐
+    │ x   ┆ y   │
+    │ --- ┆ --- │
+    │ f64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 3.0 ┆ 6.0 │
+    └─────┴─────┘
+
+    Eager evaluation:
+
+    >>> s1 = pl.Series("a", [1, 8, 3])
+    >>> s2 = pl.Series("b", [4, 5, 2])
+    >>> pl.cov(s1, s2, eager=True)
+    shape: (1,)
+    Series: 'a' [f64]
+    [
+        3.0
+    ]
     """
-    a = parse_into_expression(a)
-    b = parse_into_expression(b)
-    return wrap_expr(plr.cov(a, b, ddof))
+    if eager:
+        if not (isinstance(a, pl.Series) or isinstance(b, pl.Series)):
+            msg = "expected at least one Series in 'cov' inputs if 'eager=True'"
+            raise ValueError(msg)
+
+        frame = pl.DataFrame([e for e in (a, b) if isinstance(e, pl.Series)])
+        exprs = ((e.name if isinstance(e, pl.Series) else e) for e in (a, b))
+        return frame.select(cov(*exprs, eager=False, ddof=ddof)).to_series()
+    else:
+        a = parse_into_expression(a)
+        b = parse_into_expression(b)
+        return wrap_expr(plr.cov(a, b, ddof))
 
 
 def map_batches(
@@ -963,7 +1080,7 @@ def map_groups(
     function: Callable[[Sequence[Series]], Series | Any],
     return_dtype: PolarsDataType | None = None,
     *,
-    returns_scalar: bool = True,
+    returns_scalar: bool = False,
 ) -> Expr:
     """
     Apply a custom/user-defined function (UDF) in a GroupBy context.
@@ -1015,6 +1132,7 @@ def map_groups(
     ...             function=lambda list_of_series: list_of_series[0]
     ...             / list_of_series[0].sum()
     ...             + list_of_series[1],
+    ...             return_dtype=pl.Float64,
     ...         ).alias("my_custom_aggregation")
     ...     )
     ... ).sort("group")
@@ -1030,7 +1148,7 @@ def map_groups(
 
     The output for group `1` can be understood as follows:
 
-    - group `1` contains Series `'a': [1, 3]` and `'b': [4, 5]`
+    - group `1` contains Series `'a': [1, 3]` and `'b': [5, 6]`
     - applying the function to those lists of Series, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
@@ -1209,7 +1327,6 @@ def reduce(
     │ 5   │
     └─────┘
     """
-    # in case of col("*")
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
@@ -1365,6 +1482,13 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
         y = F.col(y)
     if isinstance(x, str):
         x = F.col(x)
+    if not hasattr(x, "_pyexpr"):
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{type(x).__name__}`"
+        raise TypeError(msg)
+    if not hasattr(y, "_pyexpr"):
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{type(y).__name__}`"
+        raise TypeError(msg)
+
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
 
 
@@ -1608,10 +1732,12 @@ def arg_sort_by(
     )
 
 
+@deprecate_streaming_parameter()
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1620,12 +1746,17 @@ def collect_all(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
-    streaming: bool = False,
+    collapse_joins: bool = True,
+    _check_order: bool = True,
+    engine: EngineType = "auto",
 ) -> list[DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
 
-    This runs all the computation graphs in parallel on the Polars threadpool.
+    This can run all the computation graphs in parallel or combined.
+
+    Common Subplan Elimination is applied on the combined plan, meaning
+    that diverging queries will run only once.
 
     Parameters
     ----------
@@ -1649,55 +1780,48 @@ def collect_all(
         Common subexpressions will be cached and reused.
     cluster_with_columns
         Combine sequential independent calls to with_columns
-    streaming
-        Process the query in batches to handle larger-than-memory data.
-        If set to `False` (default), the entire query is processed in a single
-        batch.
-
-        .. warning::
-            Streaming mode is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+    collapse_joins
+        Collapse a join and filters into a faster join
+    engine
+        Select the engine used to process the query, optional.
+        At the moment, if set to `"auto"` (default), the query
+        is run using the polars in-memory engine. Polars will also
+        attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+        environment variable. If it cannot run the query using the
+        selected engine, the query is run using the polars in-memory
+        engine.
 
         .. note::
-            Use :func:`explain` to see if Polars can process the query in streaming
-            mode.
+           The GPU engine does not support async, or running in the
+           background. If either are enabled, then GPU execution is switched off.
 
     Returns
     -------
     list of DataFrames
         The collected DataFrames, returned in the same order as the input LazyFrames.
+
     """
+    optflags = OptFlags(
+        _type_coercion=type_coercion,
+        _type_check=_type_check,
+        predicate_pushdown=predicate_pushdown,
+        projection_pushdown=projection_pushdown,
+        simplify_expression=simplify_expression,
+        slice_pushdown=slice_pushdown,
+        comm_subplan_elim=comm_subplan_elim,
+        comm_subexpr_elim=comm_subexpr_elim,
+        cluster_with_columns=cluster_with_columns,
+        collapse_joins=collapse_joins,
+        check_order_observe=_check_order,
+    )
     if no_optimization:
-        predicate_pushdown = False
-        projection_pushdown = False
-        slice_pushdown = False
-        comm_subplan_elim = False
-        comm_subexpr_elim = False
-        cluster_with_columns = False
+        optflags.no_optimizations()
 
-    if streaming:
+    if engine in ("streaming", "old-streaming"):
         issue_unstable_warning("Streaming mode is considered unstable.")
-        comm_subplan_elim = False
 
-    prepared = []
-
-    for lf in lazy_frames:
-        ldf = lf._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            streaming,
-            _eager=False,
-            new_streaming=False,
-        )
-        prepared.append(ldf)
-
-    out = plr.collect_all(prepared)
+    lfs = [lf._ldf for lf in lazy_frames]
+    out = plr.collect_all(lfs, engine, optflags._pyoptflags)
 
     # wrap the pydataframes into dataframe
     result = [wrap_df(pydf) for pydf in out]
@@ -1711,6 +1835,7 @@ def collect_all_async(
     *,
     gevent: Literal[True],
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1719,7 +1844,8 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
-    streaming: bool = True,
+    collapse_joins: bool = True,
+    engine: EngineType = "auto",
 ) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
 
@@ -1729,6 +1855,7 @@ def collect_all_async(
     *,
     gevent: Literal[False] = False,
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1737,16 +1864,19 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
-    streaming: bool = False,
+    collapse_joins: bool = True,
+    engine: EngineType = "auto",
 ) -> Awaitable[list[DataFrame]]: ...
 
 
 @unstable()
+@deprecate_streaming_parameter()
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
     gevent: bool = False,
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1755,7 +1885,9 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
-    streaming: bool = False,
+    collapse_joins: bool = True,
+    _check_order: bool = True,
+    engine: EngineType = "auto",
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
@@ -1795,18 +1927,20 @@ def collect_all_async(
         Common subexpressions will be cached and reused.
     cluster_with_columns
         Combine sequential independent calls to with_columns
-    streaming
-        Process the query in batches to handle larger-than-memory data.
-        If set to `False` (default), the entire query is processed in a single
-        batch.
-
-        .. warning::
-            Streaming mode is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+    collapse_joins
+        Collapse a join and filters into a faster join
+    engine
+        Select the engine used to process the query, optional.
+        At the moment, if set to `"auto"` (default), the query
+        is run using the polars in-memory engine. Polars will also
+        attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+        environment variable. If it cannot run the query using the
+        selected engine, the query is run using the polars in-memory
+        engine.
 
         .. note::
-            Use :func:`explain` to see if Polars can process the query in streaming
-            mode.
+           The GPU engine does not support async, or running in the
+           background. If either are enabled, then GPU execution is switched off.
 
     See Also
     --------
@@ -1825,46 +1959,131 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
+    optflags = OptFlags(
+        _type_coercion=type_coercion,
+        _type_check=_type_check,
+        predicate_pushdown=predicate_pushdown,
+        projection_pushdown=projection_pushdown,
+        simplify_expression=simplify_expression,
+        slice_pushdown=slice_pushdown,
+        comm_subplan_elim=comm_subplan_elim,
+        comm_subexpr_elim=comm_subexpr_elim,
+        cluster_with_columns=cluster_with_columns,
+        collapse_joins=collapse_joins,
+        check_order_observe=_check_order,
+    )
     if no_optimization:
-        predicate_pushdown = False
-        projection_pushdown = False
-        slice_pushdown = False
-        comm_subplan_elim = False
-        comm_subexpr_elim = False
-        cluster_with_columns = False
+        optflags.no_optimizations()
 
-    if streaming:
+    if engine in ("streaming", "old-streaming"):
         issue_unstable_warning("Streaming mode is considered unstable.")
-        comm_subplan_elim = False
 
-    prepared = []
-
-    for lf in lazy_frames:
-        ldf = lf._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            streaming,
-            _eager=False,
-            new_streaming=False,
-        )
-        prepared.append(ldf)
-
-    result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-    plr.collect_all_with_callback(prepared, result._callback_all)  # type: ignore[attr-defined]
-    return result  # type: ignore[return-value]
+    result: (
+        _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
+    ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+    lfs = [lf._ldf for lf in lazy_frames]
+    plr.collect_all_with_callback(
+        lfs, engine, optflags._pyoptflags, result._callback_all
+    )
+    return result
 
 
-def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:
+@unstable()
+def explain_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    type_coercion: bool = True,
+    _type_check: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
+    _check_order: bool = True,
+) -> str:
+    """
+    Explain multiple LazyFrames as if passed to `collect_all`.
+
+    Common Subplan Elimination is applied on the combined plan, meaning
+    that diverging queries will run only once.
+
+    Parameters
+    ----------
+    lazy_frames
+        A list of LazyFrames to collect.
+    type_coercion
+        Do type coercion optimization.
+    predicate_pushdown
+        Do predicate pushdown optimization.
+    projection_pushdown
+        Do projection pushdown optimization.
+    simplify_expression
+        Run simplify expressions optimization.
+    no_optimization
+        Turn off optimizations.
+    slice_pushdown
+        Slice pushdown optimization.
+    comm_subplan_elim
+        Will try to cache branching subplans that occur on self-joins or unions.
+    comm_subexpr_elim
+        Common subexpressions will be cached and reused.
+    cluster_with_columns
+        Combine sequential independent calls to with_columns
+    collapse_joins
+        Collapse a join and filters into a faster join
+
+    Returns
+    -------
+    Explained plan.
+    """
+    optflags = OptFlags(
+        _type_coercion=type_coercion,
+        _type_check=_type_check,
+        predicate_pushdown=predicate_pushdown,
+        projection_pushdown=projection_pushdown,
+        simplify_expression=simplify_expression,
+        slice_pushdown=slice_pushdown,
+        comm_subplan_elim=comm_subplan_elim,
+        comm_subexpr_elim=comm_subexpr_elim,
+        cluster_with_columns=cluster_with_columns,
+        collapse_joins=collapse_joins,
+        check_order_observe=_check_order,
+    )
+    if no_optimization:
+        optflags.no_optimizations()
+
+    lfs = [lf._ldf for lf in lazy_frames]
+    return plr.explain_all(lfs, optflags._pyoptflags)
+
+
+@overload
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr],
+    eager: Literal[True] = ...,
+    **named_exprs: IntoExpr,
+) -> DataFrame: ...
+
+
+@overload
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr],
+    eager: Literal[False],
+    **named_exprs: IntoExpr,
+) -> LazyFrame: ...
+
+
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr], eager: bool = True, **named_exprs: IntoExpr
+) -> DataFrame | LazyFrame:
     """
     Run polars expressions without a context.
 
-    This is syntactic sugar for running `df.select` on an empty DataFrame.
+    This is syntactic sugar for running `df.select` on an empty DataFrame
+    (or LazyFrame if eager=False).
 
     Parameters
     ----------
@@ -1872,13 +2091,16 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
         Column(s) to select, specified as positional arguments.
         Accepts expression input. Strings are parsed as column names,
         other non-expression inputs are parsed as literals.
+    eager
+        Evaluate immediately and return a `DataFrame` (default); if set to `False`,
+        return a `LazyFrame` instead.
     **named_exprs
         Additional columns to select, specified as keyword arguments.
         The columns will be renamed to the keyword used.
 
     Returns
     -------
-    DataFrame
+    DataFrame or LazyFrame
 
     Examples
     --------
@@ -1895,8 +2117,25 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
     │ 2   │
     │ 1   │
     └─────┘
+
+    >>> pl.select(pl.int_range(0, 100_000, 2).alias("n"), eager=False).filter(
+    ...     pl.col("n") % 22_500 == 0
+    ... ).collect()
+    shape: (5, 1)
+    ┌───────┐
+    │ n     │
+    │ ---   │
+    │ i64   │
+    ╞═══════╡
+    │ 0     │
+    │ 22500 │
+    │ 45000 │
+    │ 67500 │
+    │ 90000 │
+    └───────┘
     """
-    return pl.DataFrame().select(*exprs, **named_exprs)
+    empty_frame = pl.DataFrame() if eager else pl.LazyFrame()
+    return empty_frame.select(*exprs, **named_exprs)
 
 
 @overload
@@ -1905,10 +2144,6 @@ def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr:
 
 @overload
 def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series: ...
-
-
-@overload
-def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series: ...
 
 
 def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series:
@@ -1920,8 +2155,9 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     condition
         Boolean expression to evaluate
     eager
-        Evaluate immediately and return a `Series`. If set to `False` (default),
-        return an expression instead.
+        Evaluate immediately and return a `Series`; this requires that the given
+        condition is itself a `Series`. If set to `False` (default), return
+        an expression instead.
 
     See Also
     --------
@@ -1945,7 +2181,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     if eager:
         if not isinstance(condition, pl.Series):
             msg = (
-                "expected 'Series' in 'arg_where' if 'eager=True', got"
+                "expected Series in 'arg_where' if 'eager=True', got"
                 f" {type(condition).__name__!r}"
             )
             raise ValueError(msg)
@@ -1955,7 +2191,35 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         return wrap_expr(plr.arg_where(condition))
 
 
-def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: Literal[True],
+) -> Series: ...
+
+
+@overload
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: bool,
+) -> Expr | Series: ...
+
+
+def coalesce(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    eager: bool = False,
+) -> Expr | Series:
     """
     Folds the columns from left to right, keeping the first non-null value.
 
@@ -1966,6 +2230,10 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
         names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to coalesce, specified as positional arguments.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
 
     Examples
     --------
@@ -1976,7 +2244,8 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     ...         "c": [5, None, 3, None],
     ...     }
     ... )
-    >>> df.with_columns(pl.coalesce(["a", "b", "c", 10]).alias("d"))
+
+    >>> df.with_columns(pl.coalesce("a", "b", "c", 10).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬─────┐
     │ a    ┆ b    ┆ c    ┆ d   │
@@ -1988,6 +2257,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ 3    ┆ 3   │
     │ null ┆ null ┆ null ┆ 10  │
     └──────┴──────┴──────┴─────┘
+
     >>> df.with_columns(pl.coalesce(pl.col(["a", "b", "c"]), 10.0).alias("d"))
     shape: (4, 4)
     ┌──────┬──────┬──────┬──────┐
@@ -2000,9 +2270,29 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ 3    ┆ 3.0  │
     │ null ┆ null ┆ null ┆ 10.0 │
     └──────┴──────┴──────┴──────┘
+
+    >>> s1 = pl.Series("a", [None, 2, None])
+    >>> s2 = pl.Series("b", [1, None, 3])
+    >>> pl.coalesce(s1, s2, eager=True)
+    shape: (3,)
+    Series: 'a' [i64]
+    [
+        1
+        2
+        3
+    ]
     """
-    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
-    return wrap_expr(plr.coalesce(exprs))
+    if eager:
+        exprs = [exprs, *more_exprs]
+        if not (series := [e for e in exprs if isinstance(e, pl.Series)]):
+            msg = "expected at least one Series in 'coalesce' if 'eager=True'"
+            raise ValueError(msg)
+
+        exprs = [(e.name if isinstance(e, pl.Series) else e) for e in exprs]
+        return pl.DataFrame(series).select(coalesce(exprs, eager=False)).to_series()
+    else:
+        exprs = parse_into_list_of_expressions(exprs, *more_exprs)
+        return wrap_expr(plr.coalesce(exprs))
 
 
 @overload
@@ -2077,22 +2367,18 @@ def from_epoch(
         raise ValueError(msg)
 
 
-@unstable()
+@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
 def rolling_cov(
     a: str | Expr,
     b: str | Expr,
     *,
     window_size: int,
-    min_periods: int | None = None,
+    min_samples: int | None = None,
     ddof: int = 1,
 ) -> Expr:
     """
     Compute the rolling covariance between two columns/ expressions.
 
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
-
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
@@ -2104,39 +2390,35 @@ def rolling_cov(
         Column name or Expression.
     window_size
         The length of the window.
-    min_periods
+    min_samples
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
-        Delta degrees of freedom.  The divisor used in calculations
+        Delta degrees of freedom. The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
     """
-    if min_periods is None:
-        min_periods = window_size
+    if min_samples is None:
+        min_samples = window_size
     if isinstance(a, str):
         a = F.col(a)
     if isinstance(b, str):
         b = F.col(b)
     return wrap_expr(
-        plr.rolling_cov(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
+        plr.rolling_cov(a._pyexpr, b._pyexpr, window_size, min_samples, ddof)
     )
 
 
-@unstable()
+@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
 def rolling_corr(
     a: str | Expr,
     b: str | Expr,
     *,
     window_size: int,
-    min_periods: int | None = None,
+    min_samples: int | None = None,
     ddof: int = 1,
 ) -> Expr:
     """
     Compute the rolling correlation between two columns/ expressions.
-
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
@@ -2149,21 +2431,21 @@ def rolling_corr(
         Column name or Expression.
     window_size
         The length of the window.
-    min_periods
+    min_samples
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
-        Delta degrees of freedom.  The divisor used in calculations
+        Delta degrees of freedom. The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
     """
-    if min_periods is None:
-        min_periods = window_size
+    if min_samples is None:
+        min_samples = window_size
     if isinstance(a, str):
         a = F.col(a)
     if isinstance(b, str):
         b = F.col(b)
     return wrap_expr(
-        plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
+        plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_samples, ddof)
     )
 
 

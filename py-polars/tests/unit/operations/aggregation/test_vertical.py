@@ -57,7 +57,7 @@ def test_alias_for_col_agg(function: str, input: str) -> None:
     assert_expr_equal(result, expected, context)
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_mean_overflow() -> None:
     np.random.seed(1)
     expected = 769.5607652

@@ -21,7 +21,7 @@ class PolarsDataFrame(InterchangeDataFrame):
 
     Parameters
     ----------
-    column
+    df
         The Polars DataFrame backing the dataframe object.
     allow_copy
         Allow data to be copied during operations on this column. If set to `False`,
@@ -30,7 +30,7 @@ class PolarsDataFrame(InterchangeDataFrame):
 
     version = 0
 
-    def __init__(self, df: DataFrame, *, allow_copy: bool = True):
+    def __init__(self, df: DataFrame, *, allow_copy: bool = True) -> None:
         self._df = df
         self._allow_copy = allow_copy
 

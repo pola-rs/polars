@@ -1,4 +1,6 @@
-use std::sync::OnceLock;
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use polars_core::frame::DataFrame;
 
@@ -14,6 +16,11 @@ pub fn get_ideal_morsel_size() -> usize {
     })
 }
 
+/// A token indicating the order of morsels in a stream.
+///
+/// The sequence tokens going through a pipe are monotonely non-decreasing and are allowed to be
+/// discontinuous. Consequently, `1 -> 1 -> 2` and `1 -> 3 -> 5` are valid streams of sequence
+/// tokens.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Default)]
 pub struct MorselSeq(u64);
 
@@ -41,6 +48,31 @@ impl MorselSeq {
     }
 }
 
+/// A token indicating which source this morsel originated from, and a way to
+/// pass information/signals to it. Currently it's only used to request a source
+/// to stop with passing new morsels this execution phase.
+#[derive(Clone, Debug)]
+pub struct SourceToken {
+    stop: Arc<AtomicBool>,
+}
+
+impl SourceToken {
+    pub fn new() -> Self {
+        Self {
+            stop: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
+    pub fn stop_requested(&self) -> bool {
+        self.stop.load(Ordering::Relaxed)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Morsel {
     /// The data contained in this morsel.
     df: DataFrame,
@@ -49,26 +81,38 @@ pub struct Morsel {
     /// within a pipeline.
     seq: MorselSeq,
 
+    /// A token that indicates which source this morsel originates from.
+    source_token: SourceToken,
+
     /// Used to notify someone when this morsel is consumed, to provide backpressure.
     consume_token: Option<WaitToken>,
 }
 
 impl Morsel {
-    pub fn new(df: DataFrame, seq: MorselSeq) -> Self {
+    pub fn new(df: DataFrame, seq: MorselSeq, source_token: SourceToken) -> Self {
         Self {
             df,
             seq,
+            source_token,
             consume_token: None,
         }
     }
 
     #[allow(unused)]
-    pub fn into_inner(self) -> (DataFrame, MorselSeq, Option<WaitToken>) {
-        (self.df, self.seq, self.consume_token)
+    pub fn into_inner(self) -> (DataFrame, MorselSeq, SourceToken, Option<WaitToken>) {
+        (self.df, self.seq, self.source_token, self.consume_token)
+    }
+
+    pub fn into_df(self) -> DataFrame {
+        self.df
     }
 
     pub fn df(&self) -> &DataFrame {
         &self.df
+    }
+
+    pub fn df_mut(&mut self) -> &mut DataFrame {
+        &mut self.df
     }
 
     pub fn seq(&self) -> MorselSeq {
@@ -93,11 +137,28 @@ impl Morsel {
         Ok(self)
     }
 
+    pub async fn async_try_map<E, M, F>(mut self, f: M) -> Result<Self, E>
+    where
+        M: FnOnce(DataFrame) -> F,
+        F: Future<Output = Result<DataFrame, E>>,
+    {
+        self.df = f(self.df).await?;
+        Ok(self)
+    }
+
     pub fn set_consume_token(&mut self, token: WaitToken) {
         self.consume_token = Some(token);
     }
 
     pub fn take_consume_token(&mut self) -> Option<WaitToken> {
         self.consume_token.take()
+    }
+
+    pub fn source_token(&self) -> &SourceToken {
+        &self.source_token
+    }
+
+    pub fn replace_source_token(&mut self, new_token: SourceToken) -> SourceToken {
+        core::mem::replace(&mut self.source_token, new_token)
     }
 }

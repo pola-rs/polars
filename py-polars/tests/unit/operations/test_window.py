@@ -454,7 +454,7 @@ def test_window_agg_list_null_15437() -> None:
     assert_frame_equal(output, expected)
 
 
-@pytest.mark.release()
+@pytest.mark.release
 def test_windows_not_cached() -> None:
     ldf = (
         pl.DataFrame(
@@ -487,12 +487,14 @@ def test_window_order_by_8662() -> None:
     assert df.with_columns(
         x_lag0=pl.col("x").shift(1).over("g"),
         x_lag1=pl.col("x").shift(1).over("g", order_by="t"),
+        x_lag2=pl.col("x").shift(1).over("g", order_by="t", descending=True),
     ).to_dict(as_series=False) == {
         "g": [1, 1, 1, 1, 2, 2, 2, 2],
         "t": [1, 2, 3, 4, 4, 1, 2, 3],
         "x": [10, 20, 30, 40, 10, 20, 30, 40],
         "x_lag0": [None, 10, 20, 30, None, 10, 20, 30],
         "x_lag1": [None, 10, 20, 30, 40, None, 20, 30],
+        "x_lag2": [20, 30, 40, None, None, 30, 40, 10],
     }
 
 
@@ -511,3 +513,86 @@ def test_window_17308() -> None:
     assert df.select(pl.col("A").sum(), pl.col("B").sum().over("grp")).to_dict(
         as_series=False
     ) == {"A": [3, 3], "B": [3, 4]}
+
+
+def test_lit_window_broadcast() -> None:
+    # the broadcast should happen in the window function
+    assert pl.DataFrame({"a": [1, 1, 2]}).select(pl.lit(0).over("a").alias("a"))[
+        "a"
+    ].to_list() == [0, 0, 0]
+
+
+def test_order_by_sorted_keys_18943() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 1],
+            "t": [4, 3, 2, 1],
+            "x": [10, 20, 30, 40],
+        }
+    )
+
+    expect = pl.DataFrame({"x": [100, 90, 70, 40]})
+
+    out = df.select(pl.col("x").cum_sum().over("g", order_by="t"))
+    assert_frame_equal(out, expect)
+
+    out = df.set_sorted("g").select(pl.col("x").cum_sum().over("g", order_by="t"))
+    assert_frame_equal(out, expect)
+
+
+def test_nested_window_keys() -> None:
+    df = pl.DataFrame({"x": 1, "y": "two"})
+    assert df.select(pl.col("y").first().over(pl.struct("x").implode())).item() == "two"
+    assert df.select(pl.col("y").first().over(pl.struct("x"))).item() == "two"
+
+
+def test_window_21692() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 1, 2, 3],
+            "b": [4, 3, 0, 1, 2, 0],
+            "c": ["first", "first", "first", "second", "second", "second"],
+        }
+    )
+    gt0 = pl.col("b") > 0
+    assert df.with_columns(
+        corr=pl.corr(
+            pl.col("a").filter(gt0),
+            pl.col("b").filter(gt0),
+        ).over("c"),
+    ).to_dict(as_series=False) == {
+        "a": [1, 2, 3, 1, 2, 3],
+        "b": [4, 3, 0, 1, 2, 0],
+        "c": ["first", "first", "first", "second", "second", "second"],
+        "corr": [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0],
+    }
+
+
+def test_window_implode_explode() -> None:
+    assert pl.DataFrame(
+        {
+            "x": [1, 2, 3, 1, 2, 3, 1, 2, 3],
+            "y": [2, 2, 2, 3, 3, 3, 4, 4, 4],
+        }
+    ).select(
+        works=(pl.col.x * pl.col.x.implode().explode()).over(pl.col.y),
+    ).to_dict(as_series=False) == {"works": [1, 4, 9, 1, 4, 9, 1, 4, 9]}
+
+
+def test_window_22006() -> None:
+    df = pl.DataFrame(
+        [
+            {"a": 1, "b": 1},
+            {"a": 1, "b": 2},
+            {"a": 2, "b": 3},
+            {"a": 2, "b": 4},
+        ]
+    )
+
+    df_empty = pl.DataFrame([], df.schema)
+
+    df_out = df.select(c=pl.col("b").over("a", mapping_strategy="join"))
+
+    df_empty_out = df_empty.select(c=pl.col("b").over("a", mapping_strategy="join"))
+
+    assert df_out.schema == df_empty_out.schema

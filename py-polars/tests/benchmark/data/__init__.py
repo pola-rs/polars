@@ -1,6 +1,9 @@
 """Data generation functionality for use in the benchmarking suite."""
 
 from tests.benchmark.data.h2oai import generate_group_by_data
-from tests.benchmark.data.tpch import load_tpch_table
+from tests.benchmark.data.pdsh import load_pdsh_table
 
-__all__ = ["load_tpch_table", "generate_group_by_data"]
+__all__ = [
+    "generate_group_by_data",
+    "load_pdsh_table",
+]

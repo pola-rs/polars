@@ -23,7 +23,7 @@ pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
 fn get_agg(ca: &ArrayChunked, agg_type: AggType) -> Series {
     let values = ca.get_inner();
     let width = ca.width();
-    min_max::array_dispatch(ca.name(), &values, width, agg_type)
+    min_max::array_dispatch(ca.name().clone(), &values, width, agg_type)
 }
 
 pub trait ArrayNameSpace: AsArray {
@@ -46,7 +46,7 @@ pub trait ArrayNameSpace: AsArray {
 
         match ca.inner_dtype() {
             DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
-            dt if dt.is_numeric() => Ok(sum_array_numerical(ca, dt)),
+            dt if dt.is_primitive_numeric() => Ok(sum_array_numerical(ca, dt)),
             dt => sum_with_nulls(ca, dt),
         }
     }
@@ -142,21 +142,8 @@ pub trait ArrayNameSpace: AsArray {
         let ca = self.as_array();
         let n_s = n.cast(&DataType::Int64)?;
         let n = n_s.i64()?;
-        let out = match n.len() {
-            1 => {
-                if let Some(n) = n.get(0) {
-                    // SAFETY: Shift does not change the dtype and number of elements of sub-array.
-                    unsafe { ca.apply_amortized_same_type(|s| s.as_ref().shift(n)) }
-                } else {
-                    ArrayChunked::full_null_with_dtype(
-                        ca.name(),
-                        ca.len(),
-                        ca.inner_dtype(),
-                        ca.width(),
-                    )
-                }
-            },
-            _ => {
+        let out = match (ca.len(), n.len()) {
+            (a, b) if a == b => {
                 // SAFETY: Shift does not change the dtype and number of elements of sub-array.
                 unsafe {
                     ca.zip_and_apply_amortized_same_type(n, |opt_s, opt_periods| {
@@ -167,6 +154,42 @@ pub trait ArrayNameSpace: AsArray {
                     })
                 }
             },
+            (_, 1) => {
+                if let Some(n) = n.get(0) {
+                    // SAFETY: Shift does not change the dtype and number of elements of sub-array.
+                    unsafe { ca.apply_amortized_same_type(|s| s.as_ref().shift(n)) }
+                } else {
+                    ArrayChunked::full_null_with_dtype(
+                        ca.name().clone(),
+                        ca.len(),
+                        ca.inner_dtype(),
+                        ca.width(),
+                    )
+                }
+            },
+            (1, _) => {
+                if ca.get(0).is_some() {
+                    // Optimize: This does not need to broadcast first.
+                    let ca = ca.new_from_index(0, n.len());
+                    // SAFETY: Shift does not change the dtype and number of elements of sub-array.
+                    unsafe {
+                        ca.zip_and_apply_amortized_same_type(n, |opt_s, opt_periods| {
+                            match (opt_s, opt_periods) {
+                                (Some(s), Some(n)) => Some(s.as_ref().shift(n)),
+                                _ => None,
+                            }
+                        })
+                    }
+                } else {
+                    ArrayChunked::full_null_with_dtype(
+                        ca.name().clone(),
+                        ca.len(),
+                        ca.inner_dtype(),
+                        ca.width(),
+                    )
+                }
+            },
+            _ => polars_bail!(length_mismatch = "arr.shift", ca.len(), n.len()),
         };
         Ok(out.into_series())
     }

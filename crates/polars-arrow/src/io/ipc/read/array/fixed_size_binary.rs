@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
 
 use super::super::read_basic::*;
 use super::super::{Compression, IpcBuffer, Node};
@@ -12,7 +12,7 @@ use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 #[allow(clippy::too_many_arguments)]
 pub fn read_fixed_size_binary<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
-    data_type: ArrowDataType,
+    dtype: ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
     block_offset: u64,
@@ -21,7 +21,7 @@ pub fn read_fixed_size_binary<R: Read + Seek>(
     limit: Option<usize>,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<FixedSizeBinaryArray> {
-    let field_node = try_get_field_node(field_nodes, &data_type)?;
+    let field_node = try_get_field_node(field_nodes, &dtype)?;
 
     let validity = read_validity(
         buffers,
@@ -36,7 +36,7 @@ pub fn read_fixed_size_binary<R: Read + Seek>(
 
     let length = try_get_array_length(field_node, limit)?;
 
-    let length = length.saturating_mul(FixedSizeBinaryArray::maybe_get_size(&data_type)?);
+    let length = length.saturating_mul(FixedSizeBinaryArray::maybe_get_size(&dtype)?);
     let values = read_buffer(
         buffers,
         length,
@@ -47,7 +47,7 @@ pub fn read_fixed_size_binary<R: Read + Seek>(
         scratch,
     )?;
 
-    FixedSizeBinaryArray::try_new(data_type, values, validity)
+    FixedSizeBinaryArray::try_new(dtype, values, validity)
 }
 
 pub fn skip_fixed_size_binary(

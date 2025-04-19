@@ -1,14 +1,16 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
+#[cfg(feature = "ir_serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::error::*;
-use crate::slice::GetSaferUnchecked;
 
 unsafe fn index_of_unchecked<T>(slice: &[T], item: &T) -> usize {
-    (item as *const _ as usize - slice.as_ptr() as usize) / std::mem::size_of::<T>()
+    (item as *const _ as usize - slice.as_ptr() as usize) / size_of::<T>()
 }
 
 fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
-    debug_assert!(std::mem::size_of::<T>() > 0);
+    debug_assert!(size_of::<T>() > 0);
     let ptr = item as *const T;
     unsafe {
         if slice.as_ptr() < ptr && slice.as_ptr().add(slice.len()) > ptr {
@@ -21,6 +23,7 @@ fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[repr(transparent)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct Node(pub usize);
 
 impl Default for Node {
@@ -32,6 +35,7 @@ impl Default for Node {
 static ARENA_VERSION: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct Arena<T> {
     version: u32,
     items: Vec<T>,
@@ -59,6 +63,14 @@ impl<T> Arena<T> {
 
     pub fn pop(&mut self) -> Option<T> {
         self.items.pop()
+    }
+
+    pub fn last_node(&mut self) -> Option<Node> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(Node(self.items.len() - 1))
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -100,7 +112,7 @@ impl<T> Arena<T> {
     /// # Safety
     /// Doesn't do any bound checks
     pub unsafe fn get_unchecked(&self, idx: Node) -> &T {
-        self.items.get_unchecked_release(idx.0)
+        unsafe { self.items.get_unchecked(idx.0) }
     }
 
     #[inline]

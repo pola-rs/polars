@@ -2,7 +2,7 @@ use super::*;
 
 impl CategoricalChunked {
     pub fn full_null(
-        name: &str,
+        name: PlSmallStr,
         is_enum: bool,
         length: usize,
         ordering: CategoricalOrdering,

@@ -1,60 +1,47 @@
+use arrow::array::Array;
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::Field;
-#[cfg(feature = "async")]
-use bytes::Bytes;
-#[cfg(feature = "async")]
-use polars_core::datatypes::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::read::{
-    column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
-    PageReader,
+    BasicDecompressor, ColumnChunkMetadata, Filter, PageReader, column_iter_to_arrays,
 };
 use polars_utils::mmap::{MemReader, MemSlice};
 
 /// Store columns data in two scenarios:
 /// 1. a local memory mapped file
 /// 2. data fetched from cloud storage on demand, in this case
-///     a. the key in the hashmap is the start in the file
-///     b. the value in the hashmap is the actual data.
+///    a. the key in the hashmap is the start in the file
+///    b. the value in the hashmap is the actual data.
 ///
 /// For the fetched case we use a two phase approach:
-///    a. identify all the needed columns
-///    b. asynchronously fetch them in parallel, for example using object_store
-///    c. store the data in this data structure
-///    d. when all the data is available deserialize on multiple threads, for example using rayon
+///   a. identify all the needed columns
+///   b. asynchronously fetch them in parallel, for example using object_store
+///   c. store the data in this data structure
+///   d. when all the data is available deserialize on multiple threads, for example using rayon
 pub enum ColumnStore {
     Local(MemSlice),
-    #[cfg(feature = "async")]
-    Fetched(PlHashMap<u64, Bytes>),
 }
 
 /// For local files memory maps all columns that are part of the parquet field `field_name`.
 /// For cloud files the relevant memory regions should have been prefetched.
 pub(super) fn mmap_columns<'a>(
     store: &'a ColumnStore,
-    columns: &'a [ColumnChunkMetaData],
-    field_name: &str,
-) -> Vec<(&'a ColumnChunkMetaData, MemSlice)> {
-    get_field_columns(columns, field_name)
-        .into_iter()
+    field_columns: &'a [&ColumnChunkMetadata],
+) -> Vec<(&'a ColumnChunkMetadata, MemSlice)> {
+    field_columns
+        .iter()
         .map(|meta| _mmap_single_column(store, meta))
         .collect()
 }
 
 fn _mmap_single_column<'a>(
     store: &'a ColumnStore,
-    meta: &'a ColumnChunkMetaData,
-) -> (&'a ColumnChunkMetaData, MemSlice) {
-    let (start, len) = meta.byte_range();
+    meta: &'a ColumnChunkMetadata,
+) -> (&'a ColumnChunkMetadata, MemSlice) {
+    let byte_range = meta.byte_range();
     let chunk = match store {
-        ColumnStore::Local(mem_slice) => mem_slice.slice(start as usize, (start + len) as usize),
-        #[cfg(all(feature = "async", feature = "parquet"))]
-        ColumnStore::Fetched(fetched) => {
-            let entry = fetched.get(&start).unwrap_or_else(|| {
-                panic!(
-                    "mmap_columns: column with start {start} must be prefetched in ColumnStore.\n"
-                )
-            });
-            MemSlice::from_slice(entry.as_ref())
+        ColumnStore::Local(mem_slice) => {
+            mem_slice.slice(byte_range.start as usize..byte_range.end as usize)
         },
     };
     (meta, chunk)
@@ -62,27 +49,18 @@ fn _mmap_single_column<'a>(
 
 // similar to arrow2 serializer, except this accepts a slice instead of a vec.
 // this allows us to memory map
-pub(super) fn to_deserializer<'a>(
-    columns: Vec<(&ColumnChunkMetaData, MemSlice)>,
+pub fn to_deserializer(
+    columns: Vec<(&ColumnChunkMetadata, MemSlice)>,
     field: Field,
-    num_rows: usize,
-    chunk_size: Option<usize>,
-) -> PolarsResult<ArrayIter<'a>> {
-    let chunk_size = chunk_size.unwrap_or(usize::MAX).min(num_rows);
-
+    filter: Option<Filter>,
+) -> PolarsResult<(Box<dyn Array>, Bitmap)> {
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {
             // Advise fetching the data for the column chunk
             chunk.prefetch();
 
-            let pages = PageReader::new(
-                MemReader::new(chunk),
-                column_meta,
-                std::sync::Arc::new(|_, _| true),
-                vec![],
-                usize::MAX,
-            );
+            let pages = PageReader::new(MemReader::new(chunk), column_meta, vec![], usize::MAX);
             (
                 BasicDecompressor::new(pages, vec![]),
                 &column_meta.descriptor().descriptor.primitive_type,
@@ -90,5 +68,5 @@ pub(super) fn to_deserializer<'a>(
         })
         .unzip();
 
-    column_iter_to_arrays(columns, types, field, Some(chunk_size), num_rows)
+    column_iter_to_arrays(columns, types, field, filter)
 }

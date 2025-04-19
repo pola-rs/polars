@@ -190,12 +190,12 @@ where
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ObjectChunked::new_empty(self.name())),
+                _ => Ok(ObjectChunked::new_empty(self.name().clone())),
             };
         }
         check_filter_len!(self, filter);
         let chunks = self.downcast_iter().collect::<Vec<_>>();
-        let mut builder = ObjectChunkedBuilder::<T>::new(self.name(), self.len());
+        let mut builder = ObjectChunkedBuilder::<T>::new(self.name().clone(), self.len());
         for (idx, mask) in filter.into_iter().enumerate() {
             if mask.unwrap_or(false) {
                 let (chunk_idx, idx) = self.index_to_chunked_index(idx);

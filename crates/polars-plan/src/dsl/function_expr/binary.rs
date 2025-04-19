@@ -2,9 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::*;
-#[cfg(feature = "binary_encoding")]
-use crate::map;
-use crate::map_as_slice;
+use crate::{map, map_as_slice};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -20,18 +18,40 @@ pub enum BinaryFunction {
     Base64Decode(bool),
     #[cfg(feature = "binary_encoding")]
     Base64Encode,
+    Size,
+    #[cfg(feature = "binary_encoding")]
+    FromBuffer(DataType, bool),
 }
 
 impl BinaryFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use BinaryFunction::*;
         match self {
-            Contains { .. } => mapper.with_dtype(DataType::Boolean),
+            Contains => mapper.with_dtype(DataType::Boolean),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "binary_encoding")]
             HexDecode(_) | Base64Decode(_) => mapper.with_same_dtype(),
             #[cfg(feature = "binary_encoding")]
             HexEncode | Base64Encode => mapper.with_dtype(DataType::String),
+            Size => mapper.with_dtype(DataType::UInt32),
+            #[cfg(feature = "binary_encoding")]
+            FromBuffer(dtype, _) => mapper.with_dtype(dtype.clone()),
+        }
+    }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use BinaryFunction as B;
+        match self {
+            B::Contains | B::StartsWith | B::EndsWith => {
+                FunctionOptions::elementwise().with_supertyping(Default::default())
+            },
+            B::Size => FunctionOptions::elementwise(),
+            #[cfg(feature = "binary_encoding")]
+            B::HexDecode(_)
+            | B::HexEncode
+            | B::Base64Decode(_)
+            | B::Base64Encode
+            | B::FromBuffer(_, _) => FunctionOptions::elementwise(),
         }
     }
 }
@@ -40,7 +60,7 @@ impl Display for BinaryFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use BinaryFunction::*;
         let s = match self {
-            Contains { .. } => "contains",
+            Contains => "contains",
             StartsWith => "starts_with",
             EndsWith => "ends_with",
             #[cfg(feature = "binary_encoding")]
@@ -51,12 +71,15 @@ impl Display for BinaryFunction {
             Base64Decode(_) => "base64_decode",
             #[cfg(feature = "binary_encoding")]
             Base64Encode => "base64_encode",
+            Size => "size_bytes",
+            #[cfg(feature = "binary_encoding")]
+            FromBuffer(_, _) => "from_buffer",
         };
         write!(f, "bin.{s}")
     }
 }
 
-impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<BinaryFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: BinaryFunction) -> Self {
         use BinaryFunction::*;
         match func {
@@ -77,58 +100,80 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Base64Decode(strict) => map!(base64_decode, strict),
             #[cfg(feature = "binary_encoding")]
             Base64Encode => map!(base64_encode),
+            Size => map!(size_bytes),
+            #[cfg(feature = "binary_encoding")]
+            FromBuffer(dtype, is_little_endian) => map!(from_buffer, &dtype, is_little_endian),
         }
     }
 }
 
-pub(super) fn contains(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn contains(s: &[Column]) -> PolarsResult<Column> {
     let ca = s[0].binary()?;
     let lit = s[1].binary()?;
-    Ok(ca.contains_chunked(lit).with_name(ca.name()).into_series())
+    Ok(ca
+        .contains_chunked(lit)?
+        .with_name(ca.name().clone())
+        .into_column())
 }
 
-pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn ends_with(s: &[Column]) -> PolarsResult<Column> {
     let ca = s[0].binary()?;
     let suffix = s[1].binary()?;
 
     Ok(ca
-        .ends_with_chunked(suffix)
-        .with_name(ca.name())
-        .into_series())
+        .ends_with_chunked(suffix)?
+        .with_name(ca.name().clone())
+        .into_column())
 }
 
-pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
     let ca = s[0].binary()?;
     let prefix = s[1].binary()?;
 
     Ok(ca
-        .starts_with_chunked(prefix)
-        .with_name(ca.name())
-        .into_series())
+        .starts_with_chunked(prefix)?
+        .with_name(ca.name().clone())
+        .into_column())
+}
+
+pub(super) fn size_bytes(s: &Column) -> PolarsResult<Column> {
+    let ca = s.binary()?;
+    Ok(ca.size_bytes().into_column())
 }
 
 #[cfg(feature = "binary_encoding")]
-pub(super) fn hex_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
+pub(super) fn hex_decode(s: &Column, strict: bool) -> PolarsResult<Column> {
     let ca = s.binary()?;
-    ca.hex_decode(strict).map(|ok| ok.into_series())
+    ca.hex_decode(strict).map(|ok| ok.into_column())
 }
 
 #[cfg(feature = "binary_encoding")]
-pub(super) fn hex_encode(s: &Series) -> PolarsResult<Series> {
+pub(super) fn hex_encode(s: &Column) -> PolarsResult<Column> {
     let ca = s.binary()?;
-    Ok(ca.hex_encode())
+    Ok(ca.hex_encode().into())
 }
 
 #[cfg(feature = "binary_encoding")]
-pub(super) fn base64_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
+pub(super) fn base64_decode(s: &Column, strict: bool) -> PolarsResult<Column> {
     let ca = s.binary()?;
-    ca.base64_decode(strict).map(|ok| ok.into_series())
+    ca.base64_decode(strict).map(|ok| ok.into_column())
 }
 
 #[cfg(feature = "binary_encoding")]
-pub(super) fn base64_encode(s: &Series) -> PolarsResult<Series> {
+pub(super) fn base64_encode(s: &Column) -> PolarsResult<Column> {
     let ca = s.binary()?;
-    Ok(ca.base64_encode())
+    Ok(ca.base64_encode().into())
+}
+
+#[cfg(feature = "binary_encoding")]
+pub(super) fn from_buffer(
+    s: &Column,
+    dtype: &DataType,
+    is_little_endian: bool,
+) -> PolarsResult<Column> {
+    let ca = s.binary()?;
+    ca.from_buffer(dtype, is_little_endian)
+        .map(|val| val.into())
 }
 
 impl From<BinaryFunction> for FunctionExpr {

@@ -52,11 +52,7 @@ macro_rules! impl_signed_arith_kernel {
                     Some(&mask),
                 );
                 let ret = prim_binary_values(lhs, other, |lhs, rhs| {
-                    if rhs != 0 {
-                        lhs.wrapping_div(rhs)
-                    } else {
-                        0
-                    }
+                    if rhs != 0 { lhs.wrapping_div(rhs) } else { 0 }
                 });
                 ret.with_validity(valid)
             }
@@ -91,7 +87,7 @@ macro_rules! impl_signed_arith_kernel {
                     lhs.fill_with(0)
                 } else if rhs == 1 {
                     lhs
-                } else if scalar_u & (scalar_u - 1) == 0 {
+                } else if scalar_u.is_power_of_two() {
                     // Power of two.
                     let shift = scalar_u.trailing_zeros();
                     if rhs > 0 {
@@ -106,7 +102,7 @@ macro_rules! impl_signed_arith_kernel {
 
             fn prim_wrapping_floor_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
                 if rhs == 0 {
-                    PArr::full_null(lhs.len(), lhs.data_type().clone())
+                    PArr::full_null(lhs.len(), lhs.dtype().clone())
                 } else if rhs == -1 {
                     Self::prim_wrapping_neg(lhs)
                 } else if rhs == 1 {
@@ -133,19 +129,19 @@ macro_rules! impl_signed_arith_kernel {
             }
 
             fn prim_wrapping_floor_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
-                if lhs == 0 {
-                    return rhs.fill_with(0);
-                }
-
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
-                let ret = prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).0);
+                let ret = if lhs == 0 {
+                    rhs.fill_with(0)
+                } else {
+                    prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).0)
+                };
                 ret.with_validity(valid)
             }
 
             fn prim_wrapping_trunc_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
                 if rhs == 0 {
-                    PArr::full_null(lhs.len(), lhs.data_type().clone())
+                    PArr::full_null(lhs.len(), lhs.dtype().clone())
                 } else if rhs == -1 {
                     Self::prim_wrapping_neg(lhs)
                 } else if rhs == 1 {
@@ -165,19 +161,19 @@ macro_rules! impl_signed_arith_kernel {
             }
 
             fn prim_wrapping_trunc_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
-                if lhs == 0 {
-                    return rhs.fill_with(0);
-                }
-
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
-                let ret = prim_unary_values(rhs, |x| if x != 0 { lhs.wrapping_div(x) } else { 0 });
+                let ret = if lhs == 0 {
+                    rhs.fill_with(0)
+                } else {
+                    prim_unary_values(rhs, |x| if x != 0 { lhs.wrapping_div(x) } else { 0 })
+                };
                 ret.with_validity(valid)
             }
 
             fn prim_wrapping_mod_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
                 if rhs == 0 {
-                    PArr::full_null(lhs.len(), lhs.data_type().clone())
+                    PArr::full_null(lhs.len(), lhs.dtype().clone())
                 } else if rhs == -1 || rhs == 1 {
                     lhs.fill_with(0)
                 } else {
@@ -195,23 +191,19 @@ macro_rules! impl_signed_arith_kernel {
                         }
 
                         // Remainder should have sign of RHS.
-                        if rhs < 0 {
-                            -(rem_u as $T)
-                        } else {
-                            rem_u as $T
-                        }
+                        if rhs < 0 { -(rem_u as $T) } else { rem_u as $T }
                     })
                 }
             }
 
             fn prim_wrapping_mod_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
-                if lhs == 0 {
-                    return rhs.fill_with(0);
-                }
-
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
-                let ret = prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).1);
+                let ret = if lhs == 0 {
+                    rhs.fill_with(0)
+                } else {
+                    prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).1)
+                };
                 ret.with_validity(valid)
             }
 

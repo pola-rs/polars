@@ -99,8 +99,6 @@ fn iss_7440() {
 #[test]
 #[cfg(feature = "csv")]
 fn iss_8395() -> PolarsResult<()> {
-    use polars_core::series::Series;
-
     let mut context = SQLContext::new();
     let sql = r#"
     with foods as (
@@ -113,7 +111,7 @@ fn iss_8395() -> PolarsResult<()> {
 
     // assert that the df only contains [vegetables, seafood]
     let s = df.column("category")?.unique()?.sort(Default::default())?;
-    let expected = Series::new("category", &["seafood", "vegetables"]);
+    let expected = Column::new("category".into(), &["seafood", "vegetables"]);
     assert!(s.equals(&expected));
     Ok(())
 }
