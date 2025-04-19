@@ -8,6 +8,7 @@ use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
 use polars_ops::chunked_array::UnicodeForm;
+use polars_ops::series::RoundMode;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
 use polars_plan::prelude::{StrptimeOptions, col, cols, lit};
@@ -989,7 +990,7 @@ impl SQLFunctionVisitor<'_> {
             Round => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    1 => self.visit_unary(|e| e.round(0)),
+                    1 => self.visit_unary(|e| e.round(0, RoundMode::default())),
                     2 => self.try_visit_binary(|e, decimals| {
                         Ok(e.round(match decimals {
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
@@ -998,7 +999,7 @@ impl SQLFunctionVisitor<'_> {
                                 }
                             },
                             _ => polars_bail!(SQLSyntax: "invalid value for ROUND decimals ({})", args[1]),
-                        }))
+                        }, RoundMode::default()))
                     }),
                     _ => polars_bail!(SQLSyntax: "ROUND expects 1-2 arguments (found {})", args.len()),
                 }

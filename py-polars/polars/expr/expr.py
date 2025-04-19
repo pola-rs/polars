@@ -80,6 +80,7 @@ if TYPE_CHECKING:
         PolarsDataType,
         RankMethod,
         RollingInterpolationMethod,
+        RoundMode,
         SchemaDict,
         SearchSortedSide,
         SerializationFormat,
@@ -1637,7 +1638,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.ceil())
 
-    def round(self, decimals: int = 0) -> Expr:
+    def round(self, decimals: int = 0, mode: RoundMode = "half_to_even") -> Expr:
         """
         Round underlying floating point data by `decimals` digits.
 
@@ -1662,7 +1663,7 @@ class Expr:
         │ 1.2 │
         └─────┘
         """
-        return self._from_pyexpr(self._pyexpr.round(decimals))
+        return self._from_pyexpr(self._pyexpr.round(decimals, mode))
 
     def round_sig_figs(self, digits: int) -> Expr:
         """
