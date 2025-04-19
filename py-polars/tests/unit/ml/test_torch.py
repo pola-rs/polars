@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.dependencies import _lazy_import
+from polars.testing import assert_frame_equal, assert_series_equal
 
 # don't import torch until an actual test is triggered (the decorator already
 # ensures the tests aren't run locally; this avoids premature local import)
@@ -387,3 +388,36 @@ def test_misc_errors(df: pl.DataFrame) -> None:
         match="`label` is required if setting `features` when `return_type='dict'",
     ):
         _res4 = df.to_torch("dict", features=cs.float())
+
+
+def test_misc_lit_compatibility() -> None:
+    t = torch.tensor([[3, 0]], dtype=torch.int8)
+    assert isinstance(pl.lit(t), pl.Expr)
+
+
+def test_from_torch() -> None:
+    t = torch.tensor([[1234.5, 200.0, -3000.5], [8000.0, 500.5, 6000.0]])
+
+    # dataframe
+    expected_frame = pl.DataFrame(
+        data={"colx": [1234.5, 200.0, -3000.5], "coly": [8000.0, 500.5, 6000.0]},
+        schema={"colx": pl.Float32, "coly": pl.Float64},
+    )
+    schema_params = {
+        "schema": ["colx", "coly"],
+        "schema_overrides": {"coly": pl.Float64},
+    }
+    for df in (
+        pl.DataFrame(t, **schema_params),  # type: ignore[arg-type]
+        pl.from_torch(t, **schema_params),  # type: ignore[arg-type]
+    ):
+        assert_frame_equal(expected_frame, df)
+
+    # series
+    expected_series = pl.Series(
+        name="tensor",
+        dtype=pl.Array(pl.Float32, shape=(3,)),
+        values=[[1234.5, 200.0, -3000.5], [8000.0, 500.5, 6000.0]],
+    )
+    s = pl.Series(name="tensor", values=t)
+    assert_series_equal(expected_series, s)
