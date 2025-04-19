@@ -4449,9 +4449,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This is slower than a default group by.
             Setting this to `True` blocks the possibility
             to run on the streaming engine.
+
+            .. note::
+                Within each group, the order of rows is always preserved, regardless
+                of this argument.
         **named_by
             Additional columns to group by, specified as keyword arguments.
             The columns will be renamed to the keyword used.
+
+        Returns
+        -------
+        GroupBy
+            Object which can be used to perform aggregations.
 
         Examples
         --------

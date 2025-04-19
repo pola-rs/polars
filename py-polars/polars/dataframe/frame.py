@@ -6482,7 +6482,7 @@ class DataFrame:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
-            Settings this to `True` blocks the possibility
+            Setting this to `True` blocks the possibility
             to run on the streaming engine.
 
             .. note::
