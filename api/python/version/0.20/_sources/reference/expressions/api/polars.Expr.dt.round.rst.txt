@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.round
+====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.round
