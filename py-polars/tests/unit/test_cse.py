@@ -843,3 +843,18 @@ def test_cse_21115() -> None:
         "x": [5.43656365691809],
         "y": [151.13144093103566],
     }
+
+
+def test_cse_cache_leakage_22339() -> None:
+    lf1 = pl.LazyFrame({"x": [True] * 2})
+    lf2 = pl.LazyFrame({"x": [True] * 3})
+
+    a = lf1
+    b = lf1.filter(pl.col("x").not_().over(1))
+    c = lf2.filter(pl.col("x").not_().over(1))
+
+    ab = a.join(b, on="x")
+    bc = b.join(c, on="x")
+    ac = a.join(c, on="x")
+
+    assert pl.concat([ab, bc, ac]).collect().to_dict(as_series=False) == {"x": []}
