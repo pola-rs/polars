@@ -163,7 +163,7 @@ where
     let mut end_ptr = unsafe { first_slice.as_ptr().add(first_slice.len()) };
     slices[1..].iter().all(|slice| {
         let slice_ptr = slice.as_ptr();
-        let valid = slice_ptr == end_ptr;
+        let valid = std::ptr::eq(slice_ptr, end_ptr);
 
         end_ptr = unsafe { slice_ptr.add(slice.len()) };
 

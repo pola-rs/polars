@@ -289,7 +289,7 @@ impl HashableEqLP<'_> {
                     schema: _,
                     output_schema: s_r,
                 },
-            ) => Arc::as_ptr(dfl) == Arc::as_ptr(dfr) && s_l == s_r,
+            ) => std::ptr::eq(Arc::as_ptr(dfl), Arc::as_ptr(dfr)) && s_l == s_r,
             (
                 IR::SimpleProjection {
                     input: _,

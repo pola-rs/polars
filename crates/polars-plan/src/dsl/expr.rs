@@ -187,7 +187,9 @@ impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
         use LazySerde as L;
         match (self, other) {
             (L::Deserialized(a), L::Deserialized(b)) => a == b,
-            (L::Bytes(a), L::Bytes(b)) => a.as_ptr() == b.as_ptr() && a.len() == b.len(),
+            (L::Bytes(a), L::Bytes(b)) => {
+                std::ptr::eq(a.as_ptr(), b.as_ptr()) && a.len() == b.len()
+            },
             _ => false,
         }
     }
@@ -346,7 +348,6 @@ impl Default for Expr {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-
 pub enum Excluded {
     Name(PlSmallStr),
     Dtype(DataType),
