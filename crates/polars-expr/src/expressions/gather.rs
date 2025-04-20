@@ -167,7 +167,12 @@ impl GatherExpr {
             };
 
             ac.with_values(taken, true, Some(&self.expr))?;
-            ac.with_update_groups(UpdateGroups::WithSeriesLen);
+            
+            if self.returns_scalar {
+                ac.with_update_groups(UpdateGroups::No);
+            } else {
+                ac.with_update_groups(UpdateGroups::WithSeriesLen);
+            }
             Ok(ac)
         } else {
             self.gather_aggregated_expensive(ac, idx)
@@ -234,7 +239,12 @@ impl GatherExpr {
                     };
 
                     ac.with_values(taken, true, Some(&self.expr))?;
-                    ac.with_update_groups(UpdateGroups::WithSeriesLen);
+
+                    if self.returns_scalar {
+                        ac.with_update_groups(UpdateGroups::No);
+                    } else {
+                        ac.with_update_groups(UpdateGroups::WithSeriesLen);
+                    }
                     Ok(ac)
                 },
             }
