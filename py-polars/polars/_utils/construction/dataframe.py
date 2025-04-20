@@ -662,7 +662,7 @@ def _sequence_of_tuple_to_pydf(
     infer_schema_length: int | None,
     nan_to_null: bool = False,
 ) -> PyDataFrame:
-    # infer additional meta information if namedtuple
+    # Handle namedtuple or sqlalchemy rows specially
     if is_namedtuple(first_element.__class__) or is_sqlalchemy(first_element):
         if schema is None:
             schema = first_element._fields  # type: ignore[attr-defined]
@@ -675,9 +675,41 @@ def _sequence_of_tuple_to_pydf(
         if orient is None:
             orient = "row"
 
-    # ...then defer to generic sequence processing
+    # New logic: only use custom logic if `orient="row"` is explicitly passed or inferred by caller
+    if orient == "row":
+        if schema is None:
+            schema = [f"column_{i}" for i in range(len(first_element))]
+
+        column_names, schema_overrides = _unpack_schema(
+            schema, schema_overrides=schema_overrides, n_expected=len(first_element)
+        )
+        data_dict = {name: [] for name in column_names}
+        for row in data:
+            for i, name in enumerate(column_names):
+                data_dict[name].append(row[i] if i < len(row) else None)
+
+        data_series = []
+        for name, values in data_dict.items():
+            dtype = schema_overrides.get(name) if schema_overrides else None
+            if dtype:
+                try:
+                    series = pl.Series(name, values, dtype=dtype, strict=strict, nan_to_null=nan_to_null)
+                except Exception:
+                    series = pl.Series(name, values).cast(dtype, strict=strict)
+            else:
+                series = pl.Series(name, values, nan_to_null=nan_to_null)
+            data_series.append(series._s)
+
+        pydf = PyDataFrame(data_series)
+        if schema_overrides:
+            pydf = _post_apply_columns(
+                pydf, column_names, schema_overrides=schema_overrides, strict=strict
+            )
+        return pydf
+
+    # fallback: let _sequence_of_sequence_to_pydf do the work (default col-wise, etc.)
     return _sequence_of_sequence_to_pydf(
-        first_element,
+        first_element=first_element,
         data=data,
         schema=schema,
         schema_overrides=schema_overrides,
