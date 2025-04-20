@@ -2574,7 +2574,7 @@ impl JoinBuilder {
     }
 }
 
-const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorBuilder> = {
+pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorBuilder> = {
     #[cfg(not(feature = "new_streaming"))]
     {
         None
@@ -2584,6 +2584,8 @@ const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorBuild
         Some(streaming_dispatch::build_streaming_query_executor)
     }
 };
+#[cfg(feature = "new_streaming")]
+pub use streaming_dispatch::build_streaming_query_executor;
 
 #[cfg(feature = "new_streaming")]
 mod streaming_dispatch {
