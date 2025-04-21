@@ -22,6 +22,7 @@ pub trait RollingAggWindowNulls<'a, T: NativeType> {
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
+        window_size: Option<usize>,
     ) -> Self;
 
     /// # Safety
@@ -48,7 +49,8 @@ where
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
     // SAFETY; we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, start, end, params) };
+    let mut agg_window =
+        unsafe { Agg::new(values, validity, start, end, params, Some(window_size)) };
 
     let mut validity = create_validity(min_periods, len, window_size, det_offsets_fn)
         .unwrap_or_else(|| {

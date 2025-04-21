@@ -75,7 +75,13 @@ impl<
         + Add<Output = T>,
 > RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
+    fn new(
+        slice: &'a [T],
+        start: usize,
+        end: usize,
+        _params: Option<RollingFnParams>,
+        _window_size: Option<usize>,
+    ) -> Self {
         let (sum, err) = sum_kahan(&slice[start..end]);
         Self {
             slice,
