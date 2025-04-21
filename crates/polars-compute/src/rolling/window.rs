@@ -9,7 +9,7 @@ pub(super) struct SortedBuf<'a, T: NativeType> {
     last_start: usize,
     last_end: usize,
     // values within the window that we keep sorted
-    buf: OrderedSkipList<T>,
+    pub buf: OrderedSkipList<T>,
 }
 
 impl<'a, T: NativeType + PartialOrd + Copy> SortedBuf<'a, T> {
@@ -89,7 +89,7 @@ pub(super) struct SortedBufNulls<'a, T: NativeType> {
     last_start: usize,
     last_end: usize,
     // values within the window that we keep sorted
-    buf: OrderedSkipList<Option<T>>,
+    pub buf: OrderedSkipList<Option<T>>,
     pub null_count: usize,
 }
 

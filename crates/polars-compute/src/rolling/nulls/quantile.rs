@@ -48,13 +48,13 @@ impl<
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let null_count = self.sorted.update(start, end);
-        let length = self.sorted.len();
+        let mut length = self.sorted.len();
         // The min periods_issue will be taken care of when actually rolling
         if null_count == length {
             return None;
         }
         // Nulls are guaranteed to be at the front
-
+        length -= null_count;
         let mut idx = match self.method {
             QuantileMethod::Nearest => ((length as f64) * self.prob) as usize,
             QuantileMethod::Lower | QuantileMethod::Midpoint | QuantileMethod::Linear => {
@@ -73,7 +73,8 @@ impl<
             QuantileMethod::Midpoint => {
                 let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
                 Some(
-                    (self.sorted.get(idx).unwrap() + self.sorted.get(top_idx).unwrap())
+                    (self.sorted.get(idx + null_count).unwrap()
+                        + self.sorted.get(top_idx + null_count).unwrap())
                         / T::from::<f64>(2.0f64).unwrap(),
                 )
             },
@@ -82,13 +83,14 @@ impl<
                 let top_idx = f64::ceil(float_idx) as usize;
 
                 if top_idx == idx {
-                    Some(self.sorted.get(idx).unwrap())
+                    Some(self.sorted.get(idx + null_count).unwrap())
                 } else {
                     let proportion = T::from(float_idx - idx as f64).unwrap();
                     Some(
                         proportion
-                            * (self.sorted.get(top_idx).unwrap() - self.sorted.get(idx).unwrap())
-                            + self.sorted.get(idx).unwrap(),
+                            * (self.sorted.get(top_idx + null_count).unwrap()
+                                - self.sorted.get(idx + null_count).unwrap())
+                            + self.sorted.get(idx + null_count).unwrap(),
                     )
                 }
             },
