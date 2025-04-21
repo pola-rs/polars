@@ -89,7 +89,7 @@ pub(super) struct SortedBufNulls<'a, T: NativeType> {
     last_start: usize,
     last_end: usize,
     // values within the window that we keep sorted
-    pub buf: OrderedSkipList<Option<T>>,
+    buf: OrderedSkipList<Option<T>>,
     pub null_count: usize,
 }
 
