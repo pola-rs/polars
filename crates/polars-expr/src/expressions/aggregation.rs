@@ -704,6 +704,26 @@ impl AggQuantileExpr {
         );
         quantile.get(0).unwrap().try_extract()
     }
+
+    fn get_quantiles_on_groups(
+        &self,
+        df: &DataFrame,
+        groups: &GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<Column> {
+        let quantiles = self.quantile.evaluate_on_groups(df, groups, state)?;
+        let quantiles = quantiles.flat_naive().into_owned();
+        polars_ensure!(quantiles.n_unique()? <= 1, ComputeError:
+            "polars only supports computing a single quantile in group_by; \
+            varying quantile per group is not currently supported."
+        );
+
+        let quantiles = match quantiles.dtype() {
+            DataType::Float64 => quantiles,
+            _ => quantiles.cast(&DataType::Float64)?,
+        };
+        Ok(quantiles)
+    }
 }
 
 impl PhysicalExpr for AggQuantileExpr {
@@ -729,7 +749,8 @@ impl PhysicalExpr for AggQuantileExpr {
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
 
-        let quantile = self.get_quantile(df, state)?;
+        let quantiles = self.get_quantiles_on_groups(df, groups, state)?;
+        let quantile = quantiles.get(0).unwrap().try_extract()?;
 
         // SAFETY:
         // groups are in bounds

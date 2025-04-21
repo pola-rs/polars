@@ -774,3 +774,34 @@ def test_empty_agg_22005() -> None:
         .select(pl.col("a").sum())
     )
     assert_frame_equal(out.collect(), pl.DataFrame({"a": 0}))
+
+
+def test_agg_quantile_20951() -> None:
+    assert_frame_equal(
+        (
+            pl.DataFrame({"quantile": [1.0, 1.0, 1.0, 1.0], "value": [1, 2, 1, 2]})
+            .group_by(pl.col("quantile"))
+            .agg(pl.col("value").quantile(pl.col("quantile").first()))
+        ),
+        pl.DataFrame({"quantile": [1.0], "value": [2.0]}),
+    )
+    assert_frame_equal(
+        (
+            pl.DataFrame({"quantile": [0, 0, 0, 0], "value": [1, 2, 1, 2]})
+            .group_by(pl.col("quantile"))
+            .agg(pl.col("value").quantile(pl.col("quantile").first()))
+        ),
+        pl.DataFrame({"quantile": [0], "value": [1.0]}),
+    )
+
+
+def test_agg_quantile_20951_raises() -> None:
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"polars only supports computing a single quantile in group_by",
+    ):
+        (
+            pl.DataFrame({"quantile": [0, 0, 1, 1], "value": [1, 2, 1, 2]})
+            .group_by(pl.col("quantile"))
+            .agg(pl.col("value").quantile(pl.col("quantile").first()))
+        )
