@@ -33,27 +33,27 @@ impl<
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
+        window_size: Option<usize>,
     ) -> Self {
         let params = params.unwrap();
         let RollingFnParams::Quantile(params) = params else {
             unreachable!("expected Quantile params");
         };
         Self {
-            sorted: SortedBufNulls::new(slice, validity, start, end),
+            sorted: SortedBufNulls::new(slice, validity, start, end, window_size),
             prob: params.prob,
             method: params.method,
         }
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let (values, null_count) = self.sorted.update(start, end);
+        let null_count = self.sorted.update(start, end);
+        let length = self.sorted.len();
         // The min periods_issue will be taken care of when actually rolling
-        if null_count == values.len() {
+        if null_count == length {
             return None;
         }
         // Nulls are guaranteed to be at the front
-        let values = &values[null_count..];
-        let length = values.len();
 
         let mut idx = match self.method {
             QuantileMethod::Nearest => ((length as f64) * self.prob) as usize,
@@ -73,7 +73,7 @@ impl<
             QuantileMethod::Midpoint => {
                 let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
                 Some(
-                    (values.get_unchecked(idx).unwrap() + values.get_unchecked(top_idx).unwrap())
+                    (self.sorted.get(idx).unwrap() + self.sorted.get(top_idx).unwrap())
                         / T::from::<f64>(2.0f64).unwrap(),
                 )
             },
@@ -82,18 +82,17 @@ impl<
                 let top_idx = f64::ceil(float_idx) as usize;
 
                 if top_idx == idx {
-                    Some(values.get_unchecked(idx).unwrap())
+                    Some(self.sorted.get(idx).unwrap())
                 } else {
                     let proportion = T::from(float_idx - idx as f64).unwrap();
                     Some(
                         proportion
-                            * (values.get_unchecked(top_idx).unwrap()
-                                - values.get_unchecked(idx).unwrap())
-                            + values.get_unchecked(idx).unwrap(),
+                            * (self.sorted.get(top_idx).unwrap() - self.sorted.get(idx).unwrap())
+                            + self.sorted.get(idx).unwrap(),
                     )
                 }
             },
-            _ => Some(values.get_unchecked(idx).unwrap()),
+            _ => Some(self.sorted.get(idx).unwrap()),
         }
     }
 

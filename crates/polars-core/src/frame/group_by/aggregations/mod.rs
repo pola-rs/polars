@@ -86,7 +86,7 @@ where
     // start with a dummy index, will be overwritten on first iteration.
     // SAFETY:
     // we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params) };
+    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params, None) };
 
     let mut validity = MutableBitmap::with_capacity(output_len);
     validity.extend_constant(output_len, true);
@@ -136,7 +136,7 @@ where
         return PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None);
     }
     // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, 0, 0, params);
+    let mut agg_window = Agg::new(values, 0, 0, params, None);
 
     offsets
         .map(|(start, len)| {

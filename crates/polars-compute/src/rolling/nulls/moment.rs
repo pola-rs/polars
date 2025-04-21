@@ -45,6 +45,7 @@ impl<'a, T: NativeType + ToPrimitive + IsFloat + FromPrimitive, M: StateUpdate>
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
+        _window_size: Option<usize>,
     ) -> Self {
         let mut out = Self {
             slice,
