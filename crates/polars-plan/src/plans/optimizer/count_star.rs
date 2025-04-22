@@ -163,20 +163,7 @@ fn visit_logical_plan_for_scan_paths(
             unified_scan_args,
             ..
         } => {
-            // There is a regression for `select(len())` performance, currently new-streaming is
-            // faster for all cases except CSV (https://github.com/pola-rs/polars/pull/22169).
-
-            let use_fast_file_count = use_fast_file_count.unwrap_or({
-                #[cfg(feature = "csv")]
-                {
-                    matches!(&**scan_type, FileScan::Csv { .. })
-                }
-
-                #[cfg(not(feature = "csv"))]
-                {
-                    false
-                }
-            });
+            let use_fast_file_count = use_fast_file_count.unwrap_or(true);
 
             if use_fast_file_count {
                 Some(CountStarExpr {
