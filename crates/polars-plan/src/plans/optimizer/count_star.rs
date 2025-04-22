@@ -31,7 +31,10 @@ impl OptimizationRule for CountStar {
         {
             Ok("1") => Some(true),
             Ok("0") => Some(false),
-            Ok(v) => panic!("invalid argument: {}", v),
+            Ok(v) => panic!(
+                "invalid argument for POLARS_FAST_FILE_COUNT_DISPATCH: {}",
+                v
+            ),
             Err(_) => None,
         };
 
