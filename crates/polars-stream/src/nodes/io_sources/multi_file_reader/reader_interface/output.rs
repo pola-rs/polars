@@ -1,6 +1,5 @@
 use crate::async_primitives::connector;
 use crate::async_primitives::morsel_linearizer::{MorselInserter, MorselLinearizer};
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::Morsel;
 
 /// This is just a generic enum that can receive from either single or multiple senders.
@@ -12,8 +11,8 @@ pub enum FileReaderOutputRecv {
 /// Wraps either a connector or a linearizer inserter. Also attaches / waits for wait tokens
 /// automatically.
 pub enum FileReaderOutputSend {
-    Connector(connector::Sender<Morsel>, WaitGroup),
-    Linearized(MorselInserter, WaitGroup),
+    Connector(connector::Sender<Morsel>),
+    Linearized(MorselInserter),
 }
 
 impl FileReaderOutputRecv {
@@ -30,7 +29,7 @@ impl FileReaderOutputSend {
     pub fn new_serial() -> (FileReaderOutputSend, FileReaderOutputRecv) {
         let (tx, rx) = connector::connector();
         (
-            FileReaderOutputSend::Connector(tx, WaitGroup::default()),
+            FileReaderOutputSend::Connector(tx),
             FileReaderOutputRecv::Connector(rx),
         )
     }
@@ -40,29 +39,21 @@ impl FileReaderOutputSend {
         (
             inserters
                 .into_iter()
-                .map(|tx| FileReaderOutputSend::Linearized(tx, WaitGroup::default()))
+                .map(FileReaderOutputSend::Linearized)
                 .collect(),
             FileReaderOutputRecv::Linearized(lin),
         )
     }
 
-    pub async fn send_morsel(&mut self, mut morsel: Morsel) -> Result<(), Morsel> {
+    pub async fn send_morsel(&mut self, morsel: Morsel) -> Result<(), Morsel> {
         use FileReaderOutputSend::*;
 
         // We order to wait first, then send. This is intended to allow the producer create the
         // next morsel while waiting for the current one to be consumed.
 
         match self {
-            Connector(tx, wait_group) => {
-                wait_group.wait().await;
-                morsel.set_consume_token(wait_group.token());
-                tx.send(morsel).await
-            },
-            Linearized(tx, wait_group) => {
-                wait_group.wait().await;
-                morsel.set_consume_token(wait_group.token());
-                tx.insert(morsel).await
-            },
+            Connector(tx) => tx.send(morsel).await,
+            Linearized(tx) => tx.insert(morsel).await,
         }
     }
 }
