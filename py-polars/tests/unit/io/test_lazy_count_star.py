@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -17,14 +17,22 @@ from polars.testing import assert_frame_equal
 @pytest.mark.parametrize(
     ("path", "n_rows"), [("foods1.csv", 27), ("foods*.csv", 27 * 5)]
 )
-def test_count_csv(io_files_path: Path, path: str, n_rows: int) -> None:
+def test_count_csv(
+    io_files_path: Path,
+    path: str,
+    n_rows: int,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     lf = pl.scan_csv(io_files_path / path).select(pl.len())
 
     expected = pl.DataFrame(pl.Series("len", [n_rows], dtype=pl.UInt32))
 
-    # Check if we are using our fast count star
-    assert "FAST COUNT" in lf.explain()
     assert_frame_equal(lf.collect(), expected)
+    # Check if we are using our fast count star
+    assert "FAST COUNT" in lf.explain() or "project: 0" in capfd.readouterr().err
 
 
 def test_count_csv_comment_char() -> None:
@@ -46,7 +54,11 @@ a,b
 
 
 @pytest.mark.write_disk
-def test_commented_csv() -> None:
+def test_commented_csv(
+    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     with NamedTemporaryFile() as csv_a:
         csv_a.write(b"A,B\nGr1,A\nGr1,B\n# comment line\n")
         csv_a.seek(0)
@@ -54,47 +66,70 @@ def test_commented_csv() -> None:
         expected = pl.DataFrame(pl.Series("len", [2], dtype=pl.UInt32))
         lf = pl.scan_csv(csv_a.name, comment_prefix="#").select(pl.len())
 
-        assert "FAST COUNT" in lf.explain()
         assert_frame_equal(lf.collect(), expected)
+        assert "FAST COUNT" in lf.explain() or "project: 0" in capfd.readouterr().err
 
 
 @pytest.mark.parametrize(
     ("pattern", "n_rows"), [("small.parquet", 4), ("foods*.parquet", 54)]
 )
-def test_count_parquet(io_files_path: Path, pattern: str, n_rows: int) -> None:
+def test_count_parquet(
+    io_files_path: Path,
+    pattern: str,
+    n_rows: int,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     lf = pl.scan_parquet(io_files_path / pattern).select(pl.len())
 
     expected = pl.DataFrame(pl.Series("len", [n_rows], dtype=pl.UInt32))
 
     # Check if we are using our fast count star
-    assert "FAST COUNT" in lf.explain()
     assert_frame_equal(lf.collect(), expected)
+    assert "FAST COUNT" in lf.explain() or "project: 0" in capfd.readouterr().err
 
 
 @pytest.mark.parametrize(
     ("path", "n_rows"), [("foods1.ipc", 27), ("foods*.ipc", 27 * 2)]
 )
-def test_count_ipc(io_files_path: Path, path: str, n_rows: int) -> None:
+def test_count_ipc(
+    io_files_path: Path,
+    path: str,
+    n_rows: int,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     lf = pl.scan_ipc(io_files_path / path).select(pl.len())
 
     expected = pl.DataFrame(pl.Series("len", [n_rows], dtype=pl.UInt32))
 
     # Check if we are using our fast count star
-    assert "FAST COUNT" in lf.explain()
     assert_frame_equal(lf.collect(), expected)
+    assert "FAST COUNT" in lf.explain() or "project: 0" in capfd.readouterr().err
 
 
 @pytest.mark.parametrize(
     ("path", "n_rows"), [("foods1.ndjson", 27), ("foods*.ndjson", 27 * 2)]
 )
-def test_count_ndjson(io_files_path: Path, path: str, n_rows: int) -> None:
+def test_count_ndjson(
+    io_files_path: Path,
+    path: str,
+    n_rows: int,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
     lf = pl.scan_ndjson(io_files_path / path).select(pl.len())
 
     expected = pl.DataFrame(pl.Series("len", [n_rows], dtype=pl.UInt32))
 
     # Check if we are using our fast count star
-    assert "FAST COUNT" in lf.explain()
     assert_frame_equal(lf.collect(), expected)
+    assert "FAST COUNT" in lf.explain() or "project: 0" in capfd.readouterr().err
 
 
 def test_count_compressed_csv_18057(io_files_path: Path) -> None:
