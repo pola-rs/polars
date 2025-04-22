@@ -442,8 +442,12 @@ impl ProjectionPushDown {
                 // TODO: Remove
                 let in_new_streaming_engine = true;
 
-                if self.is_count_star && !in_new_streaming_engine {
-                    ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
+                if self.is_count_star {
+                    if in_new_streaming_engine {
+                        unified_scan_args.projection = Some(Arc::from([]));
+                    } else {
+                        ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
+                    }
                 }
 
                 let do_optimization = match &*scan_type {
@@ -475,7 +479,7 @@ impl ProjectionPushDown {
                                 FileScan::Ipc { .. } => {},
                                 // All nodes in new-streaming support projecting empty morsels with the correct height
                                 // from the file.
-                                _ if self.in_new_streaming_engine => {},
+                                _ if in_new_streaming_engine => {},
                                 // Other scan types do not yet support projection of e.g. only the row index or file path
                                 // column - ensure at least 1 column is projected from the file.
                                 _ => {
@@ -519,7 +523,7 @@ impl ProjectionPushDown {
                     };
                 }
 
-                if self.is_count_star && self.in_new_streaming_engine {
+                if self.is_count_star && in_new_streaming_engine {
                     output_schema = Some(output_schema.unwrap_or_default());
                 }
 
