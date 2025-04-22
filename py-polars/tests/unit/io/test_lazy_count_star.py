@@ -39,7 +39,7 @@ def assert_fast_count(
     # new-streaming 0-width scan projections. This should be printed by all
     # sources in new-streaming in verbose mode.
     assert "FAST COUNT" in lf.explain() or ("project: 0" in capture)
-    # Must not project any columns from the files.
+    # Ensure no columns are projected from the file
     assert not [x for x in capture if x != "project: 0"]
 
     assert result.schema == {expected_name: pl.get_index_type()}
