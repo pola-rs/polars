@@ -860,6 +860,7 @@ def test_list_get_literal_broadcast_21463() -> None:
     actual = df.with_columns(b=pl.lit([1, 2, 3, 4]).list.get(pl.col("a")))
     assert expected.equals(actual)
 
+
 def test_sort() -> None:
     def tc(a: list[Any], b: list[Any]) -> None:
         a_s = pl.Series("l", a, pl.List(pl.Int64))
