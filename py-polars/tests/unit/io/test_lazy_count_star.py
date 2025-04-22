@@ -36,7 +36,8 @@ def assert_fast_count(
     capture = set(re.findall(r"project: \d+", out_err))
 
     # If we don't see FAST COUNT, we must see `project: 0` which indicates
-    # new-streaming 0-width scan projections.
+    # new-streaming 0-width scan projections. This should be printed by all
+    # sources in new-streaming in verbose mode.
     assert "FAST COUNT" in lf.explain() or ("project: 0" in capture)
     # Must not project any columns from the files.
     assert not [x for x in capture if x != "project: 0"]
@@ -59,6 +60,7 @@ def assert_fast_count(
     lf.collect()
     capture = capfd.readouterr().err
     assert "FAST COUNT" in lf.explain()
+    assert "project: " not in capture
 
 
 @pytest.mark.parametrize(
