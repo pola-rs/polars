@@ -24,8 +24,8 @@ def assert_fast_count(
     expected_count: int,
     *,
     expected_name: str = "len",
-    monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -43,9 +43,7 @@ def assert_fast_count(
         assert project_logs == {"project: 0"}
 
     assert result.schema == {expected_name: pl.get_index_type()}
-
-    if expected_count is not None:
-        assert result.item() == expected_count
+    assert result.item() == expected_count
 
     # Test effect of the environment variable
     monkeypatch.setenv("POLARS_FAST_FILE_COUNT_DISPATCH", "0")
@@ -79,11 +77,9 @@ def test_count_csv(
     capfd: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
     lf = pl.scan_csv(io_files_path / path).select(pl.len())
 
-    assert_fast_count(lf, n_rows, monkeypatch=monkeypatch, capfd=capfd)
+    assert_fast_count(lf, n_rows, capfd=capfd, monkeypatch=monkeypatch)
 
 
 def test_count_csv_comment_char(
@@ -104,23 +100,20 @@ a,b
         q.collect(), pl.DataFrame({"a": [1, None, 3], "b": [2, None, 4]})
     )
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
     q = q.select(pl.len())
-    assert_fast_count(q, 3, monkeypatch=monkeypatch, capfd=capfd)
+    assert_fast_count(q, 3, capfd=capfd, monkeypatch=monkeypatch)
 
 
 @pytest.mark.write_disk
 def test_commented_csv(
     capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
     with NamedTemporaryFile() as csv_a:
         csv_a.write(b"A,B\nGr1,A\nGr1,B\n# comment line\n")
         csv_a.seek(0)
 
         lf = pl.scan_csv(csv_a.name, comment_prefix="#").select(pl.len())
-        assert_fast_count(lf, 2, monkeypatch=monkeypatch, capfd=capfd)
+        assert_fast_count(lf, 2, capfd=capfd, monkeypatch=monkeypatch)
 
 
 @pytest.mark.parametrize(
@@ -133,10 +126,8 @@ def test_count_parquet(
     capfd: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
     lf = pl.scan_parquet(io_files_path / pattern).select(pl.len())
-    assert_fast_count(lf, n_rows, monkeypatch=monkeypatch, capfd=capfd)
+    assert_fast_count(lf, n_rows, capfd=capfd, monkeypatch=monkeypatch)
 
 
 @pytest.mark.parametrize(
@@ -149,10 +140,8 @@ def test_count_ipc(
     capfd: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
     lf = pl.scan_ipc(io_files_path / path).select(pl.len())
-    assert_fast_count(lf, n_rows, monkeypatch=monkeypatch, capfd=capfd)
+    assert_fast_count(lf, n_rows, capfd=capfd, monkeypatch=monkeypatch)
 
 
 @pytest.mark.parametrize(
@@ -165,10 +154,8 @@ def test_count_ndjson(
     capfd: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
     lf = pl.scan_ndjson(io_files_path / path).select(pl.len())
-    assert_fast_count(lf, n_rows, monkeypatch=monkeypatch, capfd=capfd)
+    assert_fast_count(lf, n_rows, capfd=capfd, monkeypatch=monkeypatch)
 
 
 def test_count_compressed_csv_18057(
@@ -176,8 +163,6 @@ def test_count_compressed_csv_18057(
     capfd: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
     csv_file = io_files_path / "gzipped.csv.gz"
 
     expected = pl.DataFrame(
@@ -191,14 +176,12 @@ def test_count_compressed_csv_18057(
     # as the file has an empty line at the beginning.
 
     q = lf.select(pl.len())
-    assert_fast_count(q, 3, monkeypatch=monkeypatch, capfd=capfd)
+    assert_fast_count(q, 3, capfd=capfd, monkeypatch=monkeypatch)
 
 
 def test_count_compressed_ndjson(
     tmp_path: Path, capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
     tmp_path.mkdir(exist_ok=True)
     path = tmp_path / "data.jsonl.gz"
     df = pl.DataFrame({"x": range(5)})
@@ -207,4 +190,29 @@ def test_count_compressed_ndjson(
         df.write_ndjson(f)
 
     lf = pl.scan_ndjson(path).select(pl.len())
-    assert_fast_count(lf, 5, monkeypatch=monkeypatch, capfd=capfd)
+    assert_fast_count(lf, 5, capfd=capfd, monkeypatch=monkeypatch)
+
+
+def test_count_projection_pd(
+    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    df = pl.DataFrame({"a": range(3), "b": range(3)})
+
+    q = (
+        pl.scan_csv(df.write_csv().encode())
+        .with_row_index()
+        .select(pl.all())
+        .select(pl.len())
+    )
+
+    # Manual assert, this is not converted to FAST COUNT but we will have
+    # 0-width projections.
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+    project_logs = set(re.findall(r"project: \d+", capture))
+
+    assert project_logs == {"project: 0"}
+    assert result.item() == 3
