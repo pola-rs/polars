@@ -166,7 +166,14 @@ fn visit_logical_plan_for_scan_paths(
             unified_scan_args,
             ..
         } => {
-            let use_fast_file_count = use_fast_file_count.unwrap_or(true);
+            // New-streaming is generally on par for all except CSV (see https://github.com/pola-rs/polars/pull/22363).
+            // In the future we can potentially remove the dedicated count codepaths.
+
+            let use_fast_file_count = use_fast_file_count.unwrap_or(match scan_type.as_ref() {
+                #[cfg(feature = "csv")]
+                FileScan::Csv { .. } => true,
+                _ => false,
+            });
 
             if use_fast_file_count {
                 Some(CountStarExpr {
