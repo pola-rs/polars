@@ -36,8 +36,10 @@ def assert_fast_count(
 
     # Logs current differ depending on file type / implementation dispatch
     if "FAST COUNT" in lf.explain():
+        # * Should be no projections when fast count is enabled
         assert not project_logs
     else:
+        # * Otherwise should have at least one `project: 0` (there is 1 per file).
         assert project_logs == {"project: 0"}
 
     assert result.schema == {expected_name: pl.get_index_type()}
