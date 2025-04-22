@@ -33,18 +33,32 @@ def assert_fast_count(
     result = lf.collect()
 
     out_err = capfd.readouterr().err
-    verbose_logs = set(re.findall(r"project: \d+", out_err))
+    capture = set(re.findall(r"project: \d+", out_err))
 
     # If we don't see FAST COUNT, we must see `project: 0` which indicates
     # new-streaming 0-width scan projections.
-    assert "FAST COUNT" in lf.explain() or ("project: 0" in verbose_logs)
+    assert "FAST COUNT" in lf.explain() or ("project: 0" in capture)
     # Must not project any columns from the files.
-    assert not [x for x in verbose_logs if x != "project: 0"]
+    assert not [x for x in capture if x != "project: 0"]
 
     assert result.schema == {expected_name: pl.get_index_type()}
 
     if expected_count is not None:
         assert result.item() == expected_count
+
+    # Test effect of the environment variable
+    monkeypatch.setenv("POLARS_FAST_FILE_COUNT_DISPATCH", "0")
+    capfd.readouterr()
+    lf.collect()
+    capture = capfd.readouterr().err
+    assert "FAST COUNT" not in lf.explain()
+    assert "project: 0" in capture
+
+    monkeypatch.setenv("POLARS_FAST_FILE_COUNT_DISPATCH", "1")
+    capfd.readouterr()
+    lf.collect()
+    capture = capfd.readouterr().err
+    assert "FAST COUNT" in lf.explain()
 
 
 @pytest.mark.parametrize(
