@@ -27,20 +27,21 @@ def assert_fast_count(
     monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    capfd.readouterr()  # reset stderr
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
+    capfd.readouterr()  # resets stderr
     result = lf.collect()
+    capture = capfd.readouterr().err
+    project_logs = set(re.findall(r"project: \d+", capture))
 
-    out_err = capfd.readouterr().err
-    capture = set(re.findall(r"project: \d+", out_err))
-
+    # Logs current differ depending on file type / implementation dispatch
+    #
     # If we don't see FAST COUNT, we must see `project: 0` which indicates
     # new-streaming 0-width scan projections. This should be printed by all
     # sources in new-streaming in verbose mode.
-    assert "FAST COUNT" in lf.explain() or ("project: 0" in capture)
+    assert "FAST COUNT" in lf.explain() or ("project: 0" in project_logs)
     # Ensure no columns are projected from the file
-    assert not [x for x in capture if x != "project: 0"]
+    assert project_logs == {"project: 0"} or not project_logs
 
     assert result.schema == {expected_name: pl.get_index_type()}
 
@@ -49,18 +50,24 @@ def assert_fast_count(
 
     # Test effect of the environment variable
     monkeypatch.setenv("POLARS_FAST_FILE_COUNT_DISPATCH", "0")
+
     capfd.readouterr()
     lf.collect()
     capture = capfd.readouterr().err
+    project_logs = set(re.findall(r"project: \d+", capture))
+
     assert "FAST COUNT" not in lf.explain()
-    assert "project: 0" in capture
+    assert project_logs == {"project: 0"}
 
     monkeypatch.setenv("POLARS_FAST_FILE_COUNT_DISPATCH", "1")
+
     capfd.readouterr()
     lf.collect()
     capture = capfd.readouterr().err
+    project_logs = set(re.findall(r"project: \d+", capture))
+
     assert "FAST COUNT" in lf.explain()
-    assert "project: " not in capture
+    assert not project_logs
 
 
 @pytest.mark.parametrize(
