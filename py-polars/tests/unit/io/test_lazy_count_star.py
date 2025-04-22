@@ -1,17 +1,50 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars.lazyframe.frame import LazyFrame
+
 import gzip
+import re
 from tempfile import NamedTemporaryFile
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+
+# Parameters
+# * lf: COUNT(*) query
+def assert_fast_count(
+    lf: LazyFrame,
+    expected_count: int,
+    *,
+    expected_name: str = "len",
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    capfd.readouterr()  # reset stderr
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    result = lf.collect()
+
+    out_err = capfd.readouterr().err
+    verbose_logs = set(re.findall(r"project: \d+", out_err))
+
+    # If we don't see FAST COUNT, we must see `project: 0` which indicates
+    # new-streaming 0-width scan projections.
+    assert "FAST COUNT" in lf.explain() or ("project: 0" in verbose_logs)
+    # Must not project any columns from the files.
+    assert not [x for x in verbose_logs if x != "project: 0"]
+
+    assert result.schema == {expected_name: pl.get_index_type()}
+
+    if expected_count is not None:
+        assert result.item() == expected_count
 
 
 @pytest.mark.parametrize(
@@ -28,14 +61,12 @@ def test_count_csv(
 
     lf = pl.scan_csv(io_files_path / path).select(pl.len())
 
-    expected = pl.DataFrame(pl.Series("len", [n_rows], dtype=pl.UInt32))
-
-    assert_frame_equal(lf.collect(), expected)
-    # Check if we are using our fast count star
-    assert "FAST COUNT" in lf.explain() or "project: 0" in capfd.readouterr().err
+    assert_fast_count(lf, n_rows, monkeypatch=monkeypatch, capfd=capfd)
 
 
-def test_count_csv_comment_char() -> None:
+def test_count_csv_comment_char(
+    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     q = pl.scan_csv(
         b"""
 a,b
@@ -50,7 +81,10 @@ a,b
     assert_frame_equal(
         q.collect(), pl.DataFrame({"a": [1, None, 3], "b": [2, None, 4]})
     )
-    assert q.select(pl.len()).collect().item() == 3
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    q = q.select(pl.len())
+    assert_fast_count(q, 3, monkeypatch=monkeypatch, capfd=capfd)
 
 
 @pytest.mark.write_disk
@@ -63,11 +97,8 @@ def test_commented_csv(
         csv_a.write(b"A,B\nGr1,A\nGr1,B\n# comment line\n")
         csv_a.seek(0)
 
-        expected = pl.DataFrame(pl.Series("len", [2], dtype=pl.UInt32))
         lf = pl.scan_csv(csv_a.name, comment_prefix="#").select(pl.len())
-
-        assert_frame_equal(lf.collect(), expected)
-        assert "FAST COUNT" in lf.explain() or "project: 0" in capfd.readouterr().err
+        assert_fast_count(lf, 2, monkeypatch=monkeypatch, capfd=capfd)
 
 
 @pytest.mark.parametrize(
@@ -83,12 +114,7 @@ def test_count_parquet(
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
     lf = pl.scan_parquet(io_files_path / pattern).select(pl.len())
-
-    expected = pl.DataFrame(pl.Series("len", [n_rows], dtype=pl.UInt32))
-
-    # Check if we are using our fast count star
-    assert_frame_equal(lf.collect(), expected)
-    assert "FAST COUNT" in lf.explain() or "project: 0" in capfd.readouterr().err
+    assert_fast_count(lf, n_rows, monkeypatch=monkeypatch, capfd=capfd)
 
 
 @pytest.mark.parametrize(
@@ -104,12 +130,7 @@ def test_count_ipc(
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
     lf = pl.scan_ipc(io_files_path / path).select(pl.len())
-
-    expected = pl.DataFrame(pl.Series("len", [n_rows], dtype=pl.UInt32))
-
-    # Check if we are using our fast count star
-    assert_frame_equal(lf.collect(), expected)
-    assert "FAST COUNT" in lf.explain() or "project: 0" in capfd.readouterr().err
+    assert_fast_count(lf, n_rows, monkeypatch=monkeypatch, capfd=capfd)
 
 
 @pytest.mark.parametrize(
@@ -123,16 +144,18 @@ def test_count_ndjson(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     lf = pl.scan_ndjson(io_files_path / path).select(pl.len())
-
-    expected = pl.DataFrame(pl.Series("len", [n_rows], dtype=pl.UInt32))
-
-    # Check if we are using our fast count star
-    assert_frame_equal(lf.collect(), expected)
-    assert "FAST COUNT" in lf.explain() or "project: 0" in capfd.readouterr().err
+    assert_fast_count(lf, n_rows, monkeypatch=monkeypatch, capfd=capfd)
 
 
-def test_count_compressed_csv_18057(io_files_path: Path) -> None:
+def test_count_compressed_csv_18057(
+    io_files_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     csv_file = io_files_path / "gzipped.csv.gz"
 
     expected = pl.DataFrame(
@@ -144,10 +167,16 @@ def test_count_compressed_csv_18057(io_files_path: Path) -> None:
     # This also tests:
     # #18070 "CSV count_rows does not skip empty lines at file start"
     # as the file has an empty line at the beginning.
-    assert lf.select(pl.len()).collect().item() == 3
+
+    q = lf.select(pl.len())
+    assert_fast_count(q, 3, monkeypatch=monkeypatch, capfd=capfd)
 
 
-def test_count_compressed_ndjson(tmp_path: Path) -> None:
+def test_count_compressed_ndjson(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     tmp_path.mkdir(exist_ok=True)
     path = tmp_path / "data.jsonl.gz"
     df = pl.DataFrame({"x": range(5)})
@@ -155,5 +184,5 @@ def test_count_compressed_ndjson(tmp_path: Path) -> None:
     with gzip.open(path, "wb") as f:
         df.write_ndjson(f)
 
-    lf = pl.scan_ndjson(path)
-    assert lf.select(pl.len()).collect().item() == 5
+    lf = pl.scan_ndjson(path).select(pl.len())
+    assert_fast_count(lf, 5, monkeypatch=monkeypatch, capfd=capfd)
