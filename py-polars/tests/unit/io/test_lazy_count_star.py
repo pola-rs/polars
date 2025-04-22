@@ -35,13 +35,10 @@ def assert_fast_count(
     project_logs = set(re.findall(r"project: \d+", capture))
 
     # Logs current differ depending on file type / implementation dispatch
-    #
-    # If we don't see FAST COUNT, we must see `project: 0` which indicates
-    # new-streaming 0-width scan projections. This should be printed by all
-    # sources in new-streaming in verbose mode.
-    assert "FAST COUNT" in lf.explain() or ("project: 0" in project_logs)
-    # Ensure no columns are projected from the file
-    assert project_logs == {"project: 0"} or not project_logs
+    if "FAST COUNT" in lf.explain():
+        assert not project_logs
+    else:
+        assert project_logs == {"project: 0"}
 
     assert result.schema == {expected_name: pl.get_index_type()}
 
