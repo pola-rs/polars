@@ -531,6 +531,11 @@ impl PyLazyFrame {
         py.enter_polars(|| self.ldf.to_dot(optimized))
     }
 
+    fn to_mermaid(&self, optimized: bool) -> PyResult<String> {
+        let result = self.ldf.to_mermaid(optimized).map_err(PyPolarsErr::from)?;
+        Ok(result)
+    }
+
     fn optimization_toggle(
         &self,
         type_coercion: bool,

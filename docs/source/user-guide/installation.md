@@ -181,6 +181,7 @@ The opt-in features are:
 - `lazy` - Lazy API:
     - `regex` - Use regexes in column selection.
     - `dot_diagram` - Create dot diagrams from lazy logical plans.
+    - `mermaid_diagram` - Create mermaid diagrams from lazy logical plans.
 - `sql` - Pass SQL queries to Polars.
 - `streaming` - Be able to process datasets that are larger than RAM.
 - `random` - Generate arrays with randomly sampled values

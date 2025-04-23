@@ -3298,6 +3298,7 @@ dependencies = [
  "polars-utils",
  "pyo3",
  "rayon",
+ "regex",
  "serde_json",
  "tokio",
  "version_check",
