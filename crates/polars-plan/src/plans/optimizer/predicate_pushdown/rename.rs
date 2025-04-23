@@ -7,7 +7,7 @@ pub(super) fn process_rename(
     expr_arena: &mut Arena<AExpr>,
     existing: &[PlSmallStr],
     new: &[PlSmallStr],
-) -> PolarsResult<Vec<ExprIR>> {
+) {
     let rename_map: PlHashMap<PlSmallStr, PlSmallStr> =
         new.iter().cloned().zip(existing.iter().cloned()).collect();
 
@@ -16,7 +16,4 @@ pub(super) fn process_rename(
             map_column_references(expr_ir, expr_arena, &rename_map);
         }
     }
-
-    // TODO: Remove
-    Ok(vec![])
 }

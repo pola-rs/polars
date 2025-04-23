@@ -479,21 +479,15 @@ impl PredicatePushDown<'_> {
                 if function.allow_predicate_pd() {
                     match function {
                         FunctionIR::Rename { existing, new, .. } => {
-                            let local_predicates =
-                                process_rename(&mut acc_predicates, expr_arena, existing, new)?;
-                            let lp = self.pushdown_and_continue(
+                            process_rename(&mut acc_predicates, expr_arena, existing, new);
+
+                            self.pushdown_and_continue(
                                 lp,
                                 acc_predicates,
                                 lp_arena,
                                 expr_arena,
                                 false,
-                            )?;
-                            Ok(self.optional_apply_predicate(
-                                lp,
-                                local_predicates,
-                                lp_arena,
-                                expr_arena,
-                            ))
+                            )
                         },
                         FunctionIR::Explode { columns, .. } => {
                             let condition = |name: &PlSmallStr| columns.iter().any(|s| s == name);
