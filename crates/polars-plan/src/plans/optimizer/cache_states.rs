@@ -253,7 +253,7 @@ pub(super) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
-        let mut proj_pd = ProjectionPushDown::new(new_streaming);
+        let mut proj_pd = ProjectionPushDown::new();
         let mut pred_pd = PredicatePushDown::new(expr_eval, new_streaming).block_at_cache(false);
         for (_cache_id, v) in cache_schema_and_children {
             // # CHECK IF WE NEED TO REMOVE CACHES
