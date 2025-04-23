@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 
 use super::keys::*;
+use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
 use crate::prelude::*;
 fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
     arena.add(AExpr::BinaryExpr {
@@ -380,5 +381,80 @@ pub fn pushdown_eligibility(
             Ok((PushdownEligibility::NoPushdown, alias_to_col_map))
         },
         _ => Ok((PushdownEligibility::Partial { to_local }, alias_to_col_map)),
+    }
+}
+
+/// Maps column references within an expression. Used to handle column renaming when pushing
+/// predicates.
+pub(super) fn map_column_references(
+    expr: &mut ExprIR,
+    expr_arena: &mut Arena<AExpr>,
+    rename_map: &PlHashMap<PlSmallStr, PlSmallStr>,
+) {
+    if rename_map.is_empty() {
+        return;
+    }
+
+    let node = AexprNode::new(expr.node())
+        .rewrite(
+            &mut MapColumnReferences {
+                rename_map,
+                column_nodes: PlHashMap::with_capacity(rename_map.len()),
+            },
+            expr_arena,
+        )
+        .unwrap()
+        .node();
+
+    expr.set_node(node);
+
+    struct MapColumnReferences<'a> {
+        rename_map: &'a PlHashMap<PlSmallStr, PlSmallStr>,
+        column_nodes: PlHashMap<&'a str, Node>,
+    }
+
+    impl RewritingVisitor for MapColumnReferences<'_> {
+        type Node = AexprNode;
+        type Arena = Arena<AExpr>;
+
+        fn pre_visit(
+            &mut self,
+            node: &Self::Node,
+            arena: &mut Self::Arena,
+        ) -> polars_core::prelude::PolarsResult<crate::prelude::visitor::RewriteRecursion> {
+            let AExpr::Column(colname) = arena.get(node.node()) else {
+                return Ok(RewriteRecursion::NoMutateAndContinue);
+            };
+
+            if !self.rename_map.contains_key(colname) {
+                return Ok(RewriteRecursion::NoMutateAndContinue);
+            }
+
+            Ok(RewriteRecursion::MutateAndContinue)
+        }
+
+        fn mutate(
+            &mut self,
+            node: Self::Node,
+            arena: &mut Self::Arena,
+        ) -> polars_core::prelude::PolarsResult<Self::Node> {
+            let AExpr::Column(colname) = arena.get(node.node()) else {
+                unreachable!();
+            };
+
+            let new_colname = self.rename_map.get(colname).unwrap();
+
+            if !self.column_nodes.contains_key(new_colname.as_str()) {
+                self.column_nodes.insert(
+                    new_colname.as_str(),
+                    arena.add(AExpr::Column(new_colname.clone())),
+                );
+            }
+
+            // Safety: Checked in pre_visit()
+            Ok(AexprNode::new(
+                *self.column_nodes.get(new_colname.as_str()).unwrap(),
+            ))
+        }
     }
 }
