@@ -13,22 +13,6 @@ pub trait ChunkedSet<T: Copy> {
     where
         V: IntoIterator<Item = Option<T>>;
 }
-fn check_sorted(idx: &[IdxSize]) -> PolarsResult<()> {
-    if idx.is_empty() {
-        return Ok(());
-    }
-    let mut sorted = true;
-    let mut previous = idx[0];
-    for &i in &idx[1..] {
-        if i < previous {
-            // we will not break here as that prevents SIMD
-            sorted = false;
-        }
-        previous = i;
-    }
-    polars_ensure!(sorted, ComputeError: "set indices must be sorted");
-    Ok(())
-}
 
 trait PolarsOpsNumericType: PolarsNumericType {}
 
@@ -145,7 +129,6 @@ impl<'a> ChunkedSet<&'a str> for &'a StringChunked {
         V: IntoIterator<Item = Option<&'a str>>,
     {
         check_bounds(idx, self.len() as IdxSize)?;
-        check_sorted(idx)?;
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = StringChunkedBuilder::new(self.name().clone(), self.len());
 
@@ -174,7 +157,6 @@ impl ChunkedSet<bool> for &BooleanChunked {
         V: IntoIterator<Item = Option<bool>>,
     {
         check_bounds(idx, self.len() as IdxSize)?;
-        check_sorted(idx)?;
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = BooleanChunkedBuilder::new(self.name().clone(), self.len());
 
