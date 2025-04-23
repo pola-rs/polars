@@ -898,7 +898,7 @@ def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> No
     [
         ("calamine", pl.List(pl.Int8)),
         ("openpyxl", pl.List(pl.UInt16)),
-        ("xlsx2csv", pl.Array(pl.Int32, 2)),
+        ("xlsx2csv", pl.Array(pl.Int32, 3)),
     ],
 )
 def test_excel_write_compound_types(
@@ -906,8 +906,8 @@ def test_excel_write_compound_types(
     list_dtype: PolarsDataType,
 ) -> None:
     df = pl.DataFrame(
-        data={"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]},
-        schema_overrides={"x": pl.Array(pl.Int32, 2)},
+        data={"x": [None, [1, 2, 3], [4, 5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]},
+        schema_overrides={"x": pl.Array(pl.Int32, 3)},
     ).select("x", pl.struct(["y", "z"]))
 
     xls = BytesIO()
@@ -929,9 +929,9 @@ def test_excel_write_compound_types(
 
         # expect string conversion (only scalar values are supported)
         assert xldf.rows() == [
-            ("[1, 2]", "{'y': 'a', 'z': 9}", "in-mem"),
-            ("[3, 4]", "{'y': 'b', 'z': 8}", "in-mem"),
-            ("[5, 6]", "{'y': 'c', 'z': 7}", "in-mem"),
+            (None, "{'y': 'a', 'z': 9}", "in-mem"),
+            ("[1, 2, 3]", "{'y': 'b', 'z': 8}", "in-mem"),
+            ("[4, 5, 6]", "{'y': 'c', 'z': 7}", "in-mem"),
         ]
 
 
