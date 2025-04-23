@@ -132,7 +132,11 @@ impl<'a> ChunkedSet<&'a str> for &'a StringChunked {
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = StringChunkedBuilder::new(self.name().clone(), self.len());
 
-        for (current_idx, current_value) in idx.iter().zip(values) {
+        let mut idx_values_iter: Vec<(_, _)> = idx.iter().zip(values).collect();
+        // Sort by index's elements
+        idx_values_iter.sort_by_key(|&(idx_item, _)| idx_item);
+
+        for (current_idx, current_value) in idx_values_iter {
             for (cnt_idx, opt_val_self) in &mut ca_iter {
                 if cnt_idx == *current_idx as usize {
                     builder.append_option(current_value);
@@ -160,7 +164,11 @@ impl ChunkedSet<bool> for &BooleanChunked {
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = BooleanChunkedBuilder::new(self.name().clone(), self.len());
 
-        for (current_idx, current_value) in idx.iter().zip(values) {
+        let mut idx_values_iter: Vec<(_, _)> = idx.iter().zip(values).collect();
+        // Sort by index's elements
+        idx_values_iter.sort_by_key(|&(idx_item, _)| idx_item);
+
+        for (current_idx, current_value) in idx_values_iter {
             for (cnt_idx, opt_val_self) in &mut ca_iter {
                 if cnt_idx == *current_idx as usize {
                     builder.append_option(current_value);
