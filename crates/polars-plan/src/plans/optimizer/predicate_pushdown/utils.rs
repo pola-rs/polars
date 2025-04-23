@@ -386,7 +386,7 @@ pub fn pushdown_eligibility(
 
 /// Maps column references within an expression. Used to handle column renaming when pushing
 /// predicates.
-pub(super) fn map_column_references<'a>(
+pub(super) fn map_column_references(
     expr: &mut ExprIR,
     expr_arena: &mut Arena<AExpr>,
     rename_map: &PlHashMap<PlSmallStr, PlSmallStr>,
@@ -453,7 +453,7 @@ pub(super) fn map_column_references<'a>(
 
             // Safety: Checked in pre_visit()
             Ok(AexprNode::new(
-                self.column_nodes.get(new_colname.as_str()).unwrap().clone(),
+                *self.column_nodes.get(new_colname.as_str()).unwrap(),
             ))
         }
     }
