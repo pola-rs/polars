@@ -3,7 +3,6 @@ use std::any::Any;
 use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
 use polars_utils::IdxSize;
-use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 
 use crate::hash_keys::HashKeys;
@@ -21,10 +20,6 @@ pub trait Grouper: Any + Send + Sync {
     /// Returns the number of groups in this Grouper.
     fn num_groups(&self) -> IdxSize;
 
-    /// Inserts the given keys into this Grouper, extending groups_idxs with
-    /// the group index of keys[i].
-    fn insert_keys(&mut self, keys: HashKeys, group_idxs: &mut Vec<IdxSize>);
-
     /// Inserts the given subset of keys into this Grouper. If groups_idxs is
     /// passed it is extended such with the group index of keys[subset[i]].
     ///
@@ -38,10 +33,6 @@ pub trait Grouper: Any + Send + Sync {
     );
 
     /// Adds the given Grouper into this one, mutating groups_idxs such that
-    /// the ith group of other now has group index group_idxs[i] in self.
-    fn combine(&mut self, other: &dyn Grouper, group_idxs: &mut Vec<IdxSize>);
-
-    /// Adds the given Grouper into this one, mutating groups_idxs such that
     /// the group subset[i] of other now has group index group_idxs[i] in self.
     ///
     /// # Safety
@@ -51,18 +42,6 @@ pub trait Grouper: Any + Send + Sync {
         other: &dyn Grouper,
         subset: &[IdxSize],
         group_idxs: &mut Vec<IdxSize>,
-    );
-
-    /// Generate partition indices.
-    ///
-    /// After this function partitions_idxs[i] will contain the indices for
-    /// partition i, and sketches[i] will contain a cardinality sketch for
-    /// partition i.
-    fn gen_partition_idxs(
-        &self,
-        partitioner: &HashPartitioner,
-        partition_idxs: &mut [Vec<IdxSize>],
-        sketches: &mut [CardinalitySketch],
     );
 
     /// Returns the keys in this Grouper in group order, that is the key for
