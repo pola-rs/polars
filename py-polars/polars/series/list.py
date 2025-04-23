@@ -915,11 +915,10 @@ class ListNameSpace:
             s.to_frame()
             .select(
                 F.col(s.name).list.to_struct(
-                    # note: in eager mode, 'upper_bound' is always zero, as (unlike
+                    # note: in eager mode, 'upper_bound' is always None, as (unlike
                     # in lazy mode) there is no need to determine/track the schema.
                     n_field_strategy,
                     fields,
-                    upper_bound=0,
                     _eager=True,
                 )
             )
