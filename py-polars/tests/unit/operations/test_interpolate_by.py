@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -162,6 +163,7 @@ def test_interpolate_by_trailing_nulls(dataset: str) -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.skipif(sys.platform == "darwin", reason="numpy interp float precision")
 @given(data=st.data(), x_dtype=st.sampled_from([pl.Date, pl.Float64]))
 def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None:
     if x_dtype == pl.Float64:
