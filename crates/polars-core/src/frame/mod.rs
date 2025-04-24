@@ -1168,6 +1168,34 @@ impl DataFrame {
         Ok(self)
     }
 
+    pub fn vstack_mut_owned(&mut self, other: DataFrame) -> PolarsResult<&mut Self> {
+        if self.width() != other.width() {
+            polars_ensure!(
+                self.width() == 0,
+                ShapeMismatch:
+                "unable to append to a DataFrame of width {} with a DataFrame of width {}",
+                self.width(), other.width(),
+            );
+            self.columns = other.columns;
+            self.height = other.height;
+            return Ok(self);
+        }
+
+        self.columns
+            .iter_mut()
+            .zip(other.columns.into_iter())
+            .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
+                ensure_can_extend(&*left, &right)?;
+                let right_name = right.name().clone();
+                left.append_owned(right).map_err(|e| {
+                    e.context(format!("failed to vstack column '{right_name}'").into())
+                })?;
+                Ok(())
+            })?;
+        self.height += other.height;
+        Ok(self)
+    }
+
     /// Concatenate a [`DataFrame`] to this [`DataFrame`]
     ///
     /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks_par`].
