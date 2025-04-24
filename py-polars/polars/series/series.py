@@ -4948,7 +4948,9 @@ class Series:
 
         See Also
         --------
+        backward_fill
         fill_nan
+        forward_fill
 
         Examples
         --------
@@ -4981,6 +4983,44 @@ class Series:
             "z"
         ]
         """
+
+    def backward_fill(self, limit: int | None = None) -> Series:
+        """
+        Fill missing values with the next non-null value.
+
+        This is an alias of `.fill_null(strategy="backward")`.
+
+        Parameters
+        ----------
+        limit
+            The number of consecutive null values to backward fill.
+
+        See Also
+        --------
+        fill_null
+        forward_fill
+        shift
+        """
+        return self.fill_null(strategy="backward", limit=limit)
+
+    def forward_fill(self, limit: int | None = None) -> Series:
+        """
+        Fill missing values with the last non-null value.
+
+        This is an alias of `.fill_null(strategy="forward")`.
+
+        Parameters
+        ----------
+        limit
+            The number of consecutive null values to forward fill.
+
+        See Also
+        --------
+        backward_fill
+        fill_null
+        shift
+        """
+        return self.fill_null(strategy="forward", limit=limit)
 
     def floor(self) -> Series:
         """

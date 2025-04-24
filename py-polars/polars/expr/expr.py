@@ -2734,7 +2734,9 @@ class Expr:
 
         See Also
         --------
+        backward_fill
         fill_nan
+        forward_fill
 
         Examples
         --------
@@ -2872,6 +2874,7 @@ class Expr:
 
         See Also
         --------
+        backward_fill
         fill_null
         shift
         """
@@ -2891,6 +2894,7 @@ class Expr:
         See Also
         --------
         fill_null
+        forward_fill
         shift
         """
         return self.fill_null(strategy="backward", limit=limit)
