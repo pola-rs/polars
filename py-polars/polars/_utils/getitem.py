@@ -7,7 +7,7 @@ import polars._reexport as pl
 import polars.functions as F
 from polars._utils.constants import U32_MAX
 from polars._utils.slice import PolarsSlice
-from polars._utils.various import range_to_slice
+from polars._utils.various import qualified_type_name, range_to_slice
 from polars.datatypes.classes import (
     Boolean,
     Int8,
@@ -72,7 +72,7 @@ def get_series_item_by_key(
         try:
             indices = pl.Series("", key, dtype=Int64)
         except TypeError:
-            msg = f"cannot select elements using Sequence with elements of type {type(first).__name__!r}"
+            msg = f"cannot select elements using Sequence with elements of type {qualified_type_name(first)!r}"
             raise TypeError(msg) from None
 
         indices = _convert_series_to_indices(indices, s.len())
@@ -86,7 +86,7 @@ def get_series_item_by_key(
         indices = _convert_np_ndarray_to_indices(key, s.len())
         return _select_elements_by_index(s, indices)
 
-    msg = f"cannot select elements using key of type {type(key).__name__!r}: {key!r}"
+    msg = f"cannot select elements using key of type {qualified_type_name(key)!r}: {key!r}"
     raise TypeError(msg)
 
 
@@ -216,7 +216,7 @@ def _select_columns(
         elif isinstance(first, str):
             return _select_columns_by_name(df, key)  # type: ignore[arg-type]
         else:
-            msg = f"cannot select columns using Sequence with elements of type {type(first).__name__!r}"
+            msg = f"cannot select columns using Sequence with elements of type {qualified_type_name(first)!r}"
             raise TypeError(msg)
 
     elif isinstance(key, pl.Series):
@@ -254,7 +254,9 @@ def _select_columns(
             msg = f"cannot select columns using NumPy array of type {key.dtype}"
             raise TypeError(msg)
 
-    msg = f"cannot select columns using key of type {type(key).__name__!r}: {key!r}"
+    msg = (
+        f"cannot select columns using key of type {qualified_type_name(key)!r}: {key!r}"
+    )
     raise TypeError(msg)
 
 
@@ -322,7 +324,7 @@ def _select_rows(
         return _select_rows_by_index(df, indices)
 
     else:
-        msg = f"cannot select rows using key of type {type(key).__name__!r}: {key!r}"
+        msg = f"cannot select rows using key of type {qualified_type_name(key)!r}: {key!r}"
         raise TypeError(msg)
 
 

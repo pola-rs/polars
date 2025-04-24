@@ -18,7 +18,7 @@ from polars._utils.parse import (
     parse_into_list_of_expressions,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
-from polars._utils.various import extend_bool
+from polars._utils.various import extend_bool, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.lazyframe.opt_flags import OptFlags
@@ -1483,10 +1483,10 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
     if isinstance(x, str):
         x = F.col(x)
     if not hasattr(x, "_pyexpr"):
-        msg = f"`arctan2` expected a `str` or `Expr` got a `{type(x).__name__}`"
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{qualified_type_name(x)}`"
         raise TypeError(msg)
     if not hasattr(y, "_pyexpr"):
-        msg = f"`arctan2` expected a `str` or `Expr` got a `{type(y).__name__}`"
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{qualified_type_name(y)}`"
         raise TypeError(msg)
 
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))

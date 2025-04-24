@@ -48,6 +48,7 @@ from polars._utils.various import (
     _is_generator,
     no_default,
     parse_version,
+    qualified_type_name,
     scale_bytes,
     sphinx_accessor,
     warn_null_comparison,
@@ -1425,7 +1426,7 @@ class Series:
                         phys_arg._s.rechunk(in_place=True)
                     args.append(phys_arg._s.to_numpy_view())
                 else:
-                    msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
+                    msg = f"unsupported type {qualified_type_name(arg)!r} for {arg!r}"
                     raise TypeError(msg)
 
             # Get minimum dtype needed to be able to cast all input arguments to the
