@@ -132,11 +132,14 @@ impl<'a> ChunkedSet<&'a str> for &'a StringChunked {
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = StringChunkedBuilder::new(self.name().clone(), self.len());
 
-        let mut idx_values_iter: Vec<(_, _)> = idx.iter().zip(values).collect();
-        // Sort by index's elements
-        idx_values_iter.sort_by_key(|&(idx_item, _)| idx_item);
+        let mut idx_values = idx.iter().zip(values);
+        // Sort iter by index's elements
+        if !idx.is_sorted() {
+            idx_values = idx_values.collect();
+            idx_values.sort_by_key(|&(idx_item, _)| idx_item);
+        }
 
-        for (current_idx, current_value) in idx_values_iter {
+        for (current_idx, current_value) in idx_values {
             for (cnt_idx, opt_val_self) in &mut ca_iter {
                 if cnt_idx == *current_idx as usize {
                     builder.append_option(current_value);
@@ -164,11 +167,14 @@ impl ChunkedSet<bool> for &BooleanChunked {
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = BooleanChunkedBuilder::new(self.name().clone(), self.len());
 
-        let mut idx_values_iter: Vec<(_, _)> = idx.iter().zip(values).collect();
-        // Sort by index's elements
-        idx_values_iter.sort_by_key(|&(idx_item, _)| idx_item);
+        let mut idx_values = idx.iter().zip(values);
+        // Sort iter by index's elements
+        if !idx.is_sorted() {
+            idx_values = idx_values.collect();
+            idx_values.sort_by_key(|&(idx_item, _)| idx_item);
+        }
 
-        for (current_idx, current_value) in idx_values_iter {
+        for (current_idx, current_value) in idx_values {
             for (cnt_idx, opt_val_self) in &mut ca_iter {
                 if cnt_idx == *current_idx as usize {
                     builder.append_option(current_value);
