@@ -12,7 +12,7 @@ from polars._utils.deprecation import (
 )
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
-from polars._utils.various import find_stacklevel, no_default
+from polars._utils.various import find_stacklevel, no_default, qualified_type_name
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Time, parse_into_dtype
 from polars.datatypes.constants import N_INFER_DEFAULT
@@ -847,7 +847,9 @@ class ExprStringNameSpace:
         └──────────────┴──────────────┘
         """
         if not isinstance(fill_char, str):
-            msg = f"pad_start expects a `str`, given a `{type(fill_char)}`"
+            msg = (
+                f"pad_start expects a `str`, given a {qualified_type_name(fill_char)!r}"
+            )
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_pad_start(length, fill_char))
 
@@ -884,7 +886,7 @@ class ExprStringNameSpace:
         └──────────────┴──────────────┘
         """
         if not isinstance(fill_char, str):
-            msg = f"pad_end expects a `str`, given a `{type(fill_char)}`"
+            msg = f"pad_end expects a `str`, given a {qualified_type_name(fill_char)!r}"
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
 
@@ -1640,7 +1642,7 @@ class ExprStringNameSpace:
         └─────────────────────────────────┴───────────────────────┴──────────┘
         """
         if not isinstance(pattern, str):
-            msg = f"extract_groups expects a `str`, given a `{type(pattern)}`"
+            msg = f"extract_groups expects a `str`, given a {qualified_type_name(pattern)!r}"
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 

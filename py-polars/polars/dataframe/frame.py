@@ -56,6 +56,7 @@ from polars._utils.various import (
     no_default,
     normalize_filepath,
     parse_version,
+    qualified_type_name,
     scale_bytes,
     warn_null_comparison,
 )
@@ -4935,7 +4936,7 @@ class DataFrame:
                 cols.insert(index, column)  # type: ignore[arg-type]
                 self._df = self.select(cols)._df
             else:
-                msg = f"column must be a Series or Expr, got {column!r} (type={type(column)})"
+                msg = f"column must be a Series or Expr, got {column!r} (type={qualified_type_name(column)})"
                 raise TypeError(msg)
         return self
 
@@ -7505,19 +7506,21 @@ class DataFrame:
         └─────────────┴────────────┴────────────┴──────┘
         """
         if not isinstance(other, DataFrame):
-            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
+            msg = f"expected `other` join table to be a DataFrame, not {qualified_type_name(other)!r}"
             raise TypeError(msg)
 
         if on is not None:
             if not isinstance(on, (str, pl.Expr)):
-                msg = f"expected `on` to be str or Expr, got {type(on).__name__!r}"
+                msg = (
+                    f"expected `on` to be str or Expr, got {qualified_type_name(on)!r}"
+                )
                 raise TypeError(msg)
         else:
             if not isinstance(left_on, (str, pl.Expr)):
-                msg = f"expected `left_on` to be str or Expr, got {type(left_on).__name__!r}"
+                msg = f"expected `left_on` to be str or Expr, got {qualified_type_name(left_on)!r}"
                 raise TypeError(msg)
             elif not isinstance(right_on, (str, pl.Expr)):
-                msg = f"expected `right_on` to be str or Expr, got {type(right_on).__name__!r}"
+                msg = f"expected `right_on` to be str or Expr, got {qualified_type_name(right_on)!r}"
                 raise TypeError(msg)
 
         return (
@@ -7751,7 +7754,7 @@ class DataFrame:
         For joining on columns with categorical data, see :class:`polars.StringCache`.
         """
         if not isinstance(other, DataFrame):
-            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
+            msg = f"expected `other` join table to be a DataFrame, not {qualified_type_name(other)!r}"
             raise TypeError(msg)
 
         return (
@@ -7840,7 +7843,7 @@ class DataFrame:
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
         """
         if not isinstance(other, DataFrame):
-            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
+            msg = f"expected `other` join table to be a DataFrame, not {qualified_type_name(other)!r}"
             raise TypeError(msg)
 
         return (
@@ -10864,7 +10867,7 @@ class DataFrame:
 
         elif by_predicate is not None:
             if not isinstance(by_predicate, pl.Expr):
-                msg = f"expected `by_predicate` to be an expression, got {type(by_predicate).__name__!r}"
+                msg = f"expected `by_predicate` to be an expression, got {qualified_type_name(by_predicate)!r}"
                 raise TypeError(msg)
             rows = self.filter(by_predicate).rows()
             n_rows = len(rows)

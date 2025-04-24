@@ -9,6 +9,7 @@ from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
 from polars._utils.unstable import unstable
+from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
@@ -539,7 +540,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴─────────────────────────┴─────────────────────┘
         """
         if not isinstance(time, (dt.time, pl.Expr)):
-            msg = f"expected 'time' to be a Python time or Polars expression, found {type(time).__name__!r}"
+            msg = f"expected 'time' to be a Python time or Polars expression, found {qualified_type_name(time)!r}"
             raise TypeError(msg)
         time = parse_into_expression(time)
         return wrap_expr(self._pyexpr.dt_combine(time, time_unit))

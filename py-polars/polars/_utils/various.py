@@ -702,3 +702,31 @@ def display_dot_graph(
         plt.imshow(img)
         plt.show()
         return None
+
+
+def qualified_type_name(obj: Any, *, qualify_polars: bool = False) -> str:
+    """
+    Return the module-qualified name of the given object as a string.
+
+    Parameters
+    ----------
+    obj
+        The object to get the qualified name for.
+    qualify_polars
+        If False (default), omit the module path for our own (Polars) objects.
+    """
+    if isinstance(obj, type):
+        module = obj.__module__
+        name = obj.__name__
+    else:
+        module = obj.__class__.__module__
+        name = obj.__class__.__name__
+
+    if (
+        not module
+        or module == "builtins"
+        or (not qualify_polars and module.startswith("polars."))
+    ):
+        return name
+
+    return f"{module}.{name}"

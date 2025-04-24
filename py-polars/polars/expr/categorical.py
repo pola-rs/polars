@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -181,7 +182,7 @@ class ExprCatNameSpace:
         └────────┘
         """
         if not isinstance(prefix, str):
-            msg = f"'prefix' must be a string; found {type(prefix)!r}"
+            msg = f"'prefix' must be a string; found {qualified_type_name(prefix)!r}"
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.cat_starts_with(prefix))
 
@@ -234,7 +235,7 @@ class ExprCatNameSpace:
         └────────┘
         """
         if not isinstance(suffix, str):
-            msg = f"'suffix' must be a string; found {type(suffix)!r}"
+            msg = f"'suffix' must be a string; found {qualified_type_name(suffix)!r}"
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.cat_ends_with(suffix))
 
