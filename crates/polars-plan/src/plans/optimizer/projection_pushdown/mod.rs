@@ -469,8 +469,9 @@ impl ProjectionPushDown {
                             .cloned()
                             .collect();
 
+                            unified_scan_args.projection = Some(projection.clone());
+
                             if projection.is_empty() {
-                                unified_scan_args.projection = Some(Arc::from([]));
                                 output_schema = Some(Default::default());
                                 break;
                             }
@@ -558,10 +559,6 @@ impl ProjectionPushDown {
                     predicate,
                     unified_scan_args,
                 };
-
-                if self.is_count_star {
-                    return Ok(lp);
-                }
 
                 Ok(lp)
             },
