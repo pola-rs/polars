@@ -6,30 +6,34 @@ can obtain an access token:
 - command line interface
 - python client
 
-After a successful `login` Polars Cloud stores the token in `{$HOME}/.polars`. You can alter this
-path by setting the environment variable `POLARS_CLOUD_ACCESS_TOKEN_PATH`.
+After a successful login Polars Cloud stores the token in `{$HOME}/.config/polars_cloud`. You can alter this
+path by setting the environment variable `POLARS_CLOUD_CONFIG_DIR`.
 
 ### Command Line Interface (CLI)
 
 Authenticate with CLI using the following command
 
 ```bash
-pc login
+pc authenticate
 ```
 
 ### Python client
 
 Authenticate with the Polars Cloud using
 
-{{code_block('polars-cloud/authentication','login',['login'])}}
+{{code_block('polars-cloud/authentication','authenticate',['authenticate'])}}
 
-Both methods redirect you to the browser where you can provide your login credentials and continue
-the sign in process.
+Both methods will attempt to authenticate with the following priority:
+1. `POLARS_CLOUD_ACCESS_TOKEN` environment variable
+1. `POLARS_CLOUD_CLIENT_ID` / `POLARS_CLOUD_CLIENT_SECRET` environment variables
+1. Any cached access or refresh tokens
+
+If all methods fail the user will be redirected to the browser to login and obtain a new access token. 
+If you are in a non-interactive workflow and want to fail if there is no valid token you can run `pc.authenticate(interactive=False)` instead.
 
 ## Service accounts
 
-Both flows described above are for interactive logins where a person is present in the process. For
-non-interactive workflows such as orchestration tools there are service accounts. These allow you to
+For non-interactive workflows such as orchestration tools there are service accounts. These allow you to
 login programmatically.
 
 To create a service account go to the Polars Cloud dashboard under Settings and service accounts.
