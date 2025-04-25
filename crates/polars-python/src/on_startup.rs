@@ -68,8 +68,19 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
             PolarsError::ComputeError(format!("User provided python function failed: {e}").into())
         })?;
 
-        python_df_to_rust(py, result_df_wrapper.into_bound(py))
-            .map_err(|e| e.context("LazyFrame.map".into()))
+        // unpack the wrapper in a PyDataFrame
+        let py_pydf = result_df_wrapper.getattr(py, "_df").map_err(|_| {
+            let pytype = result_df_wrapper.bind(py).get_type();
+            PolarsError::ComputeError(
+                format!("Expected 'LazyFrame.map' to return a 'DataFrame', got a '{pytype}'",)
+                    .into(),
+            )
+        })?;
+        // Downcast to Rust
+        match py_pydf.extract::<PyDataFrame>(py) {
+            Ok(pydf) => Ok(pydf.df),
+            Err(_) => python_df_to_rust(py, result_df_wrapper.into_bound(py)),
+        }
     })
 }
 
