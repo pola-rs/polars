@@ -685,3 +685,67 @@ def test_predicate_filtering_against_nulls() -> None:
         df.remove(pl.col("num").eq_missing(None)),
     ):
         assert res["num"].to_list() == [1, 2, 4]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            (
+                pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
+                .rename({"a": "A", "b": "a"})
+                .select("A", "c")
+                .filter(pl.col("A") == 1)
+            ),
+            pl.DataFrame({"A": 1, "c": 3}),
+        ),
+        (
+            (
+                pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
+                .rename({"b": "a", "a": "A"})
+                .select("A", "c")
+                .filter(pl.col("A") == 1)
+            ),
+            pl.DataFrame({"A": 1, "c": 3}),
+        ),
+        (
+            (
+                pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
+                .rename({"a": "b", "b": "a"})
+                .select("a", "b", "c")
+                .filter(pl.col("b") == 1)
+            ),
+            pl.DataFrame({"a": 2, "b": 1, "c": 3}),
+        ),
+        (
+            (
+                pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
+                .rename({"a": "b", "b": "a"})
+                .select("b", "c")
+                .filter(pl.col("b") == 1)
+            ),
+            pl.DataFrame({"b": 1, "c": 3}),
+        ),
+        (
+            (
+                pl.LazyFrame({"a": [1], "b": [2], "c": [3]})
+                .rename({"b": "a", "a": "b"})
+                .select("a", "b", "c")
+                .filter(pl.col("b") == 1)
+            ),
+            pl.DataFrame({"a": 2, "b": 1, "c": 3}),
+        ),
+    ],
+)
+def test_predicate_pushdown_lazy_rename_22373(
+    query: pl.LazyFrame,
+    expected: pl.DataFrame,
+) -> None:
+    assert_frame_equal(
+        query.collect(),
+        expected,
+    )
+
+    # Ensure filter is pushed past rename
+    plan = query.explain()
+    assert plan.index("FILTER") > plan.index("RENAME")

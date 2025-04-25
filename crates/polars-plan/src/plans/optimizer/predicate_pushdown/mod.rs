@@ -142,35 +142,8 @@ impl PredicatePushDown<'_> {
             };
 
             if !alias_rename_map.is_empty() {
-                for (_, e) in acc_predicates.iter_mut() {
-                    let mut needs_rename = false;
-
-                    for (_, ae) in (&*expr_arena).iter(e.node()) {
-                        if let AExpr::Column(name) = ae {
-                            needs_rename |= alias_rename_map.contains_key(name);
-
-                            if needs_rename {
-                                break;
-                            }
-                        }
-                    }
-
-                    if needs_rename {
-                        // TODO! Do this directly on AExpr.
-                        let mut new_expr = node_to_expr(e.node(), expr_arena);
-                        new_expr = new_expr.map_expr(|e| match e {
-                            Expr::Column(name) => {
-                                if let Some(rename_to) = alias_rename_map.get(&*name) {
-                                    Expr::Column(rename_to.clone())
-                                } else {
-                                    Expr::Column(name)
-                                }
-                            },
-                            e => e,
-                        });
-                        let predicate = to_aexpr(new_expr, expr_arena)?;
-                        e.set_node(predicate);
-                    }
+                for (_, expr_ir) in acc_predicates.iter_mut() {
+                    map_column_references(expr_ir, expr_arena, &alias_rename_map);
                 }
             }
 
@@ -506,21 +479,15 @@ impl PredicatePushDown<'_> {
                 if function.allow_predicate_pd() {
                     match function {
                         FunctionIR::Rename { existing, new, .. } => {
-                            let local_predicates =
-                                process_rename(&mut acc_predicates, expr_arena, existing, new)?;
-                            let lp = self.pushdown_and_continue(
+                            process_rename(&mut acc_predicates, expr_arena, existing, new);
+
+                            self.pushdown_and_continue(
                                 lp,
                                 acc_predicates,
                                 lp_arena,
                                 expr_arena,
                                 false,
-                            )?;
-                            Ok(self.optional_apply_predicate(
-                                lp,
-                                local_predicates,
-                                lp_arena,
-                                expr_arena,
-                            ))
+                            )
                         },
                         FunctionIR::Explode { columns, .. } => {
                             let condition = |name: &PlSmallStr| columns.iter().any(|s| s == name);

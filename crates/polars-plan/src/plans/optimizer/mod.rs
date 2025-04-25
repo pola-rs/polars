@@ -170,7 +170,7 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
 
     // Should be run before predicate pushdown.
     if opt_flags.projection_pushdown() {
-        let mut projection_pushdown_opt = ProjectionPushDown::new(opt_flags.new_streaming());
+        let mut projection_pushdown_opt = ProjectionPushDown::new();
         let alp = lp_arena.take(lp_top);
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);

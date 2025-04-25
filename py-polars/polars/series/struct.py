@@ -3,7 +3,11 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from polars._utils.various import BUILDING_SPHINX_DOCS, sphinx_accessor
+from polars._utils.various import (
+    BUILDING_SPHINX_DOCS,
+    qualified_type_name,
+    sphinx_accessor,
+)
 from polars._utils.wrap import wrap_df
 from polars.schema import Schema
 from polars.series.utils import expr_dispatch
@@ -35,7 +39,7 @@ class StructNameSpace:
         elif isinstance(item, str):
             return self.field(item)
         else:
-            msg = f"expected type 'int | str', got {type(item).__name__!r}"
+            msg = f"expected type 'int | str', got {qualified_type_name(item)!r}"
             raise TypeError(msg)
 
     def _ipython_key_completions_(self) -> list[str]:

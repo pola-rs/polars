@@ -48,6 +48,7 @@ from polars._utils.various import (
     _is_generator,
     no_default,
     parse_version,
+    qualified_type_name,
     scale_bytes,
     sphinx_accessor,
     warn_null_comparison,
@@ -1425,7 +1426,7 @@ class Series:
                         phys_arg._s.rechunk(in_place=True)
                     args.append(phys_arg._s.to_numpy_view())
                 else:
-                    msg = f"unsupported type {type(arg).__name__!r} for {arg!r}"
+                    msg = f"unsupported type {qualified_type_name(arg)!r} for {arg!r}"
                     raise TypeError(msg)
 
             # Get minimum dtype needed to be able to cast all input arguments to the
@@ -4948,7 +4949,9 @@ class Series:
 
         See Also
         --------
+        backward_fill
         fill_nan
+        forward_fill
 
         Examples
         --------
@@ -4981,6 +4984,44 @@ class Series:
             "z"
         ]
         """
+
+    def backward_fill(self, limit: int | None = None) -> Series:
+        """
+        Fill missing values with the next non-null value.
+
+        This is an alias of `.fill_null(strategy="backward")`.
+
+        Parameters
+        ----------
+        limit
+            The number of consecutive null values to backward fill.
+
+        See Also
+        --------
+        fill_null
+        forward_fill
+        shift
+        """
+        return self.fill_null(strategy="backward", limit=limit)
+
+    def forward_fill(self, limit: int | None = None) -> Series:
+        """
+        Fill missing values with the last non-null value.
+
+        This is an alias of `.fill_null(strategy="forward")`.
+
+        Parameters
+        ----------
+        limit
+            The number of consecutive null values to forward fill.
+
+        See Also
+        --------
+        backward_fill
+        fill_null
+        shift
+        """
+        return self.fill_null(strategy="forward", limit=limit)
 
     def floor(self) -> Series:
         """

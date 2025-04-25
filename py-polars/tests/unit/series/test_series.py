@@ -778,6 +778,8 @@ def test_fill_null() -> None:
     assert a.fill_null(strategy="forward").to_list() == [0.0, 1.0, 1.0, 2.0, 2.0, 3.0]
     assert a.fill_null(strategy="backward").to_list() == [0.0, 1.0, 2.0, 2.0, 3.0, 3.0]
     assert a.fill_null(strategy="mean").to_list() == [0.0, 1.0, 1.5, 2.0, 1.5, 3.0]
+    assert a.forward_fill().to_list() == [0.0, 1.0, 1.0, 2.0, 2.0, 3.0]
+    assert a.backward_fill().to_list() == [0.0, 1.0, 2.0, 2.0, 3.0, 3.0]
 
     b = pl.Series("b", ["a", None, "c", None, "e"])
     assert b.fill_null(strategy="min").to_list() == ["a", "a", "c", "a", "e"]

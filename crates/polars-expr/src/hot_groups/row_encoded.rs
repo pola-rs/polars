@@ -52,10 +52,9 @@ impl HotGrouper for RowEncodedHashHotGrouper {
         cold_idxs.reserve(keys.hashes.len());
 
         unsafe {
-            let mut idx = 0;
-            keys.for_each_hash(|opt_h| {
+            keys.for_each_hash(|idx, opt_h| {
                 if let Some(h) = opt_h {
-                    let key = keys.keys.value_unchecked(idx);
+                    let key = keys.keys.value_unchecked(idx as usize);
                     let opt_g = self.table.insert_key(h, key, |ev_h, ev_k| {
                         self.evicted_key_hashes.push(ev_h);
                         self.evicted_key_offsets.try_push(ev_k.len()).unwrap();
@@ -68,8 +67,6 @@ impl HotGrouper for RowEncodedHashHotGrouper {
                         cold_idxs.push_unchecked(idx as IdxSize);
                     }
                 }
-
-                idx += 1;
             });
         }
     }
