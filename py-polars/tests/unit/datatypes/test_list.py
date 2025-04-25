@@ -852,6 +852,15 @@ def test_null_list_categorical_16405() -> None:
     assert_frame_equal(df, expected)
 
 
+def test_list_get_literal_broadcast_21463() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    df = df.with_columns(x=pl.lit([1, 2, 3, 4]))
+    expected = df.with_columns(b=pl.col("x").list.get(pl.col("a"))).drop("x")
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    actual = df.with_columns(b=pl.lit([1, 2, 3, 4]).list.get(pl.col("a")))
+    assert expected.equals(actual)
+
+
 def test_sort() -> None:
     def tc(a: list[Any], b: list[Any]) -> None:
         a_s = pl.Series("l", a, pl.List(pl.Int64))
