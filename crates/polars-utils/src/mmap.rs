@@ -321,7 +321,10 @@ impl Drop for MMapSemaphore {
                             let mut offset = 0;
                             while offset < len {
                                 let remaining = len - offset;
-                                libc::munmap(ptr.add(offset) as *mut c_void, remaining.min(chunk_size));
+                                libc::munmap(
+                                    ptr.add(offset) as *mut c_void,
+                                    remaining.min(chunk_size),
+                                );
                                 offset += chunk_size;
                             }
                             return;
