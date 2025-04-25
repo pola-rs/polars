@@ -1,9 +1,11 @@
+use std::mem::ManuallyDrop;
+
 use polars::prelude::*;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use crate::py_modules::polars;
+use crate::py_modules::{pl_series, polars};
 use crate::series::PySeries;
 use crate::{PyExpr, Wrap};
 
@@ -87,20 +89,18 @@ impl ToSeries for PyObject {
 
 pub(crate) fn call_lambda_with_series(
     py: Python,
-    s: Series,
+    s: &Series,
     lambda: &PyObject,
 ) -> PyResult<PyObject> {
-    let pypolars = polars(py).bind(py);
+    let mut export = ManuallyDrop::new(polars_ffi::version_0::export_series(s));
+    let plseries = pl_series(py).bind(py);
 
-    // create a PySeries struct/object for Python
-    let pyseries = PySeries::new(s);
-    // Wrap this PySeries object in the python side Series wrapper
-    let python_series_wrapper = pypolars
-        .getattr("wrap_s")
+    let s_location = &raw mut export;
+    let python_series_wrapper = plseries
+        .getattr("_import")
         .unwrap()
-        .call1((pyseries,))
+        .call1((s_location as usize,))
         .unwrap();
-    // call the lambda and get a python side Series wrapper
     lambda.call1(py, (python_series_wrapper,))
 }
 
