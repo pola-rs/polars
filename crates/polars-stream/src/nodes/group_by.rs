@@ -23,6 +23,11 @@ use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
+#[cfg(debug_assertions)]
+const DEFAULT_HOT_TABLE_SIZE: usize = 4;
+#[cfg(not(debug_assertions))]
+const DEFAULT_HOT_TABLE_SIZE: usize = 4096;
+
 struct LocalGroupBySinkState {
     hot_grouper: Box<dyn HotGrouper>,
     hot_grouped_reductions: Vec<Box<dyn GroupedReduction>>,
@@ -463,7 +468,7 @@ impl GroupByNode {
     ) -> Self {
         let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE")
             .map(|sz| sz.parse::<usize>().unwrap())
-            .unwrap_or(4096);
+            .unwrap_or(DEFAULT_HOT_TABLE_SIZE);
         let num_partitions = num_pipelines;
         let uniq_grouped_reduction_cols = grouped_reduction_cols
             .iter()
