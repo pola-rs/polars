@@ -1,3 +1,4 @@
+use std::ffi::c_void;
 use std::fs::File;
 use std::io;
 use std::mem::ManuallyDrop;
@@ -158,6 +159,8 @@ use polars_error::polars_bail;
 pub use private::MemSlice;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
+use crate::mem::PAGE_SIZE;
+
 /// A cursor over a [`MemSlice`].
 #[derive(Debug, Clone)]
 pub struct MemReader {
@@ -264,12 +267,7 @@ impl io::Seek for MemReader {
 pub static UNMAP_POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
     let thread_name = std::env::var("POLARS_THREAD_NAME").unwrap_or_else(|_| "polars".to_string());
     ThreadPoolBuilder::new()
-        .num_threads(
-            std::thread::available_parallelism()
-                .unwrap_or(std::num::NonZeroUsize::new(1).unwrap())
-                .get()
-                .min(4),
-        )
+        .num_threads(1)
         .thread_name(move |i| format!("{}-unmap-{}", thread_name, i))
         .build()
         .expect("could not spawn threads")
@@ -308,8 +306,29 @@ impl Drop for MMapSemaphore {
         unsafe {
             let mmap = ManuallyDrop::take(&mut self.mmap);
             // If the unmap is 1 MiB or bigger, we do it in a background thread.
-            if self.mmap.len() >= 1024 * 1024 {
-                UNMAP_POOL.spawn(move || drop(mmap));
+            let len = self.mmap.len();
+            if len >= 1024 * 1024 {
+                UNMAP_POOL.spawn(move || {
+                    #[cfg(target_family = "unix")]
+                    {
+                        // If the unmap is bigger than our chunk size (32 MiB), we do it in chunks.
+                        // This is because munmap holds a lock on the unmap file, which we don't
+                        // want to hold for extended periods of time.
+                        let chunk_size = (32_usize * 1024 * 1024).next_multiple_of(*PAGE_SIZE);
+                        if len > chunk_size {
+                            let mmap = ManuallyDrop::new(mmap);
+                            let ptr: *const u8 = mmap.as_ptr();
+                            let mut offset = 0;
+                            while offset < len {
+                                let remaining = len - offset;
+                                libc::munmap(ptr.add(offset) as *mut c_void, remaining.min(chunk_size));
+                                offset += chunk_size;
+                            }
+                            return;
+                        }
+                    }
+                    drop(mmap)
+                });
             } else {
                 drop(mmap);
             }

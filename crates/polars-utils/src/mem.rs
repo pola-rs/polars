@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 /// # Safety
 /// This may break aliasing rules, make sure you are the only owner.
 #[allow(clippy::mut_from_ref)]
@@ -7,18 +9,19 @@ pub unsafe fn to_mutable_slice<T: Copy>(s: &[T]) -> &mut [T] {
     unsafe { std::slice::from_raw_parts_mut(ptr, len) }
 }
 
+pub static PAGE_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    #[cfg(target_family = "unix")]
+    unsafe {
+        libc::sysconf(libc::_SC_PAGESIZE) as usize
+    }
+    #[cfg(not(target_family = "unix"))]
+    {
+        4096
+    }
+});
+
 pub mod prefetch {
-    use std::sync::LazyLock;
-    static PAGE_SIZE: LazyLock<usize> = LazyLock::new(|| {
-        #[cfg(target_family = "unix")]
-        unsafe {
-            libc::sysconf(libc::_SC_PAGESIZE) as usize
-        }
-        #[cfg(not(target_family = "unix"))]
-        {
-            4096
-        }
-    });
+    use super::PAGE_SIZE;
 
     /// # Safety
     ///
