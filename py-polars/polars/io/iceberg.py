@@ -88,6 +88,21 @@ def scan_iceberg(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
+    Creates a scan for an Iceberg table from Alibaba Cloud OSS.
+    Supported options for OSS are available `here
+    <https://py.iceberg.apache.org/configuration/#alibaba-cloud-object-storage-service-oss>`__.
+
+    >>> table_path = "oss://bucket/path/to/iceberg-table/metadata.json"
+    >>> storage_options = {
+    ...     "s3.endpoint": "https://s3.oss-your-bucket-region.aliyuncs.com/",
+    ...     "s3.access-key-id": "OSS_ACCESS_KEY_ID",
+    ...     "s3.secret-access-key": "OSS_ACCESS_KEY_SECRET",
+    ...     "s3.force-virtual-addressing": "True",
+    ... }
+    >>> pl.scan_iceberg(
+    ...     table_path, storage_options=storage_options
+    ... ).collect()  # doctest: +SKIP
+
     Creates a scan for an Iceberg table from Azure.
     Supported options for Azure are available `here
     <https://py.iceberg.apache.org/configuration/#azure-data-lake>`__.
