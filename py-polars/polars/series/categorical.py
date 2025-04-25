@@ -7,7 +7,7 @@ from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from polars import Series
+    from polars import Expr, Series
     from polars.polars import PySeries
 
 
@@ -289,5 +289,34 @@ class CatNameSpace:
             null
             "ya"
             "onf"
+        ]
+        """
+
+    def str_eval(self, expr: Expr) -> Series:
+        """
+        Run any polars expression against the categories and re-broadcast.
+
+        `str_eval` allows arbitrary expressions to be applied to the categories of a
+        categorical series, with the result re-broadcast to the input. This effectively
+        treats the series as a String series while maintaining the efficiency afforded
+        by the Categorical dtype.
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.first()`, or
+            `pl.col()`
+
+        Examples
+        --------
+        >>> s = pl.Series(["hamburger", "nuts", "lollypop", None], dtype=pl.Categorical)
+        >>> s.cat.str_eval(pl.element().str.slice(2, 4))
+        shape: (4,)
+        Series: '' [str]
+        [
+                "mbur"
+                "ts"
+                "llyp"
+                null
         ]
         """

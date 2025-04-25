@@ -1,3 +1,4 @@
+use polars::prelude::*;
 use pyo3::prelude::*;
 
 use crate::PyExpr;
@@ -27,5 +28,9 @@ impl PyExpr {
     #[pyo3(signature = (offset, length=None))]
     fn cat_slice(&self, offset: i64, length: Option<usize>) -> Self {
         self.inner.clone().cat().slice(offset, length).into()
+    }
+
+    fn cat_str_eval(&self, expr: PyExpr) -> Self {
+        self.inner.clone().cat().cat_str_eval(expr.inner).into()
     }
 }
