@@ -146,6 +146,22 @@ impl<'a> IRBuilder<'a> {
         }
     }
 
+    pub fn sort(
+        self,
+        by_column: Vec<ExprIR>,
+        slice: Option<(i64, usize)>,
+        sort_options: SortMultipleOptions,
+    ) -> Self {
+        let ir = IR::Sort {
+            input: self.root,
+            by_column,
+            slice,
+            sort_options,
+        };
+        let node = self.lp_arena.add(ir);
+        IRBuilder::new(node, self.expr_arena, self.lp_arena)
+    }
+
     pub fn node(self) -> Node {
         self.root
     }
