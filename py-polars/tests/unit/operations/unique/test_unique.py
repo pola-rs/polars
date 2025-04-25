@@ -93,9 +93,9 @@ def test_unique() -> None:
     assert_frame_equal(result, expected)
 
     s0 = pl.Series("a", [1, 2, None, 2])
-    expected = pl.Series("a", [1, 2, None])
-    assert_series_equal(s0.unique(maintain_order=True), expected)
-    assert_series_equal(s0.unique(maintain_order=False), expected, check_order=False)
+    expected_s = pl.Series("a", [1, 2, None])
+    assert_series_equal(s0.unique(maintain_order=True), expected_s)
+    assert_series_equal(s0.unique(maintain_order=False), expected_s, check_order=False)
 
 
 def test_struct_unique_df() -> None:
