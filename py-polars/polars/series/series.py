@@ -394,6 +394,10 @@ class Series:
         """
         return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
 
+    @classmethod
+    def _import(cls, pointer: int) -> Self:
+        return cls._from_pyseries(PySeries._import(pointer))
+
     def _export_arrow_to_c(self, out_ptr: int, out_schema_ptr: int) -> None:
         """
         Export to a C ArrowArray and C ArrowSchema struct, given their pointers.
