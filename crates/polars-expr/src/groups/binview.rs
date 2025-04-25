@@ -85,20 +85,6 @@ impl BinviewHashGrouper {
             DataFrame::new(vec![Column::from(s)]).unwrap()
         }
     }
-
-    // fn finalize_keys(&self, keys: Vec<T::Physical<'static>>) -> DataFrame {
-    //     let mut keys = T::Array::from_vec(keys, self.dtype.to_physical().to_arrow(CompatLevel::newest()));
-    //     if self.null_idx < IdxSize::MAX {
-    //         let mut validity = MutableBitmap::new();
-    //         validity.extend_constant(keys.len(), true);
-    //         validity.set(self.null_idx as usize, false);
-    //         keys = keys.with_validity_typed(Some(validity.freeze()));
-    //     }
-    //     unsafe {
-    //         let s = Series::from_chunks_and_dtype_unchecked(self.name.clone(), vec![Box::new(keys)], &self.dtype);
-    //         DataFrame::new(vec![Column::from(s)]).unwrap()
-    //     }
-    // }
 }
 
 impl Grouper for BinviewHashGrouper {
