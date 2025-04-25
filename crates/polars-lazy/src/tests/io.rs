@@ -4,6 +4,7 @@ use polars_ops::prelude::ClosedInterval;
 use polars_utils::slice_enum::Slice;
 
 use super::*;
+use crate::dsl;
 
 #[test]
 #[cfg(feature = "parquet")]
@@ -687,6 +688,54 @@ fn scan_anonymous_fn_with_options() -> PolarsResult<()> {
     let df = q.collect()?;
 
     assert_eq!(df.shape(), (3, 2));
+    Ok(())
+}
+
+#[test]
+fn scan_anonymous_fn_count() -> PolarsResult<()> {
+    struct MyScan {}
+
+    impl AnonymousScan for MyScan {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn allows_projection_pushdown(&self) -> bool {
+            true
+        }
+
+        fn scan(&self, scan_opts: AnonymousScanArgs) -> PolarsResult<DataFrame> {
+            assert_eq!(scan_opts.with_columns.as_deref(), Some(&["A".into()][..]));
+
+            Ok(fruits_cars()
+                .select(scan_opts.with_columns.unwrap().iter().cloned())
+                .unwrap())
+        }
+    }
+
+    let function = Arc::new(MyScan {});
+
+    let args = ScanArgsAnonymous {
+        schema: Some(fruits_cars().schema().clone()),
+        ..ScanArgsAnonymous::default()
+    };
+
+    let df = LazyFrame::anonymous_scan(function, args)?
+        .select(&[dsl::len()])
+        .collect()
+        .unwrap();
+
+    assert_eq!(df.get_columns().len(), 1);
+    assert_eq!(df.get_columns()[0].len(), 1);
+    assert_eq!(
+        df.get_columns()[0]
+            .cast(&DataType::UInt32)
+            .unwrap()
+            .as_materialized_series()
+            .first(),
+        Scalar::new(DataType::UInt32, AnyValue::UInt32(5))
+    );
+
     Ok(())
 }
 

@@ -36,7 +36,8 @@ impl DslBuilder {
         Ok(DslPlan::Scan {
             sources: ScanSources::Buffers(Arc::default()),
             file_info: Some(FileInfo {
-                schema,
+                schema: schema.clone(),
+                reader_schema: Some(either::Either::Right(schema)),
                 ..Default::default()
             }),
             unified_scan_args: Box::new(unified_scan_args),
