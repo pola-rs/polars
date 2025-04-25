@@ -77,6 +77,20 @@ unsafe fn scatter_impl<V, T: NativeType>(
     }
 }
 
+fn sorted_index_value_pairs<I>(idx: &[IdxSize], values: I) -> Vec<(&IdxSize, I::Item)>
+where
+    I: IntoIterator,
+{
+    if idx.is_sorted() {
+        // Already sorted, just collect
+        idx.iter().zip(values).collect()
+    } else {
+        // Need to sort after collecting
+        let mut pairs: Vec<_> = idx.iter().zip(values).collect();
+        pairs.sort_by_key(|&(idx_item, _)| idx_item);
+        pairs
+    }
+}
 impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T>
 where
     ChunkedArray<T>: IntoSeries,
@@ -132,12 +146,7 @@ impl<'a> ChunkedSet<&'a str> for &'a StringChunked {
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = StringChunkedBuilder::new(self.name().clone(), self.len());
 
-        let mut idx_values = idx.iter().zip(values);
-        // Sort iter by index's elements
-        if !idx.is_sorted() {
-            idx_values = idx_values.collect();
-            idx_values.sort_by_key(|&(idx_item, _)| idx_item);
-        }
+        let idx_values = sorted_index_value_pairs(idx, values);
 
         for (current_idx, current_value) in idx_values {
             for (cnt_idx, opt_val_self) in &mut ca_iter {
@@ -167,12 +176,7 @@ impl ChunkedSet<bool> for &BooleanChunked {
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = BooleanChunkedBuilder::new(self.name().clone(), self.len());
 
-        let mut idx_values = idx.iter().zip(values);
-        // Sort iter by index's elements
-        if !idx.is_sorted() {
-            idx_values = idx_values.collect();
-            idx_values.sort_by_key(|&(idx_item, _)| idx_item);
-        }
+        let idx_values = sorted_index_value_pairs(idx, values);
 
         for (current_idx, current_value) in idx_values {
             for (cnt_idx, opt_val_self) in &mut ca_iter {
