@@ -55,6 +55,11 @@ impl View {
     pub const MAX_INLINE_SIZE: u32 = 12;
 
     #[inline(always)]
+    pub fn is_inline(&self) -> bool {
+        self.length <= Self::MAX_INLINE_SIZE
+    }
+
+    #[inline(always)]
     pub fn as_u128(self) -> u128 {
         unsafe { std::mem::transmute(self) }
     }

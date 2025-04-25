@@ -16,15 +16,18 @@ pub use crate::planner::{ExpressionConversionState, create_physical_expr};
 pub struct EvictIdx(IdxSize);
 
 impl EvictIdx {
+    #[inline(always)]
     pub fn new(idx: IdxSize, should_evict: bool) -> Self {
         debug_assert!(idx >> (IdxSize::BITS - 1) == 0);
         Self(idx | ((should_evict as IdxSize) << (IdxSize::BITS - 1)))
     }
 
+    #[inline(always)]
     pub fn idx(&self) -> usize {
         (self.0 & ((1 << (IdxSize::BITS - 1)) - 1)) as usize
     }
 
+    #[inline(always)]
     pub fn should_evict(&self) -> bool {
         (self.0 >> (IdxSize::BITS - 1)) != 0
     }

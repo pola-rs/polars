@@ -135,7 +135,7 @@ impl GroupBySinkState {
                         key_columns.push(s.into_column());
                     }
                     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
-                    let hash_keys = HashKeys::from_df(&keys, *random_state, true, true);
+                    let hash_keys = HashKeys::from_df(&keys, *random_state, true, false);
 
                     hot_idxs.clear();
                     hot_group_idxs.clear();
