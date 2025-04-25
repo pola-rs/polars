@@ -2605,3 +2605,12 @@ def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) ->
     df2 = pl.DataFrame({"c": [99]})
     df3 = df1.join(df2, how="cross").filter(pl.col("a").eq(filter_value))
     assert df3.write_csv() == expected
+
+
+def test_csv_quote_in_str_22395() -> None:
+    with pytest.raises(pl.ComputeError):
+        pl.read_csv(b"""\
+        a,b
+        1,2"3
+        4,5
+        """)

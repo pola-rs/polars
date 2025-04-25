@@ -441,7 +441,9 @@ impl<'a> CoreReader<'a> {
                         let result = slf
                             .read_chunk(b, projection, 0, count, Some(0), b.len())
                             .and_then(|mut df| {
-                                debug_assert!(df.height() <= count);
+                                // This can trigger if you have quote chars in the middle of csv
+                                // fields.
+                                polars_ensure!(df.height() <= count, ComputeError: "csv is malformed\n\nConsider checking if the quote characters are correct");
 
                                 if slf.n_rows.is_some() {
                                     total_line_count.fetch_add(df.height(), Ordering::Relaxed);
