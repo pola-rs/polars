@@ -241,7 +241,8 @@ impl<'a> IRDisplay<'a> {
                 predicate,
                 scan_type,
                 unified_scan_args,
-                ..
+                hive_parts: _,
+                output_schema: _,
             } => {
                 let n_columns = unified_scan_args
                     .projection
