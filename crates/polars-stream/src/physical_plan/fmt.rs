@@ -266,8 +266,8 @@ fn visualize_plan_rec(
             output_bool: _,
         } => {
             let label = match phys_sm[node_key].kind {
-                PhysNodeKind::EquiJoin { .. } if args.how.is_equi() => "equi-join",
-                PhysNodeKind::EquiJoin { .. } => "in-memory-join",
+                PhysNodeKind::EquiJoin { .. } => "equi-join",
+                PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
                 } if args.how == JoinType::Semi => "semi-join",
