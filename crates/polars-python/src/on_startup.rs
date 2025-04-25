@@ -19,7 +19,7 @@ use crate::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::map::lazy::{ToSeries, call_lambda_with_series};
 use crate::prelude::ObjectValue;
-use crate::py_modules::{pl_df, pl_utils, polars};
+use crate::py_modules::{pl_df, pl_utils, polars, polars_rs};
 
 fn python_function_caller_series(s: Column, lambda: &PyObject) -> PolarsResult<Column> {
     Python::with_gil(|py| {
@@ -31,27 +31,45 @@ fn python_function_caller_series(s: Column, lambda: &PyObject) -> PolarsResult<C
 
 fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame> {
     Python::with_gil(|py| {
-        // create a PyDataFrame struct/object for Python
-        let pldf = pl_df(py).bind(py);
-        let width = df.width();
-        // Don't resize the Vec to avoid calling SeriesExport's Drop impl
-        // The import takes ownership and is responsible for dropping
-        let mut columns: Vec<SeriesExport> = Vec::with_capacity(width);
-        unsafe {
-            PyDataFrame { df }._export_columns(columns.as_mut_ptr() as usize);
-        }
-        // Wrap this PyDataFrame object in the python side DataFrame wrapper
-        let python_df_wrapper = pldf
-            .getattr("_import_columns")
+        let pypolars = polars(py).bind(py);
+
+        // create a PySeries struct/object for Python
+        let mut pydf = PyDataFrame::new(df);
+        // Wrap this PySeries object in the python side Series wrapper
+        let mut python_df_wrapper = pypolars
+            .getattr("wrap_df")
             .unwrap()
-            .call1((columns.as_mut_ptr() as usize, width))
+            .call1((pydf.clone(),))
             .unwrap();
+
+        if !python_df_wrapper
+            .getattr("_df")
+            .unwrap()
+            .is_instance(polars_rs(py).getattr(py, "PyDataFrame").unwrap().bind(py))
+            .unwrap()
+        {
+            let pldf = pl_df(py).bind(py);
+            let width = pydf.width();
+            // Don't resize the Vec to avoid calling SeriesExport's Drop impl
+            // The import takes ownership and is responsible for dropping
+            let mut columns: Vec<SeriesExport> = Vec::with_capacity(width);
+            unsafe {
+                pydf._export_columns(columns.as_mut_ptr() as usize);
+            }
+            // Wrap this PyDataFrame object in the python side DataFrame wrapper
+            python_df_wrapper = pldf
+                .getattr("_import_columns")
+                .unwrap()
+                .call1((columns.as_mut_ptr() as usize, width))
+                .unwrap();
+        }
         // call the lambda and get a python side df wrapper
         let result_df_wrapper = lambda.call1(py, (python_df_wrapper,)).map_err(|e| {
             PolarsError::ComputeError(format!("User provided python function failed: {e}").into())
         })?;
 
         python_df_to_rust(py, result_df_wrapper.into_bound(py))
+            .map_err(|e| e.context("LazyFrame.map".into()))
     })
 }
 

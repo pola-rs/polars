@@ -98,7 +98,7 @@ def test_lazy_map_schema() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
+        match="expected a polars.DataFrame; got",
     ):
         df.lazy().map_batches(custom).collect()  # type: ignore[arg-type]
 
