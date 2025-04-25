@@ -2608,7 +2608,7 @@ def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) ->
 
 
 def test_csv_quote_in_str_22395() -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.exceptions.ComputeError):
         pl.read_csv(b"""\
         a,b
         1,2"3
