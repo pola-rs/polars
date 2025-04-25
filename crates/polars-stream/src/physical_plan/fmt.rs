@@ -7,6 +7,7 @@ use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
+use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
@@ -168,9 +169,65 @@ fn visualize_plan_rec(
             (label.to_string(), inputs.as_slice())
         },
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
-        PhysNodeKind::MultiScan { hive_parts, .. } => {
-            let mut out = "multi-scan-source".to_string();
+        PhysNodeKind::MultiScan {
+            scan_sources,
+            file_reader_builder,
+            cloud_options: _,
+            projected_file_schema,
+            output_schema,
+            row_index,
+            pre_slice,
+            predicate,
+            hive_parts,
+            include_file_paths,
+            cast_columns_policy: _,
+            missing_columns_policy: _,
+            extra_columns_policy: _,
+            file_schema: _,
+        } => {
+            let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
             let mut f = EscapeLabel(&mut out);
+
+            write!(f, "\n{} source", scan_sources.len()).unwrap();
+
+            if scan_sources.len() != 1 {
+                write!(f, "s").unwrap();
+            }
+
+            write!(
+                f,
+                "\nproject: {} total, {} from file",
+                output_schema.len(),
+                projected_file_schema.len()
+            )
+            .unwrap();
+
+            if let Some(ri) = row_index {
+                write!(f, "\nrow index: name: {}, offset: {:?}", ri.name, ri.offset).unwrap();
+            }
+
+            if let Some(col_name) = include_file_paths {
+                write!(f, "\nfile path column: {}", col_name).unwrap();
+            }
+
+            if let Some(pre_slice) = pre_slice {
+                write!(f, "\nslice: offset: ").unwrap();
+
+                match pre_slice {
+                    Slice::Positive { offset, len: _ } => write!(f, "{}", *offset),
+                    Slice::Negative {
+                        offset_from_end,
+                        len: _,
+                    } => write!(f, "-{}", *offset_from_end),
+                }
+                .unwrap();
+
+                write!(f, ", len: {}", pre_slice.len()).unwrap()
+            }
+
+            if let Some(predicate) = predicate {
+                write!(f, "\nfilter: {}", predicate.display(expr_arena)).unwrap();
+            }
 
             if let Some(v) = hive_parts.as_ref().map(|h| h.df().width()) {
                 write!(f, "\nhive: {} columns", v).unwrap();
