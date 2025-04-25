@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
 use polars_ops::frame::JoinType;
-use polars_plan::dsl::FileScan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
@@ -207,7 +206,7 @@ fn visualize_plan_rec(
             }
 
             if let Some(col_name) = include_file_paths {
-                write!(f, "\nfile path column: {}", col_name).unwrap();
+                write!(f, "\nfile path column: '{}'", col_name).unwrap();
             }
 
             if let Some(pre_slice) = pre_slice {
@@ -231,62 +230,6 @@ fn visualize_plan_rec(
 
             if let Some(v) = hive_parts.as_ref().map(|h| h.df().width()) {
                 write!(f, "\nhive: {} columns", v).unwrap();
-            }
-
-            (out, &[][..])
-        },
-        PhysNodeKind::FileScan {
-            scan_source,
-            file_info,
-            output_schema: _,
-            scan_type,
-            predicate,
-            unified_scan_args,
-        } => {
-            let name = match &**scan_type {
-                #[cfg(feature = "parquet")]
-                FileScan::Parquet { .. } => "parquet-source",
-                #[cfg(feature = "csv")]
-                FileScan::Csv { .. } => "csv-source",
-                #[cfg(feature = "ipc")]
-                FileScan::Ipc { .. } => "ipc-source",
-                #[cfg(feature = "json")]
-                FileScan::NDJson { .. } => "ndjson-source",
-                FileScan::Anonymous { .. } => "anonymous-source",
-            };
-
-            let mut out = name.to_string();
-            let mut f = EscapeLabel(&mut out);
-
-            {
-                write!(f, "\npath: {}", scan_source.as_scan_source_ref()).unwrap();
-            }
-
-            {
-                let total_columns =
-                    file_info.schema.len() - usize::from(unified_scan_args.row_index.is_some());
-                let n_columns = unified_scan_args
-                    .projection
-                    .as_ref()
-                    .map(|columns| columns.len());
-
-                if let Some(n) = n_columns {
-                    write!(f, "\nprojection: {}/{total_columns}", n).unwrap();
-                } else {
-                    write!(f, "\nprojection: */{total_columns}").unwrap();
-                }
-            }
-
-            if let Some(polars_io::RowIndex { name, offset }) = &unified_scan_args.row_index {
-                write!(f, r#"\nrow index: name: "{}", offset: {}"#, name, offset).unwrap();
-            }
-
-            if let Some(slice) = unified_scan_args.pre_slice.as_ref() {
-                write!(f, "\nslice: {:?}", slice).unwrap();
-            }
-
-            if let Some(predicate) = predicate.as_ref() {
-                write!(f, "\nfilter: {}", predicate.display(expr_arena)).unwrap();
             }
 
             (out, &[][..])
