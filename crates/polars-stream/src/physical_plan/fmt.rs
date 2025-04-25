@@ -206,7 +206,7 @@ fn visualize_plan_rec(
             }
 
             if let Some(col_name) = include_file_paths {
-                write!(f, "\nfile path column: '{}'", col_name).unwrap();
+                write!(f, "\nfile path column: {}", col_name).unwrap();
             }
 
             if let Some(pre_slice) = pre_slice {
@@ -229,7 +229,11 @@ fn visualize_plan_rec(
             }
 
             if let Some(v) = hive_parts.as_ref().map(|h| h.df().width()) {
-                write!(f, "\nhive: {} columns", v).unwrap();
+                write!(f, "\nhive: {} column", v).unwrap();
+
+                if v != 1 {
+                    write!(f, "s").unwrap();
+                }
             }
 
             (out, &[][..])
