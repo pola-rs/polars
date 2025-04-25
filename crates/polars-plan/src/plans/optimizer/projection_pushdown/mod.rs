@@ -463,13 +463,35 @@ impl ProjectionPushDown {
                     if let Some(projection) = unified_scan_args.projection.as_mut() {
                         if projection.is_empty() {
                             match &*scan_type {
-                                #[cfg(feature = "parquet")]
-                                FileScan::Parquet { .. } => {},
-                                #[cfg(feature = "ipc")]
-                                FileScan::Ipc { .. } => {},
                                 // All nodes in new-streaming support projecting empty morsels with the correct height
                                 // from the file.
-                                _ => {},
+                                #[cfg(feature = "json")]
+                                FileScan::NDJson { .. } => {},
+                                #[cfg(feature = "ipc")]
+                                FileScan::Ipc { .. } => {},
+                                #[cfg(feature = "csv")]
+                                FileScan::Csv { .. } => {},
+                                #[cfg(feature = "parquet")]
+                                FileScan::Parquet { .. } => {},
+
+                                FileScan::Anonymous { .. } => {
+                                    use either::Either;
+
+                                    *projection = match &file_info.reader_schema {
+                                        Some(Either::Left(s)) => s.iter_names().next(),
+                                        Some(Either::Right(s)) => s.iter_names().next(),
+                                        None => None,
+                                    }
+                                    .into_iter()
+                                    .cloned()
+                                    .collect();
+
+                                    // TODO: Don't know why this works without needing to remove it
+                                    // later.
+                                    ctx.acc_projections.push(ColumnNode(
+                                        expr_arena.add(AExpr::Column(projection[0].clone())),
+                                    ));
+                                },
                             }
                         }
                     }
