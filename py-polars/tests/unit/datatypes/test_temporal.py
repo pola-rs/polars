@@ -2108,7 +2108,7 @@ def test_truncate_by_multiple_weeks_diffs() -> None:
         pl.col("ts").dt.truncate("1w").alias("1w"),
         pl.col("ts").dt.truncate("2w").alias("2w"),
         pl.col("ts").dt.truncate("3w").alias("3w"),
-    ).select(pl.all().diff().drop_nulls().unique())
+    ).select(pl.all().diff().drop_nulls().unique(maintain_order=True))
     expected = pl.DataFrame(
         {
             "1w": [timedelta(0), timedelta(days=7)],

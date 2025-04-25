@@ -17,6 +17,7 @@ use polars_utils::{unique_column_name, unitvec};
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
+use crate::physical_plan::lower_group_by::build_group_by_stream;
 
 type ExprNodeKey = Node;
 
@@ -568,6 +569,36 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
+                function: FunctionExpr::Unique(maintain_order),
+                options: _,
+            } => {
+                assert!(inner_exprs.len() == 1);
+                // Lower to no-aggregate group-by with unique name.
+                let tmp_name = unique_column_name();
+                let (trans_input, trans_inner_exprs) =
+                    lower_exprs_with_ctx(input, &[inner_exprs[0].node()], ctx)?;
+                let group_by_key_expr =
+                    ExprIR::new(trans_inner_exprs[0], OutputName::Alias(tmp_name.clone()));
+                let group_by_output_schema =
+                    schema_for_select(trans_input, &[group_by_key_expr.clone()], ctx)?;
+                let group_by_stream = build_group_by_stream(
+                    trans_input,
+                    &[group_by_key_expr],
+                    &[],
+                    group_by_output_schema,
+                    maintain_order,
+                    Arc::new(GroupbyOptions::default()),
+                    None,
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                )?;
+                input_streams.insert(group_by_stream);
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
                 function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),
                 options: _,
             } if is_scalar_ae(inner_exprs[1].node(), ctx.expr_arena) => {
@@ -819,8 +850,42 @@ fn lower_exprs_with_ctx(
                     input_streams.insert(PhysStream::first(reduce_node_key));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
+                IRAggExpr::NUnique(inner) => {
+                    // Lower to no-aggregate group-by with unique name feeding into len aggregate.
+                    let tmp_name = unique_column_name();
+                    let (trans_input, trans_inner_exprs) =
+                        lower_exprs_with_ctx(input, &[inner], ctx)?;
+                    let group_by_key_expr =
+                        ExprIR::new(trans_inner_exprs[0], OutputName::Alias(tmp_name.clone()));
+                    let group_by_output_schema =
+                        schema_for_select(trans_input, &[group_by_key_expr.clone()], ctx)?;
+                    let group_by_stream = build_group_by_stream(
+                        trans_input,
+                        &[group_by_key_expr],
+                        &[],
+                        group_by_output_schema,
+                        false,
+                        Arc::new(GroupbyOptions::default()),
+                        None,
+                        ctx.expr_arena,
+                        ctx.phys_sm,
+                        ctx.cache,
+                    )?;
+
+                    let len_node = ctx.expr_arena.add(AExpr::Len);
+                    let len_expr_ir = ExprIR::new(len_node, OutputName::Alias(tmp_name.clone()));
+                    let output_schema =
+                        schema_for_select(group_by_stream, &[len_expr_ir.clone()], ctx)?;
+                    let kind = PhysNodeKind::Reduce {
+                        input: group_by_stream,
+                        exprs: vec![len_expr_ir],
+                    };
+
+                    let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                    input_streams.insert(PhysStream::first(reduce_node_key));
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
+                },
                 IRAggExpr::Median(_)
-                | IRAggExpr::NUnique(_)
                 | IRAggExpr::Implode(_)
                 | IRAggExpr::Quantile { .. }
                 | IRAggExpr::AggGroups(_) => {
