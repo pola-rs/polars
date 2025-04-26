@@ -35,6 +35,7 @@ def foods_file_path(io_files_path: Path) -> Path:
 
 def test_zip_csv():
     dfs = pl.read_csv_from_zip("/Users/yusufyudhistira/Documents/GitHub/polars/docs/assets/data/test_csv.zip")
+    print(dfs)
     assert dfs['apple_stock.csv'].shape == (100, 2)
 
 def test_quoted_date() -> None:

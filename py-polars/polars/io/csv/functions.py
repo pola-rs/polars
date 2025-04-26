@@ -1484,7 +1484,7 @@ def read_csv_from_zip_(
                     if target_files is not None and file_name not in target_files:
                         continue
                     with zip_ref.open(file_name) as csv_file:
-                        df = pl.read_csv(csv_file)
+                        df = read_csv(csv_file)
                         dataframes[file_name] = df
 
             return dataframes
