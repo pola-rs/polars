@@ -633,10 +633,11 @@ impl RowGroupDecoder {
         .max(1);
         let task_handles = {
             let non_predicate_arrow_field_indices = self.non_predicate_arrow_field_indices.clone();
+            let non_predicate_len = non_predicate_arrow_field_indices.len();
             let projected_arrow_schema = self.projected_arrow_schema.clone();
             let row_group_data = row_group_data.clone();
             let prefilter_setting = *prefilter_setting;
-            (0..self.non_predicate_arrow_field_indices.len())
+            (0..non_predicate_len)
                 .step_by(cols_per_thread)
                 .map(move |offset| {
                     let row_group_data = row_group_data.clone();
@@ -645,10 +646,11 @@ impl RowGroupDecoder {
                     let projected_arrow_schema = projected_arrow_schema.clone();
                     let mask = mask.clone();
                     let mask_bitmap = mask_bitmap.clone();
+                    let max_col = (offset + cols_per_thread).min(non_predicate_len);
 
                     async move {
                         // This is exact as we have already taken out the remainder.
-                        (offset..offset + cols_per_thread)
+                        (offset..max_col)
                             .map(|i| {
                                 let (_, arrow_field) = projected_arrow_schema
                                     .get_at_index(non_predicate_arrow_field_indices[i])
