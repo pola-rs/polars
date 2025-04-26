@@ -351,7 +351,9 @@ def _xl_setup_table_columns(
 
     # no excel support for compound types; cast to their simple string representation
     def _map_str(s: Series) -> Series:
-        return s.__class__(s.name, [str(v) for v in s.to_list()])
+        return s.__class__(
+            s.name, [(None if v is None else str(v)) for v in s.to_list()]
+        )
 
     cast_cols = [
         F.col(col).map_batches(_map_str).alias(col)

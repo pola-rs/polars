@@ -9,7 +9,7 @@ use crate::hot_groups::fixed_index_table::FixedIndexTable;
 
 pub struct RowEncodedHashHotGrouper {
     key_schema: Arc<Schema>,
-    table: FixedIndexTable<Vec<u8>>,
+    table: FixedIndexTable<(u64, Vec<u8>)>,
     evicted_key_hashes: Vec<u64>,
     evicted_key_data: Vec<u8>,
     evicted_key_offsets: Offsets<i64>,
@@ -55,11 +55,20 @@ impl HotGrouper for RowEncodedHashHotGrouper {
             keys.for_each_hash(|idx, opt_h| {
                 if let Some(h) = opt_h {
                     let key = keys.keys.value_unchecked(idx as usize);
-                    let opt_g = self.table.insert_key(h, key, |ev_h, ev_k| {
-                        self.evicted_key_hashes.push(ev_h);
-                        self.evicted_key_offsets.try_push(ev_k.len()).unwrap();
-                        self.evicted_key_data.extend_from_slice(ev_k);
-                    });
+                    let opt_g = self.table.insert_key(
+                        h,
+                        key,
+                        |a, b| *a == b.1,
+                        |k| (h, k.to_owned()),
+                        |k, ev_k| {
+                            self.evicted_key_hashes.push(ev_k.0);
+                            self.evicted_key_offsets.try_push(ev_k.1.len()).unwrap();
+                            self.evicted_key_data.extend_from_slice(&ev_k.1);
+                            ev_k.0 = h;
+                            ev_k.1.clear();
+                            ev_k.1.extend_from_slice(k);
+                        },
+                    );
                     if let Some(g) = opt_g {
                         hot_idxs.push_unchecked(idx as IdxSize);
                         hot_group_idxs.push_unchecked(g);
@@ -72,9 +81,17 @@ impl HotGrouper for RowEncodedHashHotGrouper {
     }
 
     fn keys(&self) -> HashKeys {
-        let hashes = PrimitiveArray::from_slice(self.table.hashes());
-        let keys = LargeBinaryArray::from_slice(self.table.keys());
-        HashKeys::RowEncoded(RowEncodedKeys { hashes, keys })
+        unsafe {
+            let mut hashes = Vec::with_capacity(self.table.len());
+            let keys = LargeBinaryArray::from_trusted_len_values_iter(
+                self.table.keys().iter().map(|(h, k)| {
+                    hashes.push_unchecked(*h);
+                    k
+                }),
+            );
+            let hashes = PrimitiveArray::from_vec(hashes);
+            HashKeys::RowEncoded(RowEncodedKeys { hashes, keys })
+        }
     }
 
     fn num_evictions(&self) -> usize {

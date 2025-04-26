@@ -227,7 +227,8 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
         "value"
     ]
 
-    assert_series_equal(result, expected)
+    # We increase the absolute error threshold, numpy has some instability, see #22348.
+    assert_series_equal(result, expected, atol=1e-4)
     result_from_unsorted = (
         dataframe.sort("ts", descending=True)
         .with_columns(pl.col("value").interpolate_by("ts"))

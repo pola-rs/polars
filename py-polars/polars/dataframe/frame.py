@@ -603,6 +603,10 @@ class DataFrame:
         self._df.replace(column, new_column._s)
         return self
 
+    @classmethod
+    def _import_columns(cls, pointer: int, width: int) -> DataFrame:
+        return cls._from_pydf(PyDataFrame._import_columns(pointer, width))
+
     @property
     @unstable()
     def plot(self) -> DataFramePlot:

@@ -23,6 +23,11 @@ use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
+#[cfg(debug_assertions)]
+const DEFAULT_HOT_TABLE_SIZE: usize = 4;
+#[cfg(not(debug_assertions))]
+const DEFAULT_HOT_TABLE_SIZE: usize = 4096;
+
 struct LocalGroupBySinkState {
     hot_grouper: Box<dyn HotGrouper>,
     hot_grouped_reductions: Vec<Box<dyn GroupedReduction>>,
@@ -135,7 +140,7 @@ impl GroupBySinkState {
                         key_columns.push(s.into_column());
                     }
                     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
-                    let hash_keys = HashKeys::from_df(&keys, *random_state, true, true);
+                    let hash_keys = HashKeys::from_df(&keys, *random_state, true, false);
 
                     hot_idxs.clear();
                     hot_group_idxs.clear();
@@ -463,7 +468,7 @@ impl GroupByNode {
     ) -> Self {
         let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE")
             .map(|sz| sz.parse::<usize>().unwrap())
-            .unwrap_or(4096);
+            .unwrap_or(DEFAULT_HOT_TABLE_SIZE);
         let num_partitions = num_pipelines;
         let uniq_grouped_reduction_cols = grouped_reduction_cols
             .iter()

@@ -92,7 +92,7 @@ impl Grouper for RowEncodedHashGrouper {
 
         unsafe {
             if let Some(group_idxs) = group_idxs {
-                group_idxs.reserve(keys.keys.len() - keys.keys.null_count());
+                group_idxs.reserve(subset.len());
                 keys.for_each_hash_subset(subset, |idx, opt_hash| {
                     if let Some(hash) = opt_hash {
                         let key = keys.keys.value_unchecked(idx as usize);
@@ -106,27 +106,6 @@ impl Grouper for RowEncodedHashGrouper {
                         self.insert_key(hash, key);
                     }
                 });
-            }
-        }
-    }
-
-    unsafe fn gather_combine(
-        &mut self,
-        other: &dyn Grouper,
-        subset: &[IdxSize],
-        group_idxs: &mut Vec<IdxSize>,
-    ) {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-
-        // TODO: cardinality estimation.
-        self.idx_map.reserve(subset.len());
-
-        unsafe {
-            group_idxs.clear();
-            group_idxs.reserve(subset.len());
-            for i in subset {
-                let (hash, key, ()) = other.idx_map.get_index_unchecked(*i);
-                group_idxs.push_unchecked(self.insert_key(hash, key));
             }
         }
     }

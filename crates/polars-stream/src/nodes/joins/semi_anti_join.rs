@@ -33,7 +33,7 @@ async fn select_keys(
         &keys,
         params.random_state,
         params.nulls_equal,
-        true,
+        false,
     ))
 }
 

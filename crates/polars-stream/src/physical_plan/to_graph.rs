@@ -551,22 +551,6 @@ fn to_graph_rec<'a>(
             )
         },
 
-        FileScan { scan_type, .. } => {
-            use polars_plan::prelude::FileScan;
-
-            match scan_type.as_ref() {
-                #[cfg(feature = "parquet")]
-                FileScan::Parquet { .. } => unreachable!(),
-                #[cfg(feature = "ipc")]
-                FileScan::Ipc { .. } => unreachable!(),
-                #[cfg(feature = "csv")]
-                FileScan::Csv { .. } => unreachable!(),
-                #[cfg(feature = "json")]
-                FileScan::NDJson { .. } => unreachable!(),
-                FileScan::Anonymous { .. } => todo!(),
-            }
-        },
-
         GroupBy { input, key, aggs } => {
             let input_key = to_graph_rec(input.node, ctx)?;
 
