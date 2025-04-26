@@ -36,7 +36,7 @@ jobs:
   coverage-rust:
     # Running under ubuntu doesn't seem to work:
     # https://github.com/pola-rs/polars/issues/14255
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
