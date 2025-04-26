@@ -574,6 +574,84 @@ def read_csv(
         return _update_columns(df, new_columns)
     return df
 
+def read_csv_from_zip(
+        source: str | Path | IO[str] | IO[bytes] | bytes,
+        target_files=None,
+        **read_csv_kwargs, # <-- any read_csv options (excluding source)
+) -> dict[str, DataFrame]:
+    """
+    Reads CSV files from a ZIP archive and returns them as a dictionary of DataFrames.
+
+    Parameters
+    ----------
+    source : str or Path
+        Path to the ZIP archive containing the CSV files.
+    target_files : list of str, optional
+        Specific CSV file names to read from the archive. If None, all CSV files are read.
+    read_csv_kwargs : dict, optional
+        Additional keyword arguments forwarded to `polars.read_csv()` for advanced CSV parsing control.
+
+    Returns
+    ----------
+        dict[str, DataFrame]: A dictionary where keys are file names and values are Polars DataFrames.
+
+    Examples
+    --------
+    >>> pl.read_csv_from_zip("data.zip")
+    # Reads all CSV files in "data.zip" and returns a dictionary of DataFrames.
+    {
+        'birthdate.csv':  shape: (3, 3)
+        ┌─────┬─────────┬────────────┐
+        │ ID  ┆ Name    ┆ Birthday   │
+        │ --- ┆ ---     ┆ ---        │
+        │ i64 ┆ str     ┆ date       │
+        ╞═════╪═════════╪════════════╡
+        │ 1   ┆ Alice   ┆ 1995-07-12 │
+        │ 2   ┆ Bob     ┆ 1990-09-20 │
+        │ 3   ┆ Charlie ┆ 2002-03-08 │
+        └─────┴─────────┴────────────┘,
+        'basketball_stats.csv': shape: (3, 4)
+        ┌─────┬─────────┬──────────┬──────────┐
+        │ ID  ┆ Player  ┆ Team     ┆ Points   │
+        │ --- ┆ ---     ┆ ---      ┆ ---      │
+        ╞═════╪═════════╪══════════╪══════════╡
+        │ 1   ┆ LeBron  ┆ Lakers   ┆ 27       │
+        │ 2   ┆ Curry   ┆ Warriors ┆ 31       │
+        │ 3   ┆ Durant  ┆ Nets     ┆ 29       │
+        └─────┴─────────┴──────────┴──────────┘
+    }
+
+    >>> pl.read_csv_from_zip(
+    ...     "data.zip", target_files=["birthdate.csv"]
+    ... ) 
+    # Reads only "birthdate.csv" from the ZIP.
+    {
+        'birthdate.csv':  shape: (3, 3)
+        ┌─────┬─────────┬────────────┐
+        │ ID  ┆ Name    ┆ Birthday   │
+        │ --- ┆ ---     ┆ ---        │
+        │ i64 ┆ str     ┆ date       │
+        ╞═════╪═════════╪════════════╡
+        │ 1   ┆ Alice   ┆ 1995-07-12 │
+        │ 2   ┆ Bob     ┆ 1990-09-20 │
+        │ 3   ┆ Charlie ┆ 2002-03-08 │
+        └─────┴─────────┴────────────┘
+    }
+    """
+    dataframes = {}
+    # Open the ZIP file
+    with zipfile.ZipFile(source, 'r') as zip_ref:
+            for file_name in zip_ref.namelist():
+                # Check if the file is a CSV file and is not a hidden file (doesn't start with '__' or '.')
+                if file_name.endswith(".csv") and not file_name.startswith("__") and not file_name.startswith("."):
+                    # If specific files are provided, only process the ones in target_files
+                    if target_files is not None and file_name not in target_files:
+                        continue
+                    with zip_ref.open(file_name) as csv_file:
+                        df = read_csv(csv_file, **read_csv_kwargs)
+                        dataframes[file_name] = df
+            return dataframes
+
 def _read_csv_impl(
     source: str | Path | IO[bytes] | bytes,
     *,
@@ -1463,29 +1541,4 @@ def _scan_csv_impl(
     )
     return wrap_ldf(pylf)
 
-def read_csv_from_zip_(
-        source,
-        target_files=None
-) -> dict:
-    """
-    Reads CSV files from a ZIP archive and returns them as a dictionary of DataFrames.
-
-    Parameters:
-        source (str or Path): Path to the ZIP file.
-        target_files (list of str, optional): Specific CSV files to read from the ZIP.
-
-    Returns:
-        dict: A dictionary where keys are file names and values are Polars DataFrames.
-    """
-    dataframes = {}
-    with zipfile.ZipFile(source, 'r') as zip_ref:
-            for file_name in zip_ref.namelist():
-                if file_name.endswith(".csv") and not file_name.startswith("__") and not file_name.startswith("."):
-                    if target_files is not None and file_name not in target_files:
-                        continue
-                    with zip_ref.open(file_name) as csv_file:
-                        df = read_csv(csv_file)
-                        dataframes[file_name] = df
-
-            return dataframes
 
