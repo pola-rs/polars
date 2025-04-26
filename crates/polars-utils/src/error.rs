@@ -24,26 +24,49 @@ impl Display for PolarsUtilsError {
 
 pub type Result<T> = std::result::Result<T, PolarsUtilsError>;
 
+#[derive(Debug)]
+pub enum TruncateMode {
+    /// Truncate from the front, i.e. `...abc`
+    Front,
+    /// Truncate from the end, i.e. `abc...`
+    End,
+}
+
 /// Utility whose Display impl truncates the string unless POLARS_VERBOSE is set.
-pub struct TruncateErrorDetail<'a>(pub &'a str);
+pub struct TruncateErrorDetail<'a> {
+    pub content: &'a str,
+    pub mode: TruncateMode,
+    pub max_length: usize,
+}
 
 impl std::fmt::Display for TruncateErrorDetail<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let maybe_truncated = if verbose() {
-            self.0
+            self.content
         } else {
             // Clamp the output on non-verbose
-            &self.0[..self.0.len().min(4096)]
+            match self.mode {
+                TruncateMode::Front => {
+                    let start: usize = self.content.len().saturating_sub(self.max_length);
+                    &self.content[start..]
+                },
+                TruncateMode::End => &self.content[..self.content.len().min(self.max_length)],
+            }
         };
 
-        f.write_str(maybe_truncated)?;
+        if maybe_truncated.len() == self.content.len() {
+            f.write_str(self.content)?;
+        } else {
+            match self.mode {
+                TruncateMode::Front => f.write_str(&format!("...{maybe_truncated} "))?,
+                TruncateMode::End => f.write_str(&format!("{maybe_truncated}..."))?,
+            }
 
-        if maybe_truncated.len() != self.0.len() {
-            let n_more = self.0.len() - maybe_truncated.len();
-            f.write_str(" ...(set POLARS_VERBOSE=1 to see full response (")?;
+            let n_more = self.content.len() - maybe_truncated.len();
+            f.write_str("(set POLARS_VERBOSE=1 to see full response (")?;
             f.write_str(&format_pl_smallstr!("{}", n_more))?;
             f.write_str(" more characters))")?;
-        };
+        }
 
         Ok(())
     }

@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use polars_error::{PolarsResult, to_compute_err};
-use polars_utils::error::TruncateErrorDetail;
+use polars_utils::error::{TruncateErrorDetail, TruncateMode};
 use reqwest::RequestBuilder;
 
 /// Performs the request and attaches the response body to any error messages.
@@ -16,7 +16,11 @@ pub(super) async fn do_request(request: reqwest::RequestBuilder) -> PolarsResult
             format!(
                 "error: {}, response body: {}",
                 e,
-                TruncateErrorDetail(&body)
+                TruncateErrorDetail {
+                    content: &body,
+                    mode: TruncateMode::End,
+                    max_length: 4096
+                }
             )
         })
     })?;

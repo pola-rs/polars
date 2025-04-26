@@ -198,7 +198,7 @@ where
     T: for<'de> serde::de::Deserialize<'de>,
 {
     use polars_error::to_compute_err;
-    use polars_utils::error::TruncateErrorDetail;
+    use polars_utils::error::{TruncateErrorDetail, TruncateMode};
 
     serde_json::from_slice(bytes)
         .map_err(to_compute_err)
@@ -207,7 +207,11 @@ where
                 format!(
                     "error decoding response: {}, response value: {}",
                     e,
-                    TruncateErrorDetail(&String::from_utf8_lossy(bytes))
+                    TruncateErrorDetail {
+                        content: &String::from_utf8_lossy(bytes),
+                        mode: TruncateMode::End,
+                        max_length: 4096
+                    }
                 )
             })
         })
