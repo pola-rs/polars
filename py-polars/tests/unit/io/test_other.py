@@ -67,12 +67,10 @@ def test_write_missing_directory(write_method_name: str) -> None:
 
 def test_read_missing_file_path_truncated() -> None:
     content = "lskdfj".join(str(i) for i in range(25))
-    MAX_FILE_PATH_LENGTH = 88
-    chars_removed = len(content) - MAX_FILE_PATH_LENGTH
 
     with pytest.raises(
         FileNotFoundError,
-        match=f"\\.\\.\\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24 \\(set POLARS_VERBOSE=1 to see full response \\({chars_removed} more characters\\)\\)",
+        match="\\.\\.\\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24 \\(set POLARS_VERBOSE=1 to see full path\\)",
     ):
         pl.read_csv(content)
 
