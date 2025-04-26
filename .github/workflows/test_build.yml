@@ -36,7 +36,7 @@ jobs:
       fail-fast: false
       matrix:
         package: [polars]
-        os: [macos-13]
+        os: [macos-15]
         architecture: [aarch64]
         exclude:
           - os: windows-latest
@@ -100,5 +100,5 @@ jobs:
         # if: matrix.architecture == 'x86-64'
         run: |
           pip install --force-reinstall --verbose dist/*.whl
-          python -c 'import polars'
+          python -c 'import polars; polars.show_versions()'
 
