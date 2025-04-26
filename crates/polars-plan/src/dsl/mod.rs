@@ -1326,11 +1326,15 @@ impl Expr {
     /// Apply a rolling skew.
     #[cfg(feature = "rolling_window")]
     #[cfg(feature = "moment")]
-    pub fn rolling_skew(self, window_size: usize, bias: bool) -> Expr {
-        self.map_unary(FunctionExpr::RollingExpr(RollingFunction::Skew(
-            window_size,
-            bias,
-        )))
+    pub fn rolling_skew(self, options: RollingOptionsFixedWindow) -> Expr {
+        self.finish_rolling(options, RollingFunction::Skew)
+    }
+
+    /// Apply a rolling skew.
+    #[cfg(feature = "rolling_window")]
+    #[cfg(feature = "moment")]
+    pub fn rolling_kurtosis(self, options: RollingOptionsFixedWindow) -> Expr {
+        self.finish_rolling(options, RollingFunction::Kurtosis)
     }
 
     #[cfg(feature = "rolling_window")]

@@ -1,11 +1,6 @@
 use std::sync::Arc;
 
 use polars_core::prelude::*;
-use polars_io::HiveOptions;
-#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
-use polars_io::RowIndex;
-#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
-use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
 #[cfg(feature = "ipc")]
@@ -28,45 +23,27 @@ impl From<DslPlan> for DslBuilder {
 impl DslBuilder {
     pub fn anonymous_scan(
         function: Arc<dyn AnonymousScan>,
-        schema: Option<SchemaRef>,
-        infer_schema_length: Option<usize>,
-        skip_rows: Option<usize>,
-        n_rows: Option<usize>,
-        name: &'static str,
+        options: AnonymousScanOptions,
+        unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
-        let schema = match schema {
-            Some(s) => s,
-            None => function.schema(infer_schema_length)?,
-        };
-
-        let file_info = FileInfo::new(schema.clone(), None, (n_rows, n_rows.unwrap_or(usize::MAX)));
-        let file_options = Box::new(FileScanOptions {
-            pre_slice: n_rows.map(|x| (0, x)),
-            with_columns: None,
-            cache: false,
-            row_index: None,
-            rechunk: false,
-            file_counter: Default::default(),
-            // TODO: Support Hive partitioning.
-            hive_options: HiveOptions {
-                enabled: Some(false),
-                ..Default::default()
-            },
-            glob: false,
-            include_file_paths: None,
-            allow_missing_columns: false,
-        });
+        let schema = unified_scan_args.schema.clone().ok_or_else(|| {
+            polars_err!(
+                ComputeError:
+                "anonymous scan requires schema to be specified in unified_scan_args"
+            )
+        })?;
 
         Ok(DslPlan::Scan {
             sources: ScanSources::Buffers(Arc::default()),
-            file_info: Some(file_info),
-            file_options,
+            file_info: Some(FileInfo {
+                schema: schema.clone(),
+                reader_schema: Some(either::Either::Right(schema)),
+                ..Default::default()
+            }),
+            unified_scan_args: Box::new(unified_scan_args),
             scan_type: Box::new(FileScan::Anonymous {
                 function,
-                options: Arc::new(AnonymousScanOptions {
-                    fmt_str: name,
-                    skip_rows,
-                }),
+                options: Arc::new(options),
             }),
             cached_ir: Default::default(),
         }
@@ -77,44 +54,15 @@ impl DslBuilder {
     #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet(
         sources: ScanSources,
-        n_rows: Option<usize>,
-        cache: bool,
-        parallel: polars_io::parquet::read::ParallelStrategy,
-        row_index: Option<RowIndex>,
-        rechunk: bool,
-        low_memory: bool,
-        cloud_options: Option<CloudOptions>,
-        use_statistics: bool,
-        schema: Option<SchemaRef>,
-        hive_options: HiveOptions,
-        glob: bool,
-        include_file_paths: Option<PlSmallStr>,
-        allow_missing_columns: bool,
+        options: ParquetOptions,
+        unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
-        let options = Box::new(FileScanOptions {
-            with_columns: None,
-            cache,
-            pre_slice: n_rows.map(|x| (0, x)),
-            rechunk,
-            row_index,
-            file_counter: Default::default(),
-            hive_options,
-            glob,
-            include_file_paths,
-            allow_missing_columns,
-        });
         Ok(DslPlan::Scan {
             sources,
             file_info: None,
-            file_options: options,
+            unified_scan_args: Box::new(unified_scan_args),
             scan_type: Box::new(FileScan::Parquet {
-                options: ParquetOptions {
-                    schema,
-                    parallel,
-                    low_memory,
-                    use_statistics,
-                },
-                cloud_options,
+                options,
                 metadata: None,
             }),
             cached_ir: Default::default(),
@@ -127,32 +75,14 @@ impl DslBuilder {
     pub fn scan_ipc(
         sources: ScanSources,
         options: IpcScanOptions,
-        n_rows: Option<usize>,
-        cache: bool,
-        row_index: Option<RowIndex>,
-        rechunk: bool,
-        cloud_options: Option<CloudOptions>,
-        hive_options: HiveOptions,
-        include_file_paths: Option<PlSmallStr>,
+        unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
             file_info: None,
-            file_options: Box::new(FileScanOptions {
-                with_columns: None,
-                cache,
-                pre_slice: n_rows.map(|x| (0, x)),
-                rechunk,
-                row_index,
-                file_counter: Default::default(),
-                hive_options,
-                glob: true,
-                include_file_paths,
-                allow_missing_columns: false,
-            }),
+            unified_scan_args: Box::new(unified_scan_args),
             scan_type: Box::new(FileScan::Ipc {
                 options,
-                cloud_options,
                 metadata: None,
             }),
             cached_ir: Default::default(),
@@ -164,39 +94,14 @@ impl DslBuilder {
     #[cfg(feature = "csv")]
     pub fn scan_csv(
         sources: ScanSources,
-        read_options: CsvReadOptions,
-        cache: bool,
-        cloud_options: Option<CloudOptions>,
-        glob: bool,
-        include_file_paths: Option<PlSmallStr>,
+        options: CsvReadOptions,
+        unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
-        // This gets partially moved by FileScanOptions
-        let read_options_clone = read_options.clone();
-
-        let options = Box::new(FileScanOptions {
-            with_columns: None,
-            cache,
-            pre_slice: read_options_clone.n_rows.map(|x| (0, x)),
-            rechunk: read_options_clone.rechunk,
-            row_index: read_options_clone.row_index,
-            file_counter: Default::default(),
-            // TODO: Support Hive partitioning.
-            hive_options: HiveOptions {
-                enabled: Some(false),
-                ..Default::default()
-            },
-            glob,
-            include_file_paths,
-            allow_missing_columns: false,
-        });
         Ok(DslPlan::Scan {
             sources,
             file_info: None,
-            file_options: options,
-            scan_type: Box::new(FileScan::Csv {
-                options: read_options,
-                cloud_options,
-            }),
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScan::Csv { options }),
             cached_ir: Default::default(),
         }
         .into())

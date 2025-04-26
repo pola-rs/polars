@@ -3,6 +3,7 @@ use std::fmt::{self, Display, Formatter};
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_utils::format_list_truncated;
+use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 
 use self::ir::dot::ScanSourcesDisplay;
@@ -68,7 +69,7 @@ fn write_scan(
     n_columns: i64,
     total_columns: usize,
     predicate: &Option<ExprIRDisplay<'_>>,
-    slice: Option<(i64, usize)>,
+    pre_slice: Option<Slice>,
     row_index: Option<&RowIndex>,
 ) -> fmt::Result {
     write!(
@@ -91,8 +92,8 @@ fn write_scan(
     if let Some(predicate) = predicate {
         write!(f, "\n{:indent$}SELECTION: {predicate}", "")?;
     }
-    if let Some(slice) = slice {
-        write!(f, "\n{:indent$}SLICE: {slice:?}", "")?;
+    if let Some(pre_slice) = pre_slice {
+        write!(f, "\n{:indent$}SLICE: {pre_slice:?}", "")?;
     }
     if let Some(row_index) = row_index {
         write!(f, "\n{:indent$}ROW_INDEX: {}", "", row_index.name)?;
@@ -188,7 +189,9 @@ impl<'a> IRDisplay<'a> {
                     n_columns,
                     total_columns,
                     &predicate,
-                    options.n_rows.map(|x| (0, x)),
+                    options
+                        .n_rows
+                        .map(|len| polars_utils::slice_enum::Slice::Positive { offset: 0, len }),
                     None,
                 )
             },
@@ -237,11 +240,12 @@ impl<'a> IRDisplay<'a> {
                 file_info,
                 predicate,
                 scan_type,
-                file_options,
-                ..
+                unified_scan_args,
+                hive_parts: _,
+                output_schema: _,
             } => {
-                let n_columns = file_options
-                    .with_columns
+                let n_columns = unified_scan_args
+                    .projection
                     .as_ref()
                     .map(|columns| columns.len() as i64)
                     .unwrap_or(-1);
@@ -256,8 +260,8 @@ impl<'a> IRDisplay<'a> {
                     n_columns,
                     file_info.schema.len(),
                     &predicate,
-                    file_options.pre_slice,
-                    file_options.row_index.as_ref(),
+                    unified_scan_args.pre_slice.clone(),
+                    unified_scan_args.row_index.as_ref(),
                 )
             },
             Filter { predicate, input } => {

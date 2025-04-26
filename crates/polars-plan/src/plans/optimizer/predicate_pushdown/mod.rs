@@ -142,35 +142,8 @@ impl PredicatePushDown<'_> {
             };
 
             if !alias_rename_map.is_empty() {
-                for (_, e) in acc_predicates.iter_mut() {
-                    let mut needs_rename = false;
-
-                    for (_, ae) in (&*expr_arena).iter(e.node()) {
-                        if let AExpr::Column(name) = ae {
-                            needs_rename |= alias_rename_map.contains_key(name);
-
-                            if needs_rename {
-                                break;
-                            }
-                        }
-                    }
-
-                    if needs_rename {
-                        // TODO! Do this directly on AExpr.
-                        let mut new_expr = node_to_expr(e.node(), expr_arena);
-                        new_expr = new_expr.map_expr(|e| match e {
-                            Expr::Column(name) => {
-                                if let Some(rename_to) = alias_rename_map.get(&*name) {
-                                    Expr::Column(rename_to.clone())
-                                } else {
-                                    Expr::Column(name)
-                                }
-                            },
-                            e => e,
-                        });
-                        let predicate = to_aexpr(new_expr, expr_arena)?;
-                        e.set_node(predicate);
-                    }
+                for (_, expr_ir) in acc_predicates.iter_mut() {
+                    map_column_references(expr_ir, expr_arena, &alias_rename_map);
                 }
             }
 
@@ -373,12 +346,13 @@ impl PredicatePushDown<'_> {
                 hive_parts: scan_hive_parts,
                 ref predicate,
                 scan_type,
-                file_options: options,
+                unified_scan_args,
                 output_schema,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
-                if let Some(col) = options.include_file_paths.as_deref() {
+                // TODO: Allow predicates on file names, this should be supported by new-streaming.
+                if let Some(col) = unified_scan_args.include_file_paths.as_deref() {
                     blocked_names.push(col);
                 }
 
@@ -391,7 +365,7 @@ impl PredicatePushDown<'_> {
                         // Disallow row index pushdown of other scans as they may
                         // not update the row index properly before applying the
                         // predicate (e.g. FileScan::Csv doesn't).
-                        if let Some(ref row_index) = options.row_index {
+                        if let Some(ref row_index) = unified_scan_args.row_index {
                             blocked_names.push(row_index.name.as_ref());
                         };
                     },
@@ -408,7 +382,7 @@ impl PredicatePushDown<'_> {
 
                 let mut do_optimization = match &*scan_type {
                     #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => options.pre_slice.is_none(),
+                    FileScan::Csv { .. } => unified_scan_args.pre_slice.is_none(),
                     FileScan::Anonymous { function, .. } => function.allows_predicate_pushdown(),
                     #[cfg(feature = "json")]
                     FileScan::NDJson { .. } => true,
@@ -425,7 +399,7 @@ impl PredicatePushDown<'_> {
                         file_info,
                         hive_parts,
                         predicate,
-                        file_options: options,
+                        unified_scan_args,
                         output_schema,
                         scan_type,
                     }
@@ -435,7 +409,7 @@ impl PredicatePushDown<'_> {
                         file_info,
                         hive_parts,
                         predicate: None,
-                        file_options: options,
+                        unified_scan_args,
                         output_schema,
                         scan_type,
                     };
@@ -505,21 +479,15 @@ impl PredicatePushDown<'_> {
                 if function.allow_predicate_pd() {
                     match function {
                         FunctionIR::Rename { existing, new, .. } => {
-                            let local_predicates =
-                                process_rename(&mut acc_predicates, expr_arena, existing, new)?;
-                            let lp = self.pushdown_and_continue(
+                            process_rename(&mut acc_predicates, expr_arena, existing, new);
+
+                            self.pushdown_and_continue(
                                 lp,
                                 acc_predicates,
                                 lp_arena,
                                 expr_arena,
                                 false,
-                            )?;
-                            Ok(self.optional_apply_predicate(
-                                lp,
-                                local_predicates,
-                                lp_arena,
-                                expr_arena,
-                            ))
+                            )
                         },
                         FunctionIR::Explode { columns, .. } => {
                             let condition = |name: &PlSmallStr| columns.iter().any(|s| s == name);

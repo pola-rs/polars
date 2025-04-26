@@ -59,6 +59,7 @@ Computation
     Series.rank
     Series.replace
     Series.replace_strict
+    Series.rolling_kurtosis
     Series.rolling_map
     Series.rolling_max
     Series.rolling_mean

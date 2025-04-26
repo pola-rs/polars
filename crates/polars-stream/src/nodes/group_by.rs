@@ -1,47 +1,115 @@
 use std::sync::Arc;
 
 use polars_core::POOL;
-use polars_core::prelude::{IntoColumn, PlRandomState};
+use polars_core::prelude::{IntoColumn, PlHashSet, PlRandomState};
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
+use polars_expr::hot_groups::{HotGrouper, new_hash_hot_grouper};
 use polars_expr::reduce::GroupedReduction;
+use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
+use polars_utils::itertools::Itertools;
+use polars_utils::pl_str::PlSmallStr;
+use polars_utils::sparse_init_vec::SparseInitVec;
 use rayon::prelude::*;
 
 use super::compute_node_prelude::*;
-use crate::GROUP_BY_MIN_ROWS_PER_PARTITION;
+use crate::async_executor;
 use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
+use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
+#[cfg(debug_assertions)]
+const DEFAULT_HOT_TABLE_SIZE: usize = 4;
+#[cfg(not(debug_assertions))]
+const DEFAULT_HOT_TABLE_SIZE: usize = 4096;
+
 struct LocalGroupBySinkState {
-    grouper: Box<dyn Grouper>,
-    grouped_reductions: Vec<Box<dyn GroupedReduction>>,
+    hot_grouper: Box<dyn HotGrouper>,
+    hot_grouped_reductions: Vec<Box<dyn GroupedReduction>>,
+
+    // A cardinality sketch per partition for the keys seen by this builder.
+    sketch_per_p: Vec<CardinalitySketch>,
+
+    // morsel_idxs_values_per_p[p][start..stop] contains the offsets into cold_morsels[i]
+    // for partition p, where start, stop are:
+    // let start = morsel_idxs_offsets[i * num_partitions + p];
+    // let stop = morsel_idxs_offsets[(i + 1) * num_partitions + p];
+    cold_morsels: Vec<(u64, HashKeys, DataFrame)>,
+    morsel_idxs_values_per_p: Vec<Vec<IdxSize>>,
+    morsel_idxs_offsets_per_p: Vec<usize>,
+
+    // Similar to the above, but for (evicted) pre-aggregates.
+    pre_aggs: Vec<(HashKeys, Vec<Box<dyn GroupedReduction>>)>,
+    pre_agg_idxs_values_per_p: Vec<Vec<IdxSize>>,
+    pre_agg_idxs_offsets_per_p: Vec<usize>,
 }
 
 impl LocalGroupBySinkState {
-    fn into_df(self, output_schema: &Schema) -> PolarsResult<DataFrame> {
-        let mut out = self.grouper.get_keys_in_group_order();
-        let out_names = output_schema.iter_names().skip(out.width());
-        for (mut r, name) in self.grouped_reductions.into_iter().zip(out_names) {
-            unsafe {
-                out.with_column_unchecked(r.finalize()?.with_name(name.clone()).into_column());
-            }
+    fn new(
+        key_schema: Arc<Schema>,
+        reductions: Vec<Box<dyn GroupedReduction>>,
+        hot_table_size: usize,
+        num_partitions: usize,
+    ) -> Self {
+        let hot_grouper = new_hash_hot_grouper(key_schema, hot_table_size);
+        Self {
+            hot_grouper,
+            hot_grouped_reductions: reductions,
+
+            sketch_per_p: vec![CardinalitySketch::new(); num_partitions],
+
+            cold_morsels: Vec::new(),
+            morsel_idxs_values_per_p: vec![Vec::new(); num_partitions],
+            morsel_idxs_offsets_per_p: vec![0; num_partitions],
+
+            pre_aggs: Vec::new(),
+            pre_agg_idxs_values_per_p: vec![Vec::new(); num_partitions],
+            pre_agg_idxs_offsets_per_p: vec![0; num_partitions],
         }
-        Ok(out)
+    }
+
+    fn flush_evictions(&mut self, partitioner: &HashPartitioner) {
+        let hash_keys = self.hot_grouper.take_evicted_keys();
+        let reductions = self
+            .hot_grouped_reductions
+            .iter_mut()
+            .map(|hgr| hgr.take_evictions())
+            .collect_vec();
+        self.add_pre_agg(hash_keys, reductions, partitioner);
+    }
+
+    fn add_pre_agg(
+        &mut self,
+        hash_keys: HashKeys,
+        reductions: Vec<Box<dyn GroupedReduction>>,
+        partitioner: &HashPartitioner,
+    ) {
+        hash_keys.gen_idxs_per_partition(
+            partitioner,
+            &mut self.pre_agg_idxs_values_per_p,
+            &mut self.sketch_per_p,
+            true,
+        );
+        self.pre_agg_idxs_offsets_per_p
+            .extend(self.pre_agg_idxs_values_per_p.iter().map(|vp| vp.len()));
+        self.pre_aggs.push((hash_keys, reductions));
     }
 }
 
 struct GroupBySinkState {
     key_selectors: Vec<StreamExpr>,
-    grouped_reduction_selectors: Vec<StreamExpr>,
     grouper: Box<dyn Grouper>,
+    uniq_grouped_reduction_cols: Vec<PlSmallStr>,
+    grouped_reduction_cols: Vec<PlSmallStr>,
     grouped_reductions: Vec<Box<dyn GroupedReduction>>,
-    local: Vec<LocalGroupBySinkState>,
+    locals: Vec<LocalGroupBySinkState>,
     random_state: PlRandomState,
+    partitioner: HashPartitioner,
 }
 
 impl GroupBySinkState {
@@ -52,50 +120,84 @@ impl GroupBySinkState {
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(receivers.len() >= self.local.len());
-        self.local
-            .resize_with(receivers.len(), || LocalGroupBySinkState {
-                grouper: self.grouper.new_empty(),
-                grouped_reductions: self
-                    .grouped_reductions
-                    .iter()
-                    .map(|r| r.new_empty())
-                    .collect(),
-            });
-        for (mut recv, local) in receivers.into_iter().zip(&mut self.local) {
+        for (mut recv, local) in receivers.into_iter().zip(&mut self.locals) {
             let key_selectors = &self.key_selectors;
-            let grouped_reduction_selectors = &self.grouped_reduction_selectors;
+            let uniq_grouped_reduction_cols = &self.uniq_grouped_reduction_cols;
+            let grouped_reduction_cols = &self.grouped_reduction_cols;
             let random_state = &self.random_state;
+            let partitioner = self.partitioner.clone();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                let mut group_idxs = Vec::new();
+                let mut hot_idxs = Vec::new();
+                let mut hot_group_idxs = Vec::new();
+                let mut cold_idxs = Vec::new();
                 while let Ok(morsel) = recv.recv().await {
-                    // Compute group indices from key.
+                    // Compute hot group indices from key.
                     let seq = morsel.seq().to_u64();
-                    let df = morsel.into_df();
+                    let mut df = morsel.into_df();
                     let mut key_columns = Vec::new();
                     for selector in key_selectors {
                         let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;
                         key_columns.push(s.into_column());
                     }
                     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
-                    let hash_keys = HashKeys::from_df(&keys, *random_state, true, true);
-                    group_idxs.clear();
-                    local.grouper.insert_keys(hash_keys, &mut group_idxs);
+                    let hash_keys = HashKeys::from_df(&keys, *random_state, true, false);
 
-                    // Update reductions.
-                    for (selector, reduction) in grouped_reduction_selectors
+                    hot_idxs.clear();
+                    hot_group_idxs.clear();
+                    cold_idxs.clear();
+                    local.hot_grouper.insert_keys(
+                        &hash_keys,
+                        &mut hot_idxs,
+                        &mut hot_group_idxs,
+                        &mut cold_idxs,
+                    );
+
+                    // Drop columns not used for reductions (key-only columns).
+                    if uniq_grouped_reduction_cols.len() < grouped_reduction_cols.len() {
+                        df = df._select_impl(uniq_grouped_reduction_cols).unwrap();
+                    }
+                    df.rechunk_mut(); // For gathers.
+
+                    // Update hot reductions.
+                    for (col, reduction) in grouped_reduction_cols
                         .iter()
-                        .zip(&mut local.grouped_reductions)
+                        .zip(&mut local.hot_grouped_reductions)
                     {
                         unsafe {
                             // SAFETY: we resize the reduction to the number of groups beforehand.
-                            reduction.resize(local.grouper.num_groups());
-                            reduction.update_groups(
-                                &selector.evaluate(&df, &state.in_memory_exec_state).await?,
-                                &group_idxs,
+                            reduction.resize(local.hot_grouper.num_groups());
+                            reduction.update_groups_while_evicting(
+                                df.column(col).unwrap(),
+                                &hot_idxs,
+                                &hot_group_idxs,
                                 seq,
                             )?;
                         }
+                    }
+
+                    // Store cold keys.
+                    // TODO: don't always gather, if majority cold simply store all and remember offsets into it.
+                    if !cold_idxs.is_empty() {
+                        unsafe {
+                            let cold_keys = hash_keys.gather_unchecked(&cold_idxs);
+                            let cold_df = df.take_slice_unchecked_impl(&cold_idxs, false);
+
+                            cold_keys.gen_idxs_per_partition(
+                                &partitioner,
+                                &mut local.morsel_idxs_values_per_p,
+                                &mut local.sketch_per_p,
+                                true,
+                            );
+                            local
+                                .morsel_idxs_offsets_per_p
+                                .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
+                            local.cold_morsels.push((seq, cold_keys, cold_df));
+                        }
+                    }
+
+                    // If we have too many evicted rows, flush them.
+                    if local.hot_grouper.num_evictions() >= get_ideal_morsel_size() {
+                        local.flush_evictions(&partitioner);
                     }
                 }
                 Ok(())
@@ -103,130 +205,241 @@ impl GroupBySinkState {
         }
     }
 
-    fn combine_locals(
-        output_schema: &Schema,
-        mut locals: Vec<LocalGroupBySinkState>,
-    ) -> PolarsResult<DataFrame> {
-        if locals.is_empty() {
-            return Ok(DataFrame::empty_with_schema(output_schema));
-        }
-        let mut group_idxs = Vec::new();
-        let mut combined = locals.pop().unwrap();
-        for local in locals {
-            combined.grouper.combine(&*local.grouper, &mut group_idxs);
-            for (l, r) in combined
-                .grouped_reductions
-                .iter_mut()
-                .zip(&local.grouped_reductions)
-            {
-                unsafe {
-                    l.resize(combined.grouper.num_groups());
-                    l.combine(&**r, &group_idxs)?;
-                }
-            }
-        }
-        combined.into_df(output_schema)
-    }
-
-    fn combine_locals_parallel(
-        num_partitions: usize,
-        output_schema: &Schema,
-        locals: Vec<LocalGroupBySinkState>,
-    ) -> PolarsResult<DataFrame> {
-        if locals.is_empty() {
-            return Ok(DataFrame::empty_with_schema(output_schema));
-        }
-        let partitioner = HashPartitioner::new(num_partitions, 0);
+    fn combine_locals(&mut self) -> PolarsResult<Vec<GroupByPartition>> {
+        // Finalize pre-aggregations.
         POOL.install(|| {
-            let l_partitions: Vec<_> = locals
-                .as_slice()
+            self.locals
+                .as_mut_slice()
                 .into_par_iter()
                 .with_max_len(1)
-                .map(|local| {
-                    let mut partition_idxs = vec![Vec::new(); num_partitions];
-                    let mut sketches = vec![CardinalitySketch::new(); num_partitions];
-                    local.grouper.gen_partition_idxs(
-                        &partitioner,
-                        &mut partition_idxs,
-                        &mut sketches,
-                    );
-                    (partition_idxs, sketches)
-                })
-                .collect();
+                .for_each(|l| {
+                    if l.hot_grouper.num_evictions() > 0 {
+                        l.flush_evictions(&self.partitioner);
+                    }
+                    let hot_keys = l.hot_grouper.keys();
+                    let hot_reductions = core::mem::take(&mut l.hot_grouped_reductions);
+                    l.add_pre_agg(hot_keys, hot_reductions, &self.partitioner);
+                });
+        });
 
-            let frames = unsafe {
-                (0..num_partitions)
-                    .into_par_iter()
-                    .with_max_len(1)
-                    .map(|p| {
-                        // Estimate combined cardinality.
-                        let mut combined_sketch = CardinalitySketch::new();
-                        for l_partition in &l_partitions {
-                            combined_sketch.combine(&l_partition.1[p]);
+        // To reduce maximum memory usage we want to drop the morsels
+        // as soon as they're processed, so we move into Arcs. The drops might
+        // also be expensive, so instead of directly dropping we put that on
+        // a work queue.
+        let morsels_per_local = self
+            .locals
+            .iter_mut()
+            .map(|l| Arc::new(core::mem::take(&mut l.cold_morsels)))
+            .collect_vec();
+        let pre_aggs_per_local = self
+            .locals
+            .iter_mut()
+            .map(|l| Arc::new(core::mem::take(&mut l.pre_aggs)))
+            .collect_vec();
+        enum ToDrop<A, B> {
+            A(A),
+            B(B),
+        }
+        let (drop_q_send, drop_q_recv) = async_channel::bounded(self.locals.len());
+        let num_partitions = self.locals[0].sketch_per_p.len();
+        let output_per_partition: SparseInitVec<GroupByPartition> =
+            SparseInitVec::with_capacity(num_partitions);
+        let locals = &self.locals;
+        let grouper_template = &self.grouper;
+        let grouped_reductions_template = &self.grouped_reductions;
+        let grouped_reduction_cols = &self.grouped_reduction_cols;
+
+        async_executor::task_scope(|s| {
+            // Wrap in outer Arc to move to each thread, performing the
+            // expensive clone on that thread.
+            let arc_morsels_per_local = Arc::new(morsels_per_local);
+            let arc_pre_aggs_per_local = Arc::new(pre_aggs_per_local);
+            let mut join_handles = Vec::new();
+            for p in 0..num_partitions {
+                let arc_morsels_per_local = Arc::clone(&arc_morsels_per_local);
+                let arc_pre_aggs_per_local = Arc::clone(&arc_pre_aggs_per_local);
+                let drop_q_send = drop_q_send.clone();
+                let drop_q_recv = drop_q_recv.clone();
+                let output_per_partition = &output_per_partition;
+                join_handles.push(s.spawn_task(TaskPriority::High, async move {
+                    // Extract from outer arc and drop outer arc.
+                    let morsels_per_local = Arc::unwrap_or_clone(arc_morsels_per_local);
+                    let pre_aggs_per_local = Arc::unwrap_or_clone(arc_pre_aggs_per_local);
+
+                    // Compute cardinality estimate and total amount of
+                    // payload for this partition.
+                    let mut sketch = CardinalitySketch::new();
+                    for l in locals {
+                        sketch.combine(&l.sketch_per_p[p]);
+                    }
+
+                    // Allocate grouper and reductions.
+                    let est_num_groups = sketch.estimate() * 5 / 4;
+                    let mut p_grouper = grouper_template.new_empty();
+                    let mut p_reductions = grouped_reductions_template
+                        .iter()
+                        .map(|gr| gr.new_empty())
+                        .collect_vec();
+                    p_grouper.reserve(est_num_groups);
+                    for r in &mut p_reductions {
+                        r.reserve(est_num_groups);
+                    }
+
+                    // Insert morsels.
+                    let mut skip_drop_attempt = false;
+                    let mut group_idxs = Vec::new();
+                    for (l, l_morsels) in locals.iter().zip(morsels_per_local) {
+                        // Try to help with dropping.
+                        if !skip_drop_attempt {
+                            drop(drop_q_recv.try_recv());
                         }
-                        let combined_cardinality = combined_sketch.estimate() * 5 / 4;
 
-                        // Allocate with the estimated cardinality.
-                        let mut combined = LocalGroupBySinkState {
-                            grouper: locals[0].grouper.new_empty(),
-                            grouped_reductions: locals[0]
-                                .grouped_reductions
-                                .iter()
-                                .map(|r| r.new_empty())
-                                .collect(),
-                        };
-                        combined.grouper.reserve(combined_cardinality);
-                        for r in combined.grouped_reductions.iter_mut() {
-                            r.reserve(combined_cardinality);
-                        }
+                        for (i, morsel) in l_morsels.iter().enumerate() {
+                            let (seq_id, keys, cols) = morsel;
+                            unsafe {
+                                let p_morsel_idxs_start =
+                                    l.morsel_idxs_offsets_per_p[i * num_partitions + p];
+                                let p_morsel_idxs_stop =
+                                    l.morsel_idxs_offsets_per_p[(i + 1) * num_partitions + p];
+                                let p_morsel_idxs = &l.morsel_idxs_values_per_p[p]
+                                    [p_morsel_idxs_start..p_morsel_idxs_stop];
 
-                        // Combine everything.
-                        let mut group_idxs = Vec::new();
-                        for l in 0..locals.len() {
-                            combined.grouper.gather_combine(
-                                &*locals[l].grouper,
-                                &l_partitions[l].0[p],
-                                &mut group_idxs,
-                            );
-                            for (a, b) in combined
-                                .grouped_reductions
-                                .iter_mut()
-                                .zip(&locals[l].grouped_reductions)
-                            {
-                                a.resize(combined.grouper.num_groups());
-                                a.gather_combine(&**b, &l_partitions[l].0[p], &group_idxs)?;
+                                group_idxs.clear();
+                                p_grouper.insert_keys_subset(
+                                    keys,
+                                    p_morsel_idxs,
+                                    Some(&mut group_idxs),
+                                );
+                                for (c, r) in grouped_reduction_cols.iter().zip(&mut p_reductions) {
+                                    let values = cols.column(c.as_str()).unwrap();
+                                    r.resize(p_grouper.num_groups());
+                                    r.update_groups_subset(
+                                        values,
+                                        p_morsel_idxs,
+                                        &group_idxs,
+                                        *seq_id,
+                                    )?;
+                                }
                             }
                         }
-                        combined.into_df(output_schema)
-                    })
-                    .collect::<PolarsResult<Vec<_>>>()?
-            };
 
-            Ok(accumulate_dataframes_vertical_unchecked(frames))
-        })
+                        if let Some(l) = Arc::into_inner(l_morsels) {
+                            // If we're the last thread to process this set of morsels we're probably
+                            // falling behind the rest, since the drop can be quite expensive we skip
+                            // a drop attempt hoping someone else will pick up the slack.
+                            drop(drop_q_send.try_send(ToDrop::A(l)));
+                            skip_drop_attempt = true;
+                        } else {
+                            skip_drop_attempt = false;
+                        }
+                    }
+
+                    // Insert pre-aggregates.
+                    for (l, l_pre_aggs) in locals.iter().zip(pre_aggs_per_local) {
+                        // Try to help with dropping.
+                        if !skip_drop_attempt {
+                            drop(drop_q_recv.try_recv());
+                        }
+
+                        for (i, key_pre_aggs) in l_pre_aggs.iter().enumerate() {
+                            let (keys, pre_aggs) = key_pre_aggs;
+                            unsafe {
+                                let p_pre_agg_idxs_start =
+                                    l.pre_agg_idxs_offsets_per_p[i * num_partitions + p];
+                                let p_pre_agg_idxs_stop =
+                                    l.pre_agg_idxs_offsets_per_p[(i + 1) * num_partitions + p];
+                                let p_pre_agg_idxs = &l.pre_agg_idxs_values_per_p[p]
+                                    [p_pre_agg_idxs_start..p_pre_agg_idxs_stop];
+
+                                group_idxs.clear();
+                                p_grouper.insert_keys_subset(
+                                    keys,
+                                    p_pre_agg_idxs,
+                                    Some(&mut group_idxs),
+                                );
+                                for (pre_agg, r) in pre_aggs.iter().zip(&mut p_reductions) {
+                                    r.resize(p_grouper.num_groups());
+                                    r.gather_combine(&**pre_agg, p_pre_agg_idxs, &group_idxs)?;
+                                }
+                            }
+                        }
+
+                        if let Some(l) = Arc::into_inner(l_pre_aggs) {
+                            // If we're the last thread to process this set of morsels we're probably
+                            // falling behind the rest, since the drop can be quite expensive we skip
+                            // a drop attempt hoping someone else will pick up the slack.
+                            drop(drop_q_send.try_send(ToDrop::B(l)));
+                            skip_drop_attempt = true;
+                        } else {
+                            skip_drop_attempt = false;
+                        }
+                    }
+
+                    // We're done, help others out by doing drops.
+                    drop(drop_q_send); // So we don't deadlock trying to receive from ourselves.
+                    while let Ok(to_drop) = drop_q_recv.recv().await {
+                        drop(to_drop);
+                    }
+
+                    output_per_partition
+                        .try_set(
+                            p,
+                            GroupByPartition {
+                                grouper: p_grouper,
+                                grouped_reductions: p_reductions,
+                            },
+                        )
+                        .ok()
+                        .unwrap();
+
+                    PolarsResult::Ok(())
+                }));
+            }
+
+            // Drop outer arc after spawning each thread so the inner arcs
+            // can get dropped as soon as they're processed. We also have to
+            // drop the drop queue sender so we don't deadlock waiting for it
+            // to end.
+            drop(arc_morsels_per_local);
+            drop(arc_pre_aggs_per_local);
+            drop(drop_q_send);
+
+            polars_io::pl_async::get_runtime().block_on(async move {
+                for handle in join_handles {
+                    handle.await?;
+                }
+                PolarsResult::Ok(())
+            })?;
+            PolarsResult::Ok(())
+        })?;
+
+        // Drop remaining local state in parallel.
+        POOL.install(|| {
+            core::mem::take(&mut self.locals)
+                .into_par_iter()
+                .with_max_len(1)
+                .for_each(drop);
+        });
+
+        Ok(output_per_partition.try_assume_init().ok().unwrap())
     }
+}
 
-    fn into_source(self, output_schema: &Schema) -> PolarsResult<InMemorySourceNode> {
-        let num_rows: usize = self
-            .local
-            .iter()
-            .map(|l| l.grouper.num_groups() as usize)
-            .sum();
-        let ideal_num_partitions = num_rows.div_ceil(GROUP_BY_MIN_ROWS_PER_PARTITION);
-        let num_partitions = if ideal_num_partitions >= 4 {
-            ideal_num_partitions.min(self.local.len())
-        } else {
-            // If the ideal number of partitions is this low, don't even bother.
-            1
-        };
+struct GroupByPartition {
+    grouper: Box<dyn Grouper>,
+    grouped_reductions: Vec<Box<dyn GroupedReduction>>,
+}
 
-        let df = if num_partitions == 1 {
-            Self::combine_locals(output_schema, self.local)
-        } else {
-            Self::combine_locals_parallel(num_partitions, output_schema, self.local)
-        };
-
-        Ok(InMemorySourceNode::new(Arc::new(df?), MorselSeq::default()))
+impl GroupByPartition {
+    fn into_df(self, output_schema: &Schema) -> PolarsResult<DataFrame> {
+        let mut out = self.grouper.get_keys_in_group_order();
+        let out_names = output_schema.iter_names().skip(out.width());
+        for (mut r, name) in self.grouped_reductions.into_iter().zip(out_names) {
+            unsafe {
+                out.with_column_unchecked(r.finalize()?.with_name(name.clone()).into_column());
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -242,22 +455,49 @@ pub struct GroupByNode {
 }
 
 impl GroupByNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        key_schema: Arc<Schema>,
         key_selectors: Vec<StreamExpr>,
-        grouped_reduction_selectors: Vec<StreamExpr>,
-        grouped_reductions: Vec<Box<dyn GroupedReduction>>,
         grouper: Box<dyn Grouper>,
+        grouped_reduction_cols: Vec<PlSmallStr>,
+        grouped_reductions: Vec<Box<dyn GroupedReduction>>,
         output_schema: Arc<Schema>,
         random_state: PlRandomState,
+        num_pipelines: usize,
     ) -> Self {
+        let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE")
+            .map(|sz| sz.parse::<usize>().unwrap())
+            .unwrap_or(DEFAULT_HOT_TABLE_SIZE);
+        let num_partitions = num_pipelines;
+        let uniq_grouped_reduction_cols = grouped_reduction_cols
+            .iter()
+            .cloned()
+            .collect::<PlHashSet<_>>()
+            .into_iter()
+            .collect_vec();
+        let locals = (0..num_pipelines)
+            .map(|_| {
+                let reductions = grouped_reductions.iter().map(|gr| gr.new_empty()).collect();
+                LocalGroupBySinkState::new(
+                    key_schema.clone(),
+                    reductions,
+                    hot_table_size,
+                    num_partitions,
+                )
+            })
+            .collect();
+        let partitioner = HashPartitioner::new(num_partitions, 0);
         Self {
             state: GroupByState::Sink(GroupBySinkState {
                 key_selectors,
-                grouped_reduction_selectors,
                 grouped_reductions,
                 grouper,
-                local: Vec::new(),
                 random_state,
+                uniq_grouped_reduction_cols,
+                grouped_reduction_cols,
+                locals,
+                partitioner,
             }),
             output_schema,
         }
@@ -285,12 +525,22 @@ impl ComputeNode for GroupByNode {
             },
             // Input is done, transition to being a source.
             GroupByState::Sink(_) if matches!(recv[0], PortState::Done) => {
-                let GroupByState::Sink(sink) =
+                let GroupByState::Sink(mut sink) =
                     core::mem::replace(&mut self.state, GroupByState::Done)
                 else {
                     unreachable!()
                 };
-                self.state = GroupByState::Source(sink.into_source(&self.output_schema)?);
+                let partitions = sink.combine_locals()?;
+                let dfs = POOL.install(|| {
+                    partitions
+                        .into_par_iter()
+                        .map(|p| p.into_df(&self.output_schema))
+                        .collect::<Result<Vec<_>, _>>()
+                })?;
+
+                let df = accumulate_dataframes_vertical_unchecked(dfs);
+                let source = InMemorySourceNode::new(Arc::new(df), MorselSeq::new(0));
+                self.state = GroupByState::Source(source);
             },
             // Defer to source node implementation.
             GroupByState::Source(src) => {

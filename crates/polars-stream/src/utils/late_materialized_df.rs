@@ -6,7 +6,7 @@ use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_plan::dsl::{FileScan, ScanSources};
 use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, FileInfo, IR};
-use polars_plan::prelude::{AnonymousScanOptions, FileScanOptions};
+use polars_plan::prelude::{AnonymousScanOptions, UnifiedScanArgs};
 
 /// Used to insert a dataframe into in-memory-engine query plan after the query
 /// plan has been made.
@@ -35,7 +35,7 @@ impl LateMaterializedDataFrame {
                 options,
                 function: self,
             }),
-            file_options: Box::new(FileScanOptions::default()),
+            unified_scan_args: Box::new(UnifiedScanArgs::default()),
         }
     }
 }

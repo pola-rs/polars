@@ -661,6 +661,6 @@ def test_escape_regex() -> None:
 
     with pytest.raises(
         TypeError,
-        match="escape_regex function supports only `str` type, got `<class 'int'>`",
+        match="escape_regex function supports only `str` type, got `int`",
     ):
         pl.escape_regex(3)  # type: ignore[arg-type]

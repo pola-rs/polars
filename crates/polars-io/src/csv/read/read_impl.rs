@@ -406,8 +406,9 @@ impl<'a> CoreReader<'a> {
                 debug_assert!(count == 0 || b[position] == self.parse_options.eol_char);
 
                 let (b, count) = if count == 0
-                    && unsafe { b.as_ptr().add(b.len()) == bytes.as_ptr().add(bytes.len()) }
-                {
+                    && unsafe {
+                        std::ptr::eq(b.as_ptr().add(b.len()), bytes.as_ptr().add(bytes.len()))
+                    } {
                     total_offset = bytes.len();
                     (b, 1)
                 } else {
@@ -449,7 +450,7 @@ impl<'a> CoreReader<'a> {
                                 // We cannot use the line count as there can be comments in the lines so we must correct line counts later.
                                 if let Some(rc) = &slf.row_index {
                                     // is first chunk
-                                    let offset = if b.as_ptr() == bytes.as_ptr() {
+                                    let offset = if std::ptr::eq(b.as_ptr(), bytes.as_ptr()) {
                                         Some(rc.offset)
                                     } else {
                                         None

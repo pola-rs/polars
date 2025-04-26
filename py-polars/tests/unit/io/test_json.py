@@ -5,6 +5,7 @@ import io
 import json
 import zlib
 from collections import OrderedDict
+from datetime import datetime
 from decimal import Decimal as D
 from io import BytesIO
 from typing import TYPE_CHECKING
@@ -582,3 +583,33 @@ def test_write_masked_out_list_22202() -> None:
     lazy = output_file.getvalue()
 
     assert eager == lazy
+
+
+def test_nested_datetime_ndjson() -> None:
+    f = io.StringIO(
+        """{"start_date":"2025-03-14T09:30:27Z","steps":[{"id":1,"start_date":"2025-03-14T09:30:27Z"},{"id":2,"start_date":"2025-03-14T09:31:27Z"}]}"""
+    )
+
+    schema = {
+        "start_date": pl.Datetime,
+        "steps": pl.List(pl.Struct({"id": pl.Int64, "start_date": pl.Datetime})),
+    }
+
+    assert pl.read_ndjson(f, schema=schema).to_dict(as_series=False) == {  # type: ignore[arg-type]
+        "start_date": [datetime(2025, 3, 14, 9, 30, 27)],
+        "steps": [
+            [
+                {"id": 1, "start_date": datetime(2025, 3, 14, 9, 30, 27)},
+                {"id": 2, "start_date": datetime(2025, 3, 14, 9, 31, 27)},
+            ]
+        ],
+    }
+
+
+def test_ndjson_22229() -> None:
+    li = [
+        '{ "campaign": {  "id": "123456" }, "metrics": { "conversions": 7}}',
+        '{ "campaign": {  "id": "654321" }, "metrics": { "conversions": 3.5}}',
+    ]
+
+    assert pl.read_ndjson(io.StringIO("\n".join(li))).to_dict(as_series=False)

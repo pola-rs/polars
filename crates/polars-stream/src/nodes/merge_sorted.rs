@@ -183,45 +183,42 @@ impl ComputeNode for MergeSortedNode {
         assert_eq!(send.len(), 1);
         assert_eq!(recv.len(), 2);
 
-        match (send[0], recv[0], recv[1]) {
-            (PortState::Done, _, _) => {
-                recv[0] = PortState::Done;
-                recv[1] = PortState::Done;
-            },
+        // Abstraction: we merge buffer state with port state so we can map
+        // to one three possible 'effective' states:
+        // no data now (_blocked); data available (); or no data anymore (_done)
+        let left_done = recv[0] == PortState::Done && self.left_unmerged.is_empty();
+        let right_done = recv[1] == PortState::Done && self.right_unmerged.is_empty();
 
-            (_, PortState::Done, PortState::Done)
-                if self.left_unmerged.is_empty() && self.right_unmerged.is_empty() =>
-            {
-                send[0] = PortState::Done;
-            },
-
-            // If the output port is blocked, the input port is blocked as well.
-            (PortState::Blocked, _, _) => {
-                if recv[0] != PortState::Done {
-                    recv[0] = PortState::Blocked;
-                }
-                if recv[1] != PortState::Done {
-                    recv[1] = PortState::Blocked;
-                }
-            },
-
-            // If one of the two ports is blocked such that we cannot produce data anymore, block
-            // the other input port and output port.
-            (_, PortState::Blocked, _) if self.left_unmerged.is_empty() => {
-                send[0] = PortState::Blocked;
-                if recv[1] != PortState::Done {
-                    recv[1] = PortState::Blocked;
-                }
-            },
-            (_, _, PortState::Blocked) if self.right_unmerged.is_empty() => {
-                send[0] = PortState::Blocked;
-                if recv[0] != PortState::Done {
-                    recv[0] = PortState::Blocked;
-                }
-            },
-
-            _ => send[0] = PortState::Ready,
+        // We're done as soon as one side is done.
+        if send[0] == PortState::Done || (left_done && right_done) {
+            recv[0] = PortState::Done;
+            recv[1] = PortState::Done;
+            send[0] = PortState::Done;
+            return Ok(());
         }
+
+        // Each port is ready to proceed unless one of the other ports is effectively
+        // blocked. For example:
+        // - [Blocked with empty buffer, Ready] [Ready] returns [Ready, Blocked] [Blocked]
+        // - [Blocked with non-empty buffer, Ready] [Ready] returns [Ready, Ready, Ready]
+        let send_blocked = send[0] == PortState::Blocked;
+        let left_blocked = recv[0] == PortState::Blocked && self.left_unmerged.is_empty();
+        let right_blocked = recv[1] == PortState::Blocked && self.right_unmerged.is_empty();
+        send[0] = if left_blocked || right_blocked {
+            PortState::Blocked
+        } else {
+            PortState::Ready
+        };
+        recv[0] = if send_blocked || right_blocked {
+            PortState::Blocked
+        } else {
+            PortState::Ready
+        };
+        recv[1] = if send_blocked || left_blocked {
+            PortState::Blocked
+        } else {
+            PortState::Ready
+        };
 
         Ok(())
     }

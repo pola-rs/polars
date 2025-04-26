@@ -56,12 +56,12 @@ memchr = "2.6"
 memmap = { package = "memmap2", version = "0.9" }
 ndarray = { version = "0.16", default-features = false }
 num-traits = "0.2"
-numpy = "0.23"
+numpy = "0.24"
 object_store = { version = "0.11", default-features = false }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
-pyo3 = "0.23.4"
+pyo3 = "0.24.2"
 rand = "0.8"
 rand_distr = "0.4"
 raw-cpuid = "11"
@@ -76,6 +76,7 @@ serde = { version = "1.0.188", features = ["derive", "rc"] }
 serde_json = "1"
 simd-json = { version = "0.14", features = ["known-key"] }
 simdutf8 = "0.1.4"
+skiplist = "0.5.1"
 slotmap = "1"
 sqlparser = "0.53"
 stacker = "0.1"
@@ -137,6 +138,7 @@ features = [
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
+tikv-jemallocator = { git = "https://github.com/pola-rs/jemallocator", rev = "c7991e5bb6b3e9f79db6b0f48dcda67c5c3d2936" }
 
 [profile.mindebug-dev]
 inherits = "dev"

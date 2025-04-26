@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+import pytz
 from hypothesis import given
 
 import polars as pl
@@ -554,12 +555,59 @@ def test_read_utc_times_parquet() -> None:
     assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0, tzinfo=tz)
 
 
-def test_convert_pandas_timezone_info() -> None:
-    ts = pd.Timestamp("20200101 00:00").tz_localize("America/New_York")
-    df = pl.DataFrame({"date": [ts]})
-    assert df["date"][0] == datetime(
-        2020, 1, 1, 0, 0, tzinfo=ZoneInfo("America/New_York")
-    )
+@pytest.mark.parametrize(
+    "ts",
+    [
+        # Pandas support all of the following timezone and the pandas parsing behavior
+        # is
+        # - timezone name: pytz.timezone on <=2.x and ZoneInfo on 3.x.
+        # - timezone offset: datetime.timedelta.
+        # pytz.timezone.
+        # ZoneInfo.
+        # pytz.FixedOffset
+        # datetime.timedelta.
+        pd.Timestamp("20200101 00:00", tz=pytz.timezone("America/New_York")),
+        pd.Timestamp("20200101 00:00", tz=ZoneInfo("America/New_York")),
+        # TODO: polars currently doesn't retain FixedOffset timezone. They will be
+        # converted to UTC. Uncomment the following two tests once we support
+        # FixedOffset timezone.
+        # pd.Timestamp("20200101 00:00", tz=pytz.FixedOffset(-300)),
+        # pd.Timestamp("20200101 00:00", tz=timezone(timedelta(days=-1, seconds=68400)))
+    ],
+)
+def test_convert_pandas_timezone_info(ts: pd.Timestamp) -> None:
+    df1 = pl.DataFrame({"date": [ts]})
+    df2 = pl.select(date=pl.lit(ts))
+
+    for df in (df1, df2):
+        df_ts = df["date"][0]
+        assert df_ts == ts, (df_ts, ts)
+        assert df_ts.tzinfo is not None
+        assert ts.tzinfo is not None
+        assert df_ts.tzinfo.utcoffset(df_ts) == ts.tzinfo.utcoffset(ts), (
+            df_ts,
+            ts,
+        )
+
+
+@pytest.mark.parametrize(
+    "ts",
+    [
+        pd.Timestamp("20200101 00:00", tz=pytz.FixedOffset(-300)),
+        pd.Timestamp("20200101 00:00", tz=timezone(timedelta(days=-1, seconds=68400))),
+    ],
+)
+def test_convert_pandas_timezone_info_fixed_offset(ts: pd.Timestamp) -> None:
+    # TODO: polars currently doesn't retain FixedOffset timezone. They will
+    # be converted to UTC. Remove this test once we support FixedOffset
+    # timezone. See test_convert_pandas_timezone_info for more details.
+    df1 = pl.DataFrame({"date": [ts]})
+    df2 = pl.select(date=pl.lit(ts))
+
+    for df in (df1, df2):
+        df_ts = df["date"][0]
+        assert df_ts == ts, (df_ts, ts)
+        assert df_ts.tzinfo == ZoneInfo("UTC")
 
 
 def test_asof_join_tolerance_grouper() -> None:
@@ -2060,7 +2108,7 @@ def test_truncate_by_multiple_weeks_diffs() -> None:
         pl.col("ts").dt.truncate("1w").alias("1w"),
         pl.col("ts").dt.truncate("2w").alias("2w"),
         pl.col("ts").dt.truncate("3w").alias("3w"),
-    ).select(pl.all().diff().drop_nulls().unique())
+    ).select(pl.all().diff().drop_nulls().unique(maintain_order=True))
     expected = pl.DataFrame(
         {
             "1w": [timedelta(0), timedelta(days=7)],

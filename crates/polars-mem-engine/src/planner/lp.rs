@@ -436,12 +436,14 @@ fn create_physical_plan_impl(
             output_schema,
             scan_type,
             predicate,
-            mut file_options,
+            mut unified_scan_args,
         } => {
-            file_options.pre_slice = if let Some((offset, len)) = file_options.pre_slice {
-                Some((offset, _set_n_rows_for_scan(Some(len)).unwrap()))
+            unified_scan_args.pre_slice = if let Some(mut slice) = unified_scan_args.pre_slice {
+                *slice.len_mut() = _set_n_rows_for_scan(Some(slice.len())).unwrap();
+                Some(slice)
             } else {
-                _set_n_rows_for_scan(None).map(|x| (0, x))
+                _set_n_rows_for_scan(None)
+                    .map(|len| polars_utils::slice_enum::Slice::Positive { offset: 0, len })
             };
 
             let mut state = ExpressionConversionState::new(true);
@@ -479,7 +481,7 @@ fn create_physical_plan_impl(
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,
                         predicate,
-                        file_options,
+                        unified_scan_args,
                         file_info,
                         output_schema,
                         predicate_has_windows: state.has_windows,

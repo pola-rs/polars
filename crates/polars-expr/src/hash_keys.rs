@@ -201,11 +201,35 @@ impl HashKeys {
         }
     }
 
-    pub fn for_each_hash<F: FnMut(Option<u64>)>(&self, f: F) {
+    /// Calls f with the index of and hash of each element in this HashKeys.
+    ///
+    /// If the element is null and null_is_valid is false the respective hash
+    /// will be None.
+    pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
         match self {
             HashKeys::RowEncoded(s) => s.for_each_hash(f),
             HashKeys::Single(s) => s.for_each_hash(f),
             HashKeys::Binview(s) => s.for_each_hash(f),
+        }
+    }
+
+    /// Calls f with the index of and hash of each element in the given
+    /// subset of indices of the HashKeys.
+    ///
+    /// If the element is null and null_is_valid is false the respective hash
+    /// will be None.
+    ///
+    /// # Safety
+    /// The indices in the subset must be in-bounds.
+    pub unsafe fn for_each_hash_subset<F: FnMut(IdxSize, Option<u64>)>(
+        &self,
+        subset: &[IdxSize],
+        f: F,
+    ) {
+        match self {
+            HashKeys::RowEncoded(s) => s.for_each_hash_subset(subset, f),
+            HashKeys::Single(s) => s.for_each_hash_subset(subset, f),
+            HashKeys::Binview(s) => s.for_each_hash_subset(subset, f),
         }
     }
 
@@ -219,14 +243,13 @@ impl HashKeys {
         partition_nulls: bool,
     ) {
         unsafe {
-            // Arbitrarily put nulls in partition 0.
             let null_p = if partition_nulls | self.null_is_valid() {
-                0
+                partitioner.null_partition() as IdxSize
             } else {
                 IdxSize::MAX
             };
             partitions.reserve(self.len());
-            self.for_each_hash(|opt_h| {
+            self.for_each_hash(|_idx, opt_h| {
                 partitions.push_unchecked(
                     opt_h
                         .map(|h| partitioner.hash_to_partition(h) as IdxSize)
@@ -273,8 +296,8 @@ impl HashKeys {
         assert!(partition_idxs.len() == partitioner.num_partitions());
         assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
 
-        let mut idx = 0;
-        self.for_each_hash(|opt_h| {
+        let null_p = partitioner.null_partition();
+        self.for_each_hash(|idx, opt_h| {
             if let Some(h) = opt_h {
                 unsafe {
                     // SAFETY: we assured the number of partitions matches.
@@ -285,19 +308,27 @@ impl HashKeys {
                     }
                 }
             } else if partition_nulls {
-                // Arbitrarily put nulls in partition 0.
                 unsafe {
-                    partition_idxs.get_unchecked_mut(0).push(idx);
+                    partition_idxs.get_unchecked_mut(null_p).push(idx);
                 }
             }
-            idx += 1;
         });
     }
 
     pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
-        self.for_each_hash(|opt_h| {
+        self.for_each_hash(|_idx, opt_h| {
             sketch.insert(opt_h.unwrap_or(0));
         })
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+        match self {
+            HashKeys::RowEncoded(s) => Self::RowEncoded(s.gather_unchecked(idxs)),
+            HashKeys::Single(s) => Self::Single(s.gather_unchecked(idxs)),
+            HashKeys::Binview(s) => Self::Binview(s.gather_unchecked(idxs)),
+        }
     }
 }
 
@@ -308,16 +339,35 @@ pub struct RowEncodedKeys {
 }
 
 impl RowEncodedKeys {
-    pub fn for_each_hash<F: FnMut(Option<u64>)>(&self, mut f: F) {
-        if self.keys.has_nulls() {
-            let validity = self.keys.validity().unwrap();
-            for (hash, is_v) in self.hashes.values_iter().zip(validity) {
-                if is_v { f(Some(*hash)) } else { f(None) }
-            }
-        } else {
-            for hash in self.hashes.values_iter() {
-                f(Some(*hash))
-            }
+    pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
+        for_each_hash_prehashed(self.hashes.values().as_slice(), self.keys.validity(), f);
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn for_each_hash_subset<F: FnMut(IdxSize, Option<u64>)>(
+        &self,
+        subset: &[IdxSize],
+        f: F,
+    ) {
+        for_each_hash_subset_prehashed(
+            self.hashes.values().as_slice(),
+            self.keys.validity(),
+            subset,
+            f,
+        );
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        Self {
+            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
+                &self.hashes,
+                &idx_arr,
+            ),
+            keys: polars_compute::gather::binary::take_unchecked(&self.keys, &idx_arr),
         }
     }
 }
@@ -331,30 +381,31 @@ pub struct SingleKeys {
 }
 
 impl SingleKeys {
-    pub fn for_each_hash<F: FnMut(Option<u64>)>(&self, f: F) {
+    pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
         downcast_single_key_ca!(self.keys, |keys| {
-            for_each_hash(keys, f, &self.random_state);
+            for_each_hash_single(keys, &self.random_state, f);
         })
     }
-}
 
-fn for_each_hash<T, F>(keys: &ChunkedArray<T>, mut f: F, random_state: &PlRandomState)
-where
-    T: PolarsDataType,
-    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
-    F: FnMut(Option<u64>),
-{
-    if keys.has_nulls() {
-        for arr in keys.downcast_iter() {
-            for opt_k in arr.iter() {
-                f(opt_k.map(|k| random_state.tot_hash_one(k)))
-            }
-        }
-    } else {
-        for arr in keys.downcast_iter() {
-            for k in arr.values_iter() {
-                f(Some(random_state.tot_hash_one(k)))
-            }
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn for_each_hash_subset<F: FnMut(IdxSize, Option<u64>)>(
+        &self,
+        subset: &[IdxSize],
+        f: F,
+    ) {
+        downcast_single_key_ca!(self.keys, |keys| {
+            for_each_hash_subset_single(keys, subset, &self.random_state, f);
+        })
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+        Self {
+            random_state: self.random_state,
+            keys: self.keys.take_slice_unchecked(idxs),
+            null_is_valid: self.null_is_valid,
         }
     }
 }
@@ -368,26 +419,132 @@ pub struct BinviewKeys {
 }
 
 impl BinviewKeys {
-    pub fn for_each_hash<F: FnMut(Option<u64>)>(&self, mut f: F) {
-        if self.keys.has_nulls() {
-            let hash_slice = self.hashes.values().as_slice();
-            if let Some(validity) = self.keys.validity() {
-                for (i, v) in validity.iter().enumerate() {
-                    if v {
-                        f(Some(unsafe { *hash_slice.get_unchecked(i) }));
-                    } else {
-                        f(None);
-                    }
-                }
+    pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
+        for_each_hash_prehashed(self.hashes.values().as_slice(), self.keys.validity(), f);
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn for_each_hash_subset<F: FnMut(IdxSize, Option<u64>)>(
+        &self,
+        subset: &[IdxSize],
+        f: F,
+    ) {
+        for_each_hash_subset_prehashed(
+            self.hashes.values().as_slice(),
+            self.keys.validity(),
+            subset,
+            f,
+        );
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
+        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        Self {
+            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
+                &self.hashes,
+                &idx_arr,
+            ),
+            keys: polars_compute::gather::binview::take_binview_unchecked(&self.keys, &idx_arr),
+            null_is_valid: self.null_is_valid,
+        }
+    }
+}
+
+fn for_each_hash_prehashed<F: FnMut(IdxSize, Option<u64>)>(
+    hashes: &[u64],
+    opt_v: Option<&Bitmap>,
+    mut f: F,
+) {
+    if let Some(validity) = opt_v {
+        for (idx, (is_v, hash)) in validity.iter().zip(hashes).enumerate_idx() {
+            if is_v {
+                f(idx, Some(*hash))
             } else {
-                for h in self.hashes.values_iter() {
-                    f(Some(*h))
-                }
+                f(idx, None)
             }
-        } else {
-            for h in self.hashes.values_iter() {
-                f(Some(*h));
+        }
+    } else {
+        for (idx, h) in hashes.iter().enumerate_idx() {
+            f(idx, Some(*h));
+        }
+    }
+}
+
+/// # Safety
+/// The indices must be in-bounds.
+unsafe fn for_each_hash_subset_prehashed<F: FnMut(IdxSize, Option<u64>)>(
+    hashes: &[u64],
+    opt_v: Option<&Bitmap>,
+    subset: &[IdxSize],
+    mut f: F,
+) {
+    if let Some(validity) = opt_v {
+        for idx in subset {
+            let hash = *hashes.get_unchecked(*idx as usize);
+            let is_v = validity.get_bit_unchecked(*idx as usize);
+            if is_v {
+                f(*idx, Some(hash))
+            } else {
+                f(*idx, None)
             }
+        }
+    } else {
+        for idx in subset {
+            f(*idx, Some(*hashes.get_unchecked(*idx as usize)));
+        }
+    }
+}
+
+pub fn for_each_hash_single<T, F>(keys: &ChunkedArray<T>, random_state: &PlRandomState, mut f: F)
+where
+    T: PolarsDataType,
+    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
+    F: FnMut(IdxSize, Option<u64>),
+{
+    let mut idx = 0;
+    if keys.has_nulls() {
+        for arr in keys.downcast_iter() {
+            for opt_k in arr.iter() {
+                f(idx, opt_k.map(|k| random_state.tot_hash_one(k)));
+                idx += 1;
+            }
+        }
+    } else {
+        for arr in keys.downcast_iter() {
+            for k in arr.values_iter() {
+                f(idx, Some(random_state.tot_hash_one(k)));
+                idx += 1;
+            }
+        }
+    }
+}
+
+/// # Safety
+/// The indices must be in-bounds.
+unsafe fn for_each_hash_subset_single<T, F>(
+    keys: &ChunkedArray<T>,
+    subset: &[IdxSize],
+    random_state: &PlRandomState,
+    mut f: F,
+) where
+    T: PolarsDataType,
+    for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
+    F: FnMut(IdxSize, Option<u64>),
+{
+    let keys_arr = keys.downcast_as_array();
+
+    if keys_arr.has_nulls() {
+        for idx in subset {
+            let opt_k = keys_arr.get_unchecked(*idx as usize);
+            f(*idx, opt_k.map(|k| random_state.tot_hash_one(k)));
+        }
+    } else {
+        for idx in subset {
+            let k = keys_arr.value_unchecked(*idx as usize);
+            f(*idx, Some(random_state.tot_hash_one(k)));
         }
     }
 }

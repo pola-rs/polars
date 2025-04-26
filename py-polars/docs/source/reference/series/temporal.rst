@@ -21,6 +21,7 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.dst_offset
     Series.dt.epoch
     Series.dt.hour
+    Series.dt.is_business_day
     Series.dt.is_leap_year
     Series.dt.iso_year
     Series.dt.max

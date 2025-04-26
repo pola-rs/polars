@@ -253,6 +253,8 @@ pub struct GenericFirstLastGroupedReduction<P> {
     in_dtype: DataType,
     values: Vec<AnyValue<'static>>,
     seqs: Vec<u64>,
+    evicted_values: Vec<AnyValue<'static>>,
+    evicted_seqs: Vec<u64>,
     policy: PhantomData<fn() -> P>,
 }
 
@@ -262,6 +264,8 @@ impl<P> GenericFirstLastGroupedReduction<P> {
             in_dtype,
             values: Vec::new(),
             seqs: Vec::new(),
+            evicted_values: Vec::new(),
+            evicted_seqs: Vec::new(),
             policy: PhantomData,
         }
     }
@@ -269,12 +273,7 @@ impl<P> GenericFirstLastGroupedReduction<P> {
 
 impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<P> {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self {
-            in_dtype: self.in_dtype.clone(),
-            values: Vec::new(),
-            seqs: Vec::new(),
-            policy: PhantomData,
-        })
+        Box::new(Self::new(self.in_dtype.clone()))
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -319,6 +318,30 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         Ok(())
     }
 
+    unsafe fn update_groups_while_evicting(
+        &mut self,
+        values: &Column,
+        subset: &[IdxSize],
+        group_idxs: &[EvictIdx],
+        seq_id: u64,
+    ) -> PolarsResult<()> {
+        let seq_id = seq_id + 1; // We use 0 for 'no value'.
+        for (i, g) in subset.iter().zip(group_idxs) {
+            let grp_val = self.values.get_unchecked_mut(g.idx());
+            let grp_seq = self.seqs.get_unchecked_mut(g.idx());
+            if g.should_evict() {
+                self.evicted_values
+                    .push(core::mem::replace(grp_val, AnyValue::Null));
+                self.evicted_seqs.push(core::mem::replace(grp_seq, 0));
+            }
+            if P::should_replace(seq_id, *grp_seq) {
+                *grp_val = values.get_unchecked(*i as usize).into_static();
+                *grp_seq = seq_id;
+            }
+        }
+        Ok(())
+    }
+
     unsafe fn combine(
         &mut self,
         other: &dyn GroupedReduction,
@@ -358,23 +381,15 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         Ok(())
     }
 
-    unsafe fn partition(
-        self: Box<Self>,
-        partition_sizes: &[IdxSize],
-        partition_idxs: &[IdxSize],
-    ) -> Vec<Box<dyn GroupedReduction>> {
-        let values = partition::partition_vec(self.values, partition_sizes, partition_idxs);
-        let seqs = partition::partition_vec(self.seqs, partition_sizes, partition_idxs);
-        std::iter::zip(values, seqs)
-            .map(|(values, seqs)| {
-                Box::new(Self {
-                    in_dtype: self.in_dtype.clone(),
-                    values,
-                    seqs,
-                    policy: PhantomData,
-                }) as _
-            })
-            .collect()
+    fn take_evictions(&mut self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            in_dtype: self.in_dtype.clone(),
+            values: core::mem::take(&mut self.evicted_values),
+            seqs: core::mem::take(&mut self.evicted_seqs),
+            evicted_values: Vec::new(),
+            evicted_seqs: Vec::new(),
+            policy: PhantomData,
+        })
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {

@@ -1,6 +1,5 @@
 use arrow::array::Array;
 use polars_row::RowEncodingOptions;
-use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
@@ -81,29 +80,6 @@ impl Grouper for RowEncodedHashGrouper {
         self.idx_map.len()
     }
 
-    fn insert_keys(&mut self, keys: HashKeys, group_idxs: &mut Vec<IdxSize>) {
-        let HashKeys::RowEncoded(keys) = keys else {
-            unreachable!()
-        };
-        assert!(!keys.hashes.has_nulls());
-
-        unsafe {
-            if keys.keys.has_nulls() {
-                group_idxs.reserve(keys.keys.len() - keys.keys.null_count());
-                for (idx, hash) in keys.hashes.values_iter().enumerate() {
-                    if let Some(key) = keys.keys.get_unchecked(idx) {
-                        group_idxs.push_unchecked(self.insert_key(*hash, key));
-                    }
-                }
-            } else {
-                group_idxs.reserve(keys.hashes.len());
-                for (hash, key) in keys.hashes.values_iter().zip(keys.keys.values_iter()) {
-                    group_idxs.push_unchecked(self.insert_key(*hash, key));
-                }
-            }
-        }
-    }
-
     unsafe fn insert_keys_subset(
         &mut self,
         keys: &HashKeys,
@@ -113,74 +89,23 @@ impl Grouper for RowEncodedHashGrouper {
         let HashKeys::RowEncoded(keys) = keys else {
             unreachable!()
         };
-        assert!(!keys.hashes.has_nulls());
 
         unsafe {
-            if keys.keys.has_nulls() {
-                let groups = subset.iter().filter_map(|idx| {
-                    if let Some(key) = keys.keys.get_unchecked(*idx as usize) {
-                        let hash = keys.hashes.value_unchecked(*idx as usize);
-                        Some(self.insert_key(hash, key))
-                    } else {
-                        None
+            if let Some(group_idxs) = group_idxs {
+                group_idxs.reserve(subset.len());
+                keys.for_each_hash_subset(subset, |idx, opt_hash| {
+                    if let Some(hash) = opt_hash {
+                        let key = keys.keys.value_unchecked(idx as usize);
+                        group_idxs.push_unchecked(self.insert_key(hash, key));
                     }
                 });
-
-                if let Some(group_idxs) = group_idxs {
-                    group_idxs.reserve(keys.keys.len() - keys.keys.null_count());
-                    group_idxs.extend(groups);
-                } else {
-                    groups.for_each(drop);
-                }
             } else {
-                let groups = subset.iter().map(|idx| {
-                    let hash = keys.hashes.value_unchecked(*idx as usize);
-                    let key = keys.keys.value_unchecked(*idx as usize);
-                    self.insert_key(hash, key)
+                keys.for_each_hash_subset(subset, |idx, opt_hash| {
+                    if let Some(hash) = opt_hash {
+                        let key = keys.keys.value_unchecked(idx as usize);
+                        self.insert_key(hash, key);
+                    }
                 });
-
-                if let Some(group_idxs) = group_idxs {
-                    group_idxs.reserve(keys.hashes.len());
-                    group_idxs.extend(groups);
-                } else {
-                    groups.for_each(drop);
-                }
-            }
-        }
-    }
-
-    fn combine(&mut self, other: &dyn Grouper, group_idxs: &mut Vec<IdxSize>) {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-
-        // TODO: cardinality estimation.
-        self.idx_map.reserve(other.idx_map.len() as usize);
-
-        unsafe {
-            group_idxs.clear();
-            group_idxs.reserve(other.idx_map.len() as usize);
-            for (hash, key) in other.idx_map.iter_hash_keys() {
-                group_idxs.push_unchecked(self.insert_key(hash, key));
-            }
-        }
-    }
-
-    unsafe fn gather_combine(
-        &mut self,
-        other: &dyn Grouper,
-        subset: &[IdxSize],
-        group_idxs: &mut Vec<IdxSize>,
-    ) {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-
-        // TODO: cardinality estimation.
-        self.idx_map.reserve(subset.len());
-
-        unsafe {
-            group_idxs.clear();
-            group_idxs.reserve(subset.len());
-            for i in subset {
-                let (hash, key, ()) = other.idx_map.get_index_unchecked(*i);
-                group_idxs.push_unchecked(self.insert_key(hash, key));
             }
         }
     }
@@ -192,40 +117,6 @@ impl Grouper for RowEncodedHashGrouper {
                 key_rows.push_unchecked(key);
             }
             self.finalize_keys(key_rows)
-        }
-    }
-
-    fn gen_partition_idxs(
-        &self,
-        partitioner: &HashPartitioner,
-        partition_idxs: &mut [Vec<IdxSize>],
-        sketches: &mut [CardinalitySketch],
-    ) {
-        let num_partitions = partitioner.num_partitions();
-        assert!(partition_idxs.len() == num_partitions);
-        assert!(sketches.len() == num_partitions);
-
-        // Two-pass algorithm to prevent reallocations.
-        let mut partition_sizes = vec![0; num_partitions];
-        unsafe {
-            for (hash, _key) in self.idx_map.iter_hash_keys() {
-                let p_idx = partitioner.hash_to_partition(hash);
-                *partition_sizes.get_unchecked_mut(p_idx) += 1;
-                sketches.get_unchecked_mut(p_idx).insert(hash);
-            }
-        }
-
-        for (partition, sz) in partition_idxs.iter_mut().zip(partition_sizes) {
-            partition.clear();
-            partition.reserve(sz);
-        }
-
-        unsafe {
-            for (i, (hash, _key)) in self.idx_map.iter_hash_keys().enumerate() {
-                let p_idx = partitioner.hash_to_partition(hash);
-                let p = partition_idxs.get_unchecked_mut(p_idx);
-                p.push_unchecked(i as IdxSize);
-            }
         }
     }
 

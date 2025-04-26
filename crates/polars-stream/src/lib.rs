@@ -34,5 +34,3 @@ static DEFAULT_ZIP_HEAD_BUFFER_SIZE: LazyLock<usize> = LazyLock::new(|| {
         .map(|x| x.parse().unwrap())
         .unwrap_or(4)
 });
-
-const GROUP_BY_MIN_ROWS_PER_PARTITION: usize = 128;

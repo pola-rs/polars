@@ -7,7 +7,6 @@ use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
-use polars_plan::dsl::function_expr::rolling::RollingFunction;
 use polars_plan::dsl::function_expr::rolling_by::RollingFunctionBy;
 use polars_plan::dsl::{BooleanFunction, StringFunction, TemporalFunction};
 use polars_plan::plans::DynLiteralValue;
@@ -1094,34 +1093,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 #[cfg(feature = "sign")]
                 FunctionExpr::Sign => ("sign",).into_py_any(py),
                 FunctionExpr::FillNull => ("fill_null",).into_py_any(py),
-                FunctionExpr::RollingExpr(rolling) => match rolling {
-                    RollingFunction::Min(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling min"));
-                    },
-                    RollingFunction::Max(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling max"));
-                    },
-                    RollingFunction::Mean(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling mean"));
-                    },
-                    RollingFunction::Sum(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling sum"));
-                    },
-                    RollingFunction::Quantile(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling quantile"));
-                    },
-                    RollingFunction::Var(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling var"));
-                    },
-                    RollingFunction::Std(_) => {
-                        return Err(PyNotImplementedError::new_err("rolling std"));
-                    },
-                    RollingFunction::Skew(_, _) => {
-                        return Err(PyNotImplementedError::new_err("rolling skew"));
-                    },
-                    RollingFunction::CorrCov { .. } => {
-                        return Err(PyNotImplementedError::new_err("rolling cor_cov"));
-                    },
+                FunctionExpr::RollingExpr(rolling) => {
+                    return Err(PyNotImplementedError::new_err(format!("{}", rolling)));
                 },
                 FunctionExpr::RollingExprBy(rolling) => match rolling {
                     RollingFunctionBy::MinBy(_) => {

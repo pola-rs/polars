@@ -13,9 +13,10 @@ use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_compute::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
+    MaxWindow, MeanWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
+    SumWindow,
 };
-use polars_compute::rolling::nulls::RollingAggWindowNulls;
+use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
     self, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams, quantile_filter,
@@ -85,7 +86,7 @@ where
     // start with a dummy index, will be overwritten on first iteration.
     // SAFETY:
     // we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params) };
+    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params, None) };
 
     let mut validity = MutableBitmap::with_capacity(output_len);
     validity.extend_constant(output_len, true);
@@ -135,7 +136,7 @@ where
         return PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None);
     }
     // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, 0, 0, params);
+    let mut agg_window = Agg::new(values, 0, 0, params, None);
 
     offsets
         .map(|(start, len)| {
@@ -783,19 +784,25 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<VarWindow<_>, _, _>(
+                        None => _rolling_apply_agg_window_no_nulls::<
+                            MomentWindow<_, VarianceMoment>,
+                            _,
+                            _,
+                        >(
                             values,
                             offset_iter,
                             Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                            )
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<
+                            rolling::nulls::MomentWindow<_, VarianceMoment>,
+                            _,
+                            _,
+                        >(
+                            values,
+                            validity,
+                            offset_iter,
+                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
+                        ),
                     };
                     ChunkedArray::from(arr).into_series()
                 } else {
@@ -848,19 +855,25 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<VarWindow<_>, _, _>(
+                        None => _rolling_apply_agg_window_no_nulls::<
+                            MomentWindow<_, VarianceMoment>,
+                            _,
+                            _,
+                        >(
                             values,
                             offset_iter,
                             Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::VarWindow<_>, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                            )
-                        },
+                        Some(validity) => _rolling_apply_agg_window_nulls::<
+                            rolling::nulls::MomentWindow<_, rolling::nulls::VarianceMoment>,
+                            _,
+                            _,
+                        >(
+                            values,
+                            validity,
+                            offset_iter,
+                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
+                        ),
                     };
 
                     let mut ca = ChunkedArray::<T>::from(arr);

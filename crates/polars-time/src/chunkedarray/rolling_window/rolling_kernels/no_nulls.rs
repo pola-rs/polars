@@ -7,6 +7,7 @@ use chrono_tz::Tz;
 use num_traits::{FromPrimitive, ToPrimitive};
 use polars_compute::rolling::RollingFnParams;
 use polars_compute::rolling::no_nulls::{self, RollingAggWindowNoNulls};
+use polars_compute::rolling::nulls::VarianceMoment;
 use polars_compute::rolling::quantile_filter::SealedRolling;
 
 use super::*;
@@ -34,7 +35,7 @@ where
         )));
     }
     // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, 0, 0, params);
+    let mut agg_window = Agg::new(values, 0, 0, params, None);
 
     let out = offsets
         .map(|result| {
@@ -97,7 +98,7 @@ where
     }
     let sorting_indices = sorting_indices.expect("`sorting_indices` should have been set");
     // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, 0, 0, params);
+    let mut agg_window = Agg::new(values, 0, 0, params, None);
 
     let mut out = zeroed_vec(values.len());
     let mut validity: Option<MutableBitmap> = None;
@@ -321,14 +322,14 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<no_nulls::VarWindow<_>, _, _>(
+        rolling_apply_agg_window_sorted::<no_nulls::MomentWindow<_, VarianceMoment>, _, _>(
             values,
             offset_iter,
             min_periods,
             params,
         )
     } else {
-        rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(
+        rolling_apply_agg_window::<no_nulls::MomentWindow<_, VarianceMoment>, _, _>(
             values,
             offset_iter,
             min_periods,

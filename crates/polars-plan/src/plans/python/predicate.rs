@@ -33,6 +33,7 @@ fn accept_as_io_predicate(e: &Expr) -> bool {
                 && accept_as_io_predicate(falsy)
                 && accept_as_io_predicate(predicate)
         },
+        Expr::Cast { expr, .. } => accept_as_io_predicate(expr),
         Expr::Alias(_, _) => true,
         Expr::AnonymousFunction { input, options, .. } | Expr::Function { input, options, .. } => {
             options.is_elementwise() && input.iter().all(accept_as_io_predicate)

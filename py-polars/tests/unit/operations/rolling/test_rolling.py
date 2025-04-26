@@ -201,6 +201,34 @@ def test_rolling_skew() -> None:
     )
 
 
+def test_rolling_kurtosis() -> None:
+    s = pl.Series([1, 2, 3, 3, 2, 10, 8])
+    assert s.rolling_kurtosis(window_size=4, bias=True).to_list() == pytest.approx(
+        [
+            None,
+            None,
+            None,
+            -1.371900826446281,
+            -1.9999999999999991,
+            -0.7055324211778693,
+            -1.7878967572797346,
+        ]
+    )
+    assert s.rolling_kurtosis(
+        window_size=4, bias=True, fisher=False
+    ).to_list() == pytest.approx(
+        [
+            None,
+            None,
+            None,
+            1.628099173553719,
+            1.0000000000000009,
+            2.2944675788221307,
+            1.2121032427202654,
+        ]
+    )
+
+
 @pytest.mark.parametrize("time_zone", [None, "US/Central"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values", "expected_dtype"),
@@ -560,24 +588,28 @@ def test_overlapping_groups_4628() -> None:
 @pytest.mark.skipif(sys.platform == "win32", reason="Minor numerical diff")
 def test_rolling_skew_lagging_null_5179() -> None:
     s = pl.Series([None, 3, 4, 1, None, None, None, None, 3, None, 5, 4, 7, 2, 1, None])
-    assert s.rolling_skew(3).fill_nan(-1.0).to_list() == [
-        None,
-        None,
-        0.0,
-        -0.3818017741606059,
-        0.0,
-        -1.0,
-        None,
-        None,
-        -1.0,
-        -1.0,
-        0.0,
-        0.0,
-        0.38180177416060695,
-        0.23906314692954517,
-        0.6309038567106234,
-        0.0,
-    ]
+    result = s.rolling_skew(3, min_samples=1).fill_nan(-1.0)
+    expected = pl.Series(
+        [
+            None,
+            -1.0,
+            0.0,
+            -0.3818017741606059,
+            0.0,
+            -1.0,
+            None,
+            None,
+            -1.0,
+            -1.0,
+            0.0,
+            0.0,
+            0.38180177416060695,
+            0.23906314692954517,
+            0.6309038567106234,
+            0.0,
+        ]
+    )
+    assert_series_equal(result, expected, check_names=False)
 
 
 def test_rolling_var_numerical_stability_5197() -> None:

@@ -9,7 +9,6 @@ mod rename;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
 
-use arrow::Either;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
@@ -212,15 +211,12 @@ fn update_scan_schema(
 
 pub struct ProjectionPushDown {
     pub is_count_star: bool,
-    // @TODO: This is a hack to support both pre-NEW_MULTIFILE and post-NEW_MULTIFILE.
-    pub in_new_streaming_engine: bool,
 }
 
 impl ProjectionPushDown {
-    pub(super) fn new(in_new_streaming_engine: bool) -> Self {
+    pub(super) fn new() -> Self {
         Self {
             is_count_star: false,
-            in_new_streaming_engine,
         }
     }
 
@@ -391,6 +387,7 @@ impl ProjectionPushDown {
                 mut output_schema,
                 ..
             } => {
+                // TODO: Just project 0-width morsels.
                 if self.is_count_star {
                     ctx.process_count_star_at_scan(&schema, expr_arena);
                 }
@@ -436,16 +433,9 @@ impl ProjectionPushDown {
                 hive_parts,
                 scan_type,
                 predicate,
-                mut file_options,
+                mut unified_scan_args,
                 mut output_schema,
             } => {
-                // TODO: Remove
-                let in_new_streaming_engine = true;
-
-                if self.is_count_star && !in_new_streaming_engine {
-                    ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
-                }
-
                 let do_optimization = match &*scan_type {
                     FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
@@ -458,55 +448,64 @@ impl ProjectionPushDown {
                     FileScan::Parquet { .. } => true,
                 };
 
-                if do_optimization {
-                    file_options.with_columns = get_scan_columns(
-                        &ctx.acc_projections,
-                        expr_arena,
-                        file_options.row_index.as_ref(),
-                        file_options.include_file_paths.as_deref(),
-                    );
-
-                    if let Some(projection) = file_options.with_columns.as_mut() {
-                        if projection.is_empty() {
-                            match &*scan_type {
-                                #[cfg(feature = "parquet")]
-                                FileScan::Parquet { .. } => {},
-                                #[cfg(feature = "ipc")]
-                                FileScan::Ipc { .. } => {},
-                                // All nodes in new-streaming support projecting empty morsels with the correct height
-                                // from the file.
-                                _ if self.in_new_streaming_engine => {},
-                                // Other scan types do not yet support projection of e.g. only the row index or file path
-                                // column - ensure at least 1 column is projected from the file.
-                                _ => {
-                                    *projection = match &file_info.reader_schema {
-                                        Some(Either::Left(s)) => s.iter_names().next(),
-                                        Some(Either::Right(s)) => s.iter_names().next(),
-                                        None => None,
-                                    }
-                                    .into_iter()
-                                    .cloned()
-                                    .collect();
-
-                                    // TODO: Don't know why this works without needing to remove it
-                                    // later.
-                                    ctx.acc_projections.push(ColumnNode(
-                                        expr_arena.add(AExpr::Column(projection[0].clone())),
-                                    ));
-                                },
-                            }
-                        }
+                #[expect(clippy::never_loop)]
+                loop {
+                    if !do_optimization {
+                        break;
                     }
 
-                    output_schema = if file_options.with_columns.is_some() {
+                    if self.is_count_star {
+                        if let FileScan::Anonymous { .. } = &*scan_type {
+                            // Anonymous scan is not controlled by us, we don't know if it can support
+                            // 0-column projections, so we always project one.
+                            use either::Either;
+
+                            let projection: Arc<[PlSmallStr]> = match &file_info.reader_schema {
+                                Some(Either::Left(s)) => s.iter_names().next(),
+                                Some(Either::Right(s)) => s.iter_names().next(),
+                                None => None,
+                            }
+                            .into_iter()
+                            .cloned()
+                            .collect();
+
+                            unified_scan_args.projection = Some(projection.clone());
+
+                            if projection.is_empty() {
+                                output_schema = Some(Default::default());
+                                break;
+                            }
+
+                            ctx.acc_projections.push(ColumnNode(
+                                expr_arena.add(AExpr::Column(projection[0].clone())),
+                            ));
+
+                            unified_scan_args.projection = Some(projection)
+                        } else {
+                            // All nodes in new-streaming support projecting empty morsels with the correct height
+                            // from the file.
+                            unified_scan_args.projection = Some(Arc::from([]));
+                            output_schema = Some(Default::default());
+                            break;
+                        };
+                    }
+
+                    unified_scan_args.projection = get_scan_columns(
+                        &ctx.acc_projections,
+                        expr_arena,
+                        unified_scan_args.row_index.as_ref(),
+                        unified_scan_args.include_file_paths.as_deref(),
+                    );
+
+                    output_schema = if unified_scan_args.projection.is_some() {
                         let mut schema = update_scan_schema(
                             &ctx.acc_projections,
                             expr_arena,
                             &file_info.schema,
-                            scan_type.sort_projection(&file_options),
+                            scan_type.sort_projection(unified_scan_args.row_index.is_some()),
                         )?;
 
-                        if let Some(ref file_path_col) = file_options.include_file_paths {
+                        if let Some(ref file_path_col) = unified_scan_args.include_file_paths {
                             if let Some(i) = schema.index_of(file_path_col) {
                                 let (name, dtype) = schema.shift_remove_index(i).unwrap();
                                 schema.insert_at_index(schema.len(), name, dtype)?;
@@ -517,15 +516,13 @@ impl ProjectionPushDown {
                     } else {
                         None
                     };
-                }
 
-                if self.is_count_star && self.in_new_streaming_engine {
-                    output_schema = Some(output_schema.unwrap_or_default());
+                    break;
                 }
 
                 // File builder has a row index, but projected columns
                 // do not include it, so cull.
-                if let Some(RowIndex { ref name, .. }) = file_options.row_index {
+                if let Some(RowIndex { ref name, .. }) = unified_scan_args.row_index {
                     if output_schema
                         .as_ref()
                         .is_some_and(|schema| !schema.contains(name))
@@ -535,11 +532,11 @@ impl ProjectionPushDown {
                         let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
                         file_schema.shift_remove(name);
                         file_info.schema = Arc::new(file_schema);
-                        file_options.row_index = None;
+                        unified_scan_args.row_index = None;
                     }
                 };
 
-                if let Some(col_name) = &file_options.include_file_paths {
+                if let Some(col_name) = &unified_scan_args.include_file_paths {
                     if output_schema
                         .as_ref()
                         .is_some_and(|schema| !schema.contains(col_name))
@@ -549,7 +546,7 @@ impl ProjectionPushDown {
                         let mut file_schema = Arc::unwrap_or_clone(file_info.schema);
                         file_schema.shift_remove(col_name);
                         file_info.schema = Arc::new(file_schema);
-                        file_options.include_file_paths = None;
+                        unified_scan_args.include_file_paths = None;
                     }
                 };
 
@@ -560,23 +557,10 @@ impl ProjectionPushDown {
                     output_schema,
                     scan_type,
                     predicate,
-                    file_options,
+                    unified_scan_args,
                 };
 
-                if self.is_count_star {
-                    return Ok(lp);
-                }
-
-                // TODO: Our scans don't perfectly give the right projection order with combinations
-                // of hive columns that exist in the file, so we always add a `Select {}` node here.
-
-                if in_new_streaming_engine {
-                    Ok(lp)
-                } else {
-                    let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
-                    let builder = builder.project_simple_nodes(ctx.acc_projections)?;
-                    Ok(builder.build())
-                }
+                Ok(lp)
             },
             Sort {
                 input,

@@ -52,7 +52,9 @@ impl Executor for CachePrefiller {
         // Ensure we traverse in discovery order. This will ensure that caches aren't dependent on each
         // other.
         for cache in self.caches.values_mut() {
-            let _df = cache.execute(state)?;
+            let mut state = state.split();
+            state.branch_idx += 1;
+            let _df = cache.execute(&mut state)?;
         }
         if state.verbose() {
             eprintln!("EXECUTE PHYS PLAN")

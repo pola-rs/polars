@@ -1,12 +1,12 @@
 use std::fmt::Write;
 
 use polars_ops::frame::JoinType;
-use polars_plan::dsl::FileScan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
+use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
@@ -168,68 +168,72 @@ fn visualize_plan_rec(
             (label.to_string(), inputs.as_slice())
         },
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
-        PhysNodeKind::MultiScan { hive_parts, .. } => {
-            let mut out = "multi-scan-source".to_string();
+        PhysNodeKind::MultiScan {
+            scan_sources,
+            file_reader_builder,
+            cloud_options: _,
+            projected_file_schema,
+            output_schema,
+            row_index,
+            pre_slice,
+            predicate,
+            hive_parts,
+            include_file_paths,
+            cast_columns_policy: _,
+            missing_columns_policy: _,
+            extra_columns_policy: _,
+            file_schema: _,
+        } => {
+            let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
             let mut f = EscapeLabel(&mut out);
+
+            write!(f, "\n{} source", scan_sources.len()).unwrap();
+
+            if scan_sources.len() != 1 {
+                write!(f, "s").unwrap();
+            }
+
+            write!(
+                f,
+                "\nproject: {} total, {} from file",
+                output_schema.len(),
+                projected_file_schema.len()
+            )
+            .unwrap();
+
+            if let Some(ri) = row_index {
+                write!(f, "\nrow index: name: {}, offset: {:?}", ri.name, ri.offset).unwrap();
+            }
+
+            if let Some(col_name) = include_file_paths {
+                write!(f, "\nfile path column: {}", col_name).unwrap();
+            }
+
+            if let Some(pre_slice) = pre_slice {
+                write!(f, "\nslice: offset: ").unwrap();
+
+                match pre_slice {
+                    Slice::Positive { offset, len: _ } => write!(f, "{}", *offset),
+                    Slice::Negative {
+                        offset_from_end,
+                        len: _,
+                    } => write!(f, "-{}", *offset_from_end),
+                }
+                .unwrap();
+
+                write!(f, ", len: {}", pre_slice.len()).unwrap()
+            }
+
+            if let Some(predicate) = predicate {
+                write!(f, "\nfilter: {}", predicate.display(expr_arena)).unwrap();
+            }
 
             if let Some(v) = hive_parts.as_ref().map(|h| h.df().width()) {
-                write!(f, "\nhive: {} columns", v).unwrap();
-            }
+                write!(f, "\nhive: {} column", v).unwrap();
 
-            (out, &[][..])
-        },
-        PhysNodeKind::FileScan {
-            scan_source,
-            file_info,
-            output_schema: _,
-            scan_type,
-            predicate,
-            file_options,
-        } => {
-            let name = match &**scan_type {
-                #[cfg(feature = "parquet")]
-                FileScan::Parquet { .. } => "parquet-source",
-                #[cfg(feature = "csv")]
-                FileScan::Csv { .. } => "csv-source",
-                #[cfg(feature = "ipc")]
-                FileScan::Ipc { .. } => "ipc-source",
-                #[cfg(feature = "json")]
-                FileScan::NDJson { .. } => "ndjson-source",
-                FileScan::Anonymous { .. } => "anonymous-source",
-            };
-
-            let mut out = name.to_string();
-            let mut f = EscapeLabel(&mut out);
-
-            {
-                write!(f, "\npath: {}", scan_source.as_scan_source_ref()).unwrap();
-            }
-
-            {
-                let total_columns =
-                    file_info.schema.len() - usize::from(file_options.row_index.is_some());
-                let n_columns = file_options
-                    .with_columns
-                    .as_ref()
-                    .map(|columns| columns.len());
-
-                if let Some(n) = n_columns {
-                    write!(f, "\nprojection: {}/{total_columns}", n).unwrap();
-                } else {
-                    write!(f, "\nprojection: */{total_columns}").unwrap();
+                if v != 1 {
+                    write!(f, "s").unwrap();
                 }
-            }
-
-            if let Some(polars_io::RowIndex { name, offset }) = &file_options.row_index {
-                write!(f, r#"\nrow index: name: "{}", offset: {}"#, name, offset).unwrap();
-            }
-
-            if let Some((offset, len)) = file_options.pre_slice {
-                write!(f, "\nslice: offset: {}, len: {}", offset, len).unwrap();
-            }
-
-            if let Some(predicate) = predicate.as_ref() {
-                write!(f, "\nfilter: {}", predicate.display(expr_arena)).unwrap();
             }
 
             (out, &[][..])
@@ -266,8 +270,8 @@ fn visualize_plan_rec(
             output_bool: _,
         } => {
             let label = match phys_sm[node_key].kind {
-                PhysNodeKind::EquiJoin { .. } if args.how.is_equi() => "equi-join",
-                PhysNodeKind::EquiJoin { .. } => "in-memory-join",
+                PhysNodeKind::EquiJoin { .. } => "equi-join",
+                PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
                 } if args.how == JoinType::Semi => "semi-join",

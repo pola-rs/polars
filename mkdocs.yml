@@ -55,6 +55,7 @@ nav:
                       - user-guide/lazy/query-plan.md
                       - user-guide/lazy/execution.md
                       - user-guide/lazy/sources_sinks.md
+                      - user-guide/lazy/multiplexing.md
                       - user-guide/lazy/gpu.md
                 - IO:
                       - user-guide/io/index.md

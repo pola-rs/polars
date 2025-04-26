@@ -87,7 +87,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
         self.buffer_set.push(PLACEHOLDER_BUFFER.clone()) // Push placeholder so active_buffer_idx stays valid.
     }
 
-    fn push_value_ignore_validity(&mut self, bytes: &V) {
+    pub fn push_value_ignore_validity(&mut self, bytes: &V) {
         let bytes = bytes.to_bytes();
         self.total_bytes_len += bytes.len();
         unsafe {
@@ -103,6 +103,14 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
             };
             self.views.push(view);
         }
+    }
+
+    /// # Safety
+    /// The view must be inline.
+    pub unsafe fn push_inline_view_ignore_validity(&mut self, view: View) {
+        debug_assert!(view.is_inline());
+        self.total_bytes_len += view.length as usize;
+        self.views.push(view);
     }
 
     fn switch_active_stealing_bufferset_to(&mut self, buffer_set: &Arc<[Buffer<u8>]>) {

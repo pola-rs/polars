@@ -20,9 +20,15 @@ impl<
         + Sub<Output = T>,
 > RollingAggWindowNoNulls<'a, T> for MeanWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    fn new(
+        slice: &'a [T],
+        start: usize,
+        end: usize,
+        params: Option<RollingFnParams>,
+        window_size: Option<usize>,
+    ) -> Self {
         Self {
-            sum: SumWindow::new(slice, start, end, params),
+            sum: SumWindow::new(slice, start, end, params, window_size),
         }
     }
 

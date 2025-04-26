@@ -10,6 +10,7 @@ Manipulation/selection
     Series.alias
     Series.append
     Series.arg_sort
+    Series.backward_fill
     Series.bottom_k
     Series.cast
     Series.ceil
@@ -26,6 +27,7 @@ Manipulation/selection
     Series.fill_null
     Series.filter
     Series.floor
+    Series.forward_fill
     Series.gather
     Series.gather_every
     Series.head
