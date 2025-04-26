@@ -1,7 +1,7 @@
 use polars_core::prelude::{DataType, Field};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
-use polars_utils::error::{TruncateErrorDetail, TruncateMode};
+use polars_utils::error::TruncateErrorDetail;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -73,11 +73,7 @@ pub fn parse_type_json_str(type_json: &str) -> PolarsResult<DataType> {
             format!(
                 "error parsing type response: {}, type_json: {}",
                 e,
-                TruncateErrorDetail {
-                    content: type_json,
-                    mode: TruncateMode::End,
-                    max_length: 4096
-                }
+                TruncateErrorDetail(type_json)
             )
         })
     })
