@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
-from polars.io.iceberg import _convert_predicate, _to_ast
+from polars.io.iceberg._utils import _convert_predicate, _to_ast
 from polars.testing import assert_frame_equal
 
 
@@ -55,8 +55,8 @@ class TestIcebergScanIO:
         }
 
     def test_scan_iceberg_snapshot_id_not_found(self, iceberg_path: str) -> None:
-        with pytest.raises(ValueError, match="Snapshot ID not found"):
-            pl.scan_iceberg(iceberg_path, snapshot_id=1234567890)
+        with pytest.raises(pl.exceptions.ComputeError, match="snapshot ID not found"):
+            pl.scan_iceberg(iceberg_path, snapshot_id=1234567890).collect()
 
     def test_scan_iceberg_filter_on_partition(self, iceberg_path: str) -> None:
         ts1 = datetime(2023, 3, 1, 18, 15)
@@ -213,7 +213,6 @@ def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
 
     df.write_iceberg(table, mode="overwrite")
     actual = pl.scan_iceberg(table).collect()
-    print(df, actual)
 
     assert_frame_equal(df, actual)
 
@@ -222,5 +221,4 @@ def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
     # double the `df` by vertically stacking the dataframe on top of itself
     expected = df.vstack(df)
     actual = pl.scan_iceberg(table).collect()
-    print(expected, actual)
     assert_frame_equal(expected, actual, check_dtypes=False)

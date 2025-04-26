@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::config;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap};
 use polars_core::schema::Schema;
@@ -447,6 +448,10 @@ pub fn lower_ir(
                     .as_ref()
                     .is_some_and(|slice| slice.len() == 0)
             {
+                if config::verbose() {
+                    eprintln!("lower_ir: scan IR had empty sources")
+                }
+
                 // If there are no sources, just provide an empty in-memory source with the right
                 // schema.
                 PhysNodeKind::InMemorySource {
@@ -464,6 +469,7 @@ pub fn lower_ir(
                             first_metadata: first_metadata.clone(),
                         },
                     ) as Arc<dyn FileReaderBuilder>,
+
                     #[cfg(feature = "ipc")]
                     FileScan::Ipc {
                         options: polars_io::ipc::IpcScanOptions {},
@@ -482,7 +488,28 @@ pub fn lower_ir(
                         Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>
                     },
 
-                    _ => todo!(),
+                    #[cfg(feature = "python")]
+                    FileScan::PythonDataset {
+                        dataset_object: _,
+                        cached_ir,
+                    } => {
+                        use crate::physical_plan::io::python_dataset::python_dataset_scan_to_reader_builder;
+                        let guard = cached_ir.lock().unwrap();
+
+                        let (scan_name, scan_fn, python_source_type) = guard
+                            .as_ref()
+                            .expect("python dataset should be resolved")
+                            .python_scan()
+                            .expect("should be python scan");
+
+                        python_dataset_scan_to_reader_builder(
+                            scan_name,
+                            scan_fn.clone(),
+                            python_source_type,
+                        )
+                    },
+
+                    FileScan::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
                 };
 
                 {

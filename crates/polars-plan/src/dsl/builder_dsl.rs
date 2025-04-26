@@ -34,7 +34,7 @@ impl DslBuilder {
         })?;
 
         Ok(DslPlan::Scan {
-            sources: ScanSources::Buffers(Arc::default()),
+            sources: ScanSources::default(),
             file_info: Some(FileInfo {
                 schema: schema.clone(),
                 reader_schema: Some(either::Either::Right(schema)),
@@ -105,6 +105,25 @@ impl DslBuilder {
             cached_ir: Default::default(),
         }
         .into())
+    }
+
+    #[cfg(feature = "python")]
+    pub fn scan_python_dataset(
+        dataset_object: polars_utils::python_function::PythonObject,
+    ) -> DslBuilder {
+        use super::python_dataset::PythonDatasetProvider;
+
+        DslPlan::Scan {
+            sources: ScanSources::default(),
+            file_info: None,
+            unified_scan_args: Default::default(),
+            scan_type: Box::new(FileScan::PythonDataset {
+                dataset_object: Arc::new(PythonDatasetProvider::new(dataset_object)),
+                cached_ir: Default::default(),
+            }),
+            cached_ir: Default::default(),
+        }
+        .into()
     }
 
     pub fn cache(self) -> Self {

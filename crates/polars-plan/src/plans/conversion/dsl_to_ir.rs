@@ -180,6 +180,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         FileScan::NDJson { .. } => {
                             sources.expand_paths(unified_scan_args, cloud_options)?
                         },
+                        #[cfg(feature = "python")]
+                        FileScan::PythonDataset { .. } => {
+                            // There are a lot of places that short-circuit if the paths is empty,
+                            // so we just give a dummy path here.
+                            ScanSources::Paths(Arc::from(["dummy".into()]))
+                        },
                         FileScan::Anonymous { .. } => sources,
                     };
 
@@ -244,6 +250,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         cloud_options,
                     )
                     .map_err(|e| e.context(failed_here!(ndjson scan)))?,
+                    #[cfg(feature = "python")]
+                    FileScan::PythonDataset { dataset_object, .. } => {
+                        if crate::dsl::DATASET_PROVIDER_VTABLE.get().is_none() {
+                            polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
+                        }
+
+                        let schema = dataset_object.schema()?;
+
+                        FileInfo {
+                            schema: schema.clone(),
+                            reader_schema: Some(either::Either::Right(schema)),
+                            row_estimation: (None, usize::MAX),
+                        }
+                    },
                     FileScan::Anonymous { .. } => {
                         file_info.expect("FileInfo should be set for AnonymousScan")
                     },
@@ -291,22 +311,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     // schema.
                     file_info.update_schema_with_hive_schema(hive_schema);
                 }
-
-                unified_scan_args.include_file_paths = unified_scan_args
-                    .include_file_paths
-                    .as_ref()
-                    .filter(|_| match &*scan_type {
-                        #[cfg(feature = "parquet")]
-                        FileScan::Parquet { .. } => true,
-                        #[cfg(feature = "ipc")]
-                        FileScan::Ipc { .. } => true,
-                        #[cfg(feature = "csv")]
-                        FileScan::Csv { .. } => true,
-                        #[cfg(feature = "json")]
-                        FileScan::NDJson { .. } => true,
-                        FileScan::Anonymous { .. } => false,
-                    })
-                    .cloned();
 
                 if let Some(ref file_path_col) = unified_scan_args.include_file_paths {
                     let schema = Arc::make_mut(&mut file_info.schema);
