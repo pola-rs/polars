@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
