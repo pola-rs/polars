@@ -4,16 +4,16 @@ use std::path::Path;
 
 use polars_error::*;
 
-use crate::config::verbose;
+use crate::error::{TruncateErrorDetail, TruncateMode};
 
 pub fn _limit_path_len_io_err(path: &Path, err: io::Error) -> PolarsError {
     let path = path.to_string_lossy();
-    let msg = if path.len() > 88 && !verbose() {
-        let truncated_path: String = path.chars().skip(path.len() - 88).collect();
-        format!("{err}: ...{truncated_path}")
-    } else {
-        format!("{err}: {path}")
+    let truncated_path = TruncateErrorDetail {
+        content: path.as_ref(),
+        mode: TruncateMode::Front,
+        max_length: 88,
     };
+    let msg = format!("{err}: {truncated_path}");
     io::Error::new(err.kind(), msg).into()
 }
 
