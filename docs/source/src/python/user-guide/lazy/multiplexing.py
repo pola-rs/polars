@@ -36,6 +36,7 @@ out = [df1.slice(offset=i * 5, length=5) for i in range(2)]
 pl.testing.assert_frame_equal(df1, pl.concat(out))
 # --8<-- [end:eager]
 
+"""
 # --8<-- [start:lazy]
 lf1 = df.lazy().group_by("n").len()
 
@@ -43,6 +44,7 @@ out = [lf1.slice(offset=i * 5, length=5).collect() for i in range(2)]
 
 pl.testing.assert_frame_equal(lf1.collect(), pl.concat(out))
 # --8<-- [end:lazy]
+"""
 
 # --8<-- [start:plan_0]
 q1 = df.lazy().group_by("n").len()
