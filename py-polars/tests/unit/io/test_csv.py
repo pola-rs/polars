@@ -33,6 +33,9 @@ if TYPE_CHECKING:
 def foods_file_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.csv"
 
+def test_zip_csv():
+    dfs = pl.read_csv_from_zip("/Users/yusufyudhistira/Documents/GitHub/polars/docs/assets/data/test_csv.zip")
+    assert dfs['apple_stock.csv'].shape == (100, 2)
 
 def test_quoted_date() -> None:
     csv = textwrap.dedent(

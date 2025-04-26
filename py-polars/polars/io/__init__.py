@@ -2,7 +2,7 @@
 
 from polars.io.avro import read_avro
 from polars.io.clipboard import read_clipboard
-from polars.io.csv import read_csv, read_csv_batched, scan_csv
+from polars.io.csv import read_csv, read_csv_batched, scan_csv, read_csv_from_zip
 from polars.io.database import read_database, read_database_uri
 from polars.io.delta import read_delta, scan_delta
 from polars.io.iceberg import scan_iceberg
@@ -22,7 +22,7 @@ from polars.io.plugins import _defer as defer
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 from polars.io.spreadsheet import read_excel, read_ods
 
-__all__ = [
+__all__ = {
     "defer",
     "PartitionByKey",
     "PartitionMaxSize",
@@ -33,6 +33,7 @@ __all__ = [
     "read_avro",
     "read_clipboard",
     "read_csv",
+    "read_csv_from_zip",
     "read_csv_batched",
     "read_database",
     "read_database_uri",
@@ -53,4 +54,4 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
-]
+}
