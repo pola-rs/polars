@@ -7,8 +7,8 @@
 </div>
 
 In the [Sources and Sinks](./sources_sinks.md) page, we already discussed multiplexing as a way to
-split a query into multiple sinks. This page we'll go a bit deeper in this concept, as it is
-important to understand when combing `LazyFrame`s with procedural programming constructs.
+split a query into multiple sinks. This page will go a bit deeper in this concept, as it is
+important to understand when combining `LazyFrame`s with procedural programming constructs.
 
 When dealing with eager dataframes, it is very common to keep state in a temporary variable. Let's
 look at the following example. Below we create a `DataFrame` with 10 unique elements in a random
@@ -48,7 +48,7 @@ The reason this fails is that `lf1` doesn't contain the materialized result of
 ```
 
 This means that every time we branch of this `LazyFrame` and call `collect` we re-evaluate the
-group-by, which is not only expensive, it also leads to unexpected results if you assume that the
+group-by. Besides being expensive, this also leads to unexpected results if you assume that the
 output is stable (which isn't the case here).
 
 In the example above you are actually evaluating 2 query plans:
@@ -81,6 +81,6 @@ query come from the same subplan, indicated by the inserted "CACHE" nodes.
 --8<-- "python/user-guide/lazy/multiplexing.py:explain_all"
 ```
 
-Combining related subplans in a single execution unit with `pl.collect_all`, can thus lead to large
+Combining related subplans in a single execution unit with `pl.collect_all` can thus lead to large
 performance increases and allows diverging query plans, storing temporary tables, and a more
 procedural programming style.
