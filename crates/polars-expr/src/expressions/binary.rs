@@ -145,12 +145,15 @@ impl BinaryExpr {
         let left_c = ac_l.get_values().rechunk().into_column();
         let right_c = ac_r.get_values().rechunk().into_column();
         let res_c = apply_operator(&left_c, &right_c, self.op)?;
-        ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
         let res_s = if res_c.len() == 1 {
             res_c.new_from_index(0, ac_l.groups.len())
         } else {
             ListChunked::full(name, res_c.as_materialized_series(), ac_l.groups.len()).into_column()
         };
+        ac_l.with_update_groups(match res_s {
+            Column::Scalar(_) => UpdateGroups::No,
+            _ => UpdateGroups::WithSeriesLen,
+        });
         ac_l.with_values(res_s, true, Some(&self.expr))?;
         Ok(ac_l)
     }
