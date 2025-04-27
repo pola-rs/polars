@@ -1,7 +1,6 @@
 name: Release Python
 
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       # Latest commit to include with the release. If omitted, use the latest commit on the main branch.
@@ -308,158 +307,158 @@ jobs:
           name: wheel-${{ matrix.package }}-${{ matrix.os }}-${{ matrix.architecture }}
           path: dist/*.whl
 
-  # build-wheel-pyodide:
-  #   name: build-wheels (polars, pyodide, wasm32)
-  #   runs-on: ubuntu-latest
-  #
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         ref: ${{ inputs.sha }}
-  #
-  #     # Avoid potential out-of-memory errors
-  #     - name: Set swap space for Linux
-  #       uses: pierotofy/set-swap-space@master
-  #       with:
-  #         swap-size-gb: 10
-  #
-  #     - name: Set up Python
-  #       uses: actions/setup-python@v5
-  #       with:
-  #         python-version: ${{ env.PYTHON_VERSION }}
-  #
-  #     - name: Disable incompatible features
-  #       env:
-  #           FEATURES: parquet|async|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
-  #       run: |
-  #         sed -i 's/^  "json",$/  "serde_json",/' crates/polars-python/Cargo.toml
-  #         sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/Cargo.toml
-  #
-  #     - name: Setup emsdk
-  #       uses: mymindstorm/setup-emsdk@v14
-  #       with:
-  #         # This should match the exact version of Emscripten used by Pyodide
-  #         # UPDATE; set to latest due to breaking build
-  #         version: latest
-  #
-  #     - name: Set CFLAGS and RUSTFLAGS for wasm32
-  #       run: |
-  #           echo "CFLAGS=-fPIC" >> $GITHUB_ENV
-  #           echo "RUSTFLAGS=-C link-self-contained=no" >> $GITHUB_ENV
-  #
-  #     - name: Build wheel
-  #       uses: PyO3/maturin-action@v1
-  #       with:
-  #         command: build
-  #         target: wasm32-unknown-emscripten
-  #         args: >
-  #           --profile dist-release
-  #           --manifest-path py-polars/Cargo.toml
-  #           --interpreter python3.10
-  #           --out wasm-dist
-  #         maturin-version: 1.8.3
-  #
-  #     - name: Upload wheel
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: wheel-polars-emscripten-wasm32
-  #         path: wasm-dist/*.whl
-  #
-  # publish-to-pypi:
-  #   needs: [create-sdist, build-wheels, build-wheel-pyodide]
-  #   environment:
-  #     name: release-python
-  #     url: https://pypi.org/project/polars
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     id-token: write
-  #
-  #   steps:
-  #     - name: Download sdists and wheels
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         path: dist
-  #         merge-multiple: true
-  #
-  #     - name: Remove Emscripten wheel
-  #       run: rm -f dist/*emscripten*.whl
-  #
-  #     - name: Publish to PyPI
-  #       if: inputs.dry-run == false
-  #       uses: pypa/gh-action-pypi-publish@release/v1
-  #       with:
-  #         verbose: true
-  #
-  # publish-to-github:
-  #   needs: [publish-to-pypi, build-wheel-pyodide]
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         ref: ${{ inputs.sha }}
-  #
-  #     - name: Download sdist
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: sdist-polars
-  #         path: dist
-  #
-  #     - name: Download Pyodide wheel
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: wheel-polars-emscripten-wasm32
-  #         path: wasm-dist
-  #
-  #     - name: Get version from Cargo.toml
-  #       id: version
-  #       working-directory: py-polars
-  #       run: |
-  #         VERSION=$(grep -m 1 -oP 'version = "\K[^"]+' Cargo.toml)
-  #         if [[ "$VERSION" == *"-"* ]]; then
-  #           IS_PRERELEASE=true
-  #         else
-  #           IS_PRERELEASE=false
-  #         fi
-  #         echo "version=$VERSION" >> $GITHUB_OUTPUT
-  #         echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
-  #
-  #     - name: Create GitHub release
-  #       id: github-release
-  #       uses: release-drafter/release-drafter@v6
-  #       with:
-  #         config-name: release-drafter-python.yml
-  #         name: Python Polars ${{ steps.version.outputs.version }}
-  #         tag: py-${{ steps.version.outputs.version }}
-  #         version: ${{ steps.version.outputs.version }}
-  #         prerelease: ${{ steps.version.outputs.is_prerelease }}
-  #         commitish: ${{ inputs.sha || github.sha }}
-  #         disable-autolabeler: true
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #
-  #     - name: Upload sdist to GitHub release
-  #       run: gh release upload $TAG $FILES --clobber
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #         TAG: ${{ steps.github-release.outputs.tag_name }}
-  #         FILES: dist/polars-*.tar.gz wasm-dist/polars-*.whl
-  #
-  #     - name: Publish GitHub release
-  #       if: inputs.dry-run == false
-  #       run: gh release edit $TAG --draft=false
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #         TAG: ${{ steps.github-release.outputs.tag_name }}
-  #
-  #     - name: Trigger other workflows related to the release
-  #       if: inputs.dry-run == false
-  #       uses: peter-evans/repository-dispatch@v3
-  #       with:
-  #         event-type: python-release
-  #         client-payload: >
-  #           {
-  #             "version": "${{ steps.version.outputs.version }}",
-  #             "is_prerelease": "${{ steps.version.outputs.is_prerelease }}",
-  #             "tag": "${{ steps.github-release.outputs.tag_name }}",
-  #             "sha": "${{ inputs.sha || github.sha }}"
-  #           }
+  build-wheel-pyodide:
+    name: build-wheels (polars, pyodide, wasm32)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+
+      # Avoid potential out-of-memory errors
+      - name: Set swap space for Linux
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Disable incompatible features
+        env:
+            FEATURES: parquet|async|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
+        run: |
+          sed -i 's/^  "json",$/  "serde_json",/' crates/polars-python/Cargo.toml
+          sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/Cargo.toml
+
+      - name: Setup emsdk
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          # This should match the exact version of Emscripten used by Pyodide
+          # UPDATE; set to latest due to breaking build
+          version: latest
+
+      - name: Set CFLAGS and RUSTFLAGS for wasm32
+        run: |
+            echo "CFLAGS=-fPIC" >> $GITHUB_ENV
+            echo "RUSTFLAGS=-C link-self-contained=no" >> $GITHUB_ENV
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: wasm32-unknown-emscripten
+          args: >
+            --profile dist-release
+            --manifest-path py-polars/Cargo.toml
+            --interpreter python3.10
+            --out wasm-dist
+          maturin-version: 1.8.3
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-polars-emscripten-wasm32
+          path: wasm-dist/*.whl
+
+  publish-to-pypi:
+    needs: [create-sdist, build-wheels, build-wheel-pyodide]
+    environment:
+      name: release-python
+      url: https://pypi.org/project/polars
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download sdists and wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Remove Emscripten wheel
+        run: rm -f dist/*emscripten*.whl
+
+      - name: Publish to PyPI
+        if: inputs.dry-run == false
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
+
+  publish-to-github:
+    needs: [publish-to-pypi, build-wheel-pyodide]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+
+      - name: Download sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist-polars
+          path: dist
+
+      - name: Download Pyodide wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: wheel-polars-emscripten-wasm32
+          path: wasm-dist
+
+      - name: Get version from Cargo.toml
+        id: version
+        working-directory: py-polars
+        run: |
+          VERSION=$(grep -m 1 -oP 'version = "\K[^"]+' Cargo.toml)
+          if [[ "$VERSION" == *"-"* ]]; then
+            IS_PRERELEASE=true
+          else
+            IS_PRERELEASE=false
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub release
+        id: github-release
+        uses: release-drafter/release-drafter@v6
+        with:
+          config-name: release-drafter-python.yml
+          name: Python Polars ${{ steps.version.outputs.version }}
+          tag: py-${{ steps.version.outputs.version }}
+          version: ${{ steps.version.outputs.version }}
+          prerelease: ${{ steps.version.outputs.is_prerelease }}
+          commitish: ${{ inputs.sha || github.sha }}
+          disable-autolabeler: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload sdist to GitHub release
+        run: gh release upload $TAG $FILES --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.github-release.outputs.tag_name }}
+          FILES: dist/polars-*.tar.gz wasm-dist/polars-*.whl
+
+      - name: Publish GitHub release
+        if: inputs.dry-run == false
+        run: gh release edit $TAG --draft=false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.github-release.outputs.tag_name }}
+
+      - name: Trigger other workflows related to the release
+        if: inputs.dry-run == false
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          event-type: python-release
+          client-payload: >
+            {
+              "version": "${{ steps.version.outputs.version }}",
+              "is_prerelease": "${{ steps.version.outputs.is_prerelease }}",
+              "tag": "${{ steps.github-release.outputs.tag_name }}",
+              "sha": "${{ inputs.sha || github.sha }}"
+            }
