@@ -623,7 +623,7 @@ def read_csv_from_zip(
 
     >>> pl.read_csv_from_zip(
     ...     "data.zip", target_files=["birthdate.csv"]
-    ... ) 
+    ... )
     # Reads only "birthdate.csv" from the ZIP.
     {
         'birthdate.csv':  shape: (3, 3)

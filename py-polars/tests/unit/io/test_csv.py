@@ -15,6 +15,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 import zstandard
+import zipfile
 
 import polars as pl
 from polars._utils.various import normalize_filepath
@@ -32,11 +33,6 @@ if TYPE_CHECKING:
 @pytest.fixture
 def foods_file_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.csv"
-
-def test_zip_csv():
-    dfs = pl.read_csv_from_zip("/Users/yusufyudhistira/Documents/GitHub/polars/docs/assets/data/test_csv.zip")
-    print(dfs)
-    assert dfs['apple_stock.csv'].shape == (100, 2)
 
 def test_quoted_date() -> None:
     csv = textwrap.dedent(
@@ -536,6 +532,91 @@ def test_read_csv_encoding_lossy(tmp_path: Path) -> None:
             pl.Series("Город", ["Москва", "Санкт-�Петербург"]),
         )
 
+def test_read_csv_from_zip(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    # Create an in-memory ZIP file
+    csv_content = (
+        "ID,Name,Birthday\n"
+        "1,Alice,1995-07-12\n"
+        "2,Bob,1990-09-20\n"
+        "3,Charlie,2002-03-08\n"
+    )
+    file_path = tmp_path / "birthdate.csv"
+    file_path.write_text(csv_content)
+
+    zip_path = tmp_path / "data.zip"
+    with zipfile.ZipFile(zip_path, mode="w") as zf:
+        zf.write(file_path, arcname="birthdate.csv")
+
+    # Read CSVs using your function
+    dfs = pl.read_csv_from_zip(zip_path)
+
+    # Check that the correct file is read
+    assert "birthdate.csv" in dfs
+
+    df = dfs["birthdate.csv"]
+
+    # Check shape
+    assert df.shape == (3, 3)
+    # Check columns
+    assert df.columns == ["ID", "Name", "Birthday"]
+    # Check data
+    assert df["ID"].to_list() == [1, 2, 3]
+    assert df["Name"].to_list() == ["Alice", "Bob", "Charlie"]
+    assert df["Birthday"].cast(pl.String).to_list() == ["1995-07-12", "1990-09-20", "2002-03-08"]
+
+def test_read_csv_from_zip_target_files(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    # Prepare two CSV contents
+    birthdate_csv = (
+        "ID,Name,Birthday\n"
+        "1,Alice,1995-07-12\n"
+    )
+    basketball_csv = (
+        "ID,Player,Team,Points\n"
+        "1,LeBron,Lakers,27\n"
+    )
+
+    # Create a real ZIP file inside tmp_path
+    zip_file_path = tmp_path / "test_data.zip"
+    with zipfile.ZipFile(zip_file_path, mode="w") as zf:
+        zf.writestr("birthdate.csv", birthdate_csv)
+        zf.writestr("basketball_stats.csv", basketball_csv)
+
+    # Now read only 'birthdate.csv' from the real ZIP file
+    dfs = pl.read_csv_from_zip(zip_file_path, target_files=["birthdate.csv"])
+
+    # Assertions
+    assert list(dfs.keys()) == ["birthdate.csv"]
+    df = dfs["birthdate.csv"]
+    assert df.shape == (1, 3)
+    assert df["Name"].to_list() == ["Alice"]
+
+def test_read_csv_from_zip_empty_target_files(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    # Prepare two CSV contents
+    birthdate_csv = (
+        "ID,Name,Birthday\n"
+        "1,Alice,1995-07-12\n"
+    )
+    basketball_csv = (
+        "ID,Player,Team,Points\n"
+        "1,LeBron,Lakers,27\n"
+    )
+
+    # Create a real ZIP file inside tmp_path
+    zip_file_path = tmp_path / "test_data.zip"
+    with zipfile.ZipFile(zip_file_path, mode="w") as zf:
+        zf.writestr("birthdate.csv", birthdate_csv)
+        zf.writestr("basketball_stats.csv", basketball_csv)
+
+    # Now read only 'birthdate.csv' from the real ZIP file
+    dfs = pl.read_csv_from_zip(zip_file_path, target_files=[])
+
+    # Assertions
+    assert list(dfs.keys()) == []
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_column_rename_and_schema_overrides() -> None:
