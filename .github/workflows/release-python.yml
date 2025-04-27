@@ -94,7 +94,7 @@ jobs:
         package: [polars, polars-lts-cpu, polars-u64-idx]
         # macos-13 is x86-64
         # macos-15 is aarch64
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-13, macos-15, windows-latest, windows-11-arm]
+        os: [ubuntu-latest, macos-13, macos-15, windows-latest, windows-11-arm]
         architecture: [x86-64, aarch64]
         exclude:
           - os: windows-latest
@@ -105,10 +105,6 @@ jobs:
             architecture: x86-64
           - os: macos-13
             architecture: aarch64
-          - os: ubuntu-latest
-            architecture: aarch64
-          - os: ubuntu--24.04-arm
-            architecture: x86-64
 
     env:
       SED_INPLACE: ${{ startsWith(matrix.os, 'macos') && '-i ''''' || '-i' }}
@@ -276,7 +272,7 @@ jobs:
           echo "target=$TARGET" >> $GITHUB_OUTPUT
 
       - name: Set jemalloc for aarch64 Linux
-        if: matrix.os == 'ubuntu-24.04-arm'
+        if: matrix.architecture == 'aarch64' && matrix.os == 'ubuntu-latest'
         run: |
           echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
 
@@ -300,6 +296,8 @@ jobs:
           maturin-version: 1.8.3
 
       - name: Test wheel
+        # For linux; only test on x86-64 for now as this matches the runner architecture
+        if: matrix.architecture == 'x86-64' || startsWith(matrix.os, 'macos') || startsWith(matrix.os, 'windows')
         run: |
           pip install --force-reinstall --verbose dist/*.whl
           python -c 'import polars; polars.show_versions()'
