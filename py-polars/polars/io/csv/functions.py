@@ -576,7 +576,7 @@ def read_csv(
 
 def read_csv_from_zip(
         source: str | Path | IO[str] | IO[bytes] | bytes,
-        target_files=None,
+        target_files: list[str] | None = None,
         **read_csv_kwargs, # <-- any read_csv options (excluding source)
 ) -> dict[str, DataFrame]:
     """
