@@ -3180,3 +3180,24 @@ def test_filter_nan_22289() -> None:
         lf.collect().filter(pl.col.a.is_nan()),
         lf.filter(pl.col.a.is_nan()).collect(),
     )
+
+
+def test_reencode_categoricals_22385() -> None:
+    tbl = pl.Series("a", ["abc"], pl.Categorical()).to_frame().to_arrow()
+    tbl = tbl.cast(
+        pa.schema(
+            [
+                pa.field(
+                    "a",
+                    pa.dictionary(pa.int32(), pa.large_string()),
+                    metadata=tbl.schema[0].metadata,
+                ),
+            ]
+        )
+    )
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f)
+
+    f.seek(0)
+    pl.scan_parquet(f).collect()

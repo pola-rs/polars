@@ -387,9 +387,13 @@ pub fn page_iter_to_array(
             // - Int -> String which can be turned into categoricals
             assert_eq!(value_type.as_ref(), &ArrowDataType::Utf8View);
 
-            if field.metadata.is_none_or(|md| {
-                !md.contains_key(DTYPE_ENUM_VALUES) && !md.contains_key(DTYPE_CATEGORICAL)
-            }) {
+            if field.metadata.is_some_and(|md| {
+                md.contains_key(DTYPE_ENUM_VALUES) || md.contains_key(DTYPE_CATEGORICAL)
+            }) && matches!(key_type, IntegerType::UInt32)
+            {
+                PageDecoder::new(pages, dtype, CategoricalDecoder::new(), init_nested)?
+                    .collect_boxed(filter)?
+            } else {
                 let (nested, array, ptm) = PageDecoder::new(
                     pages,
                     ArrowDataType::Utf8View,
@@ -404,10 +408,6 @@ pub fn page_iter_to_array(
                         .unwrap(),
                     ptm,
                 )
-            } else {
-                assert_eq!(key_type, &IntegerType::UInt32);
-                PageDecoder::new(pages, dtype, CategoricalDecoder::new(), init_nested)?
-                    .collect_boxed(filter)?
             }
         },
         (from, to) => {
