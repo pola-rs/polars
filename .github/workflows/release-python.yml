@@ -107,7 +107,7 @@ jobs:
             architecture: aarch64
 
     env:
-      SED_INPLACE: ${{ startsWith(matrix.os, 'macos') && '-i '''' || '-i' }}
+      SED_INPLACE: ${{ startsWith(matrix.os, 'macos') && '-i ''''' || '-i' }}
       CPU_CHECK_MODULE: py-polars/polars/_cpu_check.py
 
     steps:
