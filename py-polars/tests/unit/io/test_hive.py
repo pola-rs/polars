@@ -168,7 +168,6 @@ def test_hive_partitioned_slice_pushdown(
         df.to_arrow(),
         root_path=root,
         partition_cols=["category", "fats_g"],
-        use_legacy_dataset=True,
     )
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
@@ -206,7 +205,6 @@ def test_hive_partitioned_projection_pushdown(
         df.to_arrow(),
         root_path=root,
         partition_cols=["category", "fats_g"],
-        use_legacy_dataset=True,
     )
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
