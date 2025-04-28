@@ -3182,6 +3182,16 @@ def test_filter_nan_22289() -> None:
     )
 
 
+def test_encode_utf8_check_22467() -> None:
+    f = io.BytesIO()
+    values = ["😀" * 129, "😀"]
+
+    pq.write_table(pl.Series(values).to_frame().to_arrow(), f, use_dictionary=False)
+
+    f.seek(0)
+    pl.scan_parquet(f).slice(1, 1).collect()
+
+
 def test_reencode_categoricals_22385() -> None:
     tbl = pl.Series("a", ["abc"], pl.Categorical()).to_frame().to_arrow()
     tbl = tbl.cast(

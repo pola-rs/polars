@@ -258,7 +258,6 @@ pub fn decode_plain_generic(
     // allows us to make UTF-8 verification a lot faster.
 
     let mut total_bytes_len = 0;
-    let mut num_seen = 0;
     let mut num_inlined = 0;
 
     let mut mvalues = values;
@@ -286,7 +285,6 @@ pub fn decode_plain_generic(
         let value;
         (value, mvalues) = mvalues.split_at(length as usize);
 
-        num_seen += 1;
         all_len_below_128 &= value.len() < 128;
         // Everything starting with 10.. .... is a continuation byte.
         none_starting_with_continuation_byte &=
@@ -356,7 +354,7 @@ pub fn decode_plain_generic(
             // This is the very slow path.
             if !all_inlined_are_ascii {
                 let mut is_valid = true;
-                for view in &target.views()[target.len() - num_seen..] {
+                for view in &target.views()[start_target_length..] {
                     if view.length <= View::MAX_INLINE_SIZE {
                         is_valid &=
                             std::str::from_utf8(unsafe { view.get_inlined_slice_unchecked() })
