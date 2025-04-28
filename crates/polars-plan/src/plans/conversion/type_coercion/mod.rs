@@ -616,7 +616,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     polars_warn!(
                         Deprecation,
                         "`str.replace_many` with a flat string datatype is deprecated.
-Please use `implode` to return to previous behavior.
+please use `implode` to return to previous behavior.
 See https://github.com/pola-rs/polars/issues/22149 for more information."
                     );
 
@@ -647,6 +647,49 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     type_patterns,
                     type_replace_with
                 );
+                None
+            },
+            #[cfg(feature = "replace")]
+            AExpr::Function {
+                function:
+                    ref function @ (FunctionExpr::Replace | FunctionExpr::ReplaceStrict { .. }),
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, type_old) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[1].node(),
+                    &input_schema
+                ));
+                let (_, type_new) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[2].node(),
+                    &input_schema
+                ));
+
+                let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
+                    let function = function.clone();
+                    let mut input = input.clone();
+
+                    if !type_old.is_list() {
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        input[1].set_node(other_input);
+                    }
+                    if !type_new.is_list() {
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[2].node())));
+                        input[2].set_node(other_input);
+                    }
+
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                };
+
                 None
             },
             AExpr::Slice { offset, length, .. } => {

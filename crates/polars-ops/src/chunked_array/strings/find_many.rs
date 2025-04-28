@@ -66,7 +66,7 @@ pub fn replace_all(
     .enumerate()
     {
         if l != 1 {
-            if length != 1 {
+            if l != length && length != 1 {
                 polars_bail!(
                     length_mismatch = "str.replace_many",
                     l,
