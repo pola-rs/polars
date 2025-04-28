@@ -21,9 +21,7 @@ use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::row_group_data_fetch::RowGroupData;
-use crate::async_executor;
 use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
-use crate::nodes::TaskPriority;
 
 /// Turns row group data into DataFrames.
 pub(super) struct RowGroupDecoder {
@@ -172,7 +170,7 @@ impl RowGroupDecoder {
                 x.num_rows(row_group_data.row_group_metadata.num_rows())
             });
 
-        let Some((cols_per_thread, _remainder)) = calc_cols_per_thread(
+        let Some((cols_per_thread, _)) = calc_cols_per_thread(
             row_group_data.row_group_metadata.num_rows(),
             projected_arrow_schema.len(),
             self.min_values_per_thread,
@@ -233,8 +231,8 @@ impl RowGroupDecoder {
             )
         };
 
-        for handle in task_handles {
-            out_vec.extend(handle.await?.into_iter().map(|(c, _)| c));
+        for fut in task_handles {
+            out_vec.extend(fut.await?.into_iter().map(|(c, _)| c));
         }
 
         Ok(())
@@ -313,7 +311,7 @@ async unsafe fn filter_cols(
         return Ok(cols);
     }
 
-    let Some((cols_per_thread, remainder)) =
+    let Some((cols_per_thread, _)) =
         calc_cols_per_thread(cols[0].len(), cols.len(), min_values_per_thread)
     else {
         for s in cols.iter_mut() {
@@ -331,9 +329,10 @@ async unsafe fn filter_cols(
         let cols = &cols;
         let mask = &mask;
 
-        (remainder..cols.len())
-            .step_by(cols_per_thread)
-            .map(move |offset| {
+        let n_futures = cols.len().div_ceil(cols_per_thread);
+
+        parallelize_first_to_local(
+            (0..cols.len()).step_by(cols_per_thread).map(move |offset| {
                 let cols = cols.clone();
                 let mask = mask.clone();
                 async move {
@@ -341,22 +340,13 @@ async unsafe fn filter_cols(
                         .map(|i| cols[i].filter(&mask))
                         .collect::<PolarsResult<Vec<_>>>()
                 }
-            })
-            .map(|fut| {
-                async_executor::AbortOnDropHandle::new(async_executor::spawn(
-                    TaskPriority::Low,
-                    fut,
-                ))
-            })
-            .collect::<Vec<_>>()
+            }),
+            n_futures,
+        )
     };
 
-    for out in cols.iter().take(remainder).map(|s| s.filter(&mask)) {
-        out_vec.push(out?);
-    }
-
-    for handle in task_handles {
-        out_vec.extend(handle.await?)
+    for fut in task_handles {
+        out_vec.extend(fut.await?)
     }
 
     Ok(out_vec)
