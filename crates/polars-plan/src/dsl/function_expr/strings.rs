@@ -282,7 +282,7 @@ impl StringFunction {
             #[cfg(feature = "dtype-struct")]
             S::SplitN(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
-            S::ContainsAny { .. } => FunctionOptions::groupwise(),
+            S::ContainsAny { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
             S::ReplaceMany { .. } => FunctionOptions::groupwise(),
             #[cfg(feature = "find_many")]
@@ -518,7 +518,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 #[cfg(feature = "find_many")]
 fn contains_any(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].str()?;
+    let patterns = s[1].list()?;
     polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
         .map(|out| out.into_column())
 }

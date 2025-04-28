@@ -23,9 +23,26 @@ fn build_ac_arr(
 
 pub fn contains_any(
     ca: &StringChunked,
-    patterns: &StringChunked,
+    patterns: &ListChunked,
     ascii_case_insensitive: bool,
 ) -> PolarsResult<BooleanChunked> {
+    polars_ensure!(
+        ca.len() == patterns.len() || ca.len() == 1 || patterns.len() == 1,
+        length_mismatch = "str.contains_any",
+        ca.len(),
+        patterns.len()
+    );
+    polars_ensure!(
+        patterns.len() == 1,
+        nyi = "`str.contains_any` with a pattern per row"
+    );
+
+    if patterns.has_nulls() {
+        return Ok(BooleanChunked::full_null(ca.name().clone(), ca.len()));
+    }
+
+    let patterns = patterns.explode()?;
+    let patterns = patterns.str()?;
     let ac = build_ac(patterns, ascii_case_insensitive)?;
 
     Ok(unary_elementwise(ca, |opt_val| {
