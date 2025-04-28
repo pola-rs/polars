@@ -389,22 +389,6 @@ impl PartitionVariantIR {
     }
 }
 
-impl SinkType {
-    pub(crate) fn is_cloud_destination(&self) -> bool {
-        match self {
-            Self::Memory => false,
-            Self::File(f) => {
-                let SinkTarget::Path(p) = &f.target else {
-                    return false;
-                };
-
-                polars_io::is_cloud_url(p.as_path())
-            },
-            Self::Partition(f) => polars_io::is_cloud_url(f.base_path.as_path()),
-        }
-    }
-}
-
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug)]
 pub struct FileSinkOptions {
