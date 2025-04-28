@@ -527,7 +527,9 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             #[cfg(feature = "find_many")]
             AExpr::Function {
                 function:
-                    ref function @ FunctionExpr::StringExpr(StringFunction::ContainsAny { .. }),
+                    ref function @ FunctionExpr::StringExpr(
+                        StringFunction::ContainsAny { .. } | StringFunction::FindMany { .. },
+                    ),
                 ref input,
                 options,
             } => {
@@ -569,7 +571,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
                 polars_ensure!(
                     type_left.is_string() && inner_dtype.is_string(),
-                    op = "list.gather",
+                    op = format!("{function}"),
                     type_left,
                     type_other
                 );

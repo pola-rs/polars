@@ -288,7 +288,7 @@ impl StringFunction {
             #[cfg(feature = "find_many")]
             S::ExtractMany { .. } => FunctionOptions::groupwise(),
             #[cfg(feature = "find_many")]
-            S::FindMany { .. } => FunctionOptions::groupwise(),
+            S::FindMany { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "regex")]
             S::EscapeRegex => FunctionOptions::elementwise(),
         }
@@ -562,15 +562,10 @@ fn find_many(
     overlapping: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = &s[1];
+    let patterns = s[1].list()?;
 
-    polars_ops::chunked_array::strings::find_many(
-        ca,
-        patterns.as_materialized_series(),
-        ascii_case_insensitive,
-        overlapping,
-    )
-    .map(|out| out.into_column())
+    polars_ops::chunked_array::strings::find_many(ca, patterns, ascii_case_insensitive, overlapping)
+        .map(|out| out.into_column())
 }
 
 fn uppercase(s: &Column) -> PolarsResult<Column> {
