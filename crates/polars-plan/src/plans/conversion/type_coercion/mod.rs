@@ -472,6 +472,58 @@ impl OptimizationRule for TypeCoercionRule {
 
                 None
             },
+            #[cfg(feature = "list_gather")]
+            AExpr::Function {
+                function: ref function @ FunctionExpr::ListExpr(ListFunction::Gather(_)),
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, type_left) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
+                let (_, type_other) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[1].node(),
+                    &input_schema
+                ));
+
+                let DataType::List(inner_dtype) = &type_other else {
+                    // @HACK. This needs to happen until 2.0 because we support
+                    // `pl.col.a.list.gather(0)` and `pl.col.a.list.gather(pl.col.b)` where `b` is
+                    // an integer.
+                    let function = function.clone();
+                    let mut input = input.clone();
+
+                    polars_warn!(
+                        Deprecation,
+                        "`list.gather` with a flat datatype is deprecated.
+Please use `implode` to return to previous behavior.
+
+See https://github.com/pola-rs/polars/issues/22149 for more information."
+                    );
+
+                    let other_input =
+                        expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                    input[1].set_node(other_input);
+
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                };
+
+                polars_ensure!(
+                    inner_dtype.is_integer(),
+                    op = "list.gather",
+                    type_left,
+                    type_other
+                );
+                None
+            },
             AExpr::Slice { offset, length, .. } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (_, offset_dtype) =

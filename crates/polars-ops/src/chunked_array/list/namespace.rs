@@ -453,6 +453,12 @@ pub trait ListNameSpaceImpl: AsList {
     #[cfg(feature = "list_gather")]
     fn lst_gather(&self, idx: &Series, null_on_oob: bool) -> PolarsResult<Series> {
         let list_ca = self.as_list();
+        let idx_ca = idx.list()?;
+
+        polars_ensure!(
+            idx_ca.inner_dtype().is_integer(),
+            ComputeError: "cannot use dtype `{}` as an index", idx_ca.inner_dtype()
+        );
 
         let index_typed_index = |idx: &Series| {
             let idx = idx.cast(&IDX_DTYPE).unwrap();
@@ -474,10 +480,66 @@ pub trait ListNameSpaceImpl: AsList {
             }
         };
 
-        use DataType::*;
-        match idx.dtype() {
-            List(boxed_dt) if boxed_dt.is_integer() => {
-                let idx_ca = idx.list().unwrap();
+        match (list_ca.len(), idx_ca.len()) {
+            (1, _) => {
+                let mut out = if list_ca.has_nulls() {
+                    ListChunked::full_null_with_dtype(
+                        PlSmallStr::EMPTY,
+                        idx.len(),
+                        list_ca.inner_dtype(),
+                    )
+                } else {
+                    let s = list_ca.explode()?;
+                    idx_ca
+                        .into_iter()
+                        .map(|opt_idx| {
+                            opt_idx
+                                .map(|idx| take_series(&s, idx, null_on_oob))
+                                .transpose()
+                        })
+                        .collect::<PolarsResult<ListChunked>>()?
+                };
+                out.rename(list_ca.name().clone());
+                Ok(out.into_series())
+            },
+            (_, 1) => {
+                let idx_ca = idx_ca.explode()?;
+
+                use DataType as D;
+                match idx_ca.dtype() {
+                    D::UInt32 | D::UInt64 => index_typed_index(&idx_ca),
+                    dt if dt.is_signed_integer() => {
+                        if let Some(min) = idx_ca.min::<i64>().unwrap() {
+                            if min >= 0 {
+                                index_typed_index(&idx_ca)
+                            } else {
+                                let mut out = {
+                                    list_ca
+                                        .amortized_iter()
+                                        .map(|opt_s| {
+                                            opt_s
+                                                .map(|s| {
+                                                    take_series(
+                                                        s.as_ref(),
+                                                        idx_ca.clone(),
+                                                        null_on_oob,
+                                                    )
+                                                })
+                                                .transpose()
+                                        })
+                                        .collect::<PolarsResult<ListChunked>>()?
+                                };
+                                out.rename(list_ca.name().clone());
+                                Ok(out.into_series())
+                            }
+                        } else {
+                            polars_bail!(ComputeError: "all indices are null");
+                        }
+                    },
+                    dt => polars_bail!(ComputeError: "cannot use dtype `{dt}` as an index"),
+                }
+            },
+            (a, b) if a == b => {
                 let mut out = {
                     list_ca
                         .amortized_iter()
@@ -496,33 +558,9 @@ pub trait ListNameSpaceImpl: AsList {
                         .collect::<PolarsResult<ListChunked>>()?
                 };
                 out.rename(list_ca.name().clone());
-
                 Ok(out.into_series())
             },
-            UInt32 | UInt64 => index_typed_index(idx),
-            dt if dt.is_signed_integer() => {
-                if let Some(min) = idx.min::<i64>().unwrap() {
-                    if min >= 0 {
-                        index_typed_index(idx)
-                    } else {
-                        let mut out = {
-                            list_ca
-                                .amortized_iter()
-                                .map(|opt_s| {
-                                    opt_s
-                                        .map(|s| take_series(s.as_ref(), idx.clone(), null_on_oob))
-                                        .transpose()
-                                })
-                                .collect::<PolarsResult<ListChunked>>()?
-                        };
-                        out.rename(list_ca.name().clone());
-                        Ok(out.into_series())
-                    }
-                } else {
-                    polars_bail!(ComputeError: "all indices are null");
-                }
-            },
-            dt => polars_bail!(ComputeError: "cannot use dtype `{}` as an index", dt),
+            (a, b) => polars_bail!(length_mismatch = "list.gather", a, b),
         }
     }
 

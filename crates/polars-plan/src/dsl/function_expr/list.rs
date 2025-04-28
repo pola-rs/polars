@@ -133,7 +133,7 @@ impl ListFunction {
             #[cfg(feature = "list_sample")]
             L::Sample { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
-            L::Gather(_) => FunctionOptions::groupwise(),
+            L::Gather(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
             L::GatherEvery => FunctionOptions::elementwise(),
             #[cfg(feature = "list_sets")]
