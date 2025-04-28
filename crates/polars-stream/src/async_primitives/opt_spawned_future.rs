@@ -28,12 +28,15 @@ where
     }
 }
 
-/// Parallelizes an iterator of futures, where the first future is kept on the current thread.
+/// Parallelizes an iterator of futures across the computational async runtime.
 ///
-/// This is an optimization to retain some data on the current thread. If there is only 1 future,
-/// then all data is kept on the current thread and spawn is not called at all.
+/// As an optimization for cache access, the first future is kept on the current thread. If there
+/// is only 1 future, then all data is kept on the current thread and spawn is not called at all.
 ///
-/// Note this means the first future in the returned array does not run until polled.
+/// Note this means the first future in the returned Vec does not run until polled.
+///
+/// Note that dropping the Vec will call abort on all spawned futures, as this is intended to be
+/// used for compute.
 ///
 /// # Panics
 /// Panics if the iterator has less than `futures_iter_length` items.
