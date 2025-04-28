@@ -303,8 +303,8 @@ class CatNameSpace:
         by the Categorical dtype.
 
         .. warning::
-        This functionality is currently considered **unstable**. It may be changed at
-        any point without it being considered a breaking change.
+            This functionality is currently considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
