@@ -27,7 +27,7 @@ impl InMemoryMapNode {
 
 impl ComputeNode for InMemoryMapNode {
     fn name(&self) -> &str {
-        "in_memory_map"
+        "in-memory-map"
     }
 
     fn update_state(

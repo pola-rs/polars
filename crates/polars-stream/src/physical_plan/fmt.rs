@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use polars_ops::frame::JoinType;
+use polars_plan::dsl::PartitionVariantIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
@@ -124,23 +125,34 @@ fn visualize_plan_rec(
             #[cfg(feature = "csv")]
             FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
             #[cfg(feature = "json")]
-            FileType::Json(_) => ("json-sink".to_string(), from_ref(input)),
+            FileType::Json(_) => ("ndjson-sink".to_string(), from_ref(input)),
             #[allow(unreachable_patterns)]
             _ => todo!(),
         },
         PhysNodeKind::PartitionSink {
-            input, file_type, ..
-        } => match file_type {
-            #[cfg(feature = "parquet")]
-            FileType::Parquet(_) => ("parquet-partition-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "ipc")]
-            FileType::Ipc(_) => ("ipc-partition-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "csv")]
-            FileType::Csv(_) => ("csv-partition-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "json")]
-            FileType::Json(_) => ("json-partition-sink".to_string(), from_ref(input)),
-            #[allow(unreachable_patterns)]
-            _ => todo!(),
+            input,
+            file_type,
+            variant,
+            ..
+        } => {
+            let variant = match variant {
+                PartitionVariantIR::ByKey { .. } => "partition-by-key-sink",
+                PartitionVariantIR::MaxSize { .. } => "partition-max-size-sink",
+                PartitionVariantIR::Parted { .. } => "partition-parted-sink",
+            };
+
+            match file_type {
+                #[cfg(feature = "parquet")]
+                FileType::Parquet(_) => (format!("{}[parquet]", variant), from_ref(input)),
+                #[cfg(feature = "ipc")]
+                FileType::Ipc(_) => (format!("{}[ipc]", variant), from_ref(input)),
+                #[cfg(feature = "csv")]
+                FileType::Csv(_) => (format!("{}[csv]", variant), from_ref(input)),
+                #[cfg(feature = "json")]
+                FileType::Json(_) => (format!("{}[ndjson]", variant), from_ref(input)),
+                #[allow(unreachable_patterns)]
+                _ => todo!(),
+            }
         },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
             ("in-memory-map".to_string(), from_ref(input))
@@ -307,10 +319,14 @@ fn visualize_plan_rec(
             input_left,
             input_right,
             key,
-        } => (
-            format!("merge sorted on '{key}'"),
-            &[*input_left, *input_right][..],
-        ),
+        } => {
+            let mut out = "merge-sorted".to_string();
+            let mut f = EscapeLabel(&mut out);
+
+            write!(f, "\nkey: {}", key).unwrap();
+
+            (out, &[*input_left, *input_right][..])
+        },
     };
 
     out.push(format!(

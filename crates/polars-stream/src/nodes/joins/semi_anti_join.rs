@@ -339,10 +339,10 @@ impl ProbeState {
 impl ComputeNode for SemiAntiJoinNode {
     fn name(&self) -> &str {
         match (self.params.return_bool, self.params.is_anti) {
-            (false, false) => "semi_join",
-            (false, true) => "anti_join",
-            (true, false) => "is_in",
-            (true, true) => "is_not_in",
+            (false, false) => "semi-join",
+            (false, true) => "anti-join",
+            (true, false) => "is-in",
+            (true, true) => "is-not-in",
         }
     }
 

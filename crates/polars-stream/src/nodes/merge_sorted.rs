@@ -171,7 +171,7 @@ fn find_mergeable(
 
 impl ComputeNode for MergeSortedNode {
     fn name(&self) -> &str {
-        "merge_sorted"
+        "merge-sorted"
     }
 
     fn update_state(

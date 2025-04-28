@@ -95,7 +95,7 @@ impl PartitionByKeySinkNode {
 
 impl SinkNode for PartitionByKeySinkNode {
     fn name(&self) -> &str {
-        "partition-by-key"
+        "partition-by-key-sink"
     }
 
     fn is_sink_input_parallel(&self) -> bool {

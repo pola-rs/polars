@@ -1225,7 +1225,7 @@ impl EquiJoinNode {
 
 impl ComputeNode for EquiJoinNode {
     fn name(&self) -> &str {
-        "equi_join"
+        "equi-join"
     }
 
     fn update_state(
