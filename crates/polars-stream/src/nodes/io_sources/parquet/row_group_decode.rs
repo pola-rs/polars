@@ -22,6 +22,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::row_group_data_fetch::RowGroupData;
 use crate::async_executor;
+use crate::async_primitives::opt_spawned_future::parallelize;
 use crate::nodes::TaskPriority;
 
 /// Turns row group data into DataFrames.
@@ -500,40 +501,36 @@ impl RowGroupDecoder {
             let projected_arrow_schema = self.projected_arrow_schema.clone();
             let row_group_data = row_group_data.clone();
 
-            (0..self.predicate_arrow_field_indices.len())
-                .step_by(cols_per_thread)
-                .map(move |offset| {
-                    let row_group_data = row_group_data.clone();
-                    let predicate_arrow_field_indices = predicate_arrow_field_indices.clone();
-                    let projected_arrow_schema = projected_arrow_schema.clone();
-                    let column_predicates = scan_predicate.column_predicates.clone();
+            parallelize(
+                (0..self.predicate_arrow_field_indices.len())
+                    .step_by(cols_per_thread)
+                    .map(move |offset| {
+                        let row_group_data = row_group_data.clone();
+                        let predicate_arrow_field_indices = predicate_arrow_field_indices.clone();
+                        let projected_arrow_schema = projected_arrow_schema.clone();
+                        let column_predicates = scan_predicate.column_predicates.clone();
 
-                    async move {
-                        // This is exact as we have already taken out the remainder.
-                        (offset..offset + cols_per_thread)
-                            .map(|i| {
-                                let (_, arrow_field) = projected_arrow_schema
-                                    .get_at_index(predicate_arrow_field_indices[i])
-                                    .unwrap();
+                        async move {
+                            // This is exact as we have already taken out the remainder.
+                            (offset..offset + cols_per_thread)
+                                .map(|i| {
+                                    let (_, arrow_field) = projected_arrow_schema
+                                        .get_at_index(predicate_arrow_field_indices[i])
+                                        .unwrap();
 
-                                decode_column_in_filter(
-                                    arrow_field,
-                                    use_column_predicates,
-                                    column_predicates.as_ref(),
-                                    row_group_data.as_ref(),
-                                    projection_height,
-                                )
-                            })
-                            .collect::<PolarsResult<Vec<_>>>()
-                    }
-                })
-                .map(|fut| {
-                    async_executor::AbortOnDropHandle::new(async_executor::spawn(
-                        TaskPriority::Low,
-                        fut,
-                    ))
-                })
-                .collect::<Vec<_>>()
+                                    decode_column_in_filter(
+                                        arrow_field,
+                                        use_column_predicates,
+                                        column_predicates.as_ref(),
+                                        row_group_data.as_ref(),
+                                        projection_height,
+                                    )
+                                })
+                                .collect::<PolarsResult<Vec<_>>>()
+                        }
+                    }),
+                self.predicate_arrow_field_indices.len() / cols_per_thread,
+            )
         };
 
         for fut in task_handles {
