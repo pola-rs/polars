@@ -483,7 +483,11 @@ pub trait ListNameSpaceImpl: AsList {
         match (list_ca.len(), idx_ca.len()) {
             (1, _) => {
                 let mut out = if list_ca.has_nulls() {
-                    ListChunked::full_null(PlSmallStr::EMPTY, idx.len())
+                    ListChunked::full_null_with_dtype(
+                        PlSmallStr::EMPTY,
+                        idx.len(),
+                        list_ca.inner_dtype(),
+                    )
                 } else {
                     let s = list_ca.explode()?;
                     idx_ca
