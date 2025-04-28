@@ -524,7 +524,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 );
                 None
             },
-            #[cfg(feature = "find_many")]
+            #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
                 function:
                     ref function @ FunctionExpr::StringExpr(
@@ -579,7 +579,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 );
                 None
             },
-            #[cfg(feature = "find_many")]
+            #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
                 function:
                     ref function @ FunctionExpr::StringExpr(StringFunction::ReplaceMany { .. }),
