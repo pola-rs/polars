@@ -46,8 +46,8 @@ def scan_iceberg(
 
         Available options:
         * native: Uses polars native reader. This allows for more optimizations to
-                  improve performance.
-        * pyiceberg: Uses PyIceberg, which supports more features.
+        improve performance.
+        * pyiceberg: Uses PyIceberg, which may support more features.
 
     Returns
     -------
