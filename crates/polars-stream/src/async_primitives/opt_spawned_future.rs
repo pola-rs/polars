@@ -37,29 +37,23 @@ where
 ///
 /// # Panics
 /// Panics if the iterator has less than `futures_iter_length` items.
-pub fn parallelize_first_to_local<I, F, O>(
-    futures_iter: I,
-    futures_iter_length: usize,
-) -> Vec<OptSpawnedFuture<F, O>>
+pub fn parallelize_first_to_local<I, F, O>(mut futures_iter: I) -> Vec<OptSpawnedFuture<F, O>>
 where
-    I: IntoIterator<Item = F>,
+    I: Iterator<Item = F>,
     F: Future<Output = O> + Send + 'static,
     O: Send + 'static,
 {
-    if futures_iter_length == 0 {
-        return vec![];
-    }
+    let mut futures = Vec::with_capacity(futures_iter.size_hint().1.unwrap_or(0));
 
-    let mut futures = Vec::with_capacity(futures_iter_length);
-    let mut futures_iter = futures_iter.into_iter();
+    let Some(first_fut) = futures_iter.next() else {
+        return futures;
+    };
 
     // The local future must come first to ensure we don't block polling it.
-    futures.push(OptSpawnedFuture::Local {
-        fut: futures_iter.next().unwrap(),
-    });
+    futures.push(OptSpawnedFuture::Local { fut: first_fut });
 
-    futures.extend((1..futures_iter_length).map(|_| OptSpawnedFuture::Spawned {
-        handle: AbortOnDropHandle::new(spawn(TaskPriority::Low, futures_iter.next().unwrap())),
+    futures.extend(futures_iter.map(|fut| OptSpawnedFuture::Spawned {
+        handle: AbortOnDropHandle::new(spawn(TaskPriority::Low, fut)),
     }));
 
     futures

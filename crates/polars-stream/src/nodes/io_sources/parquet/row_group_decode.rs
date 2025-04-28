@@ -197,8 +197,6 @@ impl RowGroupDecoder {
             let projected_arrow_schema = projected_arrow_schema.clone();
             let filter = filter.clone();
 
-            let n_futures = projected_arrow_schema.len().div_ceil(cols_per_thread);
-
             parallelize_first_to_local(
                 (0..projected_arrow_schema.len())
                     .step_by(cols_per_thread)
@@ -227,7 +225,6 @@ impl RowGroupDecoder {
                                 .collect::<PolarsResult<Vec<_>>>()
                         }
                     }),
-                n_futures,
             )
         };
 
@@ -329,20 +326,15 @@ async unsafe fn filter_cols(
         let cols = &cols;
         let mask = &mask;
 
-        let n_futures = cols.len().div_ceil(cols_per_thread);
-
-        parallelize_first_to_local(
-            (0..cols.len()).step_by(cols_per_thread).map(move |offset| {
-                let cols = cols.clone();
-                let mask = mask.clone();
-                async move {
-                    (offset..offset + cols_per_thread)
-                        .map(|i| cols[i].filter(&mask))
-                        .collect::<PolarsResult<Vec<_>>>()
-                }
-            }),
-            n_futures,
-        )
+        parallelize_first_to_local((0..cols.len()).step_by(cols_per_thread).map(move |offset| {
+            let cols = cols.clone();
+            let mask = mask.clone();
+            async move {
+                (offset..offset + cols_per_thread)
+                    .map(|i| cols[i].filter(&mask))
+                    .collect::<PolarsResult<Vec<_>>>()
+            }
+        }))
     };
 
     for fut in task_handles {
@@ -477,11 +469,6 @@ impl RowGroupDecoder {
             let projected_arrow_schema = self.projected_arrow_schema.clone();
             let row_group_data = row_group_data.clone();
 
-            let n_futures = self
-                .predicate_arrow_field_indices
-                .len()
-                .div_ceil(cols_per_thread);
-
             parallelize_first_to_local(
                 (0..self.predicate_arrow_field_indices.len())
                     .step_by(cols_per_thread)
@@ -512,7 +499,6 @@ impl RowGroupDecoder {
                                 .collect::<PolarsResult<Vec<_>>>()
                         }
                     }),
-                n_futures,
             )
         };
 
@@ -618,44 +604,39 @@ impl RowGroupDecoder {
             let row_group_data = row_group_data.clone();
             let prefilter_setting = *prefilter_setting;
 
-            let n_futures = non_predicate_len.div_ceil(cols_per_thread);
+            parallelize_first_to_local((0..non_predicate_len).step_by(cols_per_thread).map(
+                move |offset| {
+                    let row_group_data = row_group_data.clone();
+                    let non_predicate_arrow_field_indices =
+                        non_predicate_arrow_field_indices.clone();
+                    let projected_arrow_schema = projected_arrow_schema.clone();
+                    let mask = mask.clone();
+                    let mask_bitmap = mask_bitmap.clone();
+                    let max_col = offset
+                        .saturating_add(cols_per_thread)
+                        .min(non_predicate_len);
 
-            parallelize_first_to_local(
-                (0..non_predicate_len)
-                    .step_by(cols_per_thread)
-                    .map(move |offset| {
-                        let row_group_data = row_group_data.clone();
-                        let non_predicate_arrow_field_indices =
-                            non_predicate_arrow_field_indices.clone();
-                        let projected_arrow_schema = projected_arrow_schema.clone();
-                        let mask = mask.clone();
-                        let mask_bitmap = mask_bitmap.clone();
-                        let max_col = offset
-                            .saturating_add(cols_per_thread)
-                            .min(non_predicate_len);
+                    async move {
+                        (offset..max_col)
+                            .map(|i| {
+                                let (_, arrow_field) = projected_arrow_schema
+                                    .get_at_index(non_predicate_arrow_field_indices[i])
+                                    .unwrap();
 
-                        async move {
-                            (offset..max_col)
-                                .map(|i| {
-                                    let (_, arrow_field) = projected_arrow_schema
-                                        .get_at_index(non_predicate_arrow_field_indices[i])
-                                        .unwrap();
-
-                                    decode_column_prefiltered(
-                                        arrow_field,
-                                        row_group_data.as_ref(),
-                                        prefilter_cost,
-                                        &prefilter_setting,
-                                        &mask,
-                                        &mask_bitmap,
-                                        expected_num_rows,
-                                    )
-                                })
-                                .collect::<PolarsResult<Vec<_>>>()
-                        }
-                    }),
-                n_futures,
-            )
+                                decode_column_prefiltered(
+                                    arrow_field,
+                                    row_group_data.as_ref(),
+                                    prefilter_cost,
+                                    &prefilter_setting,
+                                    &mask,
+                                    &mask_bitmap,
+                                    expected_num_rows,
+                                )
+                            })
+                            .collect::<PolarsResult<Vec<_>>>()
+                    }
+                },
+            ))
         };
 
         let live_columns = live_df_filtered.take_columns();
