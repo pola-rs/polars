@@ -97,9 +97,10 @@ def test_drop_nulls_misc() -> None:
 
 
 def test_drop_nulls_empty_subset() -> None:
-    df = pl.DataFrame({"a": [1]})
-    assert_frame_equal(df.drop_nulls([]), df)
-    assert_frame_equal(df.drop_nulls(()), df)
+    df = pl.DataFrame({"a": [1, None]})
+    expected = pl.DataFrame({"a": [1]})
+    assert_frame_equal(df.drop_nulls([]), expected)
+    assert_frame_equal(df.drop_nulls(()), expected)
 
 
 def test_drop_columns() -> None:
@@ -161,9 +162,10 @@ def test_drop_nan_ignore_null_3525() -> None:
 
 
 def test_drop_nans_empty_subset() -> None:
-    df = pl.DataFrame({"a": [1]})
-    assert_frame_equal(df.drop_nans([]), df)
-    assert_frame_equal(df.drop_nans(()), df)
+    df = pl.DataFrame({"a": [1.0, float("NaN")]})
+    expected = pl.DataFrame({"a": [1.0]})
+    assert_frame_equal(df.drop_nans([]), expected)
+    assert_frame_equal(df.drop_nans(()), expected)
 
 
 def test_drop_without_parameters() -> None:
