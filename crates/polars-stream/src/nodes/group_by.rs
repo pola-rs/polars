@@ -359,7 +359,7 @@ impl GroupBySinkState {
                                 );
                                 for (pre_agg, r) in pre_aggs.iter().zip(&mut p_reductions) {
                                     r.resize(p_grouper.num_groups());
-                                    r.gather_combine(&**pre_agg, p_pre_agg_idxs, &group_idxs)?;
+                                    r.combine_subset(&**pre_agg, p_pre_agg_idxs, &group_idxs)?;
                                 }
                             }
                         }

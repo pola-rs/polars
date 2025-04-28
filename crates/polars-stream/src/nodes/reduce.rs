@@ -81,7 +81,7 @@ impl ReduceNode {
                 for (r1, r2) in reductions.iter_mut().zip(local_reducers) {
                     r1.resize(1);
                     unsafe {
-                        r1.combine(&*r2, &[0])?;
+                        r1.combine_subset(&*r2, &[0], &[0])?;
                     }
                 }
             }

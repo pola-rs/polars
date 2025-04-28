@@ -46,20 +46,6 @@ pub trait GroupedReduction: Any + Send + Sync {
         seq_id: u64,
     ) -> PolarsResult<()>;
 
-    /// Updates this GroupedReduction with new values. values[i] should
-    /// be added to reduction self[group_idxs[i]]. For order-sensitive grouped
-    /// reductions, seq_id can be used to resolve order between calls/multiple
-    /// reductions.
-    ///
-    /// # Safety
-    /// group_idxs[i] < self.num_groups() for all i.
-    unsafe fn update_groups(
-        &mut self,
-        values: &Column,
-        group_idxs: &[IdxSize],
-        seq_id: u64,
-    ) -> PolarsResult<()>;
-
     /// Updates this GroupedReduction with new values. values[subset[i]] should
     /// be added to reduction self[group_idxs[i]]. For order-sensitive grouped
     /// reductions, seq_id can be used to resolve order between calls/multiple
@@ -95,24 +81,13 @@ pub trait GroupedReduction: Any + Send + Sync {
         seq_id: u64,
     ) -> PolarsResult<()>;
 
-    /// Combines this GroupedReduction with another. Group other[i]
-    /// should be combined into group self[group_idxs[i]].
-    ///
-    /// # Safety
-    /// group_idxs[i] < self.num_groups() for all i.
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()>;
-
     /// Combines this GroupedReduction with another. Group other[subset[i]]
     /// should be combined into group self[group_idxs[i]].
     ///
     /// # Safety
     /// subset[i] < other.num_groups() for all i.
     /// group_idxs[i] < self.num_groups() for all i.
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],
@@ -285,40 +260,6 @@ where
         Ok(())
     }
 
-    unsafe fn update_groups(
-        &mut self,
-        values: &Column,
-        group_idxs: &[IdxSize],
-        seq_id: u64,
-    ) -> PolarsResult<()> {
-        assert!(values.dtype() == &self.in_dtype);
-        assert!(values.len() == group_idxs.len());
-        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
-        let values = values.as_materialized_series(); // @scalar-opt
-        let values = self.reducer.cast_series(values);
-        let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            if values.has_nulls() {
-                for (g, ov) in group_idxs.iter().zip(ca.iter()) {
-                    let grp = self.values.get_unchecked_mut(*g as usize);
-                    self.reducer.reduce_one(grp, ov, seq_id);
-                }
-            } else {
-                let mut offset = 0;
-                for arr in ca.downcast_iter() {
-                    let subgroup = &group_idxs[offset..offset + arr.len()];
-                    for (g, v) in subgroup.iter().zip(arr.values_iter()) {
-                        let grp = self.values.get_unchecked_mut(*g as usize);
-                        self.reducer.reduce_one(grp, Some(v), seq_id);
-                    }
-                    offset += arr.len();
-                }
-            }
-        }
-        Ok(())
-    }
-
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &Column,
@@ -360,25 +301,7 @@ where
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(self.in_dtype == other.in_dtype);
-        assert!(group_idxs.len() == other.values.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, v) in group_idxs.iter().zip(other.values.iter()) {
-                let grp = self.values.get_unchecked_mut(*g as usize);
-                self.reducer.combine(grp, v);
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],
@@ -476,31 +399,6 @@ where
         Ok(())
     }
 
-    unsafe fn update_groups(
-        &mut self,
-        values: &Column,
-        group_idxs: &[IdxSize],
-        seq_id: u64,
-    ) -> PolarsResult<()> {
-        assert!(values.dtype() == &self.in_dtype);
-        assert!(values.len() == group_idxs.len());
-        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
-        let values = values.as_materialized_series(); // @scalar-opt
-        let values = values.to_physical_repr();
-        let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, ov) in group_idxs.iter().zip(ca.iter()) {
-                if let Some(v) = ov {
-                    let grp = self.values.get_unchecked_mut(*g as usize);
-                    self.reducer.reduce_one(grp, Some(v), seq_id);
-                    self.mask.set_unchecked(*g as usize, true);
-                }
-            }
-        }
-        Ok(())
-    }
-
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &Column,
@@ -535,31 +433,7 @@ where
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(self.in_dtype == other.in_dtype);
-        assert!(group_idxs.len() == other.values.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, (v, o)) in group_idxs
-                .iter()
-                .zip(other.values.iter().zip(other.mask.iter()))
-            {
-                if o {
-                    let grp = self.values.get_unchecked_mut(*g as usize);
-                    self.reducer.combine(grp, v);
-                    self.mask.set_unchecked(*g as usize, true);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],
@@ -641,15 +515,6 @@ impl GroupedReduction for NullGroupedReduction {
         Ok(())
     }
 
-    unsafe fn update_groups(
-        &mut self,
-        _values: &Column,
-        _group_idxs: &[IdxSize],
-        _seq_id: u64,
-    ) -> PolarsResult<()> {
-        Ok(())
-    }
-
     unsafe fn update_groups_while_evicting(
         &mut self,
         _values: &Column,
@@ -663,15 +528,7 @@ impl GroupedReduction for NullGroupedReduction {
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        _other: &dyn GroupedReduction,
-        _group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         _other: &dyn GroupedReduction,
         _subset: &[IdxSize],
