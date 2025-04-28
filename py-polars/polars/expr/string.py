@@ -2507,9 +2507,7 @@ class ExprStringNameSpace:
         │ Can you feel the love tonight                      ┆ true         │
         └────────────────────────────────────────────────────┴──────────────┘
         """
-        patterns = parse_into_expression(
-            patterns, str_as_lit=False, list_as_series=True
-        )
+        patterns = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_contains_any(patterns, ascii_case_insensitive)
         )
@@ -2656,11 +2654,8 @@ class ExprStringNameSpace:
         patterns = parse_into_expression(
             patterns,  # type: ignore[arg-type]
             str_as_lit=False,
-            list_as_series=True,
         )
-        replace_with = parse_into_expression(
-            replace_with, str_as_lit=True, list_as_series=True
-        )
+        replace_with = parse_into_expression(replace_with, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.str_replace_many(
                 patterns, replace_with, ascii_case_insensitive
@@ -2735,9 +2730,7 @@ class ExprStringNameSpace:
         │ ["rhap", "ody"] │
         └─────────────────┘
         """
-        patterns = parse_into_expression(
-            patterns, str_as_lit=False, list_as_series=True
-        )
+        patterns = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_extract_many(patterns, ascii_case_insensitive, overlapping)
         )
@@ -2813,9 +2806,7 @@ class ExprStringNameSpace:
         │ [0, 5]    │
         └───────────┘
         """
-        patterns = parse_into_expression(
-            patterns, str_as_lit=False, list_as_series=True
-        )
+        patterns = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_find_many(patterns, ascii_case_insensitive, overlapping)
         )
