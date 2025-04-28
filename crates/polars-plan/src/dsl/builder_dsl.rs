@@ -137,30 +137,45 @@ impl DslBuilder {
     }
 
     pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> Self {
-        let exprs = match subset {
-            Some(subset) if !subset.is_empty() => subset
-                .into_iter()
-                .map(|v| v.is_not_nan())
-                .collect::<Vec<_>>(),
-            _ => vec![
+        if let Some(subset) = subset {
+            if subset.is_empty() {
+                return self;
+            }
+            self.filter(
+                all_horizontal(
+                    subset
+                        .into_iter()
+                        .map(|v| v.is_not_nan())
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap(),
+            )
+        } else {
+            self.filter(
                 // TODO: when Decimal supports NaN, include here
-                dtype_cols([DataType::Float32, DataType::Float64]).is_not_nan(),
-            ],
-        };
-
-        self.filter(all_horizontal(exprs).unwrap())
+                all_horizontal([dtype_cols([DataType::Float32, DataType::Float64]).is_not_nan()])
+                    .unwrap(),
+            )
+        }
     }
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
-        let exprs = match subset {
-            Some(subset) if !subset.is_empty() => subset
-                .into_iter()
-                .map(|v| v.is_not_null())
-                .collect::<Vec<_>>(),
-            _ => vec![all().is_not_null()],
-        };
-
-        self.filter(all_horizontal(exprs).unwrap())
+        if let Some(subset) = subset {
+            if subset.is_empty() {
+                return self;
+            }
+            self.filter(
+                all_horizontal(
+                    subset
+                        .into_iter()
+                        .map(|v| v.is_not_null())
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap(),
+            )
+        } else {
+            self.filter(all_horizontal([all().is_not_null()]).unwrap())
+        }
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
