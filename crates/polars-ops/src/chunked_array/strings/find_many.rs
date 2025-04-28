@@ -52,10 +52,47 @@ pub fn contains_any(
 
 pub fn replace_all(
     ca: &StringChunked,
-    patterns: &StringChunked,
-    replace_with: &StringChunked,
+    patterns: &ListChunked,
+    replace_with: &ListChunked,
     ascii_case_insensitive: bool,
 ) -> PolarsResult<StringChunked> {
+    let mut length = 1;
+    for (argument_idx, (argument, l)) in [
+        ("self", ca.len()),
+        ("patterns", patterns.len()),
+        ("replace_with", replace_with.len()),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if l != 1 {
+            if length != 1 {
+                polars_bail!(
+                    length_mismatch = "str.replace_many",
+                    l,
+                    length,
+                    argument = argument,
+                    argument_idx = argument_idx
+                );
+            }
+            length = l;
+        }
+    }
+
+    polars_ensure!(
+        patterns.len() == 1 && replace_with.len() == 1,
+        nyi = "`str.replace_many` with a pattern per row"
+    );
+
+    if patterns.has_nulls() || replace_with.has_nulls() {
+        return Ok(StringChunked::full_null(ca.name().clone(), ca.len()));
+    }
+
+    let patterns = patterns.explode()?;
+    let patterns = patterns.str()?;
+    let replace_with = replace_with.explode()?;
+    let replace_with = replace_with.str()?;
+
     let replace_with = if replace_with.len() == 1 && patterns.len() > 1 {
         replace_with.new_from_index(0, patterns.len())
     } else {

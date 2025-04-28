@@ -2654,11 +2654,8 @@ class ExprStringNameSpace:
         patterns = parse_into_expression(
             patterns,  # type: ignore[arg-type]
             str_as_lit=False,
-            list_as_series=True,
         )
-        replace_with = parse_into_expression(
-            replace_with, str_as_lit=True, list_as_series=True
-        )
+        replace_with = parse_into_expression(replace_with, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.str_replace_many(
                 patterns, replace_with, ascii_case_insensitive

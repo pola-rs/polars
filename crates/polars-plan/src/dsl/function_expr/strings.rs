@@ -284,7 +284,7 @@ impl StringFunction {
             #[cfg(feature = "find_many")]
             S::ContainsAny { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
-            S::ReplaceMany { .. } => FunctionOptions::groupwise(),
+            S::ReplaceMany { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
             S::ExtractMany { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
@@ -526,8 +526,8 @@ fn contains_any(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Colu
 #[cfg(feature = "find_many")]
 fn replace_many(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].str()?;
-    let replace_with = s[2].str()?;
+    let patterns = s[1].list()?;
+    let replace_with = s[2].list()?;
     polars_ops::chunked_array::strings::replace_all(
         ca,
         patterns,
