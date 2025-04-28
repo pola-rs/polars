@@ -292,6 +292,7 @@ class CatNameSpace:
         ]
         """
 
+    @unstable()
     def str_eval(self, expr: Expr) -> Series:
         """
         Run any polars expression against the categories and re-broadcast.
@@ -300,6 +301,10 @@ class CatNameSpace:
         categorical series, with the result re-broadcast to the input. This effectively
         treats the series as a String series while maintaining the efficiency afforded
         by the Categorical dtype.
+
+        .. warning::
+        This functionality is currently considered **unstable**. It may be changed at
+        any point without it being considered a breaking change.
 
         Parameters
         ----------

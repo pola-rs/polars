@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 
@@ -305,6 +306,7 @@ class ExprCatNameSpace:
         """
         return wrap_expr(self._pyexpr.cat_slice(offset, length))
 
+    @unstable()
     def str_eval(self, expr: Expr) -> Expr:
         """
         Run any polars expression against the categories and re-broadcast.
@@ -313,6 +315,10 @@ class ExprCatNameSpace:
         categorical column, with the result re-broadcast to the input. This effectively
         treats the column as a String column while maintaining the efficiency afforded
         by the Categorical dtype.
+
+        .. warning::
+        This functionality is currently considered **unstable**. It may be changed at
+        any point without it being considered a breaking change.
 
         Parameters
         ----------
