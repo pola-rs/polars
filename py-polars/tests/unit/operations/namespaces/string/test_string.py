@@ -10,7 +10,6 @@ from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
-    SchemaError,
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
