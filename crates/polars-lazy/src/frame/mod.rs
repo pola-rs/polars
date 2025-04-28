@@ -1946,6 +1946,13 @@ impl LazyFrame {
             maintain_order: true,
             keep_strategy,
         };
+        if keep_strategy == UniqueKeepStrategy::Last {
+            let reversed = self.reverse();
+            let lp = reversed.get_plan_builder().distinct(options).build();
+            let df = Self::from_logical_plan(lp, opt_state);
+            return df.reverse();
+        }
+
         let lp = self.get_plan_builder().distinct(options).build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -1982,6 +1989,12 @@ impl LazyFrame {
             maintain_order: false,
             keep_strategy,
         };
+        if keep_strategy == UniqueKeepStrategy::Last {
+            let reversed = self.reverse();
+            let lp = reversed.get_plan_builder().distinct(options).build();
+            let df = Self::from_logical_plan(lp, opt_state);
+            return df.reverse();
+        }
         let lp = self.get_plan_builder().distinct(options).build();
         Self::from_logical_plan(lp, opt_state)
     }
