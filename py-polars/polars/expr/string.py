@@ -2733,9 +2733,7 @@ class ExprStringNameSpace:
         │ ["rhap", "ody"] │
         └─────────────────┘
         """
-        patterns = parse_into_expression(
-            patterns, str_as_lit=False, list_as_series=True
-        )
+        patterns = parse_into_expression(patterns, str_as_lit=False)
         return wrap_expr(
             self._pyexpr.str_extract_many(patterns, ascii_case_insensitive, overlapping)
         )

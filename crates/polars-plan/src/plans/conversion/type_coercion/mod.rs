@@ -528,7 +528,9 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             AExpr::Function {
                 function:
                     ref function @ FunctionExpr::StringExpr(
-                        StringFunction::ContainsAny { .. } | StringFunction::FindMany { .. },
+                        StringFunction::ContainsAny { .. }
+                        | StringFunction::FindMany { .. }
+                        | StringFunction::ExtractMany { .. },
                     ),
                 ref input,
                 options,
@@ -553,7 +555,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
                     polars_warn!(
                         Deprecation,
-                        "`str.contains_any` with a string datatype is deprecated.
+                        "`{function}` with a flat string datatype is deprecated.
 Please use `implode` to return to previous behavior.
 See https://github.com/pola-rs/polars/issues/22149 for more information."
                     );

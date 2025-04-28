@@ -286,7 +286,7 @@ impl StringFunction {
             #[cfg(feature = "find_many")]
             S::ReplaceMany { .. } => FunctionOptions::groupwise(),
             #[cfg(feature = "find_many")]
-            S::ExtractMany { .. } => FunctionOptions::groupwise(),
+            S::ExtractMany { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
             S::FindMany { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "regex")]
@@ -544,11 +544,11 @@ fn extract_many(
     overlapping: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = &s[1];
+    let patterns = s[1].list()?;
 
     polars_ops::chunked_array::strings::extract_many(
         ca,
-        patterns.as_materialized_series(),
+        patterns,
         ascii_case_insensitive,
         overlapping,
     )

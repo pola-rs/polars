@@ -96,15 +96,58 @@ fn push_str(
 
 pub fn extract_many(
     ca: &StringChunked,
-    patterns: &Series,
+    patterns: &ListChunked,
     ascii_case_insensitive: bool,
     overlapping: bool,
 ) -> PolarsResult<ListChunked> {
-    match patterns.dtype() {
-        DataType::List(inner) if inner.is_string() => {
+    match (ca.len(), patterns.len()) {
+        (1, _) => match ca.get(0) {
+            None => Ok(ListChunked::full_null_with_dtype(
+                ca.name().clone(),
+                ca.len(),
+                &DataType::String,
+            )),
+            Some(val) => {
+                let mut builder =
+                    ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
+
+                for pat in patterns.amortized_iter() {
+                    match pat {
+                        None => builder.append_null(),
+                        Some(pat) => {
+                            let pat = pat.as_ref();
+                            let pat = pat.str()?;
+                            let pat = pat.rechunk();
+                            let pat = pat.downcast_as_array();
+                            let ac = build_ac_arr(pat, ascii_case_insensitive)?;
+                            push_str(val, &mut builder, &ac, overlapping);
+                        },
+                    }
+                }
+                Ok(builder.finish())
+            },
+        },
+        (_, 1) => {
+            let patterns = patterns.explode()?;
+            let patterns = patterns.str()?;
+            let ac = build_ac(patterns, ascii_case_insensitive)?;
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
-            let patterns = patterns.list().unwrap();
+
+            for arr in ca.downcast_iter() {
+                for opt_val in arr.into_iter() {
+                    if let Some(val) = opt_val {
+                        push_str(val, &mut builder, &ac, overlapping);
+                    } else {
+                        builder.append_null();
+                    }
+                }
+            }
+            Ok(builder.finish())
+        },
+        (a, b) if a == b => {
+            let mut builder =
+                ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
             let (ca, patterns) = align_chunks_binary(ca, patterns);
 
             for (arr, pat_arr) in ca.downcast_iter().zip(patterns.downcast_iter()) {
@@ -121,26 +164,7 @@ pub fn extract_many(
             }
             Ok(builder.finish())
         },
-        DataType::String => {
-            let patterns = patterns.str().unwrap();
-            let ac = build_ac(patterns, ascii_case_insensitive)?;
-            let mut builder =
-                ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.len() * 2);
-
-            for arr in ca.downcast_iter() {
-                for opt_val in arr.into_iter() {
-                    if let Some(val) = opt_val {
-                        push_str(val, &mut builder, &ac, overlapping);
-                    } else {
-                        builder.append_null();
-                    }
-                }
-            }
-            Ok(builder.finish())
-        },
-        _ => {
-            polars_bail!(InvalidOperation: "expected 'String/List<String>' datatype for 'patterns' argument")
-        },
+        (a, b) => polars_bail!(length_mismatch = "str.extract_many", a, b),
     }
 }
 
@@ -200,13 +224,11 @@ pub fn find_many(
             let ac = build_ac(patterns, ascii_case_insensitive)?;
             let mut builder = B::new(ca.name().clone(), ca.len(), ca.len() * 2, DataType::UInt32);
 
-            for arr in ca.downcast_iter() {
-                for opt_val in arr.into_iter() {
-                    if let Some(val) = opt_val {
-                        push_idx(val, &mut builder, &ac, overlapping);
-                    } else {
-                        builder.append_null();
-                    }
+            for opt_val in ca.iter() {
+                if let Some(val) = opt_val {
+                    push_idx(val, &mut builder, &ac, overlapping);
+                } else {
+                    builder.append_null();
                 }
             }
             Ok(builder.finish())
