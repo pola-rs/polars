@@ -46,36 +46,6 @@ impl GroupedReduction for CountReduce {
         Ok(())
     }
 
-    unsafe fn update_groups(
-        &mut self,
-        values: &Column,
-        group_idxs: &[IdxSize],
-        _seq_id: u64,
-    ) -> PolarsResult<()> {
-        assert!(values.len() == group_idxs.len());
-        let values = values.as_materialized_series(); // @scalar-opt
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            let mut offset = 0;
-            for chunk in values.chunks() {
-                let gs = &group_idxs[offset..offset + chunk.len()];
-                offset += chunk.len();
-
-                if chunk.has_nulls() && !self.include_nulls {
-                    let validity = chunk.validity().unwrap();
-                    for (g, v) in gs.iter().zip(validity.iter()) {
-                        *self.counts.get_unchecked_mut(*g as usize) += v as u64;
-                    }
-                } else {
-                    for g in gs {
-                        *self.counts.get_unchecked_mut(*g as usize) += 1;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &Column,
@@ -111,23 +81,7 @@ impl GroupedReduction for CountReduce {
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(other.counts.len() == group_idxs.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, v) in group_idxs.iter().zip(other.counts.iter()) {
-                *self.counts.get_unchecked_mut(*g as usize) += v;
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],
