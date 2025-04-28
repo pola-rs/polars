@@ -30,7 +30,10 @@ where
 
 /// Parallelizes an iterator of futures, where the first future is kept on the current thread.
 ///
-/// Note that this means the first future in the returned array does not run until polled.
+/// This is an optimization to retain some data on the current thread. If there is only 1 future,
+/// then all data is kept on the current thread and spawn is not called at all.
+///
+/// Note this means the first future in the returned array does not run until polled.
 ///
 /// # Panics
 /// Panics if the iterator has less than `futures_iter_length` items.
