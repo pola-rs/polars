@@ -3,7 +3,7 @@ use pin_project_lite::pin_project;
 use crate::async_executor::{AbortOnDropHandle, TaskPriority, spawn};
 
 pin_project! {
-    /// Represents a potentially spawned future
+    /// Represents a potentially spawned future.
     #[project = OptSpawnedFutureProj]
     pub enum OptSpawnedFuture<F, O> {
         Local { #[pin] fut: F },
@@ -28,9 +28,13 @@ where
     }
 }
 
-/// Parallelizes an iterator of futures. The first future does not get spawned, and instead runs
-/// on the current thread.
-pub fn parallelize<I, F, O>(
+/// Parallelizes an iterator of futures, where the first future is kept on the current thread.
+///
+/// Note that this means the first future in the returned array does not run until polled.
+///
+/// # Panics
+/// Panics if the iterator has less than `futures_iter_length` items.
+pub fn parallelize_first_to_local<I, F, O>(
     futures_iter: I,
     futures_iter_length: usize,
 ) -> Vec<OptSpawnedFuture<F, O>>

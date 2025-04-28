@@ -22,7 +22,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::row_group_data_fetch::RowGroupData;
 use crate::async_executor;
-use crate::async_primitives::opt_spawned_future::parallelize;
+use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
 use crate::nodes::TaskPriority;
 
 /// Turns row group data into DataFrames.
@@ -501,7 +501,7 @@ impl RowGroupDecoder {
             let projected_arrow_schema = self.projected_arrow_schema.clone();
             let row_group_data = row_group_data.clone();
 
-            parallelize(
+            parallelize_first_to_local(
                 (0..self.predicate_arrow_field_indices.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
@@ -511,8 +511,10 @@ impl RowGroupDecoder {
                         let column_predicates = scan_predicate.column_predicates.clone();
 
                         async move {
-                            // This is exact as we have already taken out the remainder.
-                            (offset..offset + cols_per_thread)
+                            (offset
+                                ..offset
+                                    .saturating_add(cols_per_thread)
+                                    .min(predicate_arrow_field_indices.len()))
                                 .map(|i| {
                                     let (_, arrow_field) = projected_arrow_schema
                                         .get_at_index(predicate_arrow_field_indices[i])
