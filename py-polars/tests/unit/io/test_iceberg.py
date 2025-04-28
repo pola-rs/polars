@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import pickle
 from datetime import datetime
 from pathlib import Path
 
@@ -222,3 +223,79 @@ def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
     expected = df.vstack(df)
     actual = pl.scan_iceberg(table).collect()
     assert_frame_equal(expected, actual, check_dtypes=False)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.filterwarnings("ignore:Delete operation did not match any records")
+def test_scan_iceberg_reader_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    df = pl.DataFrame({"a": range(5)})
+
+    # in-memory catalog
+    catalog = SqlCatalog(
+        "default", uri="sqlite:///:memory:", warehouse=f"file://{tmp_path}"
+    )
+    catalog.create_namespace("namespace")
+    table = catalog.create_table(
+        "namespace.table",
+        schema=df.to_arrow().schema,
+    )
+
+    df.write_iceberg(table, mode="overwrite")
+
+    native_msg = "IcebergDataset: to_dataset_scan(): native scan_parquet()"
+    fallback_msg = (
+        "IcebergDataset: to_dataset_scan(): fallback to python[pyiceberg] scan: "
+    )
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_ICEBERG_READER_OVERRIDE", "native")
+
+        q = pl.scan_iceberg(table, reader_override=None)
+
+        capfd.readouterr()
+        assert_frame_equal(pickle.loads(pickle.dumps(q)).collect(), df)
+        capture = capfd.readouterr().err
+
+        assert native_msg in capture
+        assert fallback_msg not in capture
+
+        # Parameter should take precedence over envvar
+        q = pl.scan_iceberg(table, reader_override="pyiceberg")
+
+        capfd.readouterr()
+        assert_frame_equal(pickle.loads(pickle.dumps(q)).collect(), df)
+        capture = capfd.readouterr().err
+
+        assert native_msg not in capture
+        assert fallback_msg in capture
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_ICEBERG_READER_OVERRIDE", "pyiceberg")
+
+        q = pl.scan_iceberg(table, reader_override=None)
+
+        capfd.readouterr()
+        assert_frame_equal(pickle.loads(pickle.dumps(q)).collect(), df)
+        capture = capfd.readouterr().err
+
+        assert native_msg not in capture
+        assert fallback_msg in capture
+
+        # Parameter should take precedence over envvar
+        q = pl.scan_iceberg(table, reader_override="native")
+
+        capfd.readouterr()
+        assert_frame_equal(pickle.loads(pickle.dumps(q)).collect(), df)
+        capture = capfd.readouterr().err
+
+        assert native_msg in capture
+        assert fallback_msg not in capture
