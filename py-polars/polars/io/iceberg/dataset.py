@@ -25,16 +25,14 @@ class IcebergDataset:
         *,
         snapshot_id: int | None = None,
         iceberg_storage_properties: dict[str, Any] | None = None,
-        force_scan_dispatch: Literal["native", "python"] | None = None,
+        reader_override: Literal["native", "pyiceberg"] | None,
     ) -> None:
         self._metadata_path = None
         self._table = None
         self._snapshot_id = snapshot_id
         self._iceberg_storage_properties = iceberg_storage_properties
-        self._force_scan_dispatch: Literal["native", "python"] | None = (
-            force_scan_dispatch
-        )
-        self._force_scan_dispatch_envvar = os.getenv("POLARS_ICEBERG_SCAN_DISPATCH")
+        self._reader_override: Literal["native", "pyiceberg"] | None = reader_override
+        self._reader_override_envvar = os.getenv("POLARS_ICEBERG_READER_OVERRIDE")
 
         # Accept either a path or a table object. The one we don't have is
         # lazily initialized when needed.
@@ -88,31 +86,29 @@ class IcebergDataset:
                 raise ValueError(msg)
 
         # Take from parameter first then envvar
-        force_scan_dispatch = (
-            self._force_scan_dispatch or self._force_scan_dispatch_envvar
-        )
+        reader_override = self._reader_override or self._reader_override_envvar
 
-        if force_scan_dispatch and force_scan_dispatch not in ["native", "python"]:
+        if reader_override and reader_override not in ["native", "pyiceberg"]:
             msg = (
-                "iceberg: unknown value for force_scan_dispatch: "
-                f"'{force_scan_dispatch}', expected one of ('native', 'python')"
+                "iceberg: unknown value for reader_override: "
+                f"'{reader_override}', expected one of ('native', 'pyiceberg')"
             )
             raise ValueError(msg)
 
         # Try native scan
         fallback_reason = (
-            "forced force_scan_dispatch='python'"
-            if force_scan_dispatch == "python"
+            "forced reader_override='pyiceberg'"
+            if reader_override == "pyiceberg"
             # TODO: Enable native scans by default after we have type casting support,
             # currently it may fail if the dataset has changed types.
             else "native scans disabled by default"
-            if force_scan_dispatch != "native"
+            if reader_override != "native"
             else None
         )
 
         sources = []
 
-        if force_scan_dispatch != "python":
+        if reader_override != "pyiceberg":
             scan = tbl.scan(
                 snapshot_id=snapshot_id, limit=limit, selected_fields=selected_fields
             )
@@ -144,14 +140,14 @@ class IcebergDataset:
                 allow_missing_columns=True,
             )
 
-        elif force_scan_dispatch == "native":
-            msg = f"iceberg force_scan_dispatch='native' failed: {fallback_reason}"
+        elif reader_override == "native":
+            msg = f"iceberg reader_override='native' failed: {fallback_reason}"
             raise ComputeError(msg)
 
         if verbose:
             eprint(
-                f"IcebergDataset: to_dataset_scan(): fallback to python scan: "
-                f"{fallback_reason}"
+                "IcebergDataset: to_dataset_scan(): "
+                f"fallback to python[pyiceberg] scan: {fallback_reason}"
             )
 
         func = partial(
@@ -216,21 +212,21 @@ class IcebergDataset:
             "metadata_path": self.metadata_path(),
             "snapshot_id": self._snapshot_id,
             "iceberg_storage_properties": self._iceberg_storage_properties,
-            "force_scan_dispatch": self._force_scan_dispatch,
+            "reader_override": self._reader_override,
         }
 
         if verbose():
             path_repr = state["metadata_path"]
             snapshot_id = state["snapshot_id"]
             keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
-            force_scan_dispatch = state["force_scan_dispatch"]
+            reader_override = state["reader_override"]
 
             eprint(
                 "IcebergDataset: getstate(): "
                 f"path: '{path_repr}', "
                 f"snapshot_id: '{snapshot_id}', "
                 f"iceberg_storage_properties: {keys_repr}, "
-                f"force_scan_dispatch: {force_scan_dispatch}"
+                f"reader_override: {reader_override}"
             )
 
         return state
@@ -240,14 +236,14 @@ class IcebergDataset:
             path_repr = state["metadata_path"]
             snapshot_id = state["snapshot_id"]
             keys_repr = _redact_dict_values(state["iceberg_storage_properties"])
-            force_scan_dispatch = state["force_scan_dispatch"]
+            reader_override = state["reader_override"]
 
             eprint(
                 "IcebergDataset: getstate(): "
                 f"path: '{path_repr}', "
                 f"snapshot_id: '{snapshot_id}', "
                 f"iceberg_storage_properties: {keys_repr}, "
-                f"force_scan_dispatch: {force_scan_dispatch}"
+                f"reader_override: {reader_override}"
             )
 
         IcebergDataset.__init__(
@@ -255,7 +251,7 @@ class IcebergDataset:
             state["metadata_path"],
             snapshot_id=state["snapshot_id"],
             iceberg_storage_properties=state["iceberg_storage_properties"],
-            force_scan_dispatch=state["force_scan_dispatch"],
+            reader_override=state["reader_override"],
         )
 
 

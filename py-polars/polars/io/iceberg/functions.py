@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
 from polars.io.iceberg.dataset import IcebergDataset
 
@@ -16,7 +17,7 @@ def scan_iceberg(
     *,
     snapshot_id: int | None = None,
     storage_options: dict[str, Any] | None = None,
-    _force_scan_dispatch: Literal["native", "python"] | None = None,
+    reader_override: Literal["native", "pyiceberg"] | None = None,
 ) -> LazyFrame:
     """
     Lazily read from an Apache Iceberg table.
@@ -35,6 +36,18 @@ def scan_iceberg(
         For cloud storages, this may include configurations for authentication etc.
 
         More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+    reader_override
+        Overrides the reader used to read the data.
+
+        Warning: This parameter is considered unstable, and is subject to change.
+
+        Note that this parameter should not be necessary outside of testing, as
+        polars will by default automatically select the best reader.
+
+        Available options:
+        * native: Uses polars native reader. This allows for more optimizations to
+                  improve performance.
+        * pyiceberg: Uses PyIceberg, which supports more features.
 
     Returns
     -------
@@ -111,11 +124,15 @@ def scan_iceberg(
     """
     from polars.polars import PyLazyFrame
 
+    if reader_override is not None:
+        msg = "The `reader_override` parameter of `scan_iceberg()` is considered unstable."
+        issue_unstable_warning(msg)
+
     dataset = IcebergDataset(
         source,
         snapshot_id=snapshot_id,
         iceberg_storage_properties=storage_options,
-        force_scan_dispatch=_force_scan_dispatch,
+        reader_override=reader_override,
     )
 
     return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))
