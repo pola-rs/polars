@@ -136,6 +136,7 @@ if TYPE_CHECKING:
         PythonLiteral,
         RankMethod,
         RollingInterpolationMethod,
+        RoundMode,
         SearchSortedSide,
         SeriesBuffers,
         SingleIndexSelector,
@@ -5065,7 +5066,7 @@ class Series:
         ]
         """
 
-    def round(self, decimals: int = 0) -> Series:
+    def round(self, decimals: int = 0, mode: RoundMode = "half_to_even") -> Series:
         """
         Round underlying floating point data by `decimals` digits.
 
