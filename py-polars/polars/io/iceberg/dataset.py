@@ -32,7 +32,6 @@ class IcebergDataset:
         self._snapshot_id = snapshot_id
         self._iceberg_storage_properties = iceberg_storage_properties
         self._reader_override: Literal["native", "pyiceberg"] | None = reader_override
-        self._reader_override_envvar = os.getenv("POLARS_ICEBERG_READER_OVERRIDE")
 
         # Accept either a path or a table object. The one we don't have is
         # lazily initialized when needed.
@@ -86,7 +85,9 @@ class IcebergDataset:
                 raise ValueError(msg)
 
         # Take from parameter first then envvar
-        reader_override = self._reader_override or self._reader_override_envvar
+        reader_override = self._reader_override or os.getenv(
+            "POLARS_ICEBERG_READER_OVERRIDE"
+        )
 
         if reader_override and reader_override not in ["native", "pyiceberg"]:
             msg = (
