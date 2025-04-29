@@ -97,10 +97,6 @@ pub(super) fn set_order_flags(
             },
             IR::Distinct { options, .. } => {
                 debug_assert!(options.slice.is_none());
-                if !maintain_order_above {
-                    options.maintain_order = false;
-                    continue;
-                }
                 if matches!(
                     options.keep_strategy,
                     UniqueKeepStrategy::First | UniqueKeepStrategy::Last
