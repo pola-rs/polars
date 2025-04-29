@@ -787,3 +787,22 @@ def test_strptime_empty_input_22214() -> None:
     assert s.str.strptime(pl.Time, "%H:%M:%S%.f").is_empty()
     assert s.str.strptime(pl.Date, "%Y-%m-%d").is_empty()
     assert s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z").is_empty()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "31/12/2022",
+        "banana",
+        "12-345-678",
+        "12-345-67",
+        "12-345-6789",
+        "123*45*678",
+        "123x45x678",
+        "123x45x678x",
+    ],
+)
+def test_matching_strings_but_different_format_22495(value: str) -> None:
+    s = pl.Series("my_strings", [value])
+    result = s.str.to_date("%Y-%m-%d", strict=False).item()
+    assert result is None
