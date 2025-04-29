@@ -254,9 +254,8 @@ def test_scan_iceberg_reader_override(
         "IcebergDataset: to_dataset_scan(): fallback to python[pyiceberg] scan: "
     )
 
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
     with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
         cx.setenv("POLARS_ICEBERG_READER_OVERRIDE", "native")
 
         q = pl.scan_iceberg(table, reader_override=None)
@@ -279,6 +278,7 @@ def test_scan_iceberg_reader_override(
         assert fallback_msg in capture
 
     with monkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
         cx.setenv("POLARS_ICEBERG_READER_OVERRIDE", "pyiceberg")
 
         q = pl.scan_iceberg(table, reader_override=None)
