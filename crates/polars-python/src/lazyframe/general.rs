@@ -531,8 +531,9 @@ impl PyLazyFrame {
         py.enter_polars(|| self.ldf.to_dot(optimized))
     }
 
-    fn to_dot_phys(&self, py: Python, optimized: bool, engine: Wrap<Engine>) -> PyResult<String> {
-        py.enter_polars(|| self.ldf.to_dot_phys(optimized, engine.0))
+    #[cfg(feature = "new_streaming")]
+    fn to_dot_streaming_phys(&self, py: Python, optimized: bool) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.to_dot_streaming_phys(optimized))
     }
 
     fn optimization_toggle(

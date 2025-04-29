@@ -14,42 +14,15 @@ impl LazyFrame {
         Ok(lp.display_dot().to_string())
     }
 
-    /// Get a dot language representation of the physical plan.
-    pub fn to_dot_phys(&self, optimized: bool, engine: Engine) -> PolarsResult<String> {
-        let mut lf = self.clone();
-        lf = match engine {
-            Engine::Streaming => lf.with_new_streaming(true),
-            _ => lf,
-        };
-
+    /// Get a dot language representation of the streaming physical plan.
+    #[cfg(feature = "new_streaming")]
+    pub fn to_dot_streaming_phys(&self, optimized: bool) -> PolarsResult<String> {
+        let lf = self.clone().with_new_streaming(true);
         let mut lp = if optimized {
             lf.to_alp_optimized()
         } else {
             lf.to_alp()
         }?;
-
-        match engine {
-            Engine::Streaming => {
-                #[cfg(feature = "new_streaming")]
-                {
-                    polars_stream::visualize_physical_plan(
-                        lp.lp_top,
-                        &mut lp.lp_arena,
-                        &mut lp.expr_arena,
-                    )
-                }
-
-                #[cfg(not(feature = "new_streaming"))]
-                {
-                    polars_bail!(ComputeError: "streaming engine not enabled")
-                }
-            },
-            Engine::Auto => polars_bail!(ComputeError: "no engine selected"),
-            Engine::OldStreaming => {
-                polars_bail!(ComputeError: "old streaming engine is not supported")
-            },
-            Engine::InMemory => polars_bail!(ComputeError: "in-memory engine is not supported"),
-            Engine::Gpu => polars_bail!(ComputeError: "gpu engine is not supported"),
-        }
+        polars_stream::visualize_physical_plan(lp.lp_top, &mut lp.lp_arena, &mut lp.expr_arena)
     }
 }
