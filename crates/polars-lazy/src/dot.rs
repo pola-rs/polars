@@ -29,11 +29,21 @@ impl LazyFrame {
         }?;
 
         match engine {
-            Engine::Streaming => polars_stream::visualize_physical_plan(
-                lp.lp_top,
-                &mut lp.lp_arena,
-                &mut lp.expr_arena,
-            ),
+            Engine::Streaming => {
+                #[cfg(feature = "new_streaming")]
+                {
+                    polars_stream::visualize_physical_plan(
+                        lp.lp_top,
+                        &mut lp.lp_arena,
+                        &mut lp.expr_arena,
+                    )
+                }
+
+                #[cfg(not(feature = "new_streaming"))]
+                {
+                    polars_bail!(ComputeError: "streaming engine not enabled")
+                }
+            },
             Engine::Auto => polars_bail!(ComputeError: "no engine selected"),
             Engine::OldStreaming => {
                 polars_bail!(ComputeError: "old streaming engine is not supported")
