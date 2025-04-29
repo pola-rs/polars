@@ -89,8 +89,10 @@ from polars.dependencies import (
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
+    _check_for_torch,
     altair,
     import_optional,
+    torch,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -115,7 +117,6 @@ if TYPE_CHECKING:
 
     import jax
     import numpy.typing as npt
-    import torch
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -321,6 +322,13 @@ class Series:
                     )
                     return
 
+            if dtype is not None:
+                self._s = self.cast(dtype, strict=strict)._s
+
+        elif _check_for_torch(values) and isinstance(values, torch.Tensor):
+            self._s = numpy_to_pyseries(
+                name, values.numpy(force=False), strict=strict, nan_to_null=nan_to_null
+            )
             if dtype is not None:
                 self._s = self.cast(dtype, strict=strict)._s
 

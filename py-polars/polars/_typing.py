@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
+    from polars.dependencies import torch
     from polars.lazyframe.engine_config import GPUEngine
     from polars.selectors import _selector_proxy_
 
@@ -209,6 +210,7 @@ FrameInitTypes: TypeAlias = Union[
     "pd.DataFrame",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
+    "torch.Tensor",
 ]
 
 # Excel IO

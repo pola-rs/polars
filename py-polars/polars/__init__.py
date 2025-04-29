@@ -43,6 +43,7 @@ from polars.convert import (
     from_pandas,
     from_records,
     from_repr,
+    from_torch,
     json_normalize,
 )
 from polars.dataframe import DataFrame
@@ -419,6 +420,7 @@ __all__ = [
     "from_pandas",
     "from_records",
     "from_repr",
+    "from_torch",
     "json_normalize",
     # polars.meta
     "build_info",
