@@ -236,7 +236,12 @@ unsafe fn decode(
             // @TODO: we could consider making this into a scratchpad
             let mut nested_rows = Vec::new();
             rows_for_fixed_size_list(fsl_field.dtype(), opt, dict, *width, rows, &mut nested_rows);
-            let values = decode(&mut nested_rows, opt, dict, fsl_field.dtype());
+
+            // Match encoding, which doesn't set nulls_last for nested values:
+            let mut nested_opt = opt.clone();
+            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
+
+            let values = decode(&mut nested_rows, nested_opt, dict, fsl_field.dtype());
 
             FixedSizeListArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },

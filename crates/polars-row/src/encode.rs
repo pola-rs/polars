@@ -752,6 +752,10 @@ unsafe fn encode_array(
                 },
             }
 
+            // If we have nested values encoded with nulls_last, this means we
+            // get inconsistent encoding and sort order, in ways we can't
+            // predict from the outside. It's also not necessary for nested
+            // values. So just omit it.
             let mut nested_opt = opt.clone();
             nested_opt.remove(RowEncodingOptions::NULLS_LAST);
 
@@ -781,10 +785,18 @@ unsafe fn encode_array(
                     *offset += nested_row_widths.get((i * width) + j);
                 }
             }
+
+            // If we have nested values encoded with nulls_last, this means we
+            // get inconsistent encoding and sort order, in ways we can't
+            // predict from the outside. It's also not necessary for nested
+            // values. So just omit it.
+            let mut nested_opt = opt.clone();
+            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
+
             encode_array(
                 buffer,
                 array.as_ref(),
-                opt,
+                nested_opt,
                 dict,
                 &mut child_offsets,
                 masked_out_write_offset,

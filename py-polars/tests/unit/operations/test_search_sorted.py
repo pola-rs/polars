@@ -155,3 +155,21 @@ def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) ->
         for nulls_last in [True, False]:
             sorted_series = series.sort(descending=False, nulls_last=nulls_last)
             assert_find_existing_values(sorted_series, values)
+
+
+@given(
+    values=st.lists(
+        st.none()
+        | st.lists(
+            st.integers(min_value=-10, max_value=10) | st.none(), min_size=3, max_size=3
+        )
+    )
+)
+@example(values=[[None, None, None], [0, 0, None]])
+def test_search_sorted_array_with_nulls(values: list[list[int | None] | None]) -> None:
+    """For all nulls_last options, values can be found in arbitrary lists."""
+    series = pl.Series(values, dtype=pl.Array(pl.Int64(), 3))
+    for descending in [True, False]:
+        for nulls_last in [True, False]:
+            sorted_series = series.sort(descending=False, nulls_last=nulls_last)
+            assert_find_existing_values(sorted_series, values)
