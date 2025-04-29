@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import pickle
 from datetime import datetime
 from pathlib import Path
 
