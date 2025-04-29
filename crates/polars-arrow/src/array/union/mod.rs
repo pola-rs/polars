@@ -1,4 +1,5 @@
 use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_utils::cowbox::CowBox;
 
 use super::{Array, Splitable, new_empty_array, new_null_array};
 use crate::bitmap::Bitmap;
@@ -347,6 +348,10 @@ impl Array for UnionArray {
 
     fn with_validity(&self, _: Option<Bitmap>) -> Box<dyn Array> {
         panic!("cannot set validity of a union array")
+    }
+
+    fn propagate_nulls(&self) -> CowBox<dyn Array> {
+        CowBox::Borrowed(self)
     }
 }
 

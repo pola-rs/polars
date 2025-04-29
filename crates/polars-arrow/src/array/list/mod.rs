@@ -1,6 +1,9 @@
+use std::borrow::Cow;
+
 use super::specification::try_check_offsets_bounds;
 use super::{Array, Splitable, new_empty_array};
-use crate::bitmap::Bitmap;
+use crate::bitmap::bitmask::BitMask;
+use crate::bitmap::{Bitmap, BitmapBuilder};
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
@@ -13,6 +16,7 @@ pub use iterator::*;
 mod mutable;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail};
+use polars_utils::cowbox::CowBox;
 use polars_utils::pl_str::PlSmallStr;
 
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
@@ -267,6 +271,92 @@ impl<O: Offset> ListArray<O> {
     pub fn get_child_type(dtype: &ArrowDataType) -> &ArrowDataType {
         Self::get_child_field(dtype).dtype()
     }
+
+    pub fn propagate_nulls(&self) -> Cow<Self> {
+        let Some(validity) = self.validity.as_ref() else {
+            return match self.values.propagate_nulls() {
+                CowBox::Borrowed(_) => Cow::Borrowed(self),
+                CowBox::Owned(values) => Cow::Owned(Self {
+                    dtype: self.dtype.clone(),
+                    offsets: self.offsets.clone(),
+                    values,
+                    validity: None,
+                }),
+            };
+        };
+
+        let mut last_idx = 0;
+        let old_child_validity = self.values.validity();
+        let mut new_child_validity = BitmapBuilder::new();
+
+        let mut new_values = CowBox::Borrowed(self.values.as_ref());
+
+        // Find the first element that does not have propagated nulls.
+        let null_mask = !validity;
+        for i in null_mask.true_idx_iter() {
+            last_idx = i;
+            let (start, end) = self.offsets.start_end(i);
+            if end == start {
+                continue;
+            }
+
+            if old_child_validity.is_none_or(|v| {
+                BitMask::from_bitmap(v)
+                    .sliced(start, end - start)
+                    .set_bits()
+                    > 0
+            }) {
+                new_child_validity.subslice_extend_from_opt_validity(old_child_validity, 0, start);
+                new_child_validity.extend_constant(end - start, false);
+                break;
+            }
+        }
+
+        if !new_child_validity.is_empty() {
+            // If nulls need to be propagated, create a new validity mask for the child array.
+            let null_mask = null_mask.sliced(last_idx + 1, self.len() - last_idx - 1);
+
+            for i in null_mask.true_idx_iter() {
+                let (start, end) = self.offsets.start_end(i);
+                if end == start {
+                    continue;
+                }
+
+                new_child_validity.subslice_extend_from_opt_validity(
+                    old_child_validity,
+                    new_child_validity.len(),
+                    start - new_child_validity.len(),
+                );
+                new_child_validity.extend_constant(end - start, false);
+            }
+
+            new_child_validity.subslice_extend_from_opt_validity(
+                old_child_validity,
+                new_child_validity.len(),
+                self.values.len() - new_child_validity.len(),
+            );
+
+            let new_child_validity = new_child_validity.freeze();
+            new_values = CowBox::Owned(new_values.with_validity(Some(new_child_validity)));
+        }
+
+        let values = match new_values.propagate_nulls() {
+            CowBox::Owned(values) => values,
+            CowBox::Borrowed(_) => match new_values {
+                CowBox::Owned(values) => values,
+
+                // Nothing was changed. Return the original array.
+                CowBox::Borrowed(_) => return Cow::Borrowed(self),
+            },
+        };
+
+        Cow::Owned(Self {
+            dtype: self.dtype.clone(),
+            offsets: self.offsets.clone(),
+            values,
+            validity: self.validity.clone(),
+        })
+    }
 }
 
 impl<O: Offset> Array for ListArray<O> {
@@ -279,6 +369,13 @@ impl<O: Offset> Array for ListArray<O> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+
+    fn propagate_nulls(&self) -> CowBox<dyn Array> {
+        match Self::propagate_nulls(self) {
+            Cow::Borrowed(_) => CowBox::Borrowed(self),
+            Cow::Owned(arr) => CowBox::Owned(Box::new(arr) as _),
+        }
     }
 }
 

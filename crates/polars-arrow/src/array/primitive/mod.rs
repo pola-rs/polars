@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use either::Either;
+use polars_utils::cowbox::CowBox;
 
 use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
@@ -491,6 +492,10 @@ impl<T: NativeType> Array for PrimitiveArray<T> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+
+    fn propagate_nulls(&self) -> CowBox<dyn Array> {
+        CowBox::Borrowed(self)
     }
 }
 

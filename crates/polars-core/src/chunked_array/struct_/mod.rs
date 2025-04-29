@@ -383,16 +383,10 @@ impl StructChunked {
         )
     }
 
-    /// Set the outer nulls into the inner arrays, and clear the outer validity.
+    /// Set the outer nulls into the inner arrays.
     pub(crate) fn propagate_nulls(&mut self) {
-        if self.null_count > 0 {
-            // SAFETY:
-            // We keep length and dtypes the same.
-            unsafe {
-                for arr in self.downcast_iter_mut() {
-                    *arr = arr.propagate_nulls()
-                }
-            }
+        if let Cow::Owned(ca) = ChunkPropagateNulls::propagate_nulls(self) {
+            *self = ca;
         }
     }
 

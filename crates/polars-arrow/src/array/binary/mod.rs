@@ -1,4 +1,5 @@
 use either::Either;
+use polars_utils::cowbox::CowBox;
 
 use super::specification::try_check_offsets_bounds;
 use super::{Array, GenericBinaryArray, Splitable};
@@ -429,6 +430,10 @@ impl<O: Offset> Array for BinaryArray<O> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+
+    fn propagate_nulls(&self) -> CowBox<dyn Array> {
+        CowBox::Borrowed(self)
     }
 }
 

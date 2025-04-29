@@ -9,6 +9,7 @@ pub(super) mod fmt;
 mod iterator;
 
 use polars_error::{PolarsResult, polars_bail};
+use polars_utils::cowbox::CowBox;
 
 /// An array representing a (key, value), both of arbitrary logical types.
 #[derive(Clone)]
@@ -191,6 +192,10 @@ impl Array for MapArray {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+
+    fn propagate_nulls(&self) -> CowBox<dyn Array> {
+        CowBox::Borrowed(self)
     }
 }
 

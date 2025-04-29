@@ -16,6 +16,7 @@ pub mod cell;
 pub mod chunks;
 pub mod clmul;
 mod config;
+pub mod cowbox;
 pub mod cpuid;
 pub mod error;
 pub mod floor_divmod;

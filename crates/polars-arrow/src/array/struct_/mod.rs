@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use super::{Array, Splitable, new_empty_array, new_null_array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
@@ -8,8 +10,7 @@ mod ffi;
 pub(super) mod fmt;
 mod iterator;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
-
-use crate::compute::utils::combine_validities_and;
+use polars_utils::cowbox::CowBox;
 
 /// A [`StructArray`] is a nested [`Array`] with an optional validity representing
 /// multiple [`Array`] with the same number of rows.
@@ -200,18 +201,96 @@ impl StructArray {
     }
 
     /// Set the outer nulls into the inner arrays.
-    pub fn propagate_nulls(&self) -> StructArray {
-        let has_nulls = self.null_count() > 0;
-        let mut out = self.clone();
-        if !has_nulls {
-            return out;
+    pub fn propagate_nulls(&self) -> Cow<StructArray> {
+        let Some(validity) = self.validity.as_ref() else {
+            let mut new_values = Vec::new();
+            for (i, field_array) in self.values.iter().enumerate() {
+                if let CowBox::Owned(field_array) = field_array.propagate_nulls() {
+                    new_values.reserve(self.values.len());
+                    new_values.extend(self.values[..i].iter().cloned());
+                    new_values.push(field_array);
+                    break;
+                }
+            }
+
+            if new_values.is_empty() {
+                return Cow::Borrowed(self);
+            }
+
+            new_values.extend(self.values[new_values.len()..].iter().map(|field_array| {
+                match field_array.propagate_nulls() {
+                    CowBox::Borrowed(field_array) => field_array.to_boxed(),
+                    CowBox::Owned(field_array) => field_array,
+                }
+            }));
+            return Cow::Owned(Self {
+                dtype: self.dtype.clone(),
+                values: new_values,
+                length: self.length,
+                validity: None,
+            });
         };
 
-        for value_arr in &mut out.values {
-            let new_validity = combine_validities_and(self.validity(), value_arr.validity());
-            *value_arr = value_arr.with_validity(new_validity);
+        if self.values.len() == 0 || validity.unset_bits() == 0 {
+            return Cow::Borrowed(self);
         }
-        out
+
+        let mut new_values = Vec::new();
+        for (i, field_array) in self.values.iter().enumerate() {
+            let new_field_array = match field_array.validity() {
+                None => CowBox::Owned(field_array.with_validity(Some(validity.clone()))),
+                Some(v) if v.num_intersections_with(validity) == validity.set_bits() => {
+                    CowBox::Borrowed(field_array.as_ref())
+                },
+                Some(v) => CowBox::Owned(field_array.with_validity(Some(v & validity))),
+            };
+
+            let new_field_array = match new_field_array.propagate_nulls() {
+                CowBox::Owned(new_field_array) => new_field_array,
+                CowBox::Borrowed(_) => match new_field_array {
+                    CowBox::Owned(new_field_array) => new_field_array,
+
+                    // Nothing was changed. Return the original array.
+                    CowBox::Borrowed(_) => continue,
+                },
+            };
+
+            new_values.reserve(self.values.len());
+            new_values.extend(self.values[..i].iter().cloned());
+            new_values.push(new_field_array);
+            break;
+        }
+
+        if !new_values.is_empty() {
+            new_values.extend(self.values[new_values.len()..].iter().map(|field_array| {
+                let new_field_array = match field_array.validity() {
+                    None => CowBox::Owned(field_array.with_validity(Some(validity.clone()))),
+                    Some(v) if v.num_intersections_with(validity) == validity.set_bits() => {
+                        CowBox::Borrowed(field_array.as_ref())
+                    },
+                    Some(v) => CowBox::Owned(field_array.with_validity(Some(v & validity))),
+                };
+
+                match new_field_array.propagate_nulls() {
+                    CowBox::Owned(new_field_array) => new_field_array,
+                    CowBox::Borrowed(_) => match new_field_array {
+                        CowBox::Owned(new_field_array) => new_field_array,
+
+                        // Nothing was changed. Return the original array.
+                        CowBox::Borrowed(_) => field_array.clone(),
+                    },
+                }
+            }));
+
+            return Cow::Owned(Self {
+                dtype: self.dtype.clone(),
+                values: new_values,
+                length: self.length,
+                validity: self.validity.clone(),
+            });
+        }
+
+        Cow::Borrowed(self)
     }
 
     impl_sliced!();
@@ -284,6 +363,13 @@ impl Array for StructArray {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+
+    fn propagate_nulls(&self) -> CowBox<dyn Array> {
+        match Self::propagate_nulls(self) {
+            Cow::Borrowed(_) => CowBox::Borrowed(self),
+            Cow::Owned(arr) => CowBox::Owned(Box::new(arr) as _),
+        }
     }
 }
 

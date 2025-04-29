@@ -1,5 +1,8 @@
+use std::borrow::Cow;
+
 use super::{Array, ArrayRef, Splitable, new_empty_array, new_null_array};
-use crate::bitmap::Bitmap;
+use crate::bitmap::bitmask::BitMask;
+use crate::bitmap::{Bitmap, BitmapBuilder};
 use crate::datatypes::{ArrowDataType, Field};
 
 mod ffi;
@@ -11,6 +14,7 @@ pub use builder::*;
 mod mutable;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
+use polars_utils::cowbox::CowBox;
 use polars_utils::format_tuple;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -228,30 +232,70 @@ impl FixedSizeListArray {
         dims
     }
 
-    pub fn propagate_nulls(&self) -> Self {
-        let Some(validity) = self.validity() else {
-            return self.clone();
+    pub fn propagate_nulls(&self) -> Cow<Self> {
+        let Some(validity) = self.validity.as_ref() else {
+            return match self.values.propagate_nulls() {
+                CowBox::Borrowed(_) => Cow::Borrowed(self),
+                CowBox::Owned(values) => Cow::Owned(Self {
+                    size: self.size,
+                    length: self.length,
+                    dtype: self.dtype.clone(),
+                    values,
+                    validity: None,
+                }),
+            };
         };
 
-        let propagated_validity = if self.size == 1 {
-            validity.clone()
-        } else {
-            Bitmap::from_trusted_len_iter(
-                (0..self.size * validity.len())
-                    .map(|i| unsafe { validity.get_bit_unchecked(i / self.size) }),
-            )
+        if self.size == 0 || validity.unset_bits() == 0 {
+            return Cow::Borrowed(self);
+        }
+
+        let start_point = match self.values.validity() {
+            None => Some(0),
+            Some(old_child_validity) => {
+                // Find the first element that does not have propagated nulls.
+                let null_mask = !validity;
+                null_mask.true_idx_iter().find(|i| {
+                    BitMask::from_bitmap(old_child_validity)
+                        .sliced(i * self.size, self.size)
+                        .set_bits()
+                        > 0
+                })
+            },
         };
 
-        let propagated_validity = match self.values.validity() {
-            None => propagated_validity,
-            Some(val) => val & &propagated_validity,
+        let mut new_values = CowBox::Borrowed(self.values.as_ref());
+        if let Some(start_point) = start_point {
+            // Nulls need to be propagated, create a new validity mask.
+            let mut new_child_validity = BitmapBuilder::with_capacity(self.size * self.length);
+
+            new_child_validity.subslice_extend_from_bitmap(validity, 0, start_point * self.size);
+            for is_valid in validity.iter().skip(start_point) {
+                new_child_validity.extend_constant(self.size, is_valid);
+            }
+
+            let new_child_validity = new_child_validity.freeze();
+            new_values = CowBox::Owned(new_values.with_validity(Some(new_child_validity)));
+        }
+
+        let values = match new_values.propagate_nulls() {
+            CowBox::Owned(values) => values,
+            CowBox::Borrowed(_) => match new_values {
+                CowBox::Owned(values) => values,
+
+                // Nothing was changed. Return the original array.
+                CowBox::Borrowed(_) => return Cow::Borrowed(self),
+            },
         };
-        Self::new(
-            self.dtype().clone(),
-            self.length,
-            self.values.with_validity(Some(propagated_validity)),
-            self.validity.clone(),
-        )
+
+        // The child array was changed.
+        Cow::Owned(Self {
+            size: self.size,
+            length: self.length,
+            dtype: self.dtype.clone(),
+            values,
+            validity: self.validity.clone(),
+        })
     }
 }
 
@@ -373,6 +417,13 @@ impl Array for FixedSizeListArray {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+
+    fn propagate_nulls(&self) -> CowBox<dyn Array> {
+        match Self::propagate_nulls(self) {
+            Cow::Borrowed(_) => CowBox::Borrowed(self),
+            Cow::Owned(arr) => CowBox::Owned(Box::new(arr) as _),
+        }
     }
 }
 

@@ -171,6 +171,13 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
+    fn propagate_nulls(&self) -> Option<Series> {
+        match self.0.propagate_nulls() {
+            Cow::Borrowed(_) => None,
+            Cow::Owned(ca) => Some(ca.into_series()),
+        }
+    }
+
     fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         self.0.cast_with_options(dtype, options)
     }

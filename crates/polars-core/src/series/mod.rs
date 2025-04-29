@@ -379,18 +379,22 @@ impl Series {
 
     /// Cast [`Series`] to another [`DataType`].
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
-        use DataType as D;
+        let slf = match self.propagate_nulls() {
+            None => Cow::Borrowed(self),
+            Some(series) => Cow::Owned(series),
+        };
 
+        use DataType as D;
         let do_clone = match dtype {
             D::Unknown(UnknownKind::Any) => true,
-            D::Unknown(UnknownKind::Int(_)) if self.dtype().is_integer() => true,
-            D::Unknown(UnknownKind::Float) if self.dtype().is_float() => true,
+            D::Unknown(UnknownKind::Int(_)) if slf.dtype().is_integer() => true,
+            D::Unknown(UnknownKind::Float) if slf.dtype().is_float() => true,
             D::Unknown(UnknownKind::Str)
-                if self.dtype().is_string() | self.dtype().is_categorical() =>
+                if slf.dtype().is_string() | slf.dtype().is_categorical() =>
             {
                 true
             },
-            dt if dt.is_primitive() && dt == self.dtype() => true,
+            dt if dt.is_primitive() && dt == slf.dtype() => true,
             #[cfg(feature = "dtype-categorical")]
             D::Enum(None, _) => {
                 polars_bail!(InvalidOperation: "cannot cast / initialize Enum without categories present");
@@ -399,7 +403,7 @@ impl Series {
         };
 
         if do_clone {
-            return Ok(self.clone());
+            return Ok(slf.into_owned());
         }
 
         pub fn cast_dtype(dtype: &DataType) -> Option<DataType> {
@@ -449,9 +453,9 @@ impl Series {
         };
 
         // Always allow casting all nulls to other all nulls.
-        let len = self.len();
-        if self.null_count() == len {
-            return Ok(Series::full_null(self.name().clone(), len, dtype));
+        let len = slf.len();
+        if slf.null_count() == len {
+            return Ok(Series::full_null(slf.name().clone(), len, dtype));
         }
 
         let new_options = match options {
@@ -460,14 +464,14 @@ impl Series {
             opt => opt,
         };
 
-        let ret = self.0.cast(dtype, new_options);
+        let ret = slf.0.cast(dtype, new_options);
 
         match options {
             CastOptions::NonStrict | CastOptions::Overflowing => ret,
             CastOptions::Strict => {
                 let ret = ret?;
-                if self.null_count() != ret.null_count() {
-                    handle_casting_failures(self, &ret)?;
+                if slf.null_count() != ret.null_count() {
+                    handle_casting_failures(slf.as_ref(), &ret)?;
                 }
                 Ok(ret)
             },

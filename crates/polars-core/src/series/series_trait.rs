@@ -378,6 +378,14 @@ pub trait SeriesTrait:
     /// ```
     fn new_from_index(&self, _index: usize, _length: usize) -> Series;
 
+    /// Propagate down nulls in nested types.
+    ///
+    /// - `None` if nothing needed to be done.
+    /// - `Some(series)` if something changed.
+    fn propagate_nulls(&self) -> Option<Series> {
+        None
+    }
+
     fn cast(&self, _dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
