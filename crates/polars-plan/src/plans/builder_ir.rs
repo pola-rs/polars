@@ -146,6 +146,33 @@ impl<'a> IRBuilder<'a> {
         }
     }
 
+    pub fn drop<I, S>(self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        I::IntoIter: ExactSizeIterator,
+        S: Into<PlSmallStr>,
+    {
+        let names = names.into_iter();
+        // if len == 0, no projection has to be done. This is a select all operation.
+        if names.size_hint().0 == 0 {
+            self
+        } else {
+            let mut schema = self.schema().as_ref().as_ref().clone();
+
+            for name in names {
+                let name: PlSmallStr = name.into();
+                schema.remove(&name);
+            }
+
+            let lp = IR::SimpleProjection {
+                input: self.root,
+                columns: Arc::new(schema),
+            };
+            let node = self.lp_arena.add(lp);
+            IRBuilder::new(node, self.expr_arena, self.lp_arena)
+        }
+    }
+
     pub fn sort(
         self,
         by_column: Vec<ExprIR>,
