@@ -621,7 +621,11 @@ def test_when_then_over_22478() -> None:
         }
     )
 
-    assert q.collect_schema() == expect.schema
+    assert q.collect_schema() == {
+        "x": pl.Boolean,
+        "t": pl.Int64,
+        "duration": pl.Int64,
+    }
     assert_frame_equal(q.collect(), expect)
 
     q = pl.LazyFrame({"key": [1, 1, 2, 2, 2]}).with_columns(
