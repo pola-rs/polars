@@ -3004,32 +3004,20 @@ impl DataFrame {
         // take on multiple chunks is terrible
         df.as_single_chunk_par();
 
-        match (keep, maintain_order) {
+        let columns = match (keep, maintain_order) {
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, true) => {
                 let gb = df.group_by_stable(names)?;
                 let groups = gb.get_groups();
-
-                let columns = df._apply_columns_par(&|s| unsafe { s.agg_first(groups) });
-                let mut df =
-                    unsafe { DataFrame::new_no_checks(Self::infer_height(&columns), columns) };
-
-                if let Some((offset, len)) = slice {
-                    df = df.slice(offset, len);
-                }
-                Ok(df)
+                let (offset, len) = slice.unwrap_or((0, groups.len()));
+                let groups = groups.slice(offset, len);
+                df._apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             },
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
                 let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
-
-                let columns = df._apply_columns_par(&|s| unsafe { s.agg_first(groups) });
-                let mut df =
-                    unsafe { DataFrame::new_no_checks(Self::infer_height(&columns), columns) };
-
-                if let Some((offset, len)) = slice {
-                    df = df.slice(offset, len);
-                }
-                Ok(df)
+                let (offset, len) = slice.unwrap_or((0, groups.len()));
+                let groups = groups.slice(offset, len);
+                df._apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             },
             (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
@@ -3054,26 +3042,14 @@ impl DataFrame {
                 if let Some((offset, len)) = slice {
                     out = out.slice(offset, len);
                 }
-                Ok(out)
+                return Ok(out);
             },
             (UniqueKeepStrategy::Last, false) => {
                 let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
-
-                let last_idx: NoNull<IdxCa> = groups
-                    .iter()
-                    .map(|g| match g {
-                        GroupsIndicator::Idx((_first, idx)) => idx[idx.len() - 1],
-                        GroupsIndicator::Slice([first, len]) => first + len - 1,
-                    })
-                    .collect();
-
-                let mut out = unsafe { df.take_unchecked(&last_idx) };
-
-                if let Some((offset, len)) = slice {
-                    out = out.slice(offset, len);
-                }
-                Ok(out)
+                let (offset, len) = slice.unwrap_or((0, groups.len()));
+                let groups = groups.slice(offset, len);
+                df._apply_columns_par(&|s| unsafe { s.agg_last(&groups) })
             },
             (UniqueKeepStrategy::None, _) => {
                 let df_part = df.select(names)?;
@@ -3083,9 +3059,11 @@ impl DataFrame {
                 if let Some((offset, len)) = slice {
                     filtered = filtered.slice(offset, len);
                 }
-                Ok(filtered)
+                return Ok(filtered);
             },
-        }
+        };
+        let height = Self::infer_height(&columns);
+        Ok(unsafe { DataFrame::new_no_checks(height, columns) })
     }
 
     /// Get a mask of all the unique rows in the [`DataFrame`].
