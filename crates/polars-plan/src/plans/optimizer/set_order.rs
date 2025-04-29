@@ -97,11 +97,9 @@ pub(super) fn set_order_flags(
             },
             IR::Distinct { options, .. } => {
                 debug_assert!(options.slice.is_none());
-
                 if !maintain_order_above {
                     options.maintain_order = false;
                 }
-
                 if matches!(
                     options.keep_strategy,
                     UniqueKeepStrategy::First | UniqueKeepStrategy::Last
@@ -124,11 +122,6 @@ pub(super) fn set_order_flags(
                 ..
             } => {
                 debug_assert!(options.slice.is_none());
-
-                if !maintain_order_above {
-                    *maintain_order = false;
-                }
-
                 if apply.is_some()
                     || *maintain_order
                     || options.is_rolling()
@@ -137,9 +130,18 @@ pub(super) fn set_order_flags(
                     maintain_order_above = true;
                     continue;
                 }
+                if !maintain_order_above && *maintain_order {
+                    *maintain_order = false;
+                    continue;
+                }
 
-                maintain_order_above = all_elementwise(keys, expr_arena)
-                    && all_order_independent(aggs, expr_arena, Context::Aggregation);
+                if all_elementwise(keys, expr_arena)
+                    && all_order_independent(aggs, expr_arena, Context::Aggregation)
+                {
+                    maintain_order_above = false;
+                    continue;
+                }
+                maintain_order_above = true;
             },
             // Conservative now.
             IR::HStack { exprs, .. } | IR::Select { expr: exprs, .. } => {

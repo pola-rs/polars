@@ -279,16 +279,9 @@ impl<'a> TreeFmtNode<'a> {
                             .collect(),
                     ),
                     GroupBy {
-                        input,
-                        keys,
-                        aggs,
-                        maintain_order,
-                        ..
+                        input, keys, aggs, ..
                     } => ND(
-                        wh(
-                            h,
-                            &format!("AGGREGATE[maintain_order: {}]", *maintain_order),
-                        ),
+                        wh(h, "AGGREGATE"),
                         aggs.iter()
                             .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
                             .chain(keys.iter().map(|expr| {
