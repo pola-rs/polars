@@ -596,3 +596,40 @@ def test_window_22006() -> None:
     df_empty_out = df_empty.select(c=pl.col("b").over("a", mapping_strategy="join"))
 
     assert df_out.schema == df_empty_out.schema
+
+
+def test_when_then_over_22478() -> None:
+    q = pl.LazyFrame(
+        {
+            "x": [True, True, False, True, True, True, False],
+            "t": [1, 2, 3, 4, 5, 6, 7],
+        }
+    ).with_columns(
+        duration=(
+            pl.when(pl.col("x"))
+            .then(pl.col("t").last() - pl.col("t").first())
+            .otherwise(pl.lit(0))
+            .over(pl.col("x").rle_id())
+        )
+    )
+
+    expect = pl.DataFrame(
+        {
+            "x": [True, True, False, True, True, True, False],
+            "t": [1, 2, 3, 4, 5, 6, 7],
+            "duration": [1, 1, 0, 2, 2, 2, 0],
+        }
+    )
+
+    assert q.collect_schema() == expect.schema
+    assert_frame_equal(q.collect(), expect)
+
+    q = pl.LazyFrame({"key": [1, 1, 2, 2, 2]}).with_columns(
+        out=pl.when(pl.Series(99 * [True])).then(pl.sum("key")).over("key")
+    )
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="the length of the window expression did not match that of the group",
+    ):
+        q.collect()

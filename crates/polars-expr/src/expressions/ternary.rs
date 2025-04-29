@@ -70,7 +70,8 @@ fn finish_as_iters<'a>(
         out = out.explode()?
     }
 
-    ac_truthy.with_values(out, true, None)?;
+    ac_truthy.with_agg_state(AggState::AggregatedList(out));
+
     Ok(ac_truthy)
 }
 
