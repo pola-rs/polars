@@ -2909,6 +2909,9 @@ class DataFrame:
             * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
             * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
             `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+            * S3 compatible object storages (Minio, Alibaba OSS) that demand \
+              `virtual_hosted_style_request` set to `True`. Explicitly set \
+              `endpoint` parameter to `https://<bucket>.<endpoint>`.
 
             If `storage_options` is not provided, Polars will try to infer the
             information from environment variables.
@@ -3705,6 +3708,9 @@ class DataFrame:
             * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
             * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
             `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+            * S3 compatible object storages (Minio, Alibaba OSS) that demand \
+              `virtual_hosted_style_request` set to `True`. Explicitly set \
+              `endpoint` parameter to `https://<bucket>.<endpoint>`.
 
             If `storage_options` is not provided, Polars will try to infer the
             information from environment variables.
@@ -3939,6 +3945,9 @@ class DataFrame:
             * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
             * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
             `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+            * S3 compatible object storages (Minio, Alibaba OSS) that demand \
+              `virtual_hosted_style_request` set to `True`. Explicitly set \
+              `endpoint` parameter to `https://<bucket>.<endpoint>`.
 
             If `storage_options` is not provided, Polars will try to infer the
             information from environment variables.
