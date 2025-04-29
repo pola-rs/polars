@@ -75,7 +75,7 @@ const DEFAULT_ROW_GROUP_SIZE: usize = 1 << 18;
 
 impl SinkNode for ParquetSinkNode {
     fn name(&self) -> &str {
-        "parquet_sink"
+        "parquet-sink"
     }
 
     fn is_sink_input_parallel(&self) -> bool {

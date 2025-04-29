@@ -138,7 +138,11 @@ impl ZipNode {
 
 impl ComputeNode for ZipNode {
     fn name(&self) -> &str {
-        "zip"
+        if self.null_extend {
+            "zip-null-extend"
+        } else {
+            "zip"
+        }
     }
 
     fn update_state(

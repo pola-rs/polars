@@ -87,7 +87,7 @@ fn default_file_path_cb(
 
 impl SinkNode for MaxSizePartitionSinkNode {
     fn name(&self) -> &str {
-        "partition[max_size]"
+        "partition-max-size-sink"
     }
 
     fn is_sink_input_parallel(&self) -> bool {

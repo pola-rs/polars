@@ -21,7 +21,7 @@ impl SimpleProjectionNode {
 
 impl ComputeNode for SimpleProjectionNode {
     fn name(&self) -> &str {
-        "simple_projection"
+        "simple-projection"
     }
 
     fn update_state(

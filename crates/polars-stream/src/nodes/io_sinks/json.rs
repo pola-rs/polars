@@ -35,7 +35,7 @@ impl NDJsonSinkNode {
 
 impl SinkNode for NDJsonSinkNode {
     fn name(&self) -> &str {
-        "ndjson_sink"
+        "ndjson-sink"
     }
 
     fn is_sink_input_parallel(&self) -> bool {

@@ -506,7 +506,7 @@ impl GroupByNode {
 
 impl ComputeNode for GroupByNode {
     fn name(&self) -> &str {
-        "group_by"
+        "group-by"
     }
 
     fn update_state(

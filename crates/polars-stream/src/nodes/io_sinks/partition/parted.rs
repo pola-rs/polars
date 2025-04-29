@@ -99,7 +99,7 @@ impl PartedPartitionSinkNode {
 
 impl SinkNode for PartedPartitionSinkNode {
     fn name(&self) -> &str {
-        "partition[parted]"
+        "partition-parted-sink"
     }
 
     fn is_sink_input_parallel(&self) -> bool {
