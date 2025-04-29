@@ -5,15 +5,50 @@ use polars_error::polars_ensure;
 use crate::frame::join::*;
 use crate::prelude::*;
 
+fn find_output_length(
+    fnname: &str,
+    items: impl IntoIterator<Item = (&'static str, usize)>,
+) -> PolarsResult<usize> {
+    let mut length = 1;
+    for (argument_idx, (argument, l)) in items.into_iter().enumerate() {
+        if l != 1 {
+            if l != length && length != 1 {
+                polars_bail!(
+                    length_mismatch = fnname,
+                    l,
+                    length,
+                    argument = argument,
+                    argument_idx = argument_idx
+                );
+            }
+            length = l;
+        }
+    }
+    Ok(length)
+}
+
 /// Replace values by different values of the same data type.
-pub fn replace(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
+pub fn replace(s: &Series, old: &ListChunked, new: &ListChunked) -> PolarsResult<Series> {
+    find_output_length(
+        "replace",
+        [("self", s.len()), ("old", old.len()), ("new", new.len())],
+    )?;
+
+    polars_ensure!(
+        old.len() == 1 && new.len() == 1,
+        nyi = "`replace` with a replacement pattern per row"
+    );
+
+    let old = old.explode()?;
+    let new = new.explode()?;
+
     if old.is_empty() {
         return Ok(s.clone());
     }
-    validate_old(old)?;
+    validate_old(&old)?;
 
     let dtype = s.dtype();
-    let old = cast_old_to_series_dtype(old, dtype)?;
+    let old = cast_old_to_series_dtype(&old, dtype)?;
     let new = new.strict_cast(dtype)?;
 
     if new.len() == 1 {
@@ -28,16 +63,34 @@ pub fn replace(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
 /// Unmatched values are replaced by a default value.
 pub fn replace_or_default(
     s: &Series,
-    old: &Series,
-    new: &Series,
+    old: &ListChunked,
+    new: &ListChunked,
     default: &Series,
     return_dtype: Option<DataType>,
 ) -> PolarsResult<Series> {
+    find_output_length(
+        "replace_strict",
+        [
+            ("self", s.len()),
+            ("old", old.len()),
+            ("new", new.len()),
+            ("default", default.len()),
+        ],
+    )?;
+
+    polars_ensure!(
+        old.len() == 1 && new.len() == 1,
+        nyi = "`replace_strict` with a replacement pattern per row"
+    );
+
+    let old = old.explode()?;
+    let new = new.explode()?;
+
     polars_ensure!(
         default.len() == s.len() || default.len() == 1,
         InvalidOperation: "`default` input for `replace_strict` must have the same length as the input or have length 1"
     );
-    validate_old(old)?;
+    validate_old(&old)?;
 
     let return_dtype = match return_dtype {
         Some(dtype) => dtype,
@@ -54,7 +107,7 @@ pub fn replace_or_default(
         return Ok(out);
     }
 
-    let old = cast_old_to_series_dtype(old, s.dtype())?;
+    let old = cast_old_to_series_dtype(&old, s.dtype())?;
     let new = new.cast(&return_dtype)?;
 
     if new.len() == 1 {
@@ -69,10 +122,23 @@ pub fn replace_or_default(
 /// Raises an error if not all values were replaced.
 pub fn replace_strict(
     s: &Series,
-    old: &Series,
-    new: &Series,
+    old: &ListChunked,
+    new: &ListChunked,
     return_dtype: Option<DataType>,
 ) -> PolarsResult<Series> {
+    find_output_length(
+        "replace_strict",
+        [("self", s.len()), ("old", old.len()), ("new", new.len())],
+    )?;
+
+    polars_ensure!(
+        old.len() == 1 && new.len() == 1,
+        nyi = "`replace_strict` with a replacement pattern per row"
+    );
+
+    let old = old.explode()?;
+    let new = new.explode()?;
+
     if old.is_empty() {
         polars_ensure!(
             s.len() == s.null_count(),
@@ -80,9 +146,9 @@ pub fn replace_strict(
         );
         return Ok(s.clone());
     }
-    validate_old(old)?;
+    validate_old(&old)?;
 
-    let old = cast_old_to_series_dtype(old, s.dtype())?;
+    let old = cast_old_to_series_dtype(&old, s.dtype())?;
     let new = match return_dtype {
         Some(dtype) => new.strict_cast(&dtype)?,
         None => new.clone(),
