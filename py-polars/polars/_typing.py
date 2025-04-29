@@ -315,6 +315,8 @@ EngineType: TypeAlias = Union[
     Literal["auto", "in-memory", "streaming", "gpu"], "GPUEngine"
 ]
 
+PlanStage: TypeAlias = Literal["ir", "phys"]
+
 FileSource: TypeAlias = Union[
     str,
     Path,

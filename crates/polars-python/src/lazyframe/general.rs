@@ -531,6 +531,10 @@ impl PyLazyFrame {
         py.enter_polars(|| self.ldf.to_dot(optimized))
     }
 
+    fn to_dot_phys(&self, py: Python, optimized: bool, engine: Wrap<Engine>) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.to_dot_phys(optimized, engine.0))
+    }
+
     fn optimization_toggle(
         &self,
         type_coercion: bool,
