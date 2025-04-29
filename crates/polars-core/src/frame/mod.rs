@@ -3012,13 +3012,6 @@ impl DataFrame {
                 let groups = groups.slice(offset, len);
                 df._apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             },
-            (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
-                let gb = df.group_by(names)?;
-                let groups = gb.get_groups();
-                let (offset, len) = slice.unwrap_or((0, groups.len()));
-                let groups = groups.slice(offset, len);
-                df._apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
-            },
             (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
                 // are sorted by the first value
@@ -3043,6 +3036,13 @@ impl DataFrame {
                     out = out.slice(offset, len);
                 }
                 return Ok(out);
+            },
+            (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
+                let gb = df.group_by(names)?;
+                let groups = gb.get_groups();
+                let (offset, len) = slice.unwrap_or((0, groups.len()));
+                let groups = groups.slice(offset, len);
+                df._apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             },
             (UniqueKeepStrategy::Last, false) => {
                 let gb = df.group_by(names)?;
