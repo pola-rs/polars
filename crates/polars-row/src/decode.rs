@@ -286,7 +286,11 @@ unsafe fn decode(
             };
             assert_eq!(offsets.len(), rows.len() + 1);
 
-            let values = decode(&mut nested_rows, opt, dict, list_field.dtype());
+            // Match encoding, which doesn't set nulls_last for nested values:
+            let mut nested_opt = opt.clone();
+            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
+
+            let values = decode(&mut nested_rows, nested_opt, dict, list_field.dtype());
 
             ListArray::<i64>::new(
                 dtype.clone(),

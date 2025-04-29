@@ -8,13 +8,10 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
     from typing import Any
-
-    from polars._typing import PolarsDataType
 
 
 def test_search_sorted() -> None:
@@ -154,28 +151,7 @@ def test_nulls_and_ascending(values: list[int | None]) -> None:
 def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) -> None:
     """For all nulls_last options, values can be found in arbitrary lists."""
     series = pl.Series(values, dtype=pl.List(pl.Int64()))
-    for nulls_last in [True, False]:
-        sorted_series = series.sort(descending=False, nulls_last=nulls_last)
-        assert_find_existing_values(sorted_series, values)
-
-
-@pytest.mark.parametrize(
-    ("values", "dtype"),
-    [
-        ([[1, 2], [3, 4]], pl.List(pl.Int64())),
-        ([[1, 2], [3, 4]], pl.Array(pl.Int64(), 2)),
-        ([{"a": 2, "b": 3}, {"a": 7, "b": 9}], None),
-    ],
-)
-def test_nested_dtypes_dont_support_ascending(
-    values: list[Any], dtype: PolarsDataType
-) -> None:
-    # Due to issues with row encoding implementation details, search an
-    # descending list/array/struct Series is unsupported, for now at least.
-    # See https://github.com/pola-rs/polars/issues/21946
-    series = pl.Series(values, dtype=dtype).sort(descending=True)
-    with pytest.raises(
-        InvalidOperationError,
-        match="descending sort is not supported in nested dtypes",
-    ):
-        series.search_sorted(values[0])
+    for descending in [True, False]:
+        for nulls_last in [True, False]:
+            sorted_series = series.sort(descending=False, nulls_last=nulls_last)
+            assert_find_existing_values(sorted_series, values)

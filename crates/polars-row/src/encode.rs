@@ -752,11 +752,14 @@ unsafe fn encode_array(
                 },
             }
 
+            let mut nested_opt = opt.clone();
+            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
+
             unsafe {
                 encode_array(
                     buffer,
                     nested_encoder,
-                    opt,
+                    nested_opt,
                     dict,
                     nested_offsets,
                     masked_out_write_offset,

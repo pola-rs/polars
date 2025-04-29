@@ -2,9 +2,6 @@ use polars_core::chunked_array::ops::search_sorted::{SearchSortedSide, binary_se
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
-use search_sorted::binary_search_ca_with_overrides;
-
-use crate::series::SeriesMethods;
 
 pub fn search_sorted(
     s: &Series,
@@ -81,78 +78,20 @@ pub fn search_sorted(
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         dt if dt.is_nested() => {
-            // Unfortunately in some combinations of ascending sort and
-            // nulls_last, the row encoding does not preserve sort order. So for
-            // now we don't support it until
-            // https://github.com/pola-rs/polars/issues/21946 is fixed.
-            polars_ensure!(
-                !descending,
-                InvalidOperation: "descending sort is not supported in nested dtypes"
-            );
-
-            // We want to preserve the sort order after row encoding, so we need
-            // to pick a nulls_last value that will ensure that. Nesting means
-            // the naive algorithm of checking first item isn't sufficient.
-            let maybe_nulls_last = if s.len() < 2 {
-                Some(true) // doesn't matter, really
-            } else if s.first().is_null() {
-                Some(false)
-            } else if s.last().is_null() {
-                Some(true)
-            } else {
-                // We'll just guess the likely value, and we'll validate (expensively) later.
-                None
-            };
-
-            // This is O(N), whereas typically search_sorted would be O(logN).
-            // Ideally the implementation would only row-encode values that are
-            // actively being looked up, instead of all of them...
-            let mut ca = _get_rows_encoded_ca(
+            let nulls_last = s.is_empty() || s.last().value().is_null();
+            let ca = _get_rows_encoded_ca(
                 "".into(),
                 &[s.as_ref().clone().into_column()],
                 &[descending],
-                &[maybe_nulls_last.unwrap_or(false)],
+                &[nulls_last],
             )?;
-            let nulls_last = match maybe_nulls_last {
-                Some(nulls_last) => nulls_last,
-                None => {
-                    // Validate nulls_last value:
-                    let mut nulls_last = false;
-                    let sort_options = SortOptions::new()
-                        .with_order_descending(descending)
-                        .with_nulls_last(nulls_last);
-                    if !ca
-                        .arg_sort(sort_options)
-                        .into_series()
-                        .is_sorted(sort_options)?
-                    {
-                        nulls_last = true;
-                        // Reencode the series. This is a mutating side-effect:
-                        ca = _get_rows_encoded_ca(
-                            "".into(),
-                            &[s.as_ref().clone().into_column()],
-                            &[descending],
-                            &[nulls_last],
-                        )?;
-                    }
-                    nulls_last
-                },
-            };
-
             let search_values = _get_rows_encoded_ca(
                 "".into(),
                 &[search_values.clone().into_column()],
                 &[descending],
                 &[nulls_last],
             )?;
-
-            let idx = binary_search_ca_with_overrides(
-                &ca,
-                search_values.iter(),
-                side,
-                descending,
-                nulls_last,
-            );
+            let idx = binary_search_ca(&ca, search_values.iter(), side, false);
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
         _ => polars_bail!(opq = search_sorted, original_dtype),
