@@ -165,6 +165,9 @@ impl CovState {
     pub fn combine(&mut self, other: &Self) {
         if other.weight == 0.0 {
             return;
+        } else if self.weight == 0.0 {
+            *self = other.clone();
+            return;
         }
 
         let new_weight = self.weight + other.weight;
@@ -219,6 +222,9 @@ impl PearsonState {
 
     pub fn combine(&mut self, other: &Self) {
         if other.weight == 0.0 {
+            return;
+        } else if self.weight == 0.0 {
+            *self = other.clone();
             return;
         }
 
@@ -328,6 +334,9 @@ impl SkewState {
 
     pub fn combine(&mut self, other: &Self) {
         if other.weight == 0.0 {
+            return;
+        } else if self.weight == 0.0 {
+            *self = other.clone();
             return;
         }
 
@@ -475,6 +484,9 @@ impl KurtosisState {
 
     pub fn combine(&mut self, other: &Self) {
         if other.weight == 0.0 {
+            return;
+        } else if self.weight == 0.0 {
+            *self = other.clone();
             return;
         }
 
