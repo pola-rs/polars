@@ -314,10 +314,15 @@ impl<'a> IRDisplay<'a> {
                 keys,
                 aggs,
                 apply,
+                maintain_order,
                 ..
             } => {
                 let keys = self.display_expr_slice(keys);
-                write!(f, "{:indent$}AGGREGATE", "")?;
+                write!(
+                    f,
+                    "{:indent$}AGGREGATE[maintain_order: {}]",
+                    "", maintain_order
+                )?;
                 if apply.is_some() {
                     write!(f, "\n{:sub_indent$}MAP_GROUPS BY {keys}", "")?;
                     write!(f, "\n{:sub_indent$}FROM", "")?;

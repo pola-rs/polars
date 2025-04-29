@@ -97,6 +97,11 @@ pub(super) fn set_order_flags(
             },
             IR::Distinct { options, .. } => {
                 debug_assert!(options.slice.is_none());
+
+                if !maintain_order_above {
+                    options.maintain_order = false;
+                }
+
                 if matches!(
                     options.keep_strategy,
                     UniqueKeepStrategy::First | UniqueKeepStrategy::Last
@@ -119,6 +124,11 @@ pub(super) fn set_order_flags(
                 ..
             } => {
                 debug_assert!(options.slice.is_none());
+
+                if !maintain_order_above {
+                    *maintain_order = false;
+                }
+
                 if apply.is_some()
                     || *maintain_order
                     || options.is_rolling()
@@ -127,18 +137,9 @@ pub(super) fn set_order_flags(
                     maintain_order_above = true;
                     continue;
                 }
-                if !maintain_order_above && *maintain_order {
-                    *maintain_order = false;
-                    continue;
-                }
 
-                if all_elementwise(keys, expr_arena)
-                    && all_order_independent(aggs, expr_arena, Context::Aggregation)
-                {
-                    maintain_order_above = false;
-                    continue;
-                }
-                maintain_order_above = true;
+                maintain_order_above = all_elementwise(keys, expr_arena)
+                    && all_order_independent(aggs, expr_arena, Context::Aggregation);
             },
             // Conservative now.
             IR::HStack { exprs, .. } | IR::Select { expr: exprs, .. } => {
@@ -148,6 +149,25 @@ pub(super) fn set_order_flags(
                 maintain_order_above = true;
             },
             _ => {
+                // FIXME:
+                // `maintain_order_above` is not correctly propagated in recursion for IR nodes with
+                // multiple inputs.
+                //
+                // This is current not an issue, as we never have an unordered leaf IR node. But
+                // if this ends up being the case in the future we need to fix. E.g.:
+                //
+                // ```
+                // q = pl.concat(
+                //     [
+                //         pl.scan_parquet(..., maintain_order=False), # PLAN 1
+                //         pl.LazyFrame(...).sort(...),                # PLAN 2
+                //     ]
+                // )
+                // ```
+                //
+                // The current implementation will begin optimization of plan #2 with the
+                // a `maintain_order_above` state from after finishing plan 1.
+
                 // If we don't know maintain order
                 // Known: slice
                 maintain_order_above = true;
