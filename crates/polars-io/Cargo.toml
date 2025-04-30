@@ -38,7 +38,7 @@ percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
-reqwest = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true, features = ["json"] }
 ryu = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }

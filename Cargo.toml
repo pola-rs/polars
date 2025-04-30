@@ -57,7 +57,7 @@ memmap = { package = "memmap2", version = "0.9" }
 ndarray = { version = "0.16", default-features = false }
 num-traits = "0.2"
 numpy = "0.24"
-object_store = { version = "0.11", default-features = false }
+object_store = { version = "0.12", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
