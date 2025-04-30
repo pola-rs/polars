@@ -177,7 +177,6 @@ def _assert_frame_schema_equal(
     if check_dtypes:
         left_schema_dict, right_schema_dict = dict(left_schema), dict(right_schema)
         if check_column_order or left_schema_dict != right_schema_dict:
-            print(left_schema_dict, right_schema_dict)
             detail = "dtypes do not match"
             raise_assertion_error(objects, detail, left_schema_dict, right_schema_dict)
 
