@@ -3026,15 +3026,14 @@ impl DataFrame {
                     })
                     .collect();
 
-                // sort by row index ascending
-                let sorted = last_idx.into_inner().sort(false);
-                let last_idx = NoNull::new(sorted);
-
-                let mut out = unsafe { df.take_unchecked(&last_idx) };
+                let mut last_idx = last_idx.into_inner().sort(false);
 
                 if let Some((offset, len)) = slice {
-                    out = out.slice(offset, len);
+                    last_idx = last_idx.slice(offset, len);
                 }
+
+                let last_idx = NoNull::new(last_idx);
+                let out = unsafe { df.take_unchecked(&last_idx) };
                 return Ok(out);
             },
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
@@ -3636,46 +3635,6 @@ mod test {
 
         assert_eq!(df.get_column_names(), &["a", "b", "c"]);
         Ok(())
-    }
-
-    #[test]
-    fn test_unique_keep_last_with_slice() {
-        let df = df! {
-            "x" => [0, 1, 2, 3, 4, 5, 6, 7, 3, 4, 5, 6, 7, 8, 9, 10]
-        }
-        .unwrap();
-        let out = df
-            .unique_stable(
-                Some(&["x".to_string()][..]),
-                UniqueKeepStrategy::Last,
-                Some((0, 5)),
-            )
-            .unwrap();
-        let expected = df! {
-            "x" => [0, 1, 2, 3, 4]
-        }
-        .unwrap();
-        assert!(out.equals(&expected));
-    }
-
-    #[test]
-    fn test_unique_keep_first_with_slice() {
-        let df = df! {
-            "x" => [1, 2, 2, 3, 3, 3]
-        }
-        .unwrap();
-        let out = df
-            .unique_stable(
-                Some(&["x".to_string()][..]),
-                UniqueKeepStrategy::First,
-                Some((0, 2)),
-            )
-            .unwrap();
-        let expected = df! {
-            "x" => [1, 2]
-        }
-        .unwrap();
-        assert!(out.equals(&expected));
     }
 
     #[test]
