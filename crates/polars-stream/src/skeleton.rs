@@ -32,6 +32,22 @@ pub fn run_query(
     StreamingQuery::build(node, ir_arena, expr_arena)?.execute()
 }
 
+/// Visualizes the physical plan as a dot graph.
+pub fn visualize_physical_plan(
+    node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<String> {
+    let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
+
+    let root_phys_node =
+        crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm)?;
+
+    let out = crate::physical_plan::visualize_plan(root_phys_node, &phys_sm, expr_arena);
+
+    Ok(out)
+}
+
 pub struct StreamingQuery {
     top_ir: IR,
     graph: Graph,
