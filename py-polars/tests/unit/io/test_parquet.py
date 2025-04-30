@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
+from zoneinfo import ZoneInfo
 
 import fsspec
 import numpy as np
@@ -3211,3 +3212,37 @@ def test_reencode_categoricals_22385() -> None:
 
     f.seek(0)
     pl.scan_parquet(f).collect()
+
+
+def test_parquet_read_timezone_22506() -> None:
+    f = io.BytesIO()
+
+    pd.DataFrame(
+        {
+            "a": [1, 2],
+            "b": pd.to_datetime(
+                ["2020-01-01T00:00:00+01:00", "2020-01-02T00:00:00+01:00"]
+            ),
+        }
+    ).to_parquet(f)
+
+    assert b'"metadata": {"timezone": "+01:00"}}' in f.getvalue()
+
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.read_parquet(f),
+        pl.DataFrame(
+            {
+                "a": [1, 2],
+                "b": [
+                    datetime(2020, 1, 1, tzinfo=ZoneInfo("Etc/GMT-1")),
+                    datetime(2020, 1, 2, tzinfo=ZoneInfo("Etc/GMT-1")),
+                ],
+            },
+            schema={
+                "a": pl.Int64,
+                "b": pl.Datetime(time_unit="ns", time_zone="Etc/GMT-1"),
+            },
+        ),
+    )

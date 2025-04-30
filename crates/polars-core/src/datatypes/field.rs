@@ -172,7 +172,31 @@ impl DataType {
             },
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => {
-                DataType::Datetime(tu.into(), DataType::canonical_timezone(tz))
+                let canonical_tz = DataType::canonical_timezone(tz);
+                let tz = match canonical_tz.as_deref() {
+                    #[cfg(feature = "timezones")]
+                    Some(tz_str) => {
+                        match crate::chunked_array::temporal::validate_time_zone(tz_str) {
+                            Ok(_) => canonical_tz,
+                            Err(_) => crate::chunked_array::temporal::parse_fixed_offset(tz_str)
+                                // We aren't in an error context, so just print in verbose.
+                                .inspect_err(|err| {
+                                    if crate::config::verbose() {
+                                        eprintln!(
+                                            "WARN: DataType::from_arrow() \
+                                            parse_fixed_offset() error: {:?}",
+                                            err
+                                        );
+                                    }
+                                })
+                                .ok()
+                                .or(canonical_tz),
+                        }
+                    },
+                    _ => canonical_tz,
+                };
+
+                DataType::Datetime(tu.into(), tz)
             },
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
