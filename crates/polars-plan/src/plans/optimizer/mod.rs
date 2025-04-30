@@ -17,6 +17,7 @@ mod flatten_union;
 mod fused;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
+mod expand_datasets;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod set_order;
@@ -29,6 +30,7 @@ use collapse_and_project::SimpleProjectionAndCollapse;
 #[cfg(feature = "cse")]
 pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
+pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
 use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
@@ -229,6 +231,9 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     if !opt_flags.eager() {
         rules.push(Box::new(FlattenUnionRule {}));
     }
+
+    // Note: ExpandDatasets must run after slice and predicate pushdown.
+    rules.push(Box::new(expand_datasets::ExpandDatasets {}) as Box<dyn OptimizationRule>);
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 

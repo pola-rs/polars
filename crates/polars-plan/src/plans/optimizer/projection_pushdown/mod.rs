@@ -446,6 +446,9 @@ impl ProjectionPushDown {
                     FileScan::Csv { .. } => true,
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => true,
+                    // MultiScan will handle it if the PythonDataset cannot do projections.
+                    #[cfg(feature = "python")]
+                    FileScan::PythonDataset { .. } => true,
                 };
 
                 #[expect(clippy::never_loop)]

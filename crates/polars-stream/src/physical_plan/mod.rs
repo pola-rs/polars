@@ -17,6 +17,7 @@ use polars_plan::plans::{AExpr, DataFrameUdf, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 
 mod fmt;
+mod io;
 mod lower_expr;
 mod lower_group_by;
 mod lower_ir;

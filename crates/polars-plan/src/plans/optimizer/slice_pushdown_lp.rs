@@ -207,7 +207,7 @@ impl SlicePushDown {
                 };
                 Ok(lp)
             }
-            #[cfg(feature = "csv")]
+
             (Scan {
                 sources,
                 file_info,
@@ -216,7 +216,25 @@ impl SlicePushDown {
                 mut unified_scan_args,
                 predicate,
                 scan_type,
-            }, Some(state)) if matches!(&*scan_type, FileScan::Csv { .. }) && predicate.is_none()  =>  {
+            }, Some(state)) if predicate.is_none() && match &*scan_type {
+                #[cfg(feature = "parquet")]
+                FileScan::Parquet { .. } => true,
+
+                #[cfg(feature = "ipc")]
+                FileScan::Ipc { .. } => true,
+
+                #[cfg(feature = "csv")]
+                FileScan::Csv { .. } => true,
+
+                #[cfg(feature = "json")]
+                FileScan::NDJson { .. } => true,
+
+                #[cfg(feature = "python")]
+                FileScan::PythonDataset { .. } => true,
+
+                // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
+                FileScan::Anonymous { .. } => state.offset == 0,
+            }  =>  {
                 unified_scan_args.pre_slice = Some(state.to_slice_enum());
 
                 let lp = Scan {
@@ -232,104 +250,6 @@ impl SlicePushDown {
                 Ok(lp)
             },
 
-            #[cfg(feature = "json")]
-            (Scan {
-                sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                mut unified_scan_args,
-                predicate,
-                scan_type,
-            }, Some(state)) if predicate.is_none() && matches!(&*scan_type, FileScan::NDJson {.. }) =>  {
-                unified_scan_args.pre_slice = Some(state.to_slice_enum());
-
-                let lp = Scan {
-                    sources,
-                    file_info,
-                    hive_parts,
-                    output_schema,
-                    scan_type,
-                    unified_scan_args,
-                    predicate,
-                };
-
-                Ok(lp)
-            },
-            #[cfg(feature = "parquet")]
-            (Scan {
-                sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                mut unified_scan_args,
-                predicate,
-                scan_type,
-            }, Some(state)) if predicate.is_none() && matches!(&*scan_type, FileScan::Parquet { .. }) =>  {
-                unified_scan_args.pre_slice = Some(state.to_slice_enum());
-
-                let lp = Scan {
-                    sources,
-                    file_info,
-                    hive_parts,
-                    output_schema,
-                    scan_type,
-                    unified_scan_args,
-                    predicate,
-                };
-
-                Ok(lp)
-            },
-
-            #[cfg(feature = "ipc")]
-            (Scan {
-                sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                mut unified_scan_args,
-                predicate,
-                scan_type,
-            }, Some(state)) if predicate.is_none() && matches!(&*scan_type, FileScan::Ipc{..})=>  {
-                unified_scan_args.pre_slice = Some(state.to_slice_enum());
-
-                let lp = Scan {
-                    sources,
-                    file_info,
-                    hive_parts,
-                    output_schema,
-                    scan_type,
-                    unified_scan_args,
-                    predicate,
-                };
-
-                Ok(lp)
-            },
-
-            // TODO! we currently skip slice pushdown if there is a predicate.
-            (Scan {
-                sources,
-                file_info,
-                hive_parts,
-                output_schema,
-                mut unified_scan_args,
-                predicate,
-                scan_type
-            }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-                unified_scan_args.pre_slice = Some(state.to_slice_enum());
-
-                let lp = Scan {
-                    sources,
-                    file_info,
-                    hive_parts,
-                    output_schema,
-                    predicate,
-                    unified_scan_args,
-                    scan_type
-                };
-
-                Ok(lp)
-            },
             (DataFrameScan {df, schema, output_schema, }, Some(state))  => {
                 let df = df.slice(state.offset, state.len as usize);
                 let lp = DataFrameScan {
