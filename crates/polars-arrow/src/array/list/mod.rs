@@ -1,7 +1,6 @@
 use super::specification::try_check_offsets_bounds;
 use super::{Array, Splitable, new_empty_array};
-use crate::bitmap::bitmask::BitMask;
-use crate::bitmap::{Bitmap, BitmapBuilder};
+use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
@@ -258,88 +257,6 @@ impl<O: Offset> ListArray<O> {
         ))
     }
 
-    pub fn propagate_nulls(&self) -> Option<Self> {
-        let Some(validity) = self.validity.as_ref() else {
-            return self.values.propagate_nulls().map(|values| Self {
-                dtype: self.dtype.clone(),
-                offsets: self.offsets.clone(),
-                values,
-                validity: None,
-            });
-        };
-
-        let mut last_idx = 0;
-        let old_child_validity = self.values.validity();
-        let mut new_child_validity = BitmapBuilder::new();
-
-        let mut new_values = None;
-
-        // Find the first element that does not have propagated nulls.
-        let null_mask = !validity;
-        for i in null_mask.true_idx_iter() {
-            last_idx = i;
-            let (start, end) = self.offsets.start_end(i);
-            if end == start {
-                continue;
-            }
-
-            if old_child_validity.is_none_or(|v| {
-                BitMask::from_bitmap(v)
-                    .sliced(start, end - start)
-                    .set_bits()
-                    > 0
-            }) {
-                new_child_validity.subslice_extend_from_opt_validity(old_child_validity, 0, start);
-                new_child_validity.extend_constant(end - start, false);
-                break;
-            }
-        }
-
-        if !new_child_validity.is_empty() {
-            // If nulls need to be propagated, create a new validity mask for the child array.
-            let null_mask = null_mask.sliced(last_idx + 1, self.len() - last_idx - 1);
-
-            for i in null_mask.true_idx_iter() {
-                let (start, end) = self.offsets.start_end(i);
-                if end == start {
-                    continue;
-                }
-
-                new_child_validity.subslice_extend_from_opt_validity(
-                    old_child_validity,
-                    new_child_validity.len(),
-                    start - new_child_validity.len(),
-                );
-                new_child_validity.extend_constant(end - start, false);
-            }
-
-            new_child_validity.subslice_extend_from_opt_validity(
-                old_child_validity,
-                new_child_validity.len(),
-                self.values.len() - new_child_validity.len(),
-            );
-
-            let new_child_validity = new_child_validity.freeze();
-            new_values = Some(self.values.with_validity(Some(new_child_validity)));
-        }
-
-        let Some(values) = new_values
-            .as_ref()
-            .and_then(|v| v.propagate_nulls())
-            .or(new_values)
-        else {
-            // Nothing was changed. Return the original array.
-            return None;
-        };
-
-        Some(Self {
-            dtype: self.dtype.clone(),
-            offsets: self.offsets.clone(),
-            values,
-            validity: self.validity.clone(),
-        })
-    }
-
     fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
         assert_eq!(self.len(), other.len());
 
@@ -406,10 +323,6 @@ impl<O: Offset> Array for ListArray<O> {
 
     fn trim_lists_to_normalized_offsets(&self) -> Option<Box<dyn Array>> {
         Self::trim_lists_to_normalized_offsets(self).map(|arr| Box::new(arr) as _)
-    }
-
-    fn propagate_nulls(&self) -> Option<Box<dyn Array>> {
-        Self::propagate_nulls(self).map(|arr| Box::new(arr) as _)
     }
 
     fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {

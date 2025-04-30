@@ -4,8 +4,8 @@ use polars_utils::IdxSize;
 use super::ListChunked;
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::{ChunkedArray, FalseT, PolarsDataType};
-use crate::series::implementations::null::NullChunked;
 use crate::series::Series;
+use crate::series::implementations::null::NullChunked;
 use crate::utils::align_chunks_binary_ca_series;
 
 /// Utility methods for dealing with nested chunked arrays.
@@ -24,6 +24,8 @@ pub trait ChunkNestingUtils: Sized {
 
 impl ChunkNestingUtils for ListChunked {
     fn propagate_nulls(&self) -> Option<Self> {
+        use polars_compute::propagate_nulls::propagate_nulls_list;
+
         let flags = self.get_flags();
 
         if flags.has_propagated_nulls() {
@@ -38,7 +40,7 @@ impl ChunkNestingUtils for ListChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(propagated_chunk) = chunk.propagate_nulls() {
+            if let Some(propagated_chunk) = propagate_nulls_list(chunk) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
                 chunks.push(propagated_chunk.into_boxed());
@@ -49,7 +51,7 @@ impl ChunkNestingUtils for ListChunked {
         // If we found a chunk that needs propagating, create a new ListChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match chunk.propagate_nulls() {
+                match propagate_nulls_list(chunk) {
                     None => chunk.to_boxed(),
                     Some(chunk) => chunk.into_boxed(),
                 }
@@ -124,6 +126,8 @@ impl ChunkNestingUtils for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkNestingUtils for super::ArrayChunked {
     fn propagate_nulls(&self) -> Option<Self> {
+        use polars_compute::propagate_nulls::propagate_nulls_fsl;
+
         let flags = self.get_flags();
 
         if flags.has_propagated_nulls() {
@@ -138,7 +142,7 @@ impl ChunkNestingUtils for super::ArrayChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(propagated_chunk) = chunk.propagate_nulls() {
+            if let Some(propagated_chunk) = propagate_nulls_fsl(chunk) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
                 chunks.push(propagated_chunk.into_boxed());
@@ -149,7 +153,7 @@ impl ChunkNestingUtils for super::ArrayChunked {
         // If we found a chunk that needs propagating, create a new ListChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match chunk.propagate_nulls() {
+                match propagate_nulls_fsl(chunk) {
                     None => chunk.to_boxed(),
                     Some(chunk) => chunk.into_boxed(),
                 }
@@ -226,6 +230,8 @@ impl ChunkNestingUtils for super::ArrayChunked {
 #[cfg(feature = "dtype-struct")]
 impl ChunkNestingUtils for super::StructChunked {
     fn propagate_nulls(&self) -> Option<Self> {
+        use polars_compute::propagate_nulls::propagate_nulls_struct;
+
         let flags = self.get_flags();
 
         if flags.has_propagated_nulls() {
@@ -240,7 +246,7 @@ impl ChunkNestingUtils for super::StructChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(propagated_chunk) = chunk.propagate_nulls() {
+            if let Some(propagated_chunk) = propagate_nulls_struct(chunk) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
                 chunks.push(propagated_chunk.into_boxed());
@@ -251,7 +257,7 @@ impl ChunkNestingUtils for super::StructChunked {
         // If we found a chunk that needs propagating, create a new ListChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match chunk.propagate_nulls() {
+                match propagate_nulls_struct(chunk) {
                     None => chunk.to_boxed(),
                     Some(chunk) => chunk.into_boxed(),
                 }

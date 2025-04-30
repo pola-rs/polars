@@ -230,89 +230,6 @@ impl StructArray {
         })
     }
 
-    /// Set the outer nulls into the inner arrays.
-    pub fn propagate_nulls(&self) -> Option<Self> {
-        let Some(validity) = self.validity.as_ref() else {
-            let mut new_values = Vec::new();
-            for (i, field_array) in self.values.iter().enumerate() {
-                if let Some(field_array) = field_array.propagate_nulls() {
-                    new_values.reserve(self.values.len());
-                    new_values.extend(self.values[..i].iter().cloned());
-                    new_values.push(field_array);
-                    break;
-                }
-            }
-
-            if new_values.is_empty() {
-                return None;
-            }
-
-            new_values.extend(self.values[new_values.len()..].iter().map(|field_array| {
-                field_array
-                    .propagate_nulls()
-                    .unwrap_or_else(|| field_array.to_boxed())
-            }));
-            return Some(Self {
-                dtype: self.dtype.clone(),
-                values: new_values,
-                length: self.length,
-                validity: None,
-            });
-        };
-
-        if self.values.len() == 0 || validity.unset_bits() == 0 {
-            return None;
-        }
-
-        let mut new_values = Vec::new();
-        for (i, field_array) in self.values.iter().enumerate() {
-            let new_field_array = match field_array.validity() {
-                None => Some(field_array.with_validity(Some(validity.clone()))),
-                Some(v) if v.num_intersections_with(validity) == validity.set_bits() => None,
-                Some(v) => Some(field_array.with_validity(Some(v & validity))),
-            };
-
-            let Some(new_field_array) = new_field_array
-                .as_ref()
-                .and_then(|v| v.propagate_nulls())
-                .or(new_field_array)
-            else {
-                // Nothing was changed. Return the original array.
-                continue;
-            };
-
-            new_values.reserve(self.values.len());
-            new_values.extend(self.values[..i].iter().cloned());
-            new_values.push(new_field_array);
-            break;
-        }
-
-        if new_values.is_empty() {
-            return None;
-        }
-
-        new_values.extend(self.values[new_values.len()..].iter().map(|field_array| {
-            let new_field_array = match field_array.validity() {
-                None => Some(field_array.with_validity(Some(validity.clone()))),
-                Some(v) if v.num_intersections_with(validity) == validity.set_bits() => None,
-                Some(v) => Some(field_array.with_validity(Some(v & validity))),
-            };
-
-            new_field_array
-                .as_ref()
-                .and_then(|v| v.propagate_nulls())
-                .or(new_field_array)
-                .unwrap_or_else(|| field_array.clone())
-        }));
-
-        Some(Self {
-            dtype: self.dtype.clone(),
-            values: new_values,
-            length: self.length,
-            validity: self.validity.clone(),
-        })
-    }
-
     fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
         assert_eq!(self.len(), other.len());
         assert_eq!(self.fields().len(), other.fields().len());
@@ -419,10 +336,6 @@ impl Array for StructArray {
 
     fn trim_lists_to_normalized_offsets(&self) -> Option<Box<dyn Array>> {
         Self::trim_lists_to_normalized_offsets(self).map(|arr| Box::new(arr) as _)
-    }
-
-    fn propagate_nulls(&self) -> Option<Box<dyn Array>> {
-        Self::propagate_nulls(self).map(|arr| Box::new(arr) as _)
     }
 
     fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {

@@ -1,6 +1,5 @@
 use super::{Array, ArrayRef, Splitable, new_empty_array, new_null_array};
-use crate::bitmap::bitmask::BitMask;
-use crate::bitmap::{Bitmap, BitmapBuilder};
+use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
 mod ffi;
@@ -241,68 +240,6 @@ impl FixedSizeListArray {
         })
     }
 
-    pub fn propagate_nulls(&self) -> Option<Self> {
-        let Some(validity) = self.validity.as_ref() else {
-            return self.values.propagate_nulls().map(|values| Self {
-                size: self.size,
-                length: self.length,
-                dtype: self.dtype.clone(),
-                values,
-                validity: None,
-            });
-        };
-
-        if self.size == 0 || validity.unset_bits() == 0 {
-            return None;
-        }
-
-        let start_point = match self.values.validity() {
-            None => Some(0),
-            Some(old_child_validity) => {
-                // Find the first element that does not have propagated nulls.
-                let null_mask = !validity;
-                null_mask.true_idx_iter().find(|i| {
-                    BitMask::from_bitmap(old_child_validity)
-                        .sliced(i * self.size, self.size)
-                        .set_bits()
-                        > 0
-                })
-            },
-        };
-
-        let mut new_values = None;
-        if let Some(start_point) = start_point {
-            // Nulls need to be propagated, create a new validity mask.
-            let mut new_child_validity = BitmapBuilder::with_capacity(self.size * self.length);
-
-            new_child_validity.subslice_extend_from_bitmap(validity, 0, start_point * self.size);
-            for is_valid in validity.iter().skip(start_point) {
-                new_child_validity.extend_constant(self.size, is_valid);
-            }
-
-            let new_child_validity = new_child_validity.freeze();
-            new_values = Some(self.values.with_validity(Some(new_child_validity)));
-        }
-
-        let Some(values) = new_values
-            .as_ref()
-            .and_then(|v| v.propagate_nulls())
-            .or(new_values)
-        else {
-            // Nothing was changed. Return the original array.
-            return None;
-        };
-
-        // The child array was changed.
-        Some(Self {
-            size: self.size,
-            length: self.length,
-            dtype: self.dtype.clone(),
-            values,
-            validity: self.validity.clone(),
-        })
-    }
-
     fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
         assert_eq!(self.len(), other.len());
         assert_eq!(self.size(), other.size());
@@ -329,7 +266,8 @@ impl FixedSizeListArray {
         }
 
         let pre_nesting_length = idxs.len();
-        self.values.find_validity_mismatch(other.values().as_ref(), idxs);
+        self.values
+            .find_validity_mismatch(other.values().as_ref(), idxs);
 
         if idxs.len() == original_length {
             return;
@@ -471,10 +409,6 @@ impl Array for FixedSizeListArray {
 
     fn trim_lists_to_normalized_offsets(&self) -> Option<Box<dyn Array>> {
         Self::trim_lists_to_normalized_offsets(self).map(|arr| Box::new(arr) as _)
-    }
-
-    fn propagate_nulls(&self) -> Option<Box<dyn Array>> {
-        Self::propagate_nulls(self).map(|arr| Box::new(arr) as _)
     }
 
     fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {

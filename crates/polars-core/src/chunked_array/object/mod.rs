@@ -221,10 +221,6 @@ where
             Some(validity) => validity.unset_bits(),
         }
     }
-
-    fn propagate_nulls(&self) -> Option<Box<dyn Array>> {
-        None
-    }
 }
 
 impl<T: PolarsObject> Splitable for ObjectArray<T> {

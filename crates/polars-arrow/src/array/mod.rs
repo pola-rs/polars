@@ -90,11 +90,6 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
         None
     }
 
-    /// Propagate nulls down to masked-out values in lower nesting levels.
-    fn propagate_nulls(&self) -> Option<Box<dyn Array>> {
-        None
-    }
-
     /// Find the indices of the values where the validity mismatches.
     ///
     /// This is done recursively.
