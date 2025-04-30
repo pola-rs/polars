@@ -7,27 +7,27 @@ use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
-    fn eq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
+    fn eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
         py.enter_polars_series(|| self.series.equal(&rhs.series))
     }
 
-    fn neq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
+    fn neq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
         py.enter_polars_series(|| self.series.not_equal(&rhs.series))
     }
 
-    fn gt(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
+    fn gt(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
         py.enter_polars_series(|| self.series.gt(&rhs.series))
     }
 
-    fn gt_eq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
+    fn gt_eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
         py.enter_polars_series(|| self.series.gt_eq(&rhs.series))
     }
 
-    fn lt(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
+    fn lt(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
         py.enter_polars_series(|| self.series.lt(&rhs.series))
     }
 
-    fn lt_eq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
+    fn lt_eq(&self, py: Python<'_>, rhs: &PySeries) -> PyResult<Self> {
         py.enter_polars_series(|| self.series.lt_eq(&rhs.series))
     }
 }
@@ -36,7 +36,7 @@ macro_rules! impl_op {
     ($op:ident, $name:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {
-            fn $name(&self, py: Python, rhs: $type) -> PyResult<Self> {
+            fn $name(&self, py: Python<'_>, rhs: $type) -> PyResult<Self> {
                 py.enter_polars_series(|| self.series.$op(rhs))
             }
         }
@@ -161,7 +161,7 @@ macro_rules! impl_decimal {
     ($name:ident, $method:ident) => {
         #[pymethods]
         impl PySeries {
-            fn $name(&self, py: Python, rhs: PyDecimal) -> PyResult<Self> {
+            fn $name(&self, py: Python<'_>, rhs: PyDecimal) -> PyResult<Self> {
                 let rhs = Series::new(
                     PlSmallStr::from_static("decimal"),
                     &[AnyValue::Decimal(rhs.0, rhs.1)],

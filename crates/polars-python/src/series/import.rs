@@ -32,7 +32,7 @@ fn validate_pycapsule_name(capsule: &Bound<PyCapsule>, expected_name: &str) -> P
 
 /// Import `__arrow_c_array__` across Python boundary
 pub(crate) fn call_arrow_c_array<'py>(
-    ob: &'py Bound<PyAny>,
+    ob: &Bound<'py, PyAny>,
 ) -> PyResult<(Bound<'py, PyCapsule>, Bound<'py, PyCapsule>)> {
     if !ob.hasattr("__arrow_c_array__")? {
         return Err(PyValueError::new_err(
@@ -77,7 +77,7 @@ pub(crate) fn import_array_pycapsules(
 }
 
 /// Import `__arrow_c_stream__` across Python boundary.
-fn call_arrow_c_stream<'py>(ob: &'py Bound<PyAny>) -> PyResult<Bound<'py, PyCapsule>> {
+fn call_arrow_c_stream<'py>(ob: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyCapsule>> {
     if !ob.hasattr("__arrow_c_stream__")? {
         return Err(PyValueError::new_err(
             "Expected an object with dunder __arrow_c_stream__",

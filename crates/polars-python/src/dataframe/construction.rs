@@ -15,7 +15,7 @@ impl PyDataFrame {
     #[staticmethod]
     #[pyo3(signature = (data, schema=None, infer_schema_length=None))]
     pub fn from_rows(
-        py: Python,
+        py: Python<'_>,
         data: Vec<Wrap<Row>>,
         schema: Option<Wrap<Schema>>,
         infer_schema_length: Option<usize>,
@@ -28,7 +28,7 @@ impl PyDataFrame {
     #[staticmethod]
     #[pyo3(signature = (data, schema=None, schema_overrides=None, strict=true, infer_schema_length=None))]
     pub fn from_dicts(
-        py: Python,
+        py: Python<'_>,
         data: &Bound<PyAny>,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
@@ -54,7 +54,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     pub fn from_arrow_record_batches(
-        py: Python,
+        py: Python<'_>,
         rb: Vec<Bound<PyAny>>,
         schema: Bound<PyAny>,
     ) -> PyResult<Self> {
@@ -143,11 +143,11 @@ where
     Schema::from_iter(fields)
 }
 
-fn dicts_to_rows<'a>(
-    data: &Bound<'a, PyAny>,
-    names: &'a [String],
+fn dicts_to_rows(
+    data: &Bound<'_, PyAny>,
+    names: &[String],
     strict: bool,
-) -> PyResult<Vec<Row<'a>>> {
+) -> PyResult<Vec<Row<'static>>> {
     let len = data.len()?;
     let mut rows = Vec::with_capacity(len);
     for d in data.try_iter()? {
@@ -158,7 +158,7 @@ fn dicts_to_rows<'a>(
         for k in names.iter() {
             let val = match d.get_item(k)? {
                 None => AnyValue::Null,
-                Some(val) => py_object_to_any_value(&val.as_borrowed(), strict, true)?,
+                Some(val) => py_object_to_any_value(&val, strict, true)?,
             };
             row.push(val)
         }

@@ -16,7 +16,7 @@ use crate::PyDataFrame;
 use crate::lazyframe::visit::PyExprIR;
 
 fn scan_type_to_pyobject(
-    py: Python,
+    py: Python<'_>,
     scan_type: &FileScan,
     cloud_options: &Option<CloudOptions>,
 ) -> PyResult<PyObject> {
