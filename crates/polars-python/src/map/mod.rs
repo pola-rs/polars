@@ -34,11 +34,11 @@ impl PyPolarsNumericType for Int128Type {}
 impl PyPolarsNumericType for Float32Type {}
 impl PyPolarsNumericType for Float64Type {}
 
-fn iterator_to_struct<'a>(
-    py: Python,
-    it: impl Iterator<Item = PyResult<Option<Bound<'a, PyAny>>>>,
+fn iterator_to_struct<'py>(
+    py: Python<'py>,
+    it: impl Iterator<Item = PyResult<Option<Bound<'py, PyAny>>>>,
     init_null_count: usize,
-    first_value: AnyValue<'a>,
+    first_value: AnyValue<'static>,
     name: PlSmallStr,
     capacity: usize,
 ) -> PyResult<PySeries> {

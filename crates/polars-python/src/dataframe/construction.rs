@@ -15,7 +15,7 @@ impl PyDataFrame {
     #[staticmethod]
     #[pyo3(signature = (data, schema=None, infer_schema_length=None))]
     pub fn from_rows(
-        py: Python,
+        py: Python<'_>,
         data: Vec<Wrap<Row>>,
         schema: Option<Wrap<Schema>>,
         infer_schema_length: Option<usize>,
@@ -28,7 +28,7 @@ impl PyDataFrame {
     #[staticmethod]
     #[pyo3(signature = (data, schema=None, schema_overrides=None, strict=true, infer_schema_length=None))]
     pub fn from_dicts(
-        py: Python,
+        py: Python<'_>,
         data: &Bound<PyAny>,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
@@ -72,7 +72,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     pub fn from_arrow_record_batches(
-        py: Python,
+        py: Python<'_>,
         rb: Vec<Bound<PyAny>>,
         schema: Bound<PyAny>,
     ) -> PyResult<Self> {
@@ -161,11 +161,11 @@ where
     Schema::from_iter(fields)
 }
 
-fn dicts_to_rows<'a>(
-    data: &Bound<'a, PyAny>,
-    names: &'a [String],
+fn dicts_to_rows(
+    data: &Bound<'_, PyAny>,
+    names: &[String],
     strict: bool,
-) -> PyResult<Vec<Row<'a>>> {
+) -> PyResult<Vec<Row<'static>>> {
     let py = data.py();
     let mut rows = Vec::with_capacity(data.len()?);
     let null_row = Row::new(vec![AnyValue::Null; names.len()]);
@@ -193,11 +193,11 @@ fn dicts_to_rows<'a>(
     Ok(rows)
 }
 
-fn mappings_to_rows<'a>(
-    data: &Bound<'a, PyAny>,
-    names: &'a [String],
+fn mappings_to_rows(
+    data: &Bound<'_, PyAny>,
+    names: &[String],
     strict: bool,
-) -> PyResult<Vec<Row<'a>>> {
+) -> PyResult<Vec<Row<'static>>> {
     let py = data.py();
     let mut rows = Vec::with_capacity(data.len()?);
     let null_row = Row::new(vec![AnyValue::Null; names.len()]);

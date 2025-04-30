@@ -52,14 +52,14 @@ impl<'py> IntoPyObject<'py> for &Wrap<AnyValue<'_>> {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<AnyValue<'py>> {
+impl<'py> FromPyObject<'py> for Wrap<AnyValue<'static>> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         py_object_to_any_value(ob, true, true).map(Wrap)
     }
 }
 
 pub(crate) fn any_value_into_py_object<'py>(
-    av: AnyValue,
+    av: AnyValue<'_>,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let utils = pl_utils(py).bind(py);
@@ -188,16 +188,16 @@ impl std::hash::Hash for TypeObjectKey {
     }
 }
 
-type InitFn = for<'py> fn(&Bound<'py, PyAny>, bool) -> PyResult<AnyValue<'py>>;
+type InitFn = fn(&Bound<'_, PyAny>, bool) -> PyResult<AnyValue<'static>>;
 pub(crate) static LUT: Mutex<HashMap<TypeObjectKey, InitFn, PlFixedStateQuality>> =
     Mutex::new(HashMap::with_hasher(PlFixedStateQuality::with_seed(0)));
 
 /// Convert a Python object to an [`AnyValue`].
-pub(crate) fn py_object_to_any_value<'py>(
-    ob: &Bound<'py, PyAny>,
+pub(crate) fn py_object_to_any_value(
+    ob: &Bound<'_, PyAny>,
     strict: bool,
     allow_object: bool,
-) -> PyResult<AnyValue<'py>> {
+) -> PyResult<AnyValue<'static>> {
     // Conversion functions.
     fn get_null(_ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         Ok(AnyValue::Null)
@@ -242,7 +242,7 @@ pub(crate) fn py_object_to_any_value<'py>(
         Ok(AnyValue::StringOwned(ob.extract::<String>()?.into()))
     }
 
-    fn get_bytes<'py>(ob: &Bound<'py, PyAny>, _strict: bool) -> PyResult<AnyValue<'py>> {
+    fn get_bytes(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let value = ob.extract::<Vec<u8>>()?;
         Ok(AnyValue::BinaryOwned(value))
     }
@@ -445,7 +445,7 @@ pub(crate) fn py_object_to_any_value<'py>(
         Ok(AnyValue::List(s))
     }
 
-    fn get_mapping<'py>(ob: &Bound<'py, PyAny>, strict: bool) -> PyResult<AnyValue<'py>> {
+    fn get_mapping(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
         let mapping = ob.downcast::<PyMapping>()?;
         let len = mapping.len()?;
         let mut keys = Vec::with_capacity(len);
@@ -464,7 +464,7 @@ pub(crate) fn py_object_to_any_value<'py>(
         Ok(AnyValue::StructOwned(Box::new((vals, keys))))
     }
 
-    fn get_struct<'py>(ob: &Bound<'py, PyAny>, strict: bool) -> PyResult<AnyValue<'py>> {
+    fn get_struct(ob: &Bound<'_, PyAny>, strict: bool) -> PyResult<AnyValue<'static>> {
         let dict = ob.downcast::<PyDict>().unwrap();
         let len = dict.len();
         let mut keys = Vec::with_capacity(len);
