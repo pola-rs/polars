@@ -446,7 +446,12 @@ impl Series {
             }
         }
 
-        let casted = cast_dtype(dtype);
+        let mut casted = cast_dtype(dtype);
+        if dtype.is_list() && dtype.inner_dtype().is_some_and(|dt| dt.is_null()) {
+            if let Some(from_inner_dtype) = slf.dtype().inner_dtype() {
+                casted = Some(DataType::List(Box::new(from_inner_dtype.clone())));
+            }
+        }
         let dtype = match casted {
             None => dtype,
             Some(ref dtype) => dtype,

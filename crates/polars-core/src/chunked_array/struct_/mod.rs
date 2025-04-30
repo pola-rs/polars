@@ -235,6 +235,13 @@ impl StructChunked {
         match dtype {
             DataType::Struct(dtype_fields) => {
                 let fields = self.fields_as_series();
+                polars_ensure!(
+                    fields.len() == dtype_fields.len(),
+                    op = "cast",
+                    self.dtype(),
+                    dtype
+                );
+
                 let map = PlHashMap::from_iter(fields.iter().map(|s| (s.name(), s)));
                 let struct_len = self.len();
                 let new_fields = dtype_fields
