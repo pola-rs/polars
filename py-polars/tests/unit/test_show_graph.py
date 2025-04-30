@@ -44,4 +44,4 @@ def test_show_graph_phys_not_streaming(query: pl.LazyFrame) -> None:
 
 def test_show_graph_invalid_stage(query: pl.LazyFrame) -> None:
     with pytest.raises(TypeError, match="invalid plan stage 'invalid-stage'"):
-        query.show_graph(raw_output=True, plan_stage="invalid-stage")
+        query.show_graph(raw_output=True, plan_stage="invalid-stage")  # type: ignore[arg-type]
