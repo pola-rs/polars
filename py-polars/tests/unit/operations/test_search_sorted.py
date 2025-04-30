@@ -122,32 +122,24 @@ def test_search_sorted_struct() -> None:
     assert series.search_sorted([v1, v0]).to_list() == [1, 0]
 
 
-def assert_find_in_sorted_series(sorted_series: pl.Series, values: list[Any]) -> None:
-    as_list = sorted_series.to_list()
-    for value in values:
-        idx = sorted_series.search_sorted(value, "left")
-        assert as_list.index(value) == idx
-        lookup = sorted_series[idx]
-        if isinstance(lookup, pl.Series):
-            lookup = lookup.to_list()
-        assert lookup == value
-
-
-@given(values=st.lists(st.integers(min_value=-10, max_value=10) | st.none()))
-def test_nulls_and_ascending(values: list[int | None]) -> None:
-    series = pl.Series(values, dtype=pl.Int64())
-    for descending in [True, False]:
-        for nulls_last in [True, False]:
-            sorted_series = series.sort(descending=descending, nulls_last=nulls_last)
-            assert_find_in_sorted_series(sorted_series, values)
-
-
 def assert_can_find_values(values: list[Any], dtype: PolarsDataType) -> None:
     series = pl.Series(values, dtype=dtype)
     for descending in [True, False]:
         for nulls_last in [True, False]:
             sorted_series = series.sort(descending=descending, nulls_last=nulls_last)
-            assert_find_in_sorted_series(sorted_series, values)
+            as_list = sorted_series.to_list()
+            for value in values:
+                idx = sorted_series.search_sorted(value, "left")
+                assert as_list.index(value) == idx
+                lookup = sorted_series[idx]
+                if isinstance(lookup, pl.Series):
+                    lookup = lookup.to_list()
+                assert lookup == value
+
+
+@given(values=st.lists(st.integers(min_value=-10, max_value=10) | st.none()))
+def test_nulls_and_ascending(values: list[int | None]) -> None:
+    assert_can_find_values(values, pl.Int64())
 
 
 @given(
