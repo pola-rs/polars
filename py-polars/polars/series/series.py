@@ -669,42 +669,42 @@ class Series:
     def __len__(self) -> int:
         return self.len()
 
-    def __and__(self, other: Any) -> Self:
+    def __and__(self, other: Any) -> Self | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) & other
         if not isinstance(other, Series):
             other = Series([other])
         return self._from_pyseries(self._s.bitand(other._s))
 
-    def __rand__(self, other: Any) -> Series:
+    def __rand__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return other & F.lit(self)
         if not isinstance(other, Series):
             other = Series([other])
         return other & self
 
-    def __or__(self, other: Any) -> Self:
+    def __or__(self, other: Any) -> Self | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) | other
         if not isinstance(other, Series):
             other = Series([other])
         return self._from_pyseries(self._s.bitor(other._s))
 
-    def __ror__(self, other: Any) -> Series:
+    def __ror__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return other | F.lit(self)
         if not isinstance(other, Series):
             other = Series([other])
         return other | self
 
-    def __xor__(self, other: Any) -> Self:
+    def __xor__(self, other: Any) -> Self | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) ^ other
         if not isinstance(other, Series):
             other = Series([other])
         return self._from_pyseries(self._s.bitxor(other._s))
 
-    def __rxor__(self, other: Any) -> Series:
+    def __rxor__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return other ^ F.lit(self)
         if not isinstance(other, Series):
