@@ -81,11 +81,16 @@ def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
     io_files_path: Path, file_name: str
 ) -> None:
     file_path = io_files_path / file_name
-    df = pl.scan_csv(
+    q = pl.scan_csv(
         file_path,
         schema_overrides={"calories_foo": pl.String, "fats_g_foo": pl.Float32},
         with_column_names=lambda names: [f"{a}_foo" for a in names],
-    ).collect()
+    )
+
+    assert q.collect_schema().dtypes() == [pl.String, pl.String, pl.Float32, pl.Int64]
+
+    df = q.collect()
+
     assert df.dtypes == [pl.String, pl.String, pl.Float32, pl.Int64]
     assert df.columns == [
         "category_foo",

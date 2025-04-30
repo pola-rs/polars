@@ -309,3 +309,19 @@ def test_scan_ndjson_nested_as_string() -> None:
             }
         ),
     )
+
+
+def test_scan_ndjson_schema_overwrite_22514() -> None:
+    buf = b"""\
+{"a": 1}
+"""
+
+    q = pl.scan_ndjson(buf)
+
+    # Baseline: Infers as Int64
+    assert q.collect_schema() == {"a": pl.Int64}
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1}))
+
+    q = pl.scan_ndjson(buf, schema_overrides={"a": pl.String})
+    assert q.collect_schema() == {"a": pl.String}
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": "1"}))
