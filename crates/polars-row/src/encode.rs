@@ -756,7 +756,7 @@ unsafe fn encode_array(
             // get inconsistent encoding and sort order, in ways we can't
             // predict from the outside. It's also not necessary for nested
             // values. So just omit it.
-            let mut nested_opt = opt.clone();
+            let mut nested_opt = opt;
             nested_opt.remove(RowEncodingOptions::NULLS_LAST);
 
             unsafe {
@@ -790,7 +790,7 @@ unsafe fn encode_array(
             // get inconsistent encoding and sort order, in ways we can't
             // predict from the outside. It's also not necessary for nested
             // values. So just omit it.
-            let mut nested_opt = opt.clone();
+            let mut nested_opt = opt;
             nested_opt.remove(RowEncodingOptions::NULLS_LAST);
 
             encode_array(
@@ -813,7 +813,7 @@ unsafe fn encode_array(
             // get inconsistent encoding and sort order, in ways we can't
             // predict from the outside. It's also not necessary for nested
             // values. So just omit it.
-            let mut nested_opt = opt.clone();
+            let mut nested_opt = opt;
             nested_opt.remove(RowEncodingOptions::NULLS_LAST);
 
             match dict {

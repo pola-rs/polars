@@ -217,7 +217,7 @@ unsafe fn decode(
             let validity = decode_validity(rows, opt);
 
             // Match encoding, which doesn't set nulls_last for nested values:
-            let mut nested_opt = opt.clone();
+            let mut nested_opt = opt;
             nested_opt.remove(RowEncodingOptions::NULLS_LAST);
 
             let values = match dict {
@@ -238,7 +238,7 @@ unsafe fn decode(
             let validity = decode_validity(rows, opt);
 
             // Match encoding, which doesn't set nulls_last for nested values:
-            let mut nested_opt = opt.clone();
+            let mut nested_opt = opt;
             nested_opt.remove(RowEncodingOptions::NULLS_LAST);
 
             // @TODO: we could consider making this into a scratchpad
@@ -251,7 +251,7 @@ unsafe fn decode(
         },
         D::List(list_field) | D::LargeList(list_field) => {
             // Match encoding, which doesn't set nulls_last for nested values:
-            let mut nested_opt = opt.clone();
+            let mut nested_opt = opt;
             nested_opt.remove(RowEncodingOptions::NULLS_LAST);
 
             let mut validity = BitmapBuilder::new();
