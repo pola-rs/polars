@@ -2132,3 +2132,10 @@ def test_empty_outer_join_22206() -> None:
         df,
         check_row_order=False,
     )
+
+
+def test_join_coalesce_22498() -> None:
+    df_a = pl.DataFrame({"y": [2]})
+    df_b = pl.DataFrame({"x": [1], "y": [2]})
+    df_j = df_a.lazy().join(df_b.lazy(), how="full", on="y", coalesce=True)
+    assert_frame_equal(df_j.collect(), pl.DataFrame({"y": [2], "x": [1]}))
