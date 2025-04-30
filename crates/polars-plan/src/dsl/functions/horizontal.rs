@@ -20,7 +20,13 @@ fn cum_fold_dtype() -> GetOutput {
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
-pub fn fold_exprs<F, E>(acc: Expr, f: F, exprs: E) -> Expr
+pub fn fold_exprs<F, E>(
+    acc: Expr,
+    f: F,
+    exprs: E,
+    returns_scalar: bool,
+    return_dtype: Option<DataType>,
+) -> Expr
 where
     F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
@@ -40,16 +46,24 @@ where
         Ok(Some(acc))
     });
 
+    let mut flags = FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION;
+
+    if returns_scalar {
+        flags |= FunctionFlags::RETURNS_SCALAR
+    }
+
+    let output_type = return_dtype
+        .map(GetOutput::from_type)
+        .unwrap_or_else(|| GetOutput::first());
+
     Expr::AnonymousFunction {
         input: exprs,
         function,
         // Take the type of the accumulator.
-        output_type: GetOutput::first(),
+        output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::RETURNS_SCALAR,
+            flags,
             fmt_str: "fold",
             ..Default::default()
         },

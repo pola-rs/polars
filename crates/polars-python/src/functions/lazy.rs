@@ -421,7 +421,13 @@ pub fn first() -> PyExpr {
 }
 
 #[pyfunction]
-pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+pub fn fold(
+    acc: PyExpr,
+    lambda: PyObject,
+    exprs: Vec<PyExpr>,
+    returns_scalar: bool,
+    return_dtype: Option<Wrap<DataType>>,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
 
     let func = move |a: Column, b: Column| {
@@ -432,7 +438,14 @@ pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
         )
         .map(|v| v.map(Column::from))
     };
-    dsl::fold_exprs(acc.inner, func, exprs).into()
+    dsl::fold_exprs(
+        acc.inner,
+        func,
+        exprs,
+        returns_scalar,
+        return_dtype.map(|w| w.0),
+    )
+    .into()
 }
 
 #[pyfunction]
