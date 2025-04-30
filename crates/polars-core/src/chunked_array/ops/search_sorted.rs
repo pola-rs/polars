@@ -119,6 +119,7 @@ where
         .collect()
 }
 
+#[allow(clippy::collapsible_else_if)]
 pub fn binary_search_ca<'a, T>(
     ca: &'a ChunkedArray<T>,
     search_values: impl Iterator<Item = Option<T::Physical<'a>>>,
@@ -129,30 +130,9 @@ where
     T: PolarsDataType,
     T::Physical<'a>: TotalOrd + Debug + Copy,
 {
-    let nulls_last = ca.null_count() > 0
-        && ca
-            .downcast_iter()
-            .find(|c| c.len() > 0)
-            .unwrap()
-            .get(0)
-            .is_some();
-    binary_search_ca_with_overrides(ca, search_values, side, descending, nulls_last)
-}
-
-#[allow(clippy::collapsible_else_if)]
-pub fn binary_search_ca_with_overrides<'a, T>(
-    ca: &'a ChunkedArray<T>,
-    search_values: impl Iterator<Item = Option<T::Physical<'a>>>,
-    side: SearchSortedSide,
-    descending: bool,
-    nulls_last: bool,
-) -> Vec<IdxSize>
-where
-    T: PolarsDataType,
-    T::Physical<'a>: TotalOrd + Debug + Copy,
-{
     let chunks: Vec<_> = ca.downcast_iter().filter(|c| c.len() > 0).collect();
     let has_nulls = ca.null_count() > 0;
+    let nulls_last = has_nulls && chunks[0].get(0).is_some();
     let null_idx = if nulls_last {
         if side == SearchSortedSide::Right {
             ca.len()
