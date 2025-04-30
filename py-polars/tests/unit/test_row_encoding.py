@@ -145,6 +145,7 @@ def test_struct(field: tuple[bool, bool, bool]) -> None:
     roundtrip_series_re([{"x": 1}], dtype, field)
     roundtrip_series_re([None], dtype, field)
     roundtrip_series_re([{"x": 1}] * 3, dtype, field)
+    roundtrip_series_re([{"x": 1}, {"x": None}, None], dtype, field)
 
     dtype = pl.Struct({"x": pl.Int32, "y": pl.Int32})
     roundtrip_series_re(

@@ -12,6 +12,7 @@ from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
     from typing import Any
+    from polars._typing import PolarsDataType
 
 
 def test_search_sorted() -> None:
@@ -120,12 +121,12 @@ def test_search_sorted_struct() -> None:
     assert series.search_sorted([v1, v0]).to_list() == [1, 0]
 
 
-def assert_find_existing_values(series: pl.Series, values: list[Any]) -> None:
-    as_list = series.to_list()
+def assert_find_in_sorted_series(sorted_series: pl.Series, values: list[Any]) -> None:
+    as_list = sorted_series.to_list()
     for value in values:
-        idx = series.search_sorted(value, "left")
+        idx = sorted_series.search_sorted(value, "left")
         assert as_list.index(value) == idx
-        lookup = series[idx]
+        lookup = sorted_series[idx]
         if isinstance(lookup, pl.Series):
             lookup = lookup.to_list()
         assert lookup == value
@@ -137,7 +138,15 @@ def test_nulls_and_ascending(values: list[int | None]) -> None:
     for descending in [True, False]:
         for nulls_last in [True, False]:
             sorted_series = series.sort(descending=descending, nulls_last=nulls_last)
-            assert_find_existing_values(sorted_series, values)
+            assert_find_in_sorted_series(sorted_series, values)
+
+
+def assert_can_find_values(values: list[Any], dtype: PolarsDataType) -> None:
+    series = pl.Series(values, dtype=dtype)
+    for descending in [True, False]:
+        for nulls_last in [True, False]:
+            sorted_series = series.sort(descending=False, nulls_last=nulls_last)
+            assert_find_in_sorted_series(sorted_series, values)
 
 
 @given(
@@ -150,11 +159,7 @@ def test_nulls_and_ascending(values: list[int | None]) -> None:
 @example([[], [None], [0]])
 def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) -> None:
     """For all nulls_last options, values can be found in arbitrary lists."""
-    series = pl.Series(values, dtype=pl.List(pl.Int64()))
-    for descending in [True, False]:
-        for nulls_last in [True, False]:
-            sorted_series = series.sort(descending=False, nulls_last=nulls_last)
-            assert_find_existing_values(sorted_series, values)
+    assert_can_find_values(values, dtype=pl.List(pl.Int64()))
 
 
 @given(
@@ -167,9 +172,21 @@ def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) ->
 )
 @example(values=[[None, None, None], [0, 0, None]])
 def test_search_sorted_array_with_nulls(values: list[list[int | None] | None]) -> None:
-    """For all nulls_last options, values can be found in arbitrary lists."""
-    series = pl.Series(values, dtype=pl.Array(pl.Int64(), 3))
-    for descending in [True, False]:
-        for nulls_last in [True, False]:
-            sorted_series = series.sort(descending=False, nulls_last=nulls_last)
-            assert_find_existing_values(sorted_series, values)
+    """For all nulls_last options, values can be found in arbitrary arrays."""
+    assert_can_find_values(values, dtype=pl.Array(pl.Int64(), 3))
+
+
+@given(
+    values=st.lists(
+        st.none()
+        | st.fixed_dictionaries(
+            {"key": st.integers(min_value=-10, max_value=10) | st.none()}
+        )
+    )
+)
+@example(values=[{"key": 0}, {"key": None}])
+def test_search_sorted_structs_with_nulls(
+    values: list[dict[str, int | None] | None]
+) -> None:
+    """For all nulls_last options, values can be found in arbitrary structs."""
+    assert_can_find_values(values, pl.Struct)
