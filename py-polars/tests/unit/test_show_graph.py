@@ -25,5 +25,5 @@ def test_show_graph_phys() -> None:
         }
     )
     query = ldf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort("a")
-    out = query.show_graph(raw_output=True, plan_stage="phys", engine="streaming")
+    out = query.show_graph(raw_output=True, plan_stage="physical", engine="streaming")
     assert isinstance(out, str)

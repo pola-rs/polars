@@ -1314,9 +1314,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                The GPU engine does not support streaming, if streaming
                is enabled then GPU execution is switched off.
-        plan_stage : {'ir', 'phys'}
-            Select the stage to display. Currently only the streaming engine has
-            a separate phys stage, for the other engines both IR and phys are the same.
+        plan_stage : {'ir', 'physical'}
+            Select the stage to display. Currently only the streaming engine has a
+            separate physical stage, for the other engines both IR and physical are the
+            same.
 
 
         Examples
@@ -1357,7 +1358,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if plan_stage == "ir":
             dot = _ldf.to_dot(optimized)
-        elif plan_stage == "phys":
+        elif plan_stage == "physical":
             if engine == "streaming":
                 dot = _ldf.to_dot_streaming_phys(optimized)
             else:
