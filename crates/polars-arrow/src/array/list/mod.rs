@@ -13,8 +13,6 @@ pub use iterator::*;
 mod mutable;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail};
-use polars_utils::IdxSize;
-use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
@@ -226,57 +224,6 @@ impl<O: Offset> ListArray<O> {
     pub fn get_child_type(dtype: &ArrowDataType) -> &ArrowDataType {
         Self::get_child_field(dtype).dtype()
     }
-
-    fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
-        assert_eq!(self.len(), other.len());
-
-        let original_length = idxs.len();
-        match (self.validity(), other.validity()) {
-            (None, None) => {},
-            (Some(l), Some(r)) => {
-                if l != r {
-                    let mismatches = crate::bitmap::xor(l, r);
-                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                }
-            },
-            (Some(v), _) | (_, Some(v)) => {
-                if v.unset_bits() > 0 {
-                    let mismatches = !v;
-                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                }
-            },
-        }
-
-        let mut nested_idxs = Vec::new();
-        self.values
-            .find_validity_mismatch(other.values().as_ref(), &mut nested_idxs);
-
-        if nested_idxs.is_empty() {
-            return;
-        }
-
-        assert_eq!(self.offsets.first().to_usize(), 0);
-        assert_eq!(self.offsets.range().to_usize(), self.values.len());
-
-        // @TODO: Optimize. This is only used on the error path so it is find, right?
-        let mut j = 0;
-        for (i, (start, length)) in self.offsets.offset_and_length_iter().enumerate_idx() {
-            if j < nested_idxs.len() && (nested_idxs[j] as usize) < start + length {
-                idxs.push(i);
-                j += 1;
-
-                // Loop over remaining items in same element.
-                while j < nested_idxs.len() && (nested_idxs[j] as usize) < start + length {
-                    j += 1;
-                }
-            }
-
-            if j == nested_idxs.len() {
-                break;
-            }
-        }
-        idxs[original_length..].sort_unstable();
-    }
 }
 
 impl<O: Offset> Array for ListArray<O> {
@@ -289,27 +236,6 @@ impl<O: Offset> Array for ListArray<O> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
-    }
-
-    fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {
-        match other.as_any().downcast_ref() {
-            Some(other) => Self::find_validity_mismatch(self, other, idxs),
-            None => match (self.validity(), other.validity()) {
-                (None, None) => {},
-                (Some(l), Some(r)) => {
-                    if l != r {
-                        let mismatches = crate::bitmap::xor(l, r);
-                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                    }
-                },
-                (Some(v), _) | (_, Some(v)) => {
-                    if v.unset_bits() > 0 {
-                        let mismatches = !v;
-                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                    }
-                },
-            },
-        }
     }
 }
 

@@ -29,6 +29,7 @@ pub mod moment;
 pub mod propagate_dictionary;
 pub mod propagate_nulls;
 pub mod trim_lists_to_normalized_offsets;
+pub mod find_validity_mismatch;
 pub mod rolling;
 pub mod size;
 pub mod sum;

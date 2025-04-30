@@ -1,4 +1,5 @@
 use arrow::array::{Array, IntoBoxedArray};
+use polars_compute::find_validity_mismatch::find_validity_mismatch;
 use polars_utils::IdxSize;
 
 use super::ListChunked;
@@ -116,7 +117,7 @@ impl ChunkNestingUtils for ListChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            l.find_validity_mismatch(r.as_ref(), idxs);
+            find_validity_mismatch(l, r.as_ref(), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }
@@ -222,7 +223,7 @@ impl ChunkNestingUtils for super::ArrayChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            l.find_validity_mismatch(r.as_ref(), idxs);
+            find_validity_mismatch(l, r.as_ref(), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }
@@ -331,7 +332,7 @@ impl ChunkNestingUtils for super::StructChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            l.find_validity_mismatch(r.as_ref(), idxs);
+            find_validity_mismatch(l, r.as_ref(), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }
@@ -362,7 +363,7 @@ impl<T: PolarsDataType<IsNested = FalseT>> ChunkNestingUtils for ChunkedArray<T>
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            l.find_validity_mismatch(r.as_ref(), idxs);
+            find_validity_mismatch(l, r.as_ref(), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }

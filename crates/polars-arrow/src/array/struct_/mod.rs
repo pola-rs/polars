@@ -8,7 +8,6 @@ mod ffi;
 pub(super) mod fmt;
 mod iterator;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
-use polars_utils::IdxSize;
 
 /// A [`StructArray`] is a nested [`Array`] with an optional validity representing
 /// multiple [`Array`] with the same number of rows.
@@ -198,38 +197,6 @@ impl StructArray {
         self.length = length;
     }
 
-    fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
-        assert_eq!(self.len(), other.len());
-        assert_eq!(self.fields().len(), other.fields().len());
-
-        let original_length = idxs.len();
-        match (self.validity(), other.validity()) {
-            (None, None) => {},
-            (Some(l), Some(r)) => {
-                if l != r {
-                    let mismatches = crate::bitmap::xor(l, r);
-                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                }
-            },
-            (Some(v), _) | (_, Some(v)) => {
-                if v.unset_bits() > 0 {
-                    let mismatches = !v;
-                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                }
-            },
-        }
-
-        let pre_nesting_length = idxs.len();
-        for (l, r) in self.values.iter().zip(other.values.iter()) {
-            l.find_validity_mismatch(r.as_ref(), idxs);
-        }
-
-        if idxs.len() != pre_nesting_length {
-            return;
-        }
-        idxs[original_length..].sort_unstable();
-    }
-
     impl_sliced!();
 
     impl_mut_validity!();
@@ -300,27 +267,6 @@ impl Array for StructArray {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
-    }
-
-    fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {
-        match other.as_any().downcast_ref() {
-            Some(other) => Self::find_validity_mismatch(self, other, idxs),
-            None => match (self.validity(), other.validity()) {
-                (None, None) => {},
-                (Some(l), Some(r)) => {
-                    if l != r {
-                        let mismatches = crate::bitmap::xor(l, r);
-                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                    }
-                },
-                (Some(v), _) | (_, Some(v)) => {
-                    if v.unset_bits() > 0 {
-                        let mismatches = !v;
-                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                    }
-                },
-            },
-        }
     }
 }
 

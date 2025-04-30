@@ -11,8 +11,8 @@ pub use builder::*;
 mod mutable;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
+use polars_utils::format_tuple;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{IdxSize, format_tuple};
 
 use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 
@@ -227,52 +227,6 @@ impl FixedSizeListArray {
         }
         dims
     }
-
-    fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
-        assert_eq!(self.len(), other.len());
-        assert_eq!(self.size(), other.size());
-
-        if self.size() == 0 {
-            return;
-        }
-
-        let original_length = idxs.len();
-        match (self.validity(), other.validity()) {
-            (None, None) => {},
-            (Some(l), Some(r)) => {
-                if l != r {
-                    let mismatches = crate::bitmap::xor(l, r);
-                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                }
-            },
-            (Some(v), _) | (_, Some(v)) => {
-                if v.unset_bits() > 0 {
-                    let mismatches = !v;
-                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                }
-            },
-        }
-
-        let pre_nesting_length = idxs.len();
-        self.values
-            .find_validity_mismatch(other.values().as_ref(), idxs);
-
-        if idxs.len() == original_length {
-            return;
-        }
-
-        let mut offset = 0;
-        idxs[pre_nesting_length] /= self.size as IdxSize;
-        for i in pre_nesting_length + 1..idxs.len() {
-            idxs[i - offset] = idxs[i] / self.size as IdxSize;
-
-            if idxs[i - offset] == idxs[i - offset - 1] {
-                offset += 1;
-            }
-        }
-        idxs.truncate(idxs.len() - offset);
-        idxs[original_length..].sort_unstable();
-    }
 }
 
 // must use
@@ -393,27 +347,6 @@ impl Array for FixedSizeListArray {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
-    }
-
-    fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {
-        match other.as_any().downcast_ref() {
-            Some(other) => Self::find_validity_mismatch(self, other, idxs),
-            None => match (self.validity(), other.validity()) {
-                (None, None) => {},
-                (Some(l), Some(r)) => {
-                    if l != r {
-                        let mismatches = crate::bitmap::xor(l, r);
-                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                    }
-                },
-                (Some(v), _) | (_, Some(v)) => {
-                    if v.unset_bits() > 0 {
-                        let mismatches = !v;
-                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                    }
-                },
-            },
-        }
     }
 }
 

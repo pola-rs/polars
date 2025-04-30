@@ -90,27 +90,6 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
         None
     }
 
-    /// Find the indices of the values where the validity mismatches.
-    ///
-    /// This is done recursively.
-    fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {
-        match (self.validity(), other.validity()) {
-            (None, None) => {},
-            (Some(l), Some(r)) => {
-                if l != r {
-                    let mismatches = crate::bitmap::xor(l, r);
-                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                }
-            },
-            (Some(v), _) | (_, Some(v)) => {
-                if v.unset_bits() > 0 {
-                    let mismatches = !v;
-                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-                }
-            },
-        }
-    }
-
     /// The number of null slots on this [`Array`].
     /// # Implementation
     /// This is `O(1)` since the number of null elements is pre-computed.
@@ -729,7 +708,6 @@ pub use list::{ListArray, ListArrayBuilder, ListValuesIter, MutableListArray};
 pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray, NullArrayBuilder};
 use polars_error::PolarsResult;
-use polars_utils::IdxSize;
 pub use primitive::*;
 pub use static_array::{ParameterFreeDtypeStaticArray, StaticArray};
 pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};

@@ -379,10 +379,8 @@ impl Series {
 
     /// Cast [`Series`] to another [`DataType`].
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
-        let slf = match self.propagate_nulls() {
-            None => Cow::Borrowed(self),
-            Some(series) => Cow::Owned(series),
-        };
+        let slf = self.trim_lists_to_normalized_offsets().map_or(Cow::Borrowed(self), Cow::Owned);
+        let slf = slf.propagate_nulls().map_or(slf, Cow::Owned);
 
         use DataType as D;
         let do_clone = match dtype {

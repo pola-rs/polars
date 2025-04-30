@@ -16,13 +16,8 @@ where
 }
 
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
-    dbg!(input);
-    dbg!(output);
-
     let mut idxs = Vec::new();
     input.find_validity_mismatch(output, &mut idxs);
-
-    dbg!(&idxs);
 
     // Base case. No strict casting failed.
     if idxs.is_empty() {
