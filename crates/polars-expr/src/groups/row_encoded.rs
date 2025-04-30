@@ -10,14 +10,12 @@ use crate::hash_keys::HashKeys;
 
 #[derive(Default)]
 pub struct RowEncodedHashGrouper {
-    key_schema: Arc<Schema>,
     idx_map: BytesIndexMap<()>,
 }
 
 impl RowEncodedHashGrouper {
-    pub fn new(key_schema: Arc<Schema>) -> Self {
+    pub fn new() -> Self {
         Self {
-            key_schema,
             idx_map: BytesIndexMap::new(),
         }
     }
@@ -37,14 +35,12 @@ impl RowEncodedHashGrouper {
         self.idx_map.contains_key(hash, key)
     }
 
-    fn finalize_keys(&self, mut key_rows: Vec<&[u8]>) -> DataFrame {
-        let key_dtypes = self
-            .key_schema
+    fn finalize_keys(&self, key_schema: &Schema, mut key_rows: Vec<&[u8]>) -> DataFrame {
+        let key_dtypes = key_schema
             .iter()
             .map(|(_name, dt)| dt.to_physical().to_arrow(CompatLevel::newest()))
             .collect::<Vec<_>>();
-        let ctxts = self
-            .key_schema
+        let ctxts = key_schema
             .iter()
             .map(|(_, dt)| get_row_encoding_context(dt, false))
             .collect::<Vec<_>>();
@@ -52,8 +48,7 @@ impl RowEncodedHashGrouper {
         let key_columns =
             unsafe { polars_row::decode::decode_rows(&mut key_rows, &fields, &ctxts, &key_dtypes) };
 
-        let cols = self
-            .key_schema
+        let cols = key_schema
             .iter()
             .zip(key_columns)
             .map(|((name, dt), col)| {
@@ -69,7 +64,7 @@ impl RowEncodedHashGrouper {
 
 impl Grouper for RowEncodedHashGrouper {
     fn new_empty(&self) -> Box<dyn Grouper> {
-        Box::new(Self::new(self.key_schema.clone()))
+        Box::new(Self::new())
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -110,13 +105,13 @@ impl Grouper for RowEncodedHashGrouper {
         }
     }
 
-    fn get_keys_in_group_order(&self) -> DataFrame {
+    fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame {
         unsafe {
             let mut key_rows: Vec<&[u8]> = Vec::with_capacity(self.idx_map.len() as usize);
             for (_, key) in self.idx_map.iter_hash_keys() {
                 key_rows.push_unchecked(key);
             }
-            self.finalize_keys(key_rows)
+            self.finalize_keys(schema, key_rows)
         }
     }
 

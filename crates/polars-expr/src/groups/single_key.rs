@@ -9,8 +9,6 @@ use crate::hash_keys::{HashKeys, for_each_hash_single};
 
 #[derive(Default)]
 pub struct SingleKeyHashGrouper<T: PolarsDataType> {
-    name: PlSmallStr,
-    dtype: DataType,
     idx_map: TotalIndexMap<T::Physical<'static>, ()>,
     null_idx: IdxSize,
 }
@@ -20,10 +18,8 @@ where
     for<'a> T: PolarsDataType<Physical<'a> = K>,
     K: Default + TotalHash + TotalEq,
 {
-    pub fn new(name: PlSmallStr, dtype: DataType) -> Self {
+    pub fn new() -> Self {
         Self {
-            name,
-            dtype,
             idx_map: TotalIndexMap::default(),
             null_idx: IdxSize::MAX,
         }
@@ -59,11 +55,10 @@ where
         self.null_idx < IdxSize::MAX
     }
 
-    fn finalize_keys(&self, keys: Vec<T::Physical<'static>>) -> DataFrame {
-        let mut keys = T::Array::from_vec(
-            keys,
-            self.dtype.to_physical().to_arrow(CompatLevel::newest()),
-        );
+    fn finalize_keys(&self, schema: &Schema, keys: Vec<T::Physical<'static>>) -> DataFrame {
+        let (name, dtype) = schema.get_at_index(0).unwrap();
+        let mut keys =
+            T::Array::from_vec(keys, dtype.to_physical().to_arrow(CompatLevel::newest()));
         if self.null_idx < IdxSize::MAX {
             let mut validity = MutableBitmap::new();
             validity.extend_constant(keys.len(), true);
@@ -71,11 +66,8 @@ where
             keys = keys.with_validity_typed(Some(validity.freeze()));
         }
         unsafe {
-            let s = Series::from_chunks_and_dtype_unchecked(
-                self.name.clone(),
-                vec![Box::new(keys)],
-                &self.dtype,
-            );
+            let s =
+                Series::from_chunks_and_dtype_unchecked(name.clone(), vec![Box::new(keys)], dtype);
             DataFrame::new(vec![Column::from(s)]).unwrap()
         }
     }
@@ -87,7 +79,7 @@ where
     K: Default + TotalHash + TotalEq + Clone + Send + Sync + 'static,
 {
     fn new_empty(&self) -> Box<dyn Grouper> {
-        Box::new(Self::new(self.name.clone(), self.dtype.clone()))
+        Box::new(Self::new())
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -154,13 +146,13 @@ where
         }
     }
 
-    fn get_keys_in_group_order(&self) -> DataFrame {
+    fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame {
         unsafe {
             let mut key_rows = Vec::with_capacity(self.idx_map.len() as usize);
             for key in self.idx_map.iter_keys() {
                 key_rows.push_unchecked(key.clone());
             }
-            self.finalize_keys(key_rows)
+            self.finalize_keys(schema, key_rows)
         }
     }
 
