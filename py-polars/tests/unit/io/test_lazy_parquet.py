@@ -235,14 +235,8 @@ def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) 
         assert_frame_equal(result, df.filter(pred))
 
     captured = capfd.readouterr().err
-    assert (
-        "parquet row group must be read, statistics not sufficient for predicate."
-        in captured
-    )
-    assert (
-        "parquet row group can be skipped, the statistics were sufficient to apply the predicate."
-        in captured
-    )
+    assert "Predicate pushdown: reading 1 / 1 row groups" in captured
+    assert "Predicate pushdown: reading 0 / 1 row groups" in captured
 
 
 @pytest.mark.write_disk
@@ -271,14 +265,8 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> Non
         assert_frame_equal(result, df.filter(pred))
 
     captured = capfd.readouterr().err
-    assert (
-        "parquet row group must be read, statistics not sufficient for predicate."
-        in captured
-    )
-    assert (
-        "parquet row group can be skipped, the statistics were sufficient"
-        " to apply the predicate." in captured
-    )
+
+    assert "Predicate pushdown: reading 1 / 2 row groups" in captured
 
 
 @pytest.mark.write_disk
@@ -455,7 +443,7 @@ def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) ->
         with pytest.raises(pl.exceptions.SchemaError):
             pl.scan_parquet(tmp_path).collect(engine="streaming")
     else:
-        with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        with pytest.raises(pl.exceptions.SchemaError):
             pl.scan_parquet(tmp_path).collect(engine="in-memory")
 
 
@@ -665,6 +653,11 @@ def test_parquet_unaligned_schema_read(tmp_path: Path) -> None:
     )
 
     assert_frame_equal(
+        lf.with_row_index().select("a").collect(engine="in-memory"),
+        pl.DataFrame({"a": [1, 2, 3]}),
+    )
+
+    assert_frame_equal(
         lf.select("b", "a").collect(engine="in-memory"),
         pl.DataFrame({"b": [10, 11, 12], "a": [1, 2, 3]}),
     )
@@ -676,6 +669,9 @@ def test_parquet_unaligned_schema_read(tmp_path: Path) -> None:
 
     with pytest.raises(pl.exceptions.SchemaError):
         lf.collect(engine="in-memory")
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        lf.with_row_index().collect(engine="in-memory")
 
 
 @pytest.mark.write_disk

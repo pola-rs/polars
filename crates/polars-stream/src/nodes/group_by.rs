@@ -91,10 +91,7 @@ impl GroupBySinkState {
                             // SAFETY: we resize the reduction to the number of groups beforehand.
                             reduction.resize(local.grouper.num_groups());
                             reduction.update_groups(
-                                selector
-                                    .evaluate(&df, &state.in_memory_exec_state)
-                                    .await?
-                                    .as_materialized_series(),
+                                &selector.evaluate(&df, &state.in_memory_exec_state).await?,
                                 &group_idxs,
                                 seq,
                             )?;
@@ -110,6 +107,9 @@ impl GroupBySinkState {
         output_schema: &Schema,
         mut locals: Vec<LocalGroupBySinkState>,
     ) -> PolarsResult<DataFrame> {
+        if locals.is_empty() {
+            return Ok(DataFrame::empty_with_schema(output_schema));
+        }
         let mut group_idxs = Vec::new();
         let mut combined = locals.pop().unwrap();
         for local in locals {
@@ -133,6 +133,9 @@ impl GroupBySinkState {
         output_schema: &Schema,
         locals: Vec<LocalGroupBySinkState>,
     ) -> PolarsResult<DataFrame> {
+        if locals.is_empty() {
+            return Ok(DataFrame::empty_with_schema(output_schema));
+        }
         let partitioner = HashPartitioner::new(num_partitions, 0);
         POOL.install(|| {
             let l_partitions: Vec<_> = locals

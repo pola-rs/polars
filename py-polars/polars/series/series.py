@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import math
 import os
+import sys
 from collections.abc import Iterable, Sequence
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
@@ -109,7 +110,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Collection, Generator, Mapping
 
     import jax
@@ -150,7 +150,10 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Self
 elif BUILDING_SPHINX_DOCS:
-    property = sphinx_accessor
+    # note: we assign this way to work around an autocomplete issue in ipython/jedi
+    # (ref: https://github.com/davidhalter/jedi/issues/2057)
+    current_module = sys.modules[__name__]
+    current_module.property = sphinx_accessor
 
 ArrayLike = Union[
     Sequence[Any],
@@ -2484,11 +2487,10 @@ class Series:
         Parameters
         ----------
         bins
-            Discretizations to make.
-            If None given, we determine the boundaries based on the data.
+            Bin edges. If None given, we determine the edges based on the data.
         bin_count
-            If no bins provided, this will be used to determine
-            the distance of the bins.
+            If `bins` is not provided, `bin_count` uniform bins are created that fully
+            encompass the data.
         include_breakpoint
             Include a column that indicates the upper breakpoint.
         include_category
@@ -2503,16 +2505,16 @@ class Series:
         >>> a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
         >>> a.hist(bin_count=4)
         shape: (4, 3)
-        ┌────────────┬───────────────┬───────┐
-        │ breakpoint ┆ category      ┆ count │
-        │ ---        ┆ ---           ┆ ---   │
-        │ f64        ┆ cat           ┆ u32   │
-        ╞════════════╪═══════════════╪═══════╡
-        │ 2.75       ┆ (0.993, 2.75] ┆ 3     │
-        │ 4.5        ┆ (2.75, 4.5]   ┆ 2     │
-        │ 6.25       ┆ (4.5, 6.25]   ┆ 0     │
-        │ 8.0        ┆ (6.25, 8.0]   ┆ 2     │
-        └────────────┴───────────────┴───────┘
+        ┌────────────┬─────────────┬───────┐
+        │ breakpoint ┆ category    ┆ count │
+        │ ---        ┆ ---         ┆ ---   │
+        │ f64        ┆ cat         ┆ u32   │
+        ╞════════════╪═════════════╪═══════╡
+        │ 2.75       ┆ [1.0, 2.75] ┆ 3     │
+        │ 4.5        ┆ (2.75, 4.5] ┆ 2     │
+        │ 6.25       ┆ (4.5, 6.25] ┆ 0     │
+        │ 8.0        ┆ (6.25, 8.0] ┆ 2     │
+        └────────────┴─────────────┴───────┘
         """
         out = (
             self.to_frame()
@@ -6301,7 +6303,9 @@ class Series:
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Series:
         """
-        Fill null values using interpolation.
+        Interpolate intermediate values.
+
+        Nulls at the beginning and end of the series remain null.
 
         Parameters
         ----------
@@ -6325,7 +6329,9 @@ class Series:
 
     def interpolate_by(self, by: IntoExpr) -> Series:
         """
-        Fill null values using interpolation based on another column.
+        Interpolate intermediate values with x-coordinate based on another column.
+
+        Nulls at the beginning and end of the series remain null.
 
         Parameters
         ----------
@@ -6603,7 +6609,7 @@ class Series:
         >>> s.kurtosis(fisher=False)
         1.9477376373212048
         >>> s.kurtosis(fisher=False, bias=False)
-        2.1040361802642726
+        2.1040361802642717
         """
         return self._s.kurtosis(fisher, bias)
 
@@ -7676,6 +7682,26 @@ class Series:
         - no_order
         """
         return pl.DataFrame._from_pydf(self._s._row_decode(list(dtypes), list(fields)))
+
+    def repeat_by(self, by: int | IntoExprColumn) -> Self:
+        """
+        Repeat the elements in this Series as specified in the given expression.
+
+        The repeated elements are expanded into a List.
+
+        Parameters
+        ----------
+        by
+            Numeric column that determines how often the values will be repeated.
+            The column will be coerced to UInt32. Give this dtype to make the coercion
+            a no-op.
+
+        Returns
+        -------
+        Expr
+            Expression of data type List, where the inner data type is equal to the
+            original data type.
+        """
 
 
 def _resolve_temporal_dtype(

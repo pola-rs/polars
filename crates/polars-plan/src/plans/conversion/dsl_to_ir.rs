@@ -224,13 +224,22 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     FileScan::Csv {
                         options,
                         cloud_options,
-                    } => scans::csv_file_info(
-                        &sources,
-                        &file_options,
-                        options,
-                        cloud_options.as_ref(),
-                    )
-                    .map_err(|e| e.context(failed_here!(csv scan)))?,
+                    } => {
+                        // TODO: This is a hack. We conditionally set `allow_missing_columns` to
+                        // mimic existing behavior, but this should be taken from a user provided
+                        // parameter instead.
+                        if options.schema.is_some() && options.has_header {
+                            file_options.allow_missing_columns = true;
+                        }
+
+                        scans::csv_file_info(
+                            &sources,
+                            &file_options,
+                            options,
+                            cloud_options.as_ref(),
+                        )
+                        .map_err(|e| e.context(failed_here!(csv scan)))?
+                    },
                     #[cfg(feature = "json")]
                     FileScan::NDJson {
                         options,
@@ -958,7 +967,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::File(f) => SinkTypeIR::File(f),
                 SinkType::Partition(f) => SinkTypeIR::Partition(PartitionSinkTypeIR {
-                    path_f_string: f.path_f_string,
+                    base_path: f.base_path,
+                    file_path_cb: f.file_path_cb,
                     file_type: f.file_type,
                     sink_options: f.sink_options,
                     variant: match f.variant {

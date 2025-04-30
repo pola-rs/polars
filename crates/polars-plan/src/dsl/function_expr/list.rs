@@ -123,6 +123,63 @@ impl ListFunction {
             ToStruct(args) => mapper.try_map_dtype(|x| args.get_output_dtype(x)),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use ListFunction as L;
+        match self {
+            L::Concat => FunctionOptions::elementwise(),
+            #[cfg(feature = "is_in")]
+            L::Contains => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_sample")]
+            L::Sample { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_gather")]
+            L::Gather(_) => FunctionOptions::groupwise(),
+            #[cfg(feature = "list_gather")]
+            L::GatherEvery => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_sets")]
+            L::SetOperation(_) => FunctionOptions {
+                collect_groups: ApplyOptions::ElementWise,
+                cast_options: Some(CastingRules::Supertype(SuperTypeOptions {
+                    flags: SuperTypeFlags::default() | SuperTypeFlags::ALLOW_IMPLODE_LIST,
+                })),
+
+                flags: FunctionFlags::default() & !FunctionFlags::RETURNS_SCALAR,
+                ..Default::default()
+            },
+            #[cfg(feature = "diff")]
+            L::Diff { .. } => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_drop_nulls")]
+            L::DropNulls => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_count")]
+            L::CountMatches => FunctionOptions::elementwise(),
+            L::Sum
+            | L::Slice
+            | L::Shift
+            | L::Get(_)
+            | L::Length
+            | L::Max
+            | L::Min
+            | L::Mean
+            | L::Median
+            | L::Std(_)
+            | L::Var(_)
+            | L::ArgMin
+            | L::ArgMax
+            | L::Sort(_)
+            | L::Reverse
+            | L::Unique(_)
+            | L::Join(_)
+            | L::NUnique => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_any_all")]
+            L::Any | L::All => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-array")]
+            L::ToArray(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_to_struct")]
+            L::ToStruct(ListToStructArgs::FixedWidth(_)) => FunctionOptions::elementwise(),
+            #[cfg(feature = "list_to_struct")]
+            L::ToStruct(ListToStructArgs::InferWidth { .. }) => FunctionOptions::groupwise(),
+        }
+    }
 }
 
 #[cfg(feature = "dtype-array")]
@@ -417,6 +474,7 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
+    // TODO! don't auto cast here, but implode beforehand.
     let mut first_ca = match first.try_list() {
         Some(ca) => ca,
         None => {

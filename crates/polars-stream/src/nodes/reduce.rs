@@ -66,11 +66,7 @@ impl ReduceNode {
                             let input = selector
                                 .evaluate(morsel.df(), &state.in_memory_exec_state)
                                 .await?;
-                            reducer.update_group(
-                                input.as_materialized_series(),
-                                0,
-                                morsel.seq().to_u64(),
-                            )?;
+                            reducer.update_group(&input, 0, morsel.seq().to_u64())?;
                         }
                     }
 
@@ -134,6 +130,7 @@ impl ComputeNode for ReduceNode {
                     .iter_mut()
                     .zip(self.output_schema.iter_fields())
                     .map(|(r, field)| {
+                        r.resize(1);
                         r.finalize().map(|s| {
                             let s = s.with_name(field.name.clone()).cast(&field.dtype).unwrap();
                             Column::Scalar(ScalarColumn::unit_scalar_from_series(s))

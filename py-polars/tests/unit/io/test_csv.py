@@ -1530,6 +1530,7 @@ def test_csv_categorical_categorical_merge() -> None:
     ).unique(maintain_order=True)["x"].to_list() == ["A", "B"]
 
 
+@pytest.mark.write_disk
 def test_batched_csv_reader(foods_file_path: Path) -> None:
     reader = pl.read_csv_batched(foods_file_path, batch_size=4)
     assert isinstance(reader, BatchedCsvReader)
@@ -1556,10 +1557,10 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
         tmp.write(data)
         tmp.seek(0)
 
-        expected = pl.DataFrame({"column_1": ["A", "B", "C"]})
+        expected = pl.DataFrame({"A": ["B", "C"]})
         batches = pl.read_csv_batched(
             tmp.name,
-            has_header=False,
+            has_header=True,
             truncate_ragged_lines=True,
         ).next_batches(1)
 
@@ -1914,27 +1915,28 @@ def test_ignore_errors_date_parser() -> None:
 
 
 def test_csv_ragged_lines() -> None:
-    expected = {"column_1": ["A", "B", "C"]}
+    expected = {"A": ["B", "C"]}
     assert (
         pl.read_csv(
-            io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
+            io.StringIO("A\nB,ragged\nC"), has_header=True, truncate_ragged_lines=True
         ).to_dict(as_series=False)
         == expected
     )
     assert (
         pl.read_csv(
-            io.StringIO("A\nB\nC,ragged"), has_header=False, truncate_ragged_lines=True
+            io.StringIO("A\nB\nC,ragged"), has_header=True, truncate_ragged_lines=True
         ).to_dict(as_series=False)
         == expected
     )
 
     for s in ["A\nB,ragged\nC", "A\nB\nC,ragged"]:
         with pytest.raises(ComputeError, match=r"found more fields than defined"):
-            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+            pl.read_csv(io.StringIO(s), has_header=True, truncate_ragged_lines=False)
         with pytest.raises(ComputeError, match=r"found more fields than defined"):
-            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+            pl.read_csv(io.StringIO(s), has_header=True, truncate_ragged_lines=False)
 
 
+@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_provide_schema() -> None:
     # can be used to overload schema with ragged csv files
     assert pl.read_csv(
@@ -2403,6 +2405,25 @@ time
     )
 
 
+def test_csv_try_parse_dates_leading_zero_8_digits_22167() -> None:
+    result = pl.read_csv(
+        io.StringIO(
+            "a\n2025-04-06T18:56:42.617736974Z\n2025-04-06T18:57:42.77756192Z\n2025-04-06T18:58:44.56928733Z"
+        ),
+        try_parse_dates=True,
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [
+                datetime(2025, 4, 6, 18, 56, 42, 617736, tzinfo=timezone.utc),
+                datetime(2025, 4, 6, 18, 57, 42, 777561, tzinfo=timezone.utc),
+                datetime(2025, 4, 6, 18, 58, 44, 569287, tzinfo=timezone.utc),
+            ]
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_csv_read_time_schema_overrides() -> None:
     df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
@@ -2488,6 +2509,7 @@ def test_csv_invalid_quoted_comment_line() -> None:
     ).to_dict(as_series=False) == {"ColA": [1], "ColB": [2]}
 
 
+@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_csv_compressed_new_columns_19916() -> None:
     n_rows = 100
 
@@ -2542,3 +2564,44 @@ def test_csv_enum_raise() -> None:
             csv,
             schema={"col": ENUM_DTYPE},
         )
+
+
+def test_csv_no_header_ragged_lines_1505() -> None:
+    # Test that the header schema will grow dynamically.
+    csv = io.StringIO("""a,b,c
+a,b,c,d,e,f
+g,h,i,j,k""")
+
+    assert pl.read_csv(csv, has_header=False).to_dict(as_series=False) == {
+        "column_1": ["a", "a", "g"],
+        "column_2": ["b", "b", "h"],
+        "column_3": ["c", "c", "i"],
+        "column_4": [None, "d", "j"],
+        "column_5": [None, "e", "k"],
+        "column_6": [None, "f", None],
+    }
+
+
+@pytest.mark.parametrize(
+    ("filter_value", "expected"),
+    [
+        (10, "a,b,c\n10,20,99\n"),
+        (11, "a,b,c\n11,21,99\n"),
+        (12, "a,b,c\n12,22,99\n12,23,99\n"),
+    ],
+)
+def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) -> None:
+    # df and filter expression are designed to test different
+    # Column variants (Series, Scalar) and different number of chunks:
+    # 10 > single row, ScalarColumn, multiple chunks, first is non-empty
+    # 11 > single row, ScalarColumn, multiple chunks, first is empty
+    # 12 > multiple rows, SeriesColumn, multiple chunks, some empty
+    df1 = pl.DataFrame(
+        {
+            "a": [10, 11, 12, 12],  # (12, 12 is intentional)
+            "b": [20, 21, 22, 23],
+        },
+    )
+    df2 = pl.DataFrame({"c": [99]})
+    df3 = df1.join(df2, how="cross").filter(pl.col("a").eq(filter_value))
+    assert df3.write_csv() == expected

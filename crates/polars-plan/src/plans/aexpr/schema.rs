@@ -265,6 +265,7 @@ impl AExpr {
                         Ok(field)
                     },
                     Implode(expr) => {
+                        *agg_list = false;
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
                         field.coerce(DataType::List(field.dtype().clone().into()));
                         Ok(field)

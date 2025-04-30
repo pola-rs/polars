@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 from polars._utils.various import BUILDING_SPHINX_DOCS, sphinx_accessor
@@ -13,7 +14,10 @@ if TYPE_CHECKING:
     from polars import DataFrame, Series
     from polars.polars import PySeries
 elif BUILDING_SPHINX_DOCS:
-    property = sphinx_accessor
+    # note: we assign this way to work around an autocomplete issue in ipython/jedi
+    # (ref: https://github.com/davidhalter/jedi/issues/2057)
+    current_module = sys.modules[__name__]
+    current_module.property = sphinx_accessor
 
 
 @expr_dispatch

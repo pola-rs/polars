@@ -2,7 +2,7 @@ use arrow::legacy::error::PolarsResult;
 use either::Either;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
-use polars_core::utils::get_numeric_upcast_supertype_lossless;
+use polars_core::utils::{get_numeric_upcast_supertype_lossless, try_get_supertype};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 
@@ -424,29 +424,33 @@ fn resolve_join_where(
         ctxt,
     )?;
 
-    let mut ae_nodes_stack = Vec::new();
-
     let schema_merged = ctxt
         .lp_arena
         .get(last_node)
         .schema(ctxt.lp_arena)
         .into_owned();
-    let schema_merged = schema_merged.as_ref();
 
+    // Perform predicate validation.
+    let mut upcast_exprs = Vec::<(Node, DataType)>::new();
     for e in predicates {
-        let predicate = to_expr_ir_ignore_alias(e, ctxt.expr_arena)?;
+        let arena = &mut ctxt.expr_arena;
+        let predicate = to_expr_ir_ignore_alias(e, arena)?;
+        let node = predicate.node();
 
-        debug_assert!(ae_nodes_stack.is_empty());
-        ae_nodes_stack.clear();
-        ae_nodes_stack.push(predicate.node());
+        // Ensure the predicate dtype output of the root node is Boolean
+        let ae = arena.get(node);
+        let dt_out = ae.to_dtype(&schema_merged, Context::Default, arena)?;
+        polars_ensure!(
+            dt_out == DataType::Boolean,
+            ComputeError: "'join_where' predicates must resolve to boolean"
+        );
 
-        process_join_where_predicate(
-            &mut ae_nodes_stack,
-            0,
-            schema_left.as_ref(),
-            schema_merged,
-            ctxt.expr_arena,
-            &mut ExprOrigin::None,
+        ensure_lossless_binary_comparisons(
+            &node,
+            &schema_left,
+            &schema_merged,
+            arena,
+            &mut upcast_exprs,
         )?;
 
         ctxt.conversion_optimizer
@@ -467,137 +471,125 @@ fn resolve_join_where(
     Ok((last_node, join_node))
 }
 
-/// Performs validation and type-coercion on join_where predicates.
-///
-/// Validates for all comparison expressions / subexpressions, that:
-/// 1. They reference columns from both sides.
-/// 2. The dtypes of the LHS and RHS are match, or can be casted to a lossless
-///    supertype (and inserts the necessary casting).
-///
-/// We perform (1) by recursing whenever we encounter a comparison expression.
-fn process_join_where_predicate(
-    stack: &mut Vec<Node>,
-    prev_comparison_expr_stack_offset: usize,
+/// Locate nodes that are operands in a binary comparison involving both tables, and ensure that
+/// these nodes are losslessly upcast to a safe dtype.
+fn ensure_lossless_binary_comparisons(
+    node: &Node,
     schema_left: &Schema,
     schema_merged: &Schema,
     expr_arena: &mut Arena<AExpr>,
-    column_origins: &mut ExprOrigin,
+    upcast_exprs: &mut Vec<(Node, DataType)>,
 ) -> PolarsResult<()> {
-    while stack.len() > prev_comparison_expr_stack_offset {
-        let ae_node = stack.pop().unwrap();
-        let ae = expr_arena.get(ae_node).clone();
-
-        match ae {
-            AExpr::Column(ref name) => {
-                let origin = if schema_left.contains(name) {
-                    ExprOrigin::Left
-                } else if schema_merged.contains(name) {
-                    ExprOrigin::Right
-                } else {
-                    polars_bail!(ColumnNotFound: "{}", name);
-                };
-
-                *column_origins |= origin;
-            },
-            // This is not actually Origin::Both, but we set this because the test suite expects
-            // this predicate to pass:
-            // * `pl.col("flag_right") == 1`
-            // Observe that it only has a column from one side because it is comparing to a literal.
-            AExpr::Literal(_) => *column_origins = ExprOrigin::Both,
-            AExpr::BinaryExpr {
-                left: left_node,
-                op,
-                right: right_node,
-            } if op.is_comparison_or_bitwise() => {
-                {
-                    let new_stack_offset = stack.len();
-                    stack.extend([right_node, left_node]);
-
-                    // Reset `column_origins` to a `None` state. We will only have 2 possible return states from
-                    // this point:
-                    // * Ok(()), with column_origins @ ExprOrigin::Both
-                    // * Err(_), in which case the value of column_origins doesn't matter.
-                    *column_origins = ExprOrigin::None;
-
-                    process_join_where_predicate(
-                        stack,
-                        new_stack_offset,
-                        schema_left,
-                        schema_merged,
-                        expr_arena,
-                        column_origins,
-                    )?;
-
-                    if *column_origins != ExprOrigin::Both {
-                        polars_bail!(
-                            InvalidOperation:
-                            "'join_where' predicate only refers to columns from a single table: {}",
-                            node_to_expr(ae_node, expr_arena),
-                        )
-                    }
-                }
-
-                // Fetch them again in case they were rewritten.
-                let left = expr_arena.get(left_node).clone();
-                let right = expr_arena.get(right_node).clone();
-
-                let resolve_dtype = |ae: &AExpr, node: Node| -> PolarsResult<DataType> {
-                    ae.to_dtype(schema_merged, Context::Default, expr_arena)
-                        .map_err(|e| {
-                            e.context(
-                                format!(
-                                    "could not resolve dtype of join_where predicate (expr: {})",
-                                    node_to_expr(node, expr_arena),
-                                )
-                                .into(),
-                            )
-                        })
-                };
-
-                let dtype_left = resolve_dtype(&left, left_node)?;
-                let dtype_right = resolve_dtype(&right, right_node)?;
-
-                // Note: We only upcast the sides if the expr output dtype is Boolean (i.e. `op` is
-                // a comparison), otherwise the output may change.
-
-                if let Some(dtype) =
-                    get_numeric_upcast_supertype_lossless(&dtype_left, &dtype_right)
-                        .filter(|_| op.is_comparison())
-                {
-                    // We have unique references to these nodes (they are created by this function),
-                    // so we can mutate in-place without causing side effects somewhere else.
-                    let expr = expr_arena.add(expr_arena.get(left_node).clone());
-                    expr_arena.replace(
-                        left_node,
-                        AExpr::Cast {
-                            expr,
-                            dtype: dtype.clone(),
-                            options: CastOptions::Overflowing,
-                        },
-                    );
-
-                    let expr = expr_arena.add(expr_arena.get(right_node).clone());
-                    expr_arena.replace(
-                        right_node,
-                        AExpr::Cast {
-                            expr,
-                            dtype,
-                            options: CastOptions::Overflowing,
-                        },
-                    );
-                } else {
-                    polars_ensure!(
-                        dtype_left == dtype_right,
-                        SchemaMismatch:
-                        "datatypes of join_where comparison don't match - {} on left does not match {} on right \
-                        (expr: {})",
-                        dtype_left, dtype_right, node_to_expr(ae_node, expr_arena),
-                    )
-                }
-            },
-            ae => ae.inputs_rev(stack),
-        }
+    // let mut upcast_exprs = Vec::<(Node, DataType)>::new();
+    // Ensure that all binary comparisons that use both tables are lossless.
+    build_upcast_node_list(node, schema_left, schema_merged, expr_arena, upcast_exprs)?;
+    // Replace each node with its casted counterpart
+    for (expr, dtype) in upcast_exprs.drain(..) {
+        let old_expr = expr_arena.duplicate(expr);
+        let new_aexpr = AExpr::Cast {
+            expr: old_expr,
+            dtype,
+            options: CastOptions::Overflowing,
+        };
+        expr_arena.replace(expr, new_aexpr);
     }
-
     Ok(())
+}
+
+/// If we are dealing with a binary comparison involving columns from exclusively the left table
+/// on the LHS and the right table on the RHS side, ensure that the cast is lossless.
+/// Expressions involving binaries using either table alone we leave up to the user to verify
+/// that they are valid, as they could theoretically be pushed outside of the join.
+#[recursive]
+fn build_upcast_node_list(
+    node: &Node,
+    schema_left: &Schema,
+    schema_merged: &Schema,
+    expr_arena: &Arena<AExpr>,
+    to_replace: &mut Vec<(Node, DataType)>,
+) -> PolarsResult<ExprOrigin> {
+    let expr_origin = match expr_arena.get(*node) {
+        AExpr::Column(name) => {
+            if schema_left.contains(name) {
+                ExprOrigin::Left
+            } else if schema_merged.contains(name) {
+                ExprOrigin::Right
+            } else {
+                polars_bail!(ColumnNotFound: "{}", name);
+            }
+        },
+        AExpr::Literal(..) => ExprOrigin::None,
+        AExpr::Cast { expr: node, .. } => {
+            build_upcast_node_list(node, schema_left, schema_merged, expr_arena, to_replace)?
+        },
+        AExpr::BinaryExpr {
+            left: left_node,
+            op,
+            right: right_node,
+        } => {
+            // If left and right node has both, ensure the dtypes are valid.
+            let left_origin = build_upcast_node_list(
+                left_node,
+                schema_left,
+                schema_merged,
+                expr_arena,
+                to_replace,
+            )?;
+            let right_origin = build_upcast_node_list(
+                right_node,
+                schema_left,
+                schema_merged,
+                expr_arena,
+                to_replace,
+            )?;
+            // We only update casts during comparisons if the operands are from different tables.
+            if op.is_comparison() {
+                match (left_origin, right_origin) {
+                    (ExprOrigin::Left, ExprOrigin::Right)
+                    | (ExprOrigin::Right, ExprOrigin::Left) => {
+                        // Ensure our dtype casts are lossless
+                        let left = expr_arena.get(*left_node);
+                        let right = expr_arena.get(*right_node);
+                        let dtype_left =
+                            left.to_dtype(schema_merged, Context::Default, expr_arena)?;
+                        let dtype_right =
+                            right.to_dtype(schema_merged, Context::Default, expr_arena)?;
+                        if dtype_left != dtype_right {
+                            // Ensure that we have a lossless cast between the two types.
+                            let dt = if dtype_left.is_primitive_numeric()
+                                || dtype_right.is_primitive_numeric()
+                            {
+                                get_numeric_upcast_supertype_lossless(&dtype_left, &dtype_right)
+                                    .ok_or(PolarsError::SchemaMismatch(
+                                        format!(
+                                            "'join_where' cannot compare {:?} with {:?}",
+                                            dtype_left, dtype_right
+                                        )
+                                        .into(),
+                                    ))
+                            } else {
+                                try_get_supertype(&dtype_left, &dtype_right)
+                            }?;
+
+                            // Store the nodes and their replacements if a cast is required.
+                            let replace_left = dt != dtype_left;
+                            let replace_right = dt != dtype_right;
+                            if replace_left && replace_right {
+                                to_replace.push((*left_node, dt.clone()));
+                                to_replace.push((*right_node, dt));
+                            } else if replace_left {
+                                to_replace.push((*left_node, dt));
+                            } else if replace_right {
+                                to_replace.push((*right_node, dt));
+                            }
+                        }
+                    },
+                    _ => (),
+                }
+            }
+            left_origin | right_origin
+        },
+        _ => ExprOrigin::None,
+    };
+    Ok(expr_origin)
 }

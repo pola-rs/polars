@@ -95,27 +95,6 @@ pub(crate) fn is_column_independent(expr: &Expr) -> bool {
     })
 }
 
-/// Check if leaf expression returns a scalar
-#[cfg(feature = "is_in")]
-pub(crate) fn all_return_scalar(e: &Expr) -> bool {
-    match e {
-        Expr::Literal(lv) => lv.is_scalar(),
-        Expr::Function { options: opt, .. } => opt.flags.contains(FunctionFlags::RETURNS_SCALAR),
-        Expr::Agg(_) => true,
-        Expr::Column(_) | Expr::Wildcard => false,
-        _ => {
-            let mut empty = true;
-            for leaf in expr_to_leaf_column_exprs_iter(e) {
-                if !all_return_scalar(leaf) {
-                    return false;
-                }
-                empty = false;
-            }
-            !empty
-        },
-    }
-}
-
 pub fn has_null(current_expr: &Expr) -> bool {
     has_expr(
         current_expr,

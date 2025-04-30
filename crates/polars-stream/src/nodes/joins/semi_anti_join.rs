@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use polars_core::POOL;
+use arrow::array::BooleanArray;
+use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_expr::groups::{Grouper, new_hash_grouper};
@@ -12,6 +13,7 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::sparse_init_vec::SparseInitVec;
 
+use crate::async_executor;
 use crate::async_primitives::connector::{Receiver, Sender};
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
@@ -41,6 +43,7 @@ struct SemiAntiJoinParams {
     right_key_selectors: Vec<StreamExpr>,
     nulls_equal: bool,
     is_anti: bool,
+    return_bool: bool,
     random_state: PlRandomState,
 }
 
@@ -56,6 +59,7 @@ impl SemiAntiJoinNode {
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         args: JoinArgs,
+        return_bool: bool,
         num_pipelines: usize,
     ) -> PolarsResult<Self> {
         let left_is_build = false;
@@ -71,6 +75,7 @@ impl SemiAntiJoinNode {
                 right_key_selectors,
                 random_state: PlRandomState::default(),
                 nulls_equal: args.nulls_equal,
+                return_bool,
                 is_anti,
             },
             grouper: new_hash_grouper(unique_key_schema),
@@ -165,22 +170,23 @@ impl BuildState {
             .map(|b| Arc::new(core::mem::take(&mut b.keys)))
             .collect_vec();
         let (key_drop_q_send, key_drop_q_recv) =
-            crossbeam_channel::bounded(keys_per_local_builder.len());
+            async_channel::bounded(keys_per_local_builder.len());
         let num_partitions = self.local_builders[0].sketch_per_p.len();
         let local_builders = &self.local_builders;
         let groupers: SparseInitVec<Box<dyn Grouper>> =
             SparseInitVec::with_capacity(num_partitions);
 
-        POOL.scope(|s| {
+        async_executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_keys_per_local_builder = Arc::new(keys_per_local_builder);
+            let mut join_handles = Vec::new();
             for p in 0..num_partitions {
                 let arc_keys_per_local_builder = Arc::clone(&arc_keys_per_local_builder);
                 let key_drop_q_send = key_drop_q_send.clone();
                 let key_drop_q_recv = key_drop_q_recv.clone();
                 let groupers = &groupers;
-                s.spawn(move |_| {
+                join_handles.push(s.spawn_task(TaskPriority::High, async move {
                     // Extract from outer arc and drop outer arc.
                     let keys_per_local_builder = Arc::unwrap_or_clone(arc_keys_per_local_builder);
 
@@ -218,7 +224,7 @@ impl BuildState {
                             // If we're the last thread to process this set of keys we're probably
                             // falling behind the rest, since the drop can be quite expensive we skip
                             // a drop attempt hoping someone else will pick up the slack.
-                            key_drop_q_send.send(l).unwrap();
+                            key_drop_q_send.send(l).await.unwrap();
                             skip_drop_attempt = true;
                         } else {
                             skip_drop_attempt = false;
@@ -227,12 +233,12 @@ impl BuildState {
 
                     // We're done, help others out by doing drops.
                     drop(key_drop_q_send); // So we don't deadlock trying to receive from ourselves.
-                    while let Ok(l_keys) = key_drop_q_recv.recv() {
+                    while let Ok(l_keys) = key_drop_q_recv.recv().await {
                         drop(l_keys);
                     }
 
                     groupers.try_set(p, p_grouper).ok().unwrap();
-                });
+                }));
             }
 
             // Drop outer arc after spawning each thread so the inner arcs
@@ -241,6 +247,12 @@ impl BuildState {
             // to end.
             drop(arc_keys_per_local_builder);
             drop(key_drop_q_send);
+
+            polars_io::pl_async::get_runtime().block_on(async move {
+                for handle in join_handles {
+                    handle.await;
+                }
+            });
         });
 
         ProbeState {
@@ -271,11 +283,8 @@ impl ProbeState {
         };
 
         while let Ok(morsel) = recv.recv().await {
-            // Compute hashed keys and payload.
             let (df, in_seq, src_token, wait_token) = morsel.into_inner();
-
-            let df_height = df.height();
-            if df_height == 0 {
+            if df.height() == 0 {
                 continue;
             }
 
@@ -283,25 +292,44 @@ impl ProbeState {
                 select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
 
             unsafe {
-                probe_match.clear();
-                partitions[0].probe_partitioned_groupers(
-                    partitions,
-                    &hash_keys,
-                    &mut probe_match,
-                    &partitioner,
-                    params.is_anti,
-                );
-
-                if !probe_match.is_empty() {
-                    let out_df = df.take_slice_unchecked(&probe_match);
-                    let morsel = Morsel::new(out_df, in_seq, src_token.clone());
-                    if send.send(morsel).await.is_err() {
-                        return Ok(());
+                let out_df = if params.return_bool {
+                    let mut builder = BitmapBuilder::with_capacity(df.height());
+                    partitions[0].contains_key_partitioned_groupers(
+                        partitions,
+                        &hash_keys,
+                        &partitioner,
+                        params.is_anti,
+                        &mut builder,
+                    );
+                    let mut arr = BooleanArray::from(builder.freeze());
+                    if !params.nulls_equal {
+                        arr.set_validity(hash_keys.validity().cloned());
                     }
+                    let s = BooleanChunked::with_chunk(df[0].name().clone(), arr).into_series();
+                    DataFrame::new(vec![Column::from(s)])?
+                } else {
+                    probe_match.clear();
+                    partitions[0].probe_partitioned_groupers(
+                        partitions,
+                        &hash_keys,
+                        &partitioner,
+                        params.is_anti,
+                        &mut probe_match,
+                    );
+                    if probe_match.is_empty() {
+                        continue;
+                    }
+                    df.take_slice_unchecked(&probe_match)
+                };
+
+                let mut morsel = Morsel::new(out_df, in_seq, src_token.clone());
+                if let Some(token) = wait_token {
+                    morsel.set_consume_token(token);
+                }
+                if send.send(morsel).await.is_err() {
+                    return Ok(());
                 }
             }
-
-            drop(wait_token);
         }
 
         Ok(())
@@ -310,10 +338,11 @@ impl ProbeState {
 
 impl ComputeNode for SemiAntiJoinNode {
     fn name(&self) -> &str {
-        if self.params.is_anti {
-            "anti_join"
-        } else {
-            "semi_join"
+        match (self.params.return_bool, self.params.is_anti) {
+            (false, false) => "semi_join",
+            (false, true) => "anti_join",
+            (true, false) => "is_in",
+            (true, true) => "is_not_in",
         }
     }
 

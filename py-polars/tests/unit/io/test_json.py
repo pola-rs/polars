@@ -239,8 +239,8 @@ def test_ndjson_ignore_errors() -> None:
         "SeqNo": [1, 1],
         "Timestamp": [1, 1],
         "Fields": [
-            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": None}],
-            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": None}],
+            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": '{"a": 1}'}],
+            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": '{"a": 1}'}],
         ],
     }
 
@@ -563,3 +563,22 @@ def test_read_json_utf_8_sig_encoding() -> None:
     result = pl.read_json(json.dumps(data).encode("utf-8-sig"))
     expected = pl.DataFrame(data)
     assert_frame_equal(result, expected)
+
+
+def test_write_masked_out_list_22202() -> None:
+    df = pl.DataFrame({"x": [1, 2], "y": [None, 3]})
+
+    output_file = io.BytesIO()
+
+    query = (
+        df.group_by("x", maintain_order=True)
+        .all()
+        .select(pl.when(pl.col("y").list.sum() > 0).then("y"))
+    )
+
+    eager = query.write_ndjson().encode()
+
+    query.lazy().sink_ndjson(output_file)
+    lazy = output_file.getvalue()
+
+    assert eager == lazy

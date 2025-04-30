@@ -229,7 +229,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 Ok(_) => {},
                 Err(_) => {
                     let (ca_left, ca_right) =
-                        make_categoricals_compatible(l.categorical()?, r.categorical()?)?;
+                        make_rhs_categoricals_compatible(l.categorical()?, r.categorical()?)?;
                     *l = ca_left.into_series().with_name(l.name().clone());
                     *r = ca_right.into_series().with_name(r.name().clone());
                 },
@@ -343,9 +343,19 @@ pub trait DataFrameJoinOps: IntoDf {
                 },
             };
         }
-
-        let lhs_keys = prepare_keys_multiple(&selected_left, args.nulls_equal)?.into_series();
-        let rhs_keys = prepare_keys_multiple(&selected_right, args.nulls_equal)?.into_series();
+        let (lhs_keys, rhs_keys) =
+            if (left_df.is_empty() || other.is_empty()) && matches!(&args.how, JoinType::Inner) {
+                // Fast path for empty inner joins.
+                // Return 2 dummies so that we don't row-encode.
+                let a = Series::full_null("".into(), 0, &DataType::Null);
+                (a.clone(), a)
+            } else {
+                // Row encode the keys.
+                (
+                    prepare_keys_multiple(&selected_left, args.nulls_equal)?.into_series(),
+                    prepare_keys_multiple(&selected_right, args.nulls_equal)?.into_series(),
+                )
+            };
 
         let drop_names = if should_coalesce {
             if args.how == JoinType::Right {

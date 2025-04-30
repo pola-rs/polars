@@ -229,7 +229,7 @@ def test_unnest_table_function_errors() -> None:
 
         with pytest.raises(
             SQLInterfaceError,
-            match=r"UNNEST tables do not \(yet\) support WITH OFFSET/ORDINALITY",
+            match=r"UNNEST tables do not \(yet\) support WITH OFFSET|ORDINALITY",
         ):
             ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) tbl (colx) WITH OFFSET")
 

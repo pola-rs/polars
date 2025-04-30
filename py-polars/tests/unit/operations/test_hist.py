@@ -24,7 +24,7 @@ def test_hist_empty_data_no_inputs() -> None:
                 ),
                 "category": pl.Series(
                     [
-                        "(0.0, 0.1]",
+                        "[0.0, 0.1]",
                         "(0.1, 0.2]",
                         "(0.2, 0.3]",
                         "(0.3, 0.4]",
@@ -84,7 +84,7 @@ def test_hist_empty_data_valid_edges() -> None:
     expected = pl.DataFrame(
         {
             "breakpoint": pl.Series([2.0, 3.0], dtype=pl.Float64),
-            "category": pl.Series(["(1.0, 2.0]", "(2.0, 3.0]"], dtype=pl.Categorical),
+            "category": pl.Series(["[1.0, 2.0]", "(2.0, 3.0]"], dtype=pl.Categorical),
             "count": pl.Series([0, 0], dtype=pl.UInt32),
         }
     )
@@ -126,7 +126,7 @@ def test_hist_empty_data_single_bin_count() -> None:
     expected = pl.DataFrame(
         {
             "breakpoint": pl.Series([1.0], dtype=pl.Float64),
-            "category": pl.Series(["(0.0, 1.0]"], dtype=pl.Categorical),
+            "category": pl.Series(["[0.0, 1.0]"], dtype=pl.Categorical),
             "count": pl.Series([0], dtype=pl.UInt32),
         }
     )
@@ -142,7 +142,7 @@ def test_hist_empty_data_valid_bin_count() -> None:
             "breakpoint": pl.Series([0.2, 0.4, 0.6, 0.8, 1.0], dtype=pl.Float64),
             "category": pl.Series(
                 [
-                    "(0.0, 0.2]",
+                    "[0.0, 0.2]",
                     "(0.2, 0.4]",
                     "(0.4, 0.6]",
                     "(0.6, 0.8]",
@@ -178,7 +178,7 @@ def test_hist_bin_outside_data() -> None:
     expected = pl.DataFrame(
         {
             "breakpoint": pl.Series([-9.0], dtype=pl.Float64),
-            "category": pl.Series(["(-10.0, -9.0]"], dtype=pl.Categorical),
+            "category": pl.Series(["[-10.0, -9.0]"], dtype=pl.Categorical),
             "count": pl.Series([0], dtype=pl.UInt32),
         }
     )
@@ -192,7 +192,7 @@ def test_hist_bins_between_data() -> None:
     expected = pl.DataFrame(
         {
             "breakpoint": pl.Series([10.5], dtype=pl.Float64),
-            "category": pl.Series(["(4.5, 10.5]"], dtype=pl.Categorical),
+            "category": pl.Series(["[4.5, 10.5]"], dtype=pl.Categorical),
             "count": pl.Series([0], dtype=pl.UInt32),
         }
     )
@@ -206,8 +206,8 @@ def test_hist_bins_first_edge() -> None:
     expected = pl.DataFrame(
         {
             "breakpoint": pl.Series([3.0, 4.0], dtype=pl.Float64),
-            "category": pl.Series(["(2.0, 3.0]", "(3.0, 4.0]"], dtype=pl.Categorical),
-            "count": pl.Series([0, 0], dtype=pl.UInt32),
+            "category": pl.Series(["[2.0, 3.0]", "(3.0, 4.0]"], dtype=pl.Categorical),
+            "count": pl.Series([1, 0], dtype=pl.UInt32),
         }
     )
     assert_frame_equal(result, expected)
@@ -222,7 +222,7 @@ def test_hist_bins_last_edge() -> None:
             "breakpoint": pl.Series([0.0, 99.0, 100.0], dtype=pl.Float64),
             "category": pl.Series(
                 [
-                    "(-4.0, 0.0]",
+                    "[-4.0, 0.0]",
                     "(0.0, 99.0]",
                     "(99.0, 100.0]",
                 ],
@@ -241,7 +241,7 @@ def test_hist_single_value_single_bin_count() -> None:
     expected = pl.DataFrame(
         {
             "breakpoint": pl.Series([1.5], dtype=pl.Float64),
-            "category": pl.Series(["(0.5, 1.5]"], dtype=pl.Categorical),
+            "category": pl.Series(["[0.5, 1.5]"], dtype=pl.Categorical),
             "count": pl.Series([1], dtype=pl.UInt32),
         }
     )
@@ -251,13 +251,11 @@ def test_hist_single_value_single_bin_count() -> None:
 @StringCache()
 def test_hist_single_bin_count() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
-    span = (99 - (-5)) * 0.001
-    lower_bin = -5 - span
     result = s.hist(bin_count=1)
     expected = pl.DataFrame(
         {
             "breakpoint": pl.Series([99.0], dtype=pl.Float64),
-            "category": pl.Series([f"({lower_bin}, 99.0]"], dtype=pl.Categorical),
+            "category": pl.Series(["[-5.0, 99.0]"], dtype=pl.Categorical),
             "count": pl.Series([5], dtype=pl.UInt32),
         }
     )
@@ -272,7 +270,7 @@ def test_hist_partial_covering() -> None:
         {
             "breakpoint": pl.Series([2.5, 50.0, 105.0], dtype=pl.Float64),
             "category": pl.Series(
-                ["(-1.5, 2.5]", "(2.5, 50.0]", "(50.0, 105.0]"], dtype=pl.Categorical
+                ["[-1.5, 2.5]", "(2.5, 50.0]", "(50.0, 105.0]"], dtype=pl.Categorical
             ),
             "count": pl.Series([3, 0, 1], dtype=pl.UInt32),
         }
@@ -288,7 +286,7 @@ def test_hist_full_covering() -> None:
         {
             "breakpoint": pl.Series([2.5, 50.0, 105.0], dtype=pl.Float64),
             "category": pl.Series(
-                ["(-5.5, 2.5]", "(2.5, 50.0]", "(50.0, 105.0]"], dtype=pl.Categorical
+                ["[-5.5, 2.5]", "(2.5, 50.0]", "(50.0, 105.0]"], dtype=pl.Categorical
             ),
             "count": pl.Series([4, 0, 1], dtype=pl.UInt32),
         }
@@ -305,8 +303,8 @@ def test_hist_more_bins_than_data() -> None:
     span = 99 - (-5)
     width = span / 8
     breaks = [-5 + width * i for i in range(8 + 1)]
-    breaks[0] -= span * 0.001
     categories = [f"({breaks[i]}, {breaks[i + 1]}]" for i in range(8)]
+    categories[0] = f"[{categories[0][1:]}"
 
     expected = pl.DataFrame(
         {
@@ -326,7 +324,7 @@ def test_hist() -> None:
         {
             "breakpoint": pl.Series([2.75, 4.5, 6.25, 8.0], dtype=pl.Float64),
             "category": pl.Series(
-                ["(0.993, 2.75]", "(2.75, 4.5]", "(4.5, 6.25]", "(6.25, 8.0]"],
+                ["[1.0, 2.75]", "(2.75, 4.5]", "(4.5, 6.25]", "(6.25, 8.0]"],
                 dtype=pl.Categorical,
             ),
             "count": pl.Series([3, 2, 0, 2], dtype=pl.get_index_type()),
@@ -346,7 +344,7 @@ def test_hist_all_null() -> None:
             ),
             "category": pl.Series(
                 [
-                    "(0.0, 0.1]",
+                    "[0.0, 0.1]",
                     "(0.1, 0.2]",
                     "(0.2, 0.3]",
                     "(0.3, 0.4]",
@@ -453,7 +451,7 @@ def test_hist_same_values_20030() -> None:
     expected = pl.DataFrame(
         {
             "breakpoint": pl.Series([1.0, 1.5], dtype=pl.Float64),
-            "category": pl.Series(["(0.5, 1.0]", "(1.0, 1.5]"], dtype=pl.Categorical),
+            "category": pl.Series(["[0.5, 1.0]", "(1.0, 1.5]"], dtype=pl.Categorical),
             "count": pl.Series([2, 0], dtype=pl.get_index_type()),
         }
     )
@@ -468,7 +466,7 @@ def test_hist_breakpoint_accuracy() -> None:
         {
             "breakpoint": pl.Series([2.0, 3.0, 4.0], dtype=pl.Float64),
             "category": pl.Series(
-                ["(0.997, 2.0]", "(2.0, 3.0]", "(3.0, 4.0]"], dtype=pl.Categorical
+                ["[1.0, 2.0]", "(2.0, 3.0]", "(3.0, 4.0]"], dtype=pl.Categorical
             ),
             "count": pl.Series([2, 1, 1], dtype=pl.get_index_type()),
         }
@@ -492,7 +490,7 @@ def test_hist_ensure_max_value_20879() -> None:
                 ),
                 "category": pl.Series(
                     [
-                        "(-0.340667, 2.111111]",
+                        "[-0.333333, 2.111111]",
                         "(2.111111, 4.555556]",
                         "(4.555556, 7.0]",
                     ],
@@ -513,7 +511,7 @@ def test_hist_ignore_nans_21082() -> None:
                 "breakpoint": pl.Series([0.25, 0.5, 0.75, 1.0], dtype=pl.Float64),
                 "category": pl.Series(
                     [
-                        "(-0.001, 0.25]",
+                        "[-0.001, 0.25]",
                         "(0.25, 0.5]",
                         "(0.5, 0.75]",
                         "(0.75, 1.0]",
@@ -524,3 +522,28 @@ def test_hist_ignore_nans_21082() -> None:
             }
         )
     assert_frame_equal(result, expected)
+
+
+def test_hist_include_lower_22056() -> None:
+    s = pl.Series("a", [1, 5])
+    with pl.StringCache():
+        result = s.hist(bins=[1, 5], include_category=True)
+        expected = pl.DataFrame(
+            {
+                "breakpoint": pl.Series([5.0], dtype=pl.Float64),
+                "category": pl.Series(["[1.0, 5.0]"], dtype=pl.Categorical),
+                "count": pl.Series([2], dtype=pl.get_index_type()),
+            }
+        )
+    assert_frame_equal(result, expected)
+
+
+def test_hist_ulp_edge_22234() -> None:
+    # Uniform path
+    s = pl.Series([1.0, 1e-16, 1.3e-16, -1.0])
+    result = s.hist(bin_count=2)
+    assert result["count"].to_list() == [1, 3]
+
+    # Manual path
+    result = s.hist(bins=[-1, 0, 1])
+    assert result["count"].to_list() == [1, 3]

@@ -634,9 +634,9 @@ def from_repr(data: str) -> DataFrame | Series:
 
     Notes
     -----
-    This function handles the default UTF8_FULL and UTF8_FULL_CONDENSED DataFrame
-    tables (with or without rounded corners). Truncated columns/rows are omitted,
-    wrapped headers are accounted for, and dtypes automatically identified.
+    This function handles the default UTF8_FULL (and UTF8_FULL_CONDENSED) DataFrame
+    tables, with or without rounded corners. Truncated columns/rows are omitted,
+    wrapped headers are accounted for, and dtypes are automatically identified.
 
     Currently compound/nested dtypes such as List and Struct are not supported;
     neither are Object dtypes.

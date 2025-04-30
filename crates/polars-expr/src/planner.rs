@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
+use recursive::recursive;
 
 use crate::expressions as phys_expr;
 use crate::expressions::*;
@@ -17,7 +18,7 @@ pub fn get_expr_depth_limit() -> PolarsResult<u16> {
     Ok(depth)
 }
 
-fn ok_checker(_state: &ExpressionConversionState) -> PolarsResult<()> {
+fn ok_checker(_i: usize, _state: &ExpressionConversionState) -> PolarsResult<()> {
     Ok(())
 }
 
@@ -40,14 +41,15 @@ pub(crate) fn create_physical_expressions_check_state<F>(
     checker: F,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>>
 where
-    F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
+    F: Fn(usize, &ExpressionConversionState) -> PolarsResult<()>,
 {
     exprs
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             state.reset();
             let out = create_physical_expr(e, context, expr_arena, schema, state);
-            checker(state)?;
+            checker(i, state)?;
             out
         })
         .collect()
@@ -74,14 +76,15 @@ pub(crate) fn create_physical_expressions_from_nodes_check_state<F>(
     checker: F,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>>
 where
-    F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
+    F: Fn(usize, &ExpressionConversionState) -> PolarsResult<()>,
 {
     exprs
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             state.reset();
             let out = create_physical_expr_inner(*e, context, expr_arena, schema, state);
-            checker(state)?;
+            checker(i, state)?;
             out
         })
         .collect()
@@ -97,47 +100,28 @@ pub struct ExpressionConversionState {
     // settings per expression
     // those are reset every expression
     local: LocalConversionState,
-    depth_limit: u16,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 struct LocalConversionState {
     has_implode: bool,
     has_window: bool,
     has_lit: bool,
-    // Max depth an expression may have.
-    // 0 is unlimited.
-    depth_limit: u16,
-}
-
-impl Default for LocalConversionState {
-    fn default() -> Self {
-        Self {
-            has_lit: false,
-            has_implode: false,
-            has_window: false,
-            depth_limit: 500,
-        }
-    }
 }
 
 impl ExpressionConversionState {
-    pub fn new(allow_threading: bool, depth_limit: u16) -> Self {
+    pub fn new(allow_threading: bool) -> Self {
         Self {
-            depth_limit,
             allow_threading,
             has_windows: false,
             local: LocalConversionState {
-                depth_limit,
                 ..Default::default()
             },
         }
     }
+
     fn reset(&mut self) {
-        self.local = LocalConversionState {
-            depth_limit: self.depth_limit,
-            ..Default::default()
-        }
+        self.local = LocalConversionState::default();
     }
 
     fn has_implode(&self) -> bool {
@@ -147,19 +131,6 @@ impl ExpressionConversionState {
     fn set_window(&mut self) {
         self.has_windows = true;
         self.local.has_window = true;
-    }
-
-    fn check_depth(&mut self) {
-        if self.local.depth_limit > 0 {
-            self.local.depth_limit -= 1;
-
-            if self.local.depth_limit == 0 {
-                let depth = get_expr_depth_limit().unwrap();
-                polars_warn!(format!(
-                    "encountered expression deeper than {depth} elements; this may overflow the stack, consider refactoring"
-                ))
-            }
-        }
     }
 }
 
@@ -183,6 +154,7 @@ pub fn create_physical_expr(
     }
 }
 
+#[recursive]
 fn create_physical_expr_inner(
     expression: Node,
     ctxt: Context,
@@ -191,8 +163,6 @@ fn create_physical_expr_inner(
     state: &mut ExpressionConversionState,
 ) -> PolarsResult<Arc<dyn PhysicalExpr>> {
     use AExpr::*;
-
-    state.check_depth();
 
     match expr_arena.get(expression) {
         Len => Ok(Arc::new(phys_expr::CountExpr::new())),
@@ -479,21 +449,8 @@ fn create_physical_expr_inner(
                 .get(expression)
                 .to_field(schema, ctxt, expr_arena)?;
 
-            let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
-                && matches!(options.collect_groups, ApplyOptions::GroupWise);
-            // Will be reset in the function so get that here.
-            let has_window = state.local.has_window;
-            let input = create_physical_expressions_check_state(
-                input,
-                ctxt,
-                expr_arena,
-                schema,
-                state,
-                |state| {
-                    polars_ensure!(!((is_reducing_aggregation || has_window) && state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
-                    Ok(())
-                },
-            )?;
+            let input =
+                create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
@@ -515,21 +472,8 @@ fn create_physical_expr_inner(
             let output_field = expr_arena
                 .get(expression)
                 .to_field(schema, ctxt, expr_arena)?;
-            let is_reducing_aggregation = options.flags.contains(FunctionFlags::RETURNS_SCALAR)
-                && matches!(options.collect_groups, ApplyOptions::GroupWise);
-            // Will be reset in the function so get that here.
-            let has_window = state.local.has_window;
-            let input = create_physical_expressions_check_state(
-                input,
-                ctxt,
-                expr_arena,
-                schema,
-                state,
-                |state| {
-                    polars_ensure!(!((is_reducing_aggregation || has_window) && state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
-                    Ok(())
-                },
-            )?;
+            let input =
+                create_physical_expressions_from_irs(input, ctxt, expr_arena, schema, state)?;
 
             Ok(Arc::new(ApplyExpr::new(
                 input,

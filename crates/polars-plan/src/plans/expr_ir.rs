@@ -159,7 +159,10 @@ impl ExprIR {
                     }
                     break;
                 },
-                AExpr::Len => out.output_name = OutputName::LiteralLhs(get_len_name()),
+                AExpr::Len => {
+                    out.output_name = OutputName::LiteralLhs(get_len_name());
+                    break;
+                },
                 AExpr::Alias(_, _) => {
                     // Should be removed during conversion.
                     #[cfg(debug_assertions)]

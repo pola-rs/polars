@@ -1173,11 +1173,9 @@ fn test_fill_forward() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("b").forward_fill(None).over_with_options(
-            [col("a")],
-            None,
-            WindowMapping::Join,
-        )])
+        .select([col("b")
+            .fill_null_with_strategy(FillNullStrategy::Forward(FillNullLimit::None))
+            .over_with_options([col("a")], None, WindowMapping::Join)])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
@@ -1723,7 +1721,7 @@ fn empty_df() -> PolarsResult<()> {
             col("A").shift_and_fill(lit(-1), lit(1)).alias("3"),
             col("A").fill_null(lit(1)).alias("4"),
             col("A").cum_count(false).alias("5"),
-            col("A").diff(1, NullBehavior::Ignore).alias("6"),
+            col("A").diff(lit(1), NullBehavior::Ignore).alias("6"),
             col("A").cum_max(false).alias("7"),
             col("A").cum_min(false).alias("8"),
         ])
@@ -1763,7 +1761,10 @@ fn test_is_in() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by_stable([col("fruits")])
-        .agg([col("cars").is_in(col("cars").filter(col("cars").eq(lit("beetle"))), false)])
+        .agg([col("cars").is_in(
+            col("cars").filter(col("cars").eq(lit("beetle"))).implode(),
+            false,
+        )])
         .collect()?;
     let out = out.column("cars").unwrap();
     let out = out.explode()?;
@@ -1777,7 +1778,10 @@ fn test_is_in() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by_stable([col("fruits")])
-        .agg([col("cars").is_in(lit(Series::new("a".into(), ["beetle", "vw"])), false)])
+        .agg([col("cars").is_in(
+            lit(Series::new("a".into(), ["beetle", "vw"])).implode(),
+            false,
+        )])
         .collect()?;
 
     let out = out.column("cars").unwrap();
@@ -1948,5 +1952,25 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
         "A" => [1, 1, 1],
         "B" => ["A", "B", "C"],
     ]?));
+    Ok(())
+}
+
+#[test]
+fn test_over_with_options_empty_join() -> PolarsResult<()> {
+    let empty_df = DataFrame::new(vec![
+        Series::new_empty("a".into(), &DataType::Int32).into(),
+        Series::new_empty("b".into(), &DataType::Int32).into(),
+    ])?;
+
+    let empty_df_out = empty_df
+        .lazy()
+        .select([col("b").over_with_options([col("a")], Option::None, WindowMapping::Join)])
+        .collect()?;
+
+    let f1: Field = Field::new("b".into(), DataType::List(Box::new(DataType::Int32)));
+    let sc: Schema = Schema::from_iter(vec![f1]);
+
+    assert_eq!(&**empty_df_out.schema(), &sc);
+
     Ok(())
 }

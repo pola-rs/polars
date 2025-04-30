@@ -61,6 +61,34 @@ impl BooleanFunction {
             _ => mapper.with_dtype(DataType::Boolean),
         }
     }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use BooleanFunction as B;
+        match self {
+            B::Any { .. } | B::All { .. } => FunctionOptions::aggregation(),
+            B::IsNull | B::IsNotNull | B::IsFinite | B::IsInfinite | B::IsNan | B::IsNotNan => {
+                FunctionOptions::elementwise()
+            },
+            #[cfg(feature = "is_first_distinct")]
+            B::IsFirstDistinct => FunctionOptions::length_preserving(),
+            #[cfg(feature = "is_last_distinct")]
+            B::IsLastDistinct => FunctionOptions::length_preserving(),
+            #[cfg(feature = "is_unique")]
+            B::IsUnique => FunctionOptions::length_preserving(),
+            #[cfg(feature = "is_unique")]
+            B::IsDuplicated => FunctionOptions::length_preserving(),
+            #[cfg(feature = "is_between")]
+            B::IsBetween { .. } => FunctionOptions::elementwise().with_supertyping(
+                (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
+            ),
+            #[cfg(feature = "is_in")]
+            B::IsIn { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
+            B::AllHorizontal | B::AnyHorizontal => FunctionOptions::elementwise()
+                .with_input_wildcard_expansion(true)
+                .with_allow_empty_inputs(true),
+            B::Not => FunctionOptions::elementwise(),
+        }
+    }
 }
 
 impl Display for BooleanFunction {

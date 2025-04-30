@@ -31,6 +31,31 @@ impl<'a> IRBuilder<'a> {
         IRBuilder::new(node, self.expr_arena, self.lp_arena)
     }
 
+    /// Adds IR and runs optimizations on its expressions (simplify, coerce, type-check).
+    pub fn add_alp_optimize_exprs<F>(self, f: F) -> PolarsResult<Self>
+    where
+        F: FnOnce(Node) -> IR,
+    {
+        let lp = f(self.root);
+        let ir_name = lp.name();
+
+        let b = self.add_alp(lp);
+
+        // Run the optimizer
+        let mut conversion_optimizer = ConversionOptimizer::new(true, true, true);
+        conversion_optimizer.fill_scratch(&b.lp_arena.get(b.root).get_exprs(), b.expr_arena);
+        conversion_optimizer
+            .optimize_exprs(b.expr_arena, b.lp_arena, b.root)
+            .map_err(|e| e.context(format!("optimizing '{ir_name}' failed").into()))?;
+
+        Ok(b)
+    }
+
+    /// An escape hatch to add an `Expr`. Working with IR is preferred.
+    pub fn add_expr(&mut self, expr: Expr) -> PolarsResult<ExprIR> {
+        to_expr_ir(expr, self.expr_arena)
+    }
+
     pub fn project(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {
         // if len == 0, no projection has to be done. This is a select all operation.
         if exprs.is_empty() {

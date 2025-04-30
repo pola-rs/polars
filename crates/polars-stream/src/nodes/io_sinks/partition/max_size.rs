@@ -5,12 +5,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
-use polars_core::prelude::{InitHashMaps, PlHashMap};
+use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_plan::dsl::SinkOptions;
+use polars_plan::dsl::{PartitionTargetCallback, SinkOptions};
+use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{IdxSize, format_pl_smallstr};
 
 use super::CreateNewSinkFn;
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -18,15 +18,18 @@ use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
+use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode};
-use crate::nodes::{JoinHandle, Morsel, PhaseOutcome, TaskPriority};
+use crate::nodes::{JoinHandle, Morsel, TaskPriority};
 
 pub struct MaxSizePartitionSinkNode {
     input_schema: SchemaRef,
     max_size: IdxSize,
 
-    path_f_string: Arc<PathBuf>,
+    base_path: Arc<PathBuf>,
+    file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
+    ext: PlSmallStr,
 
     sink_options: SinkOptions,
 
@@ -45,8 +48,10 @@ impl MaxSizePartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         max_size: IdxSize,
-        path_f_string: Arc<PathBuf>,
+        base_path: Arc<PathBuf>,
+        file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
+        ext: PlSmallStr,
         sink_options: SinkOptions,
     ) -> Self {
         assert!(max_size > 0);
@@ -60,12 +65,24 @@ impl MaxSizePartitionSinkNode {
         Self {
             input_schema,
             max_size,
-            path_f_string,
+            base_path,
+            file_path_cb,
             create_new,
+            ext,
             sink_options,
             num_retire_tasks,
         }
     }
+}
+
+fn default_file_path_cb(
+    ext: &str,
+    file_idx: usize,
+    _part_idx: usize,
+    _in_part_idx: usize,
+    _columns: Option<&[Column]>,
+) -> PolarsResult<PathBuf> {
+    Ok(PathBuf::from(format!("{file_idx}.{ext}")))
 }
 
 impl SinkNode for MaxSizePartitionSinkNode {
@@ -98,14 +115,12 @@ impl SinkNode for MaxSizePartitionSinkNode {
         let state = state.clone();
         let input_schema = self.input_schema.clone();
         let max_size = self.max_size;
-        let path_f_string = self.path_f_string.clone();
+        let base_path = self.base_path.clone();
+        let file_path_cb = self.file_path_cb.clone();
         let create_new = self.create_new.clone();
+        let ext = self.ext.clone();
         let retire_error = has_error_occurred.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
-            let part_str = PlSmallStr::from_static("part");
-            let mut format_args = PlHashMap::with_capacity(1);
-            format_args.insert(part_str.clone(), PlSmallStr::EMPTY);
-
             struct CurrentSink {
                 sender: SinkSender,
                 join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
@@ -113,7 +128,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
             }
 
             let verbose = config::verbose();
-            let mut part = 0;
+            let mut file_idx = 0;
             let mut current_sink_opt = None;
 
             while let Ok((outcome, recv_port)) = recv_port_recv.recv().await {
@@ -127,20 +142,23 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         let current_sink = match current_sink_opt.as_mut() {
                             Some(c) => c,
                             None => {
-                                *format_args.get_mut(&part_str).unwrap() =
-                                    format_pl_smallstr!("{part}");
-                                part += 1;
-
                                 let result = open_new_sink(
-                                    path_f_string.as_path(),
+                                    base_path.as_path(),
+                                    file_path_cb.as_ref(),
+                                    default_file_path_cb,
+                                    file_idx,
+                                    file_idx,
+                                    0,
+                                    None,
                                     &create_new,
-                                    &format_args,
                                     input_schema.clone(),
                                     "max-size",
+                                    ext.as_str(),
                                     verbose,
                                     &state,
                                 )
                                 .await?;
+                                file_idx += 1;
                                 let Some((join_handles, sender)) = result else {
                                     return Ok(());
                                 };

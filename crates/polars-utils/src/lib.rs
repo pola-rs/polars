@@ -66,5 +66,10 @@ pub use pl_str::unique_column_name;
 #[cfg(feature = "python")]
 pub mod python_function;
 
+#[cfg(feature = "python")]
+pub mod python_convert_registry;
+
 #[cfg(feature = "serde")]
 pub mod pl_serialize;
+
+pub mod kahan_sum;

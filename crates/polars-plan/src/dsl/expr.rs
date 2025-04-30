@@ -388,6 +388,59 @@ impl Expr {
             },
         }
     }
+
+    #[inline]
+    pub fn map_unary(self, function: impl Into<FunctionExpr>) -> Self {
+        Expr::n_ary(function, vec![self])
+    }
+    #[inline]
+    pub fn map_binary(self, function: impl Into<FunctionExpr>, rhs: Self) -> Self {
+        Expr::n_ary(function, vec![self, rhs])
+    }
+
+    #[inline]
+    pub fn map_ternary(self, function: impl Into<FunctionExpr>, arg1: Expr, arg2: Expr) -> Expr {
+        Expr::n_ary(function, vec![self, arg1, arg2])
+    }
+
+    #[inline]
+    pub fn try_map_n_ary(
+        self,
+        function: impl Into<FunctionExpr>,
+        exprs: impl IntoIterator<Item = PolarsResult<Expr>>,
+    ) -> PolarsResult<Expr> {
+        let exprs = exprs.into_iter();
+        let mut input = Vec::with_capacity(exprs.size_hint().0 + 1);
+        input.push(self);
+        for e in exprs {
+            input.push(e?);
+        }
+        Ok(Expr::n_ary(function, input))
+    }
+
+    #[inline]
+    pub fn map_n_ary(
+        self,
+        function: impl Into<FunctionExpr>,
+        exprs: impl IntoIterator<Item = Expr>,
+    ) -> Expr {
+        let exprs = exprs.into_iter();
+        let mut input = Vec::with_capacity(exprs.size_hint().0 + 1);
+        input.push(self);
+        input.extend(exprs);
+        Expr::n_ary(function, input)
+    }
+
+    #[inline]
+    pub fn n_ary(function: impl Into<FunctionExpr>, input: Vec<Expr>) -> Expr {
+        let function = function.into();
+        let options = function.function_options();
+        Expr::Function {
+            input,
+            function,
+            options,
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]

@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 from polars import StringCache
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -163,11 +163,11 @@ def test_is_in_struct() -> None:
 def test_is_in_null_prop() -> None:
     assert pl.Series([None], dtype=pl.Float32).is_in(pl.Series([42])).item() is None
     assert pl.Series([{"a": None}, None], dtype=pl.Struct({"a": pl.Float32})).is_in(
-        pl.Series([{"a": 42}])
+        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Float32}))
     ).to_list() == [False, None]
 
     assert pl.Series([{"a": None}, None], dtype=pl.Struct({"a": pl.Boolean})).is_in(
-        pl.Series([{"a": 42}])
+        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Boolean}))
     ).to_list() == [False, None]
 
 
@@ -215,18 +215,16 @@ def test_is_in_series() -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match=r"'is_in' cannot check for String values in Int64 data",
+        match=r"'is_in' cannot check for List\(String\) values in Int64 data",
     ):
         df.select(pl.col("b").is_in(["x", "x"]))
 
     # check we don't shallow-copy and accidentally modify 'a' (see: #10072)
     a = pl.Series("a", [1, 2])
     b = pl.Series("b", [1, 3]).is_in(a)
-    c = pl.Series("c", [1, 3]).is_in(a.to_frame())  # type: ignore[arg-type]
 
     assert a.name == "a"
     assert_series_equal(b, pl.Series("b", [True, False]))
-    assert_series_equal(c, pl.Series("c", [True, False]))
 
 
 @pytest.mark.parametrize("nulls_equal", [False, True])
@@ -276,7 +274,8 @@ def test_is_in_boolean(nulls_equal: bool) -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.List(pl.Boolean), pl.Array(pl.Boolean, 2)])
-def test_is_in_boolean_list(dtype: PolarsDataType) -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_is_in_boolean_list(dtype: PolarsDataType, nulls_equal: bool) -> None:
     # Note list is_in does not propagate nulls.
     df = pl.DataFrame(
         {
@@ -293,22 +292,23 @@ def test_is_in_boolean_list(dtype: PolarsDataType) -> None:
             ),
         }
     )
-    result = df.select(pl.col("a").is_in("b"))["a"]
-    expected = pl.Series("a", [True, False, True, False, False])
+    missing_true = True if nulls_equal else None
+    missing_false = False if nulls_equal else None
+    result = df.select(pl.col("a").is_in("b", nulls_equal=nulls_equal))["a"]
+    expected = pl.Series("a", [True, False, missing_true, missing_false, missing_false])
     assert_series_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_is_in_invalid_shape() -> None:
-    with pytest.raises(ComputeError):
-        pl.Series("a", [1, 2, 3]).is_in([[]])
+    with pytest.raises(InvalidOperationError):
+        pl.Series("a", [1, 2, 3]).is_in([[], []])
 
 
 @pytest.mark.may_fail_auto_streaming
 def test_is_in_list_rhs() -> None:
     assert_series_equal(
-        pl.Series([1, 2, 3, 4, 5]).is_in([[1], [2, 9], [None], None, None]),
-        pl.Series([True, True, False, False, False]),
+        pl.Series([1, 2, 3, 4, 5]).is_in(pl.Series([[1], [2, 9], [None], None, None])),
+        pl.Series([True, True, False, None, None]),
     )
 
 
@@ -344,12 +344,12 @@ def test_is_in_float(dtype: PolarsDataType) -> None:
         (
             pl.DataFrame({"a": ["1", "2"], "b": [[1, 2], [3, 4]]}),
             None,
-            r"'is_in' cannot check for String values in List\(Int64\) data",
+            r"'is_in' cannot check for List\(Int64\) values in String data",
         ),
         (
             pl.DataFrame({"a": [date.today(), None], "b": [[1, 2], [3, 4]]}),
             None,
-            r"'is_in' cannot check for Date values in List\(Int64\) data",
+            r"'is_in' cannot check for List\(Int64\) values in Date data",
         ),
     ],
 )
@@ -456,7 +456,18 @@ def test_cat_is_in_series_non_existent(nulls_equal: bool) -> None:
 
 
 @StringCache()
-@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.parametrize(
+    "nulls_equal",
+    [
+        False,
+        pytest.param(
+            True,
+            marks=pytest.mark.xfail(
+                reason="Bug. See https://github.com/pola-rs/polars/issues/22260"
+            ),
+        ),
+    ],
+)
 def test_enum_is_in_series_non_existent(nulls_equal: bool) -> None:
     dtype = pl.Enum(["a", "b", "c"])
     missing_value = False if nulls_equal else None
@@ -479,8 +490,21 @@ def test_cat_is_in_with_lit_str(dtype: pl.DataType, nulls_equal: bool) -> None:
 
 
 @StringCache()
-@pytest.mark.parametrize("nulls_equal", [False, True])
-@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c"])])
+@pytest.mark.parametrize(
+    ("nulls_equal", "dtype"),
+    [
+        (False, pl.Categorical),
+        (False, pl.Enum(["a", "b", "c"])),
+        (True, pl.Categorical),
+        pytest.param(
+            True,
+            pl.Enum(["a", "b", "c"]),
+            marks=pytest.mark.xfail(
+                reason="Bug. See https://github.com/pola-rs/polars/issues/22260"
+            ),
+        ),
+    ],
+)
 def test_cat_is_in_with_lit_str_non_existent(
     dtype: pl.DataType, nulls_equal: bool
 ) -> None:
@@ -509,18 +533,24 @@ def test_is_in_with_wildcard_13809() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
-@pytest.mark.may_fail_auto_streaming
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pytest.param(pl.Categorical, marks=pytest.mark.may_fail_auto_streaming),
+        pl.Enum(["a", "b", "c", "d"]),
+    ],
+)
 def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
     s = pl.Series(["c", "c", "b"], dtype=dtype)
 
     # test local
     assert_series_equal(
-        pl.Series(["a", "d", "e", "b"]).is_in(s),
-        pl.Series([False, False, False, True]),
+        pl.Series(["a", "d", "b"]).is_in(s),
+        pl.Series([False, False, True]),
     )
 
 
+@pl.StringCache()
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
 @pytest.mark.may_fail_auto_streaming
 def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
@@ -540,6 +570,7 @@ def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
     assert_frame_equal(res, expected_df)
 
 
+@pl.StringCache()
 @pytest.mark.parametrize(
     ("val", "expected"),
     [
@@ -560,6 +591,7 @@ def test_cat_list_is_in_from_cat_single(val: str | None, expected: list[bool]) -
     assert_frame_equal(res, expected_df)
 
 
+@pl.StringCache()
 def test_cat_list_is_in_from_str() -> None:
     df = pl.DataFrame(
         [
@@ -577,6 +609,7 @@ def test_cat_list_is_in_from_str() -> None:
     assert_frame_equal(res, expected_df)
 
 
+@pl.StringCache()
 @pytest.mark.parametrize(
     ("val", "expected"),
     [

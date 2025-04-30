@@ -4,7 +4,6 @@ use polars_core::config;
 use polars_core::utils::{
     accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
 };
-use polars_io::predicates::SkipBatchPredicate;
 use polars_io::utils::compression::maybe_decompress_bytes;
 
 use super::*;
@@ -211,98 +210,6 @@ impl CsvExec {
         };
 
         Ok(df)
-    }
-}
-
-impl ScanExec for CsvExec {
-    fn read(
-        &mut self,
-        with_columns: Option<Arc<[PlSmallStr]>>,
-        slice: Option<(usize, usize)>,
-        predicate: Option<ScanPredicate>,
-        _skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
-        row_index: Option<polars_io::RowIndex>,
-    ) -> PolarsResult<DataFrame> {
-        self.file_options.with_columns = with_columns;
-        self.file_options.pre_slice = slice.map(|(o, l)| (o as i64, l));
-        self.predicate = predicate;
-        self.file_options.row_index = row_index;
-
-        if self.file_info.reader_schema.is_none() {
-            self.schema()?;
-        }
-        self.read_impl()
-    }
-
-    fn schema(&mut self) -> PolarsResult<&SchemaRef> {
-        let mut schema = self.file_info.reader_schema.take();
-        if schema.is_none() {
-            let force_async = config::force_async();
-            let run_async = (self.sources.is_paths() && force_async) || self.sources.is_cloud_url();
-
-            let source = self.sources.at(0);
-            let owned = &mut vec![];
-
-            let memslice = source.to_memslice_async_assume_latest(run_async)?;
-
-            // @TODO!: Cache the decompression
-            let bytes = maybe_decompress_bytes(&memslice, owned)?;
-
-            schema = Some(arrow::Either::Right(Arc::new(
-                infer_file_schema(
-                    &get_reader_bytes(&mut std::io::Cursor::new(bytes))?,
-                    self.options.parse_options.as_ref(),
-                    self.options.infer_schema_length,
-                    self.options.has_header,
-                    self.options.schema_overwrite.as_deref(),
-                    self.options.skip_rows,
-                    self.options.skip_lines,
-                    self.options.skip_rows_after_header,
-                    self.options.raise_if_empty,
-                    &mut self.options.n_threads,
-                )?
-                .0,
-            )));
-        }
-
-        Ok(self
-            .file_info
-            .reader_schema
-            .insert(schema.unwrap())
-            .as_ref()
-            .unwrap_right())
-    }
-
-    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
-        let (lb, ub) = self.file_info.row_estimation;
-        if lb.is_some_and(|lb| lb == ub) {
-            return Ok(ub as IdxSize);
-        }
-
-        let force_async = config::force_async();
-        let run_async = (self.sources.is_paths() && force_async) || self.sources.is_cloud_url();
-
-        let source = self.sources.at(0);
-        let owned = &mut vec![];
-
-        // @TODO!: Cache the decompression
-        let memslice = source.to_memslice_async_assume_latest(run_async)?;
-
-        let popt = self.options.parse_options.as_ref();
-
-        let bytes = maybe_decompress_bytes(&memslice, owned)?;
-
-        let num_rows = polars_io::csv::read::count_rows_from_slice_par(
-            bytes,
-            popt.separator,
-            popt.quote_char,
-            popt.comment_prefix.as_ref(),
-            popt.eol_char,
-            self.options.has_header,
-        )?;
-
-        self.file_info.row_estimation = (Some(num_rows), num_rows);
-        Ok(num_rows as IdxSize)
     }
 }
 

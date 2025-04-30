@@ -72,6 +72,10 @@ impl AggState {
             AggState::NotAggregated(c) => AggState::NotAggregated(func(c)?),
         })
     }
+
+    fn is_scalar(&self) -> bool {
+        matches!(self, Self::AggregatedScalar(_))
+    }
 }
 
 // lazy update strategy
@@ -256,7 +260,7 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
-    pub(crate) fn det_groups_from_list(&mut self, s: &Series) {
+    fn det_groups_from_list(&mut self, s: &Series) {
         let mut offset = 0 as IdxSize;
         let list = s
             .list()
@@ -330,7 +334,13 @@ impl<'a> AggregationContext<'a> {
         aggregated: bool,
         expr: Option<&Expr>,
     ) -> PolarsResult<&mut Self> {
-        self.with_values_and_args(column, aggregated, expr, false)
+        self.with_values_and_args(
+            column,
+            aggregated,
+            expr,
+            false,
+            self.agg_state().is_scalar(),
+        )
     }
 
     pub(crate) fn with_values_and_args(
@@ -341,9 +351,10 @@ impl<'a> AggregationContext<'a> {
         // if the applied function was a `map` instead of an `apply`
         // this will keep functions applied over literals as literals: F(lit) = lit
         mapped: bool,
+        returns_scalar: bool,
     ) -> PolarsResult<&mut Self> {
         self.state = match (aggregated, column.dtype()) {
-            (true, &DataType::List(_)) => {
+            (true, &DataType::List(_)) if !returns_scalar => {
                 if column.len() != self.groups.len() {
                     let fmt_expr = if let Some(e) = expr {
                         format!("'{e:?}' ")
@@ -392,6 +403,22 @@ impl<'a> AggregationContext<'a> {
         // make sure that previous setting is not used
         self.update_groups = UpdateGroups::No;
         self
+    }
+
+    pub(crate) fn _implode_no_agg(&mut self) {
+        match self.state.clone() {
+            AggState::NotAggregated(_) => {
+                let _ = self.aggregated();
+                let AggState::AggregatedList(s) = self.state.clone() else {
+                    unreachable!()
+                };
+                self.state = AggState::AggregatedScalar(s);
+            },
+            AggState::AggregatedList(s) => {
+                self.state = AggState::AggregatedScalar(s);
+            },
+            _ => unreachable!("should only be called in non-agg/list-agg state by aggregation.rs"),
+        }
     }
 
     /// Get the aggregated version of the series.

@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 use strum_macros::IntoStaticStr;
 
 use super::{ColumnsUdf, SpecialEq};
-use crate::dsl::FieldsMapper;
+use crate::dsl::{FieldsMapper, FunctionOptions};
 use crate::map;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -93,6 +93,19 @@ impl BitwiseFunction {
                 Self::Xor => Ok(dtype.clone()),
             }
         })
+    }
+
+    pub fn function_options(&self) -> FunctionOptions {
+        use BitwiseFunction as B;
+        match self {
+            B::CountOnes
+            | B::CountZeros
+            | B::LeadingOnes
+            | B::LeadingZeros
+            | B::TrailingOnes
+            | B::TrailingZeros => FunctionOptions::elementwise(),
+            B::And | B::Or | B::Xor => FunctionOptions::aggregation(),
+        }
     }
 }
 

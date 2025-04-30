@@ -1392,11 +1392,7 @@ def test_repeat_by_unequal_lengths_panic() -> None:
             "a": ["x", "y", "z"],
         }
     )
-    with pytest.raises(
-        ComputeError,
-        match="repeat_by argument and the Series should have equal length, "
-        "or at least one of them should have length 1",
-    ):
+    with pytest.raises(ShapeError):
         df.select(pl.col("a").repeat_by(pl.Series([2, 2])))
 
 
@@ -1959,8 +1955,8 @@ def test_fill_null() -> None:
     )
 
     assert df.select(
-        pl.all().forward_fill().name.suffix("_forward"),
-        pl.all().backward_fill().name.suffix("_backward"),
+        pl.all().fill_null(strategy="forward").name.suffix("_forward"),
+        pl.all().fill_null(strategy="backward").name.suffix("_backward"),
     ).to_dict(as_series=False) == {
         "c_forward": [
             ["Apple", "Orange"],
@@ -2008,6 +2004,7 @@ def test_fill_nan() -> None:
     assert df.fill_nan(2.0).dtypes == [pl.Float64, pl.Datetime]
 
 
+#
 def test_forward_fill() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
     fill = df.select(pl.col("a").forward_fill())["a"]

@@ -36,6 +36,7 @@ pub(crate) mod type_check;
 pub(crate) mod type_coercion;
 
 pub(crate) use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
+pub(crate) use stack_opt::ConversionOptimizer;
 
 use crate::constants::get_len_name;
 use crate::prelude::*;
@@ -276,7 +277,8 @@ impl IR {
                     SinkTypeIR::Memory => SinkType::Memory,
                     SinkTypeIR::File(f) => SinkType::File(f),
                     SinkTypeIR::Partition(f) => SinkType::Partition(PartitionSinkType {
-                        path_f_string: f.path_f_string,
+                        base_path: f.base_path,
+                        file_path_cb: f.file_path_cb,
                         file_type: f.file_type,
                         sink_options: f.sink_options,
                         variant: match f.variant {

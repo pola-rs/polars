@@ -14,7 +14,7 @@ use polars_ops::prelude::nan_propagating_aggregate;
 use rayon::prelude::*;
 
 use super::*;
-use crate::expressions::AggState::{AggregatedList, AggregatedScalar};
+use crate::expressions::AggState::AggregatedScalar;
 use crate::expressions::{
     AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
 };
@@ -164,7 +164,9 @@ impl PhysicalExpr for AggregationExpr {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.get_values().name().clone();
-        polars_ensure!(!matches!(ac.agg_state(), AggState::Literal(_)), ComputeError: "cannot aggregate a literal");
+
+        // Literals cannot be aggregated except for implode.
+        polars_ensure!((!matches!(ac.agg_state(), AggState::Literal(_)) || matches!(self.agg_type.groupby, GroupByMethod::Implode)), ComputeError: "cannot aggregate a literal");
 
         if let AggregatedScalar(_) = ac.agg_state() {
             match self.agg_type.groupby {
@@ -354,18 +356,23 @@ impl PhysicalExpr for AggregationExpr {
                     let c = match ac.agg_state() {
                         // mean agg:
                         // -> f64 -> list<f64>
-                        AggState::AggregatedScalar(c) => c
+                        AggregatedScalar(c) => c
                             .reshape_list(&[
                                 ReshapeDimension::Infer,
                                 ReshapeDimension::new_dimension(1),
                             ])
                             .unwrap(),
+                        // Auto-imploded
+                        AggState::NotAggregated(_) | AggState::AggregatedList(_) => {
+                            ac._implode_no_agg();
+                            return Ok(ac);
+                        },
                         _ => {
                             let agg = ac.aggregated();
                             agg.as_list().into_column()
                         },
                     };
-                    AggregatedList(c.with_name(keep_name))
+                    AggState::AggregatedList(c.with_name(keep_name))
                 },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();

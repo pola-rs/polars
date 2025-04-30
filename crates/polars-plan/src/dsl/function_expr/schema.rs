@@ -32,10 +32,7 @@ impl FunctionExpr {
             // Other expressions
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "business")]
-            Business(func) => match func {
-                BusinessFunction::BusinessDayCount { .. } => mapper.with_dtype(DataType::Int32),
-                BusinessFunction::AddBusinessDay { .. } => mapper.with_same_dtype(),
-            },
+            Business(func) => func.get_field(mapper),
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),
             Negate => mapper.with_same_dtype(),
@@ -170,7 +167,7 @@ impl FunctionExpr {
                 }
             },
             #[cfg(feature = "diff")]
-            Diff(_, _) => mapper.map_dtype(|dt| match dt {
+            Diff(_) => mapper.map_dtype(|dt| match dt {
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(tu, _) => DataType::Duration(*tu),
                 #[cfg(feature = "dtype-date")]
@@ -325,12 +322,11 @@ impl FunctionExpr {
             SetSortedFlag(_) => mapper.with_same_dtype(),
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin {
+                flags: _,
                 lib,
                 symbol,
                 kwargs,
             } => unsafe { plugin::plugin_field(fields, lib, symbol.as_ref(), kwargs) },
-            BackwardFill { .. } => mapper.with_same_dtype(),
-            ForwardFill { .. } => mapper.with_same_dtype(),
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => {

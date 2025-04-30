@@ -68,6 +68,7 @@ nav:
                       - user-guide/io/cloud-storage.md
                       - user-guide/io/bigquery.md
                       - user-guide/io/hugging-face.md
+                      - user-guide/io/sheets_colab.md
                 - Plugins:
                       - user-guide/plugins/index.md
                       - user-guide/plugins/expr_plugins.md
@@ -132,6 +133,7 @@ nav:
                 - polars-cloud/cli.md
                 - polars-cloud/faq.md
                 - API Reference: https://docs.cloud.pola.rs
+                - polars-cloud/release-notes.md
 not_in_nav: |
     /_build/
 validation:

@@ -846,6 +846,18 @@ def test_sliced_dict_with_nulls_14904() -> None:
     test_round_trip(df)
 
 
+@pytest.fixture
+def empty_compressed_datapage_v2_path(io_files_path: Path) -> Path:
+    return io_files_path / "empty_datapage_v2.snappy.parquet"
+
+
+def test_read_empty_compressed_datapage_v2_22170(
+    empty_compressed_datapage_v2_path: Path,
+) -> None:
+    df = pl.DataFrame({"value": [None]}, schema={"value": pl.Float32})
+    assert_frame_equal(df, pl.read_parquet(empty_compressed_datapage_v2_path))
+
+
 def test_parquet_array_dtype() -> None:
     df = pl.DataFrame({"x": []})
     df = df.cast({"x": pl.Array(pl.Int64, shape=3)})
@@ -3119,3 +3131,32 @@ def test_unspecialized_decoding_prefiltering() -> None:
         .collect(engine="streaming")
     )
     assert_frame_equal(result, df.filter(expr))
+
+
+@pytest.mark.parametrize("parallel", ["columns", "row_groups"])
+def test_filtering_on_other_parallel_modes_with_statistics(
+    parallel: ParallelStrategy,
+) -> None:
+    f = io.BytesIO()
+
+    pl.DataFrame(
+        {
+            "a": [1, 4, 9, 2, 4, 8, 3, 4, 7],
+        }
+    ).write_parquet(f, row_group_size=3)
+
+    f.seek(0)
+    assert_series_equal(
+        pl.scan_parquet(f, parallel=parallel)
+        .filter(pl.col.a == 4)
+        .collect()
+        .to_series(),
+        pl.Series("a", [4, 4, 4]),
+    )
+
+
+def test_filter_on_logical_dtype_22252() -> None:
+    f = io.BytesIO()
+    pl.Series("a", [datetime(1996, 10, 5)]).to_frame().write_parquet(f)
+    f.seek(0)
+    pl.scan_parquet(f).filter(pl.col.a.dt.weekday() == 6).collect()

@@ -237,7 +237,7 @@ def test_online_variance() -> None:
     )
 
 
-def test_err_on_implode_and_agg() -> None:
+def test_implode_and_agg() -> None:
     df = pl.DataFrame({"type": ["water", "fire", "water", "earth"]})
 
     # this would OOB
@@ -252,15 +252,11 @@ def test_err_on_implode_and_agg() -> None:
         pl.col("type").implode().list.head().alias("foo")
     ).to_dict(as_series=False) == {
         "type": ["water", "fire", "earth"],
-        "foo": [[["water", "water"]], [["fire"]], [["earth"]]],
+        "foo": [["water", "water"], ["fire"], ["earth"]],
     }
-
-    # but not during a window function as the groups cannot be mapped back
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"'implode' followed by an aggregation is not allowed",
-    ):
-        df.lazy().select(pl.col("type").implode().list.head(1).over("type")).collect()
+    assert df.select(pl.col("type").implode().list.head(1).over("type")).to_dict(
+        as_series=False
+    ) == {"type": [["water"], ["fire"], ["water"], ["earth"]]}
 
 
 def test_mapped_literal_to_literal_9217() -> None:
@@ -769,3 +765,12 @@ def test_agg_expr_returns_list_type_15574() -> None:
         .agg(pl.col("a").drop_nulls())
         .collect_schema()
     ) == {"b": pl.Int64, "a": pl.List(pl.Int64)}
+
+
+def test_empty_agg_22005() -> None:
+    out = (
+        pl.concat([pl.LazyFrame({"a": [1, 2]}), pl.LazyFrame({"a": [1, 2]})])
+        .limit(0)
+        .select(pl.col("a").sum())
+    )
+    assert_frame_equal(out.collect(), pl.DataFrame({"a": 0}))

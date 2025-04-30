@@ -23,6 +23,7 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
 use super::{BufferedStream, JOIN_SAMPLE_LIMIT, LOPSIDED_SAMPLE_FACTOR};
+use crate::async_executor;
 use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
@@ -584,21 +585,22 @@ impl BuildState {
             .map(|b| Arc::new(core::mem::take(&mut b.morsels)))
             .collect_vec();
         let (morsel_drop_q_send, morsel_drop_q_recv) =
-            crossbeam_channel::bounded(morsels_per_local_builder.len());
+            async_channel::bounded(morsels_per_local_builder.len());
         let num_partitions = self.local_builders[0].sketch_per_p.len();
         let local_builders = &self.local_builders;
         let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
 
-        POOL.scope(|s| {
+        async_executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local_builder = Arc::new(morsels_per_local_builder);
+            let mut join_handles = Vec::new();
             for p in 0..num_partitions {
                 let arc_morsels_per_local_builder = Arc::clone(&arc_morsels_per_local_builder);
                 let morsel_drop_q_send = morsel_drop_q_send.clone();
                 let morsel_drop_q_recv = morsel_drop_q_recv.clone();
                 let probe_tables = &probe_tables;
-                s.spawn(move |_| {
+                join_handles.push(s.spawn_task(TaskPriority::High, async move {
                     // Extract from outer arc and drop outer arc.
                     let morsels_per_local_builder =
                         Arc::unwrap_or_clone(arc_morsels_per_local_builder);
@@ -650,7 +652,7 @@ impl BuildState {
                             // If we're the last thread to process this set of morsels we're probably
                             // falling behind the rest, since the drop can be quite expensive we skip
                             // a drop attempt hoping someone else will pick up the slack.
-                            morsel_drop_q_send.send(l).unwrap();
+                            morsel_drop_q_send.send(l).await.unwrap();
                             skip_drop_attempt = true;
                         } else {
                             skip_drop_attempt = false;
@@ -659,7 +661,7 @@ impl BuildState {
 
                     // We're done, help others out by doing drops.
                     drop(morsel_drop_q_send); // So we don't deadlock trying to receive from ourselves.
-                    while let Ok(l_morsels) = morsel_drop_q_recv.recv() {
+                    while let Ok(l_morsels) = morsel_drop_q_recv.recv().await {
                         drop(l_morsels);
                     }
 
@@ -674,7 +676,7 @@ impl BuildState {
                         )
                         .ok()
                         .unwrap();
-                });
+                }));
             }
 
             // Drop outer arc after spawning each thread so the inner arcs
@@ -683,6 +685,12 @@ impl BuildState {
             // to end.
             drop(arc_morsels_per_local_builder);
             drop(morsel_drop_q_send);
+
+            polars_io::pl_async::get_runtime().block_on(async move {
+                for handle in join_handles {
+                    handle.await;
+                }
+            });
         });
 
         ProbeState {

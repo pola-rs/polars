@@ -49,7 +49,7 @@ def test_group_by() -> None:
     )
 
     # check if this query runs and thus column names propagate
-    df.group_by("b").agg(pl.col("c").forward_fill()).explode("c")
+    df.group_by("b").agg(pl.col("c").fill_null(strategy="forward")).explode("c")
 
     # get a specific column
     result = df.group_by("b", maintain_order=True).agg(pl.count("a"))
@@ -1238,3 +1238,16 @@ def test_partitioned_group_by_21634(partition_limit: int) -> None:
         "grp": [1],
         "literal": [True],
     }
+
+
+def test_group_by_cse_dup_key_alias_22238() -> None:
+    df = pl.LazyFrame({"a": [1, 1, 2, 2, -1], "x": [0, 1, 2, 3, 10]})
+    result = df.group_by(
+        pl.col("a").abs(),
+        pl.col("a").abs().alias("a_with_alias"),
+    ).agg(pl.col("x").sum())
+    assert_frame_equal(
+        result.collect(),
+        pl.DataFrame({"a": [1, 2], "a_with_alias": [1, 2], "x": [11, 5]}),
+        check_row_order=False,
+    )

@@ -586,6 +586,9 @@ impl<'a> ParallelIterator for GroupsTypeParIter<'a> {
 
 #[derive(Debug)]
 pub struct GroupPositions {
+    // SAFETY: sliced is a shallow clone of original
+    // It emulates a shared reference, not an exclusive reference
+    // Its data must not be mutated through direct access
     sliced: ManuallyDrop<GroupsType>,
     // Unsliced buffer
     original: Arc<GroupsType>,
@@ -656,16 +659,24 @@ impl GroupPositions {
         match self.sliced.deref_mut() {
             GroupsType::Idx(_) => self,
             GroupsType::Slice { rolling: false, .. } => self,
-            GroupsType::Slice {
-                groups, rolling, ..
-            } => {
-                let mut offset = 0 as IdxSize;
-                for g in groups.iter_mut() {
-                    g[0] = offset;
-                    offset += g[1];
+            GroupsType::Slice { groups, .. } => {
+                // SAFETY: sliced is a shallow partial clone of original.
+                // A new owning Vec is required per GH issue #21859
+                let mut cum_offset = 0 as IdxSize;
+                let groups: Vec<_> = groups
+                    .iter()
+                    .map(|[_, len]| {
+                        let new = [cum_offset, *len];
+                        cum_offset += *len;
+                        new
+                    })
+                    .collect();
+
+                GroupsType::Slice {
+                    groups,
+                    rolling: false,
                 }
-                *rolling = false;
-                self
+                .into_sliceable()
             },
         }
     }

@@ -263,29 +263,36 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
+            output_bool: _,
         } => {
-            let mut label = if matches!(
-                phys_sm[node_key].kind,
-                PhysNodeKind::EquiJoin { .. } | PhysNodeKind::SemiAntiJoin { .. }
-            ) {
-                if args.how.is_equi() {
-                    "equi-join".to_string()
-                } else if args.how == JoinType::Semi {
-                    "semi-join".to_string()
-                } else {
-                    "anti-join".to_string()
-                }
-            } else {
-                "in-memory-join".to_string()
+            let label = match phys_sm[node_key].kind {
+                PhysNodeKind::EquiJoin { .. } if args.how.is_equi() => "equi-join",
+                PhysNodeKind::EquiJoin { .. } => "in-memory-join",
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: false, ..
+                } if args.how == JoinType::Semi => "semi-join",
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: false, ..
+                } if args.how == JoinType::Anti => "anti-join",
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: true, ..
+                } if args.how == JoinType::Semi => "is-in",
+                PhysNodeKind::SemiAntiJoin {
+                    output_bool: true, ..
+                } if args.how == JoinType::Anti => "is-not-in",
+                _ => unreachable!(),
             };
+            let mut label = label.to_string();
             write!(label, r"\nleft_on:\n{}", fmt_exprs(left_on, expr_arena)).unwrap();
             write!(label, r"\nright_on:\n{}", fmt_exprs(right_on, expr_arena)).unwrap();
-            write!(
-                label,
-                r"\nhow: {}",
-                escape_graphviz(&format!("{:?}", args.how))
-            )
-            .unwrap();
+            if args.how.is_equi() {
+                write!(
+                    label,
+                    r"\nhow: {}",
+                    escape_graphviz(&format!("{:?}", args.how))
+                )
+                .unwrap();
+            }
             if args.nulls_equal {
                 write!(label, r"\njoin-nulls").unwrap();
             }

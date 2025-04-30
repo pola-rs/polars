@@ -1,17 +1,26 @@
 from __future__ import annotations
 
+import io
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.io.partition import PartitionByKey, PartitionMaxSize, PartitionParted
+from polars.io.partition import (
+    PartitionByKey,
+    PartitionMaxSize,
+    PartitionParted,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies import dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from polars.io.partition import (
+        BasePartitionContext,
+    )
 
 
 class IOType(TypedDict):
@@ -44,7 +53,7 @@ def test_max_size_partition(
 
     (io_type["sink"])(
         lf,
-        PartitionMaxSize(tmp_path / f"{{part}}.{io_type['ext']}", max_size=max_size),
+        PartitionMaxSize(tmp_path, max_size=max_size),
         engine="streaming",
         # We need to sync here because platforms do not guarantee that a close on
         # one thread is immediately visible on another thread.
@@ -65,6 +74,41 @@ def test_max_size_partition(
 
 
 @pytest.mark.parametrize("io_type", io_types)
+def test_max_size_partition_lambda(
+    tmp_path: Path,
+    io_type: IOType,
+) -> None:
+    length = 17
+    max_size = 3
+    lf = pl.Series("a", range(length), pl.Int64).to_frame().lazy()
+
+    (io_type["sink"])(
+        lf,
+        PartitionMaxSize(
+            tmp_path,
+            file_path=lambda ctx: ctx.file_path.with_name("abc-" + ctx.file_path.name),
+            max_size=max_size,
+        ),
+        engine="streaming",
+        # We need to sync here because platforms do not guarantee that a close on
+        # one thread is immediately visible on another thread.
+        #
+        # "Multithreaded processes and close()"
+        # https://man7.org/linux/man-pages/man2/close.2.html
+        sync_on_close="data",
+    )
+
+    i = 0
+    while length > 0:
+        assert (io_type["scan"])(tmp_path / f"abc-{i}.{io_type['ext']}").select(
+            pl.len()
+        ).collect()[0, 0] == min(max_size, length)
+
+        length -= max_size
+        i += 1
+
+
+@pytest.mark.parametrize("io_type", io_types)
 @pytest.mark.write_disk
 def test_partition_by_key(
     tmp_path: Path,
@@ -74,7 +118,9 @@ def test_partition_by_key(
 
     (io_type["sink"])(
         lf,
-        PartitionByKey(tmp_path / f"{{part}}.{io_type['ext']}", by="a"),
+        PartitionByKey(
+            tmp_path, file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}", by="a"
+        ),
         engine="streaming",
         # We need to sync here because platforms do not guarantee that a close on
         # one thread is immediately visible on another thread.
@@ -109,7 +155,9 @@ def test_partition_by_key(
     (io_type["sink"])(
         lf,
         PartitionByKey(
-            tmp_path / f"{{part}}.{io_type['ext']}", by=pl.col.a.cast(pl.String())
+            tmp_path,
+            file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}",
+            by=pl.col.a.cast(pl.String()),
         ),
         engine="streaming",
         sync_on_close="data",
@@ -152,7 +200,9 @@ def test_partition_parted(
 
     (io_type["sink"])(
         lf,
-        PartitionParted(tmp_path / f"{{part}}.{io_type['ext']}", by="a"),
+        PartitionParted(
+            tmp_path, file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}", by="a"
+        ),
         engine="streaming",
         # We need to sync here because platforms do not guarantee that a close on
         # one thread is immediately visible on another thread.
@@ -180,7 +230,8 @@ def test_partition_parted(
     (io_type["sink"])(
         lf,
         PartitionParted(
-            tmp_path / f"{{part}}.{io_type['ext']}",
+            tmp_path,
+            file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}",
             by=[pl.col.a, pl.col.a.cast(pl.String()).alias("a_str")],
         ),
         engine="streaming",
@@ -204,7 +255,8 @@ def test_partition_parted(
     (io_type["sink"])(
         lf,
         PartitionParted(
-            tmp_path / f"{{part}}.{io_type['ext']}",
+            tmp_path,
+            file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}",
             by=[pl.col.a.cast(pl.String()).alias("a_str")],
             include_key=False,
         ),
@@ -227,7 +279,13 @@ def test_partition_parted(
         min_cols=1,
         excluded_dtypes=[
             pl.Decimal,  # Bug see: https://github.com/pola-rs/polars/issues/21684
+            pl.Duration,  # Bug see: https://github.com/pola-rs/polars/issues/21964
             pl.Categorical,  # We cannot ensure the string cache is properly held.
+            # Generate invalid UTF-8
+            pl.Binary,
+            pl.Struct,
+            pl.Array,
+            pl.List,
         ],
     )
 )
@@ -243,7 +301,9 @@ def test_partition_by_key_parametric(
     dfs = df.partition_by(col1)
     (io_type["sink"])(
         df.lazy(),
-        PartitionByKey(tmp_path / f"{{part}}.{io_type['ext']}", by=col1),
+        PartitionByKey(
+            tmp_path, file_path=lambda ctx: f"{ctx.file_idx}.{io_type['ext']}", by=col1
+        ),
         engine="streaming",
         # We need to sync here because platforms do not guarantee that a close on
         # one thread is immediately visible on another thread.
@@ -260,3 +320,56 @@ def test_partition_by_key_parametric(
                 tmp_path / f"{i}.{io_type['ext']}",
             ).collect(),
         )
+
+
+def test_max_size_partition_collect_files(tmp_path: Path) -> None:
+    length = 17
+    max_size = 3
+    lf = pl.Series("a", range(length), pl.Int64).to_frame().lazy()
+
+    io_type = io_types[0]
+    output_files = []
+
+    def file_path_cb(ctx: BasePartitionContext) -> Path:
+        print(ctx)
+        print(ctx.full_path)
+        output_files.append(ctx.full_path)
+        print(ctx.file_path)
+        return ctx.file_path
+
+    (io_type["sink"])(
+        lf,
+        PartitionMaxSize(tmp_path, file_path=file_path_cb, max_size=max_size),
+        engine="streaming",
+        # We need to sync here because platforms do not guarantee that a close on
+        # one thread is immediately visible on another thread.
+        #
+        # "Multithreaded processes and close()"
+        # https://man7.org/linux/man-pages/man2/close.2.html
+        sync_on_close="data",
+    )
+
+    assert output_files == [tmp_path / f"{i}.{io_type['ext']}" for i in range(6)]
+
+
+@pytest.mark.parametrize(("io_type"), io_types)
+def test_partition_to_memory(tmp_path: Path, io_type: IOType) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [5, 10, 1996],
+        }
+    )
+
+    output_files = {}
+
+    def file_path_cb(ctx: BasePartitionContext) -> io.BytesIO:
+        f = io.BytesIO()
+        output_files[ctx.file_path] = f
+        return f
+
+    io_type["sink"](df.lazy(), PartitionMaxSize("", file_path=file_path_cb, max_size=1))
+
+    assert len(output_files) == df.height
+    for i, (_, value) in enumerate(output_files.items()):
+        value.seek(0)
+        assert_frame_equal(io_type["scan"](value).collect(), df.slice(i, 1))

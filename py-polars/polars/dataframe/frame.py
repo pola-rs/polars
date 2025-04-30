@@ -7158,7 +7158,7 @@ class DataFrame:
         ... ).set_sorted("time")
         >>> df.upsample(
         ...     time_column="time", every="1mo", group_by="groups", maintain_order=True
-        ... ).select(pl.all().forward_fill())
+        ... ).select(pl.all().fill_null(strategy="forward"))
         shape: (7, 3)
         ┌─────────────────────┬────────┬────────┐
         │ time                ┆ groups ┆ values │
@@ -7239,11 +7239,11 @@ class DataFrame:
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
         by
-            join on these columns before doing asof join
+            Join on these columns before doing asof join
         by_left
-            join on these columns before doing asof join
+            Join on these columns before doing asof join
         by_right
-            join on these columns before doing asof join
+            Join on these columns before doing asof join
         strategy : {'backward', 'forward', 'nearest'}
             Join strategy.
         suffix
@@ -11414,6 +11414,8 @@ class DataFrame:
     def interpolate(self) -> DataFrame:
         """
         Interpolate intermediate values. The interpolation method is linear.
+
+        Nulls at the beginning and end of the series remain null.
 
         Examples
         --------

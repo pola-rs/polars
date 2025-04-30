@@ -24,7 +24,7 @@ impl GroupedReduction for LenReduce {
 
     fn update_group(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
@@ -34,7 +34,7 @@ impl GroupedReduction for LenReduce {
 
     unsafe fn update_groups(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idxs: &[IdxSize],
         _seq_id: u64,
     ) -> PolarsResult<()> {

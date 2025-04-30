@@ -588,9 +588,9 @@ def test_list_function_group_awareness() -> None:
         "group": [0, 1, 2],
         "get_scalar": [100, 105, 100],
         "take_no_implode": [[100], [105], [100]],
-        "implode_get": [[100], [105], [100]],
+        "implode_get": [100, 105, 100],
         "implode_take": [[[100]], [[105]], [[100]]],
-        "implode_slice": [[[100, 103]], [[105, 106, 105]], [[100, 102]]],
+        "implode_slice": [[100, 103], [105, 106, 105], [100, 102]],
     }
 
 
@@ -1027,3 +1027,52 @@ def test_list_diff_schema(
     expected = {"a": pl.List(expected_inner_dtype)}
     assert lf.collect_schema() == expected
     assert lf.collect().schema == expected
+
+
+def test_gather_every_nzero_22027() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [
+                    ["a"],
+                    ["eb", "d"],
+                ],
+                pl.List(pl.String),
+            ),
+        ]
+    )
+    with pytest.raises(pl.exceptions.ComputeError):
+        df.select(pl.col.a.list.gather_every(pl.Series([0, 0])))
+
+
+def test_list_sample_n_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series("a", [[1, 2], [1, 2]]).list.sample(pl.Series([1, 2, 1]))
+
+
+def test_list_sample_fraction_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series("a", [[1, 2], [1, 2]]).list.sample(
+            fraction=pl.Series([0.5, 0.2, 0.4])
+        )
+
+
+def test_list_sample_n_self_broadcast() -> None:
+    assert pl.Series("a", [[1, 2]]).list.sample(pl.Series([1, 2, 1])).len() == 3
+
+
+def test_list_sample_fraction_self_broadcast() -> None:
+    assert (
+        pl.Series("a", [[1, 2]]).list.sample(fraction=pl.Series([0.5, 0.2, 0.4])).len()
+        == 3
+    )
+
+
+def test_list_shift_unequal_lengths_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.Series("a", [[1, 2], [1, 2]]).list.shift(pl.Series([1, 2, 3]))
+
+
+def test_list_shift_self_broadcast() -> None:
+    assert pl.Series("a", [[1, 2]]).list.shift(pl.Series([1, 2, 1])).len() == 3

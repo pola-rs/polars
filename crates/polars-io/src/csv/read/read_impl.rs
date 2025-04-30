@@ -92,6 +92,8 @@ pub fn cast_columns(
                 df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
             }
         }
+
+        df.clear_schema();
     }
     Ok(())
 }
@@ -147,7 +149,7 @@ impl<'a> CoreReader<'a> {
         ignore_errors: bool,
         schema: Option<SchemaRef>,
         columns: Option<Arc<[PlSmallStr]>>,
-        mut n_threads: Option<usize>,
+        n_threads: Option<usize>,
         schema_overwrite: Option<SchemaRef>,
         dtype_overwrite: Option<Arc<Vec<DataType>>>,
         chunk_size: usize,
@@ -200,7 +202,6 @@ impl<'a> CoreReader<'a> {
                     skip_lines,
                     skip_rows_after_header,
                     raise_if_empty,
-                    &mut n_threads,
                 )?;
                 Arc::new(inferred_schema)
             },

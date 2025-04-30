@@ -1,7 +1,7 @@
 use std::fmt;
 
 use arrow::array::Array;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, ParquetScalarRange};
@@ -65,13 +65,14 @@ impl ColumnPredicateExpr {
 
 #[cfg(feature = "parquet")]
 impl ParquetColumnExpr for ColumnPredicateExpr {
-    fn evaluate_mut(&self, values: &dyn Array, bm: &mut MutableBitmap) {
+    fn evaluate_mut(&self, values: &dyn Array, bm: &mut BitmapBuilder) {
         // We should never evaluate nulls with this.
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
 
-        // @NOTE: This is okay because we don't have Enums, Categoricals, or Decimals
+        // @TODO: Probably these unwraps should be removed.
         let series =
-            Series::from_arrow_chunks(self.column_name.clone(), vec![values.to_boxed()]).unwrap();
+            Series::from_chunk_and_dtype(self.column_name.clone(), values.to_boxed(), &self.dtype)
+                .unwrap();
         let column = series.into_column();
         let df = unsafe { DataFrame::new_no_checks(values.len(), vec![column]) };
 
@@ -82,8 +83,8 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
         bm.reserve(true_mask.len());
         for chunk in true_mask.downcast_iter() {
             match chunk.validity() {
-                None => bm.extend(chunk.values()),
-                Some(v) => bm.extend(chunk.values() & v),
+                None => bm.extend_from_bitmap(chunk.values()),
+                Some(v) => bm.extend_from_bitmap(&(chunk.values() & v)),
             }
         }
     }
@@ -471,6 +472,10 @@ pub struct ScanIOPredicate {
 }
 impl ScanIOPredicate {
     pub fn set_external_constant_columns(&mut self, constant_columns: Vec<(PlSmallStr, Scalar)>) {
+        if constant_columns.is_empty() {
+            return;
+        }
+
         let mut live_columns = self.live_columns.as_ref().clone();
         for (c, _) in constant_columns.iter() {
             live_columns.swap_remove(c);

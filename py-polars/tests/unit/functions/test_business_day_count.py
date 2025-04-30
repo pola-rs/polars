@@ -162,3 +162,13 @@ def test_against_np_busday_count(
         # Bug in old versions of numpy
         reject()
     assert result == expected
+
+
+def test_unequal_length_22018() -> None:
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.select(
+            pl.business_day_count(
+                pl.Series([date(2020, 1, 1)] * 2),
+                pl.Series([date(2020, 1, 1)] * 3),
+            )
+        )

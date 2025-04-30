@@ -46,6 +46,12 @@ impl Display for TrigonometricFunction {
     }
 }
 
+impl From<TrigonometricFunction> for FunctionExpr {
+    fn from(value: TrigonometricFunction) -> Self {
+        Self::Trigonometry(value)
+    }
+}
+
 pub(super) fn apply_trigonometric_function(
     s: &Column,
     trig_function: TrigonometricFunction,

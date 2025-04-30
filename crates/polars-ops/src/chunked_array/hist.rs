@@ -11,12 +11,11 @@ fn get_breaks<T>(
     ca: &ChunkedArray<T>,
     bin_count: Option<usize>,
     bins: Option<&[f64]>,
-) -> PolarsResult<(Vec<f64>, bool, bool)>
+) -> PolarsResult<(Vec<f64>, bool)>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
-    let mut pad_lower = false;
     let (bins, uniform) = match (bin_count, bins) {
         (Some(_), Some(_)) => {
             return Err(PolarsError::ComputeError(
@@ -27,30 +26,17 @@ where
             // User-supplied bins. Note these are actually bin edges. Check for monotonicity.
             // If we only have one edge, we have no bins.
             let bin_len = bins.len();
-            // We also check for uniformity of bins. We declare uniformity if the difference
-            // between the largest and smallest bin is < 0.00001 the average bin size.
             if bin_len > 1 {
-                let mut smallest = bins[1] - bins[0];
-                let mut largest = smallest;
-                let mut avg_bin_size = smallest;
-                for i in 1..bins.len() {
-                    let d = bins[i] - bins[i - 1];
-                    if d <= 0.0 {
+                for i in 1..bin_len {
+                    if (bins[i] - bins[i - 1]) <= 0.0 {
                         return Err(PolarsError::ComputeError(
                             "bins must increase monotonically".into(),
                         ));
                     }
-                    if d > largest {
-                        largest = d;
-                    } else if d < smallest {
-                        smallest = d;
-                    }
-                    avg_bin_size += d;
                 }
-                let uniform = (largest - smallest) / (avg_bin_size / bin_len as f64) < 0.00001;
-                (bins.to_vec(), uniform)
+                (bins.to_vec(), false)
             } else {
-                (Vec::<f64>::new(), false) // uniformity doesn't matter here
+                (Vec::<f64>::new(), false)
             }
         },
         (bin_count, None) => {
@@ -75,7 +61,6 @@ where
                 if min_value == max_value {
                     (min_value - 0.5, 1.0 / bin_count as f64, max_value + 0.5)
                 } else {
-                    pad_lower = true;
                     (
                         min_value,
                         (max_value - min_value) / bin_count as f64,
@@ -92,12 +77,12 @@ where
             (out, true)
         },
     };
-    Ok((bins, uniform, pad_lower))
+    Ok((bins, uniform))
 }
 
 // O(n) implementation when buckets are fixed-size.
 // We deposit items directly into their buckets.
-fn uniform_hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>, include_lower: bool) -> Vec<IdxSize>
+fn uniform_hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
@@ -107,22 +92,24 @@ where
     let min_break: f64 = breaks[0];
     let max_break: f64 = breaks[num_bins];
     let scale = num_bins as f64 / (max_break - min_break);
+    let max_idx = num_bins - 1;
 
     for chunk in ca.downcast_iter() {
         for item in chunk.non_null_values_iter() {
             let item = item.to_f64().unwrap();
             if item > min_break && item <= max_break {
-                let idx = scale * (item - min_break);
-                let idx_floor = idx.floor();
-                let idx = if idx == idx_floor {
-                    idx - 1.0
-                } else {
-                    idx_floor
-                };
-                /* idx > (num_bins - 1) may happen due to floating point representation imprecision */
-                let idx = cmp::min(idx as usize, num_bins - 1);
+                // idx > (num_bins - 1) may happen due to floating point representation imprecision
+                let mut idx = cmp::min((scale * (item - min_break)) as usize, max_idx);
+
+                // Adjust for float imprecision providing idx > 1 ULP of the breaks
+                if item <= breaks[idx] {
+                    idx -= 1;
+                } else if item > breaks[idx + 1] {
+                    idx += 1;
+                }
+
                 count[idx] += 1;
-            } else if include_lower && item == min_break {
+            } else if item == min_break {
                 count[0] += 1;
             }
         }
@@ -131,12 +118,11 @@ where
 }
 
 // Variable-width bucketing. We sort the items and then move linearly through buckets.
-fn hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>, include_lower: bool) -> Vec<IdxSize>
+fn hist_count<T>(breaks: &[f64], ca: &ChunkedArray<T>) -> Vec<IdxSize>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
-    let exclude_lower = !include_lower;
     let num_bins = breaks.len() - 1;
     let mut breaks_iter = breaks.iter().skip(1); // Skip the first lower bound
     let (min_break, max_break) = (breaks[0], breaks[breaks.len() - 1]);
@@ -151,7 +137,7 @@ where
         let item = item.to_f64().unwrap();
 
         // Cycle through items until we hit the first bucket.
-        if item.is_nan() || item < min_break || (exclude_lower && item == min_break) {
+        if item.is_nan() || item < min_break {
             continue;
         }
 
@@ -186,13 +172,13 @@ where
     T: PolarsNumericType,
     ChunkedArray<T>: ChunkAgg<T::Native>,
 {
-    let (breaks, uniform, pad_lower) = get_breaks(ca, bin_count, bins)?;
+    let (breaks, uniform) = get_breaks(ca, bin_count, bins)?;
     let num_bins = std::cmp::max(breaks.len(), 1) - 1;
     let count = if num_bins > 0 && ca.len() > ca.null_count() {
         if uniform {
-            uniform_hist_count(&breaks, ca, pad_lower)
+            uniform_hist_count(&breaks, ca)
         } else {
-            hist_count(&breaks, ca, pad_lower)
+            hist_count(&breaks, ca)
         }
     } else {
         vec![0; num_bins]
@@ -215,16 +201,14 @@ where
         let mut categories =
             StringChunkedBuilder::new(PlSmallStr::from_static("category"), breaks.len());
         if num_bins > 0 {
-            let mut lower = AnyValue::Float64(if pad_lower {
-                breaks[0] - (breaks[num_bins] - breaks[0]) * 0.001
-            } else {
-                breaks[0]
-            });
+            let mut lower = AnyValue::Float64(breaks[0]);
             let mut buf = String::new();
+            let mut open_bracket = "[";
             for br in &breaks[1..] {
                 let br = AnyValue::Float64(*br);
                 buf.clear();
-                write!(buf, "({lower}, {br}]").unwrap();
+                write!(buf, "{open_bracket}{lower}, {br}]").unwrap();
+                open_bracket = "(";
                 categories.append_value(buf.as_str());
                 lower = br;
             }

@@ -1,5 +1,4 @@
 use std::cmp::Reverse;
-use std::path::PathBuf;
 
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
@@ -7,8 +6,7 @@ use polars_error::PolarsResult;
 use polars_io::SerWriter;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::{CsvWriter, CsvWriterOptions};
-use polars_io::utils::file::AsyncWriteable;
-use polars_plan::dsl::SinkOptions;
+use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
 
 use super::{SinkInputPort, SinkNode};
@@ -16,10 +14,11 @@ use crate::async_executor::spawn;
 use crate::async_primitives::connector::Receiver;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sinks::parallelize_receive_task;
-use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
+use crate::nodes::io_sinks::phase::PhaseOutcome;
+use crate::nodes::{JoinHandle, TaskPriority};
 
 pub struct CsvSinkNode {
-    path: PathBuf,
+    target: SinkTarget,
     schema: SchemaRef,
     sink_options: SinkOptions,
     write_options: CsvWriterOptions,
@@ -27,14 +26,14 @@ pub struct CsvSinkNode {
 }
 impl CsvSinkNode {
     pub fn new(
-        path: PathBuf,
+        target: SinkTarget,
         schema: SchemaRef,
         sink_options: SinkOptions,
         write_options: CsvWriterOptions,
         cloud_options: Option<CloudOptions>,
     ) -> Self {
         Self {
-            path,
+            target,
             schema,
             sink_options,
             write_options,
@@ -120,7 +119,7 @@ impl SinkNode for CsvSinkNode {
         // IO task.
         //
         // Task that will actually do write to the target file.
-        let path = self.path.clone();
+        let target = self.target.clone();
         let sink_options = self.sink_options.clone();
         let schema = self.schema.clone();
         let options = self.write_options.clone();
@@ -128,14 +127,9 @@ impl SinkNode for CsvSinkNode {
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             use tokio::io::AsyncWriteExt;
 
-            if sink_options.mkdir {
-                polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
-            }
-
-            let mut file = polars_io::utils::file::Writeable::try_new(
-                path.to_str().unwrap(),
-                cloud_options.as_ref(),
-            )?;
+            let mut file = target
+                .open_into_writeable_async(&sink_options, cloud_options.as_ref())
+                .await?;
 
             // Write the header
             if options.include_header || options.include_bom {
@@ -165,14 +159,7 @@ impl SinkNode for CsvSinkNode {
                 }
             }
 
-            if let AsyncWriteable::Local(file) = &mut file {
-                polars_io::utils::sync_on_close::tokio_sync_on_close(
-                    sink_options.sync_on_close,
-                    file,
-                )
-                .await?;
-            }
-
+            file.sync_on_close(sink_options.sync_on_close).await?;
             file.close().await?;
 
             PolarsResult::Ok(())

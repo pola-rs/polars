@@ -289,7 +289,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
 
     fn update_group(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
@@ -305,7 +305,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
 
     unsafe fn update_groups(
         &mut self,
-        values: &Series,
+        values: &Column,
         group_idxs: &[IdxSize],
         seq_id: u64,
     ) -> PolarsResult<()> {

@@ -1,17 +1,15 @@
 use std::hash::BuildHasher;
 
 use hashbrown::hash_map::RawEntryMut;
+use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_utils::aliases::PlFixedStateQuality;
 use polars_utils::format_pl_smallstr;
+use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::vec::CapacityByFactor;
 
 use super::*;
 use crate::constants::CSE_REPLACED;
 use crate::prelude::visitor::AexprNode;
-
-const SERIES_LIMIT: usize = 1000;
-
-use polars_utils::hashing::_boost_hash_combine;
 
 #[derive(Debug, Clone)]
 struct ProjectionExprs {
@@ -148,6 +146,69 @@ impl<V> IdentifierMap<V> {
 
     fn iter(&self) -> impl Iterator<Item = (&Identifier, &V)> {
         self.inner.iter()
+    }
+}
+
+/// Merges identical expressions into identical IDs.
+///
+/// Does no analysis whether this leads to legal substitutions.
+#[derive(Default)]
+pub struct NaiveExprMerger {
+    node_to_uniq_id: PlHashMap<Node, u32>,
+    uniq_id_to_node: Vec<Node>,
+    identifier_to_uniq_id: IdentifierMap<u32>,
+    arg_stack: Vec<Option<Identifier>>,
+}
+
+impl NaiveExprMerger {
+    pub fn add_expr(&mut self, node: Node, arena: &Arena<AExpr>) {
+        let node = AexprNode::new(node);
+        node.visit(self, arena).unwrap();
+    }
+
+    pub fn get_uniq_id(&self, node: Node) -> Option<u32> {
+        self.node_to_uniq_id.get(&node).copied()
+    }
+
+    pub fn get_node(&self, uniq_id: u32) -> Option<Node> {
+        self.uniq_id_to_node.get(uniq_id as usize).copied()
+    }
+}
+
+impl Visitor for NaiveExprMerger {
+    type Node = AexprNode;
+    type Arena = Arena<AExpr>;
+
+    fn pre_visit(
+        &mut self,
+        _node: &Self::Node,
+        _arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        self.arg_stack.push(None);
+        Ok(VisitRecursion::Continue)
+    }
+
+    fn post_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        let mut identifier = Identifier::new();
+        while let Some(Some(arg)) = self.arg_stack.pop() {
+            identifier.combine(&arg);
+        }
+        identifier = identifier.add_ae_node(node, arena);
+        let uniq_id = *self.identifier_to_uniq_id.entry(
+            identifier,
+            || {
+                let uniq_id = self.uniq_id_to_node.len() as u32;
+                self.uniq_id_to_node.push(node.node());
+                uniq_id
+            },
+            arena,
+        );
+        self.node_to_uniq_id.insert(node.node(), uniq_id);
+        Ok(VisitRecursion::Continue)
     }
 }
 
@@ -316,7 +377,7 @@ impl ExprIdentifierVisitor<'_> {
                         // Object and nested types are harder to hash and compare.
                         let allow = !(dtype.is_nested() | dtype.is_object());
 
-                        if s.len() < SERIES_LIMIT && allow {
+                        if s.len() < CHEAP_SERIES_HASH_LIMIT && allow {
                             REFUSE_ALLOW_MEMBER
                         } else {
                             REFUSE_NO_MEMBER

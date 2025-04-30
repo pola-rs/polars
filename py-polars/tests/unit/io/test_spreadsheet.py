@@ -1329,11 +1329,20 @@ def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None
             "b": [1.0, None, 3.5],
             "c": ["x", None, "z"],
             "d": [True, False, None],
-            "e": [date(2023, 1, 1), None, date(2023, 1, 4)],
+            "e": [
+                date(2023, 1, 1),
+                None,
+                date(2023, 1, 4),
+            ],
             "f": [
                 datetime(2023, 1, 1),
                 datetime(2000, 10, 10, 10, 10),
                 None,
+            ],
+            "g": [
+                None,
+                "1920-08-08 00:00:00",
+                "2077-10-20 00:00:00.000000",
             ],
         }
     )
@@ -1342,9 +1351,12 @@ def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None
 
     reversed_cols = list(reversed(df.columns))
     read_cols: Sequence[str] | Sequence[int]
+    expected = df.select(reversed_cols).with_columns(
+        pl.col("g").str.slice(0, 10).str.to_date()
+    )
     for read_cols in (
         reversed_cols,
-        [5, 4, 3, 2, 1, 0],
+        [6, 5, 4, 3, 2, 1, 0],
     ):
         read_df = pl.read_excel(
             xls,
@@ -1353,9 +1365,10 @@ def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None
             schema_overrides={
                 "e": pl.Date,
                 "f": pl.Datetime("us"),
+                "g": pl.Date,
             },
         )
-        assert_frame_equal(df.select(reversed_cols), read_df)
+        assert_frame_equal(expected, read_df)
 
 
 @pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])

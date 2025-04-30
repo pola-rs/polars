@@ -12,7 +12,7 @@ use super::super::evaluate::{constant_evaluate, into_column};
 use super::super::{AExpr, BooleanFunction, Operator, OutputName};
 use crate::dsl::FunctionExpr;
 use crate::plans::predicates::get_binary_expr_col_and_lv;
-use crate::plans::{ExprIR, LiteralValue, aexpr_to_leaf_names_iter, rename_columns};
+use crate::plans::{ExprIR, LiteralValue, aexpr_to_leaf_names_iter, is_scalar_ae, rename_columns};
 use crate::prelude::FunctionOptions;
 
 /// Return a new boolean expression determines whether a batch can be skipped based on min, max and
@@ -374,7 +374,12 @@ fn aexpr_to_skip_batch_predicate_rec(
             } => match function {
                 FunctionExpr::Boolean(f) => match f {
                     #[cfg(feature = "is_in")]
-                    BooleanFunction::IsIn { .. } => {
+                    BooleanFunction::IsIn { nulls_equal } => {
+                        if !is_scalar_ae(input[1].node(), expr_arena) {
+                            return None;
+                        }
+
+                        let nulls_equal = *nulls_equal;
                         let lv_node = input[1].node();
                         match (
                             into_column(input[0].node(), expr_arena, schema, 0),
@@ -394,14 +399,15 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 //      )
                                 let col = col.clone();
 
+                                let lv_node_exploded = expr_arena.add(AExpr::Explode(lv_node));
                                 let lv_min =
                                     expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Min {
-                                        input: lv_node,
+                                        input: lv_node_exploded,
                                         propagate_nans: true,
                                     }));
                                 let lv_max =
                                     expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Max {
-                                        input: lv_node,
+                                        input: lv_node_exploded,
                                         propagate_nans: true,
                                     }));
 
@@ -423,10 +429,42 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 let idx_zero = lv!(idx: 0);
                                 let col_has_no_nulls = eq!(col_nc, idx_zero);
 
-                                let lv_has_not_nulls = has_no_nulls!(lv_node);
+                                let lv_has_not_nulls = has_no_nulls!(lv_node_exploded);
                                 let null_case = or!(lv_has_not_nulls, col_has_no_nulls);
 
-                                Some(and!(null_case, expr))
+                                let min_max_is_in = and!(null_case, expr);
+
+                                let col_nc = col!(null_count: col);
+
+                                let min_is_max = binexpr!(Eq, col_min, col_max); // Eq so that (None == None) == None
+                                let idx_zero = lv!(idx: 0);
+                                let has_no_nulls = eq!(col_nc, idx_zero);
+
+                                // The above case does always cover the fallback path. Since there
+                                // is code that relies on the `min==max` always filtering normally,
+                                // we add it here.
+                                let exact_not_in = expr_arena.add(AExpr::Function {
+                                    input: vec![
+                                        ExprIR::new(col_min, OutputName::Alias(PlSmallStr::EMPTY)),
+                                        ExprIR::new(lv_node, OutputName::Alias(PlSmallStr::EMPTY)),
+                                    ],
+                                    function: FunctionExpr::Boolean(BooleanFunction::IsIn {
+                                        nulls_equal,
+                                    }),
+                                    options: BooleanFunction::IsIn { nulls_equal }
+                                        .function_options(),
+                                });
+                                let exact_not_in = expr_arena.add(AExpr::Function {
+                                    input: vec![ExprIR::new(
+                                        exact_not_in,
+                                        OutputName::Alias(PlSmallStr::EMPTY),
+                                    )],
+                                    function: FunctionExpr::Boolean(BooleanFunction::Not),
+                                    options: BooleanFunction::Not.function_options(),
+                                });
+                                let exact_not_in = and!(min_is_max, has_no_nulls, exact_not_in);
+
+                                Some(or!(exact_not_in, min_max_is_in))
                             },
                             _ => None,
                         }

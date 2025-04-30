@@ -680,7 +680,9 @@ pub mod iterator;
 mod binview;
 mod values;
 
-pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
+pub use binary::{
+    BinaryArray, BinaryArrayBuilder, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray,
+};
 pub use binview::{
     BinaryViewArray, BinaryViewArrayGeneric, BinaryViewArrayGenericBuilder, MutableBinaryViewArray,
     MutablePlBinary, MutablePlString, Utf8ViewArray, View, ViewType,

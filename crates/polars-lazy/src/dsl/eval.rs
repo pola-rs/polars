@@ -62,7 +62,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                 Context::Default,
                 &arena,
                 &schema,
-                &mut ExpressionConversionState::new(true, 0),
+                &mut ExpressionConversionState::new(true),
             )?;
 
             let state = ExecutionState::new();

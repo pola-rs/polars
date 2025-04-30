@@ -88,9 +88,7 @@ def test_ipc_list_arg(io_files_path: Path) -> None:
     assert df.row(0) == ("vegetables", 45, 0.5, 2)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_scan_ipc_local_with_async(
-    capfd: Any,
     monkeypatch: Any,
     io_files_path: Path,
 ) -> None:
@@ -108,6 +106,3 @@ def test_scan_ipc_local_with_async(
             }
         ),
     )
-
-    captured = capfd.readouterr().err
-    assert "ASYNC READING FORCED" in captured

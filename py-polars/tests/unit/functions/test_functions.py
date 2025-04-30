@@ -216,6 +216,53 @@ def test_concat_vertical() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_cov() -> None:
+    s1 = pl.Series("a", [10, 37, -40])
+    s2 = pl.Series("b", [70, -10, 35])
+
+    # lazy/expression
+    lf = pl.LazyFrame([s1, s2])
+    res1 = lf.select(
+        x=pl.cov("a", "b"),
+        y=pl.cov("a", "b", ddof=2),
+    ).collect()
+
+    # eager/series
+    res2 = (
+        pl.cov(s1, s2, eager=True).alias("x"),
+        pl.cov(s1, s2, eager=True, ddof=2).alias("y"),
+    )
+
+    # expect same result from both approaches
+    for idx, (r1, r2) in enumerate(zip(res1, res2)):
+        expected_value = -645.8333333333 if idx == 0 else -1291.6666666666
+        assert pytest.approx(expected_value) == r1.item()
+        assert_series_equal(r1, r2)
+
+
+def test_corr() -> None:
+    s1 = pl.Series("a", [10, 37, -40])
+    s2 = pl.Series("b", [70, -10, 35])
+
+    # lazy/expression
+    lf = pl.LazyFrame([s1, s2])
+    res1 = lf.select(
+        x=pl.corr("a", "b"),
+        y=pl.corr("a", "b", method="spearman"),
+    ).collect()
+
+    # eager/series
+    res2 = (
+        pl.corr(s1, s2, eager=True).alias("x"),
+        pl.corr(s1, s2, method="spearman", eager=True).alias("y"),
+    )
+
+    # expect same result from both approaches
+    for idx, (r1, r2) in enumerate(zip(res1, res2)):
+        assert pytest.approx(-0.412199756 if idx == 0 else -0.5) == r1.item()
+        assert_series_equal(r1, r2)
+
+
 def test_extend_ints() -> None:
     a = pl.DataFrame({"a": [1 for _ in range(1)]}, schema={"a": pl.Int64})
     with pytest.raises(pl.exceptions.SchemaError):
@@ -431,41 +478,52 @@ def test_coalesce() -> None:
             "c": [5, None, 3, None],
         }
     )
-
-    # List inputs
+    # list inputs
     expected = pl.Series("d", [1, 2, 3, 10]).to_frame()
     result = df.select(pl.coalesce(["a", "b", "c", 10]).alias("d"))
     assert_frame_equal(expected, result)
 
-    # Positional inputs
+    # positional inputs
     expected = pl.Series("d", [1.0, 2.0, 3.0, 10.0]).to_frame()
     result = df.select(pl.coalesce(pl.col(["a", "b", "c"]), 10.0).alias("d"))
     assert_frame_equal(result, expected)
 
 
+def test_coalesce_eager() -> None:
+    # eager/series inputs
+    s1 = pl.Series("colx", [None, 2, None])
+    s2 = pl.Series("coly", [1, None, None])
+    s3 = pl.Series("colz", [None, None, 3])
+
+    res = pl.coalesce(s1, s2, s3, eager=True)
+    expected = pl.Series("colx", [1, 2, 3])
+    assert_series_equal(expected, res)
+
+    for zero in (0, pl.lit(0)):
+        res = pl.coalesce(s1, zero, eager=True)
+        expected = pl.Series("colx", [0, 2, 0])
+        assert_series_equal(expected, res)
+
+        res = pl.coalesce(zero, s1, eager=True)
+        expected = pl.Series("literal", [0, 0, 0])
+        assert_series_equal(expected, res)
+
+    with pytest.raises(
+        ValueError,
+        match="expected at least one Series in 'coalesce' if 'eager=True'",
+    ):
+        pl.coalesce("x", "y", eager=True)
+
+
 def test_overflow_diff() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [20, 10, 30],
-        }
-    )
+    df = pl.DataFrame({"a": [20, 10, 30]})
     assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(as_series=False) == {
         "a": [None, -10, 20]
     }
 
 
 def test_fill_null_unknown_output_type() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [
-                None,
-                2,
-                3,
-                4,
-                5,
-            ]
-        }
-    )
+    df = pl.DataFrame({"a": [None, 2, 3, 4, 5]})
     assert df.with_columns(
         np.exp(pl.col("a")).fill_null(pl.lit(1, pl.Float64))
     ).to_dict(as_series=False) == {

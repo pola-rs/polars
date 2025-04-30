@@ -54,16 +54,23 @@ pub fn into_reduction(
             IRAggExpr::AggGroups(_) => todo!(),
         },
         AExpr::Len => {
-            // Compute length on the first column, or if none exist we'll use
-            // a zero-length dummy series.
-            let out: Box<dyn GroupedReduction> = Box::new(LenReduce::default());
-            let expr = if let Some(first_column) = schema.iter_names().next() {
-                expr_arena.add(AExpr::Column(first_column.as_str().into()))
+            if let Some(first_column) = schema.iter_names().next() {
+                let out: Box<dyn GroupedReduction> = Box::new(LenReduce::default());
+                let expr = expr_arena.add(AExpr::Column(first_column.as_str().into()));
+
+                (out, expr)
             } else {
-                let dummy = Series::new_null(PlSmallStr::from_static("dummy"), 0);
-                expr_arena.add(AExpr::Literal(LiteralValue::Series(SpecialEq::new(dummy))))
-            };
-            (out, expr)
+                // Support len aggregation on 0-width morsels.
+                // Notes:
+                // * We do this instead of projecting a scalar, because scalar literals don't
+                //   project to the height of the DataFrame (in the PhysicalExpr impl).
+                // * This approach is not sound for `update_groups()`, but currently that case is
+                //   not hit (it would need group-by -> len on empty morsels).
+                let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::new_idxsize());
+                let expr = expr_arena.add(AExpr::Len);
+
+                (out, expr)
+            }
         },
         _ => unreachable!(),
     };

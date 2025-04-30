@@ -25,12 +25,12 @@ pub mod horizontal_flatten;
 pub mod hyperloglogplus;
 pub mod if_then_else;
 pub mod min_max;
+pub mod moment;
 pub mod propagate_dictionary;
 pub mod rolling;
 pub mod size;
 pub mod sum;
 pub mod unique;
-pub mod var_cov;
 
 // Trait to enable the scalar blanket implementation.
 pub trait NotSimdPrimitive: NativeType {}

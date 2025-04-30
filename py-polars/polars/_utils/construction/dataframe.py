@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-from collections import Counter
 from collections.abc import Generator, Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 from functools import singledispatch
@@ -52,7 +51,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import DataOrientationWarning, DuplicateError, ShapeError
+from polars.exceptions import DataOrientationWarning, ShapeError
 from polars.meta import thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -846,7 +845,9 @@ def _sequence_of_pydantic_models_to_pydf(
 
     old_pydantic = parse_version(pydantic.__version__) < (2, 0)
     model_fields = list(
-        first_element.__fields__ if old_pydantic else first_element.model_fields
+        first_element.__fields__
+        if old_pydantic
+        else first_element.__class__.model_fields
     )
     (
         unpack_nested,
@@ -1174,12 +1175,6 @@ def arrow_to_pydf(
 
     # supply the arrow schema so the metadata is intact
     pydf = PyDataFrame.from_arrow_record_batches(batches, data.schema)
-
-    # arrow tables allow duplicate names; we don't
-    if len(data.columns) != pydf.width():
-        col_name, _ = Counter(column_names).most_common(1)[0]
-        msg = f"column {col_name!r} appears more than once; names must be unique"
-        raise DuplicateError(msg)
 
     if rechunk:
         pydf = pydf.rechunk()
