@@ -43,7 +43,7 @@ impl NodeStyle {
         }
     }
 
-    /// Returns extra styling attributes (it any) for the graph node.
+    /// Returns extra styling attributes (if any) for the graph node.
     pub fn node_attrs(&self) -> Option<String> {
         match self {
             Self::InMemoryFallback => Some(format!(
