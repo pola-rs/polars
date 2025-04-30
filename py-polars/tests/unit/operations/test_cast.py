@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -654,6 +655,21 @@ def test_invalid_inner_type_cast_list() -> None:
         match=r"cannot cast List inner type: 'Int64' to Categorical",
     ):
         s.cast(pl.List(pl.Categorical))
+
+
+def test_list_uint8_to_bytes() -> None:
+    s = pl.Series(
+        [None, [111, 110, 101], [12, None], [116, 119, 111], list(range(256))],
+        dtype=pl.List(pl.UInt8()),
+    )
+    assert s.cast(pl.Binary()).to_list() == [
+        None,
+        b"one",
+        # A list with a null in it gets turned into a null:
+        None,
+        b"two",
+        b"".join(chr(i) for i in range(256)),
+    ]
 
 
 def test_all_null_cast_5826() -> None:
