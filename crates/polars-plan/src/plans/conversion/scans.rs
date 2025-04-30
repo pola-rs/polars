@@ -344,25 +344,26 @@ pub fn ndjson_file_info(
 
     let owned = &mut vec![];
 
-    let (mut reader_schema, schema) = if let Some(schema) = ndjson_options.schema.clone() {
-        if row_index.is_none() {
-            (schema.clone(), schema.clone())
-        } else {
-            prepare_schemas(Arc::unwrap_or_clone(schema), row_index)
-        }
+    let mut schema = if let Some(schema) = ndjson_options.schema.clone() {
+        schema.clone()
     } else {
         let memslice = first.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
         let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
 
-        let schema =
-            polars_io::ndjson::infer_schema(&mut reader, ndjson_options.infer_schema_length)?;
-
-        prepare_schemas(schema, row_index)
+        Arc::new(polars_io::ndjson::infer_schema(
+            &mut reader,
+            ndjson_options.infer_schema_length,
+        )?)
     };
 
     if let Some(overwriting_schema) = &ndjson_options.schema_overwrite {
-        let schema = Arc::make_mut(&mut reader_schema);
-        overwrite_schema(schema, overwriting_schema)?;
+        overwrite_schema(Arc::make_mut(&mut schema), overwriting_schema)?;
+    }
+
+    let mut reader_schema = schema.clone();
+
+    if row_index.is_some() {
+        (schema, reader_schema) = prepare_schemas(Arc::unwrap_or_clone(schema), row_index)
     }
 
     Ok(FileInfo::new(
