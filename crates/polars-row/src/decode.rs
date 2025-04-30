@@ -228,7 +228,9 @@ unsafe fn decode(
                 Some(RowEncodingContext::Struct(dicts)) => fields
                     .iter()
                     .zip(dicts)
-                    .map(|(struct_fld, dict)| decode(rows, nested_opt, dict.as_ref(), struct_fld.dtype()))
+                    .map(|(struct_fld, dict)| {
+                        decode(rows, nested_opt, dict.as_ref(), struct_fld.dtype())
+                    })
                     .collect(),
                 _ => unreachable!(),
             };
@@ -243,7 +245,14 @@ unsafe fn decode(
 
             // @TODO: we could consider making this into a scratchpad
             let mut nested_rows = Vec::new();
-            rows_for_fixed_size_list(fsl_field.dtype(), nested_opt, dict, *width, rows, &mut nested_rows);
+            rows_for_fixed_size_list(
+                fsl_field.dtype(),
+                nested_opt,
+                dict,
+                *width,
+                rows,
+                &mut nested_rows,
+            );
 
             let values = decode(&mut nested_rows, nested_opt, dict, fsl_field.dtype());
 
@@ -270,8 +279,12 @@ unsafe fn decode(
             for (i, row) in rows.iter_mut().enumerate() {
                 while row[0] == list_continuation_token {
                     *row = &row[1..];
-                    let len =
-                        dtype_and_data_to_encoded_item_len(list_field.dtype(), row, nested_opt, dict);
+                    let len = dtype_and_data_to_encoded_item_len(
+                        list_field.dtype(),
+                        row,
+                        nested_opt,
+                        dict,
+                    );
                     nested_rows.push(&row[..len]);
                     *row = &row[len..];
                 }

@@ -187,7 +187,7 @@ def test_search_sorted_array_with_nulls(values: list[list[int | None] | None]) -
 )
 @example(values=[{"key": 0}, {"key": None}])
 def test_search_sorted_structs_with_nulls(
-    values: list[dict[str, int | None] | None]
+    values: list[dict[str, int | None] | None],
 ) -> None:
     """For all nulls_last options, values can be found in arbitrary structs."""
     assert_can_find_values(values, pl.Struct)
