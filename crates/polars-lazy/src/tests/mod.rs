@@ -68,7 +68,7 @@ fn scan_foods_csv() -> LazyFrame {
 #[cfg(feature = "ipc")]
 fn scan_foods_ipc() -> LazyFrame {
     init_files();
-    LazyFrame::scan_ipc(FOODS_IPC, Default::default()).unwrap()
+    LazyFrame::scan_ipc(FOODS_IPC, Default::default(), Default::default()).unwrap()
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
