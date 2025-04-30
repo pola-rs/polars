@@ -99,7 +99,10 @@ def elem_order_sign(
         return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, list) and isinstance(rhs, list):
         for lh, rh in zip(lhs, rhs):
-            o = elem_order_sign(lh, rh, descending=descending, nulls_last=nulls_last)
+            # Row encoding internally doesn't pass nulls_last=True when
+            # encoding nested values, and sorting of nested types is based on
+            # row_encoding, so we sent nulls_last to always False.
+            o = elem_order_sign(lh, rh, descending=descending, nulls_last=False)
             if o != 0:
                 return o
 
@@ -111,7 +114,10 @@ def elem_order_sign(
         assert len(lhs) == len(rhs)
 
         for lh, rh in zip(lhs.values(), rhs.values()):
-            o = elem_order_sign(lh, rh, descending=descending, nulls_last=nulls_last)
+            # Row encoding internally doesn't pass nulls_last=True when
+            # encoding nested values, and sorting of nested types is based on
+            # row_encoding, so we sent nulls_last to always False.
+            o = elem_order_sign(lh, rh, descending=descending, nulls_last=False)
             if o != 0:
                 return o
 
@@ -191,6 +197,7 @@ def test_series_sort_parametric(s: pl.Series) -> None:
         max_size=5,
     )
 )
+@example(df=pl.DataFrame([pl.Series([{"x": 0}, {"x": None}])]))
 def test_df_sort_parametric(df: pl.DataFrame) -> None:
     for i in range(4**df.width):
         descending = [((i // (4**j)) % 4) in [2, 3] for j in range(df.width)]

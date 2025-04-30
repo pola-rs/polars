@@ -216,15 +216,19 @@ unsafe fn decode(
         D::Struct(fields) => {
             let validity = decode_validity(rows, opt);
 
+            // Match encoding, which doesn't set nulls_last for nested values:
+            let mut nested_opt = opt.clone();
+            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
+
             let values = match dict {
                 None => fields
                     .iter()
-                    .map(|struct_fld| decode(rows, opt, None, struct_fld.dtype()))
+                    .map(|struct_fld| decode(rows, nested_opt, None, struct_fld.dtype()))
                     .collect(),
                 Some(RowEncodingContext::Struct(dicts)) => fields
                     .iter()
                     .zip(dicts)
-                    .map(|(struct_fld, dict)| decode(rows, opt, dict.as_ref(), struct_fld.dtype()))
+                    .map(|(struct_fld, dict)| decode(rows, nested_opt, dict.as_ref(), struct_fld.dtype()))
                     .collect(),
                 _ => unreachable!(),
             };
