@@ -12,6 +12,7 @@ from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
     from typing import Any
+
     from polars._typing import PolarsDataType
 
 
@@ -145,7 +146,7 @@ def assert_can_find_values(values: list[Any], dtype: PolarsDataType) -> None:
     series = pl.Series(values, dtype=dtype)
     for descending in [True, False]:
         for nulls_last in [True, False]:
-            sorted_series = series.sort(descending=False, nulls_last=nulls_last)
+            sorted_series = series.sort(descending=descending, nulls_last=nulls_last)
             assert_find_in_sorted_series(sorted_series, values)
 
 
