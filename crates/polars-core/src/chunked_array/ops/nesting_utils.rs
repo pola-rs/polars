@@ -71,6 +71,8 @@ impl ChunkNestingUtils for ListChunked {
     }
 
     fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
+        use polars_compute::trim_lists_to_normalized_offsets::trim_lists_to_normalized_offsets_list;
+
         let flags = self.get_flags();
 
         if flags.has_trimmed_lists_to_normalized_offsets() {
@@ -79,7 +81,7 @@ impl ChunkNestingUtils for ListChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(trimmed) = chunk.trim_lists_to_normalized_offsets() {
+            if let Some(trimmed) = trim_lists_to_normalized_offsets_list(chunk) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
                 chunks.push(trimmed.into_boxed());
@@ -90,7 +92,7 @@ impl ChunkNestingUtils for ListChunked {
         // If we found a chunk that needs compacting, create a new ArrayChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match chunk.trim_lists_to_normalized_offsets() {
+                match trim_lists_to_normalized_offsets_list(chunk) {
                     Some(chunk) => chunk.into_boxed(),
                     None => chunk.to_boxed(),
                 }
@@ -173,6 +175,8 @@ impl ChunkNestingUtils for super::ArrayChunked {
     }
 
     fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
+        use polars_compute::trim_lists_to_normalized_offsets::trim_lists_to_normalized_offsets_fsl;
+
         let flags = self.get_flags();
 
         if flags.has_trimmed_lists_to_normalized_offsets()
@@ -183,7 +187,7 @@ impl ChunkNestingUtils for super::ArrayChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(trimmed) = chunk.trim_lists_to_normalized_offsets() {
+            if let Some(trimmed) = trim_lists_to_normalized_offsets_fsl(chunk) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
                 chunks.push(trimmed.into_boxed());
@@ -194,7 +198,7 @@ impl ChunkNestingUtils for super::ArrayChunked {
         // If we found a chunk that needs compacting, create a new ArrayChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match chunk.trim_lists_to_normalized_offsets() {
+                match trim_lists_to_normalized_offsets_fsl(chunk) {
                     Some(chunk) => chunk.into_boxed(),
                     None => chunk.to_boxed(),
                 }
@@ -277,6 +281,8 @@ impl ChunkNestingUtils for super::StructChunked {
     }
 
     fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
+        use polars_compute::trim_lists_to_normalized_offsets::trim_lists_to_normalized_offsets_struct;
+
         let flags = self.get_flags();
 
         if flags.has_trimmed_lists_to_normalized_offsets()
@@ -290,7 +296,7 @@ impl ChunkNestingUtils for super::StructChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(trimmed) = chunk.trim_lists_to_normalized_offsets() {
+            if let Some(trimmed) = trim_lists_to_normalized_offsets_struct(chunk) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
                 chunks.push(trimmed.into_boxed());
@@ -301,7 +307,7 @@ impl ChunkNestingUtils for super::StructChunked {
         // If we found a chunk that needs compacting, create a new ArrayChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match chunk.trim_lists_to_normalized_offsets() {
+                match trim_lists_to_normalized_offsets_struct(chunk) {
                     Some(chunk) => chunk.into_boxed(),
                     None => chunk.to_boxed(),
                 }

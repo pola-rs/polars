@@ -227,36 +227,6 @@ impl<O: Offset> ListArray<O> {
         Self::get_child_field(dtype).dtype()
     }
 
-    /// Trim all lists of unused start and end elements recursively.
-    pub fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
-        let offsets = self.offsets();
-        let values = self.values();
-
-        let len = offsets.range().to_usize();
-
-        let (values, offsets) = if values.len() == len {
-            let values = values.trim_lists_to_normalized_offsets()?;
-            (values, offsets.clone())
-        } else {
-            let first_idx = *offsets.first();
-            let v = offsets.iter().map(|x| *x - first_idx).collect::<Vec<_>>();
-            let offsets = unsafe { OffsetsBuffer::<O>::new_unchecked(v.into()) };
-            let values = values.sliced(first_idx.to_usize(), len);
-            let values = values.trim_lists_to_normalized_offsets().unwrap_or(values);
-            (values, offsets)
-        };
-
-        assert_eq!(offsets.first().to_usize(), 0);
-        assert_eq!(values.len(), offsets.range().to_usize());
-
-        Some(Self::new(
-            self.dtype().clone(),
-            offsets,
-            values,
-            self.validity().cloned(),
-        ))
-    }
-
     fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
         assert_eq!(self.len(), other.len());
 
@@ -319,10 +289,6 @@ impl<O: Offset> Array for ListArray<O> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
-    }
-
-    fn trim_lists_to_normalized_offsets(&self) -> Option<Box<dyn Array>> {
-        Self::trim_lists_to_normalized_offsets(self).map(|arr| Box::new(arr) as _)
     }
 
     fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {

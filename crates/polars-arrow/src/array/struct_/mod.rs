@@ -198,38 +198,6 @@ impl StructArray {
         self.length = length;
     }
 
-    pub fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
-        let mut new_values = Vec::new();
-        for (i, field_array) in self.values.iter().enumerate() {
-            let Some(field_array) = field_array.trim_lists_to_normalized_offsets() else {
-                // Nothing was changed. Return the original array.
-                continue;
-            };
-
-            new_values.reserve(self.values.len());
-            new_values.extend(self.values[..i].iter().cloned());
-            new_values.push(field_array);
-            break;
-        }
-
-        if new_values.is_empty() {
-            return None;
-        }
-
-        new_values.extend(self.values[new_values.len()..].iter().map(|field_array| {
-            field_array
-                .trim_lists_to_normalized_offsets()
-                .unwrap_or_else(|| field_array.clone())
-        }));
-
-        Some(Self {
-            dtype: self.dtype.clone(),
-            values: new_values,
-            length: self.length,
-            validity: self.validity.clone(),
-        })
-    }
-
     fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
         assert_eq!(self.len(), other.len());
         assert_eq!(self.fields().len(), other.fields().len());
@@ -272,7 +240,7 @@ impl StructArray {
 // Accessors
 impl StructArray {
     #[inline]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         if cfg!(debug_assertions) {
             for arr in self.values.iter() {
                 assert_eq!(
@@ -332,10 +300,6 @@ impl Array for StructArray {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
-    }
-
-    fn trim_lists_to_normalized_offsets(&self) -> Option<Box<dyn Array>> {
-        Self::trim_lists_to_normalized_offsets(self).map(|arr| Box::new(arr) as _)
     }
 
     fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {

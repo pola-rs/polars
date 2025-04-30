@@ -228,18 +228,6 @@ impl FixedSizeListArray {
         dims
     }
 
-    pub fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
-        let values = self.values.trim_lists_to_normalized_offsets()?;
-
-        Some(Self {
-            size: self.size,
-            length: self.length,
-            dtype: self.dtype.clone(),
-            values,
-            validity: self.validity.clone(),
-        })
-    }
-
     fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
         assert_eq!(self.len(), other.len());
         assert_eq!(self.size(), other.size());
@@ -405,10 +393,6 @@ impl Array for FixedSizeListArray {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
-    }
-
-    fn trim_lists_to_normalized_offsets(&self) -> Option<Box<dyn Array>> {
-        Self::trim_lists_to_normalized_offsets(self).map(|arr| Box::new(arr) as _)
     }
 
     fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {
