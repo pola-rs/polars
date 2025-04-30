@@ -1,6 +1,6 @@
 use arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
-use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::BitmapBuilder;
+use arrow::bitmap::bitmask::BitMask;
 use arrow::types::Offset;
 
 /// Propagate nulls down to masked-out values in lower nesting levels.
@@ -184,7 +184,7 @@ pub fn propagate_nulls_struct(arr: &StructArray) -> Option<StructArray> {
         ));
     };
 
-    if arr.values().len() == 0 || validity.unset_bits() == 0 {
+    if arr.values().is_empty() || validity.unset_bits() == 0 {
         return None;
     }
 

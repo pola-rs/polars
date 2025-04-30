@@ -74,7 +74,10 @@ impl Series {
     /// For ListArrays, recursively normalizes the offsets to begin from 0, and
     /// slices excess length from the values array.
     pub fn list_rechunk_and_trim_to_normalized_offsets(&self) -> Self {
-        if let Some(mut ca) = self.try_list().and_then(|ca| ca.trim_lists_to_normalized_offsets()) {
+        if let Some(mut ca) = self
+            .try_list()
+            .and_then(|ca| ca.trim_lists_to_normalized_offsets())
+        {
             ca.rechunk_mut();
             ca.into_series()
         } else {

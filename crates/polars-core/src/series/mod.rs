@@ -43,7 +43,7 @@ use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{materialize_dyn_int, handle_casting_failures, Wrap};
+use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 
 /// # Series
 /// The columnar data type for a DataFrame.
@@ -379,7 +379,9 @@ impl Series {
 
     /// Cast [`Series`] to another [`DataType`].
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
-        let slf = self.trim_lists_to_normalized_offsets().map_or(Cow::Borrowed(self), Cow::Owned);
+        let slf = self
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(self), Cow::Owned);
         let slf = slf.propagate_nulls().map_or(slf, Cow::Owned);
 
         use DataType as D;

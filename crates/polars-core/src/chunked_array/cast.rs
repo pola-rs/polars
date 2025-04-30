@@ -464,7 +464,9 @@ impl ChunkCast for BooleanChunked {
 /// So this implementation casts the inner type
 impl ChunkCast for ListChunked {
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
-        let ca = self.trim_lists_to_normalized_offsets().map_or(Cow::Borrowed(self), Cow::Owned);
+        let ca = self
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(self), Cow::Owned);
         let ca = ca.propagate_nulls().map_or(ca, Cow::Owned);
 
         use DataType::*;
@@ -537,7 +539,9 @@ impl ChunkCast for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkCast for ArrayChunked {
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
-        let ca = self.trim_lists_to_normalized_offsets().map_or(Cow::Borrowed(self), Cow::Owned);
+        let ca = self
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(self), Cow::Owned);
         let ca = ca.propagate_nulls().map_or(ca, Cow::Owned);
 
         use DataType::*;
