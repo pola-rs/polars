@@ -182,7 +182,7 @@ def lit(
     if dtype:
         return wrap_expr(plr.lit(value, allow_object, is_scalar=True)).cast(dtype)
 
-    if isinstance(value, np.generic):
+    if _check_for_numpy(value) and isinstance(value, np.generic):
         # note: the item() is a py-native datetime/timedelta when units < 'ns'
         if isinstance(item := value.item(), (datetime, timedelta)):
             return lit(item)
