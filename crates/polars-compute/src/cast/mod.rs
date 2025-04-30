@@ -8,6 +8,7 @@ mod dictionary_to;
 mod primitive_to;
 mod utf8_to;
 
+use arrow::bitmap::utils::ZipValidity;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
@@ -237,6 +238,49 @@ fn cast_list_to_fixed_size_list<O: Offset>(
     .map_err(|_| polars_err!(ComputeError: "not all elements have the specified width {size}"))
 }
 
+struct ListUint8BinaryIterator<'a, O: Offset> {
+    list: &'a ListArray<O>,
+    index: usize,
+    end: usize,
+}
+
+impl<'a, O: Offset> ListUint8BinaryIterator<'a, O> {
+    #[inline]
+    fn new(list: &'a ListArray<O>) -> Self {
+        Self {
+            list,
+            index: 0,
+            end: list.len(),
+        }
+    }
+}
+
+impl<'a, O: Offset> Iterator for ListUint8BinaryIterator<'a, O> {
+    type Item = &'a [u8];
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next == self.end {
+            return None;
+        }
+        let i = self.index;
+        self.index += 1;
+
+        let (start, end) = self.list.offsets().start_end_unchecked(i);
+        let length = end - start;
+        // TODO if the resulting "slice" has nulls, return None, otherwise return &[u8].
+    }
+}
+
+fn cast_list_uint8_to_binary<O: Offset>(
+    list: &ListArray<O>,
+    options: CastOptionsImpl,
+) -> PolarsResult<BinaryViewArray> {
+    let value_iter = ListUint8BinaryIterator::new(list);
+    let iter = ZipValidity::new_with_validity(value_iter, list.validity());
+    MutableBinaryViewArray::from_iter(iter).into()
+}
+
 pub fn cast_default(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResult<Box<dyn Array>> {
     cast(array, to_type, Default::default())
 }
@@ -327,6 +371,12 @@ pub fn cast(
             options,
         )
         .map(|x| x.boxed()),
+        (List(UInt8), BinaryView) => {
+            cast_list_uint8_to_binary::<i32>(array.as_any().downcast_ref().unwrap(), options)
+        },
+        (LargeList(UInt8), BinaryView) => {
+            cast_list_to_binary::<i64>(array.as_any().downcast_ref().unwrap(), options)
+        },
         (BinaryView, _) => match to_type {
             Utf8View => array
                 .as_any()
