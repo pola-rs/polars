@@ -289,3 +289,10 @@ def test_unique_lengths_21654() -> None:
     for n in range(0, 1000, 37):
         df = pl.DataFrame({"x": pl.int_range(n, eager=True)})
         assert df.unique().height == n
+
+
+def test_unique_keep_last_with_slice_22470() -> None:
+    lf = pl.LazyFrame({"x": [0, 1, 2, 3, 4, 5, 6, 7, 3, 4, 5, 6, 7, 8, 9, 10]})
+    result = lf.unique(keep="last", maintain_order=True).slice(3, 4).collect()
+    expected = pl.DataFrame({"x": [3, 4, 5, 6]})
+    assert_frame_equal(result, expected)
