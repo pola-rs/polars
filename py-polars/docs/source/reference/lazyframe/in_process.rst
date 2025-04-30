@@ -12,3 +12,4 @@ This namespace becomes available by calling `LazyFrame.collect(background=True)`
     InProcessQuery.cancel
     InProcessQuery.fetch
     InProcessQuery.fetch_blocking
+    InProcessQuery.fetch_timeout
