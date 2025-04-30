@@ -91,8 +91,11 @@ impl ApplyExpr {
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
         let c = if self.function_returns_scalar {
+            let out = ca.explode().unwrap();
+            // if the explode doesn't return the same len, it wasn't scalar.
+            polars_ensure!(out.len() == ca.len(), InvalidOperation: "expected scalar for expr: {}, got {}", self.expr, &out);
             ac.update_groups = UpdateGroups::No;
-            ca.explode().unwrap().into_column()
+            out.into_column()
         } else {
             ac.with_update_groups(UpdateGroups::WithSeriesLen);
             ca.into_series().into()

@@ -1168,6 +1168,9 @@ def fold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
+    returns_scalar: bool = False,
+    return_dtype: PolarsDataType | None = None,
 ) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -1182,6 +1185,13 @@ def fold(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
+    return_dtype
+            Output datatype.
+            If not set, the dtype will be inferred based on the dtype
+            of the accumulator.
 
     Notes
     -----
@@ -1269,7 +1279,15 @@ def fold(
         exprs = [exprs]
 
     exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.fold(acc, function, exprs))
+    return wrap_expr(
+        plr.fold(
+            acc,
+            function,
+            exprs,
+            returns_scalar=returns_scalar,
+            return_dtype=return_dtype,
+        )
+    )
 
 
 def reduce(
