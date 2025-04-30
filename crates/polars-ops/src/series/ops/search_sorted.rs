@@ -79,6 +79,11 @@ pub fn search_sorted(
         },
         dt if dt.is_nested() => {
             let nulls_last = s.is_empty() || s.last().value().is_null();
+            // NOTE: This is O(n), unlike the rest of the implementation which
+            // is O(logn). This could be improved by only row-encoding entries
+            // that the binary search is explicitly asking for, on-demand,
+            // instead of all of them in advance. This would be a significant
+            // speed-up for large columns.
             let ca = _get_rows_encoded_ca(
                 "".into(),
                 &[s.as_ref().clone().into_column()],
