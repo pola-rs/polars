@@ -8,17 +8,13 @@ use crate::hash_keys::HashKeys;
 
 #[derive(Default)]
 pub struct BinviewHashGrouper {
-    name: PlSmallStr,
-    dtype: DataType,
     idx_map: BinaryViewIndexMap<()>,
     null_idx: IdxSize,
 }
 
 impl BinviewHashGrouper {
-    pub fn new(name: PlSmallStr, dtype: DataType) -> Self {
+    pub fn new() -> Self {
         Self {
-            name,
-            dtype,
             idx_map: BinaryViewIndexMap::default(),
             null_idx: IdxSize::MAX,
         }
@@ -64,12 +60,14 @@ impl BinviewHashGrouper {
     /// The views must be valid for the given buffers.
     unsafe fn finalize_keys<V: ViewType + ?Sized>(
         &self,
+        schema: &Schema,
         views: Buffer<View>,
         buffers: Arc<[Buffer<u8>]>,
         validity: Option<Bitmap>,
     ) -> DataFrame {
+        let (name, dtype) = schema.get_at_index(0).unwrap();
         unsafe {
-            let arrow_dtype = self.dtype.to_arrow(CompatLevel::newest());
+            let arrow_dtype = dtype.to_arrow(CompatLevel::newest());
             let keys = BinaryViewArrayGeneric::<V>::new_unchecked_unknown_md(
                 arrow_dtype,
                 views,
@@ -77,11 +75,8 @@ impl BinviewHashGrouper {
                 validity,
                 None,
             );
-            let s = Series::from_chunks_and_dtype_unchecked(
-                self.name.clone(),
-                vec![Box::new(keys)],
-                &self.dtype,
-            );
+            let s =
+                Series::from_chunks_and_dtype_unchecked(name.clone(), vec![Box::new(keys)], dtype);
             DataFrame::new(vec![Column::from(s)]).unwrap()
         }
     }
@@ -89,7 +84,7 @@ impl BinviewHashGrouper {
 
 impl Grouper for BinviewHashGrouper {
     fn new_empty(&self) -> Box<dyn Grouper> {
-        Box::new(Self::new(self.name.clone(), self.dtype.clone()))
+        Box::new(Self::new())
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -163,7 +158,7 @@ impl Grouper for BinviewHashGrouper {
         }
     }
 
-    fn get_keys_in_group_order(&self) -> DataFrame {
+    fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame {
         let buffers: Arc<[_]> = self
             .idx_map
             .buffers()
@@ -181,9 +176,10 @@ impl Grouper for BinviewHashGrouper {
         };
 
         unsafe {
-            match &self.dtype {
-                DataType::Binary => self.finalize_keys::<[u8]>(views, buffers, validity),
-                DataType::String => self.finalize_keys::<str>(views, buffers, validity),
+            let (_name, dt) = schema.get_at_index(0).unwrap();
+            match dt {
+                DataType::Binary => self.finalize_keys::<[u8]>(schema, views, buffers, validity),
+                DataType::String => self.finalize_keys::<str>(schema, views, buffers, validity),
                 _ => unreachable!(),
             }
         }
