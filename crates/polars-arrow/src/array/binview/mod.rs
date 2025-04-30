@@ -3,7 +3,6 @@
 
 mod builder;
 pub use builder::*;
-use polars_utils::cowbox::CowBox;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -669,10 +668,6 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
 
     fn to_boxed(&self) -> Box<dyn Array> {
         Box::new(self.clone())
-    }
-
-    fn propagate_nulls(&self) -> CowBox<dyn Array> {
-        CowBox::Borrowed(self)
     }
 }
 

@@ -11,7 +11,6 @@ pub use builder::*;
 mod mutable;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
-use polars_utils::cowbox::CowBox;
 
 /// The Arrow's equivalent to an immutable `Vec<Option<[u8; size]>>`.
 /// Cloning and slicing this struct is `O(1)`.
@@ -230,10 +229,6 @@ impl Array for FixedSizeBinaryArray {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
-    }
-
-    fn propagate_nulls(&self) -> CowBox<dyn Array> {
-        CowBox::Borrowed(self)
     }
 }
 

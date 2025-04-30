@@ -16,8 +16,21 @@ where
 }
 
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
-    let failure_mask = !input.is_null() & output.is_null();
-    let failures = input.filter(&failure_mask)?;
+    dbg!(input);
+    dbg!(output);
+
+    let mut idxs = Vec::new();
+    input.find_validity_mismatch(output, &mut idxs);
+
+    dbg!(&idxs);
+
+    // Base case. No strict casting failed.
+    if idxs.is_empty() {
+        return Ok(());
+    }
+
+    let num_failures = idxs.len();
+    let failures = input.take_slice(&idxs[..num_failures.min(10)])?;
 
     let additional_info = match (input.dtype(), output.dtype()) {
         (DataType::String, DataType::Date | DataType::Datetime(_, _)) => {
@@ -29,6 +42,9 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
         (DataType::String, DataType::Enum(_, _)) => {
             "\n\nEnsure that all values in the input column are present in the categories of the enum datatype."
         },
+        _ if failures.len() < num_failures => {
+            "\n\nDid not show all failed cases as there were too many."
+        },
         _ => "",
     };
 
@@ -38,7 +54,7 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
         input.dtype(),
         output.dtype(),
         output.name(),
-        failures.len(),
+        num_failures,
         input.len(),
         failures.fmt_list(),
         additional_info,

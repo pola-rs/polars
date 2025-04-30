@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use super::specification::try_check_offsets_bounds;
 use super::{Array, Splitable, new_empty_array};
 use crate::bitmap::bitmask::BitMask;
@@ -16,7 +14,8 @@ pub use iterator::*;
 mod mutable;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail};
-use polars_utils::cowbox::CowBox;
+use polars_utils::IdxSize;
+use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
@@ -134,49 +133,6 @@ impl<O: Offset> ListArray<O> {
     impl_sliced!();
     impl_mut_validity!();
     impl_into_array!();
-
-    pub fn trim_to_normalized_offsets_recursive(&self) -> Self {
-        let offsets = self.offsets();
-        let values = self.values();
-
-        let first_idx = *offsets.first();
-        let len = offsets.range().to_usize();
-
-        let values = if values.len() == len {
-            values.clone()
-        } else {
-            values.sliced(first_idx.to_usize(), len)
-        };
-
-        let offsets = if first_idx.to_usize() == 0 {
-            offsets.clone()
-        } else {
-            let v = offsets.iter().map(|x| *x - first_idx).collect::<Vec<_>>();
-            unsafe { OffsetsBuffer::<O>::new_unchecked(v.into()) }
-        };
-
-        let values = match values.dtype() {
-            ArrowDataType::List(_) => {
-                let inner: &ListArray<i32> = values.as_ref().as_any().downcast_ref().unwrap();
-                Box::new(inner.trim_to_normalized_offsets_recursive()) as Box<dyn Array>
-            },
-            ArrowDataType::LargeList(_) => {
-                let inner: &ListArray<i64> = values.as_ref().as_any().downcast_ref().unwrap();
-                Box::new(inner.trim_to_normalized_offsets_recursive()) as Box<dyn Array>
-            },
-            _ => values,
-        };
-
-        assert_eq!(offsets.first().to_usize(), 0);
-        assert_eq!(values.len(), offsets.range().to_usize());
-
-        Self::new(
-            self.dtype().clone(),
-            offsets,
-            values,
-            self.validity().cloned(),
-        )
-    }
 }
 
 // Accessors
@@ -272,24 +228,51 @@ impl<O: Offset> ListArray<O> {
         Self::get_child_field(dtype).dtype()
     }
 
-    pub fn propagate_nulls(&self) -> Cow<Self> {
+    /// Trim all lists of unused start and end elements recursively.
+    pub fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
+        let offsets = self.offsets();
+        let values = self.values();
+
+        let len = offsets.range().to_usize();
+
+        let (values, offsets) = if values.len() == len {
+            let values = values.trim_lists_to_normalized_offsets()?;
+            (values, offsets.clone())
+        } else {
+            let first_idx = *offsets.first();
+            let v = offsets.iter().map(|x| *x - first_idx).collect::<Vec<_>>();
+            let offsets = unsafe { OffsetsBuffer::<O>::new_unchecked(v.into()) };
+            let values = values.sliced(first_idx.to_usize(), len);
+            let values = values.trim_lists_to_normalized_offsets().unwrap_or(values);
+            (values, offsets)
+        };
+
+        assert_eq!(offsets.first().to_usize(), 0);
+        assert_eq!(values.len(), offsets.range().to_usize());
+
+        Some(Self::new(
+            self.dtype().clone(),
+            offsets,
+            values,
+            self.validity().cloned(),
+        ))
+    }
+
+    pub fn propagate_nulls(&self) -> Option<Self> {
         let Some(validity) = self.validity.as_ref() else {
-            return match self.values.propagate_nulls() {
-                CowBox::Borrowed(_) => Cow::Borrowed(self),
-                CowBox::Owned(values) => Cow::Owned(Self {
-                    dtype: self.dtype.clone(),
-                    offsets: self.offsets.clone(),
-                    values,
-                    validity: None,
-                }),
-            };
+            return self.values.propagate_nulls().map(|values| Self {
+                dtype: self.dtype.clone(),
+                offsets: self.offsets.clone(),
+                values,
+                validity: None,
+            });
         };
 
         let mut last_idx = 0;
         let old_child_validity = self.values.validity();
         let mut new_child_validity = BitmapBuilder::new();
 
-        let mut new_values = CowBox::Borrowed(self.values.as_ref());
+        let mut new_values = None;
 
         // Find the first element that does not have propagated nulls.
         let null_mask = !validity;
@@ -337,25 +320,75 @@ impl<O: Offset> ListArray<O> {
             );
 
             let new_child_validity = new_child_validity.freeze();
-            new_values = CowBox::Owned(new_values.with_validity(Some(new_child_validity)));
+            new_values = Some(self.values.with_validity(Some(new_child_validity)));
         }
 
-        let values = match new_values.propagate_nulls() {
-            CowBox::Owned(values) => values,
-            CowBox::Borrowed(_) => match new_values {
-                CowBox::Owned(values) => values,
-
-                // Nothing was changed. Return the original array.
-                CowBox::Borrowed(_) => return Cow::Borrowed(self),
-            },
+        let Some(values) = new_values
+            .as_ref()
+            .and_then(|v| v.propagate_nulls())
+            .or(new_values)
+        else {
+            // Nothing was changed. Return the original array.
+            return None;
         };
 
-        Cow::Owned(Self {
+        Some(Self {
             dtype: self.dtype.clone(),
             offsets: self.offsets.clone(),
             values,
             validity: self.validity.clone(),
         })
+    }
+
+    fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
+        assert_eq!(self.len(), other.len());
+
+        let original_length = idxs.len();
+        match (self.validity(), other.validity()) {
+            (None, None) => {},
+            (Some(l), Some(r)) => {
+                if l != r {
+                    let mismatches = crate::bitmap::xor(l, r);
+                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                }
+            },
+            (Some(v), _) | (_, Some(v)) => {
+                if v.unset_bits() > 0 {
+                    let mismatches = !v;
+                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                }
+            },
+        }
+
+        let mut nested_idxs = Vec::new();
+        self.values
+            .find_validity_mismatch(other.values().as_ref(), &mut nested_idxs);
+
+        if nested_idxs.is_empty() {
+            return;
+        }
+
+        assert_eq!(self.offsets.first().to_usize(), 0);
+        assert_eq!(self.offsets.range().to_usize(), self.values.len());
+
+        // @TODO: Optimize. This is only used on the error path so it is find, right?
+        let mut j = 0;
+        for (i, (start, length)) in self.offsets.offset_and_length_iter().enumerate_idx() {
+            if j < nested_idxs.len() && (nested_idxs[j] as usize) < start + length {
+                idxs.push(i);
+                j += 1;
+
+                // Loop over remaining items in same element.
+                while j < nested_idxs.len() && (nested_idxs[j] as usize) < start + length {
+                    j += 1;
+                }
+            }
+
+            if j == nested_idxs.len() {
+                break;
+            }
+        }
+        idxs[original_length..].sort_unstable();
     }
 }
 
@@ -371,10 +404,32 @@ impl<O: Offset> Array for ListArray<O> {
         Box::new(self.clone().with_validity(validity))
     }
 
-    fn propagate_nulls(&self) -> CowBox<dyn Array> {
-        match Self::propagate_nulls(self) {
-            Cow::Borrowed(_) => CowBox::Borrowed(self),
-            Cow::Owned(arr) => CowBox::Owned(Box::new(arr) as _),
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Box<dyn Array>> {
+        Self::trim_lists_to_normalized_offsets(self).map(|arr| Box::new(arr) as _)
+    }
+
+    fn propagate_nulls(&self) -> Option<Box<dyn Array>> {
+        Self::propagate_nulls(self).map(|arr| Box::new(arr) as _)
+    }
+
+    fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {
+        match other.as_any().downcast_ref() {
+            Some(other) => Self::find_validity_mismatch(self, other, idxs),
+            None => match (self.validity(), other.validity()) {
+                (None, None) => {},
+                (Some(l), Some(r)) => {
+                    if l != r {
+                        let mismatches = crate::bitmap::xor(l, r);
+                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                    }
+                },
+                (Some(v), _) | (_, Some(v)) => {
+                    if v.unset_bits() > 0 {
+                        let mismatches = !v;
+                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                    }
+                },
+            },
         }
     }
 }

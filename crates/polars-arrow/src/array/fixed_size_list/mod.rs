@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use super::{Array, ArrayRef, Splitable, new_empty_array, new_null_array};
 use crate::bitmap::bitmask::BitMask;
 use crate::bitmap::{Bitmap, BitmapBuilder};
@@ -14,9 +12,8 @@ pub use builder::*;
 mod mutable;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
-use polars_utils::cowbox::CowBox;
-use polars_utils::format_tuple;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::{IdxSize, format_tuple};
 
 use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 
@@ -232,22 +229,31 @@ impl FixedSizeListArray {
         dims
     }
 
-    pub fn propagate_nulls(&self) -> Cow<Self> {
+    pub fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
+        let values = self.values.trim_lists_to_normalized_offsets()?;
+
+        Some(Self {
+            size: self.size,
+            length: self.length,
+            dtype: self.dtype.clone(),
+            values,
+            validity: self.validity.clone(),
+        })
+    }
+
+    pub fn propagate_nulls(&self) -> Option<Self> {
         let Some(validity) = self.validity.as_ref() else {
-            return match self.values.propagate_nulls() {
-                CowBox::Borrowed(_) => Cow::Borrowed(self),
-                CowBox::Owned(values) => Cow::Owned(Self {
-                    size: self.size,
-                    length: self.length,
-                    dtype: self.dtype.clone(),
-                    values,
-                    validity: None,
-                }),
-            };
+            return self.values.propagate_nulls().map(|values| Self {
+                size: self.size,
+                length: self.length,
+                dtype: self.dtype.clone(),
+                values,
+                validity: None,
+            });
         };
 
         if self.size == 0 || validity.unset_bits() == 0 {
-            return Cow::Borrowed(self);
+            return None;
         }
 
         let start_point = match self.values.validity() {
@@ -264,7 +270,7 @@ impl FixedSizeListArray {
             },
         };
 
-        let mut new_values = CowBox::Borrowed(self.values.as_ref());
+        let mut new_values = None;
         if let Some(start_point) = start_point {
             // Nulls need to be propagated, create a new validity mask.
             let mut new_child_validity = BitmapBuilder::with_capacity(self.size * self.length);
@@ -275,27 +281,71 @@ impl FixedSizeListArray {
             }
 
             let new_child_validity = new_child_validity.freeze();
-            new_values = CowBox::Owned(new_values.with_validity(Some(new_child_validity)));
+            new_values = Some(self.values.with_validity(Some(new_child_validity)));
         }
 
-        let values = match new_values.propagate_nulls() {
-            CowBox::Owned(values) => values,
-            CowBox::Borrowed(_) => match new_values {
-                CowBox::Owned(values) => values,
-
-                // Nothing was changed. Return the original array.
-                CowBox::Borrowed(_) => return Cow::Borrowed(self),
-            },
+        let Some(values) = new_values
+            .as_ref()
+            .and_then(|v| v.propagate_nulls())
+            .or(new_values)
+        else {
+            // Nothing was changed. Return the original array.
+            return None;
         };
 
         // The child array was changed.
-        Cow::Owned(Self {
+        Some(Self {
             size: self.size,
             length: self.length,
             dtype: self.dtype.clone(),
             values,
             validity: self.validity.clone(),
         })
+    }
+
+    fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
+        assert_eq!(self.len(), other.len());
+        assert_eq!(self.size(), other.size());
+
+        if self.size() == 0 {
+            return;
+        }
+
+        let original_length = idxs.len();
+        match (self.validity(), other.validity()) {
+            (None, None) => {},
+            (Some(l), Some(r)) => {
+                if l != r {
+                    let mismatches = crate::bitmap::xor(l, r);
+                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                }
+            },
+            (Some(v), _) | (_, Some(v)) => {
+                if v.unset_bits() > 0 {
+                    let mismatches = !v;
+                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                }
+            },
+        }
+
+        let pre_nesting_length = idxs.len();
+        self.values.find_validity_mismatch(other.values().as_ref(), idxs);
+
+        if idxs.len() == original_length {
+            return;
+        }
+
+        let mut offset = 0;
+        idxs[pre_nesting_length] /= self.size as IdxSize;
+        for i in pre_nesting_length + 1..idxs.len() {
+            idxs[i - offset] = idxs[i] / self.size as IdxSize;
+
+            if idxs[i - offset] == idxs[i - offset - 1] {
+                offset += 1;
+            }
+        }
+        idxs.truncate(idxs.len() - offset);
+        idxs[original_length..].sort_unstable();
     }
 }
 
@@ -419,10 +469,32 @@ impl Array for FixedSizeListArray {
         Box::new(self.clone().with_validity(validity))
     }
 
-    fn propagate_nulls(&self) -> CowBox<dyn Array> {
-        match Self::propagate_nulls(self) {
-            Cow::Borrowed(_) => CowBox::Borrowed(self),
-            Cow::Owned(arr) => CowBox::Owned(Box::new(arr) as _),
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Box<dyn Array>> {
+        Self::trim_lists_to_normalized_offsets(self).map(|arr| Box::new(arr) as _)
+    }
+
+    fn propagate_nulls(&self) -> Option<Box<dyn Array>> {
+        Self::propagate_nulls(self).map(|arr| Box::new(arr) as _)
+    }
+
+    fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {
+        match other.as_any().downcast_ref() {
+            Some(other) => Self::find_validity_mismatch(self, other, idxs),
+            None => match (self.validity(), other.validity()) {
+                (None, None) => {},
+                (Some(l), Some(r)) => {
+                    if l != r {
+                        let mismatches = crate::bitmap::xor(l, r);
+                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                    }
+                },
+                (Some(v), _) | (_, Some(v)) => {
+                    if v.unset_bits() > 0 {
+                        let mismatches = !v;
+                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                    }
+                },
+            },
         }
     }
 }

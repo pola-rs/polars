@@ -29,8 +29,8 @@ pub mod float_sorted_arg_max;
 mod for_each;
 pub mod full;
 pub mod gather;
+mod nesting_utils;
 pub(crate) mod nulls;
-mod propagate_nulls;
 mod reverse;
 #[cfg(feature = "rolling_window")]
 pub(crate) mod rolling_window;
@@ -39,18 +39,16 @@ pub mod search_sorted;
 mod set;
 mod shift;
 pub mod sort;
-mod trim_masked;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
 
 pub use chunkops::_set_check_length;
-pub use propagate_nulls::ChunkPropagateNulls;
+pub use nesting_utils::ChunkNestingUtils;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
-pub use trim_masked::ChunkTrimMasked;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::series::{BitRepr, IsSorted};

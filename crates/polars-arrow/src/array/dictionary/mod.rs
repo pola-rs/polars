@@ -19,7 +19,6 @@ mod value_map;
 pub use iterator::*;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail};
-use polars_utils::cowbox::CowBox;
 
 use super::primitive::PrimitiveArray;
 use super::specification::check_indexes;
@@ -422,10 +421,6 @@ impl<K: DictionaryKey> Array for DictionaryArray<K> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
-    }
-
-    fn propagate_nulls(&self) -> CowBox<dyn Array> {
-        CowBox::Borrowed(self)
     }
 }
 

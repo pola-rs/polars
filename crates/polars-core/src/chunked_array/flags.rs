@@ -18,7 +18,10 @@ bitflags::bitflags! {
         const CAN_FAST_EXPLODE_LIST = 0x04;
 
         /// Recursive version of `CAN_FAST_EXPLODE_LIST`.
-        const HAS_TRIMMED_MASKED = 0x08;
+        ///
+        /// This can also apply to other nested chunked arrays and signals that there all lists
+        /// have been compacted recursively.
+        const HAS_TRIMMED_LISTS_TO_NORMALIZED_OFFSETS = 0x08;
         /// All masked out values have their nulls propagated.
         const HAS_PROPAGATED_NULLS = 0x10;
     }
@@ -123,7 +126,7 @@ impl StatisticsFlags {
         self.contains(Self::HAS_PROPAGATED_NULLS)
     }
 
-    pub fn has_trimmed_masked(&self) -> bool {
-        self.contains(Self::HAS_TRIMMED_MASKED)
+    pub fn has_trimmed_lists_to_normalized_offsets(&self) -> bool {
+        self.contains(Self::HAS_TRIMMED_LISTS_TO_NORMALIZED_OFFSETS)
     }
 }

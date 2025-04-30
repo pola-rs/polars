@@ -43,7 +43,7 @@ use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
+use crate::utils::{materialize_dyn_int, handle_casting_failures, Wrap};
 
 /// # Series
 /// The columnar data type for a DataFrame.
@@ -464,18 +464,11 @@ impl Series {
             opt => opt,
         };
 
-        let ret = slf.0.cast(dtype, new_options);
-
-        match options {
-            CastOptions::NonStrict | CastOptions::Overflowing => ret,
-            CastOptions::Strict => {
-                let ret = ret?;
-                if slf.null_count() != ret.null_count() {
-                    handle_casting_failures(slf.as_ref(), &ret)?;
-                }
-                Ok(ret)
-            },
+        let out = slf.0.cast(dtype, new_options)?;
+        if options.is_strict() {
+            handle_casting_failures(slf.as_ref(), &out)?;
         }
+        Ok(out)
     }
 
     /// Cast from physical to logical types without any checks on the validity of the cast.

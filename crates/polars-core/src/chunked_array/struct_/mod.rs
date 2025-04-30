@@ -384,8 +384,8 @@ impl StructChunked {
     }
 
     /// Set the outer nulls into the inner arrays.
-    pub(crate) fn propagate_nulls(&mut self) {
-        if let Cow::Owned(ca) = ChunkPropagateNulls::propagate_nulls(self) {
+    pub(crate) fn propagate_nulls_mut(&mut self) {
+        if let Some(ca) = ChunkNestingUtils::propagate_nulls(self) {
             *self = ca;
         }
     }
@@ -422,7 +422,7 @@ impl StructChunked {
         }
 
         self.compute_len();
-        self.propagate_nulls();
+        self.propagate_nulls_mut();
     }
 
     pub fn unnest(self) -> DataFrame {
@@ -451,7 +451,7 @@ impl StructChunked {
             *arr = arr.with_validity(validity);
         }
         self.compute_len();
-        self.propagate_nulls();
+        self.propagate_nulls_mut();
     }
 
     pub fn with_outer_validity(mut self, validity: Option<Bitmap>) -> Self {

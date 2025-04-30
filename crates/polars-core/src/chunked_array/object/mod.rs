@@ -6,7 +6,6 @@ use std::hash::Hash;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::buffer::Buffer;
-use polars_utils::cowbox::CowBox;
 use polars_utils::total_ord::TotalHash;
 
 use crate::prelude::*;
@@ -223,8 +222,8 @@ where
         }
     }
 
-    fn propagate_nulls(&self) -> CowBox<dyn Array> {
-        CowBox::Borrowed(self)
+    fn propagate_nulls(&self) -> Option<Box<dyn Array>> {
+        None
     }
 }
 

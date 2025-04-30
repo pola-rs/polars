@@ -1,5 +1,7 @@
 //! Implementations of the ChunkCast Trait.
 
+use std::borrow::Cow;
+
 use polars_compute::cast::CastOptionsImpl;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
@@ -25,7 +27,7 @@ pub enum CastOptions {
 }
 
 impl CastOptions {
-    pub fn strict(&self) -> bool {
+    pub fn is_strict(&self) -> bool {
         matches!(self, CastOptions::Strict)
     }
 }
@@ -462,7 +464,8 @@ impl ChunkCast for BooleanChunked {
 /// So this implementation casts the inner type
 impl ChunkCast for ListChunked {
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
-        let ca = self.propagate_nulls();
+        let ca = self.trim_lists_to_normalized_offsets().map_or(Cow::Borrowed(self), Cow::Owned);
+        let ca = ca.propagate_nulls().map_or(ca, Cow::Owned);
 
         use DataType::*;
         match dtype {
@@ -534,7 +537,8 @@ impl ChunkCast for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkCast for ArrayChunked {
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
-        let ca = self.propagate_nulls();
+        let ca = self.trim_lists_to_normalized_offsets().map_or(Cow::Borrowed(self), Cow::Owned);
+        let ca = ca.propagate_nulls().map_or(ca, Cow::Owned);
 
         use DataType::*;
         match dtype {
@@ -552,7 +556,8 @@ impl ChunkCast for ArrayChunked {
                     },
                     _ => {
                         // ensure the inner logical type bubbles up
-                        let (arr, child_type) = cast_fixed_size_list(ca.as_ref(), child_type, options)?;
+                        let (arr, child_type) =
+                            cast_fixed_size_list(ca.as_ref(), child_type, options)?;
                         // SAFETY: we just cast so the dtype matches.
                         // we must take this path to correct for physical types.
                         unsafe {

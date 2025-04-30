@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use super::{Array, Splitable, new_empty_array, new_null_array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
@@ -10,7 +8,7 @@ mod ffi;
 pub(super) mod fmt;
 mod iterator;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
-use polars_utils::cowbox::CowBox;
+use polars_utils::IdxSize;
 
 /// A [`StructArray`] is a nested [`Array`] with an optional validity representing
 /// multiple [`Array`] with the same number of rows.
@@ -200,12 +198,44 @@ impl StructArray {
         self.length = length;
     }
 
+    pub fn trim_lists_to_normalized_offsets(&self) -> Option<Self> {
+        let mut new_values = Vec::new();
+        for (i, field_array) in self.values.iter().enumerate() {
+            let Some(field_array) = field_array.trim_lists_to_normalized_offsets() else {
+                // Nothing was changed. Return the original array.
+                continue;
+            };
+
+            new_values.reserve(self.values.len());
+            new_values.extend(self.values[..i].iter().cloned());
+            new_values.push(field_array);
+            break;
+        }
+
+        if new_values.is_empty() {
+            return None;
+        }
+
+        new_values.extend(self.values[new_values.len()..].iter().map(|field_array| {
+            field_array
+                .trim_lists_to_normalized_offsets()
+                .unwrap_or_else(|| field_array.clone())
+        }));
+
+        Some(Self {
+            dtype: self.dtype.clone(),
+            values: new_values,
+            length: self.length,
+            validity: self.validity.clone(),
+        })
+    }
+
     /// Set the outer nulls into the inner arrays.
-    pub fn propagate_nulls(&self) -> Cow<StructArray> {
+    pub fn propagate_nulls(&self) -> Option<Self> {
         let Some(validity) = self.validity.as_ref() else {
             let mut new_values = Vec::new();
             for (i, field_array) in self.values.iter().enumerate() {
-                if let CowBox::Owned(field_array) = field_array.propagate_nulls() {
+                if let Some(field_array) = field_array.propagate_nulls() {
                     new_values.reserve(self.values.len());
                     new_values.extend(self.values[..i].iter().cloned());
                     new_values.push(field_array);
@@ -214,16 +244,15 @@ impl StructArray {
             }
 
             if new_values.is_empty() {
-                return Cow::Borrowed(self);
+                return None;
             }
 
             new_values.extend(self.values[new_values.len()..].iter().map(|field_array| {
-                match field_array.propagate_nulls() {
-                    CowBox::Borrowed(field_array) => field_array.to_boxed(),
-                    CowBox::Owned(field_array) => field_array,
-                }
+                field_array
+                    .propagate_nulls()
+                    .unwrap_or_else(|| field_array.to_boxed())
             }));
-            return Cow::Owned(Self {
+            return Some(Self {
                 dtype: self.dtype.clone(),
                 values: new_values,
                 length: self.length,
@@ -232,27 +261,24 @@ impl StructArray {
         };
 
         if self.values.len() == 0 || validity.unset_bits() == 0 {
-            return Cow::Borrowed(self);
+            return None;
         }
 
         let mut new_values = Vec::new();
         for (i, field_array) in self.values.iter().enumerate() {
             let new_field_array = match field_array.validity() {
-                None => CowBox::Owned(field_array.with_validity(Some(validity.clone()))),
-                Some(v) if v.num_intersections_with(validity) == validity.set_bits() => {
-                    CowBox::Borrowed(field_array.as_ref())
-                },
-                Some(v) => CowBox::Owned(field_array.with_validity(Some(v & validity))),
+                None => Some(field_array.with_validity(Some(validity.clone()))),
+                Some(v) if v.num_intersections_with(validity) == validity.set_bits() => None,
+                Some(v) => Some(field_array.with_validity(Some(v & validity))),
             };
 
-            let new_field_array = match new_field_array.propagate_nulls() {
-                CowBox::Owned(new_field_array) => new_field_array,
-                CowBox::Borrowed(_) => match new_field_array {
-                    CowBox::Owned(new_field_array) => new_field_array,
-
-                    // Nothing was changed. Return the original array.
-                    CowBox::Borrowed(_) => continue,
-                },
+            let Some(new_field_array) = new_field_array
+                .as_ref()
+                .and_then(|v| v.propagate_nulls())
+                .or(new_field_array)
+            else {
+                // Nothing was changed. Return the original array.
+                continue;
             };
 
             new_values.reserve(self.values.len());
@@ -261,36 +287,62 @@ impl StructArray {
             break;
         }
 
-        if !new_values.is_empty() {
-            new_values.extend(self.values[new_values.len()..].iter().map(|field_array| {
-                let new_field_array = match field_array.validity() {
-                    None => CowBox::Owned(field_array.with_validity(Some(validity.clone()))),
-                    Some(v) if v.num_intersections_with(validity) == validity.set_bits() => {
-                        CowBox::Borrowed(field_array.as_ref())
-                    },
-                    Some(v) => CowBox::Owned(field_array.with_validity(Some(v & validity))),
-                };
-
-                match new_field_array.propagate_nulls() {
-                    CowBox::Owned(new_field_array) => new_field_array,
-                    CowBox::Borrowed(_) => match new_field_array {
-                        CowBox::Owned(new_field_array) => new_field_array,
-
-                        // Nothing was changed. Return the original array.
-                        CowBox::Borrowed(_) => field_array.clone(),
-                    },
-                }
-            }));
-
-            return Cow::Owned(Self {
-                dtype: self.dtype.clone(),
-                values: new_values,
-                length: self.length,
-                validity: self.validity.clone(),
-            });
+        if new_values.is_empty() {
+            return None;
         }
 
-        Cow::Borrowed(self)
+        new_values.extend(self.values[new_values.len()..].iter().map(|field_array| {
+            let new_field_array = match field_array.validity() {
+                None => Some(field_array.with_validity(Some(validity.clone()))),
+                Some(v) if v.num_intersections_with(validity) == validity.set_bits() => None,
+                Some(v) => Some(field_array.with_validity(Some(v & validity))),
+            };
+
+            new_field_array
+                .as_ref()
+                .and_then(|v| v.propagate_nulls())
+                .or(new_field_array)
+                .unwrap_or_else(|| field_array.clone())
+        }));
+
+        Some(Self {
+            dtype: self.dtype.clone(),
+            values: new_values,
+            length: self.length,
+            validity: self.validity.clone(),
+        })
+    }
+
+    fn find_validity_mismatch(&self, other: &Self, idxs: &mut Vec<IdxSize>) {
+        assert_eq!(self.len(), other.len());
+        assert_eq!(self.fields().len(), other.fields().len());
+
+        let original_length = idxs.len();
+        match (self.validity(), other.validity()) {
+            (None, None) => {},
+            (Some(l), Some(r)) => {
+                if l != r {
+                    let mismatches = crate::bitmap::xor(l, r);
+                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                }
+            },
+            (Some(v), _) | (_, Some(v)) => {
+                if v.unset_bits() > 0 {
+                    let mismatches = !v;
+                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                }
+            },
+        }
+
+        let pre_nesting_length = idxs.len();
+        for (l, r) in self.values.iter().zip(other.values.iter()) {
+            l.find_validity_mismatch(r.as_ref(), idxs);
+        }
+
+        if idxs.len() != pre_nesting_length {
+            return;
+        }
+        idxs[original_length..].sort_unstable();
     }
 
     impl_sliced!();
@@ -365,10 +417,32 @@ impl Array for StructArray {
         Box::new(self.clone().with_validity(validity))
     }
 
-    fn propagate_nulls(&self) -> CowBox<dyn Array> {
-        match Self::propagate_nulls(self) {
-            Cow::Borrowed(_) => CowBox::Borrowed(self),
-            Cow::Owned(arr) => CowBox::Owned(Box::new(arr) as _),
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Box<dyn Array>> {
+        Self::trim_lists_to_normalized_offsets(self).map(|arr| Box::new(arr) as _)
+    }
+
+    fn propagate_nulls(&self) -> Option<Box<dyn Array>> {
+        Self::propagate_nulls(self).map(|arr| Box::new(arr) as _)
+    }
+
+    fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {
+        match other.as_any().downcast_ref() {
+            Some(other) => Self::find_validity_mismatch(self, other, idxs),
+            None => match (self.validity(), other.validity()) {
+                (None, None) => {},
+                (Some(l), Some(r)) => {
+                    if l != r {
+                        let mismatches = crate::bitmap::xor(l, r);
+                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                    }
+                },
+                (Some(v), _) | (_, Some(v)) => {
+                    if v.unset_bits() > 0 {
+                        let mismatches = !v;
+                        idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                    }
+                },
+            },
         }
     }
 }

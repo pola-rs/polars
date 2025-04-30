@@ -378,6 +378,14 @@ pub trait SeriesTrait:
     /// ```
     fn new_from_index(&self, _index: usize, _length: usize) -> Series;
 
+    /// Trim all lists of unused start and end elements recursively.
+    ///
+    /// - `None` if nothing needed to be done.
+    /// - `Some(series)` if something changed.
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Series> {
+        None
+    }
+
     /// Propagate down nulls in nested types.
     ///
     /// - `None` if nothing needed to be done.
@@ -385,6 +393,9 @@ pub trait SeriesTrait:
     fn propagate_nulls(&self) -> Option<Series> {
         None
     }
+
+    /// Find the indices of elements where the null masks are different recursively.
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>);
 
     fn cast(&self, _dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;
 

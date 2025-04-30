@@ -650,7 +650,7 @@ impl Display for ExprIRDisplay<'_> {
                 options,
             } => {
                 self.with_root(expr).fmt(f)?;
-                if options.strict() {
+                if options.is_strict() {
                     write!(f, ".strict_cast({dtype:?})")
                 } else {
                     write!(f, ".cast({dtype:?})")

@@ -85,8 +85,36 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// When the validity is [`None`], all slots are valid.
     fn validity(&self) -> Option<&Bitmap>;
 
+    /// Trim all lists of unused start and end elements recursively.
+    fn trim_lists_to_normalized_offsets(&self) -> Option<Box<dyn Array>> {
+        None
+    }
+
     /// Propagate nulls down to masked-out values in lower nesting levels.
-    fn propagate_nulls(&self) -> CowBox<dyn Array>;
+    fn propagate_nulls(&self) -> Option<Box<dyn Array>> {
+        None
+    }
+
+    /// Find the indices of the values where the validity mismatches.
+    ///
+    /// This is done recursively.
+    fn find_validity_mismatch(&self, other: &dyn Array, idxs: &mut Vec<IdxSize>) {
+        match (self.validity(), other.validity()) {
+            (None, None) => {},
+            (Some(l), Some(r)) => {
+                if l != r {
+                    let mismatches = crate::bitmap::xor(l, r);
+                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                }
+            },
+            (Some(v), _) | (_, Some(v)) => {
+                if v.unset_bits() > 0 {
+                    let mismatches = !v;
+                    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+                }
+            },
+        }
+    }
 
     /// The number of null slots on this [`Array`].
     /// # Implementation
@@ -706,7 +734,7 @@ pub use list::{ListArray, ListArrayBuilder, ListValuesIter, MutableListArray};
 pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray, NullArrayBuilder};
 use polars_error::PolarsResult;
-use polars_utils::cowbox::CowBox;
+use polars_utils::IdxSize;
 pub use primitive::*;
 pub use static_array::{ParameterFreeDtypeStaticArray, StaticArray};
 pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};

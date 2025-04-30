@@ -1,7 +1,6 @@
 use std::any::Any;
 
 use polars_error::{PolarsResult, polars_bail};
-use polars_utils::cowbox::CowBox;
 use polars_utils::IdxSize;
 
 use super::Splitable;
@@ -100,10 +99,6 @@ impl Array for NullArray {
     fn with_validity(&self, _: Option<Bitmap>) -> Box<dyn Array> {
         // Nulls with invalid nulls are also nulls.
         self.clone().boxed()
-    }
-
-    fn propagate_nulls(&self) -> CowBox<dyn Array> {
-        CowBox::Borrowed(self)
     }
 }
 
