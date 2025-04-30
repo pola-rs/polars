@@ -333,3 +333,28 @@ def test_collapse_joins_combinations() -> None:
                     print()
 
                     raise
+
+
+def test_order_observe_sort_before_unique_22485() -> None:
+    lf = pl.LazyFrame(
+        {
+            "order": [3, 2, 1],
+            "id": ["A", "A", "B"],
+        }
+    )
+
+    expect = pl.DataFrame({"order": [1, 3], "id": ["B", "A"]})
+
+    q = lf.sort("order").unique(["id"], keep="last").sort("order")
+
+    plan = q.explain()
+    assert "SORT BY" in plan[plan.index("UNIQUE") :]
+
+    assert_frame_equal(q.collect(), expect)
+
+    q = lf.sort("order").unique(["id"], keep="last", maintain_order=True)
+
+    plan = q.explain()
+    assert "SORT BY" in plan[plan.index("UNIQUE") :]
+
+    assert_frame_equal(q.collect(), expect)

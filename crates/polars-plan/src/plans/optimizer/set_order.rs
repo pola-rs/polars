@@ -99,7 +99,6 @@ pub(super) fn set_order_flags(
                 debug_assert!(options.slice.is_none());
                 if !maintain_order_above {
                     options.maintain_order = false;
-                    continue;
                 }
                 if matches!(
                     options.keep_strategy,
@@ -152,6 +151,25 @@ pub(super) fn set_order_flags(
                 maintain_order_above = true;
             },
             _ => {
+                // FIXME:
+                // `maintain_order_above` is not correctly propagated in recursion for IR nodes with
+                // multiple inputs.
+                //
+                // This is current not an issue, as we never have an unordered leaf IR node. But
+                // if this ends up being the case in the future we need to fix. E.g.:
+                //
+                // ```
+                // q = pl.concat(
+                //     [
+                //         pl.scan_parquet(..., maintain_order=False), # PLAN 1
+                //         pl.LazyFrame(...).sort(...),                # PLAN 2
+                //     ]
+                // )
+                // ```
+                //
+                // The current implementation will begin optimization of plan #2 with the
+                // a `maintain_order_above` state from after finishing plan 1.
+
                 // If we don't know maintain order
                 // Known: slice
                 maintain_order_above = true;
