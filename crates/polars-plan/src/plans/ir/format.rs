@@ -877,6 +877,7 @@ pub fn write_ir_non_recursive(
             write!(f, "{:indent$}{name}", "")
         },
         IR::SinkMultiple { inputs: _ } => write!(f, "{:indent$}SINK_MULTIPLE", ""),
+        #[cfg(feature = "merge_sorted")]
         IR::MergeSorted {
             input_left: _,
             input_right: _,
