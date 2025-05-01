@@ -345,7 +345,7 @@ impl ChunkCast for StringChunked {
                 #[cfg(feature = "timezones")]
                 Some(time_zone) => {
                     TimeZone::validate_time_zone(time_zone)?;
-                    let result: Vec<Box<dyn Array>> = cast_chunks(
+                    let result = cast_chunks(
                         &self.chunks,
                         &Datetime(time_unit.to_owned(), Some(time_zone.clone())),
                         options,
