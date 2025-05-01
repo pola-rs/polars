@@ -239,6 +239,33 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
         }
     }
 
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        let other: &ObjectArray<T> = other.as_any().downcast_ref().unwrap();
+
+        self.values.reserve(length * repeats);
+        for value in other.values[start..start + length].iter() {
+            unsafe {
+                for _ in 0..repeats {
+                    self.values.push_unchecked(value.clone());
+                }
+            }
+        }
+        self.bitmask_builder
+            .subslice_extend_each_repeated_from_opt_validity(
+                other.validity(),
+                start,
+                length,
+                repeats,
+            );
+    }
+
     unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], _share: ShareStrategy) {
         let other: &ObjectArray<T> = other.as_any().downcast_ref().unwrap();
         let other_values_slice = other.values.as_slice();

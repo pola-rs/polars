@@ -78,6 +78,34 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         self.length += length.min(other.len().saturating_sub(start));
     }
 
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &FixedSizeListArray,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    ) {
+        let other_values = &**other.values();
+        self.inner_builder.reserve(repeats * length * self.size);
+        for outer_idx in start..start + length {
+            self.inner_builder.subslice_extend_repeated(
+                other_values,
+                outer_idx * self.size,
+                self.size,
+                repeats,
+                share,
+            );
+        }
+        self.validity
+            .subslice_extend_each_repeated_from_opt_validity(
+                other.validity(),
+                start,
+                length,
+                repeats,
+            );
+    }
+
     unsafe fn gather_extend(
         &mut self,
         other: &FixedSizeListArray,
