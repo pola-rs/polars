@@ -19,6 +19,7 @@ where
 
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
     use DataType as D;
+    #[allow(clippy::single_match)]
     match (input.dtype(), output.dtype()) {
         // @Hack to deal with deprecated cast
         // @2.0
