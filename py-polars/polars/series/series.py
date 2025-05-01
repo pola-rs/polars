@@ -736,7 +736,7 @@ class Series:
 
     @overload
     def __rxor__(self, other: Expr) -> Expr: ...
-    
+
     @overload
     def __rxor__(self, other: Any) -> Series: ...
 
