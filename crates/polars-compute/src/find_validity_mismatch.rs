@@ -8,10 +8,21 @@ use crate::cast::CastOptionsImpl;
 
 /// Find the indices of the values where the validity mismatches.
 ///
-/// This is done recursively.
+/// This is done recursively, meaning that a validity mismatch at a deeper level will result as at
+/// the level above at the corresponding index.
+///
+/// This procedure requires that
+/// - Nulls are propagated recursively
+/// - Lists to be
+///     - trimmed to normalized offsets
+///     - have the same number of child elements below each element (even nulls)
 pub fn find_validity_mismatch(left: &dyn Array, right: &dyn Array, idxs: &mut Vec<IdxSize>) {
     assert_eq!(left.len(), right.len());
 
+    // Handle the top-level.
+    //
+    // NOTE: This is done always, even if left and right have different nestings. This is
+    // intentional and needed.
     let original_idxs_length = idxs.len();
     match (left.validity(), right.validity()) {
         (None, None) => {},
@@ -71,6 +82,7 @@ pub fn find_validity_mismatch(left: &dyn Array, right: &dyn Array, idxs: &mut Ve
             idxs,
         )
     }
+
     // (List, Array) / (Array, List)
     if let (Some(left), Some(right)) = (
         left.downcast_ref::<ListArray<i32>>(),
