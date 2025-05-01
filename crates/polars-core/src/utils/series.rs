@@ -1,7 +1,5 @@
 use std::rc::Rc;
 
-use polars_utils::itertools::Itertools;
-
 use crate::prelude::*;
 use crate::series::amortized_iter::AmortSeries;
 
@@ -23,13 +21,13 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
     match (input.dtype(), output.dtype()) {
         // @Hack to deal with deprecated cast
         // @2.0
+        #[cfg(feature = "dtype-struct")]
         (D::Struct(l_fields), D::Struct(r_fields)) => {
             if l_fields.len() != r_fields.len()
-                || !l_fields
+                || l_fields
                     .iter()
-                    .map(|f| f.name())
-                    .zip(r_fields.iter().map(|f| f.name()))
-                    .all_equal()
+                    .zip(r_fields.iter())
+                    .any(|(l, r)| l.name() != r.name())
             {
                 return Ok(());
             }
