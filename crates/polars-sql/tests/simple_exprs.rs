@@ -545,6 +545,120 @@ fn test_arr_agg() {
 }
 
 #[test]
+fn test_explode_with_multiple_columns() {
+    let df = create_sample_df();
+
+    // Implode column "a"
+    let df_imploded = df
+        .lazy()
+        .select(&[col("a").implode().alias("a")])
+        .collect()
+        .unwrap();
+
+    let df_with_new_column_a = df_imploded
+        .clone()
+        .lazy()
+        .with_column(lit("a").alias("b"))
+        .collect()
+        .unwrap();
+
+    let df_with_new_column_b = df_imploded
+        .lazy()
+        .with_column(lit("b").alias("b"))
+        .collect()
+        .unwrap();
+
+    let df = df_with_new_column_a.vstack(&df_with_new_column_b).unwrap();
+    let df_pl_api = df.clone().lazy().explode(&[col("a")]).collect().unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.lazy());
+
+    let sql = r#"
+        SELECT
+            unnest(a) AS a,
+            b,
+        FROM df
+    "#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    assert!(df_sql.equals(&df_pl_api));
+}
+
+#[test]
+fn test_multiple_explodes_with_same_column() {
+    let df = create_sample_df();
+    let df_imploded = df
+        .lazy()
+        .select(&[
+            col("a").implode().alias("list_a"),
+            col("b").implode().alias("list_b"),
+        ])
+        .collect()
+        .unwrap();
+
+    let mut context = SQLContext::new();
+    context.register("df", df_imploded.clone().lazy());
+    let sql = r#"
+        SELECT
+            unnest(list_a) AS list_a,
+            unnest(list_b) AS list_b,
+            CASE 
+                WHEN unnest(list_b) > 5000 THEN 'High'
+                WHEN unnest(list_b) > 2500 THEN 'Medium'
+                ELSE 'Low'
+            END AS list_b_category
+        FROM df
+    "#;
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    assert!(df_sql.shape().eq(&(9_999, 3)));
+}
+
+#[test]
+fn test_multiple_explodes_different_columns() {
+    let df = create_sample_df();
+
+    let df_imploded = df
+        .lazy()
+        .select(&[
+            col("a").implode().alias("list_a"),
+            col("b").implode().alias("list_b"),
+        ])
+        .collect()
+        .unwrap();
+
+    // Add scalar to check if row-bound mapping stays consistent.
+    let df_with_scalar = df_imploded
+        .lazy()
+        .with_column(lit(100).alias("value"))
+        .collect()
+        .unwrap();
+
+    // Test using both the Polars API and SQL
+    let df_pl_api = df_with_scalar
+        .clone()
+        .lazy()
+        .explode(&[col("list_a"), col("list_b")])
+        .collect()
+        .unwrap();
+
+    let mut context = SQLContext::new();
+    context.register("df", df_with_scalar.clone().lazy());
+
+    let sql = r#"
+        SELECT
+            unnest(list_a) AS list_a,
+            unnest(list_b) AS list_b,
+            value
+        FROM df
+    "#;
+
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+    // Verify SQL result matches the Polars API result
+    assert!(df_sql.equals(&df_pl_api));
+}
+
+#[test]
 fn test_ctes() -> PolarsResult<()> {
     let df = create_sample_df();
 
