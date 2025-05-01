@@ -141,7 +141,7 @@ def test_interpolate_temporal_nearest(
 
 
 @pytest.mark.parametrize(
-    ("input", "scale", "method", "expected"),
+    ("input", "scale", "method", "output"),
     # note the lack of rounding (1.66 vs 1.67)
     [
         ([1.0, None, 3.0], 2, "linear", [1.0, 2.0, 3.0]),
@@ -151,12 +151,12 @@ def test_interpolate_temporal_nearest(
     ],
 )
 def test_interpolate_decimal_22475(
-    input: list[Any], scale: int, method: InterpolationMethod, expected: list[Any]
+    input: list[Any], scale: int, method: InterpolationMethod, output: list[Any]
 ) -> None:
     df = pl.DataFrame({"data": input})
     df_decimal = df.with_columns(pl.col("data").cast(pl.Decimal(scale=scale)))
     out = df_decimal.with_columns(pl.col("data").interpolate(method=method))
-    expected = pl.DataFrame({"data": expected}).with_columns(
+    expected = pl.DataFrame({"data": output}).with_columns(
         pl.col("data").cast(pl.Decimal(scale=2))
     )
     assert_frame_equal(out, expected)
