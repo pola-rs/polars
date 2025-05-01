@@ -5417,26 +5417,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Lazy DataFrame to join with.
         on
             Name(s) of the join columns in both DataFrames. If set, `left_on` and
-            `right_on` should be None. This should not be specified if `how="cross"`.
-        how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
+            `right_on` should be None. This should not be specified if `how='cross'`.
+        how : {'inner','left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
-            * *inner*
-                Returns rows that have matching values in both tables
-            * *left*
-                Returns all rows from the left table, and the matched rows from the
-                right table
-            * *right*
-                Returns all rows from the right table, and the matched rows from the
-                left table
-            * *full*
-                Returns all rows when there is a match in either left or right table
-            * *cross*
-                Returns the Cartesian product of rows from both tables
-            * *semi*
-                Returns rows from the left table that have a match in the right table.
-            * *anti*
-                Returns rows from the left table that have no match in the right table.
+            .. list-table ::
+               :header-rows: 0
+
+               * - **inner**
+                 - *(Default)* Returns rows that have matching values in both tables.
+               * - **left**
+                 - Returns all rows from the left table, and the matched rows from
+                   the right table.
+               * - **full**
+                 - Returns all rows when there is a match in either left or right.
+               * - **cross**
+                 - Returns the Cartesian product of rows from both tables
+               * - **semi**
+                 - Returns rows from the left table that have a match in the right
+                   table.
+               * - **anti**
+                 - Returns rows from the left table that have no match in the right
+                   table.
+
         left_on
             Join column of the left DataFrame.
         right_on
@@ -5446,48 +5449,61 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         validate: {'m:m', 'm:1', '1:m', '1:1'}
             Checks if join is of specified type.
 
-                * *many_to_many*
-                    “m:m”: default, does not result in checks
-                * *one_to_one*
-                    “1:1”: check if join keys are unique in both left and right datasets
-                * *one_to_many*
-                    “1:m”: check if join keys are unique in left dataset
-                * *many_to_one*
-                    “m:1”: check if join keys are unique in right dataset
+            .. list-table ::
+               :header-rows: 0
+
+               * - **m:m**
+                 - *(Default)* Many-to-many. Does not result in checks.
+               * - **1:1**
+                 - One-to-one. Checks if join keys are unique in both left and
+                   right datasets.
+               * - **1:m**
+                 - One-to-many. Checks if join keys are unique in left dataset.
+               * - **m:1**
+                 - Many-to-one. Check if join keys are unique in right dataset.
 
             .. note::
                 This is currently not supported by the streaming engine.
-
         nulls_equal
             Join on null values. By default null values will never produce matches.
         coalesce
             Coalescing behavior (merging of join columns).
 
-            - None: -> join specific.
-            - True: -> Always coalesce join columns.
-            - False: -> Never coalesce join columns.
+            .. list-table ::
+               :header-rows: 0
+
+               * - **None**
+                 - *(Default)* Coalesce unless `how='full'` is specified.
+               * - **True**
+                 - Always coalesce join columns.
+               * - **False**
+                 - Never coalesce join columns.
 
             .. note::
                 Joining on any other expressions than `col`
                 will turn off coalescing.
         maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
             Which DataFrame row order to preserve, if any.
-            Do not rely on any observed ordering without explicitly
-            setting this parameter, as your code may break in a future release.
-            Not specifying any ordering can improve performance
+            Do not rely on any observed ordering without explicitly setting this
+            parameter, as your code may break in a future release.
+            Not specifying any ordering can improve performance.
             Supported for inner, left, right and full joins
 
-            * *none*
-                No specific ordering is desired. The ordering might differ across
-                Polars versions or even between different runs.
-            * *left*
-                Preserves the order of the left DataFrame.
-            * *right*
-                Preserves the order of the right DataFrame.
-            * *left_right*
-                First preserves the order of the left DataFrame, then the right.
-            * *right_left*
-                First preserves the order of the right DataFrame, then the left.
+            .. list-table ::
+               :header-rows: 0
+
+               * - **none**
+                 - *(Default)* No specific ordering is desired. The ordering might
+                   differ across Polars versions or even between different runs.
+               * - **left**
+                 - Preserves the order of the left DataFrame.
+               * - **right**
+                 - Preserves the order of the right DataFrame.
+               * - **left_right**
+                 - First preserves the order of the left DataFrame, then the right.
+               * - **right_left**
+                 - First preserves the order of the right DataFrame, then the left.
+
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
