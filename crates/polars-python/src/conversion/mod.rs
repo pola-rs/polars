@@ -40,6 +40,7 @@ use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::{pl_series, polars};
 use crate::series::PySeries;
+use crate::utils::to_py_err;
 use crate::{PyDataFrame, PyLazyFrame};
 
 /// # Safety
@@ -266,7 +267,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
             },
             DataType::Datetime(tu, tz) => {
                 let datetime_class = pl.getattr(intern!(py, "Datetime"))?;
-                datetime_class.call1((tu.to_ascii(), tz.as_deref()))
+                datetime_class.call1((tu.to_ascii(), tz.as_deref().map(|x| x.as_str())))
             },
             DataType::Duration(tu) => {
                 let duration_class = pl.getattr(intern!(py, "Duration"))?;
@@ -416,7 +417,10 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
                 let time_zone = ob.getattr(intern!(py, "time_zone")).unwrap();
                 let time_zone = time_zone.extract::<Option<PyBackedStr>>()?;
-                DataType::Datetime(time_unit, time_zone.as_deref().map(|x| x.into()))
+                DataType::Datetime(
+                    time_unit,
+                    TimeZone::opt_try_new(time_zone.as_deref()).map_err(to_py_err)?,
+                )
             },
             "Duration" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
@@ -1342,5 +1346,15 @@ impl<'py> FromPyObject<'py> for Wrap<UnicodeForm> {
             },
         };
         Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<Option<TimeZone>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let tz = Option::<Wrap<PlSmallStr>>::extract_bound(ob)?;
+
+        let tz = tz.map(|x| x.0);
+
+        Ok(Wrap(TimeZone::opt_try_new(tz).map_err(to_py_err)?))
     }
 }

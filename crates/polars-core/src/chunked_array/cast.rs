@@ -5,8 +5,6 @@ use polars_compute::cast::CastOptionsImpl;
 use serde::{Deserialize, Serialize};
 
 use super::flags::StatisticsFlags;
-#[cfg(feature = "timezones")]
-use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
@@ -102,7 +100,7 @@ fn cast_impl_inner(
         Datetime(tu, tz) => match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
-                validate_time_zone(tz)?;
+                TimeZone::validate_time_zone(tz)?;
                 out.into_datetime(*tu, Some(tz.clone()))
             },
             _ => out.into_datetime(*tu, None),
@@ -346,8 +344,8 @@ impl ChunkCast for StringChunked {
             DataType::Datetime(time_unit, time_zone) => match time_zone {
                 #[cfg(feature = "timezones")]
                 Some(time_zone) => {
-                    validate_time_zone(time_zone)?;
-                    let result = cast_chunks(
+                    TimeZone::validate_time_zone(time_zone)?;
+                    let result: Vec<Box<dyn Array>> = cast_chunks(
                         &self.chunks,
                         &Datetime(time_unit.to_owned(), Some(time_zone.clone())),
                         options,

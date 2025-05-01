@@ -1,8 +1,6 @@
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
-use polars_core::chunked_array::temporal::validate_time_zone;
-#[cfg(feature = "timezones")]
 use polars_time::base_utc_offset as base_utc_offset_fn;
 #[cfg(feature = "timezones")]
 use polars_time::dst_offset as dst_offset_fn;
@@ -458,7 +456,6 @@ pub(super) fn convert_time_zone(s: &Column, time_zone: &TimeZone) -> PolarsResul
     match s.dtype() {
         DataType::Datetime(_, _) => {
             let mut ca = s.datetime()?.clone();
-            validate_time_zone(time_zone)?;
             ca.set_time_zone(time_zone.clone())?;
             Ok(ca.into_column())
         },

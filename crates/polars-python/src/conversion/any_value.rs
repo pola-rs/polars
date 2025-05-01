@@ -11,7 +11,7 @@ use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
 use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, TimeUnit};
-use polars::prelude::{AnyValue, PlSmallStr, Series};
+use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
@@ -281,7 +281,7 @@ pub(crate) fn py_object_to_any_value<'py>(
 
         let (timestamp, tz) = if tzinfo.hasattr(intern!(py, "key"))? {
             let datetime = ob.extract::<DateTime<Tz>>()?;
-            let tz = datetime.timezone().name().into();
+            let tz = TimeZone::from_static(datetime.timezone().name());
             if datetime.year() >= 2100 {
                 // chrono-tz does not support dates after 2100
                 // https://github.com/chronotope/chrono-tz/issues/135
@@ -300,7 +300,7 @@ pub(crate) fn py_object_to_any_value<'py>(
         } else {
             let datetime = ob.extract::<DateTime<FixedOffset>>()?;
             let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
-            (delta.num_microseconds().unwrap(), "UTC".into())
+            (delta.num_microseconds().unwrap(), TimeZone::UTC)
         };
 
         Ok(AnyValue::DatetimeOwned(
