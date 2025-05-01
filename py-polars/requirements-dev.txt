@@ -63,11 +63,11 @@ orjson
 
 pytest==8.3.2
 pytest-codspeed==3.2.0
-pytest-cov==6.0.0
+pytest-cov==6.1.1
 pytest-xdist==3.6.1
 
 # Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
-moto[s3]==5.0.9
+moto[s3]==5.1.4
 flask
 flask-cors
 
