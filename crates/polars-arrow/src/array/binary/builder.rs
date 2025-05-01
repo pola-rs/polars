@@ -79,6 +79,41 @@ impl<O: Offset> StaticArrayBuilder for BinaryArrayBuilder<O> {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &BinaryArray<O>,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        let other_offsets = other.offsets();
+        let other_values = &**other.values();
+
+        let start_offset = other.offsets()[start].to_usize();
+        let stop_offset = other.offsets()[start + length].to_usize();
+        self.offsets.reserve(length * repeats);
+        self.values.reserve((stop_offset - start_offset) * repeats);
+        for offset_idx in start..start + length {
+            let substring_start = other_offsets[offset_idx].to_usize();
+            let substring_stop = other_offsets[offset_idx + 1].to_usize();
+            for _ in 0..repeats {
+                self.offsets
+                    .try_push(substring_stop - substring_start)
+                    .unwrap();
+                self.values
+                    .extend_from_slice(&other_values[substring_start..substring_stop]);
+            }
+        }
+        self.validity
+            .subslice_extend_each_repeated_from_opt_validity(
+                other.validity(),
+                start,
+                length,
+                repeats,
+            );
+    }
+
     unsafe fn gather_extend(
         &mut self,
         other: &BinaryArray<O>,

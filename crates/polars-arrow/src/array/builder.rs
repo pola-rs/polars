@@ -63,10 +63,21 @@ pub trait StaticArrayBuilder: Send {
         repeats: usize,
         share: ShareStrategy,
     ) {
+        self.reserve(length * repeats);
         for _ in 0..repeats {
             self.subslice_extend(other, start, length, share)
         }
     }
+
+    /// The same as subslice_extend, but repeats each element `repeats` times.
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &Self::Array,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    );
 
     /// Extends this builder with the contents of the given array at the given
     /// indices. That is, `other[idxs[i]]` is appended to this array in order,
@@ -141,6 +152,21 @@ impl<T: StaticArrayBuilder> ArrayBuilder for T {
     }
 
     #[inline(always)]
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    ) {
+        let other: &T::Array = other.as_any().downcast_ref().unwrap();
+        StaticArrayBuilder::subslice_extend_each_repeated(
+            self, other, start, length, repeats, share,
+        );
+    }
+
+    #[inline(always)]
     unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
         let other: &T::Array = other.as_any().downcast_ref().unwrap();
         StaticArrayBuilder::gather_extend(self, other, idxs, share);
@@ -188,6 +214,16 @@ pub trait ArrayBuilder: ArrayBuilderBoxedHelper + Send {
 
     /// The same as subslice_extend, but repeats the extension `repeats` times.
     fn subslice_extend_repeated(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    );
+
+    /// The same as subslice_extend, but repeats each element `repeats` times.
+    fn subslice_extend_each_repeated(
         &mut self,
         other: &dyn Array,
         start: usize,
@@ -275,6 +311,18 @@ impl ArrayBuilder for Box<dyn ArrayBuilder> {
         share: ShareStrategy,
     ) {
         (**self).subslice_extend_repeated(other, start, length, repeats, share);
+    }
+
+    #[inline(always)]
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    ) {
+        (**self).subslice_extend_each_repeated(other, start, length, repeats, share);
     }
 
     #[inline(always)]
