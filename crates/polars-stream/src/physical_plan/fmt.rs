@@ -61,7 +61,7 @@ impl NodeStyle {
     /// Returns a legend explaining the node style meaning.
     pub fn legend() -> String {
         format!(
-            "fontsize=\"10\"\nlabelloc=\"b\"\nlabel=<<BR/><BR/><B>Legend</B><BR/><BR/>◯ streaming engine node<FONT COLOR=\"{}\">⬤</FONT>potentially memory-intensive node<FONT COLOR=\"{}\">⬤</FONT>in-memory engine fallback>",
+            "fontname=\"Helvetica\"\nfontsize=\"10\"\nlabelloc=\"b\"\nlabel=<<BR/><BR/><B>Legend</B><BR/><BR/>◯ streaming engine node <FONT COLOR=\"{}\">⬤</FONT> potentially memory-intensive node <FONT COLOR=\"{}\">⬤</FONT> in-memory engine fallback>",
             Self::COLOR_MEM_INTENSIVE,
             Self::COLOR_IN_MEM_FALLBACK,
         )
@@ -412,7 +412,7 @@ pub fn visualize_plan(
 ) -> String {
     let mut visited: SecondaryMap<PhysNodeKey, ()> = SecondaryMap::new();
     let mut out = Vec::with_capacity(phys_sm.len() + 3);
-    out.push("digraph polars {\nrankdir=\"BT\"".to_string());
+    out.push("digraph polars {\nrankdir=\"BT\"\nnode [fontname=\"Monospace\"]".to_string());
     out.push(NodeStyle::legend());
     visualize_plan_rec(root, phys_sm, expr_arena, &mut visited, &mut out);
     out.push("}".to_string());
