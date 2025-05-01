@@ -96,7 +96,8 @@ impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
         let start_offset = other.offsets()[start].to_usize();
         let stop_offset = other.offsets()[start + length].to_usize();
         self.offsets.reserve(length * repeats);
-        self.inner_builder.reserve((stop_offset - start_offset) * repeats);
+        self.inner_builder
+            .reserve((stop_offset - start_offset) * repeats);
         for offset_idx in start..start + length {
             let sublist_start = other_offsets[offset_idx].to_usize();
             let sublist_stop = other_offsets[offset_idx + 1].to_usize();
