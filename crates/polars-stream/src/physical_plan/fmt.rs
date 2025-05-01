@@ -6,7 +6,6 @@ use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
 use polars_utils::arena::Arena;
-use polars_utils::itertools::Itertools;
 use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
@@ -74,12 +73,76 @@ fn escape_graphviz(s: &str) -> String {
         .replace('"', "\\\"")
 }
 
-fn fmt_exprs(exprs: &[ExprIR], expr_arena: &Arena<AExpr>) -> String {
-    exprs
-        .iter()
-        .map(|e| escape_graphviz(&e.display(expr_arena).to_string()))
-        .collect_vec()
-        .join("\\n")
+fn fmt_expr(f: &mut dyn Write, expr: &ExprIR, expr_arena: &Arena<AExpr>) -> std::fmt::Result {
+    // Remove the alias to make the display better
+    let without_alias = ExprIR::from_node(expr.node(), expr_arena);
+    write!(
+        f,
+        "{} = {}",
+        expr.output_name(),
+        without_alias.display(expr_arena)
+    )
+}
+
+pub enum FormatExprStyle {
+    Select,
+    NoAliases,
+}
+
+pub fn fmt_exprs_to_label(
+    exprs: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+    style: FormatExprStyle,
+) -> String {
+    let mut buffer = String::new();
+    let mut f = EscapeLabel(&mut buffer);
+    fmt_exprs(&mut f, exprs, expr_arena, style);
+    buffer
+}
+
+pub fn fmt_exprs(
+    f: &mut dyn Write,
+    exprs: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+    style: FormatExprStyle,
+) {
+    if matches!(style, FormatExprStyle::Select) {
+        let mut formatted = Vec::new();
+
+        let mut max_name_width = 0;
+        let mut max_expr_width = 0;
+
+        for e in exprs {
+            let mut name = String::new();
+            let mut expr = String::new();
+
+            // Remove the alias to make the display better
+            let without_alias = ExprIR::from_node(e.node(), expr_arena);
+
+            write!(name, "{}", e.output_name()).unwrap();
+            write!(expr, "{}", without_alias.display(expr_arena)).unwrap();
+
+            max_name_width = max_name_width.max(name.chars().count());
+            max_expr_width = max_expr_width.max(expr.chars().count());
+
+            formatted.push((name, expr));
+        }
+
+        for (name, expr) in formatted {
+            write!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}\\n").unwrap();
+        }
+    } else {
+        let Some(e) = exprs.first() else {
+            return;
+        };
+
+        fmt_expr(f, e, expr_arena).unwrap();
+
+        for e in &exprs[1..] {
+            f.write_str("\\n").unwrap();
+            fmt_expr(f, e, expr_arena).unwrap();
+        }
+    }
 }
 
 #[recursive::recursive]
@@ -125,7 +188,10 @@ fn visualize_plan_rec(
                 "select"
             };
             (
-                format!("{label}\\n{}", fmt_exprs(selectors, expr_arena)),
+                format!(
+                    "{label}\\n{}",
+                    fmt_exprs_to_label(selectors, expr_arena, FormatExprStyle::Select)
+                ),
                 from_ref(input),
             )
         },
@@ -140,12 +206,15 @@ fn visualize_plan_rec(
         PhysNodeKind::InputIndependentSelect { selectors } => (
             format!(
                 "input-independent-select\\n{}",
-                fmt_exprs(selectors, expr_arena)
+                fmt_exprs_to_label(selectors, expr_arena, FormatExprStyle::Select)
             ),
             &[][..],
         ),
         PhysNodeKind::Reduce { input, exprs } => (
-            format!("reduce\\n{}", fmt_exprs(exprs, expr_arena)),
+            format!(
+                "reduce\\n{}",
+                fmt_exprs_to_label(exprs, expr_arena, FormatExprStyle::Select)
+            ),
             from_ref(input),
         ),
         PhysNodeKind::StreamingSlice {
@@ -165,7 +234,10 @@ fn visualize_plan_rec(
             from_ref(input),
         ),
         PhysNodeKind::Filter { input, predicate } => (
-            format!("filter\\n{}", fmt_exprs(from_ref(predicate), expr_arena)),
+            format!(
+                "filter\\n{}",
+                fmt_exprs_to_label(from_ref(predicate), expr_arena, FormatExprStyle::Select)
+            ),
             from_ref(input),
         ),
         PhysNodeKind::SimpleProjection { input, columns } => (
@@ -212,8 +284,20 @@ fn visualize_plan_rec(
                 _ => todo!(),
             }
         },
-        PhysNodeKind::InMemoryMap { input, map: _ } => {
-            ("in-memory-map".to_string(), from_ref(input))
+        PhysNodeKind::InMemoryMap {
+            input,
+            map: _,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("in-memory-map");
+            if let Some(format_str) = format_str {
+                label.push('\n');
+
+                let mut f = EscapeLabel(&mut label);
+                write!(f, "{format_str}").unwrap();
+            }
+            (label, from_ref(input))
         },
         PhysNodeKind::Map { input, map: _ } => ("map".to_string(), from_ref(input)),
         PhysNodeKind::Sort {
@@ -222,7 +306,10 @@ fn visualize_plan_rec(
             slice: _,
             sort_options: _,
         } => (
-            format!("sort\\n{}", fmt_exprs(by_column, expr_arena)),
+            format!(
+                "sort\\n{}",
+                fmt_exprs_to_label(by_column, expr_arena, FormatExprStyle::NoAliases)
+            ),
             from_ref(input),
         ),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
@@ -311,8 +398,8 @@ fn visualize_plan_rec(
         PhysNodeKind::GroupBy { input, key, aggs } => (
             format!(
                 "group-by\\nkey:\\n{}\\naggs:\\n{}",
-                fmt_exprs(key, expr_arena),
-                fmt_exprs(aggs, expr_arena)
+                fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
             ),
             from_ref(input),
         ),
@@ -357,8 +444,18 @@ fn visualize_plan_rec(
                 _ => unreachable!(),
             };
             let mut label = label.to_string();
-            write!(label, r"\nleft_on:\n{}", fmt_exprs(left_on, expr_arena)).unwrap();
-            write!(label, r"\nright_on:\n{}", fmt_exprs(right_on, expr_arena)).unwrap();
+            write!(
+                label,
+                r"\nleft_on:\n{}",
+                fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases)
+            )
+            .unwrap();
+            write!(
+                label,
+                r"\nright_on:\n{}",
+                fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases)
+            )
+            .unwrap();
             if args.how.is_equi() {
                 write!(
                     label,
