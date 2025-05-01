@@ -4884,7 +4884,7 @@ class DataFrame:
 
     def insert_column(self, index: int, column: IntoExprColumn) -> DataFrame:
         """
-        Insert a Series at a certain column index.
+        Insert a Series (or expression) at a certain column index.
 
         This operation is in place.
 
@@ -4897,6 +4897,8 @@ class DataFrame:
 
         Examples
         --------
+        Insert a new Series column at the given index:
+
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> s = pl.Series("baz", [97, 98, 99])
         >>> df.insert_column(1, s)
@@ -4911,26 +4913,23 @@ class DataFrame:
         │ 3   ┆ 99  ┆ 6   │
         └─────┴─────┴─────┘
 
+        Insert a new expression column at the given index:
+
         >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3, 4],
-        ...         "b": [0.5, 4, 10, 13],
-        ...         "c": [True, True, False, True],
-        ...     }
+        ...     {"a": [2, 4, 2], "b": [0.5, 4, 10], "c": ["xx", "yy", "zz"]}
         ... )
-        >>> s = pl.Series("d", [-2.5, 15, 20.5, 0])
-        >>> df.insert_column(3, s)
-        shape: (4, 4)
-        ┌─────┬──────┬───────┬──────┐
-        │ a   ┆ b    ┆ c     ┆ d    │
-        │ --- ┆ ---  ┆ ---   ┆ ---  │
-        │ i64 ┆ f64  ┆ bool  ┆ f64  │
-        ╞═════╪══════╪═══════╪══════╡
-        │ 1   ┆ 0.5  ┆ true  ┆ -2.5 │
-        │ 2   ┆ 4.0  ┆ true  ┆ 15.0 │
-        │ 3   ┆ 10.0 ┆ false ┆ 20.5 │
-        │ 4   ┆ 13.0 ┆ true  ┆ 0.0  │
-        └─────┴──────┴───────┴──────┘
+        >>> expr = (pl.col("b") / pl.col("a")).alias("b_div_a")
+        >>> df.insert_column(2, expr)
+        shape: (3, 4)
+        ┌─────┬──────┬─────────┬─────┐
+        │ a   ┆ b    ┆ b_div_a ┆ c   │
+        │ --- ┆ ---  ┆ ---     ┆ --- │
+        │ i64 ┆ f64  ┆ f64     ┆ str │
+        ╞═════╪══════╪═════════╪═════╡
+        │ 2   ┆ 0.5  ┆ 0.25    ┆ xx  │
+        │ 4   ┆ 4.0  ┆ 1.0     ┆ yy  │
+        │ 2   ┆ 10.0 ┆ 5.0     ┆ zz  │
+        └─────┴──────┴─────────┴─────┘
         """
         if (original_index := index) < 0:
             index = self.width + index
