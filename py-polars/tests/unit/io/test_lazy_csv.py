@@ -466,3 +466,26 @@ def test_select_nonexistent_column() -> None:
 
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
         pl.scan_csv(f).select("b").collect()
+
+
+def test_scan_csv_provided_schema_with_extra_fields_22531() -> None:
+    data = b"""\
+a,b,c
+a,b,c
+"""
+
+    schema = {x: pl.String for x in ["a", "b", "c", "d", "e"]}
+
+    assert_frame_equal(
+        pl.scan_csv(data, schema=schema).collect(),
+        pl.DataFrame(
+            {
+                "a": "a",
+                "b": "b",
+                "c": "c",
+                "d": None,
+                "e": None,
+            },
+            schema=schema,
+        ),
+    )
