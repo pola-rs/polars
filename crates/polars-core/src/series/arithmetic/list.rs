@@ -61,13 +61,22 @@ impl NumericListOp {
     #[cfg_attr(not(feature = "list_arithmetic"), allow(unused))]
     pub fn execute(&self, lhs: &Series, rhs: &Series) -> PolarsResult<Series> {
         feature_gated!("list_arithmetic", {
+            use std::borrow::Cow;
+
             use either::Either;
 
             // `trim_to_normalized_offsets` ensures we don't perform excessive
             // memory allocation / compute on memory regions that have been
             // sliced out.
-            let lhs = lhs.list_rechunk_and_trim_to_normalized_offsets();
-            let rhs = rhs.list_rechunk_and_trim_to_normalized_offsets();
+            let lhs = lhs
+                .trim_lists_to_normalized_offsets()
+                .map_or(Cow::Borrowed(lhs), Cow::Owned);
+            let rhs = rhs
+                .trim_lists_to_normalized_offsets()
+                .map_or(Cow::Borrowed(rhs), Cow::Owned);
+
+            let lhs = lhs.rechunk();
+            let rhs = rhs.rechunk();
 
             let binary_op_exec = match ListNumericOpHelper::try_new(
                 self.clone(),

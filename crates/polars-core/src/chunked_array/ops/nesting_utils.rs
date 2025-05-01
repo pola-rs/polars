@@ -103,6 +103,7 @@ impl ChunkNestingUtils for ListChunked {
             let mut ca = unsafe {
                 Self::new_with_dims(self.field.clone(), chunks, self.length, self.null_count)
             };
+
             ca.set_flags(flags | StatisticsFlags::HAS_TRIMMED_LISTS_TO_NORMALIZED_OFFSETS);
             return Some(ca);
         }

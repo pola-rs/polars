@@ -30,14 +30,14 @@ pub fn trim_lists_to_normalized_offsets_list<O: Offset>(
     let len = offsets.range().to_usize();
 
     let (values, offsets) = if values.len() == len {
-        let values = values.trim_lists_to_normalized_offsets()?;
+        let values = trim_lists_to_normalized_offsets(values.as_ref())?;
         (values, offsets.clone())
     } else {
         let first_idx = *offsets.first();
         let v = offsets.iter().map(|x| *x - first_idx).collect::<Vec<_>>();
         let offsets = unsafe { OffsetsBuffer::<O>::new_unchecked(v.into()) };
         let values = values.sliced(first_idx.to_usize(), len);
-        let values = values.trim_lists_to_normalized_offsets().unwrap_or(values);
+        let values = trim_lists_to_normalized_offsets(values.as_ref()).unwrap_or(values);
         (values, offsets)
     };
 
@@ -55,7 +55,7 @@ pub fn trim_lists_to_normalized_offsets_list<O: Offset>(
 pub fn trim_lists_to_normalized_offsets_fsl(
     arr: &FixedSizeListArray,
 ) -> Option<FixedSizeListArray> {
-    let values = arr.values().trim_lists_to_normalized_offsets()?;
+    let values = trim_lists_to_normalized_offsets(arr.values().as_ref())?;
 
     Some(FixedSizeListArray::new(
         arr.dtype().clone(),
@@ -68,7 +68,7 @@ pub fn trim_lists_to_normalized_offsets_fsl(
 pub fn trim_lists_to_normalized_offsets_struct(arr: &StructArray) -> Option<StructArray> {
     let mut new_values = Vec::new();
     for (i, field_array) in arr.values().iter().enumerate() {
-        let Some(field_array) = field_array.trim_lists_to_normalized_offsets() else {
+        let Some(field_array) = trim_lists_to_normalized_offsets(field_array.as_ref()) else {
             // Nothing was changed. Return the original array.
             continue;
         };
@@ -84,8 +84,7 @@ pub fn trim_lists_to_normalized_offsets_struct(arr: &StructArray) -> Option<Stru
     }
 
     new_values.extend(arr.values()[new_values.len()..].iter().map(|field_array| {
-        field_array
-            .trim_lists_to_normalized_offsets()
+        trim_lists_to_normalized_offsets(field_array.as_ref())
             .unwrap_or_else(|| field_array.clone())
     }));
 

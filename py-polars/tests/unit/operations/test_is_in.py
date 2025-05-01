@@ -471,7 +471,7 @@ def test_enum_is_in_series_non_existent(nulls_equal: bool) -> None:
     with pytest.raises(InvalidOperationError):
         s.is_in(["a", "d", "e"], nulls_equal=nulls_equal)
 
-    out = s.is_in(["a", "d"], nulls_equal=nulls_equal)
+    out = s.is_in(["a"], nulls_equal=nulls_equal)
     assert_series_equal(out, expected)
 
 

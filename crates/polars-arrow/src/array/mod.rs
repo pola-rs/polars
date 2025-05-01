@@ -85,11 +85,6 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// When the validity is [`None`], all slots are valid.
     fn validity(&self) -> Option<&Bitmap>;
 
-    /// Trim all lists of unused start and end elements recursively.
-    fn trim_lists_to_normalized_offsets(&self) -> Option<Box<dyn Array>> {
-        None
-    }
-
     /// The number of null slots on this [`Array`].
     /// # Implementation
     /// This is `O(1)` since the number of null elements is pre-computed.

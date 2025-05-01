@@ -1,5 +1,7 @@
 use std::rc::Rc;
 
+use polars_utils::itertools::Itertools;
+
 use crate::prelude::*;
 use crate::series::amortized_iter::AmortSeries;
 
@@ -16,6 +18,24 @@ where
 }
 
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
+    use DataType as D;
+    match (input.dtype(), output.dtype()) {
+        // @Hack to deal with deprecated cast
+        // @2.0
+        (D::Struct(l_fields), D::Struct(r_fields)) => {
+            if l_fields.len() != r_fields.len()
+                || !l_fields
+                    .iter()
+                    .map(|f| f.name())
+                    .zip(r_fields.iter().map(|f| f.name()))
+                    .all_equal()
+            {
+                return Ok(());
+            }
+        },
+        _ => {},
+    }
+
     let mut idxs = Vec::new();
     input.find_validity_mismatch(output, &mut idxs);
 
