@@ -216,15 +216,21 @@ unsafe fn decode(
         D::Struct(fields) => {
             let validity = decode_validity(rows, opt);
 
+            // Match encoding, which doesn't set nulls_last for nested values:
+            let mut nested_opt = opt;
+            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
+
             let values = match dict {
                 None => fields
                     .iter()
-                    .map(|struct_fld| decode(rows, opt, None, struct_fld.dtype()))
+                    .map(|struct_fld| decode(rows, nested_opt, None, struct_fld.dtype()))
                     .collect(),
                 Some(RowEncodingContext::Struct(dicts)) => fields
                     .iter()
                     .zip(dicts)
-                    .map(|(struct_fld, dict)| decode(rows, opt, dict.as_ref(), struct_fld.dtype()))
+                    .map(|(struct_fld, dict)| {
+                        decode(rows, nested_opt, dict.as_ref(), struct_fld.dtype())
+                    })
                     .collect(),
                 _ => unreachable!(),
             };
@@ -233,14 +239,30 @@ unsafe fn decode(
         D::FixedSizeList(fsl_field, width) => {
             let validity = decode_validity(rows, opt);
 
+            // Match encoding, which doesn't set nulls_last for nested values:
+            let mut nested_opt = opt;
+            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
+
             // @TODO: we could consider making this into a scratchpad
             let mut nested_rows = Vec::new();
-            rows_for_fixed_size_list(fsl_field.dtype(), opt, dict, *width, rows, &mut nested_rows);
-            let values = decode(&mut nested_rows, opt, dict, fsl_field.dtype());
+            rows_for_fixed_size_list(
+                fsl_field.dtype(),
+                nested_opt,
+                dict,
+                *width,
+                rows,
+                &mut nested_rows,
+            );
+
+            let values = decode(&mut nested_rows, nested_opt, dict, fsl_field.dtype());
 
             FixedSizeListArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },
         D::List(list_field) | D::LargeList(list_field) => {
+            // Match encoding, which doesn't set nulls_last for nested values:
+            let mut nested_opt = opt;
+            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
+
             let mut validity = BitmapBuilder::new();
 
             // @TODO: we could consider making this into a scratchpad
@@ -257,8 +279,12 @@ unsafe fn decode(
             for (i, row) in rows.iter_mut().enumerate() {
                 while row[0] == list_continuation_token {
                     *row = &row[1..];
-                    let len =
-                        dtype_and_data_to_encoded_item_len(list_field.dtype(), row, opt, dict);
+                    let len = dtype_and_data_to_encoded_item_len(
+                        list_field.dtype(),
+                        row,
+                        nested_opt,
+                        dict,
+                    );
                     nested_rows.push(&row[..len]);
                     *row = &row[len..];
                 }
@@ -286,7 +312,7 @@ unsafe fn decode(
             };
             assert_eq!(offsets.len(), rows.len() + 1);
 
-            let values = decode(&mut nested_rows, opt, dict, list_field.dtype());
+            let values = decode(&mut nested_rows, nested_opt, dict, list_field.dtype());
 
             ListArray::<i64>::new(
                 dtype.clone(),

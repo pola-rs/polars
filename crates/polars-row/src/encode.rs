@@ -747,11 +747,18 @@ unsafe fn encode_array(
                 },
             }
 
+            // If we have nested values encoded with nulls_last, this means we
+            // get inconsistent encoding and sort order, in ways we can't
+            // predict from the outside. It's also not necessary for nested
+            // values. So just omit it.
+            let mut nested_opt = opt;
+            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
+
             unsafe {
                 encode_array(
                     buffer,
                     nested_encoder,
-                    opt,
+                    nested_opt,
                     dict,
                     nested_offsets,
                     masked_out_write_offset,
@@ -773,10 +780,18 @@ unsafe fn encode_array(
                     *offset += nested_row_widths.get((i * width) + j);
                 }
             }
+
+            // If we have nested values encoded with nulls_last, this means we
+            // get inconsistent encoding and sort order, in ways we can't
+            // predict from the outside. It's also not necessary for nested
+            // values. So just omit it.
+            let mut nested_opt = opt;
+            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
+
             encode_array(
                 buffer,
                 array.as_ref(),
-                opt,
+                nested_opt,
                 dict,
                 &mut child_offsets,
                 masked_out_write_offset,
@@ -789,13 +804,20 @@ unsafe fn encode_array(
         EncoderState::Struct(arrays) => {
             encode_validity(buffer, encoder.array.validity(), opt, offsets);
 
+            // If we have nested values encoded with nulls_last, this means we
+            // get inconsistent encoding and sort order, in ways we can't
+            // predict from the outside. It's also not necessary for nested
+            // values. So just omit it.
+            let mut nested_opt = opt;
+            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
+
             match dict {
                 None => {
                     for array in arrays {
                         encode_array(
                             buffer,
                             array,
-                            opt,
+                            nested_opt,
                             None,
                             offsets,
                             masked_out_write_offset,
@@ -808,7 +830,7 @@ unsafe fn encode_array(
                         encode_array(
                             buffer,
                             array,
-                            opt,
+                            nested_opt,
                             dict.as_ref(),
                             offsets,
                             masked_out_write_offset,
