@@ -1646,6 +1646,13 @@ class Expr:
         ----------
         decimals
             Number of decimals to round by.
+        mode : {'half_to_even', 'half_away_from_zero'}
+            RoundMode.
+
+            * *half_to_even*
+                round to the nearest even number
+            * *half_away_from_zero*
+                round to the nearest number away from zero
 
         Examples
         --------
@@ -1662,6 +1669,33 @@ class Expr:
         │ 1.0 │
         │ 1.2 │
         └─────┘
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "f64": [-3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5],
+        ...         "d": ["-3.5", "-2.5", "-1.5", "-0.5", "0.5", "1.5", "2.5", "3.5"],
+        ...     },
+        ...     schema_overrides={"d": pl.Decimal(scale=1)},
+        ... )
+        >>> df.with_columns(
+        ...     pl.all().round(mode="half_away_from_zero").name.suffix("_away"),
+        ...     pl.all().round(mode="half_to_even").name.suffix("_to_even"),
+        ... )
+        shape: (8, 6)
+        ┌──────┬──────────────┬──────────┬──────────────┬─────────────┬──────────────┐
+        │ f64  ┆ d            ┆ f64_away ┆ d_away       ┆ f64_to_even ┆ d_to_even    │
+        │ ---  ┆ ---          ┆ ---      ┆ ---          ┆ ---         ┆ ---          │
+        │ f64  ┆ decimal[*,1] ┆ f64      ┆ decimal[*,1] ┆ f64         ┆ decimal[*,1] │
+        ╞══════╪══════════════╪══════════╪══════════════╪═════════════╪══════════════╡
+        │ -3.5 ┆ -3.5         ┆ -4.0     ┆ -4.0         ┆ -4.0        ┆ -4.0         │
+        │ -2.5 ┆ -2.5         ┆ -3.0     ┆ -3.0         ┆ -2.0        ┆ -2.0         │
+        │ -1.5 ┆ -1.5         ┆ -2.0     ┆ -2.0         ┆ -2.0        ┆ -2.0         │
+        │ -0.5 ┆ -0.5         ┆ -1.0     ┆ -1.0         ┆ -0.0        ┆ 0.0          │
+        │ 0.5  ┆ 0.5          ┆ 1.0      ┆ 1.0          ┆ 0.0         ┆ 0.0          │
+        │ 1.5  ┆ 1.5          ┆ 2.0      ┆ 2.0          ┆ 2.0         ┆ 2.0          │
+        │ 2.5  ┆ 2.5          ┆ 3.0      ┆ 3.0          ┆ 2.0         ┆ 2.0          │
+        │ 3.5  ┆ 3.5          ┆ 4.0      ┆ 4.0          ┆ 4.0         ┆ 4.0          │
+        └──────┴──────────────┴──────────┴──────────────┴─────────────┴──────────────┘
         """
         return self._from_pyexpr(self._pyexpr.round(decimals, mode))
 
