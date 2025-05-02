@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from polars import DataFrame, LazyFrame
-    from polars._typing import IntoExpr, RollingInterpolationMethod, SchemaDict
+    from polars._typing import IntoExpr, QuantileMethod, SchemaDict
     from polars.polars import PyLazyGroupBy
 
 
@@ -597,7 +597,7 @@ class LazyGroupBy:
         return self.agg(F.all().n_unique())
 
     def quantile(
-        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
+        self, quantile: float, interpolation: QuantileMethod = "nearest"
     ) -> LazyFrame:
         """
         Compute the quantile per group.
@@ -606,7 +606,7 @@ class LazyGroupBy:
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Examples
@@ -629,7 +629,7 @@ class LazyGroupBy:
         │ Orange ┆ 2.0 ┆ 0.5  │
         │ Banana ┆ 5.0 ┆ 14.0 │
         └────────┴─────┴──────┘
-        """
+        """  # noqa: W505
         return self.agg(F.all().quantile(quantile, interpolation=interpolation))
 
     def sum(self) -> LazyFrame:

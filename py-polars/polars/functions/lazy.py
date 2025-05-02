@@ -37,7 +37,7 @@ if TYPE_CHECKING:
         EpochTimeUnit,
         IntoExpr,
         PolarsDataType,
-        RollingInterpolationMethod,
+        QuantileMethod,
     )
 
 
@@ -1637,7 +1637,7 @@ def groups(column: str) -> Expr:
 def quantile(
     column: str,
     quantile: float | Expr,
-    interpolation: RollingInterpolationMethod = "nearest",
+    interpolation: QuantileMethod = "nearest",
 ) -> Expr:
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.
@@ -1648,7 +1648,7 @@ def quantile(
         Column name.
     quantile
         Quantile between 0.0 and 1.0.
-    interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+    interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
         Interpolation method.
     """
     return F.col(column).quantile(quantile, interpolation)

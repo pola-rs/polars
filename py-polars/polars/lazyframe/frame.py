@@ -131,7 +131,7 @@ if TYPE_CHECKING:
         PlanStage,
         PolarsDataType,
         PythonDataType,
-        RollingInterpolationMethod,
+        QuantileMethod,
         SchemaDefinition,
         SchemaDict,
         SerializationFormat,
@@ -891,7 +891,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75),
         *,
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
     ) -> DataFrame:
         """
         Creates a summary of statistics for a LazyFrame, returning a DataFrame.
@@ -902,7 +902,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             One or more percentiles to include in the summary statistics.
             All values must be in the range `[0, 1]`.
 
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method used when calculating percentiles.
 
         Returns
@@ -7073,7 +7073,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def quantile(
         self,
         quantile: float | Expr,
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
     ) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their quantile value.
@@ -7082,7 +7082,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Examples
@@ -7102,7 +7102,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╡
         │ 3.0 ┆ 1.0 │
         └─────┴─────┘
-        """
+        """  # noqa: W505
         quantile = parse_into_expression(quantile)
         return self._from_pyldf(self._ldf.quantile(quantile, interpolation))
 

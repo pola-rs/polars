@@ -16,7 +16,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         IntoExpr,
         Label,
-        RollingInterpolationMethod,
+        QuantileMethod,
         SchemaDict,
         StartBy,
     )
@@ -692,7 +692,7 @@ class GroupBy:
         return self.agg(F.all().n_unique())
 
     def quantile(
-        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
+        self, quantile: float, interpolation: QuantileMethod = "nearest"
     ) -> DataFrame:
         """
         Compute the quantile per group.
@@ -701,7 +701,7 @@ class GroupBy:
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Examples
@@ -724,7 +724,7 @@ class GroupBy:
         │ Orange ┆ 2.0 ┆ 0.5  │
         │ Banana ┆ 5.0 ┆ 14.0 │
         └────────┴─────┴──────┘
-        """
+        """  # noqa: W505
         return self.agg(F.all().quantile(quantile, interpolation=interpolation))
 
     def sum(self) -> DataFrame:
