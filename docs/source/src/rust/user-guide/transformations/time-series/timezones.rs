@@ -30,20 +30,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("tz_aware")
                 .dt()
                 .replace_time_zone(
-                    TimeZone::opt_try_new(Some("Europe/Brussels"))
-                        .unwrap()
-                        .as_ref(),
+                    TimeZone::opt_try_new(Some("Europe/Brussels")).unwrap(),
                     lit("raise"),
                     NonExistent::Raise,
                 )
                 .alias("replace time zone"),
             col("tz_aware")
                 .dt()
-                .convert_time_zone(
-                    TimeZone::opt_try_new(Some("Asia/Kathmandu"))
-                        .unwrap()
-                        .as_ref(),
-                )
+                .convert_time_zone(TimeZone::opt_try_new(Some("Asia/Kathmandu")).unwrap())
                 .alias("convert time zone"),
             col("tz_aware")
                 .dt()
