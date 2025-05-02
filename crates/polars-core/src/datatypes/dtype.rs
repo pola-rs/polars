@@ -586,6 +586,22 @@ impl DataType {
         }
     }
 
+    pub fn contains_non_global_categoricals(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(revmap, _) => revmap.as_ref().is_none_or(|r| r.is_local()),
+            List(inner) => inner.contains_non_global_categoricals(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_non_global_categoricals(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_non_global_categoricals()),
+            _ => false,
+        }
+    }
+
     pub fn contains_objects(&self) -> bool {
         use DataType::*;
         match self {
