@@ -11,7 +11,7 @@ use polars_utils::arena::{Arena, Node};
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::graph::{Graph, GraphNodeKey};
-use crate::physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind};
+use crate::physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind, StreamingLowerIRContext};
 
 /// Executes the IR with the streaming engine.
 ///
@@ -40,8 +40,11 @@ pub fn visualize_physical_plan(
 ) -> PolarsResult<String> {
     let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
 
+    let ctx = StreamingLowerIRContext {
+        prepare_visualization: true,
+    };
     let root_phys_node =
-        crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm)?;
+        crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm, ctx)?;
 
     let out = crate::physical_plan::visualize_plan(root_phys_node, &phys_sm, expr_arena);
 
@@ -72,8 +75,16 @@ impl StreamingQuery {
             std::fs::write(visual_path, visualization).unwrap();
         }
         let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
-        let root_phys_node =
-            crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm)?;
+        let ctx = StreamingLowerIRContext {
+            prepare_visualization: false,
+        };
+        let root_phys_node = crate::physical_plan::build_physical_plan(
+            node,
+            ir_arena,
+            expr_arena,
+            &mut phys_sm,
+            ctx,
+        )?;
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_PHYSICAL_PLAN") {
             let visualization =
                 crate::physical_plan::visualize_plan(root_phys_node, &phys_sm, expr_arena);

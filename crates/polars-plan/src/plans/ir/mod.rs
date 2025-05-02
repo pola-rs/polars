@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::fmt;
 
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
-pub use format::{ExprIRDisplay, IRDisplay};
+pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursive};
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;

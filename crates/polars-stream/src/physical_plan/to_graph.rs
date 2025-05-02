@@ -381,7 +381,11 @@ fn to_graph_rec<'a>(
             }
         },
 
-        InMemoryMap { input, map } => {
+        InMemoryMap {
+            input,
+            map,
+            format_str: _,
+        } => {
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(

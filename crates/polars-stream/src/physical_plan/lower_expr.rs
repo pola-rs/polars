@@ -16,7 +16,8 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{unique_column_name, unitvec};
 use slotmap::SlotMap;
 
-use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
+use super::fmt::fmt_exprs;
+use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 
 type ExprNodeKey = Node;
@@ -38,9 +39,25 @@ impl ExprCache {
 }
 
 struct LowerExprContext<'a> {
+    prepare_visualization: bool,
     expr_arena: &'a mut Arena<AExpr>,
     phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
     cache: &'a mut ExprCache,
+}
+
+impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext {
+    fn from(value: LowerExprContext<'a>) -> Self {
+        Self {
+            prepare_visualization: value.prepare_visualization,
+        }
+    }
+}
+impl<'a> From<&LowerExprContext<'a>> for StreamingLowerIRContext {
+    fn from(value: &LowerExprContext<'a>) -> Self {
+        Self {
+            prepare_visualization: value.prepare_visualization,
+        }
+    }
 }
 
 pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
@@ -405,9 +422,23 @@ fn build_fallback_node_with_ctx(
             .try_collect()?;
         DataFrame::new_with_broadcast(columns)
     };
+
+    let format_str = ctx.prepare_visualization.then(|| {
+        let mut buffer = String::new();
+        buffer.push_str("SELECT [\n");
+        fmt_exprs(
+            &mut buffer,
+            exprs,
+            ctx.expr_arena,
+            super::fmt::FormatExprStyle::Select,
+        );
+        buffer.push(']');
+        buffer
+    });
     let kind = PhysNodeKind::InMemoryMap {
         input: input_stream,
         map: Arc::new(map),
+        format_str,
     };
     Ok(ctx.phys_sm.insert(PhysNode::new(output_schema, kind)))
 }
@@ -592,6 +623,7 @@ fn lower_exprs_with_ctx(
                     ctx.expr_arena,
                     ctx.phys_sm,
                     ctx.cache,
+                    StreamingLowerIRContext::from(&*ctx),
                 )?;
                 input_streams.insert(group_by_stream);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
@@ -870,6 +902,7 @@ fn lower_exprs_with_ctx(
                         ctx.expr_arena,
                         ctx.phys_sm,
                         ctx.cache,
+                        StreamingLowerIRContext::from(&*ctx),
                     )?;
 
                     let len_node = ctx.expr_arena.add(AExpr::Len);
@@ -1048,11 +1081,13 @@ pub fn lower_exprs(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>)> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
         cache: expr_cache,
+        prepare_visualization: ctx.prepare_visualization,
     };
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
     let (transformed_input, transformed_exprs) =
@@ -1073,11 +1108,13 @@ pub fn build_select_stream(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
         cache: expr_cache,
+        prepare_visualization: ctx.prepare_visualization,
     };
     build_select_stream_with_ctx(input, exprs, &mut ctx)
 }
@@ -1090,11 +1127,13 @@ pub fn build_length_preserving_select_stream(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
         cache: expr_cache,
+        prepare_visualization: ctx.prepare_visualization,
     };
     let already_length_preserving = exprs
         .iter()
