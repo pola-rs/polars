@@ -4062,73 +4062,32 @@ class DataFrame:
 
             return
 
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
-        )
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, file, storage_options, "write_parquet"
-        )
-        del credential_provider
-
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
-        if isinstance(metadata, dict):
-            if metadata:
-                metadata = list(metadata.items())  # type: ignore[assignment]
-            else:
-                # Handle empty dict input
-                metadata = None
-        elif callable(metadata):
-            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
-
-        if isinstance(statistics, bool) and statistics:
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": False,
-                "null_count": True,
-            }
-        elif isinstance(statistics, bool) and not statistics:
-            statistics = {}
-        elif statistics == "full":
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": True,
-                "null_count": True,
-            }
-
+        target: str | Path | IO[bytes] | pl.io.PartitioningScheme = file
+        mkdir = False
+        engine = "in-memory"
         if partition_by is not None:
-            msg = "the `partition_by` parameter of `write_parquet` is considered unstable."
-            issue_unstable_warning(msg)
+            if isinstance(file, str):
+                msg = "expected file to be a `str` since partition-by is set"
+                raise TypeError(msg)
 
-        if metadata is not None:
-            msg = (
-                "the `metadata` parameter of `sink_parquet` is considered experimental."
-            )
-            issue_unstable_warning(msg)
+            target = pl.io.PartitionByKey(partition_by, keys=partition_by)
+            mkdir = True
+            engine = "streaming"
 
-        if isinstance(partition_by, str):
-            partition_by = [partition_by]
-
-        self._df.write_parquet(
-            file,
-            compression,
-            compression_level,
-            statistics,
-            row_group_size,
-            data_page_size,
-            partition_by=partition_by,
-            partition_chunk_size_bytes=partition_chunk_size_bytes,
-            cloud_options=storage_options,
-            credential_provider=credential_provider_builder,
+        self.lazy().sink_parquet(
+            target,
+            compression=compression,
+            compression_level=compression_level,
+            statistics=statistics,
+            row_group_size=row_group_size,
+            data_page_size=data_page_size,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
             retries=retries,
             metadata=metadata,
+            no_optimization=True,
+            engine=engine,
+            mkdir=mkdir,
         )
 
     def write_database(
