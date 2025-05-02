@@ -773,7 +773,7 @@ def test_invalid_bool_to_cat(value: bool, dtype: PolarsDataType) -> None:
     ],
 )
 def test_nested_strict_casts_failing(
-    values: list[any],
+    values: list[Any],
     from_dtype: pl.DataType,
     to_dtype: pl.DataType,
     pre_apply: Callable[[pl.Series], pl.Series] | None,
@@ -858,7 +858,7 @@ def test_nested_strict_casts_failing(
     ],
 )
 def test_nested_strict_casts_succeeds(
-    values: list[any],
+    values: list[Any],
     from_dtype: pl.DataType,
     pre_apply: Callable[[pl.Series], pl.Series] | None,
     to: pl.Series,
