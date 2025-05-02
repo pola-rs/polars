@@ -111,8 +111,8 @@ a,b
 3,4
 5,6"""
 
-    assert pl.scan_csv(data).collect().select(pl.len()).item() == 3
-    assert pl.scan_csv(data, comment_prefix="#").collect().select(pl.len()).item() == 3
+    assert pl.scan_csv(data).collect().height == 3
+    assert pl.scan_csv(data, comment_prefix="#").collect().height == 3
 
     assert pl.scan_csv(data).select(pl.len()).collect().item() == 3
     assert pl.scan_csv(data, comment_prefix="#").select(pl.len()).collect().item() == 3
