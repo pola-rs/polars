@@ -1,7 +1,7 @@
 # polars-testing
 
-`polars-testing` is a sub-crate of the [Polars](https://crates.io/crates/polars) library, offering comprehensive
-functionality for unit testing in Rust.
+`polars-testing` is a sub-crate of the [Polars](https://crates.io/crates/polars) library, offering
+comprehensive functionality for unit testing in Rust.
 
 ## Usage
 

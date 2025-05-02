@@ -1,15 +1,21 @@
 [workspace]
-default-members = ["crates/*"]
-members = ["crates/*", "docs/source/src/rust", "py-polars"]
 resolver = "2"
+members = [
+  "crates/*",
+  "docs/source/src/rust",
+  "py-polars",
+]
+default-members = [
+  "crates/*",
+]
 
 [workspace.package]
+version = "0.47.0"
 authors = ["Ritchie Vink <ritchie46@gmail.com>"]
 edition = "2024"
 homepage = "https://www.pola.rs/"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"
-version = "0.47.0"
 
 [workspace.dependencies]
 aho-corasick = "1.1"
@@ -40,12 +46,9 @@ foldhash = "0.1.5"
 futures = "0.3.25"
 hashbrown = { version = "0.15.0", features = ["rayon", "serde"] }
 # https://github.com/rust-lang/hashbrown/issues/564
-hashbrown_old_nightly_hack = { package = "hashbrown", version = "0.14.5", features = [
-  "rayon",
-  "serde",
-] }
+hashbrown_old_nightly_hack = { package = "hashbrown", version = "0.14.5", features = ["rayon", "serde"] }
 hex = "0.4.3"
-indexmap = { version = "2", features = ["serde", "std"] }
+indexmap = { version = "2", features = ["std", "serde"] }
 itoa = "1.0.6"
 libc = "0.2"
 libm = "0.2"
@@ -119,6 +122,9 @@ package = "polars-arrow-format"
 version = "0.1.0"
 
 [workspace.dependencies.arrow]
+package = "polars-arrow"
+version = "0.47.0"
+path = "crates/polars-arrow"
 default-features = false
 features = [
   "compute_aggregate",
@@ -128,9 +134,6 @@ features = [
   "compute_boolean_kleene",
   "compute_comparison",
 ]
-package = "polars-arrow"
-path = "crates/polars-arrow"
-version = "0.47.0"
 
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
@@ -138,23 +141,23 @@ version = "0.47.0"
 tikv-jemallocator = { git = "https://github.com/pola-rs/jemallocator", rev = "c7991e5bb6b3e9f79db6b0f48dcda67c5c3d2936" }
 
 [profile.mindebug-dev]
-debug = "line-tables-only"
 inherits = "dev"
+debug = "line-tables-only"
 
 [profile.release]
-debug = "line-tables-only"
 lto = "thin"
+debug = "line-tables-only"
 
 [profile.nodebug-release]
-debug = false
 inherits = "release"
+debug = false
 
 [profile.debug-release]
-debug = true
 inherits = "release"
+debug = true
 
 [profile.dist-release]
+inherits = "release"
 codegen-units = 1
 debug = false
-inherits = "release"
 lto = "fat"
