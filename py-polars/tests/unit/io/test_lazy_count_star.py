@@ -104,6 +104,20 @@ a,b
     assert_fast_count(q, 3, capfd=capfd, monkeypatch=monkeypatch)
 
 
+def test_count_csv_no_newline_on_last_22564() -> None:
+    data = b"""\
+a,b
+1,2
+3,4
+5,6"""
+
+    assert pl.scan_csv(data).collect().select(pl.len()).item() == 3
+    assert pl.scan_csv(data, comment_prefix="#").collect().select(pl.len()).item() == 3
+
+    assert pl.scan_csv(data).select(pl.len()).collect().item() == 3
+    assert pl.scan_csv(data, comment_prefix="#").select(pl.len()).collect().item() == 3
+
+
 @pytest.mark.write_disk
 def test_commented_csv(
     capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
