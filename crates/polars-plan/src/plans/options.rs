@@ -78,7 +78,7 @@ bitflags!(
             const ALLOW_EMPTY_INPUTS = 1 << 7;
 
             /// Given a function f and a column of values [v1, ..., vn]
-            /// f is row-seperable i.f.f.
+            /// f is row-separable i.f.f.
             /// f([v1, ..., vn]) = concat(f(v1, ... vm), f(vm+1, ..., vn))
             const ROW_SEPARABLE = 1 << 8;
             /// Given a function f and a column of values [v1, ..., vn]
