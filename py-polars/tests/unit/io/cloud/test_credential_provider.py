@@ -139,6 +139,5 @@ def test_credential_provider_skips_google_config_autoload(
     def raises() -> pl.CredentialProviderFunctionReturn:
         raise AssertionError(err_magic)
 
-    # We should get a different error raised by our `raises()` function.
     with pytest.raises(AssertionError, match=err_magic):
         pl.scan_parquet("gs://.../...", credential_provider=raises).collect()
