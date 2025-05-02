@@ -1,7 +1,6 @@
 use std::sync::{Arc, Mutex};
 
 use polars_core::config;
-use polars_error::to_compute_err;
 use polars_plan::dsl::python_dsl::PythonScanSource;
 use polars_plan::plans::python_df_to_rust;
 use polars_utils::format_pl_smallstr;
@@ -38,7 +37,7 @@ pub fn python_dataset_scan_to_reader_builder(
 
                         // Note: to_dataset_scan() has already captured projection / limit.
 
-                        let df = python_scan_function.call0(py).map_err(to_compute_err)?;
+                        let df = python_scan_function.call0(py)?;
                         let df = python_df_to_rust(py, df.bind(py).clone())?;
 
                         Ok(Some(df))

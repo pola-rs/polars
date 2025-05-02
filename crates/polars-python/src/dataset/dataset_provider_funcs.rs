@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars::prelude::{DslPlan, PlSmallStr, Schema, SchemaRef};
 use polars_core::config;
-use polars_error::{PolarsResult, to_compute_err};
+use polars_error::PolarsResult;
 use polars_utils::python_function::PythonObject;
 use pyo3::conversion::FromPyObjectBound;
 use pyo3::exceptions::PyValueError;
@@ -13,7 +13,6 @@ use pyo3::{PyResult, Python};
 
 use crate::interop::arrow::to_rust::field_to_rust;
 use crate::prelude::{Wrap, get_lf};
-use crate::utils::to_py_err;
 
 pub fn reader_name(dataset_object: &PythonObject) -> PlSmallStr {
     Python::with_gil(|py| {
@@ -60,22 +59,20 @@ pub fn schema(dataset_object: &PythonObject) -> PolarsResult<SchemaRef> {
                             None
                         },
                         None => None,
-                    }))
-                    .map_err(to_py_err)?;
+                    }))?;
 
                 if let Some(last_err) = last_err {
-                    return Err(last_err);
+                    return Err(last_err.into());
                 }
 
-                return PyResult::Ok(Arc::new(schema));
+                return Ok(Arc::new(schema));
             }
         }
 
         let Wrap(schema) = Wrap::<Schema>::from_py_object_bound(schema_obj.bind_borrowed(py))?;
 
-        PyResult::Ok(Arc::new(schema))
+        Ok(Arc::new(schema))
     })
-    .map_err(to_compute_err)
 }
 
 pub fn to_dataset_scan(
@@ -105,13 +102,11 @@ pub fn to_dataset_scan(
             .call(py, (), Some(&kwargs))?;
 
         let Ok(lf) = get_lf(scan.bind(py)) else {
-            return Err(PyValueError::new_err(format!(
-                "cannot extract LazyFrame from {}",
-                &scan
-            )));
+            return Err(
+                PyValueError::new_err(format!("cannot extract LazyFrame from {}", &scan)).into(),
+            );
         };
 
-        PyResult::Ok(lf.logical_plan)
+        Ok(lf.logical_plan)
     })
-    .map_err(to_compute_err)
 }

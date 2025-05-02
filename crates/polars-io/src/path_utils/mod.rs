@@ -366,7 +366,7 @@ pub fn expand_paths_hive(
 
                                 async {
                                     let store = st;
-                                    store
+                                    let out = store
                                         .list(Some(&prefix))
                                         .try_filter_map(|x| async move {
                                             let out = (x.size > 0).then(|| {
@@ -381,8 +381,9 @@ pub fn expand_paths_hive(
                                             Ok(out)
                                         })
                                         .try_collect::<Vec<_>>()
-                                        .await
-                                        .map_err(to_compute_err)
+                                        .await?;
+
+                                    Ok(out)
                                 }
                             })
                             .await?;
