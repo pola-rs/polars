@@ -39,7 +39,14 @@ impl fmt::Debug for Expr {
             },
             Nth(i) => write!(f, "nth({i})"),
             Len => write!(f, "len()"),
-            Explode(expr) => write!(f, "{expr:?}.explode()"),
+            Explode {
+                input: expr,
+                skip_empty: false,
+            } => write!(f, "{expr:?}.explode()"),
+            Explode {
+                input: expr,
+                skip_empty: true,
+            } => write!(f, "{expr:?}.explode(skip_empty)"),
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),

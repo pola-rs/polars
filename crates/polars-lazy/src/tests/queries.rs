@@ -1041,7 +1041,7 @@ fn test_group_by_cum_sum() -> PolarsResult<()> {
         .collect()?;
 
     assert_eq!(
-        Vec::from(out.column("vals")?.explode()?.i32()?),
+        Vec::from(out.column("vals")?.explode(false)?.i32()?),
         [1, 5, 11, 3, 12, 20]
             .iter()
             .copied()
@@ -1302,7 +1302,7 @@ fn test_sort_by() -> PolarsResult<()> {
         .group_by_stable([col("b")])
         .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
-    let a = out.column("a")?.explode()?;
+    let a = out.column("a")?.explode(false)?;
     assert_eq!(
         Vec::from(a.i32().unwrap()),
         &[Some(3), Some(1), Some(2), Some(5), Some(4)]
@@ -1315,7 +1315,7 @@ fn test_sort_by() -> PolarsResult<()> {
         .agg([col("a").sort_by([col("b"), col("c")], SortMultipleOptions::default())])
         .collect()?;
 
-    let a = out.column("a")?.explode()?;
+    let a = out.column("a")?.explode(false)?;
     assert_eq!(
         Vec::from(a.i32().unwrap()),
         &[Some(3), Some(1), Some(2), Some(5), Some(4)]
@@ -1698,7 +1698,7 @@ fn test_single_ranked_group() -> PolarsResult<()> {
             .over_with_options([col("group")], None, WindowMapping::Join)])
         .collect()?;
 
-    let out = out.column("value")?.explode()?;
+    let out = out.column("value")?.explode(false)?;
     let out = out.f64()?;
     assert_eq!(
         Vec::from(out),
@@ -1767,7 +1767,7 @@ fn test_is_in() -> PolarsResult<()> {
         )])
         .collect()?;
     let out = out.column("cars").unwrap();
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.bool().unwrap();
     assert_eq!(
         Vec::from(out),
@@ -1785,7 +1785,7 @@ fn test_is_in() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("cars").unwrap();
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.bool().unwrap();
     assert_eq!(
         Vec::from(out),

@@ -393,7 +393,7 @@ impl PhysicalExpr for SortByExpr {
         // group_by operation - we must ensure that we are as well.
         if ordered_by_group_operation {
             let s = ac_in.aggregated();
-            ac_in.with_values(s.explode().unwrap(), false, None)?;
+            ac_in.with_values(s.explode(false).unwrap(), false, None)?;
         }
 
         ac_in.with_groups(groups.into_sliceable());

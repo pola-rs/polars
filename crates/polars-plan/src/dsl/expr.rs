@@ -118,7 +118,10 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
-    Explode(Arc<Expr>),
+    Explode {
+        input: Arc<Expr>,
+        skip_empty: bool,
+    },
     Filter {
         input: Arc<Expr>,
         by: Arc<Expr>,
@@ -296,7 +299,10 @@ impl Hash for Expr {
                 sort_options.hash(state);
             },
             Expr::Agg(input) => input.hash(state),
-            Expr::Explode(input) => input.hash(state),
+            Expr::Explode { input, skip_empty } => {
+                skip_empty.hash(state);
+                input.hash(state)
+            },
             Expr::Window {
                 function,
                 partition_by,

@@ -75,7 +75,7 @@ impl TreeWalker for Expr {
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
             Function { input, function, options } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options },
-            Explode(expr) => Explode(am(expr, f)?),
+            Explode { input, skip_empty } => Explode { input: am(input, f)?, skip_empty },
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
             Window { function, partition_by, order_by, options } => {
                 let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
@@ -184,8 +184,17 @@ impl AExpr {
             | (Filter { .. }, Filter { .. })
             | (Ternary { .. }, Ternary { .. })
             | (Len, Len)
-            | (Slice { .. }, Slice { .. })
-            | (Explode(_), Explode(_)) => true,
+            | (Slice { .. }, Slice { .. }) => true,
+            (
+                Explode {
+                    expr: _,
+                    skip_empty: l_skip_empty,
+                },
+                Explode {
+                    expr: _,
+                    skip_empty: r_skip_empty,
+                },
+            ) => l_skip_empty == r_skip_empty,
             (
                 SortBy {
                     sort_options: l_sort_options,

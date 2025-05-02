@@ -91,7 +91,7 @@ impl ApplyExpr {
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
         let c = if self.function_returns_scalar {
-            let out = ca.explode().unwrap();
+            let out = ca.explode(false).unwrap();
             // if the explode doesn't return the same len, it wasn't scalar.
             polars_ensure!(out.len() == ca.len(), InvalidOperation: "expected scalar for expr: {}, got {}", self.expr, &out);
             ac.update_groups = UpdateGroups::No;
