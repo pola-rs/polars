@@ -6,7 +6,6 @@ import pytest
 
 import polars as pl
 import polars.io.cloud.credential_provider
-from polars.exceptions import ComputeError
 
 
 @pytest.mark.parametrize(

@@ -11,7 +11,6 @@ use std::sync::{Arc, LazyLock};
 use std::{env, io};
 pub mod signals;
 
-use pyo3::IntoPyObject;
 pub use warning::*;
 
 #[cfg(feature = "python")]
@@ -267,8 +266,8 @@ impl PolarsError {
             Context { error, .. } => error.wrap_msg(func),
             #[cfg(feature = "python")]
             Python { error } => pyo3::Python::with_gil(|py| {
-                use pyo3::PyErr;
                 use pyo3::types::{PyAnyMethods, PyStringMethods};
+                use pyo3::{IntoPyObject, PyErr};
 
                 let value = error.value(py);
 
