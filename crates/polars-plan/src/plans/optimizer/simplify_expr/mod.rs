@@ -10,11 +10,8 @@ fn new_null_count(input: &[ExprIR]) -> AExpr {
     AExpr::Function {
         input: input.to_vec(),
         function: FunctionExpr::NullCount,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR,
-            ..Default::default()
-        },
+        options: FunctionOptions::aggregation()
+            .with_flags(|f| f | FunctionFlags::ALLOW_GROUP_AWARE),
     }
 }
 
@@ -435,13 +432,9 @@ fn string_addition_to_linear_concat(
                         ignore_nulls: false,
                     }
                     .into(),
-                    options: FunctionOptions {
-                        collect_groups: ApplyOptions::ElementWise,
-                        flags: FunctionFlags::default()
-                            | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                                & !FunctionFlags::RETURNS_SCALAR,
-                        ..Default::default()
-                    },
+                    options: FunctionOptions::elementwise().with_flags(|f| {
+                        f | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR
+                    }),
                 }),
             }
         } else {

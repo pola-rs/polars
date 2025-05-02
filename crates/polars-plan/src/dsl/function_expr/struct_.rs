@@ -128,17 +128,19 @@ impl StructFunction {
         use StructFunction as S;
         match self {
             S::FieldByIndex(_) | S::FieldByName(_) => {
-                FunctionOptions::elementwise().with_allow_rename(true)
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             S::RenameFields(_) | S::PrefixFields(_) | S::SuffixFields(_) => {
                 FunctionOptions::elementwise()
             },
             #[cfg(feature = "json")]
             S::JsonEncode => FunctionOptions::elementwise(),
-            S::WithFields => FunctionOptions::elementwise()
-                .with_pass_name_to_apply(true)
-                .with_input_wildcard_expansion(true),
-            S::MultipleFields(_) => FunctionOptions::elementwise().with_allow_rename(true),
+            S::WithFields => FunctionOptions::elementwise().with_flags(|f| {
+                f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::PASS_NAME_TO_APPLY
+            }),
+            S::MultipleFields(_) => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
         }
     }
 }

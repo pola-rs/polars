@@ -306,9 +306,7 @@ impl WindowExpr {
                         },
                         Expr::Function { options, .. }
                         | Expr::AnonymousFunction { options, .. } => {
-                            if options.flags.contains(FunctionFlags::RETURNS_SCALAR)
-                                && matches!(options.collect_groups, ApplyOptions::GroupWise)
-                            {
+                            if options.flags.returns_scalar() {
                                 agg_col = true;
                             }
                         },

@@ -83,9 +83,9 @@ impl BooleanFunction {
             ),
             #[cfg(feature = "is_in")]
             B::IsIn { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
-            B::AllHorizontal | B::AnyHorizontal => FunctionOptions::elementwise()
-                .with_input_wildcard_expansion(true)
-                .with_allow_empty_inputs(true),
+            B::AllHorizontal | B::AnyHorizontal => FunctionOptions::elementwise().with_flags(|f| {
+                f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::ALLOW_EMPTY_INPUTS
+            }),
             B::Not => FunctionOptions::elementwise(),
         }
     }

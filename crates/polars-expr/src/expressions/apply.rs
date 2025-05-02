@@ -17,15 +17,11 @@ pub struct ApplyExpr {
     inputs: Vec<Arc<dyn PhysicalExpr>>,
     function: SpecialEq<Arc<dyn ColumnsUdf>>,
     expr: Expr,
-    collect_groups: ApplyOptions,
-    function_returns_scalar: bool,
+    flags: FunctionFlags,
     function_operates_on_scalar: bool,
-    allow_rename: bool,
-    pass_name_to_apply: bool,
     input_schema: SchemaRef,
     allow_threading: bool,
     check_lengths: bool,
-    allow_group_aware: bool,
     output_field: Field,
     inlined_eval: OnceLock<Option<Column>>,
 }
@@ -40,31 +36,23 @@ impl ApplyExpr {
         allow_threading: bool,
         input_schema: SchemaRef,
         output_field: Field,
-        returns_scalar: bool,
+        function_operates_on_scalar: bool,
     ) -> Self {
-        #[cfg(debug_assertions)]
-        if matches!(options.collect_groups, ApplyOptions::ElementWise)
-            && options.flags.contains(FunctionFlags::RETURNS_SCALAR)
-        {
-            panic!(
-                "expr {:?} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive",
-                expr
-            )
-        }
+        debug_assert!(
+            !options.is_length_preserving()
+                || !options.flags.contains(FunctionFlags::RETURNS_SCALAR),
+            "expr {expr:?} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive",
+        );
 
         Self {
             inputs,
             function,
             expr,
-            collect_groups: options.collect_groups,
-            function_returns_scalar: options.flags.contains(FunctionFlags::RETURNS_SCALAR),
-            function_operates_on_scalar: returns_scalar,
-            allow_rename: options.flags.contains(FunctionFlags::ALLOW_RENAME),
-            pass_name_to_apply: options.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY),
+            flags: options.flags,
+            function_operates_on_scalar,
             input_schema,
             allow_threading,
             check_lengths: options.check_lengths(),
-            allow_group_aware: options.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
             output_field,
             inlined_eval: Default::default(),
         }
@@ -90,7 +78,7 @@ impl ApplyExpr {
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let c = if self.function_returns_scalar {
+        let c = if self.flags.returns_scalar() {
             let out = ca.explode(false).unwrap();
             // if the explode doesn't return the same len, it wasn't scalar.
             polars_ensure!(out.len() == ca.len(), InvalidOperation: "expected scalar for expr: {}, got {}", self.expr, &out);
@@ -101,7 +89,13 @@ impl ApplyExpr {
             ca.into_series().into()
         };
 
-        ac.with_values_and_args(c, true, None, false, self.function_returns_scalar)?;
+        ac.with_values_and_args(
+            c,
+            true,
+            None,
+            false,
+            self.flags.returns_scalar(),
+        )?;
 
         Ok(ac)
     }
@@ -151,7 +145,10 @@ impl ApplyExpr {
         let f = |opt_s: Option<Series>| match opt_s {
             None => Ok(None),
             Some(mut s) => {
-                if self.pass_name_to_apply {
+                if self
+                    .flags
+                    .contains(FunctionFlags::PASS_NAME_TO_APPLY)
+                {
                     s.rename(name.clone());
                 }
                 Ok(self
@@ -179,7 +176,7 @@ impl ApplyExpr {
                 // })?
                 let out: ListChunked = POOL.install(|| iter.collect::<PolarsResult<_>>())?;
 
-                if self.function_returns_scalar {
+                if self.flags.returns_scalar() {
                     debug_assert_eq!(&DataType::List(Box::new(dtype)), out.dtype());
                 } else {
                     debug_assert_eq!(&dtype, out.dtype());
@@ -242,7 +239,12 @@ impl ApplyExpr {
         // then unpack the lists and finally create iterators from this list chunked arrays.
         let mut iters = acs
             .iter_mut()
-            .map(|ac| ac.iter_groups(self.pass_name_to_apply))
+            .map(|ac| {
+                ac.iter_groups(
+                    self.flags
+                        .contains(FunctionFlags::PASS_NAME_TO_APPLY),
+                )
+            })
             .collect::<Vec<_>>();
 
         // Length of the items to iterate over.
@@ -329,7 +331,7 @@ impl PhysicalExpr for ApplyExpr {
             self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
 
-        if self.allow_rename {
+        if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
             self.eval_and_flatten(&mut inputs)
         } else {
             let in_name = inputs[0].name().clone();
@@ -363,27 +365,27 @@ impl PhysicalExpr for ApplyExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_ensure!(
-            self.allow_group_aware,
+            self.flags.contains(FunctionFlags::ALLOW_GROUP_AWARE),
             expr = self.expr,
             ComputeError: "this expression cannot run in the group_by context",
         );
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            match self.collect_groups {
-                ApplyOptions::ApplyList => {
+            match self.flags.is_elementwise() {
+                false if self.flags.contains(FunctionFlags::APPLY_LIST) => {
                     let c = self.eval_and_flatten(&mut [ac.aggregated()])?;
                     ac.with_values(c, true, Some(&self.expr))?;
                     Ok(ac)
                 },
-                ApplyOptions::GroupWise => self.apply_single_group_aware(ac),
-                ApplyOptions::ElementWise => self.apply_single_elementwise(ac),
+                false => self.apply_single_group_aware(ac),
+                true => self.apply_single_elementwise(ac),
             }
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
 
-            match self.collect_groups {
-                ApplyOptions::ApplyList => {
+            match self.flags.is_elementwise() {
+                false if self.flags.contains(FunctionFlags::APPLY_LIST) => {
                     let mut c = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
                     let c = self.eval_and_flatten(&mut c)?;
                     // take the first aggregation context that as that is the input series
@@ -392,8 +394,8 @@ impl PhysicalExpr for ApplyExpr {
                     ac.with_values(c, true, Some(&self.expr))?;
                     Ok(ac)
                 },
-                ApplyOptions::GroupWise => self.apply_multiple_group_aware(acs, df),
-                ApplyOptions::ElementWise => {
+                false => self.apply_multiple_group_aware(acs, df),
+                true => {
                     let mut has_agg_list = false;
                     let mut has_agg_scalar = false;
                     let mut has_not_agg = false;
@@ -425,14 +427,14 @@ impl PhysicalExpr for ApplyExpr {
         self.expr.to_field(input_schema, Context::Default)
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        if self.inputs.len() == 1 && matches!(self.collect_groups, ApplyOptions::ElementWise) {
+        if self.inputs.len() == 1 && self.flags.is_elementwise() {
             Some(self)
         } else {
             None
         }
     }
     fn is_scalar(&self) -> bool {
-        self.function_returns_scalar || self.function_operates_on_scalar
+        self.flags.returns_scalar() || self.function_operates_on_scalar
     }
 }
 
@@ -510,7 +512,7 @@ impl PartitionedAggregation for ApplyExpr {
         let a = self.inputs[0].as_partitioned_aggregator().unwrap();
         let s = a.evaluate_partitioned(df, groups, state)?;
 
-        if self.allow_rename {
+        if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
             self.eval_and_flatten(&mut [s])
         } else {
             let in_name = s.name().clone();
