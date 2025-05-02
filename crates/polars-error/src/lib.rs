@@ -161,7 +161,7 @@ impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {
         if let object_store::Error::Generic { store, source } = &err {
             if let Some(polars_err) = source.as_ref().downcast_ref::<PolarsError>() {
-                return polars_err.wrap_msg(|s| format!("{} (store = {})", s, store));
+                return polars_err.wrap_msg(|s| format!("{} (store: {})", s, store));
             }
         }
 
