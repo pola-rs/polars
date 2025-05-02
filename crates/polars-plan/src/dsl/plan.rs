@@ -13,7 +13,7 @@ use super::*;
 // (Major, Minor)
 // Add a field -> increment minor
 // Remove or modify a field -> increment major and reset minor
-pub static DSL_VERSION: (u16, u16) = (1, 0);
+pub static DSL_VERSION: (u16, u16) = (2, 0);
 static DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
