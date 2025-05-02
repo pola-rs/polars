@@ -89,13 +89,7 @@ impl ApplyExpr {
             ca.into_series().into()
         };
 
-        ac.with_values_and_args(
-            c,
-            true,
-            None,
-            false,
-            self.flags.returns_scalar(),
-        )?;
+        ac.with_values_and_args(c, true, None, false, self.flags.returns_scalar())?;
 
         Ok(ac)
     }
@@ -145,10 +139,7 @@ impl ApplyExpr {
         let f = |opt_s: Option<Series>| match opt_s {
             None => Ok(None),
             Some(mut s) => {
-                if self
-                    .flags
-                    .contains(FunctionFlags::PASS_NAME_TO_APPLY)
-                {
+                if self.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY) {
                     s.rename(name.clone());
                 }
                 Ok(self
@@ -239,12 +230,7 @@ impl ApplyExpr {
         // then unpack the lists and finally create iterators from this list chunked arrays.
         let mut iters = acs
             .iter_mut()
-            .map(|ac| {
-                ac.iter_groups(
-                    self.flags
-                        .contains(FunctionFlags::PASS_NAME_TO_APPLY),
-                )
-            })
+            .map(|ac| ac.iter_groups(self.flags.contains(FunctionFlags::PASS_NAME_TO_APPLY)))
             .collect::<Vec<_>>();
 
         // Length of the items to iterate over.

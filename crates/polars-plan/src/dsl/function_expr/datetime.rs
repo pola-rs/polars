@@ -191,7 +191,9 @@ impl TemporalFunction {
             #[cfg(feature = "timezones")]
             T::ReplaceTimeZone(_, _) => FunctionOptions::elementwise(),
             T::Combine(_) => FunctionOptions::elementwise(),
-            T::DatetimeFunction { .. } => FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME),
+            T::DatetimeFunction { .. } => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
         }
     }
 }
