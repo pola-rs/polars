@@ -537,6 +537,7 @@ impl Expr {
             function: new_column_udf(f),
             output_type,
             options: FunctionOptions::elementwise()
+                .with_fmt_str("map")
                 .with_flags(|f| f | FunctionFlags::OPTIONAL_RE_ENTRANT),
         }
     }

@@ -152,12 +152,11 @@ impl FunctionOptions {
     }
 
     pub fn set_elementwise(&mut self) {
-        self.flags |= FunctionFlags::ROW_SEPARABLE | FunctionFlags::LENGTH_PRESERVING;
+        self.flags.set_elementwise();
     }
 
     pub fn is_elementwise(&self) -> bool {
-        self.flags
-            .contains(FunctionFlags::LENGTH_PRESERVING & FunctionFlags::ROW_SEPARABLE)
+        self.flags.is_elementwise()
     }
 
     pub fn is_length_preserving(&self) -> bool {
@@ -165,7 +164,7 @@ impl FunctionOptions {
     }
 
     pub fn returns_scalar(&self) -> bool {
-        self.flags.contains(FunctionFlags::RETURNS_SCALAR)
+        self.flags.returns_scalar()
     }
 
     pub fn elementwise() -> FunctionOptions {
@@ -176,7 +175,7 @@ impl FunctionOptions {
     }
 
     pub fn elementwise_with_infer() -> FunctionOptions {
-        Self::groupwise()
+        Self::length_preserving()
     }
 
     pub fn row_separable() -> FunctionOptions {

@@ -425,17 +425,18 @@ fn string_addition_to_linear_concat(
                         None
                     }
                 },
-                _ => Some(AExpr::Function {
-                    input: vec![left_e, right_e],
-                    function: StringFunction::ConcatHorizontal {
+                _ => {
+                    let function = StringFunction::ConcatHorizontal {
                         delimiter: "".into(),
                         ignore_nulls: false,
-                    }
-                    .into(),
-                    options: FunctionOptions::elementwise().with_flags(|f| {
-                        f | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR
-                    }),
-                }),
+                    };
+                    let options = function.function_options();
+                    Some(AExpr::Function {
+                        input: vec![left_e, right_e],
+                        function: function.into(),
+                        options,
+                    })
+                },
             }
         } else {
             None

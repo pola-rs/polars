@@ -220,7 +220,8 @@ impl StringFunction {
         use StringFunction as S;
         match self {
             #[cfg(feature = "concat_str")]
-            S::ConcatHorizontal { .. } => FunctionOptions::elementwise(),
+            S::ConcatHorizontal { .. } => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "concat_str")]
             S::ConcatVertical { .. } => FunctionOptions::aggregation(),
             #[cfg(feature = "regex")]

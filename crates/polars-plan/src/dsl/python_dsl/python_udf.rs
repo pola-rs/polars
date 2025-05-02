@@ -242,6 +242,9 @@ impl Expr {
         if agg_list {
             flags |= FunctionFlags::APPLY_LIST;
         }
+        if func.is_elementwise {
+            flags.set_elementwise();
+        }
         if returns_scalar {
             flags |= FunctionFlags::RETURNS_SCALAR;
         }

@@ -13,9 +13,8 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str, ignore_nulls: bool) -
             ignore_nulls,
         }
         .into(),
-        options: FunctionOptions::elementwise().with_flags(|f| {
-            f | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR
-        }),
+        options: FunctionOptions::elementwise()
+            .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
     }
 }
 

@@ -1294,9 +1294,9 @@ impl FunctionExpr {
             F::ArgUnique => FunctionOptions::groupwise(),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::groupwise(),
-            F::Repeat => FunctionOptions::groupwise().with_flags(|f| {
-                (f | FunctionFlags::ALLOW_RENAME) & !FunctionFlags::LENGTH_PRESERVING
-            }),
+            F::Repeat => {
+                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
             #[cfg(feature = "round_series")]
             F::Clip { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
