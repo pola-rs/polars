@@ -37,7 +37,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("replace time zone"),
             col("tz_aware")
                 .dt()
-                .convert_time_zone(TimeZone::opt_try_new(Some("Asia/Kathmandu")).unwrap())
+                .convert_time_zone(
+                    TimeZone::opt_try_new(Some("Asia/Kathmandu"))
+                        .unwrap()
+                        .unwrap(),
+                )
                 .alias("convert time zone"),
             col("tz_aware")
                 .dt()
