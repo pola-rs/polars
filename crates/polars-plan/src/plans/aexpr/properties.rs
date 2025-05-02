@@ -26,7 +26,7 @@ impl AExpr {
             Alias(_, _) | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
             Agg { .. }
-            | Explode(_)
+            | Explode { .. }
             | Filter { .. }
             | Gather { .. }
             | Len

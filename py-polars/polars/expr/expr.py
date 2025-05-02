@@ -2348,7 +2348,7 @@ class Expr:
         │ 2         ┆ 1    ┆ null      │
         └───────────┴──────┴───────────┘
         """
-        element = parse_into_expression(element, str_as_lit=True, list_as_series=False)
+        element = parse_into_expression(element, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.index_of(element))
 
     def search_sorted(
@@ -10409,8 +10409,8 @@ class Expr:
                     "`new` argument is required if `old` argument is not a Mapping type"
                 )
                 raise TypeError(msg)
-            new = pl.Series(old.values())
-            old = pl.Series(old.keys())
+            new = list(old.values())
+            old = list(old.keys())
         else:
             if isinstance(old, Sequence) and not isinstance(old, (str, pl.Series)):
                 old = pl.Series(old)
@@ -10605,11 +10605,11 @@ class Expr:
                     "`new` argument is required if `old` argument is not a Mapping type"
                 )
                 raise TypeError(msg)
-            new = pl.Series(old.values())
-            old = pl.Series(old.keys())
+            new = list(old.values())
+            old = list(old.keys())
 
-        old = parse_into_expression(old, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
-        new = parse_into_expression(new, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
+        old = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
+        new = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
 
         default = (
             None

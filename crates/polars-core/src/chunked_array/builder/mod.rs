@@ -234,7 +234,7 @@ mod test {
         builder.append_null();
 
         let out = builder.finish();
-        let out = out.explode().unwrap();
+        let out = out.explode(false).unwrap();
         assert_eq!(out.len(), 7);
         assert_eq!(out.get(6).unwrap(), AnyValue::Null);
     }

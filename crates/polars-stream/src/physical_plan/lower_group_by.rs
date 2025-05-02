@@ -127,7 +127,7 @@ fn try_lower_elementwise_scalar_agg_expr(
         // in a streaming fashion but they change the length of the input which
         // means the same filter/explode should also be applied to the key
         // column, which is not (yet) supported.
-        AExpr::Explode(_) | AExpr::Filter { .. } => None,
+        AExpr::Explode { .. } | AExpr::Filter { .. } => None,
 
         AExpr::BinaryExpr { left, op, right } => {
             let (left, op, right) = (*left, *op, *right);

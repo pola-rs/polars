@@ -627,11 +627,11 @@ impl Series {
     }
 
     /// Explode a list Series. This expands every item to a new row..
-    pub fn explode(&self) -> PolarsResult<Series> {
+    pub fn explode(&self, skip_empty: bool) -> PolarsResult<Series> {
         match self.dtype() {
-            DataType::List(_) => self.list().unwrap().explode(),
+            DataType::List(_) => self.list().unwrap().explode(skip_empty),
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => self.array().unwrap().explode(),
+            DataType::Array(_, _) => self.array().unwrap().explode(skip_empty),
             _ => Ok(self.clone()),
         }
     }

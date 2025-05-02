@@ -82,11 +82,11 @@ pub trait ChunkAnyValue {
 
 /// Explode/flatten a List or String Series
 pub trait ChunkExplode {
-    fn explode(&self) -> PolarsResult<Series> {
-        self.explode_and_offsets().map(|t| t.0)
+    fn explode(&self, skip_empty: bool) -> PolarsResult<Series> {
+        self.explode_and_offsets(skip_empty).map(|t| t.0)
     }
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>>;
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
+    fn explode_and_offsets(&self, skip_empty: bool) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
 }
 
 pub trait ChunkBytes {

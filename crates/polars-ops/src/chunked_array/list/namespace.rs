@@ -489,7 +489,7 @@ pub trait ListNameSpaceImpl: AsList {
                         list_ca.inner_dtype(),
                     )
                 } else {
-                    let s = list_ca.explode()?;
+                    let s = list_ca.explode(false)?;
                     idx_ca
                         .into_iter()
                         .map(|opt_idx| {
@@ -503,7 +503,7 @@ pub trait ListNameSpaceImpl: AsList {
                 Ok(out.into_series())
             },
             (_, 1) => {
-                let idx_ca = idx_ca.explode()?;
+                let idx_ca = idx_ca.explode(false)?;
 
                 use DataType as D;
                 match idx_ca.dtype() {

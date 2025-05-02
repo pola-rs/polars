@@ -179,6 +179,8 @@ impl ArrayNameSpace {
     /// Returns a column with a separate row for every array element.
     pub fn explode(self) -> Expr {
         self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Explode))
+            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Explode {
+                skip_empty: false,
+            }))
     }
 }

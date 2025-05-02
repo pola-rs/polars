@@ -391,9 +391,13 @@ impl Display for ExprIRDisplay<'_> {
                 }
             },
             Len => write!(f, "len()"),
-            Explode(expr) => {
+            Explode { expr, skip_empty } => {
                 let expr = self.with_root(expr);
-                write!(f, "{expr}.explode()")
+                if *skip_empty {
+                    write!(f, "{expr}.explode(skip_empty)")
+                } else {
+                    write!(f, "{expr}.explode()")
+                }
             },
             Alias(expr, name) => {
                 let expr = self.with_root(expr);

@@ -533,7 +533,7 @@ impl PhysicalExpr for WindowExpr {
                 Ok(out.into_column())
             },
             Explode => {
-                let mut out = ac.aggregated().explode()?;
+                let mut out = ac.aggregated().explode(false)?;
                 if let Some(name) = &self.out_name {
                     out.rename(name.clone());
                 }
@@ -543,7 +543,7 @@ impl PhysicalExpr for WindowExpr {
                 // TODO!
                 // investigate if sorted arrays can be return directly
                 let out_column = ac.aggregated();
-                let flattened = out_column.explode()?;
+                let flattened = out_column.explode(false)?;
                 // we extend the lifetime as we must convince the compiler that ac lives
                 // long enough. We drop `GrouBy` when we are done with `ac`.
                 let ac = unsafe {

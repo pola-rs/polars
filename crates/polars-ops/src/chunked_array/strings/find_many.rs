@@ -41,7 +41,7 @@ pub fn contains_any(
         return Ok(BooleanChunked::full_null(ca.name().clone(), ca.len()));
     }
 
-    let patterns = patterns.explode()?;
+    let patterns = patterns.explode(true)?;
     let patterns = patterns.str()?;
     let ac = build_ac(patterns, ascii_case_insensitive)?;
 
@@ -88,9 +88,9 @@ pub fn replace_all(
         return Ok(StringChunked::full_null(ca.name().clone(), ca.len()));
     }
 
-    let patterns = patterns.explode()?;
+    let patterns = patterns.explode(true)?;
     let patterns = patterns.str()?;
-    let replace_with = replace_with.explode()?;
+    let replace_with = replace_with.explode(true)?;
     let replace_with = replace_with.str()?;
 
     let replace_with = if replace_with.len() == 1 && patterns.len() > 1 {
@@ -165,7 +165,7 @@ pub fn extract_many(
             },
         },
         (_, 1) => {
-            let patterns = patterns.explode()?;
+            let patterns = patterns.explode(true)?;
             let patterns = patterns.str()?;
             let ac = build_ac(patterns, ascii_case_insensitive)?;
             let mut builder =
@@ -256,7 +256,7 @@ pub fn find_many(
             },
         },
         (_, 1) => {
-            let patterns = patterns.explode()?;
+            let patterns = patterns.explode(true)?;
             let patterns = patterns.str()?;
             let ac = build_ac(patterns, ascii_case_insensitive)?;
             let mut builder = B::new(ca.name().clone(), ca.len(), ca.len() * 2, DataType::UInt32);

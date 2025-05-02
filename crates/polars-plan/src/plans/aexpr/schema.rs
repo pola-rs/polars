@@ -144,7 +144,7 @@ impl AExpr {
                 let e = ctx.arena.get(*function);
                 e.to_field_impl(ctx, agg_list)
             },
-            Explode(expr) => {
+            Explode { expr, .. } => {
                 // `Explode` is a "flatten" operation, which is not the same as returning a scalar.
                 // Namely, it should be auto-imploded in the aggregation context, so we don't update
                 // the `agg_list` state here.

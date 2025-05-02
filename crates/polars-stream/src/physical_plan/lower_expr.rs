@@ -137,7 +137,7 @@ pub fn is_input_independent_rec(
     }
 
     let ret = match arena.get(expr_key) {
-        AExpr::Explode(inner)
+        AExpr::Explode { expr: inner, .. }
         | AExpr::Alias(inner, _)
         | AExpr::Cast {
             expr: inner,
@@ -278,7 +278,7 @@ pub fn is_length_preserving_rec(
 
     let ret = match arena.get(expr_key) {
         AExpr::Gather { .. }
-        | AExpr::Explode(_)
+        | AExpr::Explode { .. }
         | AExpr::Filter { .. }
         | AExpr::Agg(_)
         | AExpr::Slice { .. }
@@ -541,12 +541,18 @@ fn lower_exprs_with_ctx(
         }
 
         match ctx.expr_arena.get(expr).clone() {
-            AExpr::Explode(inner) => {
+            AExpr::Explode {
+                expr: inner,
+                skip_empty,
+            } => {
                 // While explode is streamable, it is not elementwise, so we
                 // have to transform it to a select node.
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
                 let exploded_name = unique_column_name();
-                let trans_inner = ctx.expr_arena.add(AExpr::Explode(trans_exprs[0]));
+                let trans_inner = ctx.expr_arena.add(AExpr::Explode {
+                    expr: trans_exprs[0],
+                    skip_empty,
+                });
                 let explode_expr =
                     ExprIR::new(trans_inner, OutputName::Alias(exploded_name.clone()));
                 let output_schema = schema_for_select(trans_input, &[explode_expr.clone()], ctx)?;
@@ -642,7 +648,10 @@ fn lower_exprs_with_ctx(
                 let right_expr_exploded_node = match ctx.expr_arena.get(inner_exprs[1].node()) {
                     // expr.implode().explode() ~= expr (and avoids rechunking)
                     AExpr::Agg(IRAggExpr::Implode(n)) => *n,
-                    _ => ctx.expr_arena.add(AExpr::Explode(inner_exprs[1].node())),
+                    _ => ctx.expr_arena.add(AExpr::Explode {
+                        expr: inner_exprs[1].node(),
+                        skip_empty: true,
+                    }),
                 };
                 let (trans_input_right, trans_expr_right) =
                     lower_exprs_with_ctx(input, &[right_expr_exploded_node], ctx)?;

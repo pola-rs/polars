@@ -249,7 +249,10 @@ impl Expr {
 
     /// Explode the String/List column.
     pub fn explode(self) -> Self {
-        Expr::Explode(Arc::new(self))
+        Expr::Explode {
+            input: Arc::new(self),
+            skip_empty: false,
+        }
     }
 
     /// Slice the Series.

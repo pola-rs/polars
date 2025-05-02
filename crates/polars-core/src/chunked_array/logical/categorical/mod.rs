@@ -597,7 +597,7 @@ mod test {
             },
             _ => panic!(),
         }
-        let flat = aggregated.explode()?;
+        let flat = aggregated.explode(false)?;
         let ca = flat.categorical().unwrap();
         let vals = ca.iter_str().map(|v| v.unwrap()).collect::<Vec<_>>();
         assert_eq!(vals, &["a", "b", "c"]);

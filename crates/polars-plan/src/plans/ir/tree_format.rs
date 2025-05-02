@@ -24,7 +24,14 @@ pub struct TreeFmtAExpr<'a>(&'a AExpr);
 impl fmt::Display for TreeFmtAExpr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.0 {
-            AExpr::Explode(_) => "explode",
+            AExpr::Explode {
+                expr: _,
+                skip_empty: false,
+            } => "explode",
+            AExpr::Explode {
+                expr: _,
+                skip_empty: true,
+            } => "explode(skip_empty)",
             AExpr::Alias(_, name) => return write!(f, "alias({})", name),
             AExpr::Column(name) => return write!(f, "col({})", name),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
