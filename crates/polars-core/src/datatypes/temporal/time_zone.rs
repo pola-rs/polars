@@ -9,11 +9,15 @@ pub struct TimeZone {
 }
 
 impl TimeZone {
-    pub const UTC: TimeZone = TimeZone::from_static("UTC");
+    pub const UTC: TimeZone = unsafe { TimeZone::from_static("UTC") };
 
-    /// Construct from a static string. This does not perform any validation on the value.
+    /// Construct from a static string.
+    ///
+    /// # Safety
+    /// This does not perform any validation, the caller is responsible for
+    /// ensuring they pass a valid timezone.
     #[inline(always)]
-    pub const fn from_static(tz: &'static str) -> Self {
+    pub const unsafe fn from_static(tz: &'static str) -> Self {
         Self {
             inner: PlSmallStr::from_static(tz),
         }

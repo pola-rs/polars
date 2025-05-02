@@ -281,7 +281,7 @@ pub(crate) fn py_object_to_any_value<'py>(
 
         let (timestamp, tz) = if tzinfo.hasattr(intern!(py, "key"))? {
             let datetime = ob.extract::<DateTime<Tz>>()?;
-            let tz = TimeZone::from_static(datetime.timezone().name());
+            let tz = unsafe { TimeZone::from_static(datetime.timezone().name()) };
             if datetime.year() >= 2100 {
                 // chrono-tz does not support dates after 2100
                 // https://github.com/chronotope/chrono-tz/issues/135
