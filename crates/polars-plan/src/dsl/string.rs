@@ -260,7 +260,7 @@ impl StringNameSpace {
                 // @HACK. This needs to be done because literals still block predicate pushdown,
                 // but this should be an exception in the predicate pushdown.
                 if is_column_independent {
-                    options.collect_groups = ApplyOptions::ElementWise;
+                    options.set_elementwise();
                 }
                 options
             })

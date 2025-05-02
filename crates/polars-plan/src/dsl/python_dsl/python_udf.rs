@@ -226,12 +226,10 @@ impl FunctionOutputField for PythonGetOutput {
 
 impl Expr {
     pub fn map_python(self, func: PythonUdfExpression, agg_list: bool) -> Expr {
-        let (collect_groups, name) = if agg_list {
-            (ApplyOptions::ApplyList, MAP_LIST_NAME)
-        } else if func.is_elementwise {
-            (ApplyOptions::ElementWise, "python_udf")
+        let name = if agg_list {
+            MAP_LIST_NAME
         } else {
-            (ApplyOptions::GroupWise, "python_udf")
+            "python_udf"
         };
 
         let returns_scalar = func.returns_scalar;
@@ -241,6 +239,12 @@ impl Expr {
         let output_type = SpecialEq::new(Arc::new(output_field) as Arc<dyn FunctionOutputField>);
 
         let mut flags = FunctionFlags::default() | FunctionFlags::OPTIONAL_RE_ENTRANT;
+        if agg_list {
+            flags |= FunctionFlags::APPLY_LIST;
+        }
+        if func.is_elementwise {
+            flags.set_elementwise();
+        }
         if returns_scalar {
             flags |= FunctionFlags::RETURNS_SCALAR;
         }
@@ -250,7 +254,6 @@ impl Expr {
             function: new_column_udf(func),
             output_type,
             options: FunctionOptions {
-                collect_groups,
                 fmt_str: name,
                 flags,
                 ..Default::default()

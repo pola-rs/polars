@@ -222,24 +222,6 @@ fn test_filter_null_creation_by_cast() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_predicate_pd_apply() -> PolarsResult<()> {
-    let q = df![
-        "a" => [1, 2, 3],
-    ]?
-    .lazy()
-    .select([
-        // map_list is use in python `col().apply`
-        col("a"),
-        col("a")
-            .map_list(|s| Ok(Some(s)), GetOutput::same_type())
-            .alias("a_applied"),
-    ])
-    .filter(col("a").lt(lit(3)));
-
-    assert!(predicate_at_scan(q));
-    Ok(())
-}
-#[test]
 #[cfg(feature = "cse")]
 fn test_predicate_on_join_suffix_4788() -> PolarsResult<()> {
     let lf = df![

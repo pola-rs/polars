@@ -519,10 +519,7 @@ fn create_physical_expr_inner(
                 vec![input],
                 function,
                 node_to_expr(expression, expr_arena),
-                FunctionOptions {
-                    collect_groups: ApplyOptions::GroupWise,
-                    ..Default::default()
-                },
+                FunctionOptions::groupwise(),
                 state.allow_threading,
                 schema.clone(),
                 field,

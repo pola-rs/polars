@@ -69,12 +69,12 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
     // but aren't actually elementwise (e.g. arguments aren't same length).
     match expr {
         AExpr::AnonymousFunction { options, .. } => {
-            options.collect_groups == ApplyOptions::ApplyList
+            options.flags.contains(FunctionFlags::APPLY_LIST)
         },
         AExpr::Function {
             function, options, ..
         } => {
-            if options.collect_groups == ApplyOptions::ApplyList {
+            if options.flags.contains(FunctionFlags::APPLY_LIST) {
                 return true;
             }
 

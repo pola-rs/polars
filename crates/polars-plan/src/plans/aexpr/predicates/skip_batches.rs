@@ -576,10 +576,7 @@ fn aexpr_to_skip_batch_predicate_rec(
     let mut expr = expr_arena.add(AExpr::Function {
         input: vec![ExprIR::new(expr, OutputName::Alias(PlSmallStr::EMPTY))],
         function: FunctionExpr::Boolean(BooleanFunction::Not),
-        options: FunctionOptions {
-            collect_groups: crate::plans::ApplyOptions::ElementWise,
-            ..Default::default()
-        },
+        options: FunctionOptions::elementwise(),
     });
     for col in live_columns.keys() {
         let col_min = col!(min: col);
