@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use arrow::compute::utils::combine_validities_and_many;
 use polars_row::{
     RowEncodingCategoricalContext, RowEncodingContext, RowEncodingOptions, RowsEncoded,
@@ -230,6 +232,10 @@ pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
     for by in by {
         debug_assert_eq!(by.len(), num_rows);
 
+        let by = by
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(by), Cow::Owned);
+        let by = by.propagate_nulls().map_or(by, Cow::Owned);
         let by = by.as_materialized_series();
         let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_unsorted();
@@ -261,6 +267,10 @@ pub fn _get_rows_encoded(
     for ((by, desc), null_last) in by.iter().zip(descending).zip(nulls_last) {
         debug_assert_eq!(by.len(), num_rows);
 
+        let by = by
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(by), Cow::Owned);
+        let by = by.propagate_nulls().map_or(by, Cow::Owned);
         let by = by.as_materialized_series();
         let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_sorted(*desc, *null_last);

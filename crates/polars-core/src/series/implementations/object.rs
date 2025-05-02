@@ -239,6 +239,10 @@ where
         ObjectChunked::<T>::get_object_chunked_unchecked(&self.0, chunk, index)
     }
 
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.find_validity_mismatch(other, idxs)
+    }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }

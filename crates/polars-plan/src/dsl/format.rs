@@ -127,7 +127,7 @@ impl fmt::Debug for Expr {
                 dtype,
                 options,
             } => {
-                if options.strict() {
+                if options.is_strict() {
                     write!(f, "{expr:?}.strict_cast({dtype:?})")
                 } else {
                     write!(f, "{expr:?}.cast({dtype:?})")

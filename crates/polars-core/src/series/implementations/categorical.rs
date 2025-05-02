@@ -308,6 +308,10 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         Ok(ChunkAggSeries::max_reduce(&self.0))
     }
 
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.physical().find_validity_mismatch(other, idxs)
+    }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }

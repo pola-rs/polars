@@ -37,7 +37,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
             AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {}", op),
             AExpr::Cast { dtype, options, .. } => {
-                return if options.strict() {
+                return if options.is_strict() {
                     write!(f, "strict cast({})", dtype)
                 } else {
                     write!(f, "cast({})", dtype)

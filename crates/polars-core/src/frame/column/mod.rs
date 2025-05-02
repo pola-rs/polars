@@ -1798,6 +1798,18 @@ impl Column {
         }
         series.to_arrow(0, compat_level)
     }
+
+    pub fn trim_lists_to_normalized_offsets(&self) -> Option<Column> {
+        self.as_materialized_series()
+            .trim_lists_to_normalized_offsets()
+            .map(Column::from)
+    }
+
+    pub fn propagate_nulls(&self) -> Option<Column> {
+        self.as_materialized_series()
+            .propagate_nulls()
+            .map(Column::from)
+    }
 }
 
 impl Default for Column {

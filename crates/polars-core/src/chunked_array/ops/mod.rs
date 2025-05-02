@@ -29,6 +29,7 @@ pub mod float_sorted_arg_max;
 mod for_each;
 pub mod full;
 pub mod gather;
+mod nesting_utils;
 pub(crate) mod nulls;
 mod reverse;
 #[cfg(feature = "rolling_window")]
@@ -44,6 +45,7 @@ pub(crate) mod unique;
 pub mod zip;
 
 pub use chunkops::_set_check_length;
+pub use nesting_utils::ChunkNestingUtils;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
