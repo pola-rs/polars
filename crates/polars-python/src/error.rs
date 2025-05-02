@@ -109,6 +109,7 @@ impl From<PyPolarsErr> for PyErr {
                     let tmp = PyPolarsErr::Polars(err.context_trace());
                     PyErr::from(tmp)
                 },
+                PolarsError::Python { error } => error.0,
             },
             Python(err) => err,
             err => PyRuntimeError::new_err(format!("{:?}", &err)),

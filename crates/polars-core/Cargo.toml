@@ -118,7 +118,7 @@ dtype-struct = []
 
 # scale to terabytes?
 bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
-python = []
+python = ["polars-error/python"]
 
 serde = [
   "dep:serde",

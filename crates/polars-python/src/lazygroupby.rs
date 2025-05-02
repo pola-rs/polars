@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars::lazy::frame::{LazyFrame, LazyGroupBy};
-use polars::prelude::{DataFrame, PolarsError, Schema};
+use polars::prelude::{DataFrame, Schema};
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
@@ -62,11 +62,7 @@ impl PyLazyGroupBy {
                     pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
 
                 // call the lambda and get a python side DataFrame wrapper
-                let result_df_wrapper = lambda.call1(py, (python_df_wrapper,)).map_err(|e| {
-                    PolarsError::ComputeError(
-                        format!("User provided python function failed: {e}").into(),
-                    )
-                })?;
+                let result_df_wrapper = lambda.call1(py, (python_df_wrapper,))?;
                 // unpack the wrapper in a PyDataFrame
                 let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
                 "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
