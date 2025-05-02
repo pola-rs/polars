@@ -426,7 +426,7 @@ def test_replace_strict_unique_22134() -> None:
     )
 
 
-def test_replace_strict_nested_mapping_22554() -> None():
+def test_replace_strict_nested_mapping_22554() -> None:
     assert_series_equal(
         pl.Series([1, 2, 3]).replace_strict(
             {
