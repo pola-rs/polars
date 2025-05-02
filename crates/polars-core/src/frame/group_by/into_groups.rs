@@ -361,8 +361,19 @@ impl IntoGroupsType for ListChunked {
 impl IntoGroupsType for ArrayChunked {
     #[allow(clippy::needless_lifetimes)]
     #[allow(unused_variables)]
-    fn group_tuples<'a>(&'a self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsType> {
-        todo!("grouping FixedSizeList not yet supported")
+    fn group_tuples<'a>(
+        &'a self,
+        mut multithreaded: bool,
+        sorted: bool,
+    ) -> PolarsResult<GroupsType> {
+        multithreaded &= POOL.current_num_threads() > 1;
+        let by = &[self.clone().into_column()];
+        let ca = if multithreaded {
+            encode_rows_vertical_par_unordered(by).unwrap()
+        } else {
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, by).unwrap()
+        };
+        ca.group_tuples(multithreaded, sorted)
     }
 }
 
