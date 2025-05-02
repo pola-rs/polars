@@ -2471,7 +2471,7 @@ def test_temporal_downcast_construction_19309() -> None:
     ]
 
 
-def test_timezone_ignore_err(
+def test_timezone_ignore_error(
     capfd: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2481,22 +2481,38 @@ def test_timezone_ignore_err(
 
     with pytest.raises(
         ComputeError,
-        match="If you would like to forcibly disable",
+        match=(
+            "unable to parse time zone: 'non-existent'"
+            ".*POLARS_IGNORE_TIMEZONE_PARSE_ERROR"
+        ),
     ):
-        pl.DataFrame(schema={"a": dtype})
+        pl.DataFrame({"a": datetime(2025, 1, 1)}, schema={"a": dtype})
 
-    monkeypatch.setenv("POLARS_IGNORE_TIMEZONE_PARSE_ERROR", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    capfd.readouterr()
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_IGNORE_TIMEZONE_PARSE_ERROR", "1")
+        capfd.readouterr()
 
-    df = pl.DataFrame(schema={"a": dtype})
+        df = pl.DataFrame({"a": datetime(2025, 1, 1)}, schema={"a": dtype})
 
-    assert df.dtypes[0] == dtype
+        assert df.dtypes[0] == dtype
 
-    capture = capfd.readouterr().err
+        capture = capfd.readouterr().err
 
-    assert (
-        "WARN: unable to parse time zone: 'non-existent'. Please check the "
-        "Time Zone Database for a list of available time zones."
-    ) in capture
+        assert (
+            "WARN: unable to parse time zone: 'non-existent'. Please check the "
+            "Time Zone Database for a list of available time zones."
+        ) in capture
+
+        tbl = df.to_arrow()
+
+        assert tbl.schema[0].type.tz == "non-existent"
+
+        assert_frame_equal(pl.DataFrame(tbl), df)
+
+    with pytest.raises(
+        ComputeError,
+        match="unable to parse time zone: 'non-existent'",
+    ):
+        pl.DataFrame(tbl)
