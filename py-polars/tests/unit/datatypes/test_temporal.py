@@ -2469,3 +2469,31 @@ def test_temporal_downcast_construction_19309() -> None:
         datetime(1970, 1, 1),
         datetime(1970, 1, 1),
     ]
+
+
+def test_timezone_ignore_err(
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dtype = pl.Datetime(time_zone="non-existent")
+
+    capfd.readouterr()
+
+    with pytest.raises(ComputeError, match="If you would like to forcibly disable"):
+        pl.DataFrame(schema={"a": dtype})
+
+    monkeypatch.setenv("POLARS_IGNORE_TIMEZONE_PARSE_ERROR", "1")
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    capfd.readouterr()
+
+    df = pl.DataFrame(schema={"a": dtype})
+
+    assert df.dtypes[0] == dtype
+
+    capture = capfd.readouterr().err
+
+    assert (
+        "WARN: unable to parse time zone: 'non-existent'. Please check the "
+        "Time Zone Database for a list of available time zones."
+    ) in capture

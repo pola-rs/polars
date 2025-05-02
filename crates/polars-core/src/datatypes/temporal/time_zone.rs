@@ -1,6 +1,8 @@
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
+use crate::config;
+
 #[derive(Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TimeZone {
@@ -23,6 +25,15 @@ impl TimeZone {
         }
     }
 
+    /// # Safety
+    /// This does not perform any validation, the caller is responsible for
+    /// ensuring they pass a valid timezone.
+    pub unsafe fn new_unchecked(zone_str: impl Into<PlSmallStr>) -> Self {
+        Self {
+            inner: zone_str.into(),
+        }
+    }
+
     /// Converts timezones to canonical form.
     ///
     /// If the "timezones" feature is enabled, additionally performs validation and converts to
@@ -40,12 +51,31 @@ impl TimeZone {
             }));
         }
 
-        let mut canonical_tz = canonical_timezone(zone_str);
+        let mut canonical_tz = Self::_canonical_timezone_impl(zone_str);
 
         #[cfg(feature = "timezones")]
         if let Some(tz) = canonical_tz.as_mut() {
             if Self::validate_time_zone(tz).is_err() {
-                *tz = parse_fixed_offset(tz)?
+                match parse_fixed_offset(tz) {
+                    Ok(v) => *tz = v,
+                    Err(err) => {
+                        if std::env::var("POLARS_IGNORE_TIMEZONE_PARSE_ERROR").as_deref() == Ok("1")
+                        {
+                            if config::verbose() {
+                                eprintln!("WARN: {}", err)
+                            }
+                        } else {
+                            return Err(err.wrap_msg(|s| {
+                                format!(
+                                    "{}. If you would like to forcibly disable \
+                                    timezone validation, set \
+                                    POLARS_IGNORE_TIMEZONE_PARSE_ERROR=1.",
+                                    s
+                                )
+                            }));
+                        }
+                    },
+                }
             }
         }
 
@@ -54,6 +84,15 @@ impl TimeZone {
 
     pub fn eq_wildcard_aware(this: &Self, other: &Self) -> bool {
         this == other || this.inner == "*" || other.inner == "*"
+    }
+
+    pub fn _canonical_timezone_impl(tz: Option<PlSmallStr>) -> Option<PlSmallStr> {
+        match tz.as_deref() {
+            Some("") | None => None,
+            #[cfg(feature = "timezones")]
+            Some("+00:00") | Some("00:00") | Some("utc") => Some(PlSmallStr::from_static("UTC")),
+            Some(_) => tz,
+        }
     }
 
     #[cfg(feature = "timezones")]
@@ -93,15 +132,6 @@ impl std::fmt::Debug for TimeZone {
 impl std::fmt::Display for TimeZone {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self.inner, f)
-    }
-}
-
-fn canonical_timezone(tz: Option<PlSmallStr>) -> Option<PlSmallStr> {
-    match tz.as_deref() {
-        Some("") | None => None,
-        #[cfg(feature = "timezones")]
-        Some("+00:00") | Some("00:00") | Some("utc") => Some(PlSmallStr::from_static("UTC")),
-        Some(_) => tz,
     }
 }
 
@@ -164,7 +194,7 @@ fn unable_to_parse_err<T>(tz: &str) -> PolarsResult<T> {
     polars_bail!(
         ComputeError:
         "unable to parse time zone: '{}'. Please check the \
-        Time Zone Database for a list of available time zones",
+        Time Zone Database for a list of available time zones.",
         tz
     )
 }
