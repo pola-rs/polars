@@ -6,7 +6,6 @@ import pytest
 
 import polars as pl
 import polars.io.cloud.credential_provider
-from polars.exceptions import ComputeError
 
 
 @pytest.mark.parametrize(
@@ -91,7 +90,7 @@ def test_credential_provider_serialization_auto_init(
 
     # Check baseline - query plan is configured to auto-initialize the credential
     # provider.
-    with pytest.raises(pl.exceptions.ComputeError, match="err_magic_1"):
+    with pytest.raises(AssertionError, match="err_magic_1"):
         q.collect()
 
     q = pickle.loads(pickle.dumps(q))
@@ -104,7 +103,7 @@ def test_credential_provider_serialization_auto_init(
 
     # Check that auto-initialization happens upon executing the deserialized
     # query.
-    with pytest.raises(pl.exceptions.ComputeError, match="err_magic_2"):
+    with pytest.raises(AssertionError, match="err_magic_2"):
         q.collect()
 
 
@@ -123,7 +122,7 @@ def test_credential_provider_serialization_custom_provider() -> None:
 
     lf = pl.LazyFrame.deserialize(io.BytesIO(serialized))
 
-    with pytest.raises(ComputeError, match=err_magic):
+    with pytest.raises(AssertionError, match=err_magic):
         lf.collect()
 
 
@@ -132,7 +131,7 @@ def test_credential_provider_skips_google_config_autoload(
 ) -> None:
     monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_PATH", "__non_existent")
 
-    with pytest.raises(ComputeError, match="__non_existent"):
+    with pytest.raises(OSError, match="__non_existent"):
         pl.scan_parquet("gs://.../...", credential_provider=None).collect()
 
     err_magic = "err_magic_3"
@@ -140,6 +139,5 @@ def test_credential_provider_skips_google_config_autoload(
     def raises() -> pl.CredentialProviderFunctionReturn:
         raise AssertionError(err_magic)
 
-    # We should get a different error raised by our `raises()` function.
-    with pytest.raises(ComputeError, match=err_magic):
+    with pytest.raises(AssertionError, match=err_magic):
         pl.scan_parquet("gs://.../...", credential_provider=raises).collect()

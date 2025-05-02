@@ -56,7 +56,7 @@ json = ["polars-mem-engine/json", "polars-plan/json", "polars-io/json"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 object = ["polars-ops/object"]
-python = ["pyo3", "polars-plan/python"]
+python = ["pyo3", "polars-plan/python", "polars-error/python"]
 
 # We need to specify default features here to match workspace defaults.
 # Otherwise we get warnings with cargo check/clippy.

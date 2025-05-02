@@ -845,8 +845,7 @@ fn to_graph_rec<'a>(
                                 batch_size,
                             );
 
-                            let generator_init =
-                                callable.call1(args).map_err(polars_error::to_compute_err)?;
+                            let generator_init = callable.call1(args)?;
                             let generator = generator_init.get_item(0).map_err(
                                 |_| polars_err!(ComputeError: "expected tuple got {generator_init}"),
                             )?;

@@ -461,7 +461,7 @@ mod python_impl {
     use std::hash::Hash;
     use std::sync::Arc;
 
-    use polars_error::{PolarsError, PolarsResult, to_compute_err};
+    use polars_error::{PolarsError, PolarsResult};
     use polars_utils::python_function::PythonObject;
     use pyo3::Python;
     use pyo3::exceptions::PyValueError;
@@ -509,8 +509,7 @@ mod python_impl {
                         let v = (!v.is_none(py)).then_some(v);
 
                         pyo3::PyResult::Ok(v)
-                    })
-                    .map_err(to_compute_err)?;
+                    })?;
 
                     Ok(opt_initialized_py_object
                         .map(PythonObject)
@@ -542,7 +541,7 @@ mod python_impl {
     impl IntoCredentialProvider for PythonCredentialProvider {
         #[cfg(feature = "aws")]
         fn into_aws_provider(self) -> object_store::aws::AwsCredentialProvider {
-            use polars_error::{PolarsResult, to_compute_err};
+            use polars_error::PolarsResult;
 
             use crate::cloud::credential_provider::{
                 CredentialProviderFunction, ObjectStoreCredential,
@@ -595,8 +594,7 @@ mod python_impl {
                         }
 
                         pyo3::PyResult::Ok(expiry.unwrap_or(u64::MAX))
-                    })
-                    .map_err(to_compute_err)?;
+                    })?;
 
                     if credentials.key_id.is_empty() {
                         return Err(PolarsError::ComputeError(
@@ -619,7 +617,7 @@ mod python_impl {
         #[cfg(feature = "azure")]
         fn into_azure_provider(self) -> object_store::azure::AzureCredentialProvider {
             use object_store::azure::AzureAccessKey;
-            use polars_error::{PolarsResult, to_compute_err};
+            use polars_error::PolarsResult;
 
             use crate::cloud::credential_provider::{
                 CredentialProviderFunction, ObjectStoreCredential,
@@ -667,8 +665,7 @@ mod python_impl {
                         }
 
                         pyo3::PyResult::Ok(expiry.unwrap_or(u64::MAX))
-                    })
-                    .map_err(to_compute_err)?;
+                    })?;
 
                     let Some(credentials) = credentials else {
                         return Err(PolarsError::ComputeError(
@@ -688,7 +685,7 @@ mod python_impl {
 
         #[cfg(feature = "gcp")]
         fn into_gcp_provider(self) -> object_store::gcp::GcpCredentialProvider {
-            use polars_error::{PolarsResult, to_compute_err};
+            use polars_error::PolarsResult;
 
             use crate::cloud::credential_provider::{
                 CredentialProviderFunction, ObjectStoreCredential,
@@ -725,8 +722,7 @@ mod python_impl {
                         }
 
                         pyo3::PyResult::Ok(expiry.unwrap_or(u64::MAX))
-                    })
-                    .map_err(to_compute_err)?;
+                    })?;
 
                     if credentials.bearer.is_empty() {
                         return Err(PolarsError::ComputeError(

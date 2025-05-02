@@ -84,7 +84,7 @@ impl PythonUdfExpression {
                 .getattr("loads")
                 .unwrap();
             let arg = (PyBytes::new(py, remainder),);
-            let python_function = pickle.call1(arg).map_err(from_pyerr)?;
+            let python_function = pickle.call1(arg)?;
             Ok(Arc::new(Self::new(
                 python_function.into(),
                 output_type,
@@ -93,10 +93,6 @@ impl PythonUdfExpression {
             )) as Arc<dyn ColumnsUdf>)
         })
     }
-}
-
-fn from_pyerr(e: PyErr) -> PolarsError {
-    PolarsError::ComputeError(format!("error raised in python: {e}").into())
 }
 
 impl DataFrameUdf for polars_utils::python_function::PythonFunction {
@@ -147,13 +143,10 @@ impl ColumnsUdf for PythonUdfExpression {
             let (dumped, use_cloudpickle) = match pickle_result {
                 Ok(dumped) => (dumped, false),
                 Err(_) => {
-                    let cloudpickle = PyModule::import(py, "cloudpickle")
-                        .map_err(from_pyerr)?
+                    let cloudpickle = PyModule::import(py, "cloudpickle")?
                         .getattr("dumps")
                         .unwrap();
-                    let dumped = cloudpickle
-                        .call1((self.python_function.clone_ref(py),))
-                        .map_err(from_pyerr)?;
+                    let dumped = cloudpickle.call1((self.python_function.clone_ref(py),))?;
                     (dumped, true)
                 },
             };

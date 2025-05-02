@@ -3175,6 +3175,7 @@ dependencies = [
  "object_store",
  "parking_lot",
  "polars-arrow-format",
+ "pyo3",
  "regex",
  "signal-hook",
  "simdutf8",

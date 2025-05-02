@@ -55,7 +55,7 @@ class TestIcebergScanIO:
         }
 
     def test_scan_iceberg_snapshot_id_not_found(self, iceberg_path: str) -> None:
-        with pytest.raises(pl.exceptions.ComputeError, match="snapshot ID not found"):
+        with pytest.raises(ValueError, match="snapshot ID not found"):
             pl.scan_iceberg(iceberg_path, snapshot_id=1234567890).collect()
 
     def test_scan_iceberg_filter_on_partition(self, iceberg_path: str) -> None:

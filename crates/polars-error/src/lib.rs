@@ -13,6 +13,9 @@ pub mod signals;
 
 pub use warning::*;
 
+#[cfg(feature = "python")]
+mod python;
+
 enum ErrorStrategy {
     Panic,
     WithBacktrace,
@@ -99,6 +102,10 @@ pub enum PolarsError {
         error: Box<PolarsError>,
         msg: ErrString,
     },
+    #[cfg(feature = "python")]
+    Python {
+        error: python::PyErrWrap,
+    },
 }
 
 impl Error for PolarsError {}
@@ -127,6 +134,8 @@ impl Display for PolarsError {
             StringCacheMismatch(msg) => write!(f, "string caches don't match: {msg}"),
             StructFieldNotFound(msg) => write!(f, "field not found: {msg}"),
             Context { error, msg } => write!(f, "{error}: {msg}"),
+            #[cfg(feature = "python")]
+            Python { error } => write!(f, "python: {}", error),
         }
     }
 }
@@ -150,7 +159,13 @@ impl From<regex::Error> for PolarsError {
 #[cfg(feature = "object_store")]
 impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {
-        std::io::Error::other(format!("object-store error: {err:?}")).into()
+        if let object_store::Error::Generic { store, source } = &err {
+            if let Some(polars_err) = source.as_ref().downcast_ref::<PolarsError>() {
+                return polars_err.wrap_msg(|s| format!("{} (store: {})", s, store));
+            }
+        }
+
+        std::io::Error::other(format!("object-store error: {}", err)).into()
     }
 }
 
@@ -249,6 +264,39 @@ impl PolarsError {
             SQLInterface(msg) => SQLInterface(func(msg).into()),
             SQLSyntax(msg) => SQLSyntax(func(msg).into()),
             Context { error, .. } => error.wrap_msg(func),
+            #[cfg(feature = "python")]
+            Python { error } => pyo3::Python::with_gil(|py| {
+                use pyo3::types::{PyAnyMethods, PyStringMethods};
+                use pyo3::{IntoPyObject, PyErr};
+
+                let value = error.value(py);
+
+                let msg = if let Ok(s) = value.str() {
+                    func(&s.to_string_lossy())
+                } else {
+                    func("<exception str() failed>")
+                };
+
+                let cls = value.get_type();
+
+                let out = PyErr::from_type(cls, (msg,));
+
+                let out = if let Ok(out_with_traceback) = (|| {
+                    out.clone_ref(py)
+                        .into_pyobject(py)?
+                        .getattr("with_traceback")
+                        .unwrap()
+                        .call1((value.getattr("__traceback__").unwrap(),))
+                })() {
+                    PyErr::from_value(out_with_traceback)
+                } else {
+                    out
+                };
+
+                Python {
+                    error: python::PyErrWrap(out),
+                }
+            }),
         }
     }
 
@@ -452,6 +500,7 @@ macro_rules! polars_ensure {
 pub fn to_compute_err(err: impl Display) -> PolarsError {
     PolarsError::ComputeError(err.to_string().into())
 }
+
 #[macro_export]
 macro_rules! feature_gated {
     ($($feature:literal);*, $content:expr) => {{
