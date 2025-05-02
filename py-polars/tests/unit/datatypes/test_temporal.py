@@ -2479,7 +2479,10 @@ def test_timezone_ignore_err(
 
     capfd.readouterr()
 
-    with pytest.raises(ComputeError, match="If you would like to forcibly disable"):
+    with pytest.raises(
+        ComputeError,
+        match="If you would like to forcibly disable",
+    ):
         pl.DataFrame(schema={"a": dtype})
 
     monkeypatch.setenv("POLARS_IGNORE_TIMEZONE_PARSE_ERROR", "1")

@@ -59,6 +59,8 @@ impl TimeZone {
                 match parse_fixed_offset(tz) {
                     Ok(v) => *tz = v,
                     Err(err) => {
+                        // This can be used if there are externally created arrow buffers / dtypes
+                        // with unknown timezones.
                         if std::env::var("POLARS_IGNORE_TIMEZONE_PARSE_ERROR").as_deref() == Ok("1")
                         {
                             if config::verbose() {
