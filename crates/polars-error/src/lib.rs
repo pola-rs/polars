@@ -11,6 +11,7 @@ use std::sync::{Arc, LazyLock};
 use std::{env, io};
 pub mod signals;
 
+use pyo3::IntoPyObject;
 pub use warning::*;
 
 #[cfg(feature = "python")]
@@ -280,6 +281,18 @@ impl PolarsError {
                 let cls = value.get_type();
 
                 let out = PyErr::from_type(cls, (msg,));
+
+                let out = if let Ok(out_with_traceback) = (|| {
+                    out.clone_ref(py)
+                        .into_pyobject(py)?
+                        .getattr("with_traceback")
+                        .unwrap()
+                        .call1((value.getattr("__traceback__").unwrap(),))
+                })() {
+                    PyErr::from_value(out_with_traceback)
+                } else {
+                    out
+                };
 
                 Python {
                     error: python::PyErrWrap(out),
