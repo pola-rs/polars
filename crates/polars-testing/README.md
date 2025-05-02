@@ -1,7 +1,7 @@
 # polars-testing
 
-`polars-testing` is a sub-crate of the [Polars](https://crates.io/crates/polars) library, offering
-comprehensive functionality for unit testing in Rust.
+`polars-testing` is a sub-crate of the [Polars](https://crates.io/crates/polars) library, offering comprehensive
+functionality for unit testing in Rust.
 
 ## Usage
 
@@ -9,7 +9,7 @@ To use `polars-testing`, add it as a dependency to your Rust project's `Cargo.to
 
 ```toml
 [dependencies]
-polars-testing = "0.46.0"
+polars-testing = "0.47.0"
 ```
 
 You can then import the crate in your Rust code using:
