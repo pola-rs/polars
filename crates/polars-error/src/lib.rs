@@ -165,7 +165,7 @@ impl From<object_store::Error> for PolarsError {
             }
         }
 
-        std::io::Error::other(format!("object-store error: {err:?}")).into()
+        std::io::Error::other(format!("object-store error: {}", err)).into()
     }
 }
 
