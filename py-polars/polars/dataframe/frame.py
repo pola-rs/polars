@@ -160,6 +160,7 @@ if TYPE_CHECKING:
         Orientation,
         ParquetCompression,
         ParquetMetadata,
+        PartitioningScheme,
         PivotAgg,
         PolarsDataType,
         PythonDataType,
@@ -3749,43 +3750,16 @@ class DataFrame:
         return_bytes = file is None
         if return_bytes:
             file = BytesIO()
-        elif isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
 
-        if compat_level is None:
-            compat_level = True  # type: ignore[assignment]
-        elif isinstance(compat_level, CompatLevel):
-            compat_level = compat_level._version  # type: ignore[attr-defined]
-
-        if compression is None:
-            compression = "uncompressed"
-
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
-        )
-
-        credential_provider_builder = (
-            None
-            if return_bytes
-            else _init_credential_provider_builder(
-                credential_provider, file, storage_options, "write_ipc"
-            )
-        )
-        del credential_provider
-
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
-        self._df.write_ipc(
+        self.lazy().sink_ipc(
             file,
-            compression,
-            compat_level,
-            cloud_options=storage_options,
-            credential_provider=credential_provider_builder,
+            compression=compression,
+            compat_level=compat_level,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
             retries=retries,
+            no_optimization=True,
+            engine="in-memory",
         )
         return file if return_bytes else None  # type: ignore[return-value]
 
@@ -4062,15 +4036,17 @@ class DataFrame:
 
             return
 
-        target: str | Path | IO[bytes] | pl.io.PartitioningScheme = file
+        target: str | Path | IO[bytes] | PartitioningScheme = file
         mkdir = False
         engine = "in-memory"
         if partition_by is not None:
-            if isinstance(file, str):
+            if not isinstance(file, str):
                 msg = "expected file to be a `str` since partition-by is set"
                 raise TypeError(msg)
 
-            target = pl.io.PartitionByKey(partition_by, keys=partition_by)
+            from polars.io import PartitionByKey
+
+            target = PartitionByKey(file, by=partition_by)
             mkdir = True
             engine = "streaming"
 
