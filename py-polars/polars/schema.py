@@ -99,7 +99,7 @@ class Schema(BaseSchema):
         check_dtypes: bool = True,
     ) -> None:
         input = (
-            schema.items() if schema and isinstance(schema, Mapping) else (schema or {})
+            schema.items() if schema and isinstance(schema, Mapping) else (schema or ())
         )
         for name, tp in input:  # type: ignore[misc]
             if not check_dtypes:
