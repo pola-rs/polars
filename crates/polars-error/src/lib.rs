@@ -314,6 +314,13 @@ impl PolarsError {
             error: Box::new(self),
         }
     }
+
+    pub fn remove_context(mut self) -> Self {
+        while let Self::Context { error, .. } = self {
+            self = *error;
+        }
+        self
+    }
 }
 
 pub fn map_err<E: Error>(error: E) -> PolarsError {
