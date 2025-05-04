@@ -28,7 +28,7 @@ def test_truncate_monthly(value: date, n: int) -> None:
     total = (value.year - 1970) * 12 + value.month - 1
     remainder = total % n
     total -= remainder
-    year, month = (total // 12), ((total % 12) + 1)
+    year, month = (total // 12) + 1970, ((total % 12) + 1)
     expected = datetime(year, month, 1)
     assert result == expected
 
