@@ -35,10 +35,10 @@ tokio = { workspace = true, features = ["sync"] }
 polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
-polars-mem-engine = { workspace = true }
+polars-mem-engine = { workspace = true, features = [] }
 polars-ops = { workspace = true }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true }
+polars-plan = { workspace = true, features = ["semi_anti_join", "dtype-categorical", "cse", "rle", "is_in", "replace"] }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -46,7 +46,7 @@ version_check = { workspace = true }
 [features]
 nightly = []
 bitwise = ["polars-core/bitwise", "polars-plan/bitwise", "polars-expr/bitwise"]
-merge_sorted = ["polars-plan/merge_sorted"]
+merge_sorted = ["polars-plan/merge_sorted", "polars-mem-engine/merge_sorted"]
 dynamic_group_by = []
 strings = []
 ipc = ["polars-mem-engine/ipc", "polars-plan/ipc", "polars-io/ipc"]
