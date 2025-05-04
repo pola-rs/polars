@@ -239,7 +239,10 @@ pub(super) fn process_join(
             let dest_columns: &[ExprIR];
             let pushdown_dest: &mut Vec<ColumnNode>;
             let names_dest: &mut PlHashSet<PlSmallStr>;
-            if matches!(options.args.how, JoinType::Left | JoinType::Inner) {
+            if matches!(
+                options.args.how,
+                JoinType::Left | JoinType::Inner | JoinType::Full
+            ) {
                 src_columns = &left_on;
                 pushdown_src = &mut pushdown_left;
                 names_src = &mut names_left;
