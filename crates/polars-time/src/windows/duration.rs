@@ -730,7 +730,7 @@ impl Duration {
             original_dt_local.year() as i64,
             original_dt_local.month() as i64,
         );
-        let total = (year * 12) + (month - 1);
+        let total = ((year - 1970) * 12) + (month - 1);
         let mut remainder_months = total % self.months;
         if remainder_months < 0 {
             remainder_months += self.months

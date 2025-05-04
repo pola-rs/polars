@@ -166,16 +166,20 @@ class ExprDateTimeNameSpace:
         Divide the date/datetime range into buckets.
 
         Each date/datetime is mapped to the start of its bucket using the corresponding
-        local datetime. Note that weekly buckets start on Monday.
-        Ambiguous results are localised using the DST offset of the original timestamp -
-        for example, truncating `'2022-11-06 01:30:00 CST'` by `'1h'` results in
-        `'2022-11-06 01:00:00 CST'`, whereas truncating `'2022-11-06 01:30:00 CDT'` by
-        `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
+        local datetime. Note that:
+
+        - Weekly buckets start on Monday.
+        - All other buckets start on the Unix epoch (1970-01-01).
+        - Ambiguous results are localised using the DST offset of the original
+          timestamp - for example, truncating `'2022-11-06 01:30:00 CST'` by
+          `'1h'` results in `'2022-11-06 01:00:00 CST'`, whereas truncating
+          `'2022-11-06 01:30:00 CDT'` by `'1h'` results in
+          `'2022-11-06 01:00:00 CDT'`.
 
         Parameters
         ----------
         every
-            Every interval start and period length
+            The size of each bucket.
 
         Notes
         -----
@@ -197,7 +201,6 @@ class ExprDateTimeNameSpace:
         These strings can be combined:
 
         - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
