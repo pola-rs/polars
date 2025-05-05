@@ -212,16 +212,16 @@ impl PartialEq for DataType {
 impl Eq for DataType {}
 
 impl DataType {
-    pub fn new_idxsize() -> Self {
-        #[cfg(feature = "bigidx")]
-        {
-            Self::UInt64
-        }
+    pub const IDXSIZE: Self = {
         #[cfg(not(feature = "bigidx"))]
         {
-            Self::UInt32
+            DataType::UInt32
         }
-    }
+        #[cfg(feature = "bigidx")]
+        {
+            DataType::UInt64
+        }
+    };
 
     /// Standardize timezones to consistent values.
     pub(crate) fn canonical_timezone(tz: &Option<PlSmallStr>) -> Option<TimeZone> {
