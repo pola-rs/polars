@@ -41,7 +41,11 @@ zstd = { workspace = true, optional = true }
 
 xxhash-rust = { version = "0.8", optional = true, features = ["xxh64"] }
 
+proptest = { workspace = true, optional = true }
+
 [dev-dependencies]
+arrow = { workspace = true, features = ["proptest"] }
+proptest = { workspace = true }
 rand = "0.8"
 
 [features]

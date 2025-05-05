@@ -63,6 +63,7 @@ strength_reduce = { workspace = true, optional = true }
 async-stream = { version = "0.3", optional = true }
 tokio = { workspace = true, optional = true, features = ["io-util"] }
 
+proptest = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 
 [dev-dependencies]
@@ -71,7 +72,7 @@ crossbeam-channel = { workspace = true }
 doc-comment = "0.3"
 flate2 = { workspace = true, default-features = true }
 # used to run formal property testing
-proptest = { version = "1", default-features = false, features = ["std"] }
+proptest = { workspace = true }
 # use for flaky testing
 rand = { workspace = true }
 # use for generating and testing random data samples
