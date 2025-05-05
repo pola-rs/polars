@@ -375,7 +375,7 @@ def identify_deprecations(*types: DeprecationType) -> dict[str, list[str]]:
 
     for py_file in package_path.rglob("*.py"):
         rel_path = py_file.relative_to(package_path)
-        module_path = ".".join(rel_path.parts)
+        module_path = ".".join(rel_path.parts).removesuffix(".py")
         with py_file.open("r", encoding="utf-8") as src:
             for deprecation_type, func_names in _find_deprecated_functions(
                 source=src.read(),
