@@ -1,6 +1,5 @@
 use std::fmt::Write;
 
-use polars_ops::frame::JoinType;
 use polars_plan::dsl::PartitionVariantIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};

@@ -30,7 +30,7 @@ pub fn elapsed_offset_to_timedelta(elapsed: i64, time_unit: TimeUnit) -> TimeDel
 
 /// Convert time-units-since-epoch to a more structured object.
 pub fn timestamp_to_naive_datetime(since_epoch: i64, time_unit: TimeUnit) -> NaiveDateTime {
-    NaiveDateTime::UNIX_EPOCH + elapsed_offset_to_timedelta(since_epoch, time_unit)
+    DateTime::UNIX_EPOCH.naive_utc() + elapsed_offset_to_timedelta(since_epoch, time_unit)
 }
 
 /// Convert nanoseconds-since-midnight to a more structured object.
