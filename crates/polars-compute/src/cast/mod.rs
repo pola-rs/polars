@@ -8,6 +8,8 @@ mod dictionary_to;
 mod primitive_to;
 mod utf8_to;
 
+use arrow::bitmap::Bitmap;
+use arrow::offset::OffsetsBuffer;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
@@ -238,7 +240,10 @@ pub(super) fn cast_list_to_fixed_size_list<O: Offset>(
 }
 
 struct ListUint8BinaryIterator<'a, O: Offset> {
-    list: &'a ListArray<O>,
+    validity: Option<&'a Bitmap>,
+    internal_validity: Option<&'a Bitmap>,
+    offsets: &'a OffsetsBuffer<O>,
+    u8array: &'a [u8],
     index: usize,
     end: usize,
 }
@@ -246,8 +251,15 @@ struct ListUint8BinaryIterator<'a, O: Offset> {
 impl<'a, O: Offset> ListUint8BinaryIterator<'a, O> {
     #[inline]
     fn new(list: &'a ListArray<O>) -> Self {
+        let u8array: &PrimitiveArray<u8> = list.values().as_any().downcast_ref().unwrap();
+        let validity = list.validity();
+        let internal_validity = list.values().validity();
+        let offsets = list.offsets();
         Self {
-            list,
+            validity,
+            internal_validity,
+            offsets,
+            u8array: u8array.values().as_slice(),
             index: 0,
             end: list.len(),
         }
@@ -266,7 +278,7 @@ impl<'a, O: Offset> Iterator for ListUint8BinaryIterator<'a, O> {
         self.index += 1;
 
         // Check if there's a null instead of a list:
-        if let Some(validity) = self.list.validity() {
+        if let Some(validity) = self.validity {
             // SAFETY: We are generating indexes limited to < list.len().
             if unsafe { !validity.get_bit_unchecked(index) } {
                 return Some(None);
@@ -274,18 +286,17 @@ impl<'a, O: Offset> Iterator for ListUint8BinaryIterator<'a, O> {
         }
 
         // SAFETY: We are generating indexes limited to < list.len().
-        let (start, end) = unsafe { self.list.offsets().start_end_unchecked(index) };
+        let (start, end) = unsafe { self.offsets.start_end_unchecked(index) };
         let length = end - start;
 
         // Check if the list contains nulls:
-        if let Some(internal_validity) = self.list.values().validity() {
+        if let Some(internal_validity) = self.internal_validity {
             if internal_validity.null_count_range(start, length) > 0 {
                 return Some(None);
             }
         }
 
-        let u8array: &PrimitiveArray<u8> = self.list.values().as_any().downcast_ref().unwrap();
-        Some(Some(&u8array.values().as_slice()[start..end]))
+        Some(Some(&self.u8array[start..end]))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -293,7 +304,7 @@ impl<'a, O: Offset> Iterator for ListUint8BinaryIterator<'a, O> {
     }
 }
 
-impl<'a, O: Offset> ExactSizeIterator for ListUint8BinaryIterator<'a, O> {}
+impl<O: Offset> ExactSizeIterator for ListUint8BinaryIterator<'_, O> {}
 
 fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<BinaryViewArray> {
     let iter = ListUint8BinaryIterator::new(list);
