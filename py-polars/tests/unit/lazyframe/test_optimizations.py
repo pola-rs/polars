@@ -358,3 +358,25 @@ def test_order_observe_sort_before_unique_22485() -> None:
     assert "SORT BY" in plan[plan.index("UNIQUE") :]
 
     assert_frame_equal(q.collect(), expect)
+
+
+def test_order_observe_group_by() -> None:
+    q = (
+        pl.LazyFrame({"a": range(5)})
+        .group_by("a", maintain_order=True)
+        .agg(b=1)
+        .sort("b")
+    )
+
+    plan = q.explain()
+    assert "AGGREGATE[maintain_order: false]" in plan
+
+    q = (
+        pl.LazyFrame({"a": range(5)})
+        .group_by("a", maintain_order=True)
+        .agg(b=1)
+        .sort("b", maintain_order=True)
+    )
+
+    plan = q.explain()
+    assert "AGGREGATE[maintain_order: true]" in plan
