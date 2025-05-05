@@ -257,7 +257,7 @@ def _init_credential_provider_builder(
             return credential_provider
 
         if credential_provider != "auto":
-            msg = f"The `credential_provider` parameter of `{caller_name}` is considered unstable."
+            msg = f"the `credential_provider` parameter of `{caller_name}` is considered unstable."
             issue_unstable_warning(msg)
 
             return CredentialProviderBuilder.from_initialized_provider(

@@ -23,6 +23,11 @@ pub const NANOSECONDS_IN_DAY: i64 = SECONDS_IN_DAY * NANOSECONDS;
 /// Number of days between 0001-01-01 and 1970-01-01
 pub const EPOCH_DAYS_FROM_CE: i32 = 719_163;
 
+#[inline]
+fn unix_epoch() -> NaiveDateTime {
+    DateTime::UNIX_EPOCH.naive_utc()
+}
+
 /// converts a `i32` representing a `date32` to [`NaiveDateTime`]
 #[inline]
 pub fn date32_to_datetime(v: i32) -> NaiveDateTime {
@@ -33,7 +38,7 @@ pub fn date32_to_datetime(v: i32) -> NaiveDateTime {
 #[inline]
 pub fn date32_to_datetime_opt(v: i32) -> Option<NaiveDateTime> {
     let delta = TimeDelta::try_days(v.into())?;
-    NaiveDateTime::UNIX_EPOCH.checked_add_signed(delta)
+    unix_epoch().checked_add_signed(delta)
 }
 
 /// converts a `i32` representing a `date32` to [`NaiveDate`]
@@ -52,7 +57,7 @@ pub fn date32_to_date_opt(days: i32) -> Option<NaiveDate> {
 #[inline]
 pub fn date64_to_datetime(v: i64) -> NaiveDateTime {
     TimeDelta::try_milliseconds(v)
-        .and_then(|delta| NaiveDateTime::UNIX_EPOCH.checked_add_signed(delta))
+        .and_then(|delta| unix_epoch().checked_add_signed(delta))
         .expect("invalid or out-of-range datetime")
 }
 
@@ -161,7 +166,7 @@ pub fn timestamp_ms_to_datetime(v: i64) -> NaiveDateTime {
 #[inline]
 pub fn timestamp_ms_to_datetime_opt(v: i64) -> Option<NaiveDateTime> {
     let delta = TimeDelta::try_milliseconds(v)?;
-    NaiveDateTime::UNIX_EPOCH.checked_add_signed(delta)
+    unix_epoch().checked_add_signed(delta)
 }
 
 /// converts a `i64` representing a `timestamp(us)` to [`NaiveDateTime`]
@@ -174,7 +179,7 @@ pub fn timestamp_us_to_datetime(v: i64) -> NaiveDateTime {
 #[inline]
 pub fn timestamp_us_to_datetime_opt(v: i64) -> Option<NaiveDateTime> {
     let delta = TimeDelta::microseconds(v);
-    NaiveDateTime::UNIX_EPOCH.checked_add_signed(delta)
+    unix_epoch().checked_add_signed(delta)
 }
 
 /// converts a `i64` representing a `timestamp(ns)` to [`NaiveDateTime`]
@@ -187,7 +192,7 @@ pub fn timestamp_ns_to_datetime(v: i64) -> NaiveDateTime {
 #[inline]
 pub fn timestamp_ns_to_datetime_opt(v: i64) -> Option<NaiveDateTime> {
     let delta = TimeDelta::nanoseconds(v);
-    NaiveDateTime::UNIX_EPOCH.checked_add_signed(delta)
+    unix_epoch().checked_add_signed(delta)
 }
 
 /// Converts a timestamp in `time_unit` and `timezone` into [`chrono::DateTime`].

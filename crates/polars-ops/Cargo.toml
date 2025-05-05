@@ -87,7 +87,7 @@ timezones = ["chrono", "chrono-tz", "polars-core/temporal", "polars-core/timezon
 random = ["rand", "rand_distr"]
 rank = ["rand"]
 find_many = ["aho-corasick"]
-serde = ["dep:serde", "polars-core/serde", "polars-utils/serde", "polars-schema/serde"]
+serde = ["dep:serde", "polars-core/serde", "polars-utils/serde", "polars-schema/serde", "polars-compute/serde"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]

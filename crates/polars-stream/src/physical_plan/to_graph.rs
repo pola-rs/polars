@@ -718,8 +718,9 @@ fn to_graph_rec<'a>(
             let unique_key_schema =
                 compute_output_schema(&right_input_schema, &unique_left_on, ctx.expr_arena)?;
 
-            if let SemiAntiJoin { output_bool, .. } = node.kind {
-                ctx.graph.add_node(
+            match node.kind {
+                #[cfg(feature = "semi_anti_join")]
+                SemiAntiJoin { output_bool, .. } => ctx.graph.add_node(
                     nodes::joins::semi_anti_join::SemiAntiJoinNode::new(
                         unique_key_schema,
                         left_key_selectors,
@@ -732,9 +733,8 @@ fn to_graph_rec<'a>(
                         (left_input_key, input_left.port),
                         (right_input_key, input_right.port),
                     ],
-                )
-            } else {
-                ctx.graph.add_node(
+                ),
+                _ => ctx.graph.add_node(
                     nodes::joins::equi_join::EquiJoinNode::new(
                         left_input_schema,
                         right_input_schema,
@@ -750,7 +750,7 @@ fn to_graph_rec<'a>(
                         (left_input_key, input_left.port),
                         (right_input_key, input_right.port),
                     ],
-                )
+                ),
             }
         },
 

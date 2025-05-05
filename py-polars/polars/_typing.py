@@ -128,6 +128,9 @@ ParquetCompression: TypeAlias = Literal[
 PivotAgg: TypeAlias = Literal[
     "min", "max", "first", "last", "sum", "mean", "median", "len"
 ]
+QuantileMethod: TypeAlias = Literal[
+    "nearest", "higher", "lower", "midpoint", "linear", "equiprobable"
+]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
 RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero"]
@@ -170,9 +173,6 @@ InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
     "inner", "left", "right", "full", "semi", "anti", "cross", "outer"
 ]  # JoinType
-RollingInterpolationMethod: TypeAlias = Literal[
-    "nearest", "higher", "lower", "midpoint", "linear"
-]  # QuantileInterpolOptions
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
@@ -285,7 +285,6 @@ ConnectionOrCursor: TypeAlias = Union[
     BasicConnection, BasicCursor, Cursor, AlchemyConnection
 ]
 
-
 # Annotations for `__getitem__` methods
 SingleIndexSelector: TypeAlias = int
 MultiIndexSelector: TypeAlias = Union[
@@ -330,6 +329,14 @@ FileSource: TypeAlias = Union[
 
 JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
 
+DeprecationType: TypeAlias = Literal[
+    "function",
+    "renamed_parameter",
+    "streaming_parameter",
+    "nonkeyword_arguments",
+    "parameter_as_multi_positional",
+]
+
 
 class PartitioningScheme:
     def __init__(
@@ -368,6 +375,7 @@ __all__ = [
     "DbReadEngine",
     "DbWriteEngine",
     "DbWriteMode",
+    "DeprecationType",
     "Endianness",
     "EngineType",
     "EpochTimeUnit",
@@ -411,9 +419,9 @@ __all__ = [
     "PolarsType",
     "PythonDataType",
     "PythonLiteral",
+    "QuantileMethod",
     "RankMethod",
     "Roll",
-    "RollingInterpolationMethod",
     "RowTotalsDefinition",
     "SchemaDefinition",
     "SchemaDict",

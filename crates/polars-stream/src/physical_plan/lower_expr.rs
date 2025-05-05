@@ -79,10 +79,13 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
             }
 
             use FunctionExpr as F;
-            matches!(
-                function,
-                F::Boolean(BooleanFunction::IsIn { .. }) | F::Replace | F::ReplaceStrict { .. }
-            )
+            match function {
+                #[cfg(feature = "is_in")]
+                F::Boolean(BooleanFunction::IsIn { .. }) => true,
+                #[cfg(feature = "replace")]
+                F::Replace | F::ReplaceStrict { .. } => true,
+                _ => false,
+            }
         },
         _ => false,
     }
@@ -635,6 +638,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
             },
 
+            #[cfg(feature = "is_in")]
             AExpr::Function {
                 input: ref inner_exprs,
                 function: FunctionExpr::Boolean(BooleanFunction::IsIn { nulls_equal }),

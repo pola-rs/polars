@@ -46,7 +46,7 @@ pub(super) fn sort_and_groups(
 
         df.get_columns_mut().pop().unwrap()
     };
-    let encoded = encoded.as_series().unwrap();
+    let encoded = encoded.as_materialized_series();
     let encoded = encoded.binary_offset().unwrap();
     let encoded = encoded.with_sorted_flag(polars_core::series::IsSorted::Ascending);
     let groups = encoded.group_tuples(true, false).unwrap();

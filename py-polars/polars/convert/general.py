@@ -711,6 +711,9 @@ def from_repr(data: str) -> DataFrame | Series:
     """
     Construct a Polars DataFrame or Series from its string representation.
 
+    .. versionchanged:: 0.20.17
+        The `tbl` parameter was renamed to `data`.
+
     Parameters
     ----------
     data

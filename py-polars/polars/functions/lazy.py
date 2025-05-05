@@ -8,9 +8,9 @@ import polars._reexport as pl
 import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
-    deprecate_function,
     deprecate_renamed_parameter,
     deprecate_streaming_parameter,
+    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.parse import (
@@ -27,6 +27,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Awaitable, Collection, Iterable
     from typing import Literal
 
@@ -37,8 +38,13 @@ if TYPE_CHECKING:
         EpochTimeUnit,
         IntoExpr,
         PolarsDataType,
-        RollingInterpolationMethod,
+        QuantileMethod,
     )
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 def field(name: str | list[str]) -> Expr:
@@ -893,7 +899,7 @@ def corr(
     """
     if ddof is not None:
         issue_deprecation_warning(
-            "The `ddof` parameter has no effect. Do not use it.",
+            "the `ddof` parameter has no effect. Do not use it.",
             version="1.17.0",
         )
 
@@ -1510,7 +1516,7 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
 
 
-@deprecate_function("Use `arctan2` followed by `.degrees()` instead.", version="1.0.0")
+@deprecated("`arctan2d` is deprecated; use `arctan2` followed by `.degrees()` instead.")
 def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
     """
     Compute two argument arctan in degrees.
@@ -1637,7 +1643,7 @@ def groups(column: str) -> Expr:
 def quantile(
     column: str,
     quantile: float | Expr,
-    interpolation: RollingInterpolationMethod = "nearest",
+    interpolation: QuantileMethod = "nearest",
 ) -> Expr:
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.
@@ -1648,7 +1654,7 @@ def quantile(
         Column name.
     quantile
         Quantile between 0.0 and 1.0.
-    interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+    interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
         Interpolation method.
     """
     return F.col(column).quantile(quantile, interpolation)
@@ -1836,7 +1842,7 @@ def collect_all(
         optflags.no_optimizations()
 
     if engine in ("streaming", "old-streaming"):
-        issue_unstable_warning("Streaming mode is considered unstable.")
+        issue_unstable_warning("streaming mode is considered unstable.")
 
     lfs = [lf._ldf for lf in lazy_frames]
     out = plr.collect_all(lfs, engine, optflags._pyoptflags)
@@ -1994,7 +2000,7 @@ def collect_all_async(
         optflags.no_optimizations()
 
     if engine in ("streaming", "old-streaming"):
-        issue_unstable_warning("Streaming mode is considered unstable.")
+        issue_unstable_warning("streaming mode is considered unstable.")
 
     result: (
         _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
@@ -2400,6 +2406,9 @@ def rolling_cov(
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
+    .. versionchanged:: 1.21.0
+        The `min_periods` parameter was renamed `min_samples`.
+
     Parameters
     ----------
     a
@@ -2440,6 +2449,9 @@ def rolling_corr(
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
+
+    .. versionchanged:: 1.21.0
+        The `min_periods` parameter was renamed `min_samples`.
 
     Parameters
     ----------
