@@ -81,24 +81,30 @@ pub fn to_alp(
     match to_alp_impl(lp, &mut ctxt) {
         Ok(out) => Ok(out),
         Err(err) => {
-            if let Some(ir_until_then) = lp_arena.last_node() {
-                let node_name = if let PolarsError::Context { msg, .. } = &err {
-                    msg
-                } else {
-                    "THIS_NODE"
-                };
-                let plan = IRPlan::new(
-                    ir_until_then,
-                    std::mem::take(lp_arena),
-                    std::mem::take(expr_arena),
-                );
-                let location = format!("{}", plan.display());
-                Err(err.wrap_msg(|msg| {
-                    format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
-                }))
+            if opt_flags.contains(OptFlags::EAGER) {
+                // If we dispatched to the lazy engine from the eager API, we don't want to resolve
+                // where in the query plan it went wrong. It is clear from the backtrace anyway.
+                return Err(err.remove_context());
+            };
+
+            let Some(ir_until_then) = lp_arena.last_node() else {
+                return Err(err);
+            };
+
+            let node_name = if let PolarsError::Context { msg, .. } = &err {
+                msg
             } else {
-                Err(err)
-            }
+                "THIS_NODE"
+            };
+            let plan = IRPlan::new(
+                ir_until_then,
+                std::mem::take(lp_arena),
+                std::mem::take(expr_arena),
+            );
+            let location = format!("{}", plan.display());
+            Err(err.wrap_msg(|msg| {
+                format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
+            }))
         },
     }
 }
