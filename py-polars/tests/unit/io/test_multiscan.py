@@ -651,13 +651,18 @@ def test_row_index_filter_22612(scan: Any, write: Any) -> None:
         write(df, f)
 
     for end in range(2, 10):
-        f.seek(0)
+        assert_frame_equal(
+            scan(f)
+            .with_row_index()
+            .filter(pl.col("index") >= end - 2, pl.col("index") <= end)
+            .collect(),
+            df.with_row_index().slice(end - 2, 3),
+        )
 
         assert_frame_equal(
             scan(f)
             .with_row_index()
-            # .filter(pl.col("index").is_between(end - 2, end))
-            .filter(pl.col("index") >= end - 2, pl.col("index") <= end)
+            .filter(pl.col("index").is_between(end - 2, end))
             .collect(),
             df.with_row_index().slice(end - 2, 3),
         )
