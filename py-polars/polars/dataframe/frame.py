@@ -161,7 +161,7 @@ if TYPE_CHECKING:
         PivotAgg,
         PolarsDataType,
         PythonDataType,
-        RollingInterpolationMethod,
+        QuantileMethod,
         RowTotalsDefinition,
         SchemaDefinition,
         SchemaDict,
@@ -5393,7 +5393,7 @@ class DataFrame:
         self,
         percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75),
         *,
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
     ) -> DataFrame:
         """
         Summary statistics for a DataFrame.
@@ -5404,7 +5404,7 @@ class DataFrame:
             One or more percentiles to include in the summary statistics.
             All values must be in the range `[0, 1]`.
 
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method used when calculating percentiles.
 
         Notes
@@ -10322,7 +10322,7 @@ class DataFrame:
         return self.select(exprs)
 
     def quantile(
-        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
+        self, quantile: float, interpolation: QuantileMethod = "nearest"
     ) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their quantile value.
@@ -10331,7 +10331,7 @@ class DataFrame:
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Examples
@@ -10352,7 +10352,7 @@ class DataFrame:
         ╞═════╪═════╪══════╡
         │ 2.0 ┆ 7.0 ┆ null │
         └─────┴─────┴──────┘
-        """
+        """  # noqa: W505
         return self.lazy().quantile(quantile, interpolation).collect(_eager=True)
 
     def to_dummies(

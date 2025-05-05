@@ -135,8 +135,8 @@ if TYPE_CHECKING:
         NumericLiteral,
         PolarsDataType,
         PythonLiteral,
+        QuantileMethod,
         RankMethod,
-        RollingInterpolationMethod,
         RoundMode,
         SearchSortedSide,
         SeriesBuffers,
@@ -1967,7 +1967,7 @@ class Series:
     def describe(
         self,
         percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75),
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
     ) -> DataFrame:
         """
         Quick summary statistics of a Series.
@@ -1980,7 +1980,7 @@ class Series:
         percentiles
             One or more percentiles to include in the summary statistics (if the
             Series has a numeric dtype). All values must be in the range `[0, 1]`.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method used when calculating percentiles.
 
         Notes
@@ -2028,7 +2028,7 @@ class Series:
         │ min        ┆ aa    │
         │ max        ┆ cc    │
         └────────────┴───────┘
-        """
+        """  # noqa: W505
         stats = self.to_frame().describe(
             percentiles=percentiles,
             interpolation=interpolation,
@@ -2234,7 +2234,7 @@ class Series:
         return self._s.median()
 
     def quantile(
-        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
+        self, quantile: float, interpolation: QuantileMethod = "nearest"
     ) -> float | None:
         """
         Get the quantile value of this Series.
@@ -2243,7 +2243,7 @@ class Series:
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Examples
@@ -2251,7 +2251,7 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.quantile(0.5)
         2.0
-        """
+        """  # noqa: W505
         return self._s.quantile(quantile, interpolation)
 
     def to_dummies(
@@ -6096,7 +6096,7 @@ class Series:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
         window_size: int = 2,
         weights: list[float] | None = None,
         *,
@@ -6120,7 +6120,7 @@ class Series:
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
         window_size
             The length of the window in number of elements.
@@ -6158,7 +6158,7 @@ class Series:
                 3.66
                 5.32
         ]
-        """
+        """  # noqa: W505
 
     @unstable()
     def rolling_skew(

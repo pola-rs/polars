@@ -78,8 +78,8 @@ if TYPE_CHECKING:
         NullBehavior,
         NumericLiteral,
         PolarsDataType,
+        QuantileMethod,
         RankMethod,
-        RollingInterpolationMethod,
         RoundMode,
         SchemaDict,
         SearchSortedSide,
@@ -3819,7 +3819,7 @@ class Expr:
     def quantile(
         self,
         quantile: float | Expr,
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
     ) -> Expr:
         """
         Get quantile value.
@@ -3828,7 +3828,7 @@ class Expr:
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Examples
@@ -3879,7 +3879,7 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
-        """
+        """  # noqa: W505
         quantile = parse_into_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
@@ -7257,7 +7257,7 @@ class Expr:
         window_size: timedelta | str,
         *,
         quantile: float,
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
         min_samples: int = 1,
         closed: ClosedInterval = "right",
     ) -> Expr:
@@ -7287,7 +7287,7 @@ class Expr:
             in `window size`).
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
         window_size
             The length of the window. Can be a dynamic
@@ -7378,7 +7378,7 @@ class Expr:
         │ 23    ┆ 2001-01-01 23:00:00 ┆ 22.0                 │
         │ 24    ┆ 2001-01-02 00:00:00 ┆ 23.0                 │
         └───────┴─────────────────────┴──────────────────────┘
-        """
+        """  # noqa: W505
         window_size = _prepare_rolling_by_window_args(window_size)
         by = parse_into_expression(by)
         return self._from_pyexpr(
@@ -8174,7 +8174,7 @@ class Expr:
     def rolling_quantile(
         self,
         quantile: float,
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
         window_size: int = 2,
         weights: list[float] | None = None,
         *,
@@ -8198,7 +8198,7 @@ class Expr:
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
         window_size
             The length of the window in number of elements.
@@ -8304,7 +8304,7 @@ class Expr:
         │ 5.0 ┆ null             │
         │ 6.0 ┆ null             │
         └─────┴──────────────────┘
-        """
+        """  # noqa: W505
         return self._from_pyexpr(
             self._pyexpr.rolling_quantile(
                 quantile,
