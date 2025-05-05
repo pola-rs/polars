@@ -40,8 +40,6 @@ impl NodeStyle {
             #[cfg(feature = "merge_sorted")]
             K::MergeSorted { .. } => Self::MemoryIntensive,
             _ => Self::Generic,
-            #[cfg(feature = "merge_sorted")]
-            K::MergeSorted { .. } => Self::MemoryIntensive,
         }
     }
 
@@ -434,16 +432,16 @@ fn visualize_plan_rec(
                 PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
-                } if args.how == JoinType::Semi => "semi-join",
+                } if args.how.is_semi() => "semi-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
-                } if args.how == JoinType::Anti => "anti-join",
+                } if args.how.is_anti() => "anti-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: true, ..
-                } if args.how == JoinType::Semi => "is-in",
+                } if args.how.is_semi() => "is-in",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: true, ..
-                } if args.how == JoinType::Anti => "is-not-in",
+                } if args.how.is_anti() => "is-not-in",
                 _ => unreachable!(),
             };
             let mut label = label.to_string();

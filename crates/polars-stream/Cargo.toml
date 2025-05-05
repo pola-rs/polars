@@ -36,9 +36,9 @@ polars-core = { workspace = true, features = ["partition_by"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
-polars-ops = { workspace = true, features = ["rle", "semi_anti_join", "is_in", "replace"] }
+polars-ops = { workspace = true, features = ["rle", "replace"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["semi_anti_join", "dtype-categorical", "cse", "rle", "is_in", "replace", "cloud"] }
+polars-plan = { workspace = true, features = ["dtype-categorical", "cse", "rle", "replace", "cloud"] }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -57,6 +57,8 @@ cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 object = ["polars-ops/object"]
 python = ["pyo3", "polars-plan/python", "polars-error/python"]
+semi_anti_join = ["polars-plan/semi_anti_join", "polars-ops/semi_anti_join"]
+is_in = ["polars-ops/is_in", "polars-plan/is_in", "semi_anti_join"]
 
 # We need to specify default features here to match workspace defaults.
 # Otherwise we get warnings with cargo check/clippy.

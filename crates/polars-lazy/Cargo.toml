@@ -187,7 +187,7 @@ bitwise = [
   "polars-ops/bitwise",
 ]
 approx_unique = ["polars-plan/approx_unique"]
-is_in = ["polars-plan/is_in", "polars-ops/is_in", "polars-expr/is_in"]
+is_in = ["polars-plan/is_in", "polars-ops/is_in", "polars-expr/is_in", "polars-stream/is_in"]
 repeat_by = ["polars-plan/repeat_by"]
 round_series = ["polars-plan/round_series", "polars-ops/round_series", "polars-expr/round_series"]
 is_first_distinct = ["polars-plan/is_first_distinct"]
@@ -256,7 +256,7 @@ merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted", "pola
 meta = ["polars-plan/meta"]
 pivot = ["polars-core/rows", "polars-ops/pivot", "polars-plan/pivot"]
 top_k = ["polars-plan/top_k"]
-semi_anti_join = ["polars-plan/semi_anti_join"]
+semi_anti_join = ["polars-plan/semi_anti_join", "polars-stream/semi_anti_join"]
 cse = ["polars-plan/cse"]
 propagate_nans = ["polars-plan/propagate_nans", "polars-expr/propagate_nans"]
 coalesce = ["polars-plan/coalesce"]

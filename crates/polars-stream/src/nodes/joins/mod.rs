@@ -14,6 +14,7 @@ use crate::pipe::RecvPort;
 
 pub mod equi_join;
 pub mod in_memory;
+#[cfg(feature = "semi_anti_join")]
 pub mod semi_anti_join;
 
 static JOIN_SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
