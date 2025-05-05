@@ -8,7 +8,6 @@ mod dictionary_to;
 mod primitive_to;
 mod utf8_to;
 
-use arrow::bitmap::utils::ZipValidity;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
@@ -256,29 +255,49 @@ impl<'a, O: Offset> ListUint8BinaryIterator<'a, O> {
 }
 
 impl<'a, O: Offset> Iterator for ListUint8BinaryIterator<'a, O> {
-    type Item = &'a [u8];
+    type Item = Option<&'a [u8]>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.next == self.end {
+        if self.index == self.end {
             return None;
         }
-        let i = self.index;
+        let index = self.index;
         self.index += 1;
 
-        let (start, end) = self.list.offsets().start_end_unchecked(i);
+        // Check if there's a null instead of a list:
+        if let Some(validity) = self.list.validity() {
+            // SAFETY: We are generating indexes limited to < list.len().
+            if unsafe { !validity.get_bit_unchecked(index) } {
+                return Some(None);
+            }
+        }
+
+        // SAFETY: We are generating indexes limited to < list.len().
+        let (start, end) = unsafe { self.list.offsets().start_end_unchecked(index) };
         let length = end - start;
-        // TODO if the resulting "slice" has nulls, return None, otherwise return &[u8].
+
+        // Check if the list contains nulls:
+        if let Some(internal_validity) = self.list.values().validity() {
+            if internal_validity.null_count_range(start, length) > 0 {
+                return Some(None);
+            }
+        }
+
+        let u8array: &PrimitiveArray<u8> = self.list.values().as_any().downcast_ref().unwrap();
+        Some(Some(&u8array.values().as_slice()[start..end]))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.end, Some(self.end))
     }
 }
 
-fn cast_list_uint8_to_binary<O: Offset>(
-    list: &ListArray<O>,
-    options: CastOptionsImpl,
-) -> PolarsResult<BinaryViewArray> {
-    let value_iter = ListUint8BinaryIterator::new(list);
-    let iter = ZipValidity::new_with_validity(value_iter, list.validity());
-    MutableBinaryViewArray::from_iter(iter).into()
+impl<'a, O: Offset> ExactSizeIterator for ListUint8BinaryIterator<'a, O> {}
+
+fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<BinaryViewArray> {
+    let iter = ListUint8BinaryIterator::new(list);
+    Ok(MutableBinaryViewArray::from_iterator(iter).into())
 }
 
 pub fn cast_default(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResult<Box<dyn Array>> {
@@ -371,11 +390,13 @@ pub fn cast(
             options,
         )
         .map(|x| x.boxed()),
-        (List(UInt8), BinaryView) => {
-            cast_list_uint8_to_binary::<i32>(array.as_any().downcast_ref().unwrap(), options)
+        (List(field), BinaryView) if matches!(field.dtype(), UInt8) => {
+            cast_list_uint8_to_binary::<i32>(array.as_any().downcast_ref().unwrap())
+                .map(|arr| arr.boxed())
         },
-        (LargeList(UInt8), BinaryView) => {
-            cast_list_to_binary::<i64>(array.as_any().downcast_ref().unwrap(), options)
+        (LargeList(field), BinaryView) if matches!(field.dtype(), UInt8) => {
+            cast_list_uint8_to_binary::<i64>(array.as_any().downcast_ref().unwrap())
+                .map(|arr| arr.boxed())
         },
         (BinaryView, _) => match to_type {
             Utf8View => array

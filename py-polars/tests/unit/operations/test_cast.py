@@ -657,19 +657,32 @@ def test_invalid_inner_type_cast_list() -> None:
         s.cast(pl.List(pl.Categorical))
 
 
-def test_list_uint8_to_bytes() -> None:
+@pytest.mark.parametrize(
+    "values,result",
+    [
+        ([[1, 2], [3, 4]], [b"\x01\x02", b"\x03\x04"]),
+        ([[1, 2], None, [3, 4]], [b"\x01\x02", None, b"\x03\x04"]),
+        (
+            [None, [111, 110, 101], [12, None], [116, 119, 111], list(range(256))],
+            [
+                None,
+                b"one",
+                # A list with a null in it gets turned into a null:
+                None,
+                b"two",
+                bytes(i for i in range(256)),
+            ],
+        ),
+    ],
+)
+def test_list_uint8_to_bytes(
+    values: list[list[int | None] | None], result: list[bytes | None]
+) -> None:
     s = pl.Series(
-        [None, [111, 110, 101], [12, None], [116, 119, 111], list(range(256))],
+        values,
         dtype=pl.List(pl.UInt8()),
     )
-    assert s.cast(pl.Binary()).to_list() == [
-        None,
-        b"one",
-        # A list with a null in it gets turned into a null:
-        None,
-        b"two",
-        b"".join(chr(i) for i in range(256)),
-    ]
+    assert s.cast(pl.Binary(), strict=False).to_list() == result
 
 
 def test_all_null_cast_5826() -> None:
