@@ -533,7 +533,7 @@ impl ChunkCast for ListChunked {
                         &DataType::Binary,
                     ))
                 }
-            }
+            },
             _ => {
                 polars_bail!(
                     InvalidOperation: "cannot cast List type (inner: '{:?}', to: '{:?}')",

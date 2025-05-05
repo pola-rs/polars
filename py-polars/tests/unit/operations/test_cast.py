@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable
@@ -658,7 +657,7 @@ def test_invalid_inner_type_cast_list() -> None:
 
 
 @pytest.mark.parametrize(
-    "values,result",
+    ("values", "result"),
     [
         ([[1, 2], [3, 4]], [b"\x01\x02", b"\x03\x04"]),
         ([[1, 2], None, [3, 4]], [b"\x01\x02", None, b"\x03\x04"]),
