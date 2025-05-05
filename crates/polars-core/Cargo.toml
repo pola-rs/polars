@@ -125,6 +125,7 @@ serde = [
   "bitflags/serde",
   "polars-schema/serde",
   "polars-utils/serde",
+  "polars-compute/serde",
   "arrow/io_ipc",
   "arrow/io_ipc_compression",
   "serde_json",

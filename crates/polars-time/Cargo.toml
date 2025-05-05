@@ -46,7 +46,7 @@ offset_by = []
 rolling_window = ["polars-core/rolling_window"]
 rolling_window_by = ["polars-core/rolling_window_by", "dtype-duration"]
 fmt = ["polars-core/fmt"]
-serde = ["dep:serde", "polars-utils/serde"]
+serde = ["dep:serde", "polars-utils/serde", "polars-compute/serde"]
 temporal = ["polars-core/temporal"]
 timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "arrow/timezones", "polars-ops/timezones"]
 
