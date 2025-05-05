@@ -36,7 +36,7 @@ jobs:
   coverage-rust:
     # Running under ubuntu doesn't seem to work:
     # https://github.com/pola-rs/polars/issues/14255
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -93,6 +93,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          check-latest: true
 
       - name: Install uv
         run: |

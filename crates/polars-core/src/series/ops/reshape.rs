@@ -71,16 +71,6 @@ impl Series {
         (offsets, validities)
     }
 
-    /// For ListArrays, recursively normalizes the offsets to begin from 0, and
-    /// slices excess length from the values array.
-    pub fn list_rechunk_and_trim_to_normalized_offsets(&self) -> Self {
-        if let Some(ca) = self.try_list() {
-            ca.rechunk_and_trim_to_normalized_offsets().into_series()
-        } else {
-            self.rechunk()
-        }
-    }
-
     /// Convert the values of this Series to a ListChunked with a length of 1,
     /// so a Series of `[1, 2, 3]` becomes `[[1, 2, 3]]`.
     pub fn implode(&self) -> PolarsResult<ListChunked> {
@@ -227,7 +217,7 @@ impl Series {
 
         let s = self;
         let s = if let DataType::List(_) = s.dtype() {
-            Cow::Owned(s.explode()?)
+            Cow::Owned(s.explode(true)?)
         } else {
             Cow::Borrowed(s)
         };
@@ -338,7 +328,7 @@ mod test {
             let out = s.reshape_list(&dims)?;
             assert_eq!(out.len(), list_len);
             assert!(matches!(out.dtype(), DataType::List(_)));
-            assert_eq!(out.explode()?.len(), 4);
+            assert_eq!(out.explode(false)?.len(), 4);
         }
 
         Ok(())

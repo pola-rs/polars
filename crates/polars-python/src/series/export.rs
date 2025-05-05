@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_ffi::version_0::SeriesExport;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList};
@@ -164,5 +165,12 @@ impl PySeries {
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
         series_to_stream(&self.series, py)
+    }
+
+    pub fn _export(&mut self, _py: Python, location: usize) {
+        let export = polars_ffi::version_0::export_series(&self.series);
+        unsafe {
+            (location as *mut SeriesExport).write(export);
+        }
     }
 }

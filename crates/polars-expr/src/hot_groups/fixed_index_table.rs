@@ -19,7 +19,6 @@ struct Slot {
 pub struct FixedIndexTable<K> {
     slots: Vec<Slot>,
     keys: Vec<K>,
-    hashes: Vec<u64>,
     shift: u8,
     prng: u64,
 }
@@ -35,8 +34,8 @@ impl<K> FixedIndexTable<K> {
         Self {
             slots: vec![empty_slot; num_slots as usize],
             shift: 64 - num_slots.trailing_zeros() as u8,
-            keys: Vec::with_capacity(num_slots as usize),
-            hashes: Vec::with_capacity(num_slots as usize),
+            // We add one to the capacity for the null key.
+            keys: Vec::with_capacity(1 + num_slots as usize),
             prng: 0,
         }
     }
@@ -45,13 +44,31 @@ impl<K> FixedIndexTable<K> {
         self.keys.len()
     }
 
+    /// Insert a key which will never be mapped to nor evicted.
+    ///
+    /// This is useful for permanent entries which are handled externally.
+    /// Returns the key index this would have taken up.
+    pub fn push_unmapped_key(&mut self, key: K) -> IdxSize {
+        let idx = self.keys.len();
+        self.keys.push(key);
+        idx as IdxSize
+    }
+
     /// Tries to insert a key with a given hash.
     ///
     /// Returns Some((index, evict_old)) if successful, None otherwise.
-    pub fn insert_key<Q, F>(&mut self, hash: u64, key: &Q, mut on_evict: F) -> Option<EvictIdx>
+    pub fn insert_key<Q, E, I, V>(
+        &mut self,
+        hash: u64,
+        key: Q,
+        mut eq: E,
+        mut insert: I,
+        mut evict_insert: V,
+    ) -> Option<EvictIdx>
     where
-        Q: ToOwned<Owned = K> + PartialEq<K> + ?Sized,
-        F: FnMut(u64, &K),
+        E: FnMut(&Q, &K) -> bool,
+        I: FnMut(Q) -> K,
+        V: FnMut(Q, &mut K),
     {
         let tag = hash as u32;
         let h1 = (hash >> self.shift) as usize;
@@ -76,7 +93,7 @@ impl<K> FixedIndexTable<K> {
                 let ha = select_unpredictable(s1_delta == 0, h1, h2);
                 let sa = self.slots.get_unchecked_mut(ha);
                 if let Some(sak) = self.keys.get(sa.key_index as usize) {
-                    if key == sak {
+                    if eq(&key, sak) {
                         sa.last_access_tag = tag;
                         return Some(EvictIdx::new(sa.key_index, false));
                     }
@@ -87,7 +104,7 @@ impl<K> FixedIndexTable<K> {
                     let hb = h1 ^ h2 ^ ha;
                     let sb = self.slots.get_unchecked_mut(hb);
                     if let Some(sbk) = self.keys.get(sb.key_index as usize) {
-                        if key == sbk {
+                        if eq(&key, sbk) {
                             sb.last_access_tag = tag;
                             return Some(EvictIdx::new(sb.key_index, false));
                         }
@@ -104,8 +121,7 @@ impl<K> FixedIndexTable<K> {
                     s1.tag = tag;
                     s1.last_access_tag = tag;
                     s1.key_index = num_keys;
-                    self.keys.push_unchecked(key.to_owned());
-                    self.hashes.push_unchecked(hash);
+                    self.keys.push_unchecked(insert(key));
                     return Some(EvictIdx::new(s1.key_index, false));
                 }
 
@@ -115,8 +131,7 @@ impl<K> FixedIndexTable<K> {
                     s2.tag = tag;
                     s2.last_access_tag = tag;
                     s2.key_index = num_keys;
-                    self.keys.push_unchecked(key.to_owned());
-                    self.hashes.push_unchecked(hash);
+                    self.keys.push_unchecked(insert(key));
                     return Some(EvictIdx::new(s2.key_index, false));
                 }
             }
@@ -127,11 +142,8 @@ impl<K> FixedIndexTable<K> {
             let slot = self.slots.get_unchecked_mut(hr);
             if slot.last_access_tag == tag {
                 slot.tag = tag;
-                let evict_hash = self.hashes.get_unchecked_mut(slot.key_index as usize);
                 let evict_key = self.keys.get_unchecked_mut(slot.key_index as usize);
-                on_evict(*evict_hash, evict_key);
-                key.clone_into(evict_key);
-                *evict_hash = hash;
+                evict_insert(key, evict_key);
                 Some(EvictIdx::new(slot.key_index, true))
             } else {
                 slot.last_access_tag = tag;
@@ -142,9 +154,5 @@ impl<K> FixedIndexTable<K> {
 
     pub fn keys(&self) -> &[K] {
         &self.keys
-    }
-
-    pub fn hashes(&self) -> &[u64] {
-        &self.hashes
     }
 }

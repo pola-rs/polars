@@ -8,9 +8,9 @@ import polars._reexport as pl
 import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
-    deprecate_function,
     deprecate_renamed_parameter,
     deprecate_streaming_parameter,
+    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.parse import (
@@ -18,7 +18,7 @@ from polars._utils.parse import (
     parse_into_list_of_expressions,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
-from polars._utils.various import extend_bool
+from polars._utils.various import extend_bool, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.lazyframe.opt_flags import OptFlags
@@ -27,6 +27,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Awaitable, Collection, Iterable
     from typing import Literal
 
@@ -37,8 +38,13 @@ if TYPE_CHECKING:
         EpochTimeUnit,
         IntoExpr,
         PolarsDataType,
-        RollingInterpolationMethod,
+        QuantileMethod,
     )
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 def field(name: str | list[str]) -> Expr:
@@ -893,7 +899,7 @@ def corr(
     """
     if ddof is not None:
         issue_deprecation_warning(
-            "The `ddof` parameter has no effect. Do not use it.",
+            "the `ddof` parameter has no effect. Do not use it.",
             version="1.17.0",
         )
 
@@ -1168,6 +1174,9 @@ def fold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
+    returns_scalar: bool = False,
+    return_dtype: PolarsDataType | None = None,
 ) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -1182,6 +1191,13 @@ def fold(
         Fn(acc, value) -> new_value
     exprs
         Expressions to aggregate over. May also be a wildcard expression.
+    returns_scalar
+        Whether or not `function` applied returns a scalar. This must be set correctly
+        by the user.
+    return_dtype
+            Output datatype.
+            If not set, the dtype will be inferred based on the dtype
+            of the accumulator.
 
     Notes
     -----
@@ -1269,7 +1285,15 @@ def fold(
         exprs = [exprs]
 
     exprs = parse_into_list_of_expressions(exprs)
-    return wrap_expr(plr.fold(acc, function, exprs))
+    return wrap_expr(
+        plr.fold(
+            acc,
+            function,
+            exprs,
+            returns_scalar=returns_scalar,
+            return_dtype=return_dtype,
+        )
+    )
 
 
 def reduce(
@@ -1483,16 +1507,16 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
     if isinstance(x, str):
         x = F.col(x)
     if not hasattr(x, "_pyexpr"):
-        msg = f"`arctan2` expected a `str` or `Expr` got a `{type(x).__name__}`"
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{qualified_type_name(x)}`"
         raise TypeError(msg)
     if not hasattr(y, "_pyexpr"):
-        msg = f"`arctan2` expected a `str` or `Expr` got a `{type(y).__name__}`"
+        msg = f"`arctan2` expected a `str` or `Expr` got a `{qualified_type_name(y)}`"
         raise TypeError(msg)
 
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
 
 
-@deprecate_function("Use `arctan2` followed by `.degrees()` instead.", version="1.0.0")
+@deprecated("`arctan2d` is deprecated; use `arctan2` followed by `.degrees()` instead.")
 def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
     """
     Compute two argument arctan in degrees.
@@ -1619,7 +1643,7 @@ def groups(column: str) -> Expr:
 def quantile(
     column: str,
     quantile: float | Expr,
-    interpolation: RollingInterpolationMethod = "nearest",
+    interpolation: QuantileMethod = "nearest",
 ) -> Expr:
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.
@@ -1630,7 +1654,7 @@ def quantile(
         Column name.
     quantile
         Quantile between 0.0 and 1.0.
-    interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+    interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
         Interpolation method.
     """
     return F.col(column).quantile(quantile, interpolation)
@@ -1818,7 +1842,7 @@ def collect_all(
         optflags.no_optimizations()
 
     if engine in ("streaming", "old-streaming"):
-        issue_unstable_warning("Streaming mode is considered unstable.")
+        issue_unstable_warning("streaming mode is considered unstable.")
 
     lfs = [lf._ldf for lf in lazy_frames]
     out = plr.collect_all(lfs, engine, optflags._pyoptflags)
@@ -1976,7 +2000,7 @@ def collect_all_async(
         optflags.no_optimizations()
 
     if engine in ("streaming", "old-streaming"):
-        issue_unstable_warning("Streaming mode is considered unstable.")
+        issue_unstable_warning("streaming mode is considered unstable.")
 
     result: (
         _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
@@ -2382,6 +2406,9 @@ def rolling_cov(
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
+    .. versionchanged:: 1.21.0
+        The `min_periods` parameter was renamed `min_samples`.
+
     Parameters
     ----------
     a
@@ -2422,6 +2449,9 @@ def rolling_corr(
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
+
+    .. versionchanged:: 1.21.0
+        The `min_periods` parameter was renamed `min_samples`.
 
     Parameters
     ----------

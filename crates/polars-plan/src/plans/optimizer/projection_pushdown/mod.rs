@@ -436,10 +436,6 @@ impl ProjectionPushDown {
                 mut unified_scan_args,
                 mut output_schema,
             } => {
-                if self.is_count_star {
-                    unified_scan_args.projection = Some(Arc::from([]));
-                }
-
                 let do_optimization = match &*scan_type {
                     FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
@@ -450,29 +446,59 @@ impl ProjectionPushDown {
                     FileScan::Csv { .. } => true,
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => true,
+                    // MultiScan will handle it if the PythonDataset cannot do projections.
+                    #[cfg(feature = "python")]
+                    FileScan::PythonDataset { .. } => true,
                 };
 
-                if do_optimization {
+                #[expect(clippy::never_loop)]
+                loop {
+                    if !do_optimization {
+                        break;
+                    }
+
+                    if self.is_count_star {
+                        if let FileScan::Anonymous { .. } = &*scan_type {
+                            // Anonymous scan is not controlled by us, we don't know if it can support
+                            // 0-column projections, so we always project one.
+                            use either::Either;
+
+                            let projection: Arc<[PlSmallStr]> = match &file_info.reader_schema {
+                                Some(Either::Left(s)) => s.iter_names().next(),
+                                Some(Either::Right(s)) => s.iter_names().next(),
+                                None => None,
+                            }
+                            .into_iter()
+                            .cloned()
+                            .collect();
+
+                            unified_scan_args.projection = Some(projection.clone());
+
+                            if projection.is_empty() {
+                                output_schema = Some(Default::default());
+                                break;
+                            }
+
+                            ctx.acc_projections.push(ColumnNode(
+                                expr_arena.add(AExpr::Column(projection[0].clone())),
+                            ));
+
+                            unified_scan_args.projection = Some(projection)
+                        } else {
+                            // All nodes in new-streaming support projecting empty morsels with the correct height
+                            // from the file.
+                            unified_scan_args.projection = Some(Arc::from([]));
+                            output_schema = Some(Default::default());
+                            break;
+                        };
+                    }
+
                     unified_scan_args.projection = get_scan_columns(
                         &ctx.acc_projections,
                         expr_arena,
                         unified_scan_args.row_index.as_ref(),
                         unified_scan_args.include_file_paths.as_deref(),
                     );
-
-                    if let Some(projection) = unified_scan_args.projection.as_mut() {
-                        if projection.is_empty() {
-                            match &*scan_type {
-                                #[cfg(feature = "parquet")]
-                                FileScan::Parquet { .. } => {},
-                                #[cfg(feature = "ipc")]
-                                FileScan::Ipc { .. } => {},
-                                // All nodes in new-streaming support projecting empty morsels with the correct height
-                                // from the file.
-                                _ => {},
-                            }
-                        }
-                    }
 
                     output_schema = if unified_scan_args.projection.is_some() {
                         let mut schema = update_scan_schema(
@@ -493,10 +519,8 @@ impl ProjectionPushDown {
                     } else {
                         None
                     };
-                }
 
-                if self.is_count_star {
-                    output_schema = Some(output_schema.unwrap_or_default());
+                    break;
                 }
 
                 // File builder has a row index, but projected columns
@@ -538,10 +562,6 @@ impl ProjectionPushDown {
                     predicate,
                     unified_scan_args,
                 };
-
-                if self.is_count_star {
-                    return Ok(lp);
-                }
 
                 Ok(lp)
             },

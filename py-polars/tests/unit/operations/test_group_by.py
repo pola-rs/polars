@@ -1268,3 +1268,38 @@ def test_group_by_22328() -> None:
         .with_columns(pl.col("z").fill_null(0))
         .collect()
     ).shape == (20, 3)
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_arrays_22574(maintain_order: bool) -> None:
+    assert_frame_equal(
+        pl.Series("a", [[1], [2], [2]], pl.Array(pl.Int64, 1))
+        .to_frame()
+        .group_by("a", maintain_order=maintain_order)
+        .agg(pl.len()),
+        pl.DataFrame(
+            [
+                pl.Series("a", [[1], [2]], pl.Array(pl.Int64, 1)),
+                pl.Series("len", [1, 2], pl.get_index_type()),
+            ]
+        ),
+        check_row_order=maintain_order,
+    )
+
+    assert_frame_equal(
+        pl.Series(
+            "a", [[[1, 2]], [[2, 3]], [[2, 3]]], pl.Array(pl.Array(pl.Int64, 2), 1)
+        )
+        .to_frame()
+        .group_by("a", maintain_order=maintain_order)
+        .agg(pl.len()),
+        pl.DataFrame(
+            [
+                pl.Series(
+                    "a", [[[1, 2]], [[2, 3]]], pl.Array(pl.Array(pl.Int64, 2), 1)
+                ),
+                pl.Series("len", [1, 2], pl.get_index_type()),
+            ]
+        ),
+        check_row_order=maintain_order,
+    )

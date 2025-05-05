@@ -187,12 +187,8 @@ pub(super) fn hist(
 
 #[cfg(feature = "replace")]
 pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
-    polars_ops::series::replace(
-        s[0].as_materialized_series(),
-        s[1].as_materialized_series(),
-        s[2].as_materialized_series(),
-    )
-    .map(Column::from)
+    polars_ops::series::replace(s[0].as_materialized_series(), s[1].list()?, s[2].list()?)
+        .map(Column::from)
 }
 
 #[cfg(feature = "replace")]
@@ -200,15 +196,15 @@ pub(super) fn replace_strict(s: &[Column], return_dtype: Option<DataType>) -> Po
     match s.get(3) {
         Some(default) => polars_ops::series::replace_or_default(
             s[0].as_materialized_series(),
-            s[1].as_materialized_series(),
-            s[2].as_materialized_series(),
+            s[1].list()?,
+            s[2].list()?,
             default.as_materialized_series(),
             return_dtype,
         ),
         None => polars_ops::series::replace_strict(
             s[0].as_materialized_series(),
-            s[1].as_materialized_series(),
-            s[2].as_materialized_series(),
+            s[1].list()?,
+            s[2].list()?,
             return_dtype,
         ),
     }

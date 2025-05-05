@@ -17,6 +17,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 lit(0),
                 |acc, val| (&acc + &val).map(Some),
                 [col("a"), col("b")],
+                false,
+                None,
             )
             .alias("sum_fold"),
             sum_horizontal([col("a"), col("b")], true)?.alias("sum_horz"),
@@ -39,6 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 lit(0),
                 |acc, val| (&acc + &val).map(Some),
                 [col("a"), col("b")],
+                false,
+                None,
             )
             .alias("sum_fold"),
         ])
@@ -55,6 +59,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             lit(0),
             |acc, val| (&acc * &val).map(Some),
             [col("a"), col("b")],
+            false,
+            None,
         )
         .alias("prod")])
         .collect()?;
@@ -70,6 +76,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             lit(1),
             |acc, val| (&acc * &val).map(Some),
             [col("a"), col("b")],
+            false,
+            None,
         )
         .alias("prod")])
         .collect()?;
@@ -90,6 +98,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             lit(true),
             |acc, val| (&acc & &val).map(Some),
             [col("*").gt(1)],
+            false,
+            None,
         ))
         .collect()?;
 

@@ -2,13 +2,19 @@ use polars_core::error::{PolarsResult, polars_err};
 use polars_io::path_utils::is_cloud_url;
 
 use crate::constants::POLARS_PLACEHOLDER;
-use crate::dsl::{DslPlan, FileScan, ScanSources};
+use crate::dsl::{DslPlan, FileScan, ScanSources, SinkType};
 
 /// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
 pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
     if std::env::var("POLARS_SKIP_CLIENT_CHECK").as_deref() == Ok("1") {
         return Ok(());
     }
+
+    // Check that the plan ends with a sink.
+    if !matches!(dsl, DslPlan::Sink { .. }) {
+        return ineligible_error("does not contain a sink");
+    }
+
     for plan_node in dsl.into_iter() {
         match plan_node {
             #[cfg(feature = "python")]
@@ -41,9 +47,21 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                 }
             },
             DslPlan::Sink { payload, .. } => {
-                if !payload.is_cloud_destination() {
-                    return ineligible_error("contains sink to non-cloud location");
+                match payload {
+                    SinkType::Memory => {
+                        return ineligible_error("contains memory sink");
+                    },
+                    SinkType::File(_) => {
+                        // The sink destination is passed around separately, can't check the
+                        // eligibility here.
+                    },
+                    SinkType::Partition(_) => {
+                        return ineligible_error("contains partition sink");
+                    },
                 }
+            },
+            DslPlan::SinkMultiple { .. } => {
+                return ineligible_error("contains sink multiple");
             },
             _ => (),
         }

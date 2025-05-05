@@ -59,24 +59,23 @@ pub(crate) struct SQLExprVisitor<'a> {
 
 impl SQLExprVisitor<'_> {
     fn array_expr_to_series(&mut self, elements: &[SQLExpr]) -> PolarsResult<Series> {
-        let array_elements = elements
-            .iter()
-            .map(|e| match e {
+        let mut array_elements = Vec::with_capacity(elements.len());
+        for e in elements {
+            let val = match e {
                 SQLExpr::Value(v) => self.visit_any_value(v, None),
                 SQLExpr::UnaryOp { op, expr } => match expr.as_ref() {
                     SQLExpr::Value(v) => self.visit_any_value(v, Some(op)),
-                    _ => Err(polars_err!(SQLInterface: "expression {:?} is not currently supported", e)),
+                    _ => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
                 },
-                SQLExpr::Array(_) => {
-                    // TODO: nested arrays (handle FnMut issues)
-                    // let srs = self.array_expr_to_series(&[e.clone()])?;
-                    // Ok(AnyValue::List(srs))
-                    Err(polars_err!(SQLInterface: "nested array literals are not currently supported:\n{:?}", e))
+                SQLExpr::Array(values) => {
+                    let srs = self.array_expr_to_series(&values.elem)?;
+                    Ok(AnyValue::List(srs))
                 },
-                _ => Err(polars_err!(SQLInterface: "expression {:?} is not currently supported", e)),
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
-
+                _ => Err(polars_err!(SQLInterface: "array element {:?} is not supported", e)),
+            }?
+            .into_static();
+            array_elements.push(val);
+        }
         Series::from_any_values(PlSmallStr::EMPTY, &array_elements, true)
     }
 
@@ -123,7 +122,7 @@ impl SQLExprVisitor<'_> {
                 negated,
             } => {
                 let expr = self.visit_expr(expr)?;
-                let elems = self.visit_array_expr(list, false, Some(&expr))?;
+                let elems = self.visit_array_expr(list, true, Some(&expr))?;
                 let is_in = expr.is_in(elems, false);
                 Ok(if *negated { is_in.not() } else { is_in })
             },

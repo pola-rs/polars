@@ -581,8 +581,6 @@ class ExprListNameSpace:
         │ [1, 2, … 5] ┆ [1, 5]       │
         └─────────────┴──────────────┘
         """
-        if isinstance(indices, list):
-            indices = pl.Series(indices)
         indices = parse_into_expression(indices)
         return wrap_expr(self._pyexpr.list_gather(indices, null_on_oob))
 

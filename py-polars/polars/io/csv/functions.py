@@ -15,6 +15,7 @@ from polars._utils.various import (
     is_path_or_str_sequence,
     is_str_sequence,
     normalize_filepath,
+    qualified_type_name,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT, String, parse_into_dtype
@@ -86,6 +87,12 @@ def read_csv(
 ) -> DataFrame:
     r"""
     Read a CSV file into a DataFrame.
+
+    .. versionchanged:: 0.20.31
+        The `dtypes` parameter was renamed `schema_overrides`.
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
 
     Parameters
     ----------
@@ -205,7 +212,7 @@ def read_csv(
         allocation needed.
 
         .. deprecated:: 1.10.0
-            Is a no-op.
+            This parameter is now a no-op.
     eol_char
         Single byte end of line character (default: `\n`). When encountering a file
         with windows line endings (`\r\n`), one can go with the default `\n`. The extra
@@ -626,7 +633,7 @@ def _read_csv_impl(
         elif isinstance(schema_overrides, Sequence):
             dtype_slice = schema_overrides
         else:
-            msg = f"`schema_overrides` should be of type list or dict, got {type(schema_overrides).__name__!r}"
+            msg = f"`schema_overrides` should be of type list or dict, got {qualified_type_name(schema_overrides)!r}"
             raise TypeError(msg)
 
     processed_null_values = _process_null_values(null_values)
@@ -761,6 +768,12 @@ def read_csv_batched(
     Upon creation of the `BatchedCsvReader`, Polars will gather statistics and
     determine the file chunks. After that, work will only be done if `next_batches`
     is called, which will return a list of `n` frames of the given batch size.
+
+    .. versionchanged:: 0.20.31
+        The `dtypes` parameter was renamed `schema_overrides`.
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
 
     Parameters
     ----------
@@ -1030,16 +1043,18 @@ def read_csv_batched(
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_csv(
-    source: str
-    | Path
-    | IO[str]
-    | IO[bytes]
-    | bytes
-    | list[str]
-    | list[Path]
-    | list[IO[str]]
-    | list[IO[bytes]]
-    | list[bytes],
+    source: (
+        str
+        | Path
+        | IO[str]
+        | IO[bytes]
+        | bytes
+        | list[str]
+        | list[Path]
+        | list[IO[str]]
+        | list[IO[bytes]]
+        | list[bytes]
+    ),
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -1083,6 +1098,12 @@ def scan_csv(
     projections to the scan level, thereby potentially reducing
     memory overhead.
 
+    .. versionchanged:: 0.20.31
+        The `dtypes` parameter was renamed `schema_overrides`.
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
     Parameters
     ----------
     source
@@ -1112,7 +1133,8 @@ def scan_csv(
     schema
         Provide the schema. This means that polars doesn't do schema inference.
         This argument expects the complete schema, whereas `schema_overrides` can be
-        used to partially overwrite a schema.
+        used to partially overwrite a schema. Note that the order of the columns in
+        the provided `schema` must match the order of the columns in the CSV being read.
     schema_overrides
         Overwrite dtypes during inference; should be a {colname:dtype,} dict or,
         if providing a list of strings to `new_columns`, a list of dtypes of
@@ -1287,7 +1309,7 @@ def scan_csv(
         raise TypeError(msg)
 
     if not new_columns and isinstance(schema_overrides, Sequence):
-        msg = f"expected 'schema_overrides' dict, found {type(schema_overrides).__name__!r}"
+        msg = f"expected 'schema_overrides' dict, found {qualified_type_name(schema_overrides)!r}"
         raise TypeError(msg)
     elif new_columns:
         if with_column_names:

@@ -14,7 +14,7 @@ from polars._typing import FrameType
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.pycapsule import is_pycapsule
 from polars._utils.unstable import issue_unstable_warning
-from polars._utils.various import _get_stack_locals
+from polars._utils.various import _get_stack_locals, qualified_type_name
 from polars._utils.wrap import wrap_ldf
 from polars.convert import from_arrow, from_pandas
 from polars.dataframe import DataFrame
@@ -81,7 +81,7 @@ def _ensure_lazyframe(obj: Any) -> LazyFrame:
     ):
         return from_arrow(obj).lazy()  # type: ignore[union-attr]
     else:
-        msg = f"Unrecognised frame type: {type(obj)}"
+        msg = f"unrecognised frame type: {qualified_type_name(obj)}"
         raise ValueError(msg)
 
 
@@ -160,6 +160,9 @@ class SQLContext(Generic[FrameType]):
     ) -> None:
         """
         Initialize a new `SQLContext`.
+
+        .. versionchanged:: 0.20.31
+            The `eager_execution` parameter was renamed `eager`.
 
         Parameters
         ----------

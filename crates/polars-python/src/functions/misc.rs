@@ -26,12 +26,6 @@ pub fn register_plugin_function(
     pass_name_to_apply: bool,
     changes_length: bool,
 ) -> PyResult<PyExpr> {
-    let collect_groups = if is_elementwise {
-        ApplyOptions::ElementWise
-    } else {
-        ApplyOptions::GroupWise
-    };
-
     let cast_to_supertypes = if cast_to_supertype {
         Some(CastingRules::cast_to_supertypes())
     } else {
@@ -39,7 +33,10 @@ pub fn register_plugin_function(
     };
 
     let mut flags = FunctionFlags::default();
-    flags.set(FunctionFlags::CHANGES_LENGTH, changes_length);
+    if is_elementwise {
+        flags.set_elementwise();
+    }
+    flags.set(FunctionFlags::LENGTH_PRESERVING, !changes_length);
     flags.set(FunctionFlags::PASS_NAME_TO_APPLY, pass_name_to_apply);
     flags.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
     flags.set(
@@ -48,7 +45,6 @@ pub fn register_plugin_function(
     );
 
     let options = FunctionOptions {
-        collect_groups,
         cast_options: cast_to_supertypes,
         flags,
         ..Default::default()

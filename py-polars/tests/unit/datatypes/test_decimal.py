@@ -682,8 +682,10 @@ def test_fill_null() -> None:
 
 def test_unique() -> None:
     ser = pl.Series([D("1.1"), D("1.1"), D("2.2")])
+    uniq = pl.Series([D("1.1"), D("2.2")])
 
-    assert ser.unique().to_list() == [D("1.1"), D("2.2")]
+    assert_series_equal(ser.unique(maintain_order=False), uniq, check_order=False)
+    assert_series_equal(ser.unique(maintain_order=True), uniq)
     assert ser.n_unique() == 2
     assert ser.arg_unique().to_list() == [0, 2]
 

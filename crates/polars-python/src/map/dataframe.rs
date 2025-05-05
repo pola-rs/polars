@@ -304,7 +304,7 @@ pub fn apply_lambda_with_rows_output<'a>(
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
         let tpl = (PyTuple::new(py, iter).unwrap(),);
 
-        let return_val = lambda.call1(tpl).map_err(|e| polars_err!(ComputeError: format!("{e}")))?;
+        let return_val = lambda.call1(tpl) ?;
         if return_val.is_none() {
             Ok(&null_row)
         } else {

@@ -472,6 +472,226 @@ impl OptimizationRule for TypeCoercionRule {
 
                 None
             },
+            #[cfg(feature = "list_gather")]
+            AExpr::Function {
+                function: ref function @ FunctionExpr::ListExpr(ListFunction::Gather(_)),
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, type_left) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
+                let (_, type_other) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[1].node(),
+                    &input_schema
+                ));
+
+                let DataType::List(inner_dtype) = &type_other else {
+                    // @HACK. This needs to happen until 2.0 because we support
+                    // `pl.col.a.list.gather(0)` and `pl.col.a.list.gather(pl.col.b)` where `b` is
+                    // an integer.
+                    let function = function.clone();
+                    let mut input = input.clone();
+
+                    polars_warn!(
+                        Deprecation,
+                        "`list.gather` with a flat datatype is deprecated.
+Please use `implode` to return to previous behavior.
+
+See https://github.com/pola-rs/polars/issues/22149 for more information."
+                    );
+
+                    let other_input =
+                        expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                    input[1].set_node(other_input);
+
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                };
+
+                polars_ensure!(
+                    inner_dtype.is_integer(),
+                    op = "list.gather",
+                    type_left,
+                    type_other
+                );
+                None
+            },
+            #[cfg(all(feature = "strings", feature = "find_many"))]
+            AExpr::Function {
+                function:
+                    ref function @ FunctionExpr::StringExpr(
+                        StringFunction::ContainsAny { .. }
+                        | StringFunction::FindMany { .. }
+                        | StringFunction::ExtractMany { .. },
+                    ),
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, type_left) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
+                let (_, type_other) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[1].node(),
+                    &input_schema
+                ));
+
+                let DataType::List(inner_dtype) = &type_other else {
+                    // @HACK. This needs to happen until 2.0 because we support
+                    // `pl.col.a.str.contains_any(pl.col.b)` where `b` is a string.
+                    let function = function.clone();
+                    let mut input = input.clone();
+
+                    polars_warn!(
+                        Deprecation,
+                        "`{function}` with a flat string datatype is deprecated.
+Please use `implode` to return to previous behavior.
+See https://github.com/pola-rs/polars/issues/22149 for more information."
+                    );
+
+                    let other_input =
+                        expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                    input[1].set_node(other_input);
+
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                };
+
+                polars_ensure!(
+                    type_left.is_string() && inner_dtype.is_string(),
+                    op = format!("{function}"),
+                    type_left,
+                    type_other
+                );
+                None
+            },
+            #[cfg(all(feature = "strings", feature = "find_many"))]
+            AExpr::Function {
+                function:
+                    ref function @ FunctionExpr::StringExpr(StringFunction::ReplaceMany { .. }),
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, type_left) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
+                let (_, type_patterns) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[1].node(),
+                    &input_schema
+                ));
+                let (_, type_replace_with) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[2].node(),
+                    &input_schema
+                ));
+
+                let (
+                    DataType::List(type_patterns_inner_dtype),
+                    DataType::List(type_replace_with_inner_dtype),
+                ) = (&type_patterns, &type_replace_with)
+                else {
+                    // @HACK. This needs to happen until 2.0 because we support
+                    // `pl.col.a.str.replace_with(pl.col.b, ..)` where `b` is a string.
+                    let function = function.clone();
+                    let mut input = input.clone();
+
+                    polars_warn!(
+                        Deprecation,
+                        "`str.replace_many` with a flat string datatype is deprecated.
+please use `implode` to return to previous behavior.
+See https://github.com/pola-rs/polars/issues/22149 for more information."
+                    );
+
+                    if !type_patterns.is_list() {
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        input[1].set_node(other_input);
+                    }
+                    if !type_replace_with.is_list() {
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[2].node())));
+                        input[2].set_node(other_input);
+                    }
+
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                };
+
+                polars_ensure!(
+                    type_left.is_string()
+                        && type_patterns_inner_dtype.is_string()
+                        && type_replace_with_inner_dtype.is_string(),
+                    op = "str.replace_many",
+                    type_left,
+                    type_patterns,
+                    type_replace_with
+                );
+                None
+            },
+            #[cfg(feature = "replace")]
+            AExpr::Function {
+                function:
+                    ref function @ (FunctionExpr::Replace | FunctionExpr::ReplaceStrict { .. }),
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, type_old) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[1].node(),
+                    &input_schema
+                ));
+                let (_, type_new) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[2].node(),
+                    &input_schema
+                ));
+
+                let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
+                    let function = function.clone();
+                    let mut input = input.clone();
+
+                    if !type_old.is_list() {
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        input[1].set_node(other_input);
+                    }
+                    if !type_new.is_list() {
+                        let other_input =
+                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[2].node())));
+                        input[2].set_node(other_input);
+                    }
+
+                    return Ok(Some(AExpr::Function {
+                        function,
+                        input,
+                        options,
+                    }));
+                };
+
+                None
+            },
             AExpr::Slice { offset, length, .. } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (_, offset_dtype) =

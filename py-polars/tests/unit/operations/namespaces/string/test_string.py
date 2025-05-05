@@ -10,7 +10,6 @@ from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
-    SchemaError,
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -1270,13 +1269,13 @@ def test_replace_many_invalid_inputs() -> None:
     with pytest.raises(ColumnNotFoundError, match="me"):
         df.select(pl.col("text").str.replace_many("me", "you"))
 
-    with pytest.raises(SchemaError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("text").str.replace_many(1, 2))
 
-    with pytest.raises(SchemaError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("text").str.replace_many([1], [2]))
 
-    with pytest.raises(SchemaError):
+    with pytest.raises(InvalidOperationError):
         df.select(pl.col("text").str.replace_many(["me"], None))
 
     with pytest.raises(TypeError):
@@ -1292,9 +1291,6 @@ def test_replace_many_invalid_inputs() -> None:
 
     with pytest.raises(ColumnNotFoundError, match="me"):
         s.str.replace_many("me", "you")  # type: ignore[arg-type]
-
-    with pytest.raises(SchemaError):
-        df.select(pl.col("text").str.replace_many(["me"], None))
 
     with pytest.raises(TypeError):
         df.select(pl.col("text").str.replace_many(["me"]))

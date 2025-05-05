@@ -11,9 +11,9 @@ use crate::series::IsSorted;
 
 fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
-        DataType::List(_) => series.list().unwrap().explode_and_offsets(),
+        DataType::List(_) => series.list().unwrap().explode_and_offsets(false),
         #[cfg(feature = "dtype-array")]
-        DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(),
+        DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(false),
         _ => polars_bail!(opq = explode, series.dtype()),
     }
 }
@@ -34,7 +34,7 @@ impl DataFrame {
         let mut df = self.clone();
         if self.is_empty() {
             for s in &columns {
-                df.with_column(s.as_materialized_series().explode()?)?;
+                df.with_column(s.as_materialized_series().explode(false)?)?;
             }
             return Ok(df);
         }

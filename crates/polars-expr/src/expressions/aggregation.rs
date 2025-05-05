@@ -604,7 +604,7 @@ impl PartitionedAggregation for AggregationExpr {
                 offsets.push(length_so_far);
 
                 let mut process_group = |ca: ListChunked| -> PolarsResult<()> {
-                    let s = ca.explode()?;
+                    let s = ca.explode(false)?;
                     length_so_far += s.len() as i64;
                     offsets.push(length_so_far);
                     values.push(s.chunks()[0].clone());

@@ -296,9 +296,9 @@ def _combine_as_selector(
     if regexes:
         selected.append(
             matches(
-                regexes[0]
+                "|".join(f"({rx})" for rx in regexes)
                 if len(regexes) > 1
-                else "|".join(f"({rx})" for rx in regexes)
+                else regexes[0]
             )
         )
     if selectors:

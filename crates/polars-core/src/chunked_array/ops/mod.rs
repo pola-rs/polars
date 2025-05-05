@@ -29,6 +29,7 @@ pub mod float_sorted_arg_max;
 mod for_each;
 pub mod full;
 pub mod gather;
+mod nesting_utils;
 pub(crate) mod nulls;
 mod reverse;
 #[cfg(feature = "rolling_window")]
@@ -44,6 +45,7 @@ pub(crate) mod unique;
 pub mod zip;
 
 pub use chunkops::_set_check_length;
+pub use nesting_utils::ChunkNestingUtils;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 pub use sort::options::*;
@@ -82,11 +84,11 @@ pub trait ChunkAnyValue {
 
 /// Explode/flatten a List or String Series
 pub trait ChunkExplode {
-    fn explode(&self) -> PolarsResult<Series> {
-        self.explode_and_offsets().map(|t| t.0)
+    fn explode(&self, skip_empty: bool) -> PolarsResult<Series> {
+        self.explode_and_offsets(skip_empty).map(|t| t.0)
     }
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>>;
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
+    fn explode_and_offsets(&self, skip_empty: bool) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
 }
 
 pub trait ChunkBytes {

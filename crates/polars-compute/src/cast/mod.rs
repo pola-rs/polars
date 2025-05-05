@@ -167,7 +167,7 @@ fn cast_fixed_size_list_to_list<O: Offset>(
     ))
 }
 
-fn cast_list_to_fixed_size_list<O: Offset>(
+pub(super) fn cast_list_to_fixed_size_list<O: Offset>(
     list: &ListArray<O>,
     inner: &Field,
     size: usize,

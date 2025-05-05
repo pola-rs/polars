@@ -4,7 +4,7 @@ mod skeleton;
 
 use std::sync::LazyLock;
 
-pub use skeleton::run_query;
+pub use skeleton::{run_query, visualize_physical_plan};
 
 mod execute;
 pub(crate) mod expression;

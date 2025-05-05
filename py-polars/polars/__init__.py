@@ -43,6 +43,7 @@ from polars.convert import (
     from_pandas,
     from_records,
     from_repr,
+    from_torch,
     json_normalize,
 )
 from polars.dataframe import DataFrame
@@ -419,6 +420,7 @@ __all__ = [
     "from_pandas",
     "from_records",
     "from_repr",
+    "from_torch",
     "json_normalize",
     # polars.meta
     "build_info",
@@ -441,11 +443,10 @@ def __getattr__(name: str) -> Any:
 
         issue_deprecation_warning(
             message=(
-                f"Accessing `{name}` from the top-level `polars` module is deprecated."
-                " Import it directly from the `polars.exceptions` module instead:"
-                f" from polars.exceptions import {name}"
+                f"accessing `{name}` from the top-level `polars` module was deprecated "
+                "in version 1.0.0. Import it directly from the `polars.exceptions` module "
+                f"instead, e.g.: `from polars.exceptions import {name}`"
             ),
-            version="1.0.0",
         )
         return getattr(exceptions, name)
 
@@ -457,10 +458,9 @@ def __getattr__(name: str) -> Any:
 
         issue_deprecation_warning(
             message=(
-                f"`{name}` is deprecated. Define your own data type groups or use the"
-                " `polars.selectors` module for selecting columns of a certain data type."
+                f"`{name}` was deprecated in version 1.0.0. Define your own data type groups or "
+                "use the `polars.selectors` module for selecting columns of a certain data type."
             ),
-            version="1.0.0",
         )
         return getattr(dtgroup, name)
 

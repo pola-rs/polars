@@ -2,11 +2,13 @@ use arrow::array::Array;
 use arrow::ffi;
 use arrow::ffi::{ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema};
 use polars::prelude::*;
+use polars_ffi::version_0::SeriesExport;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyTuple, PyType};
 
 use super::PySeries;
+use crate::error::PyPolarsErr;
 
 /// Validate PyCapsule has provided name
 fn validate_pycapsule_name(capsule: &Bound<PyCapsule>, expected_name: &str) -> PyResult<()> {
@@ -131,5 +133,22 @@ impl PySeries {
     pub fn from_arrow_c_stream(_cls: &Bound<PyType>, ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         let capsule = call_arrow_c_stream(ob)?;
         import_stream_pycapsule(&capsule)
+    }
+
+    #[classmethod]
+    /// Import a series via polars-ffi
+    /// Takes ownership of the [`SeriesExport`] at [`location`]
+    /// # Safety
+    /// [`location`] should be the address of an allocated and initialized [`SeriesExport`]
+    pub unsafe fn _import(_cls: &Bound<PyType>, location: usize) -> PyResult<Self> {
+        let location = location as *mut SeriesExport;
+
+        // # Safety
+        // `location` should be valid for reading
+        let series = unsafe {
+            let export = location.read();
+            polars_ffi::version_0::import_series(export).map_err(PyPolarsErr::from)?
+        };
+        Ok(PySeries { series })
     }
 }

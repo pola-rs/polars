@@ -220,7 +220,8 @@ impl StringFunction {
         use StringFunction as S;
         match self {
             #[cfg(feature = "concat_str")]
-            S::ConcatHorizontal { .. } => FunctionOptions::elementwise(),
+            S::ConcatHorizontal { .. } => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "concat_str")]
             S::ConcatVertical { .. } => FunctionOptions::aggregation(),
             #[cfg(feature = "regex")]
@@ -282,13 +283,13 @@ impl StringFunction {
             #[cfg(feature = "dtype-struct")]
             S::SplitN(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
-            S::ContainsAny { .. } => FunctionOptions::groupwise(),
+            S::ContainsAny { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
-            S::ReplaceMany { .. } => FunctionOptions::groupwise(),
+            S::ReplaceMany { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
-            S::ExtractMany { .. } => FunctionOptions::groupwise(),
+            S::ExtractMany { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
-            S::FindMany { .. } => FunctionOptions::groupwise(),
+            S::FindMany { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "regex")]
             S::EscapeRegex => FunctionOptions::elementwise(),
         }
@@ -518,7 +519,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 #[cfg(feature = "find_many")]
 fn contains_any(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].str()?;
+    let patterns = s[1].list()?;
     polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
         .map(|out| out.into_column())
 }
@@ -526,8 +527,8 @@ fn contains_any(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Colu
 #[cfg(feature = "find_many")]
 fn replace_many(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = s[1].str()?;
-    let replace_with = s[2].str()?;
+    let patterns = s[1].list()?;
+    let replace_with = s[2].list()?;
     polars_ops::chunked_array::strings::replace_all(
         ca,
         patterns,
@@ -544,11 +545,11 @@ fn extract_many(
     overlapping: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = &s[1];
+    let patterns = s[1].list()?;
 
     polars_ops::chunked_array::strings::extract_many(
         ca,
-        patterns.as_materialized_series(),
+        patterns,
         ascii_case_insensitive,
         overlapping,
     )
@@ -562,15 +563,10 @@ fn find_many(
     overlapping: bool,
 ) -> PolarsResult<Column> {
     let ca = s[0].str()?;
-    let patterns = &s[1];
+    let patterns = s[1].list()?;
 
-    polars_ops::chunked_array::strings::find_many(
-        ca,
-        patterns.as_materialized_series(),
-        ascii_case_insensitive,
-        overlapping,
-    )
-    .map(|out| out.into_column())
+    polars_ops::chunked_array::strings::find_many(ca, patterns, ascii_case_insensitive, overlapping)
+        .map(|out| out.into_column())
 }
 
 fn uppercase(s: &Column) -> PolarsResult<Column> {

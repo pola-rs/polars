@@ -42,8 +42,8 @@ from polars._utils.construction import (
 )
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
-    deprecate_function,
     deprecate_renamed_parameter,
+    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_df_item_by_key
@@ -56,6 +56,7 @@ from polars._utils.various import (
     no_default,
     normalize_filepath,
     parse_version,
+    qualified_type_name,
     scale_bytes,
     warn_null_comparison,
 )
@@ -87,9 +88,11 @@ from polars.dependencies import (
     _check_for_numpy,
     _check_for_pandas,
     _check_for_pyarrow,
+    _check_for_torch,
     altair,
     great_tables,
     import_optional,
+    torch,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -122,7 +125,6 @@ if TYPE_CHECKING:
     import jax
     import numpy.typing as npt
     import pyiceberg
-    import torch
     from great_tables import GT
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
@@ -159,7 +161,7 @@ if TYPE_CHECKING:
         PivotAgg,
         PolarsDataType,
         PythonDataType,
-        RollingInterpolationMethod,
+        QuantileMethod,
         RowTotalsDefinition,
         SchemaDefinition,
         SchemaDict,
@@ -181,6 +183,11 @@ if TYPE_CHECKING:
         from typing import Concatenate, ParamSpec
     else:
         from typing_extensions import Concatenate, ParamSpec
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -405,6 +412,16 @@ class DataFrame:
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
+        elif _check_for_torch(data) and isinstance(data, torch.Tensor):
+            self._df = numpy_to_pydf(
+                data.numpy(force=False),
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
+                orient=orient,
+                nan_to_null=nan_to_null,
+            )
+
         elif (
             not hasattr(data, "__arrow_c_stream__")
             and not isinstance(data, Sized)
@@ -601,6 +618,10 @@ class DataFrame:
         """Replace a column by a new Series (in place)."""
         self._df.replace(column, new_column._s)
         return self
+
+    @classmethod
+    def _import_columns(cls, pointer: int, width: int) -> DataFrame:
+        return cls._from_pydf(PyDataFrame._import_columns(pointer, width))
 
     @property
     @unstable()
@@ -1589,6 +1610,9 @@ class DataFrame:
         Data types that do copy:
             - CategoricalType
 
+        .. versionchanged:: 1.1
+            The `future` parameter was renamed `compat_level`.
+
         Parameters
         ----------
         compat_level
@@ -1863,7 +1887,7 @@ class DataFrame:
         """  # noqa: W505
         if use_pyarrow is not None:
             issue_deprecation_warning(
-                "The `use_pyarrow` parameter for `DataFrame.to_numpy` is deprecated."
+                "the `use_pyarrow` parameter for `DataFrame.to_numpy` is deprecated."
                 " Polars now uses its native engine by default for conversion to NumPy.",
                 version="0.20.28",
             )
@@ -3668,6 +3692,9 @@ class DataFrame:
 
         See "File or Random Access format" in https://arrow.apache.org/docs/python/ipc.html.
 
+        .. versionchanged:: 1.1
+            The `future` parameter was renamed `compat_level`.
+
         Parameters
         ----------
         file
@@ -3790,6 +3817,9 @@ class DataFrame:
         Write to Arrow IPC record batch stream.
 
         See "Streaming format" in https://arrow.apache.org/docs/python/ipc.html.
+
+        .. versionchanged:: 1.1
+            The `future` parameter was renamed `compat_level`.
 
         Parameters
         ----------
@@ -4052,7 +4082,7 @@ class DataFrame:
             }
 
         if partition_by is not None:
-            msg = "The `partition_by` parameter of `write_parquet` is considered unstable."
+            msg = "the `partition_by` parameter of `write_parquet` is considered unstable."
             issue_unstable_warning(msg)
 
         if isinstance(partition_by, str):
@@ -4539,7 +4569,7 @@ class DataFrame:
         """
         if overwrite_schema is not None:
             issue_deprecation_warning(
-                "The parameter `overwrite_schema` for `write_delta` is deprecated."
+                "the parameter `overwrite_schema` for `write_delta` is deprecated."
                 ' Use the parameter `delta_write_options` instead and pass `{"schema_mode": "overwrite"}`.',
                 version="0.20.14",
             )
@@ -4603,7 +4633,7 @@ class DataFrame:
 
         if mode == "merge":
             if delta_merge_options is None:
-                msg = "You need to pass delta_merge_options with at least a given predicate for `MERGE` to work."
+                msg = "you need to pass delta_merge_options with at least a given predicate for `MERGE` to work."
                 raise ValueError(msg)
             if isinstance(target, str):
                 dt = DeltaTable(table_uri=target, storage_options=storage_options)
@@ -4868,7 +4898,7 @@ class DataFrame:
 
     def insert_column(self, index: int, column: IntoExprColumn) -> DataFrame:
         """
-        Insert a Series at a certain column index.
+        Insert a Series (or expression) at a certain column index.
 
         This operation is in place.
 
@@ -4881,6 +4911,8 @@ class DataFrame:
 
         Examples
         --------
+        Insert a new Series column at the given index:
+
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> s = pl.Series("baz", [97, 98, 99])
         >>> df.insert_column(1, s)
@@ -4895,26 +4927,23 @@ class DataFrame:
         │ 3   ┆ 99  ┆ 6   │
         └─────┴─────┴─────┘
 
+        Insert a new expression column at the given index:
+
         >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3, 4],
-        ...         "b": [0.5, 4, 10, 13],
-        ...         "c": [True, True, False, True],
-        ...     }
+        ...     {"a": [2, 4, 2], "b": [0.5, 4, 10], "c": ["xx", "yy", "zz"]}
         ... )
-        >>> s = pl.Series("d", [-2.5, 15, 20.5, 0])
-        >>> df.insert_column(3, s)
-        shape: (4, 4)
-        ┌─────┬──────┬───────┬──────┐
-        │ a   ┆ b    ┆ c     ┆ d    │
-        │ --- ┆ ---  ┆ ---   ┆ ---  │
-        │ i64 ┆ f64  ┆ bool  ┆ f64  │
-        ╞═════╪══════╪═══════╪══════╡
-        │ 1   ┆ 0.5  ┆ true  ┆ -2.5 │
-        │ 2   ┆ 4.0  ┆ true  ┆ 15.0 │
-        │ 3   ┆ 10.0 ┆ false ┆ 20.5 │
-        │ 4   ┆ 13.0 ┆ true  ┆ 0.0  │
-        └─────┴──────┴───────┴──────┘
+        >>> expr = (pl.col("b") / pl.col("a")).alias("b_div_a")
+        >>> df.insert_column(2, expr)
+        shape: (3, 4)
+        ┌─────┬──────┬─────────┬─────┐
+        │ a   ┆ b    ┆ b_div_a ┆ c   │
+        │ --- ┆ ---  ┆ ---     ┆ --- │
+        │ i64 ┆ f64  ┆ f64     ┆ str │
+        ╞═════╪══════╪═════════╪═════╡
+        │ 2   ┆ 0.5  ┆ 0.25    ┆ xx  │
+        │ 4   ┆ 4.0  ┆ 1.0     ┆ yy  │
+        │ 2   ┆ 10.0 ┆ 5.0     ┆ zz  │
+        └─────┴──────┴─────────┴─────┘
         """
         if (original_index := index) < 0:
             index = self.width + index
@@ -4935,7 +4964,7 @@ class DataFrame:
                 cols.insert(index, column)  # type: ignore[arg-type]
                 self._df = self.select(cols)._df
             else:
-                msg = f"column must be a Series or Expr, got {column!r} (type={type(column)})"
+                msg = f"column must be a Series or Expr, got {column!r} (type={qualified_type_name(column)})"
                 raise TypeError(msg)
         return self
 
@@ -5364,7 +5393,7 @@ class DataFrame:
         self,
         percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75),
         *,
-        interpolation: RollingInterpolationMethod = "nearest",
+        interpolation: QuantileMethod = "nearest",
     ) -> DataFrame:
         """
         Summary statistics for a DataFrame.
@@ -5375,7 +5404,7 @@ class DataFrame:
             One or more percentiles to include in the summary statistics.
             All values must be in the range `[0, 1]`.
 
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method used when calculating percentiles.
 
         Notes
@@ -5738,6 +5767,9 @@ class DataFrame:
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
+        .. versionchanged:: 1.0.0
+            The `descending` parameter was renamed `reverse`.
+
         Parameters
         ----------
         k
@@ -5819,6 +5851,9 @@ class DataFrame:
         the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
+
+        .. versionchanged:: 1.0.0
+            The `descending` parameter was renamed `reverse`.
 
         Parameters
         ----------
@@ -6429,17 +6464,16 @@ class DataFrame:
             msg = f"`offset` input for `with_row_index` cannot be {issue}, got {offset}"
             raise ValueError(msg) from None
 
-    @deprecate_function(
-        "Use `with_row_index` instead."
-        " Note that the default column name has changed from 'row_nr' to 'index'.",
-        version="0.20.4",
+    @deprecated(
+        "`DataFrame.with_row_count` is deprecated; use `with_row_index` instead."
+        " Note that the default column name has changed from 'row_nr' to 'index'."
     )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> DataFrame:
         """
         Add a column at index 0 that counts the rows.
 
         .. deprecated:: 0.20.4
-            Use :meth:`with_row_index` instead.
+            Use the :meth:`with_row_index` method instead.
             Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
@@ -6675,6 +6709,9 @@ class DataFrame:
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
+        .. versionchanged:: 0.20.14
+            The `by` parameter was renamed `group_by`.
+
         Parameters
         ----------
         index_column
@@ -6806,6 +6843,9 @@ class DataFrame:
         .. warning::
             The index column must be sorted in ascending order. If `group_by` is passed, then
             the index column must be sorted in ascending order within each group.
+
+        .. versionchanged:: 0.20.14
+            The `by` parameter was renamed `group_by`.
 
         Parameters
         ----------
@@ -7122,10 +7162,12 @@ class DataFrame:
 
         - "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
+
+        .. versionchanged:: 0.20.14
+            The `by` parameter was renamed `group_by`.
 
         Parameters
         ----------
@@ -7289,8 +7331,8 @@ class DataFrame:
         coalesce
             Coalescing behavior (merging of `on` / `left_on` / `right_on` columns):
 
-            - True: -> Always coalesce join columns.
-            - False: -> Never coalesce join columns.
+            - *True*: Always coalesce join columns.
+            - *False*: Never coalesce join columns.
 
             Note that joining on any other expressions than `col`
             will turn off coalescing.
@@ -7505,19 +7547,21 @@ class DataFrame:
         └─────────────┴────────────┴────────────┴──────┘
         """
         if not isinstance(other, DataFrame):
-            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
+            msg = f"expected `other` join table to be a DataFrame, not {qualified_type_name(other)!r}"
             raise TypeError(msg)
 
         if on is not None:
             if not isinstance(on, (str, pl.Expr)):
-                msg = f"expected `on` to be str or Expr, got {type(on).__name__!r}"
+                msg = (
+                    f"expected `on` to be str or Expr, got {qualified_type_name(on)!r}"
+                )
                 raise TypeError(msg)
         else:
             if not isinstance(left_on, (str, pl.Expr)):
-                msg = f"expected `left_on` to be str or Expr, got {type(left_on).__name__!r}"
+                msg = f"expected `left_on` to be str or Expr, got {qualified_type_name(left_on)!r}"
                 raise TypeError(msg)
             elif not isinstance(right_on, (str, pl.Expr)):
-                msg = f"expected `right_on` to be str or Expr, got {type(right_on).__name__!r}"
+                msg = f"expected `right_on` to be str or Expr, got {qualified_type_name(right_on)!r}"
                 raise TypeError(msg)
 
         return (
@@ -7560,32 +7604,37 @@ class DataFrame:
         """
         Join in SQL-like fashion.
 
+        .. versionchanged:: 1.24
+            The `join_nulls` parameter was renamed `nulls_equal`.
+
         Parameters
         ----------
         other
             DataFrame to join with.
         on
             Name(s) of the join columns in both DataFrames. If set, `left_on` and
-            `right_on` should be None. This should not be specified if `how="cross"`.
+            `right_on` should be None. This should not be specified if `how='cross'`.
         how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
-            * *inner*
-                Returns rows that have matching values in both tables
-            * *left*
-                Returns all rows from the left table, and the matched rows from the
-                right table
-            * *right*
-                Returns all rows from the right table, and the matched rows from the
-                left table
-            * *full*
-                Returns all rows when there is a match in either left or right table
-            * *cross*
-                Returns the Cartesian product of rows from both tables
-            * *semi*
-                Returns rows from the left table that have a match in the right table.
-            * *anti*
-                Returns rows from the left table that have no match in the right table.
+            .. list-table ::
+               :header-rows: 0
+
+               * - **inner**
+                 - *(Default)* Returns rows that have matching values in both tables.
+               * - **left**
+                 - Returns all rows from the left table, and the matched rows from
+                   the right table.
+               * - **full**
+                 - Returns all rows when there is a match in either left or right.
+               * - **cross**
+                 - Returns the Cartesian product of rows from both tables
+               * - **semi**
+                 - Returns rows from the left table that have a match in the right
+                   table.
+               * - **anti**
+                 - Returns rows from the left table that have no match in the right
+                   table.
 
         left_on
             Name(s) of the left join column(s).
@@ -7596,14 +7645,18 @@ class DataFrame:
         validate: {'m:m', 'm:1', '1:m', '1:1'}
             Checks if join is of specified type.
 
-                * *many_to_many*
-                    “m:m”: default, does not result in checks
-                * *one_to_one*
-                    “1:1”: check if join keys are unique in both left and right datasets
-                * *one_to_many*
-                    “1:m”: check if join keys are unique in left dataset
-                * *many_to_one*
-                    “m:1”: check if join keys are unique in right dataset
+            .. list-table ::
+               :header-rows: 0
+
+               * - **m:m**
+                 - *(Default)* Many-to-many (default). Does not result in checks.
+               * - **1:1**
+                 - One-to-one. Checks if join keys are unique in both left and
+                   right datasets.
+               * - **1:m**
+                 - One-to-many. Checks if join keys are unique in left dataset.
+               * - **m:1**
+                 - Many-to-one. Check if join keys are unique in right dataset.
 
             .. note::
                 This is currently not supported by the streaming engine.
@@ -7613,31 +7666,40 @@ class DataFrame:
         coalesce
             Coalescing behavior (merging of join columns).
 
-            - None: -> join specific.
-            - True: -> Always coalesce join columns.
-            - False: -> Never coalesce join columns.
+            .. list-table ::
+               :header-rows: 0
+
+               * - **None**
+                 - *(Default)* Coalesce unless `how='full'` is specified.
+               * - **True**
+                 - Always coalesce join columns.
+               * - **False**
+                 - Never coalesce join columns.
 
             .. note::
                 Joining on any other expressions than `col`
                 will turn off coalescing.
         maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
             Which DataFrame row order to preserve, if any.
-            Do not rely on any observed ordering without explicitly
-            setting this parameter, as your code may break in a future release.
-            Not specifying any ordering can improve performance
+            Do not rely on any observed ordering without explicitly setting this
+            parameter, as your code may break in a future release.
+            Not specifying any ordering can improve performance.
             Supported for inner, left, right and full joins
 
-            * *none*
-                No specific ordering is desired. The ordering might differ across
-                Polars versions or even between different runs.
-            * *left*
-                Preserves the order of the left DataFrame.
-            * *right*
-                Preserves the order of the right DataFrame.
-            * *left_right*
-                First preserves the order of the left DataFrame, then the right.
-            * *right_left*
-                First preserves the order of the right DataFrame, then the left.
+            .. list-table ::
+               :header-rows: 0
+
+               * - **none**
+                 - *(Default)* No specific ordering is desired. The ordering might
+                   differ across Polars versions or even between different runs.
+               * - **left**
+                 - Preserves the order of the left DataFrame.
+               * - **right**
+                 - Preserves the order of the right DataFrame.
+               * - **left_right**
+                 - First preserves the order of the left DataFrame, then the right.
+               * - **right_left**
+                 - First preserves the order of the right DataFrame, then the left.
 
         See Also
         --------
@@ -7751,7 +7813,7 @@ class DataFrame:
         For joining on columns with categorical data, see :class:`polars.StringCache`.
         """
         if not isinstance(other, DataFrame):
-            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
+            msg = f"expected `other` join table to be a DataFrame, not {qualified_type_name(other)!r}"
             raise TypeError(msg)
 
         return (
@@ -7840,7 +7902,7 @@ class DataFrame:
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
         """
         if not isinstance(other, DataFrame):
-            msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
+            msg = f"expected `other` join table to be a DataFrame, not {qualified_type_name(other)!r}"
             raise TypeError(msg)
 
         return (
@@ -8752,6 +8814,9 @@ class DataFrame:
 
         Only available in eager mode. See "Examples" section below for how to do a
         "lazy pivot" if you know the unique column values in advance.
+
+        .. versionchanged:: 1.0.0
+            The `columns` parameter was renamed `on`.
 
         Parameters
         ----------
@@ -10257,7 +10322,7 @@ class DataFrame:
         return self.select(exprs)
 
     def quantile(
-        self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
+        self, quantile: float, interpolation: QuantileMethod = "nearest"
     ) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their quantile value.
@@ -10266,7 +10331,7 @@ class DataFrame:
         ----------
         quantile
             Quantile between 0.0 and 1.0.
-        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
         Examples
@@ -10287,7 +10352,7 @@ class DataFrame:
         ╞═════╪═════╪══════╡
         │ 2.0 ┆ 7.0 ┆ null │
         └─────┴─────┴──────┘
-        """
+        """  # noqa: W505
         return self.lazy().quantile(quantile, interpolation).collect(_eager=True)
 
     def to_dummies(
@@ -10529,15 +10594,16 @@ class DataFrame:
         df = self.lazy().select(expr.n_unique()).collect(_eager=True)
         return 0 if df.is_empty() else df.row(0)[0]
 
-    @deprecate_function(
-        "Use `select(pl.all().approx_n_unique())` instead.", version="0.20.11"
+    @deprecated(
+        "`DataFrame.approx_n_unique` is deprecated; "
+        "use `select(pl.all().approx_n_unique())` instead."
     )
     def approx_n_unique(self) -> DataFrame:
         """
         Approximate count of unique values.
 
         .. deprecated:: 0.20.11
-            Use `select(pl.all().approx_n_unique())` instead.
+            Use the `select(pl.all().approx_n_unique())` method instead.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
@@ -10864,7 +10930,7 @@ class DataFrame:
 
         elif by_predicate is not None:
             if not isinstance(by_predicate, pl.Expr):
-                msg = f"expected `by_predicate` to be an expression, got {type(by_predicate).__name__!r}"
+                msg = f"expected `by_predicate` to be an expression, got {qualified_type_name(by_predicate)!r}"
                 raise TypeError(msg)
             rows = self.filter(by_predicate).rows()
             n_rows = len(rows)
@@ -11860,9 +11926,9 @@ class DataFrame:
         """
         return self.lazy().count().collect(_eager=True)
 
-    @deprecate_function(
-        "Use `unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
-        version="1.0.0",
+    @deprecated(
+        "`DataFrame.melt` is deprecated; use `DataFrame.unpivot` instead, with "
+        "`index` instead of `id_vars` and `on` instead of `value_vars`"
     )
     def melt(
         self,
@@ -11882,7 +11948,7 @@ class DataFrame:
         two non-identifier columns, 'variable' and 'value'.
 
         .. deprecated:: 1.0.0
-            Please use :meth:`.unpivot` instead.
+            Use the :meth:`.unpivot` method instead.
 
         Parameters
         ----------

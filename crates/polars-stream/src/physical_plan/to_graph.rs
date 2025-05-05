@@ -381,7 +381,11 @@ fn to_graph_rec<'a>(
             }
         },
 
-        InMemoryMap { input, map } => {
+        InMemoryMap {
+            input,
+            map,
+            format_str: _,
+        } => {
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
@@ -551,22 +555,6 @@ fn to_graph_rec<'a>(
             )
         },
 
-        FileScan { scan_type, .. } => {
-            use polars_plan::prelude::FileScan;
-
-            match scan_type.as_ref() {
-                #[cfg(feature = "parquet")]
-                FileScan::Parquet { .. } => unreachable!(),
-                #[cfg(feature = "ipc")]
-                FileScan::Ipc { .. } => unreachable!(),
-                #[cfg(feature = "csv")]
-                FileScan::Csv { .. } => unreachable!(),
-                #[cfg(feature = "json")]
-                FileScan::NDJson { .. } => unreachable!(),
-                FileScan::Anonymous { .. } => todo!(),
-            }
-        },
-
         GroupBy { input, key, aggs } => {
             let input_key = to_graph_rec(input.node, ctx)?;
 
@@ -730,8 +718,9 @@ fn to_graph_rec<'a>(
             let unique_key_schema =
                 compute_output_schema(&right_input_schema, &unique_left_on, ctx.expr_arena)?;
 
-            if let SemiAntiJoin { output_bool, .. } = node.kind {
-                ctx.graph.add_node(
+            match node.kind {
+                #[cfg(feature = "semi_anti_join")]
+                SemiAntiJoin { output_bool, .. } => ctx.graph.add_node(
                     nodes::joins::semi_anti_join::SemiAntiJoinNode::new(
                         unique_key_schema,
                         left_key_selectors,
@@ -744,9 +733,8 @@ fn to_graph_rec<'a>(
                         (left_input_key, input_left.port),
                         (right_input_key, input_right.port),
                     ],
-                )
-            } else {
-                ctx.graph.add_node(
+                ),
+                _ => ctx.graph.add_node(
                     nodes::joins::equi_join::EquiJoinNode::new(
                         left_input_schema,
                         right_input_schema,
@@ -762,7 +750,7 @@ fn to_graph_rec<'a>(
                         (left_input_key, input_left.port),
                         (right_input_key, input_right.port),
                     ],
-                )
+                ),
             }
         },
 
@@ -857,8 +845,7 @@ fn to_graph_rec<'a>(
                                 batch_size,
                             );
 
-                            let generator_init =
-                                callable.call1(args).map_err(polars_error::to_compute_err)?;
+                            let generator_init = callable.call1(args)?;
                             let generator = generator_init.get_item(0).map_err(
                                 |_| polars_err!(ComputeError: "expected tuple got {generator_init}"),
                             )?;

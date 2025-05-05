@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -740,3 +740,135 @@ def test_invalid_bool_to_cat(value: bool, dtype: PolarsDataType) -> None:
         match="cannot cast Boolean to Categorical",
     ):
         pl.Series([value]).cast(dtype)
+
+
+@pytest.mark.parametrize(
+    ("values", "from_dtype", "to_dtype", "pre_apply"),
+    [
+        ([["A"]], pl.List(pl.String), pl.List(pl.Int8), None),
+        ([["A"]], pl.Array(pl.String, 1), pl.List(pl.Int8), None),
+        ([[["A"]]], pl.List(pl.List(pl.String)), pl.List(pl.List(pl.Int8)), None),
+        (
+            [
+                {"x": "1", "y": "2"},
+                {"x": "A", "y": "B"},
+                {"x": "3", "y": "4"},
+                {"x": "X", "y": "Y"},
+                {"x": "5", "y": "6"},
+            ],
+            pl.Struct(
+                {
+                    "x": pl.String,
+                    "y": pl.String,
+                }
+            ),
+            pl.Struct(
+                {
+                    "x": pl.Int8,
+                    "y": pl.Int32,
+                }
+            ),
+            None,
+        ),
+    ],
+)
+def test_nested_strict_casts_failing(
+    values: list[Any],
+    from_dtype: pl.DataType,
+    to_dtype: pl.DataType,
+    pre_apply: Callable[[pl.Series], pl.Series] | None,
+) -> None:
+    s = pl.Series(values, dtype=from_dtype)
+
+    if pre_apply is not None:
+        s = pre_apply(s)
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=r"conversion from",
+    ):
+        s.cast(to_dtype)
+
+
+@pytest.mark.parametrize(
+    ("values", "from_dtype", "pre_apply", "to"),
+    [
+        (
+            [["A"], ["1"], ["2"]],
+            pl.List(pl.String),
+            lambda s: s.slice(1, 2),
+            pl.Series([[1], [2]]),
+        ),
+        (
+            [["1"], ["A"], ["2"], ["B"], ["3"]],
+            pl.List(pl.String),
+            lambda s: s.filter(pl.Series([True, False, True, False, True])),
+            pl.Series([[1], [2], [3]]),
+        ),
+        (
+            [
+                {"x": "1", "y": "2"},
+                {"x": "A", "y": "B"},
+                {"x": "3", "y": "4"},
+                {"x": "X", "y": "Y"},
+                {"x": "5", "y": "6"},
+            ],
+            pl.Struct(
+                {
+                    "x": pl.String,
+                    "y": pl.String,
+                }
+            ),
+            lambda s: s.filter(pl.Series([True, False, True, False, True])),
+            pl.Series(
+                [
+                    {"x": 1, "y": 2},
+                    {"x": 3, "y": 4},
+                    {"x": 5, "y": 6},
+                ]
+            ),
+        ),
+        (
+            [
+                {"x": "1", "y": "2"},
+                {"x": "A", "y": "B"},
+                {"x": "3", "y": "4"},
+                {"x": "X", "y": "Y"},
+                {"x": "5", "y": "6"},
+            ],
+            pl.Struct(
+                {
+                    "x": pl.String,
+                    "y": pl.String,
+                }
+            ),
+            lambda s: pl.select(
+                pl.when(pl.Series([True, False, True, False, True])).then(s)
+            ).to_series(),
+            pl.Series(
+                [
+                    {"x": 1, "y": 2},
+                    None,
+                    {"x": 3, "y": 4},
+                    None,
+                    {"x": 5, "y": 6},
+                ]
+            ),
+        ),
+    ],
+)
+def test_nested_strict_casts_succeeds(
+    values: list[Any],
+    from_dtype: pl.DataType,
+    pre_apply: Callable[[pl.Series], pl.Series] | None,
+    to: pl.Series,
+) -> None:
+    s = pl.Series(values, dtype=from_dtype)
+
+    if pre_apply is not None:
+        s = pre_apply(s)
+
+    assert_series_equal(
+        s.cast(to.dtype),
+        to,
+    )

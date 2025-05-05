@@ -81,24 +81,30 @@ pub fn to_alp(
     match to_alp_impl(lp, &mut ctxt) {
         Ok(out) => Ok(out),
         Err(err) => {
-            if let Some(ir_until_then) = lp_arena.last_node() {
-                let node_name = if let PolarsError::Context { msg, .. } = &err {
-                    msg
-                } else {
-                    "THIS_NODE"
-                };
-                let plan = IRPlan::new(
-                    ir_until_then,
-                    std::mem::take(lp_arena),
-                    std::mem::take(expr_arena),
-                );
-                let location = format!("{}", plan.display());
-                Err(err.wrap_msg(|msg| {
-                    format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
-                }))
+            if opt_flags.contains(OptFlags::EAGER) {
+                // If we dispatched to the lazy engine from the eager API, we don't want to resolve
+                // where in the query plan it went wrong. It is clear from the backtrace anyway.
+                return Err(err.remove_context());
+            };
+
+            let Some(ir_until_then) = lp_arena.last_node() else {
+                return Err(err);
+            };
+
+            let node_name = if let PolarsError::Context { msg, .. } = &err {
+                msg
             } else {
-                Err(err)
-            }
+                "THIS_NODE"
+            };
+            let plan = IRPlan::new(
+                ir_until_then,
+                std::mem::take(lp_arena),
+                std::mem::take(expr_arena),
+            );
+            let location = format!("{}", plan.display());
+            Err(err.wrap_msg(|msg| {
+                format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
+            }))
         },
     }
 }
@@ -180,6 +186,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         FileScan::NDJson { .. } => {
                             sources.expand_paths(unified_scan_args, cloud_options)?
                         },
+                        #[cfg(feature = "python")]
+                        FileScan::PythonDataset { .. } => {
+                            // There are a lot of places that short-circuit if the paths is empty,
+                            // so we just give a dummy path here.
+                            ScanSources::Paths(Arc::from(["dummy".into()]))
+                        },
                         FileScan::Anonymous { .. } => sources,
                     };
 
@@ -244,6 +256,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         cloud_options,
                     )
                     .map_err(|e| e.context(failed_here!(ndjson scan)))?,
+                    #[cfg(feature = "python")]
+                    FileScan::PythonDataset { dataset_object, .. } => {
+                        if crate::dsl::DATASET_PROVIDER_VTABLE.get().is_none() {
+                            polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
+                        }
+
+                        let schema = dataset_object.schema()?;
+
+                        FileInfo {
+                            schema: schema.clone(),
+                            reader_schema: Some(either::Either::Right(schema)),
+                            row_estimation: (None, usize::MAX),
+                        }
+                    },
                     FileScan::Anonymous { .. } => {
                         file_info.expect("FileInfo should be set for AnonymousScan")
                     },
@@ -291,22 +317,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     // schema.
                     file_info.update_schema_with_hive_schema(hive_schema);
                 }
-
-                unified_scan_args.include_file_paths = unified_scan_args
-                    .include_file_paths
-                    .as_ref()
-                    .filter(|_| match &*scan_type {
-                        #[cfg(feature = "parquet")]
-                        FileScan::Parquet { .. } => true,
-                        #[cfg(feature = "ipc")]
-                        FileScan::Ipc { .. } => true,
-                        #[cfg(feature = "csv")]
-                        FileScan::Csv { .. } => true,
-                        #[cfg(feature = "json")]
-                        FileScan::NDJson { .. } => true,
-                        FileScan::Anonymous { .. } => false,
-                    })
-                    .cloned();
 
                 if let Some(ref file_path_col) = unified_scan_args.include_file_paths {
                     let schema = Arc::make_mut(&mut file_info.schema);

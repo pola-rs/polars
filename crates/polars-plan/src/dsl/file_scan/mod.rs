@@ -1,4 +1,5 @@
 use std::hash::Hash;
+use std::sync::Mutex;
 
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
@@ -16,6 +17,11 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 use super::*;
+
+#[cfg(feature = "python")]
+pub mod python_dataset;
+#[cfg(feature = "python")]
+pub use python_dataset::{DATASET_PROVIDER_VTABLE, PythonDatasetProviderVTable};
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +52,14 @@ pub enum FileScan {
         options: IpcScanOptions,
         #[cfg_attr(feature = "serde", serde(skip))]
         metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
+    },
+
+    #[cfg(feature = "python")]
+    PythonDataset {
+        dataset_object: Arc<python_dataset::PythonDatasetProvider>,
+
+        #[cfg_attr(feature = "serde", serde(skip, default))]
+        cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
     },
 
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -199,10 +213,20 @@ mod _file_scan_eq_hash {
             metadata: Option<usize>,
         },
 
+        #[cfg(feature = "python")]
+        PythonDataset {
+            dataset_object: usize,
+            cached_ir: usize,
+        },
+
         Anonymous {
             options: &'a crate::dsl::AnonymousScanOptions,
             function: usize,
         },
+
+        /// Variant to ensure the lifetime is used regardless of feature gate combination.
+        #[expect(unused)]
+        Phantom(&'a ()),
     }
 
     impl<'a> From<&'a FileScan> for FileScanEqHashWrap<'a> {
@@ -224,6 +248,15 @@ mod _file_scan_eq_hash {
                 FileScan::Ipc { options, metadata } => FileScanEqHashWrap::Ipc {
                     options,
                     metadata: metadata.as_ref().map(arc_as_ptr),
+                },
+
+                #[cfg(feature = "python")]
+                FileScan::PythonDataset {
+                    dataset_object,
+                    cached_ir,
+                } => FileScanEqHashWrap::PythonDataset {
+                    dataset_object: arc_as_ptr(dataset_object),
+                    cached_ir: arc_as_ptr(cached_ir),
                 },
 
                 FileScan::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {

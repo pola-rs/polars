@@ -419,9 +419,7 @@ def test_to_list() -> None:
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    with pytest.deprecated_call(
-        match="`ExprDateTimeNameSpace.with_time_unit` is deprecated"
-    ):
+    with pytest.deprecated_call(match="`dt.with_time_unit` is deprecated"):
         s1 = (
             pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
             .cast(pl.Datetime)
@@ -473,7 +471,7 @@ def test_datetime_comp_tz_aware_invalid() -> None:
     other = datetime(2020, 1, 1)
     with pytest.raises(
         TypeError,
-        match="Datetime time zone None does not match Series timezone 'Asia/Kathmandu'",
+        match="datetime time zone None does not match Series timezone 'Asia/Kathmandu'",
     ):
         _ = a > other
 
@@ -2108,7 +2106,7 @@ def test_truncate_by_multiple_weeks_diffs() -> None:
         pl.col("ts").dt.truncate("1w").alias("1w"),
         pl.col("ts").dt.truncate("2w").alias("2w"),
         pl.col("ts").dt.truncate("3w").alias("3w"),
-    ).select(pl.all().diff().drop_nulls().unique())
+    ).select(pl.all().diff().drop_nulls().unique(maintain_order=True))
     expected = pl.DataFrame(
         {
             "1w": [timedelta(0), timedelta(days=7)],

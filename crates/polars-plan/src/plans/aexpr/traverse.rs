@@ -42,7 +42,7 @@ impl AExpr {
             AnonymousFunction { input, .. } | Function { input, .. } => {
                 container.extend(input.iter().rev().map(|e| e.node()))
             },
-            Explode(e) => container.extend([*e]),
+            Explode { expr: e, .. } => container.extend([*e]),
             Window {
                 function,
                 partition_by,
@@ -71,7 +71,7 @@ impl AExpr {
             Column(_) | Literal(_) | Len => return self,
             Alias(input, _) => input,
             Cast { expr, .. } => expr,
-            Explode(input) => input,
+            Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {
                 *left = inputs[0];
                 *right = inputs[1];

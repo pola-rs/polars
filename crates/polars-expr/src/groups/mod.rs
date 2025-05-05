@@ -2,12 +2,15 @@ use std::any::Any;
 
 use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
+use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::IdxSize;
 use polars_utils::hashing::HashPartitioner;
 
 use crate::hash_keys::HashKeys;
 
+mod binview;
 mod row_encoded;
+mod single_key;
 
 /// A Grouper maps keys to groups, such that duplicate keys map to the same group.
 pub trait Grouper: Any + Send + Sync {
@@ -32,21 +35,9 @@ pub trait Grouper: Any + Send + Sync {
         group_idxs: Option<&mut Vec<IdxSize>>,
     );
 
-    /// Adds the given Grouper into this one, mutating groups_idxs such that
-    /// the group subset[i] of other now has group index group_idxs[i] in self.
-    ///
-    /// # Safety
-    /// For all i, subset[i] < other.len().
-    unsafe fn gather_combine(
-        &mut self,
-        other: &dyn Grouper,
-        subset: &[IdxSize],
-        group_idxs: &mut Vec<IdxSize>,
-    );
-
     /// Returns the keys in this Grouper in group order, that is the key for
     /// group i is returned in row i.
-    fn get_keys_in_group_order(&self) -> DataFrame;
+    fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame;
 
     /// Returns the (indices of the) keys found in the groupers. If
     /// invert is true it instead returns the keys not found in the groupers.
@@ -78,5 +69,27 @@ pub trait Grouper: Any + Send + Sync {
 }
 
 pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
-    Box::new(row_encoded::RowEncodedHashGrouper::new(key_schema))
+    if key_schema.len() > 1 {
+        Box::new(row_encoded::RowEncodedHashGrouper::new())
+    } else {
+        let (_name, dt) = key_schema.get_at_index(0).unwrap();
+        match dt {
+            dt if dt.is_primitive_numeric() | dt.is_temporal() => {
+                with_match_physical_numeric_polars_type!(dt.to_physical(), |$T| {
+                    Box::new(single_key::SingleKeyHashGrouper::<$T>::new())
+                })
+            },
+
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                Box::new(single_key::SingleKeyHashGrouper::<Int128Type>::new())
+            },
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(_, _) => Box::new(single_key::SingleKeyHashGrouper::<UInt32Type>::new()),
+
+            DataType::String | DataType::Binary => Box::new(binview::BinviewHashGrouper::new()),
+
+            _ => Box::new(row_encoded::RowEncodedHashGrouper::new()),
+        }
+    }
 }

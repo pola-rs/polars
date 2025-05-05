@@ -355,6 +355,8 @@ def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
         try:
             el = py_type(el)  # type: ignore[call-arg]
         except Exception:
-            msg = f"cannot convert Python type {type(el).__name__!r} to {dtype!r}"
+            from polars._utils.various import qualified_type_name
+
+            msg = f"cannot convert Python type {qualified_type_name(el)!r} to {dtype!r}"
             raise TypeError(msg) from None
     return el

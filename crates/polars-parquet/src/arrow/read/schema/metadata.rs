@@ -1,5 +1,5 @@
 use arrow::datatypes::{
-    ArrowDataType, ArrowSchema, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, Field, Metadata,
+    ArrowDataType, ArrowSchema, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, Field, IntegerType, Metadata,
 };
 use arrow::io::ipc::read::deserialize_schema;
 use base64::Engine as _;
@@ -27,7 +27,8 @@ fn convert_field(field: &mut Field) {
         ArrowDataType::Dictionary(key_type, value_type, sorted) => {
             let is_pl_enum_or_categorical = field.metadata.as_ref().is_some_and(|md| {
                 md.contains_key(DTYPE_ENUM_VALUES) || md.contains_key(DTYPE_CATEGORICAL)
-            });
+            }) && matches!(key_type, IntegerType::UInt32)
+                && matches!(value_type.as_ref(), ArrowDataType::Utf8View);
             let is_int_to_str = matches!(
                 value_type.as_ref(),
                 ArrowDataType::Utf8View | ArrowDataType::Utf8 | ArrowDataType::LargeUtf8

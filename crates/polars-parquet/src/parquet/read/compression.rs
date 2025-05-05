@@ -70,18 +70,12 @@ pub fn decompress(compressed_page: CompressedPage, buffer: &mut Vec<u8>) -> Parq
         (_, CompressedPage::Data(page)) => {
             // prepare the compression buffer
             let read_size = page.uncompressed_size();
-
             if read_size > buffer.capacity() {
-                // dealloc and ignore region, replacing it by a new region.
-                // This won't reallocate - it frees and calls `alloc_zeroed`
-                *buffer = vec![0; read_size];
-            } else if read_size > buffer.len() {
-                // fill what we need with zeros so that we can use them in `Read`.
-                // This won't reallocate
-                buffer.resize(read_size, 0);
-            } else {
-                buffer.truncate(read_size);
+                // Clear before resizing to avoid memcpy'ing junk we don't care about anymore rather
+                // than just memset'ing zeroes.
+                buffer.clear();
             }
+            buffer.resize(read_size, 0);
 
             match page.header() {
                 DataPageHeader::V1(_) => decompress_v1(&page.buffer, page.compression, buffer)?,
@@ -101,18 +95,13 @@ pub fn decompress(compressed_page: CompressedPage, buffer: &mut Vec<u8>) -> Parq
         (_, CompressedPage::Dict(page)) => {
             // prepare the compression buffer
             let read_size = page.uncompressed_page_size;
-
             if read_size > buffer.capacity() {
-                // dealloc and ignore region, replacing it by a new region.
-                // This won't reallocate - it frees and calls `alloc_zeroed`
-                *buffer = vec![0; read_size];
-            } else if read_size > buffer.len() {
-                // fill what we need with zeros so that we can use them in `Read`.
-                // This won't reallocate
-                buffer.resize(read_size, 0);
-            } else {
-                buffer.truncate(read_size);
+                // Clear before resizing to avoid memcpy'ing junk we don't care about anymore rather
+                // than just memset'ing zeroes.
+                buffer.clear();
             }
+            buffer.resize(read_size, 0);
+
             decompress_v1(&page.buffer, page.compression(), buffer)?;
             let buffer = CowBuffer::Owned(std::mem::take(buffer));
 

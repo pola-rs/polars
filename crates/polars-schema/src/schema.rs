@@ -2,7 +2,7 @@ use core::fmt::{Debug, Formatter};
 use core::hash::{Hash, Hasher};
 
 use indexmap::map::MutableKeys;
-use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlIndexMap};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -454,6 +454,31 @@ where
             .collect();
 
         Self { fields }
+    }
+
+    pub fn from_iter_check_duplicates<I, F>(iter: I) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = F>,
+        F: Into<(PlSmallStr, D)>,
+    {
+        let iter = iter.into_iter();
+        let mut slf = Self::with_capacity(iter.size_hint().1.unwrap_or(0));
+
+        for v in iter {
+            let (name, d) = v.into();
+
+            if slf.contains(&name) {
+                return Err(err_msg(&name));
+
+                fn err_msg(name: &str) -> PolarsError {
+                    polars_err!(Duplicate: "duplicate name when building schema '{}'", &name)
+                }
+            }
+
+            slf.fields.insert(name, d);
+        }
+
+        Ok(slf)
     }
 }
 

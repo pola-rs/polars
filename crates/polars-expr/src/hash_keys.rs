@@ -243,9 +243,8 @@ impl HashKeys {
         partition_nulls: bool,
     ) {
         unsafe {
-            // Arbitrarily put nulls in partition 0.
             let null_p = if partition_nulls | self.null_is_valid() {
-                0
+                partitioner.null_partition() as IdxSize
             } else {
                 IdxSize::MAX
             };
@@ -297,6 +296,7 @@ impl HashKeys {
         assert!(partition_idxs.len() == partitioner.num_partitions());
         assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
 
+        let null_p = partitioner.null_partition();
         self.for_each_hash(|idx, opt_h| {
             if let Some(h) = opt_h {
                 unsafe {
@@ -308,9 +308,8 @@ impl HashKeys {
                     }
                 }
             } else if partition_nulls {
-                // Arbitrarily put nulls in partition 0.
                 unsafe {
-                    partition_idxs.get_unchecked_mut(0).push(idx);
+                    partition_idxs.get_unchecked_mut(null_p).push(idx);
                 }
             }
         });
@@ -384,7 +383,7 @@ pub struct SingleKeys {
 impl SingleKeys {
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
         downcast_single_key_ca!(self.keys, |keys| {
-            for_each_hash_single(keys, f, &self.random_state);
+            for_each_hash_single(keys, &self.random_state, f);
         })
     }
 
@@ -396,7 +395,7 @@ impl SingleKeys {
         f: F,
     ) {
         downcast_single_key_ca!(self.keys, |keys| {
-            for_each_hash_subset_single(keys, subset, f, &self.random_state);
+            for_each_hash_subset_single(keys, subset, &self.random_state, f);
         })
     }
 
@@ -499,7 +498,7 @@ unsafe fn for_each_hash_subset_prehashed<F: FnMut(IdxSize, Option<u64>)>(
     }
 }
 
-fn for_each_hash_single<T, F>(keys: &ChunkedArray<T>, mut f: F, random_state: &PlRandomState)
+pub fn for_each_hash_single<T, F>(keys: &ChunkedArray<T>, random_state: &PlRandomState, mut f: F)
 where
     T: PolarsDataType,
     for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,
@@ -528,8 +527,8 @@ where
 unsafe fn for_each_hash_subset_single<T, F>(
     keys: &ChunkedArray<T>,
     subset: &[IdxSize],
-    mut f: F,
     random_state: &PlRandomState,
+    mut f: F,
 ) where
     T: PolarsDataType,
     for<'a> <T as PolarsDataType>::Physical<'a>: TotalHash,

@@ -68,6 +68,10 @@ def read_parquet(
     """
     Read into a DataFrame from a parquet file.
 
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
     Parameters
     ----------
     source
@@ -187,11 +191,11 @@ def read_parquet(
 
     """
     if schema is not None:
-        msg = "The `schema` parameter of `read_parquet` is considered unstable."
+        msg = "the `schema` parameter of `read_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
     if hive_schema is not None:
-        msg = "The `hive_schema` parameter of `read_parquet` is considered unstable."
+        msg = "the `hive_schema` parameter of `read_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
     # Dispatch to pyarrow if requested
@@ -359,6 +363,10 @@ def scan_parquet(
     This function allows the query optimizer to push down predicates and projections to
     the scan level, typically increasing performance and reducing memory overhead.
 
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
     Parameters
     ----------
     source
@@ -479,11 +487,11 @@ def scan_parquet(
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     """
     if schema is not None:
-        msg = "The `schema` parameter of `scan_parquet` is considered unstable."
+        msg = "the `schema` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
     if hive_schema is not None:
-        msg = "The `hive_schema` parameter of `scan_parquet` is considered unstable."
+        msg = "the `hive_schema` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
     if isinstance(source, (str, Path)):

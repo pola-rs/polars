@@ -596,3 +596,108 @@ def test_window_22006() -> None:
     df_empty_out = df_empty.select(c=pl.col("b").over("a", mapping_strategy="join"))
 
     assert df_out.schema == df_empty_out.schema
+
+
+def test_when_then_over_22478() -> None:
+    q = pl.LazyFrame(
+        {
+            "x": [True, True, False, True, True, True, False],
+            "t": [1, 2, 3, 4, 5, 6, 7],
+        }
+    ).with_columns(
+        duration=(
+            pl.when(pl.col("x"))
+            .then(pl.col("t").last() - pl.col("t").first())
+            .otherwise(pl.lit(0))
+            .over(pl.col("x").rle_id())
+        )
+    )
+
+    expect = pl.DataFrame(
+        {
+            "x": [True, True, False, True, True, True, False],
+            "t": [1, 2, 3, 4, 5, 6, 7],
+            "duration": [1, 1, 0, 2, 2, 2, 0],
+        }
+    )
+
+    assert q.collect_schema() == {
+        "x": pl.Boolean,
+        "t": pl.Int64,
+        "duration": pl.Int64,
+    }
+    assert_frame_equal(q.collect(), expect)
+
+    q = pl.LazyFrame({"key": [1, 1, 2, 2, 2]}).with_columns(
+        out=pl.when(pl.Series(99 * [True])).then(pl.sum("key")).over("key")
+    )
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="the length of the window expression did not match that of the group",
+    ):
+        q.collect()
+
+
+def test_window_fold_22493() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2, 2, 2], "b": [1, 1, 1, 2, 2, 2, 2, 2]})
+
+    assert (
+        df.select(
+            (
+                pl.when(False)
+                .then(1)
+                .otherwise(
+                    pl.fold(
+                        acc=pl.lit(0.0),
+                        function=lambda acc, x: acc + x,
+                        exprs=pl.col(["a", "b"]),
+                        returns_scalar=False,
+                    )
+                )
+            )
+            .over("a")
+            .alias("prod"),
+        )
+    ).to_dict(as_series=False) == {"prod": [2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]}
+
+    assert (
+        df.select(
+            (
+                pl.when(False)
+                .then(1)
+                .otherwise(
+                    pl.fold(
+                        acc=pl.lit(0.0),
+                        function=lambda acc, x: acc + x.sum(),
+                        exprs=pl.col(["a", "b"]),
+                        returns_scalar=True,
+                    )
+                )
+            )
+            .over("a")
+            .alias("prod"),
+        )
+    ).to_dict(as_series=False) == {
+        "prod": [6.0, 6.0, 6.0, 20.0, 20.0, 20.0, 20.0, 20.0]
+    }
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        (
+            df.select(
+                (
+                    pl.when(False)
+                    .then(1)
+                    .otherwise(
+                        pl.fold(
+                            acc=pl.lit(0.0),
+                            function=lambda acc, x: acc + x,
+                            exprs=pl.col(["a", "b"]),
+                            returns_scalar=True,
+                        )
+                    )
+                )
+                .over("a")
+                .alias("prod"),
+            )
+        )

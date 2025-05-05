@@ -21,7 +21,11 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
-from polars._utils.various import _cast_repr_strings_with_schema, issue_warning
+from polars._utils.various import (
+    _cast_repr_strings_with_schema,
+    issue_warning,
+    qualified_type_name,
+)
 from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import N_INFER_DEFAULT, Categorical, String
 from polars.dependencies import _check_for_pyarrow
@@ -41,6 +45,7 @@ if TYPE_CHECKING:
         SchemaDict,
     )
     from polars.dependencies import numpy as np
+    from polars.dependencies import torch
     from polars.interchange.protocol import SupportsInterchange
 
 
@@ -358,14 +363,95 @@ def from_numpy(
     """
     return wrap_df(
         numpy_to_pydf(
-            data, schema=schema, orient=orient, schema_overrides=schema_overrides
+            data=data,
+            schema=schema,
+            schema_overrides=schema_overrides,
+            orient=orient,
+        )
+    )
+
+
+def from_torch(
+    tensor: torch.Tensor,
+    schema: SchemaDefinition | None = None,
+    *,
+    schema_overrides: SchemaDict | None = None,
+    orient: Orientation | None = None,
+    force: bool = False,
+) -> DataFrame:
+    """
+    Construct a DataFrame from a PyTorch Tensor.
+
+    Parameters
+    ----------
+    tensor : :class:`torch.Tensor`
+        A PyTorch `Tensor` object of one or more dimensions.
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
+    schema_overrides : dict, default None
+        Support type specification or override of one or more columns; note that
+        any dtypes inferred from the columns param will be overridden.
+    orient : {None, 'col', 'row'}
+        Whether to interpret two-dimensional data as columns or as rows. If None,
+        the orientation is inferred by matching the columns and data dimensions. If
+        this does not yield conclusive results, column orientation is used.
+    force : bool
+        If False, the conversion is performed only if the Tensor is on CPU, does not
+        require grad, does not have its conjugate bit set, and is of a dtype (and
+        layout) that NumPy supports; this will typically be zero-copy. If True, it
+        is equivalent to calling `.detach().cpu().resolve_conj().resolve_neg()`
+        before passing the Tensor to Polars.
+
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+    >>> import torch
+    >>> data = torch.tensor(
+    ...     [
+    ...         [1234.5, 200.0, 3000.5],
+    ...         [8000.0, 500.5, 6000.0],
+    ...     ]
+    ... )
+    >>> df = pl.from_torch(
+    ...     data,
+    ...     schema=["colx", "coly", "colz"],
+    ...     schema_overrides={"colz": pl.Float64},
+    ... )
+    >>> df
+    shape: (2, 3)
+    ┌────────┬───────┬────────┐
+    │ colx   ┆ coly  ┆ colz   │
+    │ ---    ┆ ---   ┆ ---    │
+    │ f32    ┆ f32   ┆ f64    │
+    ╞════════╪═══════╪════════╡
+    │ 1234.5 ┆ 200.0 ┆ 3000.5 │
+    │ 8000.0 ┆ 500.5 ┆ 6000.0 │
+    └────────┴───────┴────────┘
+    """
+    return wrap_df(
+        numpy_to_pydf(
+            data=tensor.numpy(force=force),
+            schema=schema,
+            schema_overrides=schema_overrides,
+            orient=orient,
         )
     )
 
 
 # Note: we cannot @overload the typing (Series vs DataFrame) here, as pyarrow
-# does not implement any support for type hints; attempts to hint here will
-# simply result in mypy inferring "Any", which isn't useful...
+# does not (yet?) implement any support for type hints; attempts to hint here
+# will simply result in mypy inferring "Any", which isn't at all useful...
 
 
 def from_arrow(
@@ -493,7 +579,7 @@ def from_arrow(
             )
         )
 
-    msg = f"expected PyArrow Table, Array, or one or more RecordBatches; got {type(data).__name__!r}"
+    msg = f"expected PyArrow Table, Array, or one or more RecordBatches; got {qualified_type_name(data)!r}"
     raise TypeError(msg)
 
 
@@ -616,7 +702,7 @@ def from_pandas(
             )
         )
     else:
-        msg = f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
+        msg = f"expected pandas DataFrame or Series, got {qualified_type_name(data)!r}"
         raise TypeError(msg)
 
 
@@ -624,6 +710,9 @@ def from_pandas(
 def from_repr(data: str) -> DataFrame | Series:
     """
     Construct a Polars DataFrame or Series from its string representation.
+
+    .. versionchanged:: 0.20.17
+        The `tbl` parameter was renamed to `data`.
 
     Parameters
     ----------

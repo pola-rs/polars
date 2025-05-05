@@ -11,6 +11,7 @@ use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_plan::plans::{AExpr, IR};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::python_function::PythonObject;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
@@ -458,6 +459,26 @@ impl PyLazyFrame {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (
+        dataset_object
+    ))]
+    fn new_from_dataset_object(dataset_object: PyObject) -> PyResult<Self> {
+        use crate::dataset::dataset_provider_funcs;
+
+        polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
+            reader_name: dataset_provider_funcs::reader_name,
+            schema: dataset_provider_funcs::schema,
+            to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
+        });
+
+        let lf =
+            LazyFrame::from(DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build())
+                .into();
+
+        Ok(lf)
+    }
+
+    #[staticmethod]
     fn scan_from_python_function_arrow_schema(
         schema: &Bound<'_, PyList>,
         scan_fn: PyObject,
@@ -529,6 +550,11 @@ impl PyLazyFrame {
 
     fn to_dot(&self, py: Python, optimized: bool) -> PyResult<String> {
         py.enter_polars(|| self.ldf.to_dot(optimized))
+    }
+
+    #[cfg(feature = "new_streaming")]
+    fn to_dot_streaming_phys(&self, py: Python, optimized: bool) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.to_dot_streaming_phys(optimized))
     }
 
     fn optimization_toggle(

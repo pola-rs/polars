@@ -625,9 +625,13 @@ impl<'a> FieldsMapper<'a> {
             None => {
                 let new = &self.fields[2];
                 let default = self.fields.get(3);
+
+                // @HACK: Related to implicit implode see #22149.
+                let inner_dtype = new.dtype().inner_dtype().unwrap_or(new.dtype());
+
                 match default {
-                    Some(default) => try_get_supertype(default.dtype(), new.dtype())?,
-                    None => new.dtype().clone(),
+                    Some(default) => try_get_supertype(default.dtype(), inner_dtype)?,
+                    None => inner_dtype.clone(),
                 }
             },
         };

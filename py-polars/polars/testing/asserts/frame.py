@@ -29,6 +29,9 @@ def assert_frame_equal(
     Raises a detailed `AssertionError` if the frames differ.
     This function is intended for use in unit tests.
 
+    .. versionchanged:: 0.20.31
+        The `check_dtype` parameter was renamed `check_dtypes`.
+
     Parameters
     ----------
     left
@@ -177,7 +180,6 @@ def _assert_frame_schema_equal(
     if check_dtypes:
         left_schema_dict, right_schema_dict = dict(left_schema), dict(right_schema)
         if check_column_order or left_schema_dict != right_schema_dict:
-            print(left_schema_dict, right_schema_dict)
             detail = "dtypes do not match"
             raise_assertion_error(objects, detail, left_schema_dict, right_schema_dict)
 
@@ -210,6 +212,9 @@ def assert_frame_not_equal(
     Assert that the left and right frame are **not** equal.
 
     This function is intended for use in unit tests.
+
+    .. versionchanged:: 0.20.31
+        The `check_dtype` parameter was renamed `check_dtypes`.
 
     Parameters
     ----------
