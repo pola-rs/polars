@@ -505,3 +505,98 @@ fn decode_masked_optional<B: AlignedBytes>(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use arrow::bitmap::proptest::bitmap;
+    use proptest::collection::size_range;
+    use proptest::prelude::*;
+
+    use super::*;
+
+    fn values_and_mask() -> impl Strategy<Value = (Vec<u32>, Bitmap)> {
+        any_with::<Vec<u32>>(size_range(0..100).lift()).prop_flat_map(|vec| {
+            let len = vec.len();
+            (Just(vec), bitmap(len))
+        })
+    }
+
+    fn validity_values_and_mask() -> impl Strategy<Value = (Bitmap, Vec<u32>, Bitmap)> {
+        bitmap(0..100).prop_flat_map(|validity| {
+            let len = validity.len();
+            let values_length = validity.set_bits();
+
+            (
+                Just(validity),
+                any_with::<Vec<u32>>(size_range(values_length).lift()),
+                bitmap(len),
+            )
+        })
+    }
+
+    fn _test_decode_masked_required(values: &Vec<u32>, mask: &Bitmap) {
+        let mut reference_result = Vec::with_capacity(mask.set_bits());
+        for (value, is_selected) in values.iter().zip(mask.iter()) {
+            if is_selected {
+                reference_result.push(*value);
+            }
+        }
+
+        let mut result = Vec::<arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+        decode_masked_required(
+            ArrayChunks::new(bytemuck::cast_slice(values.as_slice())).unwrap(),
+            mask.clone(),
+            &mut result,
+        )
+        .unwrap();
+
+        let result = bytemuck::cast_vec::<_, u32>(result);
+        assert_eq!(reference_result, result);
+    }
+
+    fn _test_decode_masked_optional(validity: &Bitmap, values: &Vec<u32>, mask: &Bitmap) {
+        let mut result = Vec::<arrow::types::Bytes4Alignment4>::with_capacity(mask.set_bits());
+        decode_masked_optional(
+            ArrayChunks::new(bytemuck::cast_slice(values.as_slice())).unwrap(),
+            validity.clone(),
+            mask.clone(),
+            &mut result,
+        )
+        .unwrap();
+
+        let result = bytemuck::cast_vec::<_, u32>(result);
+
+        let mut result_i = 0;
+        let mut values_i = 0;
+        for (is_valid, is_selected) in validity.iter().zip(mask.iter()) {
+            if is_selected {
+                if is_valid {
+                    assert_eq!(result[result_i], values[values_i]);
+                }
+                result_i += 1;
+            }
+
+            if is_valid {
+                values_i += 1;
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_decode_masked_required(
+            (ref values, ref mask) in values_and_mask()
+        ) {
+            _test_decode_masked_required(values, mask)
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_decode_masked_optional(
+            (ref validity, ref values, ref mask) in validity_values_and_mask()
+        ) {
+            _test_decode_masked_optional(validity, values, mask)
+        }
+    }
+}

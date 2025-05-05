@@ -61,6 +61,7 @@ object_store = { version = "0.12", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
+proptest = { version = "1.6", default-features = false, features = ["std"] }
 pyo3 = "0.24.2"
 rand = "0.8"
 rand_distr = "0.4"
