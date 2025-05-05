@@ -69,6 +69,15 @@ impl SinkTarget {
         }
     }
 
+    #[cfg(not(feature = "cloud"))]
+    pub async fn open_into_writeable_async(
+        &self,
+        sink_options: &SinkOptions,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Writeable> {
+        self.open_into_writeable(sink_options, cloud_options)
+    }
+
     #[cfg(feature = "cloud")]
     pub async fn open_into_writeable_async(
         &self,
