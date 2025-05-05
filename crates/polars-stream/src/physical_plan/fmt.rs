@@ -36,8 +36,9 @@ impl NodeStyle {
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
             | K::InMemoryJoin { .. }
-            | K::MergeSorted { .. }
             | K::Multiplexer { .. } => Self::MemoryIntensive,
+            #[cfg(feature = "merge_sorted")]
+            K::MergeSorted { .. } => Self::MemoryIntensive,
             _ => Self::Generic,
         }
     }
