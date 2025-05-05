@@ -166,7 +166,7 @@ impl GatherExpr {
                 taken.as_list().into_column()
             };
 
-            ac.with_values(taken, true, Some(&self.expr))?;
+            ac.with_values_and_args(taken, true, Some(&self.expr), false, self.returns_scalar)?;
 
             if self.returns_scalar {
                 ac.with_update_groups(UpdateGroups::No);
