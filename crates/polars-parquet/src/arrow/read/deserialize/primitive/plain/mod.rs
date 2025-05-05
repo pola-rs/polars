@@ -517,10 +517,7 @@ mod tests {
     fn values_and_mask() -> impl Strategy<Value = (Vec<u32>, Bitmap)> {
         any_with::<Vec<u32>>(size_range(0..100).lift()).prop_flat_map(|vec| {
             let len = vec.len();
-            (
-                Just(vec),
-                bitmap(len),
-            )
+            (Just(vec), bitmap(len))
         })
     }
 
