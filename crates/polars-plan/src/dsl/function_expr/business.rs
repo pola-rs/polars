@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use super::FunctionOptions;
 use crate::dsl::{FieldsMapper, SpecialEq};
 use crate::map_as_slice;
-use crate::prelude::ColumnsUdf;
+use crate::prelude::{ColumnsUdf, FunctionFlags};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -39,7 +39,9 @@ impl BusinessFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use BusinessFunction as B;
         match self {
-            B::BusinessDayCount { .. } => FunctionOptions::elementwise().with_allow_rename(true),
+            B::BusinessDayCount { .. } => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
             B::AddBusinessDay { .. } | B::IsBusinessDay { .. } => FunctionOptions::elementwise(),
         }
     }

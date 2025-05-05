@@ -70,9 +70,7 @@ impl OptimizationRule for SlicePushDown {
                         predicate,
                     })
                 },
-                m @ AnonymousFunction { options, .. }
-                    if matches!(options.collect_groups, ApplyOptions::ElementWise) =>
-                {
+                m @ AnonymousFunction { options, .. } if options.is_elementwise() => {
                     if let AnonymousFunction {
                         mut input,
                         function,
@@ -95,9 +93,7 @@ impl OptimizationRule for SlicePushDown {
                         unreachable!()
                     }
                 },
-                m @ Function { options, .. }
-                    if matches!(options.collect_groups, ApplyOptions::ElementWise) =>
-                {
+                m @ Function { options, .. } if options.is_elementwise() => {
                     if let Function {
                         mut input,
                         function,

@@ -5,7 +5,7 @@ use futures::{StreamExt, TryStreamExt};
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore};
 use polars_core::prelude::{InitHashMaps, PlHashMap};
-use polars_error::{PolarsError, PolarsResult, to_compute_err};
+use polars_error::{PolarsError, PolarsResult};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use crate::pl_async::{
@@ -158,10 +158,10 @@ impl PolarsObjectStore {
     + TryStreamExt<Ok = Bytes, Error = PolarsError, Item = PolarsResult<Bytes>>
     + use<'a, T> {
         futures::stream::iter(ranges.map(move |range| async move {
-            store
+            let out = store
                 .get_range(path, range.start as u64..range.end as u64)
-                .await
-                .map_err(to_compute_err)
+                .await?;
+            Ok(out)
         }))
         // Add a limit locally as this gets run inside a single `tune_with_concurrency_budget`.
         .buffered(get_concurrency_limit() as usize)
@@ -177,13 +177,14 @@ impl PolarsObjectStore {
                 let parts = split_range(range.clone());
 
                 if parts.len() == 1 {
-                    tune_with_concurrency_budget(1, move || async move {
+                    let out = tune_with_concurrency_budget(1, move || async move {
                         store
                             .get_range(path, range.start as u64..range.end as u64)
                             .await
                     })
-                    .await
-                    .map_err(to_compute_err)
+                    .await?;
+
+                    Ok(out)
                 } else {
                     let parts = tune_with_concurrency_budget(
                         parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
@@ -335,7 +336,7 @@ impl PolarsObjectStore {
                             let mut len = 0;
                             while let Some(bytes) = stream.try_next().await? {
                                 len += bytes.len();
-                                file.write_all(&bytes).await.map_err(to_compute_err)?;
+                                file.write_all(&bytes).await?;
                             }
 
                             assert_eq!(len, opt_size.unwrap() as usize);
@@ -346,13 +347,12 @@ impl PolarsObjectStore {
                     .await?
                 } else {
                     tune_with_concurrency_budget(1, || async {
-                        let mut stream =
-                            store.get(path).await.map_err(to_compute_err)?.into_stream();
+                        let mut stream = store.get(path).await?.into_stream();
 
                         let mut len = 0;
                         while let Some(bytes) = stream.try_next().await? {
                             len += bytes.len();
-                            file.write_all(&bytes).await.map_err(to_compute_err)?;
+                            file.write_all(&bytes).await?;
                         }
 
                         PolarsResult::Ok(pl_async::Size::from(len as u64))
@@ -398,10 +398,11 @@ impl PolarsObjectStore {
                         }
                     }
 
-                    head_result
+                    let out = head_result?;
+
+                    Ok(out)
                 })
                 .await
-                .map_err(to_compute_err)
             }
         })
         .await

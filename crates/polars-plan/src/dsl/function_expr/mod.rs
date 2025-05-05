@@ -1279,7 +1279,8 @@ impl FunctionExpr {
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
             F::DropNans => FunctionOptions::row_separable(),
-            F::DropNulls => FunctionOptions::row_separable().with_allow_empty_inputs(true),
+            F::DropNulls => FunctionOptions::row_separable()
+                .with_flags(|f| f | FunctionFlags::ALLOW_EMPTY_INPUTS),
             #[cfg(feature = "mode")]
             F::Mode => FunctionOptions::groupwise(),
             #[cfg(feature = "moment")]
@@ -1293,15 +1294,15 @@ impl FunctionExpr {
             F::ArgUnique => FunctionOptions::groupwise(),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::groupwise(),
-            F::Repeat => FunctionOptions::groupwise()
-                .with_allow_rename(true)
-                .with_changes_length(true),
+            F::Repeat => {
+                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
             #[cfg(feature = "round_series")]
             F::Clip { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
-            F::AsStruct => FunctionOptions::elementwise()
-                .with_pass_name_to_apply(true)
-                .with_input_wildcard_expansion(true),
+            F::AsStruct => FunctionOptions::elementwise().with_flags(|f| {
+                f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::INPUT_WILDCARD_EXPANSION
+            }),
             #[cfg(feature = "top_k")]
             F::TopK { .. } => FunctionOptions::groupwise(),
             #[cfg(feature = "top_k")]
@@ -1314,13 +1315,15 @@ impl FunctionExpr {
             | F::CumMax { .. } => FunctionOptions::length_preserving(),
             F::Reverse => FunctionOptions::length_preserving(),
             #[cfg(feature = "dtype-struct")]
-            F::ValueCounts { .. } => FunctionOptions::groupwise().with_pass_name_to_apply(true),
+            F::ValueCounts { .. } => {
+                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY)
+            },
             #[cfg(feature = "unique_counts")]
             F::UniqueCounts => FunctionOptions::groupwise(),
             #[cfg(feature = "approx_unique")]
             F::ApproxNUnique => FunctionOptions::aggregation(),
             F::Coalesce => FunctionOptions::elementwise()
-                .with_input_wildcard_expansion(true)
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
             F::ShrinkType => FunctionOptions::length_preserving(),
             #[cfg(feature = "diff")]
@@ -1346,7 +1349,7 @@ impl FunctionExpr {
             #[cfg(feature = "fused")]
             F::Fused(_) => FunctionOptions::elementwise(),
             F::ConcatExpr(_) => FunctionOptions::groupwise()
-                .with_input_wildcard_expansion(true)
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
             #[cfg(feature = "cov")]
             F::Correlation { .. } => {
@@ -1355,9 +1358,8 @@ impl FunctionExpr {
             #[cfg(feature = "peaks")]
             F::PeakMin | F::PeakMax => FunctionOptions::length_preserving(),
             #[cfg(feature = "cutqcut")]
-            F::Cut { .. } | F::QCut { .. } => {
-                FunctionOptions::length_preserving().with_pass_name_to_apply(true)
-            },
+            F::Cut { .. } | F::QCut { .. } => FunctionOptions::length_preserving()
+                .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),
             #[cfg(feature = "rle")]
             F::RLE => FunctionOptions::groupwise(),
             #[cfg(feature = "rle")]
@@ -1376,12 +1378,11 @@ impl FunctionExpr {
             F::SetSortedFlag(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "ffi_plugin")]
             F::FfiPlugin { flags, .. } => *flags,
-            F::MaxHorizontal | F::MinHorizontal => FunctionOptions::elementwise()
-                .with_input_wildcard_expansion(true)
-                .with_allow_rename(true),
-            F::MeanHorizontal { .. } | F::SumHorizontal { .. } => {
-                FunctionOptions::elementwise().with_input_wildcard_expansion(true)
-            },
+            F::MaxHorizontal | F::MinHorizontal => FunctionOptions::elementwise().with_flags(|f| {
+                f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::ALLOW_RENAME
+            }),
+            F::MeanHorizontal { .. } | F::SumHorizontal { .. } => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "ewma")]
             F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } => {
                 FunctionOptions::length_preserving()

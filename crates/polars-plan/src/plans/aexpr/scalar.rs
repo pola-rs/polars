@@ -11,7 +11,7 @@ pub fn is_scalar_ae(node: Node, expr_arena: &Arena<AExpr>) -> bool {
             if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
                 true
             } else if options.is_elementwise()
-                || !options.flags.contains(FunctionFlags::CHANGES_LENGTH)
+                || options.flags.contains(FunctionFlags::LENGTH_PRESERVING)
             {
                 input.iter().all(|e| e.is_scalar(expr_arena))
             } else {

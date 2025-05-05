@@ -185,7 +185,7 @@ fn aexpr_to_skip_batch_predicate_rec(
         }
 
         match expr_arena.get(e) {
-            AExpr::Explode(_) => None,
+            AExpr::Explode { .. } => None,
             AExpr::Alias(_, _) => None,
             AExpr::Column(_) => None,
             AExpr::Literal(_) => None,
@@ -399,7 +399,10 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 //      )
                                 let col = col.clone();
 
-                                let lv_node_exploded = expr_arena.add(AExpr::Explode(lv_node));
+                                let lv_node_exploded = expr_arena.add(AExpr::Explode {
+                                    expr: lv_node,
+                                    skip_empty: true,
+                                });
                                 let lv_min =
                                     expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Min {
                                         input: lv_node_exploded,
@@ -573,10 +576,7 @@ fn aexpr_to_skip_batch_predicate_rec(
     let mut expr = expr_arena.add(AExpr::Function {
         input: vec![ExprIR::new(expr, OutputName::Alias(PlSmallStr::EMPTY))],
         function: FunctionExpr::Boolean(BooleanFunction::Not),
-        options: FunctionOptions {
-            collect_groups: crate::plans::ApplyOptions::ElementWise,
-            ..Default::default()
-        },
+        options: FunctionOptions::elementwise(),
     });
     for col in live_columns.keys() {
         let col_min = col!(min: col);

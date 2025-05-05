@@ -35,6 +35,10 @@ impl NullChunked {
             ))],
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.length as usize
+    }
 }
 impl PrivateSeriesNumeric for NullChunked {
     fn bit_repr(&self) -> Option<BitRepr> {
@@ -334,6 +338,10 @@ impl SeriesTrait for NullChunked {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(self.clone())
+    }
+
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        ChunkNestingUtils::find_validity_mismatch(self, other, idxs)
     }
 
     fn as_any(&self) -> &dyn Any {

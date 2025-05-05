@@ -13,6 +13,7 @@ arrow-format = { workspace = true, optional = true }
 avro-schema = { workspace = true, optional = true }
 object_store = { workspace = true, optional = true }
 parking_lot = { workspace = true }
+pyo3 = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 simdutf8 = { workspace = true }
 
@@ -20,4 +21,4 @@ simdutf8 = { workspace = true }
 signal-hook = "0.3"
 
 [features]
-python = []
+python = ["dep:pyo3"]

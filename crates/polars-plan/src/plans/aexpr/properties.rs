@@ -26,7 +26,7 @@ impl AExpr {
             Alias(_, _) | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
             Agg { .. }
-            | Explode(_)
+            | Explode { .. }
             | Filter { .. }
             | Gather { .. }
             | Len
@@ -249,7 +249,7 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                         )
                     },
                     Function { input, options, .. } => {
-                        matches!(options.collect_groups, ApplyOptions::ElementWise)
+                        options.is_elementwise()
                             && input.len() == 1
                             && !has_aggregation(input[0].node())
                     },

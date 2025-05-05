@@ -67,7 +67,7 @@ fn finish_as_iters<'a>(
         // Exploded list should be equal to groups length.
         list_vals_len == ac_truthy.groups.len()
     {
-        out = out.explode()?
+        out = out.explode(false)?
     }
 
     ac_truthy.with_agg_state(AggState::AggregatedList(out));

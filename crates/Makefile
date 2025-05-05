@@ -152,6 +152,7 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features extract_jsonpath   \
 		--exclude-features fmt                \
 		--exclude-features gcp                \
+		--exclude-features csv                \
 		--exclude-features ipc                \
 		--exclude-features ipc_streaming      \
 		--exclude-features json               \

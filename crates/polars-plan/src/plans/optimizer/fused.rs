@@ -10,11 +10,8 @@ fn get_expr(input: &[Node], op: FusedOperator, expr_arena: &Arena<AExpr>) -> AEx
         .copied()
         .map(|n| ExprIR::from_node(n, expr_arena))
         .collect();
-    let mut options = FunctionOptions {
-        collect_groups: ApplyOptions::ElementWise,
-        cast_options: Some(CastingRules::cast_to_supertypes()),
-        ..Default::default()
-    };
+    let mut options =
+        FunctionOptions::elementwise().with_casting_rules(CastingRules::cast_to_supertypes());
     // order of operations change because of FMA
     // so we must toggle this check off
     // it is still safe as it is a trusted operation

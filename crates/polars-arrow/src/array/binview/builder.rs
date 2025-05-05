@@ -133,6 +133,46 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
         }
     }
 
+    unsafe fn translate_view(
+        &mut self,
+        mut view: View,
+        other_bufferset: &Arc<[Buffer<u8>]>,
+    ) -> View {
+        // Translate from old array-local buffer idx to global stolen buffer idx.
+        let (mut new_buffer_idx, gen_) = *self
+            .buffer_set_translation_idxs
+            .get_unchecked(view.buffer_idx as usize);
+        if gen_ != self.buffer_set_translation_generation {
+            // This buffer index wasn't seen before for this array, do a dedup lookup.
+            // Since we map by starting pointer and different subslices may have different lengths, we expand
+            // the buffer to the maximum it could be.
+            let buffer = other_bufferset
+                .get_unchecked(view.buffer_idx as usize)
+                .clone()
+                .expand_end_to_storage();
+            let buf_id = buffer.as_slice().as_ptr().addr();
+            let idx = match self.stolen_buffers.entry(buf_id) {
+                Entry::Occupied(o) => *o.get(),
+                Entry::Vacant(v) => {
+                    let idx = self.buffer_set.len() as u32;
+                    self.total_buffer_len += buffer.len();
+                    self.buffer_set.push(buffer);
+                    v.insert(idx);
+                    idx
+                },
+            };
+
+            // Cache result for future lookups.
+            *self
+                .buffer_set_translation_idxs
+                .get_unchecked_mut(view.buffer_idx as usize) =
+                (idx, self.buffer_set_translation_generation);
+            new_buffer_idx = idx;
+        }
+        view.buffer_idx = new_buffer_idx;
+        view
+    }
+
     unsafe fn extend_views_dedup_ignore_validity(
         &mut self,
         views: impl IntoIterator<Item = View>,
@@ -144,42 +184,31 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
 
         for mut view in views {
             if view.length > View::MAX_INLINE_SIZE {
-                // Translate from old array-local buffer idx to global stolen buffer idx.
-                let (mut new_buffer_idx, gen_) = *self
-                    .buffer_set_translation_idxs
-                    .get_unchecked(view.buffer_idx as usize);
-                if gen_ != self.buffer_set_translation_generation {
-                    // This buffer index wasn't seen before for this array, do a dedup lookup.
-                    // Since we map by starting pointer and different subslices may have different lengths, we expand
-                    // the buffer to the maximum it could be.
-                    let buffer = other_bufferset
-                        .get_unchecked(view.buffer_idx as usize)
-                        .clone()
-                        .expand_end_to_storage();
-                    let buf_id = buffer.as_slice().as_ptr().addr();
-                    let idx = match self.stolen_buffers.entry(buf_id) {
-                        Entry::Occupied(o) => *o.get(),
-                        Entry::Vacant(v) => {
-                            let idx = self.buffer_set.len() as u32;
-                            self.total_buffer_len += buffer.len();
-                            self.buffer_set.push(buffer);
-                            v.insert(idx);
-                            idx
-                        },
-                    };
-
-                    // Cache result for future lookups.
-                    *self
-                        .buffer_set_translation_idxs
-                        .get_unchecked_mut(view.buffer_idx as usize) =
-                        (idx, self.buffer_set_translation_generation);
-                    new_buffer_idx = idx;
-                }
-                view.buffer_idx = new_buffer_idx;
+                view = self.translate_view(view, other_bufferset);
             }
-
             self.total_bytes_len += view.length as usize;
             self.views.push(view);
+        }
+    }
+
+    unsafe fn extend_views_each_repeated_dedup_ignore_validity(
+        &mut self,
+        views: impl IntoIterator<Item = View>,
+        repeats: usize,
+        other_bufferset: &Arc<[Buffer<u8>]>,
+    ) {
+        // TODO: if there are way more buffers than length translate per-view
+        // rather than all at once.
+        self.switch_active_stealing_bufferset_to(other_bufferset);
+
+        for mut view in views {
+            if view.length > View::MAX_INLINE_SIZE {
+                view = self.translate_view(view, other_bufferset);
+            }
+            self.total_bytes_len += repeats * view.length as usize;
+            for _ in 0..repeats {
+                self.views.push(view);
+            }
         }
     }
 }
@@ -291,6 +320,59 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
 
         self.validity
             .subslice_extend_from_opt_validity(other.validity(), start, length);
+    }
+
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &Self::Array,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    ) {
+        self.views.reserve(length * repeats);
+
+        unsafe {
+            match share {
+                ShareStrategy::Never => {
+                    if let Some(v) = other.validity() {
+                        for i in start..start + length {
+                            if v.get_bit_unchecked(i) {
+                                for _ in 0..repeats {
+                                    self.push_value_ignore_validity(other.value_unchecked(i));
+                                }
+                            } else {
+                                for _ in 0..repeats {
+                                    self.views.push(View::default())
+                                }
+                            }
+                        }
+                    } else {
+                        for i in start..start + length {
+                            for _ in 0..repeats {
+                                self.push_value_ignore_validity(other.value_unchecked(i));
+                            }
+                        }
+                    }
+                },
+                ShareStrategy::Always => {
+                    let other_views = &other.views()[start..start + length];
+                    self.extend_views_each_repeated_dedup_ignore_validity(
+                        other_views.iter().copied(),
+                        repeats,
+                        other.data_buffers(),
+                    );
+                },
+            }
+        }
+
+        self.validity
+            .subslice_extend_each_repeated_from_opt_validity(
+                other.validity(),
+                start,
+                length,
+                repeats,
+            );
     }
 
     unsafe fn gather_extend(

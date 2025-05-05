@@ -424,3 +424,16 @@ def test_replace_strict_unique_22134() -> None:
         pl.DataFrame({"mapped_column": ["Jelly", "Soap"]}),
         check_row_order=False,
     )
+
+
+def test_replace_strict_nested_mapping_22554() -> None:
+    assert_series_equal(
+        pl.Series([1, 2, 3]).replace_strict(
+            {
+                1: [42],
+                2: [13],
+                3: [37],
+            }
+        ),
+        pl.Series([[42], [13], [37]]),
+    )

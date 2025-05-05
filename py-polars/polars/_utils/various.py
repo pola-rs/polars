@@ -673,7 +673,7 @@ def display_dot_graph(
         )
     except (ImportError, FileNotFoundError):
         msg = (
-            "The graphviz `dot` binary should be on your PATH."
+            "the graphviz `dot` binary should be on your PATH."
             "(If not installed you can download here: https://graphviz.org/download/)"
         )
         raise ImportError(msg) from None

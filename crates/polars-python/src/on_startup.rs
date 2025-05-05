@@ -6,7 +6,6 @@ use polars::prelude::*;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
-use polars_core::error::PolarsError::ComputeError;
 use polars_error::PolarsWarning;
 use polars_error::signals::register_polars_keyboard_interrupt_hook;
 use polars_ffi::version_0::SeriesExport;
@@ -23,8 +22,7 @@ use crate::py_modules::{pl_df, pl_utils, polars, polars_rs};
 
 fn python_function_caller_series(s: Column, lambda: &PyObject) -> PolarsResult<Column> {
     Python::with_gil(|py| {
-        let object = call_lambda_with_series(py, s.as_materialized_series(), lambda)
-            .map_err(|s| ComputeError(format!("{}", s).into()))?;
+        let object = call_lambda_with_series(py, s.as_materialized_series(), lambda)?;
         object.to_series(py, polars(py), s.name()).map(Column::from)
     })
 }
@@ -64,9 +62,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
                 .unwrap();
         }
         // call the lambda and get a python side df wrapper
-        let result_df_wrapper = lambda.call1(py, (python_df_wrapper,)).map_err(|e| {
-            PolarsError::ComputeError(format!("User provided python function failed: {e}").into())
-        })?;
+        let result_df_wrapper = lambda.call1(py, (python_df_wrapper,))?;
 
         // unpack the wrapper in a PyDataFrame
         let py_pydf = result_df_wrapper.getattr(py, "_df").map_err(|_| {

@@ -1073,3 +1073,12 @@ def test_group_by_dynamic_overlapping_19704() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_group_by_dynamic_single_row_22585() -> None:
+    df = pl.DataFrame({"date": [date(2025, 1, 1)], "group": ["x"]})
+    out = df.group_by_dynamic("date", every="1y", group_by=["group"]).agg(pl.len())
+    expected = pl.DataFrame(
+        {"group": ["x"], "date": [date(2025, 1, 1)], "len": [1]}
+    ).with_columns(pl.col("len").cast(pl.UInt32))
+    assert_frame_equal(expected, out)

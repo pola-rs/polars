@@ -171,6 +171,45 @@ impl SeriesBuilder {
         }
     }
 
+    pub fn subslice_extend_each_repeated(
+        &mut self,
+        other: &Series,
+        mut start: usize,
+        mut length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    ) {
+        #[cfg(feature = "dtype-categorical")]
+        {
+            fill_rev_map(other.dtype(), &mut self.rev_map_merger);
+        }
+
+        if length == 0 || repeats == 0 || other.is_empty() {
+            return;
+        }
+
+        for chunk in other.chunks() {
+            if start < chunk.len() {
+                let length_in_chunk = length.min(chunk.len() - start);
+                self.builder.subslice_extend_each_repeated(
+                    &**chunk,
+                    start,
+                    length_in_chunk,
+                    repeats,
+                    share,
+                );
+
+                start = 0;
+                length -= length_in_chunk;
+                if length == 0 {
+                    break;
+                }
+            } else {
+                start -= chunk.len();
+            }
+        }
+    }
+
     /// Extends this builder with the contents of the given series at the given
     /// indices. That is, `other[idxs[i]]` is appended to this builder in order,
     /// for each i=0..idxs.len(). May panic if other does not match the dtype

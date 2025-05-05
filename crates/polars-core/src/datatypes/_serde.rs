@@ -90,6 +90,7 @@ enum SerializableDataType {
     Float64,
     String,
     Binary,
+    BinaryOffset,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date,
@@ -136,6 +137,7 @@ impl From<&DataType> for SerializableDataType {
             Float64 => Self::Float64,
             String => Self::String,
             Binary => Self::Binary,
+            BinaryOffset => Self::BinaryOffset,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(*tu, tz.clone()),
             Duration(tu) => Self::Duration(*tu),
@@ -171,7 +173,6 @@ impl From<&DataType> for SerializableDataType {
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             #[cfg(feature = "object")]
             Object(name) => Self::Object(name.to_string()),
-            dt => panic!("{dt:?} not supported"),
         }
     }
 }
@@ -193,6 +194,7 @@ impl From<SerializableDataType> for DataType {
             Float64 => Self::Float64,
             String => Self::String,
             Binary => Self::Binary,
+            BinaryOffset => Self::BinaryOffset,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(tu, tz),
             Duration(tu) => Self::Duration(tu),

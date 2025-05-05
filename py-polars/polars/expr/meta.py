@@ -2,18 +2,24 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, overload
 
-from polars._utils.deprecation import deprecate_renamed_function
+from polars._utils.deprecation import deprecated
 from polars._utils.serde import serialize_polars_object
 from polars._utils.various import display_dot_graph
 from polars._utils.wrap import wrap_expr
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
+    import sys
     from io import IOBase
     from pathlib import Path
 
     from polars import Expr
     from polars._typing import SerializationFormat
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 class ExprMetaNameSpace:
@@ -289,8 +295,10 @@ class ExprMetaNameSpace:
     def serialize(
         self, file: None = ..., *, format: Literal["binary"] = ...
     ) -> bytes: ...
+
     @overload
     def serialize(self, file: None = ..., *, format: Literal["json"]) -> str: ...
+
     @overload
     def serialize(
         self, file: IOBase | str | Path, *, format: SerializationFormat = ...
@@ -356,7 +364,7 @@ class ExprMetaNameSpace:
     @overload
     def write_json(self, file: IOBase | str | Path) -> None: ...
 
-    @deprecate_renamed_function("Expr.meta.serialize", version="0.20.11")
+    @deprecated("`meta.write_json` was renamed; use `meta.serialize` instead")
     def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
         """
         Write expression to json.

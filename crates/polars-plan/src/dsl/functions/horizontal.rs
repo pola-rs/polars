@@ -46,12 +46,6 @@ where
         Ok(Some(acc))
     });
 
-    let mut flags = FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION;
-
-    if returns_scalar {
-        flags |= FunctionFlags::RETURNS_SCALAR
-    }
-
     let output_type = return_dtype
         .map(GetOutput::from_type)
         .unwrap_or_else(|| GetOutput::first());
@@ -61,12 +55,13 @@ where
         function,
         // Take the type of the accumulator.
         output_type,
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags,
-            fmt_str: "fold",
-            ..Default::default()
-        },
+        options: FunctionOptions::groupwise()
+            .with_fmt_str("fold")
+            .with_flags(|mut f| {
+                f |= FunctionFlags::INPUT_WILDCARD_EXPANSION;
+                f.set(FunctionFlags::RETURNS_SCALAR, returns_scalar);
+                f
+            }),
     }
 }
 
@@ -104,14 +99,9 @@ where
         input: exprs,
         function,
         output_type: GetOutput::super_type(),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "reduce",
-            ..Default::default()
-        },
+        options: FunctionOptions::aggregation()
+            .with_fmt_str("reduce")
+            .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
     }
 }
 
@@ -152,14 +142,9 @@ where
         input: exprs,
         function,
         output_type: cum_fold_dtype(),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "cum_reduce",
-            ..Default::default()
-        },
+        options: FunctionOptions::aggregation()
+            .with_fmt_str("cum_reduce")
+            .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
     }
 }
 
@@ -199,14 +184,9 @@ where
         input: exprs,
         function,
         output_type: cum_fold_dtype(),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::RETURNS_SCALAR,
-            fmt_str: "cum_fold",
-            ..Default::default()
-        },
+        options: FunctionOptions::aggregation()
+            .with_fmt_str("cum_fold")
+            .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
     }
 }
 

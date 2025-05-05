@@ -249,7 +249,7 @@ fn test_binary_agg_context_0() -> PolarsResult<()> {
         .unwrap();
 
     let out = out.column("foo")?;
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.str()?;
     assert_eq!(
         Vec::from(out),
@@ -293,7 +293,7 @@ fn test_binary_agg_context_1() -> PolarsResult<()> {
     // [90, 90]
     // [7, 90]
     let out = out.column("vals")?;
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.i32()?;
     assert_eq!(
         Vec::from(out),
@@ -314,7 +314,7 @@ fn test_binary_agg_context_1() -> PolarsResult<()> {
     // [90, 90]
     // [90, 7]
     let out = out.column("vals")?;
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.i32()?;
     assert_eq!(
         Vec::from(out),
@@ -344,7 +344,7 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
     // 3 - [3, 4] = [0, -1]
     // 5 - [5, 6] = [0, -1]
     let out = out.column("vals")?;
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.i32()?;
     assert_eq!(
         Vec::from(out),
@@ -362,7 +362,7 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
     // [3, 4] - 3 = [0, 1]
     // [5, 6] - 5 = [0, 1]
     let out = out.column("vals")?;
-    let out = out.explode()?;
+    let out = out.explode(false)?;
     let out = out.i32()?;
     assert_eq!(
         Vec::from(out),
@@ -459,7 +459,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .sort(["user"], Default::default())
         .collect()?;
     let s = out.column("ordered")?;
-    let flat = s.explode()?;
+    let flat = s.explode(false)?;
     let flat = flat.str()?;
     let vals = flat.into_no_null_iter().collect::<Vec<_>>();
     assert_eq!(vals, ["a", "b", "c", "a", "a"]);
@@ -598,12 +598,7 @@ fn test_anonymous_function_returns_scalar_all_null_20679() {
         input: vec![col("b")],
         function: LazySerde::Deserialized(SpecialEq::new(Arc::new(f))),
         output_type: Default::default(),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
-            fmt_str: "",
-            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
-            ..Default::default()
-        },
+        options: FunctionOptions::aggregation().with_fmt_str(""),
     };
 
     let grouped_df = df

@@ -174,7 +174,7 @@ def test_deprecated() -> None:
 def test_deprecated_parameter_join_nulls() -> None:
     df = pl.DataFrame({"a": [1, None]})
     with pytest.deprecated_call(
-        match=r"The argument `join_nulls` for `DataFrame.join` is deprecated. It has been renamed to `nulls_equal`"
+        match=r"the argument `join_nulls` for `DataFrame.join` is deprecated. It was renamed to `nulls_equal`"
     ):
         result = df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
     assert_frame_equal(result, df, check_row_order=False)
@@ -2132,3 +2132,10 @@ def test_empty_outer_join_22206() -> None:
         df,
         check_row_order=False,
     )
+
+
+def test_join_coalesce_22498() -> None:
+    df_a = pl.DataFrame({"y": [2]})
+    df_b = pl.DataFrame({"x": [1], "y": [2]})
+    df_j = df_a.lazy().join(df_b.lazy(), how="full", on="y", coalesce=True)
+    assert_frame_equal(df_j.collect(), pl.DataFrame({"y": [2], "x": [1]}))
