@@ -82,6 +82,7 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
             match function {
                 #[cfg(feature = "is_in")]
                 F::Boolean(BooleanFunction::IsIn { .. }) => true,
+                #[cfg(feature = "replace")]
                 F::Replace | F::ReplaceStrict { .. } => true,
                 _ => false,
             }
