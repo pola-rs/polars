@@ -23,7 +23,7 @@ memmap = { workspace = true }
 parking_lot = { workspace = true }
 percent-encoding = { workspace = true }
 pin-project-lite = { workspace = true }
-polars-io = { workspace = true, features = ["async", "cloud", "file_cache"] }
+polars-io = { workspace = true, features = ["async", "file_cache"] }
 polars-utils = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
@@ -38,7 +38,7 @@ polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
 polars-ops = { workspace = true, features = ["rle"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["cse", "rle", "cloud"] }
+polars-plan = { workspace = true, features = ["cse", "rle"] }
 
 [build-dependencies]
 version_check = { workspace = true }
