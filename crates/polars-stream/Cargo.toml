@@ -38,7 +38,7 @@ polars-expr = { workspace = true }
 polars-mem-engine = { workspace = true }
 polars-ops = { workspace = true, features = ["rle", "replace"] }
 polars-parquet = { workspace = true }
-polars-plan = { workspace = true, features = ["dtype-categorical", "cse", "rle", "replace", "cloud"] }
+polars-plan = { workspace = true, features = ["cse", "rle", "replace", "cloud"] }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -54,7 +54,7 @@ parquet = ["polars-mem-engine/parquet", "polars-plan/parquet"]
 csv = ["polars-mem-engine/csv", "polars-plan/csv", "polars-io/csv"]
 json = ["polars-mem-engine/json", "polars-plan/json", "polars-io/json"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
-dtype-categorical = ["polars-core/dtype-categorical"]
+dtype-categorical = ["polars-core/dtype-categorical", "polars-plan/dtype-categorical"]
 object = ["polars-ops/object"]
 python = ["pyo3", "polars-plan/python", "polars-error/python"]
 semi_anti_join = ["polars-plan/semi_anti_join", "polars-ops/semi_anti_join"]
