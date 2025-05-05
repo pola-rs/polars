@@ -685,6 +685,25 @@ def test_list_uint8_to_bytes(
     assert s.cast(pl.Binary(), strict=False).to_list() == result
 
 
+def test_list_uint8_to_bytes_strict() -> None:
+    series = pl.Series(
+        [[1, 2], [3, 4]],
+        dtype=pl.List(pl.UInt8()),
+    )
+    assert series.cast(pl.Binary(), strict=True).to_list() == [b"\x01\x02", b"\x03\x04"]
+
+    series = pl.Series(
+        "mycol",
+        [[1, 2], [3, None]],
+        dtype=pl.List(pl.UInt8()),
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match="conversion from `list\\[u8\\]` to `binary` failed in column 'mycol' for 1 out of 2 values: \\[\\[3, null\\]\\]",
+    ):
+        series.cast(pl.Binary(), strict=True)
+
+
 def test_all_null_cast_5826() -> None:
     df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.String)])
     out = df.with_columns(pl.col("a").cast(pl.Boolean))
