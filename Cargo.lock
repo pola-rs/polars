@@ -3549,6 +3549,7 @@ dependencies = [
  "polars-arrow",
  "polars-compute",
  "polars-error",
+ "polars-parquet",
  "polars-parquet-format",
  "polars-utils",
  "proptest",
