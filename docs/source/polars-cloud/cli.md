@@ -37,7 +37,7 @@ This refreshes your access token and saves it to disk.
 Create and setup a new workspace
 
 ```bash
-pc workspace setup
+pc setup
 ```
 
 List all workspaces

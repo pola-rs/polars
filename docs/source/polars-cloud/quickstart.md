@@ -15,7 +15,7 @@ $ pip install polars polars-cloud
 Create an account and login by running the command below.
 
 ```bash
-$ pc authenticate 
+$ pc authenticate
 ```
 
 ## Connect your cloud
@@ -28,7 +28,7 @@ cloudformation template. See our [infrastructure](providers/aws/infra.md) sectio
 To connect your cloud run:
 
 ```bash
-$ pc setup workspace -n <YOUR_WORKSPACE_NAME>
+$ pc setup
 ```
 
 This redirects you to the browser where you can connect Polars Cloud to your AWS environment.
