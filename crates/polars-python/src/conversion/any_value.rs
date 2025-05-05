@@ -247,7 +247,7 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_date(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        const UNIX_EPOCH: NaiveDate = NaiveDateTime::UNIX_EPOCH.date();
+        const UNIX_EPOCH: NaiveDate = DateTime::UNIX_EPOCH.naive_utc().date();
         let date = ob.extract::<NaiveDate>()?;
         let elapsed = date.signed_duration_since(UNIX_EPOCH);
         Ok(AnyValue::Date(elapsed.num_days() as i32))
@@ -259,7 +259,7 @@ pub(crate) fn py_object_to_any_value<'py>(
 
         if tzinfo.is_none() {
             let datetime = ob.extract::<NaiveDateTime>()?;
-            let delta = datetime - NaiveDateTime::UNIX_EPOCH;
+            let delta = datetime - DateTime::UNIX_EPOCH.naive_utc();
             let timestamp = delta.num_microseconds().unwrap();
             return Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None));
         }

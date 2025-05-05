@@ -17,6 +17,7 @@ pub mod cardinality;
 pub mod cast;
 pub mod comparisons;
 pub mod filter;
+#[cfg(feature = "cast")]
 pub mod find_validity_mismatch;
 pub mod float_sum;
 #[cfg(feature = "gather")]
