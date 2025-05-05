@@ -1163,7 +1163,7 @@ def arrow_to_pydf(
     try:
         if column_names != data.schema.names:
             data = data.rename_columns(column_names)
-    except pa.lib.ArrowInvalid as e:
+    except pa.ArrowInvalid as e:
         msg = "dimensions of columns arg must match data dimensions"
         raise ValueError(msg) from e
 

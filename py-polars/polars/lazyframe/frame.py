@@ -28,9 +28,9 @@ from polars._typing import (
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
-    deprecate_function,
     deprecate_renamed_parameter,
     deprecate_streaming_parameter,
+    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.parse import (
@@ -100,7 +100,6 @@ from polars.selectors import by_dtype, expand_selector
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame, get_engine_affinity
 
-
 if TYPE_CHECKING:
     import sys
     from collections.abc import Awaitable, Iterable, Sequence
@@ -151,6 +150,11 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -655,7 +659,7 @@ class LazyFrame:
         2
         """
         issue_warning(
-            "Determining the width of a LazyFrame requires resolving its schema,"
+            "determining the width of a LazyFrame requires resolving its schema,"
             " which is a potentially expensive operation. Use `LazyFrame.collect_schema().len()`"
             " to get the width without this warning.",
             category=PerformanceWarning,
@@ -703,7 +707,7 @@ class LazyFrame:
     def __getitem__(self, item: int | range | slice) -> LazyFrame:
         if not isinstance(item, slice):
             msg = (
-                "'LazyFrame' object is not subscriptable (aside from slicing)"
+                "LazyFrame is not subscriptable (aside from slicing)"
                 "\n\nUse `select()` or `filter()` instead."
             )
             raise TypeError(msg)
@@ -1191,7 +1195,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if tree_format is not None:
             issue_deprecation_warning(
-                "The `tree_format` parameter for `LazyFrame.explain` is deprecated"
+                "the `tree_format` parameter for `LazyFrame.explain` is deprecated"
                 " Use the `format` parameter instead.",
                 version="0.20.30",
             )
@@ -1201,7 +1205,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine = _select_engine(engine)
 
         if engine in ("streaming", "old-streaming"):
-            issue_unstable_warning("Streaming mode is considered unstable.")
+            issue_unstable_warning("streaming mode is considered unstable.")
 
         if optimized:
             type_check = _type_check
@@ -1336,7 +1340,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine = _select_engine(engine)
 
         if engine in ("streaming", "old-streaming"):
-            issue_unstable_warning("Streaming mode is considered unstable.")
+            issue_unstable_warning("streaming mode is considered unstable.")
 
         type_check = _type_check
         _ldf = self._ldf.optimization_toggle(
@@ -1621,6 +1625,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
+        .. versionchanged:: 1.0.0
+            The `descending` parameter was renamed `reverse`.
+
         Parameters
         ----------
         k
@@ -1695,6 +1702,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
+
+        .. versionchanged:: 1.0.0
+            The `descending` parameter was renamed `reverse`.
 
         Parameters
         ----------
@@ -2185,7 +2195,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _check_order = False
 
         if engine in ("old-streaming", "streaming"):
-            issue_unstable_warning("Streaming mode is considered unstable.")
+            issue_unstable_warning("streaming mode is considered unstable.")
 
         callback = _gpu_engine_callback(
             engine,
@@ -2216,7 +2226,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             engine = "gpu"
 
         if background:
-            issue_unstable_warning("Background mode is considered unstable.")
+            issue_unstable_warning("background mode is considered unstable.")
             return InProcessQuery(ldf.collect_concurrently())
 
         # Only for testing purposes
@@ -2387,7 +2397,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine = _select_engine(engine)
 
         if engine in ("streaming", "old-streaming"):
-            issue_unstable_warning("Streaming mode is considered unstable.")
+            issue_unstable_warning("streaming mode is considered unstable.")
 
         type_check = _type_check
         ldf = self._ldf.optimization_toggle(
@@ -2474,6 +2484,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
     ) -> None: ...
+
     @overload
     def sink_parquet(
         self,
@@ -2503,6 +2514,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: Literal[True],
         engine: EngineType = "auto",
     ) -> LazyFrame: ...
+
     @unstable()
     def sink_parquet(
         self,
@@ -2748,6 +2760,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
     ) -> None: ...
+
     @overload
     def sink_ipc(
         self,
@@ -2774,6 +2787,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: Literal[True],
         engine: EngineType = "auto",
     ) -> LazyFrame: ...
+
     @unstable()
     def sink_ipc(
         self,
@@ -2987,6 +3001,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
     ) -> None: ...
+
     @overload
     def sink_csv(
         self,
@@ -3024,6 +3039,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: Literal[True],
         engine: EngineType = "auto",
     ) -> LazyFrame: ...
+
     @unstable()
     def sink_csv(
         self,
@@ -3286,6 +3302,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
     ) -> None: ...
+
     @overload
     def sink_ndjson(
         self,
@@ -3310,6 +3327,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: Literal[True],
         engine: EngineType = "auto",
     ) -> LazyFrame: ...
+
     @unstable()
     def sink_ndjson(
         self,
@@ -3505,10 +3523,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             new_streaming=engine in ("auto", "streaming"),
         )
 
-    @deprecate_function(
+    @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
-        "instead, in conjunction with a call to `head`.",
-        version="1.0",
+        "instead, in conjunction with a call to `head`."
     )
     def fetch(
         self,
@@ -4602,6 +4619,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
+        .. versionchanged:: 0.20.14
+            The `by` parameter was renamed `group_by`.
+
         Parameters
         ----------
         index_column
@@ -4715,6 +4735,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         .. warning::
             The index column must be sorted in ascending order. If `group_by` is passed, then
             the index column must be sorted in ascending order within each group.
+
+        .. versionchanged:: 0.20.14
+            The `by` parameter was renamed `group_by`.
 
         Parameters
         ----------
@@ -5411,6 +5434,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Add a join operation to the Logical Plan.
 
+        .. versionchanged:: 1.24
+            The `join_nulls` parameter was renamed `nulls_equal`.
+
         Parameters
         ----------
         other
@@ -5622,14 +5648,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if how == "outer":
             how = "full"
             issue_deprecation_warning(
-                "Use of `how='outer'` should be replaced with `how='full'`.",
+                "use of `how='outer'` should be replaced with `how='full'`.",
                 version="0.20.29",
             )
         elif how == "outer_coalesce":  # type: ignore[comparison-overlap]
             coalesce = True
             how = "full"
             issue_deprecation_warning(
-                "Use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
+                "use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
                 version="0.20.29",
             )
         elif how == "cross":
@@ -5952,15 +5978,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return self._from_pyldf(self._ldf.with_columns_seq(pyexprs))
 
-    @deprecate_function(
-        "Use `pl.concat(..., how='horizontal')` instead.", version="1.0.0"
+    @deprecated(
+        "`LazyFrame.with_context` is deprecated; "
+        "use `pl.concat(..., how='horizontal')` instead."
     )
     def with_context(self, other: Self | list[Self]) -> LazyFrame:
         """
         Add an external context to the computation graph.
 
         .. deprecated:: 1.0.0
-            Use :func:`concat` instead with `how='horizontal'`
+            Use :func:`concat` instead, with `how='horizontal'`
 
         This allows expressions to also access columns from DataFrames
         that are not part of this one.
@@ -6469,8 +6496,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.slice(0, 1)
 
-    @deprecate_function(
-        "Use `select(pl.all().approx_n_unique())` instead.", version="0.20.11"
+    @deprecated(
+        "`LazyFrame.approx_n_unique` is deprecated; "
+        "use `select(pl.all().approx_n_unique())` instead."
     )
     def approx_n_unique(self) -> LazyFrame:
         """
@@ -6578,17 +6606,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"`offset` input for `with_row_index` cannot be {issue}, got {offset}"
             raise ValueError(msg) from None
 
-    @deprecate_function(
-        "Use `with_row_index` instead."
-        " Note that the default column name has changed from 'row_nr' to 'index'.",
-        version="0.20.4",
+    @deprecated(
+        "`LazyFrame.with_row_count` is deprecated; use `LazyFrame.with_row_index` instead."
+        " Note that the default column name has changed from 'row_nr' to 'index'."
     )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> LazyFrame:
         """
         Add a column at index 0 that counts the rows.
 
         .. deprecated:: 0.20.4
-            Use :meth:`with_row_index` instead.
+            Use the :meth:`with_row_index` method instead.
             Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
@@ -7463,7 +7490,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if not streamable:
             issue_deprecation_warning(
-                "The `streamable` parameter for `LazyFrame.unpivot` is deprecated"
+                "the `streamable` parameter for `LazyFrame.unpivot` is deprecated"
                 "This parameter has no effect",
                 version="1.5.0",
             )
@@ -7906,7 +7933,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if how in ("outer", "outer_coalesce"):
             how = "full"
             issue_deprecation_warning(
-                "Use of `how='outer'` should be replaced with `how='full'`.",
+                "use of `how='outer'` should be replaced with `how='full'`.",
                 version="0.20.29",
             )
 
@@ -8021,9 +8048,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.count())
 
-    @deprecate_function(
-        "Use `unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
-        version="1.0.0",
+    @deprecated(
+        "`LazyFrame.melt` is deprecated; use `LazyFrame.unpivot` instead, with "
+        "`index` instead of `id_vars` and `on` instead of `value_vars`"
     )
     def melt(
         self,
@@ -8045,7 +8072,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         two non-identifier columns, 'variable' and 'value'.
 
         .. deprecated:: 1.0.0
-            Please use :meth:`.unpivot` instead.
+            Use the :meth:`.unpivot` method instead.
 
         Parameters
         ----------

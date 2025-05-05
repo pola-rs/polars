@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Callable
 
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import deprecate_renamed_function
+from polars._utils.deprecation import deprecated
 
 if TYPE_CHECKING:
     import sys
@@ -25,6 +25,11 @@ if TYPE_CHECKING:
         from typing import Self
     else:
         from typing_extensions import Self
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 class GroupBy:
@@ -468,7 +473,7 @@ class GroupBy:
             len_expr = len_expr.alias(name)
         return self.agg(len_expr)
 
-    @deprecate_renamed_function("len", version="0.20.5")
+    @deprecated("`GroupBy.count` was renamed; use `GroupBy.len` instead")
     def count(self) -> DataFrame:
         """
         Return the number of rows in each group.

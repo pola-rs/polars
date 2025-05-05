@@ -285,7 +285,6 @@ ConnectionOrCursor: TypeAlias = Union[
     BasicConnection, BasicCursor, Cursor, AlchemyConnection
 ]
 
-
 # Annotations for `__getitem__` methods
 SingleIndexSelector: TypeAlias = int
 MultiIndexSelector: TypeAlias = Union[
@@ -330,6 +329,14 @@ FileSource: TypeAlias = Union[
 
 JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
 
+DeprecationType: TypeAlias = Literal[
+    "function",
+    "renamed_parameter",
+    "streaming_parameter",
+    "nonkeyword_arguments",
+    "parameter_as_multi_positional",
+]
+
 
 class PartitioningScheme:
     def __init__(
@@ -368,6 +375,7 @@ __all__ = [
     "DbReadEngine",
     "DbWriteEngine",
     "DbWriteMode",
+    "DeprecationType",
     "Endianness",
     "EngineType",
     "EpochTimeUnit",

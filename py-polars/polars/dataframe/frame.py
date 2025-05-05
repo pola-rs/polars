@@ -42,8 +42,8 @@ from polars._utils.construction import (
 )
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
-    deprecate_function,
     deprecate_renamed_parameter,
+    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_df_item_by_key
@@ -183,6 +183,11 @@ if TYPE_CHECKING:
         from typing import Concatenate, ParamSpec
     else:
         from typing_extensions import Concatenate, ParamSpec
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -1605,6 +1610,9 @@ class DataFrame:
         Data types that do copy:
             - CategoricalType
 
+        .. versionchanged:: 1.1
+            The `future` parameter was renamed `compat_level`.
+
         Parameters
         ----------
         compat_level
@@ -1879,7 +1887,7 @@ class DataFrame:
         """  # noqa: W505
         if use_pyarrow is not None:
             issue_deprecation_warning(
-                "The `use_pyarrow` parameter for `DataFrame.to_numpy` is deprecated."
+                "the `use_pyarrow` parameter for `DataFrame.to_numpy` is deprecated."
                 " Polars now uses its native engine by default for conversion to NumPy.",
                 version="0.20.28",
             )
@@ -3684,6 +3692,9 @@ class DataFrame:
 
         See "File or Random Access format" in https://arrow.apache.org/docs/python/ipc.html.
 
+        .. versionchanged:: 1.1
+            The `future` parameter was renamed `compat_level`.
+
         Parameters
         ----------
         file
@@ -3806,6 +3817,9 @@ class DataFrame:
         Write to Arrow IPC record batch stream.
 
         See "Streaming format" in https://arrow.apache.org/docs/python/ipc.html.
+
+        .. versionchanged:: 1.1
+            The `future` parameter was renamed `compat_level`.
 
         Parameters
         ----------
@@ -4068,7 +4082,7 @@ class DataFrame:
             }
 
         if partition_by is not None:
-            msg = "The `partition_by` parameter of `write_parquet` is considered unstable."
+            msg = "the `partition_by` parameter of `write_parquet` is considered unstable."
             issue_unstable_warning(msg)
 
         if isinstance(partition_by, str):
@@ -4555,7 +4569,7 @@ class DataFrame:
         """
         if overwrite_schema is not None:
             issue_deprecation_warning(
-                "The parameter `overwrite_schema` for `write_delta` is deprecated."
+                "the parameter `overwrite_schema` for `write_delta` is deprecated."
                 ' Use the parameter `delta_write_options` instead and pass `{"schema_mode": "overwrite"}`.',
                 version="0.20.14",
             )
@@ -4619,7 +4633,7 @@ class DataFrame:
 
         if mode == "merge":
             if delta_merge_options is None:
-                msg = "You need to pass delta_merge_options with at least a given predicate for `MERGE` to work."
+                msg = "you need to pass delta_merge_options with at least a given predicate for `MERGE` to work."
                 raise ValueError(msg)
             if isinstance(target, str):
                 dt = DeltaTable(table_uri=target, storage_options=storage_options)
@@ -5753,6 +5767,9 @@ class DataFrame:
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
+        .. versionchanged:: 1.0.0
+            The `descending` parameter was renamed `reverse`.
+
         Parameters
         ----------
         k
@@ -5834,6 +5851,9 @@ class DataFrame:
         the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
+
+        .. versionchanged:: 1.0.0
+            The `descending` parameter was renamed `reverse`.
 
         Parameters
         ----------
@@ -6444,17 +6464,16 @@ class DataFrame:
             msg = f"`offset` input for `with_row_index` cannot be {issue}, got {offset}"
             raise ValueError(msg) from None
 
-    @deprecate_function(
-        "Use `with_row_index` instead."
-        " Note that the default column name has changed from 'row_nr' to 'index'.",
-        version="0.20.4",
+    @deprecated(
+        "`DataFrame.with_row_count` is deprecated; use `with_row_index` instead."
+        " Note that the default column name has changed from 'row_nr' to 'index'."
     )
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> DataFrame:
         """
         Add a column at index 0 that counts the rows.
 
         .. deprecated:: 0.20.4
-            Use :meth:`with_row_index` instead.
+            Use the :meth:`with_row_index` method instead.
             Note that the default column name has changed from 'row_nr' to 'index'.
 
         Parameters
@@ -6690,6 +6709,9 @@ class DataFrame:
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
+        .. versionchanged:: 0.20.14
+            The `by` parameter was renamed `group_by`.
+
         Parameters
         ----------
         index_column
@@ -6821,6 +6843,9 @@ class DataFrame:
         .. warning::
             The index column must be sorted in ascending order. If `group_by` is passed, then
             the index column must be sorted in ascending order within each group.
+
+        .. versionchanged:: 0.20.14
+            The `by` parameter was renamed `group_by`.
 
         Parameters
         ----------
@@ -7137,10 +7162,12 @@ class DataFrame:
 
         - "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
+
+        .. versionchanged:: 0.20.14
+            The `by` parameter was renamed `group_by`.
 
         Parameters
         ----------
@@ -7576,6 +7603,9 @@ class DataFrame:
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
+
+        .. versionchanged:: 1.24
+            The `join_nulls` parameter was renamed `nulls_equal`.
 
         Parameters
         ----------
@@ -8784,6 +8814,9 @@ class DataFrame:
 
         Only available in eager mode. See "Examples" section below for how to do a
         "lazy pivot" if you know the unique column values in advance.
+
+        .. versionchanged:: 1.0.0
+            The `columns` parameter was renamed `on`.
 
         Parameters
         ----------
@@ -10561,15 +10594,16 @@ class DataFrame:
         df = self.lazy().select(expr.n_unique()).collect(_eager=True)
         return 0 if df.is_empty() else df.row(0)[0]
 
-    @deprecate_function(
-        "Use `select(pl.all().approx_n_unique())` instead.", version="0.20.11"
+    @deprecated(
+        "`DataFrame.approx_n_unique` is deprecated; "
+        "use `select(pl.all().approx_n_unique())` instead."
     )
     def approx_n_unique(self) -> DataFrame:
         """
         Approximate count of unique values.
 
         .. deprecated:: 0.20.11
-            Use `select(pl.all().approx_n_unique())` instead.
+            Use the `select(pl.all().approx_n_unique())` method instead.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
 
@@ -11892,9 +11926,9 @@ class DataFrame:
         """
         return self.lazy().count().collect(_eager=True)
 
-    @deprecate_function(
-        "Use `unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
-        version="1.0.0",
+    @deprecated(
+        "`DataFrame.melt` is deprecated; use `DataFrame.unpivot` instead, with "
+        "`index` instead of `id_vars` and `on` instead of `value_vars`"
     )
     def melt(
         self,
@@ -11914,7 +11948,7 @@ class DataFrame:
         two non-identifier columns, 'variable' and 'value'.
 
         .. deprecated:: 1.0.0
-            Please use :meth:`.unpivot` instead.
+            Use the :meth:`.unpivot` method instead.
 
         Parameters
         ----------

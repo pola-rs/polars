@@ -37,8 +37,8 @@ from polars._utils.convert import (
     timedelta_to_int,
 )
 from polars._utils.deprecation import (
-    deprecate_function,
     deprecate_renamed_parameter,
+    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_series_item_by_key
@@ -144,14 +144,18 @@ if TYPE_CHECKING:
         SizeUnit,
         TemporalLiteral,
     )
-    from polars._utils.various import (
-        NoDefault,
-    )
+    from polars._utils.various import NoDefault
 
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
+
 elif BUILDING_SPHINX_DOCS:
     # note: we assign this way to work around an autocomplete issue in ipython/jedi
     # (ref: https://github.com/davidhalter/jedi/issues/2057)
@@ -375,11 +379,12 @@ class Series:
         return series
 
     @classmethod
-    @deprecate_function(
-        "use _import_arrow_from_c; if you are using an extension, please compile it with latest 'pyo3-polars'",
-        version="1.3",
+    @deprecated(
+        "`_import_from_c` is deprecated; use `_import_arrow_from_c` instead. If "
+        "you are using an extension, please compile it with the latest 'pyo3-polars'"
     )
     def _import_from_c(cls, name: str, pointers: list[tuple[int, int]]) -> Self:
+        # `_import_from_c` was deprecated in 1.3
         return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
 
     @classmethod
@@ -771,7 +776,7 @@ class Series:
                 # Use local time zone info
                 time_zone = self.dtype.time_zone  # type: ignore[attr-defined]
                 if str(other.tzinfo) != str(time_zone):
-                    msg = f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
+                    msg = f"datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
                     raise TypeError(msg)
                 time_unit = self.dtype.time_unit  # type: ignore[attr-defined]
             else:
@@ -1524,7 +1529,7 @@ class Series:
                 # Generalized ufuncs will operate on the whole array, so
                 # missing data can corrupt the results.
                 if self.has_nulls():
-                    msg = "Can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
+                    msg = "can't pass a Series with missing data to a generalized ufunc, as it might give unexpected results. See https://docs.pola.rs/user-guide/expressions/missing-data/ for suggestions on how to remove or fill in missing data."
                     raise ComputeError(msg)
                 # If the input and output are the same size, e.g. "(n)->(n)" we
                 # can allocate ourselves and save a copy. If they're different,
@@ -2727,6 +2732,9 @@ class Series:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         expr
@@ -3636,16 +3644,16 @@ class Series:
         """
         return self._s.has_nulls()
 
-    @deprecate_function(
-        "Use `has_nulls` instead to check for the presence of null values.",
-        version="0.20.30",
+    @deprecated(
+        "`has_validity` is deprecated; use `has_nulls` "
+        "instead to check for the presence of null values."
     )
     def has_validity(self) -> bool:
         """
         Check whether the Series contains one or more null values.
 
         .. deprecated:: 0.20.30
-            Use :meth:`has_nulls` instead.
+            Use the :meth:`has_nulls` method instead.
         """
         return self._s.has_nulls()
 
@@ -4082,6 +4090,9 @@ class Series:
         """
         Check whether the Series is equal to another Series.
 
+        .. versionchanged:: 0.20.31
+            The `strict` parameter was renamed `check_dtypes`.
+
         Parameters
         ----------
         other
@@ -4433,7 +4444,7 @@ class Series:
         """  # noqa: W505
         if zero_copy_only is not None:
             issue_deprecation_warning(
-                "The `zero_copy_only` parameter for `Series.to_numpy` is deprecated."
+                "the `zero_copy_only` parameter for `Series.to_numpy` is deprecated."
                 " Use the `allow_copy` parameter instead, which is the inverse of `zero_copy_only`.",
                 version="0.20.10",
             )
@@ -4441,7 +4452,7 @@ class Series:
 
         if use_pyarrow is not None:
             issue_deprecation_warning(
-                "The `use_pyarrow` parameter for `Series.to_numpy` is deprecated."
+                "the `use_pyarrow` parameter for `Series.to_numpy` is deprecated."
                 " Polars now uses its native engine for conversion to NumPy by default."
                 " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
                 version="0.20.28",
@@ -4569,6 +4580,9 @@ class Series:
         Return the underlying Arrow array.
 
         If the Series contains only a single chunk this operation is zero copy.
+
+        .. versionchanged:: 1.24
+            The `future` parameter was renamed `compat_level`.
 
         Parameters
         ----------
@@ -5679,6 +5693,9 @@ class Series:
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -5725,6 +5742,9 @@ class Series:
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -5773,6 +5793,9 @@ class Series:
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -5819,6 +5842,9 @@ class Series:
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -5867,6 +5893,9 @@ class Series:
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -5919,6 +5948,9 @@ class Series:
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -5967,6 +5999,9 @@ class Series:
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6024,6 +6059,9 @@ class Series:
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -6068,12 +6106,15 @@ class Series:
         """
         Compute a rolling quantile.
 
+        The window at a given row will include the row itself and the `window_size - 1`
+        elements before it.
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        The window at a given row will include the row itself and the `window_size - 1`
-        elements before it.
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7154,6 +7195,9 @@ class Series:
         r"""
         Compute exponentially-weighted moving average.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         com
@@ -7320,6 +7364,9 @@ class Series:
         r"""
         Compute exponentially-weighted moving standard deviation.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         com
@@ -7404,6 +7451,9 @@ class Series:
     ) -> Series:
         r"""
         Compute exponentially-weighted moving variance.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------

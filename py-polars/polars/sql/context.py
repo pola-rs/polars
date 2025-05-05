@@ -81,7 +81,7 @@ def _ensure_lazyframe(obj: Any) -> LazyFrame:
     ):
         return from_arrow(obj).lazy()  # type: ignore[union-attr]
     else:
-        msg = f"Unrecognised frame type: {qualified_type_name(obj)}"
+        msg = f"unrecognised frame type: {qualified_type_name(obj)}"
         raise ValueError(msg)
 
 
@@ -160,6 +160,9 @@ class SQLContext(Generic[FrameType]):
     ) -> None:
         """
         Initialize a new `SQLContext`.
+
+        .. versionchanged:: 0.20.31
+            The `eager_execution` parameter was renamed `eager`.
 
         Parameters
         ----------

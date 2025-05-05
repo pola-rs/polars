@@ -23,8 +23,8 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
-    deprecate_function,
     deprecate_renamed_parameter,
+    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.parse import (
@@ -95,6 +95,11 @@ if TYPE_CHECKING:
         from typing import Concatenate, ParamSpec
     else:
         from typing_extensions import Concatenate, ParamSpec
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -1941,6 +1946,9 @@ class Expr:
 
         .. math:: O(n \log{n})
 
+        .. versionchanged:: 1.0.0
+            The `descending` parameter was renamed to `reverse`.
+
         Parameters
         ----------
         by
@@ -2113,6 +2121,9 @@ class Expr:
         This has time complexity:
 
         .. math:: O(n \log{n})
+
+        .. versionchanged:: 1.0.0
+            The `descending` parameter was renamed `reverse`.
 
         Parameters
         ----------
@@ -4232,13 +4243,13 @@ class Expr:
         )
         return self._from_pyexpr(self._pyexpr.filter(predicate))
 
-    @deprecate_function("Use `filter` instead.", version="0.20.4")
+    @deprecated("`where` is deprecated; use `filter` instead.")
     def where(self, predicate: Expr) -> Expr:
         """
         Filter a single column.
 
         .. deprecated:: 0.20.4
-            Use :func:`filter` instead.
+            Use the :func:`filter` method instead.
 
         Alias for :func:`filter`.
 
@@ -4667,7 +4678,7 @@ class Expr:
         """
         if strategy == "threading":
             issue_unstable_warning(
-                "The 'threading' strategy for `map_elements` is considered unstable."
+                "the 'threading' strategy for `map_elements` is considered unstable."
             )
 
         # input x: Series of type list containing the group values
@@ -6210,6 +6221,9 @@ class Expr:
             - ...
             - (t_n - window_size, t_n]
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         by
@@ -6334,6 +6348,9 @@ class Expr:
             - (t_1 - window_size, t_1]
             - ...
             - (t_n - window_size, t_n]
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6485,6 +6502,9 @@ class Expr:
             - (t_1 - window_size, t_1]
             - ...
             - (t_n - window_size, t_n]
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6644,6 +6664,9 @@ class Expr:
             - ...
             - (t_n - window_size, t_n]
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -6795,6 +6818,9 @@ class Expr:
             - (t_1 - window_size, t_1]
             - ...
             - (t_n - window_size, t_n]
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6956,6 +6982,9 @@ class Expr:
             - ...
             - (t_n - window_size, t_n]
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         by
@@ -7115,6 +7144,9 @@ class Expr:
             - ...
             - (t_n - window_size, t_n]
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         by
@@ -7243,6 +7275,9 @@ class Expr:
             - (t_1 - window_size, t_1]
             - ...
             - (t_n - window_size, t_n]
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7376,6 +7411,9 @@ class Expr:
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -7482,6 +7520,9 @@ class Expr:
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7590,6 +7631,9 @@ class Expr:
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -7696,6 +7740,9 @@ class Expr:
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7804,6 +7851,9 @@ class Expr:
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7916,6 +7966,9 @@ class Expr:
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -8026,6 +8079,9 @@ class Expr:
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         window_size
@@ -8134,6 +8190,9 @@ class Expr:
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -8402,6 +8461,9 @@ class Expr:
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -9471,6 +9533,9 @@ class Expr:
         r"""
         Compute exponentially-weighted moving average.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         com
@@ -9652,6 +9717,9 @@ class Expr:
         r"""
         Compute exponentially-weighted moving standard deviation.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         com
@@ -9743,6 +9811,9 @@ class Expr:
     ) -> Expr:
         r"""
         Compute exponentially-weighted moving variance.
+
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -10071,6 +10142,9 @@ class Expr:
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
+        .. versionchanged:: 1.21.0
+            The `min_periods` parameter was renamed `min_samples`.
+
         Parameters
         ----------
         expr
@@ -10389,13 +10463,13 @@ class Expr:
         """
         if return_dtype is not None:
             issue_deprecation_warning(
-                "The `return_dtype` parameter for `replace` is deprecated."
+                "the `return_dtype` parameter for `replace` is deprecated."
                 " Use `replace_strict` instead to set a return data type while replacing values.",
                 version="1.0.0",
             )
         if default is not no_default:
             issue_deprecation_warning(
-                "The `default` parameter for `replace` is deprecated."
+                "the `default` parameter for `replace` is deprecated."
                 " Use `replace_strict` instead to set a default while replacing values.",
                 version="1.0.0",
             )
@@ -10738,8 +10812,9 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.bitwise_xor())
 
-    @deprecate_function(
-        "Use `polars.plugins.register_plugin_function` instead.", version="0.20.16"
+    @deprecated(
+        "`register_plugin` is deprecated; "
+        "use `polars.plugins.register_plugin_function` instead."
     )
     def register_plugin(
         self,

@@ -125,7 +125,7 @@ def scan_iceberg(
     from polars.polars import PyLazyFrame
 
     if reader_override is not None:
-        msg = "The `reader_override` parameter of `scan_iceberg()` is considered unstable."
+        msg = "the `reader_override` parameter of `scan_iceberg()` is considered unstable."
         issue_unstable_warning(msg)
 
     dataset = IcebergDataset(
