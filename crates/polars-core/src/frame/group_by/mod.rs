@@ -49,7 +49,7 @@ impl DataFrame {
         for by_key in by.iter_mut() {
             if by_key.len() != common_height {
                 polars_ensure!(
-                    by_key.len() == 1 || common_height == 0,
+                    by_key.len() == 1,
                     ShapeMismatch: "series used as keys should have the same length as the DataFrame"
                 );
                 *by_key = by_key.new_from_index(0, common_height)
