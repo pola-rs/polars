@@ -12,6 +12,8 @@ use super::{DynIter, DynStreamingIterator};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetadata, ColumnDescriptor};
 use crate::parquet::page::CompressedPage;
+use crate::parquet::statistics::Statistics;
+use crate::write::WriteOptions;
 
 pub struct ColumnOffsetsMetadata {
     pub dictionary_page_offset: Option<i64>,
@@ -76,19 +78,27 @@ pub fn write_row_group<
     descriptors: &[ColumnDescriptor],
     columns: DynIter<'a, std::result::Result<DynStreamingIterator<'a, CompressedPage, E>, E>>,
     ordinal: usize,
+    chunk_statistics: &[Option<Statistics>],
+    options: &WriteOptions,
 ) -> ParquetResult<(RowGroup, Vec<Vec<PageWriteSpec>>, u64)>
 where
     W: Write,
     ParquetError: From<E>,
     E: std::error::Error,
 {
-    let column_iter = descriptors.iter().zip(columns);
+    let column_iter = descriptors.iter().zip(columns).zip(chunk_statistics);
 
     let initial = offset;
     let columns = column_iter
-        .map(|(descriptor, page_iter)| {
-            let (column, page_specs, size) =
-                write_column_chunk(writer, offset, descriptor, page_iter?)?;
+        .map(|((descriptor, page_iter), chunk_statistics)| {
+            let (column, page_specs, size) = write_column_chunk(
+                writer,
+                offset,
+                descriptor,
+                page_iter?,
+                chunk_statistics.as_ref(),
+                options,
+            )?;
             offset += size;
             Ok((column, page_specs))
         })
@@ -143,19 +153,28 @@ pub async fn write_row_group_async<
     descriptors: &[ColumnDescriptor],
     columns: DynIter<'a, std::result::Result<DynStreamingIterator<'a, CompressedPage, E>, E>>,
     ordinal: usize,
+    chunk_statistics: &[Option<Statistics>],
+    options: &WriteOptions,
 ) -> ParquetResult<(RowGroup, Vec<Vec<PageWriteSpec>>, u64)>
 where
     W: AsyncWrite + Unpin + Send,
     ParquetError: From<E>,
     E: std::error::Error,
 {
-    let column_iter = descriptors.iter().zip(columns);
+    let column_iter = descriptors.iter().zip(columns).zip(chunk_statistics);
 
     let initial = offset;
     let mut columns = vec![];
-    for (descriptor, page_iter) in column_iter {
-        let (column, page_specs, size) =
-            write_column_chunk_async(writer, offset, descriptor, page_iter?).await?;
+    for ((descriptor, page_iter), chunk_statistics) in column_iter {
+        let (column, page_specs, size) = write_column_chunk_async(
+            writer,
+            offset,
+            descriptor,
+            page_iter?,
+            chunk_statistics.as_ref(),
+            options,
+        )
+        .await?;
         offset += size;
         columns.push((column, page_specs));
     }
