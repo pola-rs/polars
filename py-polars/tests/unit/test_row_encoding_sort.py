@@ -99,10 +99,8 @@ def elem_order_sign(
         return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, list) and isinstance(rhs, list):
         for lh, rh in zip(lhs, rhs):
-            # Row encoding internally doesn't pass nulls_last=True when
-            # encoding nested values, and sorting of nested types is based on
-            # row_encoding, so we sent nulls_last to always False.
-            o = elem_order_sign(lh, rh, descending=descending, nulls_last=False)
+            # Nulls lasts is set to descending for nested values. See #22557.
+            o = elem_order_sign(lh, rh, descending=descending, nulls_last=descending)
             if o != 0:
                 return o
 
@@ -114,10 +112,8 @@ def elem_order_sign(
         assert len(lhs) == len(rhs)
 
         for lh, rh in zip(lhs.values(), rhs.values()):
-            # Row encoding internally doesn't pass nulls_last=True when
-            # encoding nested values, and sorting of nested types is based on
-            # row_encoding, so we sent nulls_last to always False.
-            o = elem_order_sign(lh, rh, descending=descending, nulls_last=False)
+            # Nulls lasts is set to descending for nested values. See #22557.
+            o = elem_order_sign(lh, rh, descending=descending, nulls_last=descending)
             if o != 0:
                 return o
 
