@@ -117,7 +117,9 @@ fn write_dates() {
 
     let with_timezone = polars_ops::chunked_array::replace_time_zone(
         s2.slice(0, 1).datetime().unwrap(),
-        Some("America/New_York"),
+        TimeZone::opt_try_new(Some("America/New_York"))
+            .unwrap()
+            .as_ref(),
         &StringChunked::new("".into(), ["raise"]),
         NonExistent::Raise,
     )

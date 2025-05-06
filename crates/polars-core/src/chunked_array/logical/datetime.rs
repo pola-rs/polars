@@ -1,4 +1,5 @@
 use super::*;
+use crate::datatypes::time_unit::TimeUnit;
 use crate::prelude::*;
 
 pub type DatetimeChunked = Logical<DatetimeType, Int64Type>;
@@ -34,7 +35,9 @@ impl LogicalType for DatetimeChunked {
         cast_options: CastOptions,
     ) -> PolarsResult<Series> {
         use DataType::*;
-        use TimeUnit::*;
+
+        use crate::datatypes::time_unit::TimeUnit::*;
+
         let out = match dtype {
             Datetime(to_unit, tz) => {
                 let from_unit = self.time_unit();

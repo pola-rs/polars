@@ -7,13 +7,12 @@ use polars_utils::itertools::Itertools;
 #[cfg(any(feature = "serde-lazy", feature = "serde"))]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
+pub use temporal::time_zone::TimeZone;
 
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_physical_type;
 use crate::utils::materialize_dyn_int;
-
-pub type TimeZone = PlSmallStr;
 
 static MAINTAIN_PL_TYPE: &str = "maintain_type";
 static PL_KEY: &str = "pl";
@@ -220,16 +219,6 @@ impl DataType {
         #[cfg(not(feature = "bigidx"))]
         {
             Self::UInt32
-        }
-    }
-
-    /// Standardize timezones to consistent values.
-    pub(crate) fn canonical_timezone(tz: &Option<PlSmallStr>) -> Option<TimeZone> {
-        match tz.as_deref() {
-            Some("") | None => None,
-            #[cfg(feature = "timezones")]
-            Some("+00:00") | Some("00:00") | Some("utc") => Some(PlSmallStr::from_static("UTC")),
-            Some(v) => Some(PlSmallStr::from_str(v)),
         }
     }
 
@@ -838,7 +827,10 @@ impl DataType {
                 Ok(dt)
             },
             Date => Ok(ArrowDataType::Date32),
-            Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(unit.to_arrow(), tz.clone())),
+            Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(
+                unit.to_arrow(),
+                tz.as_deref().cloned(),
+            )),
             Duration(unit) => Ok(ArrowDataType::Duration(unit.to_arrow())),
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]

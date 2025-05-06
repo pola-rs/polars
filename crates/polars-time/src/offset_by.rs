@@ -14,7 +14,7 @@ fn apply_offsets_to_datetime(
         1 => match offsets.get(0) {
             Some(offset) => {
                 let offset = &Duration::parse(offset);
-                if offset.is_constant_duration(datetime.time_zone().as_deref()) {
+                if offset.is_constant_duration(datetime.time_zone().as_ref()) {
                     // fastpath!
                     let mut duration = match datetime.time_unit() {
                         TimeUnit::Milliseconds => offset.duration_ms(),
@@ -81,7 +81,7 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
         1 => match offsets.get(0) {
             Some(offset) => {
                 let offset = Duration::try_parse(offset)?;
-                offset.is_constant_duration(tz.as_deref())
+                offset.is_constant_duration(tz.as_ref())
             },
             None => false,
         },
