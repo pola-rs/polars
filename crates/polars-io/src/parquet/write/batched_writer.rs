@@ -8,9 +8,11 @@ use polars_parquet::read::{ParquetError, fallible_streaming_iterator};
 use polars_parquet::write::{
     CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding, FallibleStreamingIterator,
     FileWriter, Page, ParquetType, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
-    array_to_columns,
+    array_to_columns, schema_to_metadata_key,
 };
 use rayon::prelude::*;
+
+use super::{KeyValueMetadata, ParquetMetadataContext};
 
 pub struct BatchedWriter<W: Write> {
     // A mutex so that streaming engine can get concurrent read access to
@@ -23,6 +25,7 @@ pub struct BatchedWriter<W: Write> {
     pub(super) encodings: Vec<Vec<Encoding>>,
     pub(super) options: WriteOptions,
     pub(super) parallel: bool,
+    pub(super) key_value_metadata: Option<KeyValueMetadata>,
 }
 
 impl<W: Write> BatchedWriter<W> {
@@ -31,6 +34,7 @@ impl<W: Write> BatchedWriter<W> {
         encodings: Vec<Vec<Encoding>>,
         options: WriteOptions,
         parallel: bool,
+        key_value_metadata: Option<KeyValueMetadata>,
     ) -> Self {
         Self {
             writer,
@@ -38,6 +42,7 @@ impl<W: Write> BatchedWriter<W> {
             encodings,
             options,
             parallel,
+            key_value_metadata,
         }
     }
 
@@ -116,7 +121,24 @@ impl<W: Write> BatchedWriter<W> {
     /// Writes the footer of the parquet file. Returns the total size of the file.
     pub fn finish(&self) -> PolarsResult<u64> {
         let mut writer = self.writer.lock().unwrap();
-        let size = writer.end(None)?;
+
+        let key_value_metadata = self
+            .key_value_metadata
+            .as_ref()
+            .map(|meta| {
+                let arrow_schema = schema_to_metadata_key(writer.schema());
+                let ctx = ParquetMetadataContext {
+                    arrow_schema: arrow_schema.value.as_ref().unwrap(),
+                };
+                let mut out = meta.collect(ctx)?;
+                if !out.iter().any(|kv| kv.key == arrow_schema.key) {
+                    out.insert(0, arrow_schema);
+                }
+                PolarsResult::Ok(out)
+            })
+            .transpose()?;
+
+        let size = writer.end(key_value_metadata)?;
         Ok(size)
     }
 }

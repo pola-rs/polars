@@ -9,7 +9,12 @@ from polars.io.iceberg import scan_iceberg
 from polars.io.ipc import read_ipc, read_ipc_schema, read_ipc_stream, scan_ipc
 from polars.io.json import read_json
 from polars.io.ndjson import read_ndjson, scan_ndjson
-from polars.io.parquet import read_parquet, read_parquet_schema, scan_parquet
+from polars.io.parquet import (
+    read_parquet,
+    read_parquet_metadata,
+    read_parquet_schema,
+    scan_parquet,
+)
 from polars.io.partition import (
     BasePartitionContext,
     KeyedPartition,
@@ -45,6 +50,7 @@ __all__ = [
     "read_ndjson",
     "read_ods",
     "read_parquet",
+    "read_parquet_metadata",
     "read_parquet_schema",
     "scan_csv",
     "scan_delta",

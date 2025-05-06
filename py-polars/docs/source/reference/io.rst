@@ -128,6 +128,7 @@ Parquet
    :toctree: api/
 
    read_parquet
+   read_parquet_metadata
    read_parquet_schema
    scan_parquet
    DataFrame.write_parquet

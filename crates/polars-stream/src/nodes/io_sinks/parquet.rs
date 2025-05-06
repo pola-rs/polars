@@ -60,7 +60,7 @@ impl ParquetSinkNode {
 
             input_schema,
             sink_options,
-            write_options: *write_options,
+            write_options: write_options.clone(),
 
             parquet_schema,
             arrow_schema: schema,
@@ -100,7 +100,7 @@ impl SinkNode for ParquetSinkNode {
         // Collect task -> IO task
         let (mut io_tx, mut io_rx) = connector::<Vec<Vec<CompressedPage>>>();
 
-        let write_options = self.write_options;
+        let write_options = &self.write_options;
 
         let options = WriteOptions {
             statistics: write_options.statistics,
@@ -236,7 +236,7 @@ impl SinkNode for ParquetSinkNode {
         let target = self.target.clone();
         let sink_options = self.sink_options.clone();
         let cloud_options = self.cloud_options.clone();
-        let write_options = self.write_options;
+        let write_options = self.write_options.clone();
         let arrow_schema = self.arrow_schema.clone();
         let parquet_schema = self.parquet_schema.clone();
         let encodings = self.encodings.clone();
@@ -246,6 +246,7 @@ impl SinkNode for ParquetSinkNode {
                 .await?;
 
             let writer = BufWriter::new(&mut *file);
+            let key_value_metadata = write_options.key_value_metadata;
             let write_options = WriteOptions {
                 statistics: write_options.statistics,
                 compression: write_options.compression.into(),
@@ -258,7 +259,13 @@ impl SinkNode for ParquetSinkNode {
                 parquet_schema,
                 write_options,
             ));
-            let mut writer = BatchedWriter::new(file_writer, encodings, write_options, false);
+            let mut writer = BatchedWriter::new(
+                file_writer,
+                encodings,
+                write_options,
+                false,
+                key_value_metadata,
+            );
 
             let num_parquet_columns = writer.parquet_schema().leaves().len();
             while let Ok(current_row_group) = io_rx.recv().await {

@@ -8,19 +8,6 @@ use super::{ThriftFileMetadata, WriteOptions, to_parquet_schema};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
 use crate::parquet::write::{RowGroupIterColumns, WriteOptions as FileWriteOptions};
 
-/// Attaches [`ArrowSchema`] to `key_value_metadata`
-pub fn add_arrow_schema(
-    schema: &ArrowSchema,
-    key_value_metadata: Option<Vec<KeyValue>>,
-) -> Option<Vec<KeyValue>> {
-    key_value_metadata
-        .map(|mut x| {
-            x.push(schema_to_metadata_key(schema));
-            x
-        })
-        .or_else(|| Some(vec![schema_to_metadata_key(schema)]))
-}
-
 /// An interface to write a parquet to a [`Write`]
 pub struct FileWriter<W: Write> {
     writer: crate::parquet::write::FileWriter<W>,
@@ -92,9 +79,12 @@ impl<W: Write> FileWriter<W> {
     }
 
     /// Writes the footer of the parquet file. Returns the total size of the file.
+    /// If `key_value_metadata` is provided, the value is taken as-is. If it is not provided,
+    /// the Arrow schema is added to the metadata.
     pub fn end(&mut self, key_value_metadata: Option<Vec<KeyValue>>) -> PolarsResult<u64> {
-        let key_value_metadata = add_arrow_schema(&self.schema, key_value_metadata);
-        Ok(self.writer.end(key_value_metadata)?)
+        let key_value_metadata =
+            key_value_metadata.unwrap_or_else(|| vec![schema_to_metadata_key(&self.schema)]);
+        Ok(self.writer.end(Some(key_value_metadata))?)
     }
 
     /// Consumes this writer and returns the inner writer

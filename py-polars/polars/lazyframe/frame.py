@@ -23,6 +23,7 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars._typing import (
+    ParquetMetadata,
     PartitioningScheme,
 )
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
@@ -33,6 +34,7 @@ from polars._utils.deprecation import (
     deprecated,
     issue_deprecation_warning,
 )
+from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
@@ -127,6 +129,7 @@ if TYPE_CHECKING:
         Label,
         MaintainOrderJoin,
         Orientation,
+        ParquetMetadata,
         PlanStage,
         PolarsDataType,
         PythonDataType,
@@ -2483,6 +2486,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
+        metadata: ParquetMetadata | None = None,
     ) -> None: ...
 
     @overload
@@ -2513,6 +2517,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[True],
         engine: EngineType = "auto",
+        metadata: ParquetMetadata | None = None,
     ) -> LazyFrame: ...
 
     @unstable()
@@ -2540,6 +2545,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
+        metadata: ParquetMetadata | None = None,
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
@@ -2641,6 +2647,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+        metadata
+            A dictionary or callback to add key-values to the file-level Parquet
+            metadata.
+
+            .. warning::
+                This functionality is considered **experimental**. It may be removed or
+                changed at any point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
         lazy: bool
@@ -2675,6 +2688,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins=collapse_joins,
             no_optimization=no_optimization,
         )
+
+        if metadata is not None:
+            msg = (
+                "the `metadata` parameter of `sink_parquet` is considered experimental."
+            )
+            issue_unstable_warning(msg)
 
         if isinstance(statistics, bool) and statistics:
             statistics = {
@@ -2715,6 +2734,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "mkdir": mkdir,
         }
 
+        if isinstance(metadata, dict):
+            if metadata:
+                metadata = list(metadata.items())  # type: ignore[assignment]
+            else:
+                # Handle empty dict input
+                metadata = None
+        elif callable(metadata):
+            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
+
         lf = lf.sink_parquet(
             target=target,
             compression=compression,
@@ -2726,6 +2754,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
+            metadata=metadata,
         )
         lf = LazyFrame._from_pyldf(lf)
 
