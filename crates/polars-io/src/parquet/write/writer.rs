@@ -15,11 +15,7 @@ use super::{KeyValueMetadata, ParquetWriteOptions};
 use crate::shared::schema_to_arrow_checked;
 
 impl ParquetWriteOptions {
-    pub fn to_writer<F>(
-        &self,
-        f: F,
-        context_info: Option<PlHashMap<String, String>>,
-    ) -> ParquetWriter<F>
+    pub fn to_writer<F>(&self, f: F) -> ParquetWriter<F>
     where
         F: Write,
     {
@@ -29,7 +25,6 @@ impl ParquetWriteOptions {
             .with_row_group_size(self.row_group_size)
             .with_data_page_size(self.data_page_size)
             .with_key_value_metadata(self.key_value_metadata.clone())
-            .with_context_info(context_info)
     }
 }
 

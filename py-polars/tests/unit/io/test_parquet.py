@@ -20,6 +20,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
+from polars._typing import ParquetMetadata
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
@@ -3256,38 +3257,34 @@ def test_parquet_read_timezone_22506() -> None:
 @pytest.mark.parametrize("lazy", [True, False])
 def test_read_write_metadata(tmp_path: Path, static: bool, lazy: bool) -> None:
     metadata = {"hello": "world", "something": "else"}
+    md: ParquetMetadata = metadata
+    if not static:
+        md = lambda ctx: metadata  # noqa: E731
+
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    def fn_metadata(ctx: ParquetMetadataContext) -> dict[str, str]:
-        return {**ctx["key_value_metadata"], **metadata}
-
+    f = io.BytesIO()
     if lazy:
-        df.lazy().sink_parquet(
-            tmp_path / "df.parquet",
-            metadata=metadata if static else fn_metadata,
-        )
+        df.lazy().sink_parquet(f, metadata=md)
     else:
-        df.write_parquet(
-            tmp_path / "df.parquet",
-            metadata=metadata if static else fn_metadata,
-        )
+        df.write_parquet(f, metadata=md)
 
-    actual = pl.read_parquet_metadata(tmp_path / "df.parquet")
+    f.seek(0)
+    actual = pl.read_parquet_metadata(f)
     assert "ARROW:schema" in actual
     assert metadata == {k: v for k, v in actual.items() if k != "ARROW:schema"}
 
 
+@pytest.mark.write_disk
 def test_metadata_callback_info(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
-    info_objects = []
+    num_writes = 0
 
     def fn_metadata(ctx: ParquetMetadataContext) -> dict[str, str]:
-        nonlocal info_objects
-        info_objects.append(ctx["info"])
-        return ctx["key_value_metadata"]
+        nonlocal num_writes
+        num_writes += 1
+        return {}
 
     df.write_parquet(tmp_path, partition_by="a", metadata=fn_metadata)
 
-    assert len(info_objects) == len(df)
-    assert all("output_path" in obj for obj in info_objects)
-    assert len({obj["output_path"] for obj in info_objects}) == len(df)
+    assert num_writes == len(df)
