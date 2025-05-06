@@ -10,6 +10,7 @@ use arrow::datatypes::*;
 use arrow::record_batch::RecordBatchT;
 use arrow::types::{NativeType, i256};
 use ethnum::AsI256;
+use polars::prelude::PlSmallStr;
 use polars_error::PolarsResult;
 use polars_parquet::read::{self as p_read};
 use polars_parquet::write::*;
@@ -539,7 +540,7 @@ pub fn pyarrow_nullable(column: &str) -> Box<dyn Array> {
                 .to(ArrowDataType::Timestamp(TimeUnit::Second, None)),
         ),
         "timestamp_s_utc" => Box::new(PrimitiveArray::<i64>::from(i64_values).to(
-            ArrowDataType::Timestamp(TimeUnit::Second, Some("UTC".into())),
+            ArrowDataType::Timestamp(TimeUnit::Second, Some(PlSmallStr::from_static("UTC"))),
         )),
         _ => unreachable!(),
     }

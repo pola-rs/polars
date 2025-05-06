@@ -210,7 +210,8 @@ pub trait RoundSeries: SeriesSealed {
                 .into_series());
         }
 
-        polars_bail!(InvalidOperation: "round can only be used on numeric types (f32, f64, or decimal)");
+        polars_ensure!(s.dtype().is_integer(), InvalidOperation: "round can only be used on numeric types" );
+        Ok(s.clone())
     }
 
     fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {

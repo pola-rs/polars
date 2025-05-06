@@ -720,7 +720,7 @@ macro_rules! df {
 }
 
 pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
-    use TimeUnit::*;
+    use crate::datatypes::time_unit::TimeUnit::*;
     match (tu_l, tu_r) {
         (Nanoseconds, Microseconds) => Microseconds,
         (_, Milliseconds) => Milliseconds,

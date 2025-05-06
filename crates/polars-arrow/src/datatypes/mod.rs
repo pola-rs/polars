@@ -246,6 +246,18 @@ pub enum IntervalUnit {
 }
 
 impl ArrowDataType {
+    /// Polars IdxSize type, dependent on bigidx feature
+    pub const IDX_DTYPE: Self = {
+        #[cfg(not(feature = "bigidx"))]
+        {
+            ArrowDataType::UInt32
+        }
+        #[cfg(feature = "bigidx")]
+        {
+            ArrowDataType::UInt64
+        }
+    };
+
     /// the [`PhysicalType`] of this [`ArrowDataType`].
     pub fn to_physical_type(&self) -> PhysicalType {
         use ArrowDataType::*;

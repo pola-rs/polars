@@ -94,40 +94,40 @@ pub fn date_ranges(
 }
 
 #[pyfunction]
-#[pyo3(signature = (start, end, every, closed, time_unit=None, time_zone=None))]
+#[pyo3(signature = (start, end, every, closed, time_unit=None, time_zone=Wrap(None)))]
 pub fn datetime_range(
     start: PyExpr,
     end: PyExpr,
     every: &str,
     closed: Wrap<ClosedWindow>,
     time_unit: Option<Wrap<TimeUnit>>,
-    time_zone: Option<Wrap<TimeZone>>,
+    time_zone: Wrap<Option<TimeZone>>,
 ) -> PyResult<PyExpr> {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::try_parse(every).map_err(PyPolarsErr::from)?;
     let closed = closed.0;
     let time_unit = time_unit.map(|x| x.0);
-    let time_zone = time_zone.map(|x| x.0);
+    let time_zone = time_zone.0;
     Ok(dsl::datetime_range(start, end, every, closed, time_unit, time_zone).into())
 }
 
 #[pyfunction]
-#[pyo3(signature = (start, end, every, closed, time_unit=None, time_zone=None))]
+#[pyo3(signature = (start, end, every, closed, time_unit=None, time_zone=Wrap(None)))]
 pub fn datetime_ranges(
     start: PyExpr,
     end: PyExpr,
     every: &str,
     closed: Wrap<ClosedWindow>,
     time_unit: Option<Wrap<TimeUnit>>,
-    time_zone: Option<Wrap<TimeZone>>,
+    time_zone: Wrap<Option<TimeZone>>,
 ) -> PyResult<PyExpr> {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::try_parse(every).map_err(PyPolarsErr::from)?;
     let closed = closed.0;
     let time_unit = time_unit.map(|x| x.0);
-    let time_zone = time_zone.map(|x| x.0);
+    let time_zone = time_zone.0;
     Ok(dsl::datetime_ranges(start, end, every, closed, time_unit, time_zone).into())
 }
 

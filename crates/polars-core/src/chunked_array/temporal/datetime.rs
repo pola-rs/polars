@@ -120,7 +120,7 @@ impl DatetimeChunked {
         let mut out = self.clone();
         out.set_time_unit(tu);
 
-        use TimeUnit::*;
+        use crate::datatypes::time_unit::TimeUnit::*;
         match (current_unit, tu) {
             (Nanoseconds, Microseconds) => {
                 let ca = (&self.0).wrapping_floor_div_scalar(1_000);

@@ -12,6 +12,7 @@ use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::RecvPort;
 
+pub mod cross_join;
 pub mod equi_join;
 pub mod in_memory;
 #[cfg(feature = "semi_anti_join")]

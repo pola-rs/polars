@@ -30,7 +30,7 @@ impl PolarsRound for DatetimeChunked {
                 if every_parsed.negative {
                     polars_bail!(ComputeError: "cannot round a Datetime to a negative duration")
                 }
-                if (time_zone.is_none() || time_zone.as_deref() == Some("UTC"))
+                if (time_zone.is_none() || time_zone == &Some(TimeZone::UTC))
                     && (every_parsed.months() == 0 && every_parsed.weeks() == 0)
                 {
                     // ... yes we can! Weeks, months, and time zones require extra logic.

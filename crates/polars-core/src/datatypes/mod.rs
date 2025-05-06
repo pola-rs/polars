@@ -15,7 +15,7 @@ mod field;
 mod into_scalar;
 #[cfg(feature = "object")]
 mod static_array_collect;
-mod time_unit;
+mod temporal;
 
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
@@ -50,7 +50,7 @@ use serde::de::{EnumAccess, VariantAccess, Visitor};
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
-pub use time_unit::*;
+pub use temporal::*;
 
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
