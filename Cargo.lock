@@ -3174,7 +3174,7 @@ dependencies = [
  "polars-time",
  "polars-utils",
  "proptest",
- "rand 0.8.5",
+ "rand 0.9.1",
  "tokio",
  "tokio-util",
  "version_check",
@@ -3212,7 +3212,7 @@ dependencies = [
  "polars-schema",
  "polars-utils",
  "proptest",
- "rand 0.8.5",
+ "rand 0.9.1",
  "regex",
  "regex-syntax 0.8.5",
  "ryu",
@@ -3257,7 +3257,7 @@ dependencies = [
  "polars-arrow",
  "polars-error",
  "polars-utils",
- "rand 0.8.5",
+ "rand 0.9.1",
  "ryu",
  "serde",
  "skiplist",
@@ -3289,7 +3289,7 @@ dependencies = [
  "polars-row",
  "polars-schema",
  "polars-utils",
- "rand 0.8.5",
+ "rand 0.9.1",
  "rand_distr",
  "rayon",
  "regex",
@@ -3309,7 +3309,7 @@ dependencies = [
  "aws-smithy-checksums 0.60.13",
  "chrono",
  "polars",
- "rand 0.8.5",
+ "rand 0.9.1",
  "reqwest",
  "tokio",
 ]
@@ -3359,7 +3359,7 @@ dependencies = [
  "polars-row",
  "polars-time",
  "polars-utils",
- "rand 0.8.5",
+ "rand 0.9.1",
  "rayon",
  "recursive",
 ]
@@ -3517,7 +3517,7 @@ dependencies = [
  "polars-json",
  "polars-schema",
  "polars-utils",
- "rand 0.8.5",
+ "rand 0.9.1",
  "rand_distr",
  "rayon",
  "regex",
@@ -3710,7 +3710,7 @@ dependencies = [
  "polars-plan",
  "polars-time",
  "polars-utils",
- "rand 0.8.5",
+ "rand 0.9.1",
  "regex",
  "serde",
  "sqlparser",
@@ -3744,7 +3744,7 @@ dependencies = [
  "polars-plan",
  "polars-utils",
  "pyo3",
- "rand 0.8.5",
+ "rand 0.9.1",
  "rayon",
  "recursive",
  "slotmap",
@@ -3799,7 +3799,7 @@ dependencies = [
  "num-traits",
  "polars-error",
  "pyo3",
- "rand 0.8.5",
+ "rand 0.9.1",
  "raw-cpuid",
  "rayon",
  "regex",
@@ -4145,12 +4145,12 @@ dependencies = [
 
 [[package]]
 name = "rand_distr"
-version = "0.4.3"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
+checksum = "6a8615d50dcf34fa31f7ab52692afec947c4dd0ab803cc87cb3b0b4570ff7463"
 dependencies = [
  "num-traits",
- "rand 0.8.5",
+ "rand 0.9.1",
 ]
 
 [[package]]
