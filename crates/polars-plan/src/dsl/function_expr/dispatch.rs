@@ -59,7 +59,7 @@ pub(super) fn set_sorted_flag(s: &Column, sorted: IsSorted) -> PolarsResult<Colu
 #[cfg(feature = "timezones")]
 pub(super) fn replace_time_zone(
     s: &[Column],
-    time_zone: Option<&str>,
+    time_zone: Option<&TimeZone>,
     non_existent: NonExistent,
 ) -> PolarsResult<Column> {
     let s1 = &s[0];

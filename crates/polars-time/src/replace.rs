@@ -133,7 +133,7 @@ pub fn replace_datetime(
         nanosecond,
         ambiguous,
         &ca.time_unit(),
-        ca.time_zone().as_deref(),
+        ca.time_zone().clone(),
         ca.name().clone(),
     )?;
 

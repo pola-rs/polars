@@ -1,12 +1,15 @@
+use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::Arc;
 
+use arrow::datatypes::ArrowDataType;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, IDX_DTYPE, IntoColumn};
 use polars_core::series::Series;
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_core::utils::arrow::datatypes::ArrowSchemaRef;
 use polars_error::{PolarsResult, polars_ensure};
+use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::_internal::{PrefilterMaskSetting, collect_statistics_with_live_columns};
 use polars_io::prelude::{FileMetadata, ParallelStrategy};
@@ -27,6 +30,7 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
     predicate: Option<&ScanIOPredicate>,
     metadata: &Arc<FileMetadata>,
     reader_schema: &ArrowSchemaRef,
+    mut row_index: Option<RowIndex>,
     verbose: bool,
 ) -> PolarsResult<Option<Bitmap>> {
     if !use_statistics {
@@ -46,10 +50,19 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
     let live_columns = predicate.live_columns.clone();
     let reader_schema = reader_schema.clone();
     let skip_row_group_mask = async_executor::spawn(TaskPriority::High, async move {
+        if let Some(ri) = &mut row_index {
+            for md in metadata.row_groups[0..row_group_slice.start].iter() {
+                ri.offset = ri
+                    .offset
+                    .saturating_add(IdxSize::try_from(md.num_rows()).unwrap_or(IdxSize::MAX));
+            }
+        }
+
         let stats = collect_statistics_with_live_columns(
             &metadata.row_groups[row_group_slice.clone()],
             reader_schema.as_ref(),
             &live_columns,
+            row_index.as_ref().map(|ri| (&ri.name, ri.offset)),
         )?;
 
         let mut columns = Vec::with_capacity(1 + live_columns.len() * 3);
@@ -60,7 +73,17 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
             .collect();
         columns.push(Column::new("len".into(), lengths));
         for (c, stat) in live_columns.iter().zip(stats) {
-            let field = reader_schema.get(c).unwrap();
+            let field = reader_schema.get(c).map(Cow::Borrowed).unwrap_or_else(|| {
+                let row_index = row_index.clone().unwrap();
+                assert_eq!(c, &row_index.name);
+
+                Cow::Owned(arrow::datatypes::Field {
+                    name: row_index.name,
+                    dtype: ArrowDataType::IDX_DTYPE,
+                    is_nullable: false,
+                    metadata: None,
+                })
+            });
 
             let min_name = format_pl_smallstr!("{c}_min");
             let max_name = format_pl_smallstr!("{c}_max");
@@ -68,7 +91,7 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
 
             let (min, max, nc) = match stat {
                 None => {
-                    let dtype = DataType::from_arrow_field(field);
+                    let dtype = DataType::from_arrow_field(field.as_ref());
 
                     (
                         Column::full_null(min_name, num_row_groups, &dtype),
@@ -170,6 +193,9 @@ impl ParquetReadImpl {
         // Prefetch loop (spawns prefetches on the tokio scheduler).
         let (prefetch_send, mut prefetch_recv) =
             tokio::sync::mpsc::channel(row_group_prefetch_size);
+
+        let row_index = self.row_index.clone();
+
         let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
             polars_ensure!(
                 metadata.num_rows < IdxSize::MAX as usize,
@@ -231,6 +257,7 @@ impl ParquetReadImpl {
                 predicate.as_ref(),
                 &metadata,
                 &reader_schema,
+                row_index,
                 verbose,
             )
             .await?;

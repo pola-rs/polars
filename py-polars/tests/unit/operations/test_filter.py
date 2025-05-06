@@ -217,36 +217,39 @@ def test_agg_function_of_filter_10565() -> None:
 
 
 def test_filter_logical_type_13194() -> None:
-    data = {
-        "id": [1, 1, 2],
-        "date": [
-            [datetime(year=2021, month=1, day=1)],
-            [datetime(year=2021, month=1, day=1)],
-            [datetime(year=2025, month=1, day=30)],
-        ],
-        "cat": [
-            ["a", "b", "c"],
-            ["a", "b", "c"],
-            ["d", "e", "f"],
-        ],
-    }
+    with pl.StringCache():
+        data = {
+            "id": [1, 1, 2],
+            "date": [
+                [datetime(year=2021, month=1, day=1)],
+                [datetime(year=2021, month=1, day=1)],
+                [datetime(year=2025, month=1, day=30)],
+            ],
+            "cat": [
+                ["a", "b", "c"],
+                ["a", "b", "c"],
+                ["d", "e", "f"],
+            ],
+        }
 
-    df = pl.DataFrame(data).with_columns(pl.col("cat").cast(pl.List(pl.Categorical())))
+        df = pl.DataFrame(data).with_columns(
+            pl.col("cat").cast(pl.List(pl.Categorical()))
+        )
 
-    df = df.filter(pl.col("id") == pl.col("id").shift(1))
-    expected_df = pl.DataFrame(
-        {
-            "id": [1],
-            "date": [[datetime(year=2021, month=1, day=1)]],
-            "cat": [["a", "b", "c"]],
-        },
-        schema={
-            "id": pl.Int64,
-            "date": pl.List(pl.Datetime),
-            "cat": pl.List(pl.Categorical),
-        },
-    )
-    assert_frame_equal(df, expected_df)
+        df = df.filter(pl.col("id") == pl.col("id").shift(1))
+        expected_df = pl.DataFrame(
+            {
+                "id": [1],
+                "date": [[datetime(year=2021, month=1, day=1)]],
+                "cat": [["a", "b", "c"]],
+            },
+            schema={
+                "id": pl.Int64,
+                "date": pl.List(pl.Datetime),
+                "cat": pl.List(pl.Categorical),
+            },
+        )
+        assert_frame_equal(df, expected_df)
 
 
 def test_filter_horizontal_selector_15428() -> None:

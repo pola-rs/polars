@@ -66,7 +66,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             lit("raise"),
         )
         .dt()
-        .convert_time_zone("Europe/Brussels".into());
+        .convert_time_zone(
+            TimeZone::opt_try_new(Some("Europe/Brussels"))
+                .unwrap()
+                .unwrap(),
+        );
     let mixed_parsed = df!("date" => &data)?.lazy().select([q]).collect()?;
 
     println!("{}", &mixed_parsed);

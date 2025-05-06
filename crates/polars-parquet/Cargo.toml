@@ -41,7 +41,12 @@ zstd = { workspace = true, optional = true }
 
 xxhash-rust = { version = "0.8", optional = true, features = ["xxh64"] }
 
+proptest = { workspace = true, optional = true }
+
 [dev-dependencies]
+# ensure that the proptest feature is enabled when we are testing
+polars-parquet = { workspace = true, features = ["proptest"] }
+
 rand = "0.8"
 
 [features]
@@ -63,3 +68,5 @@ async = ["async-stream", "futures", "polars-parquet-format/async"]
 bloom_filter = ["xxhash-rust"]
 serde_types = ["serde"]
 simd = ["polars-compute/simd"]
+
+proptest = ["dep:proptest", "arrow/proptest"]
