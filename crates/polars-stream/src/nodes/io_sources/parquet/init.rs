@@ -79,7 +79,7 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
 
                 Cow::Owned(arrow::datatypes::Field {
                     name: row_index.name,
-                    dtype: ArrowDataType::IDXSIZE,
+                    dtype: ArrowDataType::IDX_DTYPE,
                     is_nullable: false,
                     metadata: None,
                 })

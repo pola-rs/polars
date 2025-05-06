@@ -212,7 +212,7 @@ impl PartialEq for DataType {
 impl Eq for DataType {}
 
 impl DataType {
-    pub const IDXSIZE: Self = {
+    pub const IDX_DTYPE: Self = {
         #[cfg(not(feature = "bigidx"))]
         {
             DataType::UInt32

@@ -247,7 +247,7 @@ pub enum IntervalUnit {
 
 impl ArrowDataType {
     /// Polars IdxSize type, dependent on bigidx feature
-    pub const IDXSIZE: Self = {
+    pub const IDX_DTYPE: Self = {
         #[cfg(not(feature = "bigidx"))]
         {
             ArrowDataType::UInt32

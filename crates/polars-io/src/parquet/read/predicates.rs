@@ -38,7 +38,7 @@ pub fn collect_statistics_with_live_columns(
                 }
 
                 let null_count =
-                    PrimitiveArray::<IdxSize>::full(row_groups.len(), 0, ArrowDataType::IDXSIZE);
+                    PrimitiveArray::<IdxSize>::full(row_groups.len(), 0, ArrowDataType::IDX_DTYPE);
 
                 let mut distinct_count =
                     MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
