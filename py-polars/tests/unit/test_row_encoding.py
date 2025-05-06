@@ -13,6 +13,8 @@ from polars.testing.parametric.strategies.dtype import dtypes
 from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from polars._typing import PolarsDataType
 
 FIELD_COMBS = [
@@ -356,4 +358,58 @@ def test_null(
         ._row_decode([("a", dtype)], [field])
         .to_series(),
         s,
+    )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "vs"),
+    [
+        (pl.List(pl.String), [[None], ["A"], ["B"]]),
+        (pl.Array(pl.String, 1), [[None], ["A"], ["B"]]),
+        (pl.Struct({"x": pl.String}), [{"x": None}, {"x": "A"}, {"x": "B"}]),
+        (pl.Array(pl.String, 2), [[None, "Z"], ["A", "C"], ["B", "B"]]),
+    ],
+)
+def test_nested_sorting_22557(dtype: pl.DataType, vs: list[Any]) -> None:
+    s = pl.Series("a", [vs[1], None, vs[0], vs[2]], dtype)
+
+    assert_series_equal(
+        s.sort(descending=False, nulls_last=False), pl.Series("a", [None] + vs, dtype)
+    )
+    assert_series_equal(
+        s.sort(descending=False, nulls_last=True), pl.Series("a", vs + [None], dtype)
+    )
+    assert_series_equal(
+        s.sort(descending=True, nulls_last=False),
+        pl.Series("a", [None] + vs[::-1], dtype),
+    )
+    assert_series_equal(
+        s.sort(descending=True, nulls_last=True),
+        pl.Series("a", vs[::-1] + [None], dtype),
+    )
+
+    roundtrip_series_re(vs, dtype, (False, False, False))
+    roundtrip_series_re(vs, dtype, (False, True, False))
+    roundtrip_series_re(vs, dtype, (True, False, False))
+    roundtrip_series_re(vs, dtype, (True, True, False))
+
+    assert_series_equal(
+        s.to_frame()._row_encode([(False, False, False)]).arg_sort(),
+        pl.Series("a", [1, 2, 0, 3], pl.get_index_type()),
+        check_names=False,
+    )
+    assert_series_equal(
+        s.to_frame()._row_encode([(False, True, False)]).arg_sort(),
+        pl.Series("a", [2, 0, 3, 1], pl.get_index_type()),
+        check_names=False,
+    )
+    assert_series_equal(
+        s.to_frame()._row_encode([(True, False, False)]).arg_sort(),
+        pl.Series("a", [1, 3, 0, 2], pl.get_index_type()),
+        check_names=False,
+    )
+    assert_series_equal(
+        s.to_frame()._row_encode([(True, True, False)]).arg_sort(),
+        pl.Series("a", [3, 0, 2, 1], pl.get_index_type()),
+        check_names=False,
     )

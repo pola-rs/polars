@@ -128,7 +128,7 @@ fn list_num_column_bytes<O: Offset>(
     let mut list_row_widths = RowWidths::new(values.len());
     let encoder = get_encoder(
         values.as_ref(),
-        opt,
+        opt.into_nested(),
         dicts,
         &mut list_row_widths,
         masked_out_max_width,
@@ -265,7 +265,7 @@ fn get_encoder(
                 let mut nested_row_widths = RowWidths::new(array.values().len());
                 let nested_encoder = get_encoder(
                     array.values().as_ref(),
-                    opt,
+                    opt.into_nested(),
                     dict,
                     &mut nested_row_widths,
                     masked_out_max_width,
@@ -286,7 +286,7 @@ fn get_encoder(
                         .map(|array| {
                             get_encoder(
                                 array.as_ref(),
-                                opt,
+                                opt.into_nested(),
                                 None,
                                 &mut RowWidths::new(row_widths.num_rows()),
                                 masked_out_max_width,
@@ -328,7 +328,7 @@ fn get_encoder(
             let mut nested_row_widths = RowWidths::new(array.values().len());
             let nested_encoder = get_encoder(
                 array.values().as_ref(),
-                opt,
+                opt.into_nested(),
                 dict,
                 &mut nested_row_widths,
                 masked_out_max_width,
@@ -357,7 +357,7 @@ fn get_encoder(
                     for array in array.values() {
                         let encoder = get_encoder(
                             array.as_ref(),
-                            opt,
+                            opt.into_nested(),
                             None,
                             row_widths,
                             masked_out_max_width,
@@ -369,7 +369,7 @@ fn get_encoder(
                     for (array, dict) in array.values().iter().zip(dicts) {
                         let encoder = get_encoder(
                             array.as_ref(),
-                            opt,
+                            opt.into_nested(),
                             dict.as_ref(),
                             row_widths,
                             masked_out_max_width,
@@ -747,18 +747,11 @@ unsafe fn encode_array(
                 },
             }
 
-            // If we have nested values encoded with nulls_last, this means we
-            // get inconsistent encoding and sort order, in ways we can't
-            // predict from the outside. It's also not necessary for nested
-            // values. So just omit it.
-            let mut nested_opt = opt;
-            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
-
             unsafe {
                 encode_array(
                     buffer,
                     nested_encoder,
-                    nested_opt,
+                    opt.into_nested(),
                     dict,
                     nested_offsets,
                     masked_out_write_offset,
@@ -781,17 +774,10 @@ unsafe fn encode_array(
                 }
             }
 
-            // If we have nested values encoded with nulls_last, this means we
-            // get inconsistent encoding and sort order, in ways we can't
-            // predict from the outside. It's also not necessary for nested
-            // values. So just omit it.
-            let mut nested_opt = opt;
-            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
-
             encode_array(
                 buffer,
                 array.as_ref(),
-                nested_opt,
+                opt.into_nested(),
                 dict,
                 &mut child_offsets,
                 masked_out_write_offset,
@@ -804,20 +790,13 @@ unsafe fn encode_array(
         EncoderState::Struct(arrays) => {
             encode_validity(buffer, encoder.array.validity(), opt, offsets);
 
-            // If we have nested values encoded with nulls_last, this means we
-            // get inconsistent encoding and sort order, in ways we can't
-            // predict from the outside. It's also not necessary for nested
-            // values. So just omit it.
-            let mut nested_opt = opt;
-            nested_opt.remove(RowEncodingOptions::NULLS_LAST);
-
             match dict {
                 None => {
                     for array in arrays {
                         encode_array(
                             buffer,
                             array,
-                            nested_opt,
+                            opt.into_nested(),
                             None,
                             offsets,
                             masked_out_write_offset,
@@ -830,7 +809,7 @@ unsafe fn encode_array(
                         encode_array(
                             buffer,
                             array,
-                            nested_opt,
+                            opt.into_nested(),
                             dict.as_ref(),
                             offsets,
                             masked_out_write_offset,
