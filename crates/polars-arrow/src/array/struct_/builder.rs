@@ -99,7 +99,7 @@ impl StaticArrayBuilder for StructArrayBuilder {
         }
         self.validity
             .subslice_extend_from_opt_validity(other.validity(), start, length);
-        self.length += length.min(other.len().saturating_sub(start));
+        self.length += length.min(other.len().saturating_sub(start)) * repeats;
     }
 
     unsafe fn gather_extend(
