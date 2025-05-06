@@ -413,7 +413,16 @@ pub fn build_group_by_stream(
     } else {
         let format_str = ctx.prepare_visualization.then(|| {
             let mut buffer = String::new();
-            write_group_by(&mut buffer, 0, expr_arena, keys, aggs, apply.as_deref()).unwrap();
+            write_group_by(
+                &mut buffer,
+                0,
+                expr_arena,
+                keys,
+                aggs,
+                apply.as_deref(),
+                maintain_order,
+            )
+            .unwrap();
             buffer
         });
         build_group_by_fallback(
