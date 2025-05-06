@@ -659,6 +659,7 @@ def test_invalid_inner_type_cast_list() -> None:
 @pytest.mark.parametrize(
     ("values", "result"),
     [
+        ([[]], [b""]),
         ([[1, 2], [3, 4]], [b"\x01\x02", b"\x03\x04"]),
         ([[1, 2], None, [3, 4]], [b"\x01\x02", None, b"\x03\x04"]),
         (
