@@ -8,8 +8,6 @@ mod dictionary_to;
 mod primitive_to;
 mod utf8_to;
 
-use arrow::bitmap::Bitmap;
-use arrow::offset::OffsetsBuffer;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
@@ -239,76 +237,43 @@ pub(super) fn cast_list_to_fixed_size_list<O: Offset>(
     .map_err(|_| polars_err!(ComputeError: "not all elements have the specified width {size}"))
 }
 
-struct ListUint8BinaryIterator<'a, O: Offset> {
-    validity: Option<&'a Bitmap>,
-    internal_validity: Option<&'a Bitmap>,
-    offsets: &'a OffsetsBuffer<O>,
-    u8array: &'a [u8],
-    index: usize,
-    end: usize,
-}
+fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<BinaryViewArray> {
+    let mut result = MutableBinaryViewArray::new();
 
-impl<'a, O: Offset> ListUint8BinaryIterator<'a, O> {
-    #[inline]
-    fn new(list: &'a ListArray<O>) -> Self {
-        let u8array: &PrimitiveArray<u8> = list.values().as_any().downcast_ref().unwrap();
-        let validity = list.validity();
-        let internal_validity = list.values().validity();
-        let offsets = list.offsets();
-        Self {
-            validity,
-            internal_validity,
-            offsets,
-            u8array: u8array.values().as_slice(),
-            index: 0,
-            end: list.len(),
-        }
-    }
-}
+    let u8array: &PrimitiveArray<u8> = list.values().as_any().downcast_ref().unwrap();
+    let slice = u8array.values().as_slice();
+    let cloned_buffer = [u8array.values().clone()];
+    let validity = list.validity();
+    let internal_validity = list.values().validity();
+    let offsets = list.offsets();
 
-impl<'a, O: Offset> Iterator for ListUint8BinaryIterator<'a, O> {
-    type Item = Option<&'a [u8]>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index == self.end {
-            return None;
-        }
-        let index = self.index;
-        self.index += 1;
-
+    for index in 0..list.len() {
         // Check if there's a null instead of a list:
-        if let Some(validity) = self.validity {
+        if let Some(validity) = validity {
             // SAFETY: We are generating indexes limited to < list.len().
             if unsafe { !validity.get_bit_unchecked(index) } {
-                return Some(None);
+                result.push_null();
+                continue;
             }
         }
 
         // SAFETY: We are generating indexes limited to < list.len().
-        let (start, end) = unsafe { self.offsets.start_end_unchecked(index) };
+        let (start, end) = unsafe { offsets.start_end_unchecked(index) };
         let length = end - start;
 
         // Check if the list contains nulls:
-        if let Some(internal_validity) = self.internal_validity {
+        if let Some(internal_validity) = internal_validity {
             if internal_validity.null_count_range(start, length) > 0 {
-                return Some(None);
+                result.push_null();
+                continue;
             }
         }
 
-        Some(Some(&self.u8array[start..end]))
+        let view = View::new_from_bytes(&slice[start..end], 0, start as u32);
+        result.push_view(view, &cloned_buffer);
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.end, Some(self.end))
-    }
-}
-
-impl<O: Offset> ExactSizeIterator for ListUint8BinaryIterator<'_, O> {}
-
-fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<BinaryViewArray> {
-    let iter = ListUint8BinaryIterator::new(list);
-    Ok(MutableBinaryViewArray::from_iterator(iter).into())
+    Ok(result.into())
 }
 
 pub fn cast_default(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResult<Box<dyn Array>> {
