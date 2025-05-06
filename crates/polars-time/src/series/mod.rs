@@ -96,7 +96,7 @@ pub trait TemporalMethods: AsSeries {
             }),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(time_unit, time_zone) => s.datetime().map(|ca| {
-                match time_zone.as_deref() {
+                match time_zone.as_deref().map(|x| x.as_str()) {
                     Some("UTC") | None => {
                         // fastpath!
                         // Same idea as above, but we need to subtract 1 for dates

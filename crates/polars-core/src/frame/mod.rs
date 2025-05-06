@@ -361,6 +361,11 @@ impl DataFrame {
         Ok(unsafe { DataFrame::new_no_checks(length, columns) })
     }
 
+    pub fn new_from_index(&self, index: usize, height: usize) -> Self {
+        let cols = self.columns.iter().map(|c| c.new_from_index(index, height));
+        unsafe { Self::new_no_checks(height, cols.collect()) }
+    }
+
     /// Creates an empty `DataFrame` usable in a compile time context (such as static initializers).
     ///
     /// # Example

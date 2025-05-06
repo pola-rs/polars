@@ -270,7 +270,7 @@ pub fn cum_reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None, ambiguous=PyExpr::from(dsl::lit(String::from("raise")))))]
+#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=Wrap(None), ambiguous=PyExpr::from(dsl::lit(String::from("raise")))))]
 pub fn datetime(
     year: PyExpr,
     month: PyExpr,
@@ -280,7 +280,7 @@ pub fn datetime(
     second: Option<PyExpr>,
     microsecond: Option<PyExpr>,
     time_unit: Wrap<TimeUnit>,
-    time_zone: Option<Wrap<TimeZone>>,
+    time_zone: Wrap<Option<TimeZone>>,
     ambiguous: PyExpr,
 ) -> PyExpr {
     let year = year.inner;
@@ -289,7 +289,7 @@ pub fn datetime(
     set_unwrapped_or_0!(hour, minute, second, microsecond);
     let ambiguous = ambiguous.inner;
     let time_unit = time_unit.0;
-    let time_zone = time_zone.map(|x| x.0);
+    let time_zone = time_zone.0;
     let args = DatetimeArgs {
         year,
         month,

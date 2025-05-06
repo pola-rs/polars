@@ -33,7 +33,8 @@ impl LogicalType for DurationChunked {
         cast_options: CastOptions,
     ) -> PolarsResult<Series> {
         use DataType::*;
-        use TimeUnit::*;
+
+        use crate::datatypes::time_unit::TimeUnit::*;
         match dtype {
             Duration(tu) => {
                 let to_unit = *tu;

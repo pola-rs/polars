@@ -800,10 +800,18 @@ pub fn write_ir_non_recursive(
             keys,
             aggs,
             schema: _,
-            maintain_order: _,
+            maintain_order,
             options: _,
             apply,
-        } => write_group_by(f, indent, expr_arena, keys, aggs, apply.as_deref()),
+        } => write_group_by(
+            f,
+            indent,
+            expr_arena,
+            keys,
+            aggs,
+            apply.as_deref(),
+            *maintain_order,
+        ),
         IR::Join {
             input_left: _,
             input_right: _,
@@ -898,13 +906,18 @@ pub fn write_group_by(
     keys: &[ExprIR],
     aggs: &[ExprIR],
     apply: Option<&dyn DataFrameUdf>,
+    maintain_order: bool,
 ) -> fmt::Result {
     let sub_indent = indent + INDENT_INCREMENT;
     let keys = ExprIRSliceDisplay {
         exprs: keys,
         expr_arena,
     };
-    write!(f, "{:indent$}AGGREGATE", "")?;
+    write!(
+        f,
+        "{:indent$}AGGREGATE[maintain_order: {}]",
+        "", maintain_order
+    )?;
     if apply.is_some() {
         write!(f, "\n{:sub_indent$}MAP_GROUPS BY {keys}", "")?;
         write!(f, "\n{:sub_indent$}FROM", "")?;

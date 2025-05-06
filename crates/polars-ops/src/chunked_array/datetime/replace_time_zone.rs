@@ -7,25 +7,31 @@ use arrow::temporal_conversions::{
 use chrono::NaiveDateTime;
 use chrono_tz::UTC;
 use polars_core::chunked_array::ops::arity::try_binary_elementwise;
-use polars_core::chunked_array::temporal::parse_time_zone;
 use polars_core::prelude::*;
 
 pub fn replace_time_zone(
     datetime: &Logical<DatetimeType, Int64Type>,
-    time_zone: Option<&str>,
+    time_zone: Option<&TimeZone>,
     ambiguous: &StringChunked,
     non_existent: NonExistent,
 ) -> PolarsResult<DatetimeChunked> {
-    let from_time_zone = datetime.time_zone().as_deref().unwrap_or("UTC");
-    let from_tz = parse_time_zone(from_time_zone)?;
-    let to_tz = parse_time_zone(time_zone.unwrap_or("UTC"))?;
+    let from_time_zone = datetime.time_zone().clone().unwrap_or(TimeZone::UTC);
+
+    let from_tz = from_time_zone.to_chrono()?;
+
+    let to_tz = if let Some(tz) = time_zone {
+        tz.to_chrono()?
+    } else {
+        chrono_tz::UTC
+    };
+
     if (from_tz == to_tz)
         & ((from_tz == UTC) | ((ambiguous.len() == 1) & (ambiguous.get(0) == Some("raise"))))
     {
         let mut out = datetime
             .0
             .clone()
-            .into_datetime(datetime.time_unit(), time_zone.map(PlSmallStr::from_str));
+            .into_datetime(datetime.time_unit(), time_zone.cloned());
         out.set_sorted_flag(datetime.is_sorted_flag());
         return Ok(out);
     }
@@ -64,8 +70,9 @@ pub fn replace_time_zone(
         )
     };
 
-    let mut out = out?.into_datetime(datetime.time_unit(), time_zone.map(PlSmallStr::from_str));
-    if from_time_zone == "UTC" && ambiguous.len() == 1 && ambiguous.get(0) == Some("raise") {
+    let mut out = out?.into_datetime(datetime.time_unit(), time_zone.cloned());
+    if from_time_zone == TimeZone::UTC && ambiguous.len() == 1 && ambiguous.get(0) == Some("raise")
+    {
         // In general, the sortedness flag can't be preserved.
         // To be safe, we only do so in the simplest case when we know for sure that there is no "daylight savings weirdness" going on, i.e.:
         // - `from_tz` is guaranteed to not observe daylight savings time;

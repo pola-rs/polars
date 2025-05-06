@@ -429,6 +429,7 @@ fn visualize_plan_rec(
             let label = match phys_sm[node_key].kind {
                 PhysNodeKind::EquiJoin { .. } => "equi-join",
                 PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
+                PhysNodeKind::CrossJoin { .. } => "cross-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
                 } if args.how.is_semi() => "semi-join",
@@ -469,6 +470,11 @@ fn visualize_plan_rec(
             }
             (label, &[*input_left, *input_right][..])
         },
+        PhysNodeKind::CrossJoin {
+            input_left,
+            input_right,
+            args: _,
+        } => ("cross-join".to_string(), &[*input_left, *input_right][..]),
         #[cfg(feature = "merge_sorted")]
         PhysNodeKind::MergeSorted {
             input_left,

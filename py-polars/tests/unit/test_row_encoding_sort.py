@@ -99,7 +99,8 @@ def elem_order_sign(
         return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, list) and isinstance(rhs, list):
         for lh, rh in zip(lhs, rhs):
-            o = elem_order_sign(lh, rh, descending=descending, nulls_last=nulls_last)
+            # Nulls lasts is set to descending for nested values. See #22557.
+            o = elem_order_sign(lh, rh, descending=descending, nulls_last=descending)
             if o != 0:
                 return o
 
@@ -111,7 +112,8 @@ def elem_order_sign(
         assert len(lhs) == len(rhs)
 
         for lh, rh in zip(lhs.values(), rhs.values()):
-            o = elem_order_sign(lh, rh, descending=descending, nulls_last=nulls_last)
+            # Nulls lasts is set to descending for nested values. See #22557.
+            o = elem_order_sign(lh, rh, descending=descending, nulls_last=descending)
             if o != 0:
                 return o
 
@@ -149,6 +151,7 @@ def tuple_order(
     )
 )
 @example(s=pl.Series("col0", [None, [None]], pl.List(pl.Int64)))
+@example(s=pl.Series("col0", [[None], [0]], pl.List(pl.Int64)))
 def test_series_sort_parametric(s: pl.Series) -> None:
     for descending in [False, True]:
         for nulls_last in [False, True]:
@@ -182,8 +185,6 @@ def test_series_sort_parametric(s: pl.Series) -> None:
             pl.Float32,  # We cannot really deal with totalOrder
             pl.Float64,  # We cannot really deal with totalOrder
             pl.Decimal,  # Bug: see https://github.com/pola-rs/polars/issues/20308
-            pl.List,  # I am not sure what is broken here.
-            pl.Array,  # I am not sure what is broken here.
             pl.Enum,
             pl.Categorical,
         ],
@@ -191,6 +192,7 @@ def test_series_sort_parametric(s: pl.Series) -> None:
         max_size=5,
     )
 )
+@example(df=pl.DataFrame([pl.Series([{"x": 0}, {"x": None}])]))
 def test_df_sort_parametric(df: pl.DataFrame) -> None:
     for i in range(4**df.width):
         descending = [((i // (4**j)) % 4) in [2, 3] for j in range(df.width)]

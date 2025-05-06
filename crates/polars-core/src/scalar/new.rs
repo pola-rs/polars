@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use super::Scalar;
-use crate::prelude::{AnyValue, DataType, TimeUnit, TimeZone};
+use crate::datatypes::time_unit::TimeUnit;
+use crate::prelude::{AnyValue, DataType, TimeZone};
 
 impl Scalar {
     #[cfg(feature = "dtype-date")]
