@@ -238,11 +238,13 @@ pub(super) fn cast_list_to_fixed_size_list<O: Offset>(
 }
 
 fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<BinaryViewArray> {
-    let mut result = MutableBinaryViewArray::new();
+    let mut result = MutableBinaryViewArray::with_capacity(list.len());
 
     let u8array: &PrimitiveArray<u8> = list.values().as_any().downcast_ref().unwrap();
     let slice = u8array.values().as_slice();
-    let cloned_buffer = [u8array.values().clone()];
+    let mut cloned_buffers = vec![u8array.values().clone()];
+    let mut buf_index = 0;
+    let mut previous_buf_lengths = 0;
     let validity = list.validity();
     let internal_validity = list.values().validity();
     let offsets = list.offsets();
@@ -269,8 +271,28 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
             }
         }
 
-        let view = View::new_from_bytes(&slice[start..end], 0, start as u32);
-        result.push_view(view, &cloned_buffer);
+        if start - previous_buf_lengths > (u32::MAX as usize) {
+            // Views use u32 offsets. The current start is >= 2^32 into the
+            // current buffer, so split that buffer.
+            buf_index += 1;
+            let (previous, next) = cloned_buffers
+                .last()
+                .unwrap()
+                .split_at(start - previous_buf_lengths);
+            previous_buf_lengths += previous.len();
+            *(cloned_buffers.last_mut().unwrap()) = previous;
+            cloned_buffers.push(next);
+        }
+        let view = View::new_from_bytes(
+            &slice[start..end],
+            buf_index,
+            (start - previous_buf_lengths) as u32,
+        );
+        debug_assert_eq!(
+            unsafe { view.get_slice_unchecked(&cloned_buffers) },
+            &slice[start..end]
+        );
+        result.push_view(view, &cloned_buffers);
     }
 
     Ok(result.into())
