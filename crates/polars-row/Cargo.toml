@@ -18,5 +18,5 @@ polars-utils = { workspace = true }
 arrow = { workspace = true }
 
 [dev-dependencies]
-proptest = { workspace = true }
 arrow = { workspace = true, features = ["proptest"] }
+proptest = { workspace = true }
