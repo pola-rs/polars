@@ -20,7 +20,6 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars._typing import ParquetMetadata
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
@@ -32,6 +31,7 @@ if TYPE_CHECKING:
     from polars._typing import (
         ParallelStrategy,
         ParquetCompression,
+        ParquetMetadata,
         ParquetMetadataContext,
     )
     from tests.unit.conftest import MemoryUsage
