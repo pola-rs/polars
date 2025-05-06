@@ -1,38 +1,43 @@
 # Logging in
 
 Polars cloud allows authentication through short-lived authentication tokens. There are two ways you
-can obtain an access token:
+can get an access token:
 
 - command line interface
-- python client
+- Python client
 
-After a successful `login` Polars Cloud stores the token in `{$HOME}/.polars`. You can alter this
-path by setting the environment variable `POLARS_CLOUD_ACCESS_TOKEN_PATH`.
+After successful authentication, Polars Cloud stores the token in your OS config directory:
 
-### Command Line Interface (CLI)
+| OS      | Value                                  | Example                                  |
+| ------- | -------------------------------------- | ---------------------------------------- |
+| Linux   | `$XDG_CONFIG_HOME` or `$HOME/.config/` | home/alice/.config                       |
+| macOS   | `$HOME/Library/Application Support`    | /Users/Alice/Library/Application Support |
+| Windows | `{FOLDERID_RoamingAppData}`            | C:\Users\Alice\AppData\Roaming           |
 
-Authenticate with CLI using the following command
+You can override this path by setting the environment variable `POLARS_CLOUD_ACCESS_TOKEN_PATH`.
+
+There are two main ways to authenticate:
+
+1. `authenticate` Loads cached tokens, otherwise opens the browser to log in and caches them
+2. `login` Opens the browser to log in, caches tokens but does not reuse them
+
+Generally you would use `authenticate` unless you want to switch between accounts.
+
+You can authenticate from the terminal:
 
 ```bash
+pc authenticate
 pc login
 ```
 
-### Python client
-
-Authenticate with the Polars Cloud using
+Or in Python:
 
 {{code_block('polars-cloud/authentication','login',['login'])}}
-
-Both methods redirect you to the browser where you can provide your login credentials and continue
-the sign in process.
 
 ## Service accounts
 
 Both flows described above are for interactive logins where a person is present in the process. For
 non-interactive workflows such as orchestration tools there are service accounts. These allow you to
-login programmatically.
-
-To create a service account go to the Polars Cloud dashboard under Settings and service accounts.
-Here you can create a new service account for your workspace. To authenticate set the
-`POLARS_CLOUD_CLIENT_ID` and `POLARS_CLOUD_CLIENT_SECRET` environment variables. Polars Cloud will
-automatically pick these up if there are no access tokens present in the path.
+login programmatically. See the
+[Using service accounts](https://docs.pola.rs/polars-cloud/explain/authentication/) page for more
+information.
