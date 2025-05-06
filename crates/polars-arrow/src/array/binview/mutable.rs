@@ -69,6 +69,19 @@ impl<T: ViewType + ?Sized> Default for MutableBinaryViewArray<T> {
 impl<T: ViewType + ?Sized> From<MutableBinaryViewArray<T>> for BinaryViewArrayGeneric<T> {
     fn from(mut value: MutableBinaryViewArray<T>) -> Self {
         value.finish_in_progress();
+
+        // Optimization: If all views are inline, we don't need buffers.
+        let mut all_views_inline = true;
+        for view in &value.views {
+            if !view.is_inline() {
+                all_views_inline = false;
+                break;
+            }
+        }
+        if all_views_inline {
+            value.completed_buffers.clear();
+        }
+
         unsafe {
             Self::new_unchecked(
                 T::DATA_TYPE,
