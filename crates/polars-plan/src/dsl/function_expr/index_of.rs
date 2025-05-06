@@ -28,9 +28,8 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         // If the Series is sorted, we can use an optimized binary search to
         // find the value.
         IsSorted::Ascending | IsSorted::Descending
-            if !needle.is_null() &&
-            // search_sorted() doesn't support decimals at the moment.
-            !series.dtype().is_decimal() =>
+            // null dtype isn't supported by search_sorted():
+            if !series.dtype().is_null() =>
         {
             search_sorted(
                 series,
