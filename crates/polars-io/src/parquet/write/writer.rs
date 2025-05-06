@@ -134,7 +134,6 @@ where
             options,
             parallel: self.parallel,
             key_value_metadata: self.key_value_metadata,
-            context_info: self.context_info,
         })
     }
 

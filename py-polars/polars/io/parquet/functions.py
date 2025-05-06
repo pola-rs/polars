@@ -338,6 +338,10 @@ def read_parquet_metadata(source: str | Path | IO[bytes] | bytes) -> dict[str, s
     """
     Get file-level custom metadata of a Parquet file without reading data.
 
+    .. warning::
+        This functionality is considered **experimental**. It may be removed or
+        changed at any point without it being considered a breaking change.
+
     Parameters
     ----------
     source

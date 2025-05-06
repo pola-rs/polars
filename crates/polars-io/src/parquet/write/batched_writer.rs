@@ -12,7 +12,7 @@ use polars_parquet::write::{
 };
 use rayon::prelude::*;
 
-use super::{KeyValueMetadata, KeyValueMetadataContext};
+use super::{KeyValueMetadata, ParquetMetadataContext};
 
 pub struct BatchedWriter<W: Write> {
     // A mutex so that streaming engine can get concurrent read access to
@@ -26,7 +26,6 @@ pub struct BatchedWriter<W: Write> {
     pub(super) options: WriteOptions,
     pub(super) parallel: bool,
     pub(super) key_value_metadata: Option<KeyValueMetadata>,
-    pub(super) context_info: Option<PlHashMap<String, String>>,
 }
 
 impl<W: Write> BatchedWriter<W> {
@@ -36,7 +35,6 @@ impl<W: Write> BatchedWriter<W> {
         options: WriteOptions,
         parallel: bool,
         key_value_metadata: Option<KeyValueMetadata>,
-        context_info: Option<PlHashMap<String, String>>,
     ) -> Self {
         Self {
             writer,
@@ -45,7 +43,6 @@ impl<W: Write> BatchedWriter<W> {
             options,
             parallel,
             key_value_metadata,
-            context_info,
         }
     }
 
@@ -129,11 +126,15 @@ impl<W: Write> BatchedWriter<W> {
             .key_value_metadata
             .as_ref()
             .map(|meta| {
-                let ctx = KeyValueMetadataContext {
-                    key_value_metadata: vec![schema_to_metadata_key(writer.schema())],
-                    info: self.context_info.clone().unwrap_or_default(),
+                let arrow_schema = schema_to_metadata_key(writer.schema());
+                let ctx = ParquetMetadataContext {
+                    arrow_schema: arrow_schema.value.as_ref().unwrap(),
                 };
-                meta.collect(ctx)
+                let mut out = meta.collect(ctx)?;
+                if !out.iter().any(|kv| kv.key == arrow_schema.key) {
+                    out.insert(0, arrow_schema);
+                }
+                PolarsResult::Ok(out)
             })
             .transpose()?;
 

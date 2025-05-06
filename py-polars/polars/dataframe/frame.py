@@ -3970,7 +3970,12 @@ class DataFrame:
         retries
             Number of retries if accessing a cloud instance fails.
         metadata
-            File-level metadata to add to the Parquet file.
+            A dictionary or callback to add key-values to the file-level Parquet
+            metadata.
+
+            .. warning::
+                This functionality is considered **experimental**. It may be removed or
+                changed at any point without it being considered a breaking change.
 
         Examples
         --------
@@ -4012,6 +4017,9 @@ class DataFrame:
         if use_pyarrow:
             if statistics == "full" or isinstance(statistics, dict):
                 msg = "write_parquet with `use_pyarrow=True` allows only boolean values for `statistics`"
+                raise ValueError(msg)
+            if metadata is not None:
+                msg = "write_parquet with `use_pyarrow=True` cannot be combined with `metadata`"
                 raise ValueError(msg)
 
             tbl = self.to_arrow()
@@ -4097,6 +4105,12 @@ class DataFrame:
 
         if partition_by is not None:
             msg = "the `partition_by` parameter of `write_parquet` is considered unstable."
+            issue_unstable_warning(msg)
+
+        if metadata is not None:
+            msg = (
+                "the `metadata` parameter of `sink_parquet` is considered experimental."
+            )
             issue_unstable_warning(msg)
 
         if isinstance(partition_by, str):

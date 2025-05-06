@@ -23,9 +23,9 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars._typing import (
+    ParquetMetadata,
     PartitioningScheme,
 )
-from polars._typing import ParquetMetadata
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
@@ -129,11 +129,8 @@ if TYPE_CHECKING:
         Label,
         MaintainOrderJoin,
         Orientation,
-<<<<<<< HEAD
-        PlanStage,
-=======
         ParquetMetadata,
->>>>>>> 7a0e3ce2e7 (Fix lint)
+        PlanStage,
         PolarsDataType,
         PythonDataType,
         QuantileMethod,
@@ -2548,10 +2545,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
+        metadata: ParquetMetadata | None = None,
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
-        metadata: ParquetMetadata | None = None,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -2650,6 +2647,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+        metadata
+            A dictionary or callback to add key-values to the file-level Parquet
+            metadata.
+
+            .. warning::
+                This functionality is considered **experimental**. It may be removed or
+                changed at any point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
         lazy: bool
@@ -2684,6 +2688,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins=collapse_joins,
             no_optimization=no_optimization,
         )
+
+        if metadata is not None:
+            msg = (
+                "the `metadata` parameter of `sink_parquet` is considered experimental."
+            )
+            issue_unstable_warning(msg)
 
         if isinstance(statistics, bool) and statistics:
             statistics = {

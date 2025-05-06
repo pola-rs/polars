@@ -2,7 +2,6 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::write::KeyValue;
 #[cfg(feature = "python")]
@@ -13,9 +12,8 @@ use pyo3::PyObject;
 use serde::{Deserialize, Serialize, de, ser};
 
 /// Context that can be used to construct custom file-level key value metadata for a Parquet file.
-pub struct KeyValueMetadataContext {
-    pub key_value_metadata: Vec<KeyValue>,
-    pub info: PlHashMap<String, String>,
+pub struct ParquetMetadataContext<'a> {
+    pub arrow_schema: &'a str,
 }
 
 /// Key/value pairs that can be attached to a Parquet file as file-level metadtaa.
@@ -87,14 +85,9 @@ impl KeyValueMetadata {
 
     /// Turn the metadata into the key/value pairs to write to the Parquet file.
     /// The context is used to dynamically construct key/value pairs.
-    pub fn collect(&self, ctx: KeyValueMetadataContext) -> PolarsResult<Vec<KeyValue>> {
+    pub fn collect(&self, ctx: ParquetMetadataContext) -> PolarsResult<Vec<KeyValue>> {
         match self {
-            Self::Static(kv) => {
-                let mut ctx = ctx;
-                let mut result = kv.clone();
-                result.append(&mut ctx.key_value_metadata);
-                Ok(result)
-            },
+            Self::Static(kv) => Ok(kv.clone()),
             Self::DynamicRust(func) => Ok(func.0(ctx)),
             #[cfg(feature = "python")]
             Self::DynamicPython(py_func) => py_func.call(ctx),
@@ -104,7 +97,7 @@ impl KeyValueMetadata {
 
 #[derive(Clone)]
 pub struct RustKeyValueMetadataFunction(
-    Arc<dyn Fn(KeyValueMetadataContext) -> Vec<KeyValue> + Send + Sync>,
+    Arc<dyn Fn(ParquetMetadataContext) -> Vec<KeyValue> + Send + Sync>,
 );
 
 impl Debug for RustKeyValueMetadataFunction {
@@ -167,7 +160,7 @@ mod python_impl {
     use pyo3::{PyResult, Python, pyclass};
     use serde::{Deserialize, Serialize};
 
-    use super::KeyValueMetadataContext;
+    use super::ParquetMetadataContext;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -180,12 +173,12 @@ mod python_impl {
                 deserialize_with = "PythonObject::deserialize_with_pyversion"
             )
         )]
-        pub Arc<PythonObject>,
+        pub Arc<polars_utils::python_function::PythonFunction>,
     );
 
     impl PythonKeyValueMetadataFunction {
-        pub fn call(&self, ctx: KeyValueMetadataContext) -> PolarsResult<Vec<KeyValue>> {
-            let ctx = PythonMetadataContext::from_key_value_metadata_context(ctx);
+        pub fn call(&self, ctx: ParquetMetadataContext) -> PolarsResult<Vec<KeyValue>> {
+            let ctx = PythonParquetMetadataContext::from_key_value_metadata_context(ctx);
             Python::with_gil(|py| {
                 let args = (ctx,);
                 let out: Vec<(String, String)> =
@@ -210,24 +203,15 @@ mod python_impl {
     }
 
     #[pyclass]
-    pub struct PythonMetadataContext {
+    pub struct PythonParquetMetadataContext {
         #[pyo3(get)]
-        key_value_metadata: Vec<(String, String)>,
-        #[pyo3(get)]
-        info: Vec<(String, String)>,
+        arrow_schema: String,
     }
 
-    impl PythonMetadataContext {
-        pub fn from_key_value_metadata_context(ctx: KeyValueMetadataContext) -> Self {
-            let key_value_metadata = ctx
-                .key_value_metadata
-                .into_iter()
-                .map(|kv| (kv.key, kv.value.unwrap_or_default()))
-                .collect::<Vec<_>>();
-            let info = ctx.info.into_iter().collect::<Vec<_>>();
+    impl PythonParquetMetadataContext {
+        pub fn from_key_value_metadata_context(ctx: ParquetMetadataContext) -> Self {
             Self {
-                key_value_metadata,
-                info,
+                arrow_schema: ctx.arrow_schema.to_string(),
             }
         }
     }

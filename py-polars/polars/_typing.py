@@ -446,9 +446,19 @@ __all__ = [
 ]
 
 
-class ParquetMetadataContext(TypedDict):
-    key_value_metadata: dict[str, str]
-    info: dict[str, str]
+class ParquetMetadataContext:
+    """
+    The context given when writing file-level parquet metadata.
+
+    .. warning::
+        This functionality is considered **experimental**. It may be removed or
+        changed at any point without it being considered a breaking change.
+    """
+
+    def __init__(self, *, arrow_schema: str) -> None:
+        self.arrow_schema = arrow_schema
+
+    arrow_schema: str  #: The base64 encoded arrow schema that is going to be written into metadata.
 
 
 ParquetMetadataFn: TypeAlias = Callable[[ParquetMetadataContext], dict[str, str]]
