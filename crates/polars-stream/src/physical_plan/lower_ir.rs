@@ -893,11 +893,19 @@ pub fn lower_ir(
                 }
                 return Ok(stream);
             } else if args.how.is_cross() {
-                PhysNodeKind::CrossJoin {
-                    input_left: phys_left,
-                    input_right: phys_right,
-                    args,
+                let node = phys_sm.insert(PhysNode::new(
+                    output_schema,
+                    PhysNodeKind::CrossJoin {
+                        input_left: phys_left,
+                        input_right: phys_right,
+                        args: args.clone(),
+                    }
+                ));
+                let mut stream = PhysStream::first(node);
+                if let Some((offset, len)) = args.slice {
+                    stream = build_slice_stream(stream, offset, len, phys_sm);
                 }
+                return Ok(stream);
             } else {
                 PhysNodeKind::InMemoryJoin {
                     input_left: phys_left,
