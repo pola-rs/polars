@@ -11,9 +11,6 @@ pub type IdxCa = UInt32Chunked;
 #[cfg(feature = "bigidx")]
 pub type IdxCa = UInt64Chunked;
 
-#[cfg(not(feature = "bigidx"))]
-pub const IDX_DTYPE: DataType = DataType::IDX_DTYPE;
-#[cfg(feature = "bigidx")]
 pub const IDX_DTYPE: DataType = DataType::IDX_DTYPE;
 
 #[cfg(not(feature = "bigidx"))]
