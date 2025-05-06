@@ -941,6 +941,11 @@ def test_round() -> None:
 
     b = a.round()
     assert b.to_list() == [1.0, 2.0]
+    
+
+def test_round_int() -> None:
+    s = pl.Series([1, 2, 3])
+    assert_series_equal(s, s.round())
 
 
 @pytest.mark.parametrize(
