@@ -130,6 +130,15 @@ impl RowEncodingOptions {
             EMPTY_STR_TOKEN
         }
     }
+
+    pub fn into_nested(mut self) -> RowEncodingOptions {
+        // Correct nested ordering (see #22557)
+        self.set(
+            RowEncodingOptions::NULLS_LAST,
+            self.contains(RowEncodingOptions::DESCENDING),
+        );
+        self
+    }
 }
 
 #[derive(Default, Clone)]
