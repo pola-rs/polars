@@ -899,7 +899,7 @@ pub fn lower_ir(
                         input_left: phys_left,
                         input_right: phys_right,
                         args: args.clone(),
-                    }
+                    },
                 ));
                 let mut stream = PhysStream::first(node);
                 if let Some((offset, len)) = args.slice {
