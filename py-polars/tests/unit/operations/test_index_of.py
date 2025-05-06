@@ -49,7 +49,6 @@ def assert_index_of(
         value = pl.lit(value, dtype=series.dtype)
 
     # Eager API:
-    print(series.index_of(value), expected_index, value, series)
     assert series.index_of(value) == expected_index
     # Lazy API:
     assert pl.LazyFrame({"series": series}).select(
@@ -267,6 +266,9 @@ def test_other_types(
             [
                 series.sort(descending=False),
                 series.sort(descending=True),
+                # Length 1 series are marked as sorted; this catches regression
+                # in issue #21100:
+                pl.Series(series.to_list()[:1], dtype=series.dtype),
             ]
         )
     for s in series_variants:
@@ -318,6 +320,8 @@ def test_enum(convert_to_literal: bool) -> None:
         series.drop_nulls(),
         series.sort(descending=False),
         series.sort(descending=True),
+        # Length 1 series, to check for #21100:
+        pl.Series(["a"], dtype=pl.Enum(["c", "b", "a"])),
     ]:
         for value in expected_values:
             assert_index_of(s, value, convert_to_literal=convert_to_literal)
