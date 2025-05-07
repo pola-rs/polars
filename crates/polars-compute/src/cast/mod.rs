@@ -1010,7 +1010,14 @@ mod tests {
             vec![&[1], &[2], &[3], &[4], &[5], &[6], &[7]]
         );
         // max offset of 3 so we need to split:
-        assert_eq!(binary_array.data_buffers().len(), 2);
+        assert_eq!(
+            binary_array
+                .data_buffers()
+                .iter()
+                .map(|buf| buf.len())
+                .collect::<Vec<_>>(),
+            vec![4, 3]
+        );
     }
 
     /// Arrow spec requires views to fit in a single buffer. When cfg(test),
