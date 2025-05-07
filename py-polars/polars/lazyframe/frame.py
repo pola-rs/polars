@@ -6760,7 +6760,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         value
-            Value to fill the NaN values with.
+            Value used to fill NaN values.
 
         Warnings
         --------
@@ -7206,6 +7206,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             (default), use all columns (note that only floating-point columns
             can contain NaNs).
 
+        Warnings
+        --------
+        Note that floating point NaNs (Not a Number) are not missing values.
+        To drop missing values, use :func:`drop_nulls`.
+
+        See Also
+        --------
+        drop_nulls
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -7283,6 +7292,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         subset
             Column name(s) for which null values are considered.
             If set to `None` (default), use all columns.
+
+        See Also
+        --------
+        drop_nans
 
         Examples
         --------

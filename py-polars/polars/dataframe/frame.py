@@ -6137,6 +6137,15 @@ class DataFrame:
             (default), use all columns (note that only floating-point columns
             can contain NaNs).
 
+        Warnings
+        --------
+        Note that floating point NaNs (Not a Number) are not missing values.
+        To drop missing values, use :func:`drop_nulls`.
+
+        See Also
+        --------
+        drop_nulls
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -6207,7 +6216,7 @@ class DataFrame:
         subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
     ) -> DataFrame:
         """
-        Drop all rows that contain null values.
+        Drop all rows that contain one or more null values.
 
         The original order of the remaining rows is preserved.
 
@@ -6216,6 +6225,10 @@ class DataFrame:
         subset
             Column name(s) for which null values are considered.
             If set to `None` (default), use all columns.
+
+        See Also
+        --------
+        drop_nans
 
         Examples
         --------
@@ -8708,7 +8721,7 @@ class DataFrame:
         Parameters
         ----------
         value
-            Value with which to replace NaN values.
+            Value used to fill NaN values.
 
         Returns
         -------
