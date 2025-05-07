@@ -262,7 +262,10 @@ where
         buffer: Option<Bitmap>,
     ) -> Self {
         let arr = to_array::<T>(values, buffer);
-        ChunkedArray::new_with_compute_len(Arc::new(Field::new(name, T::get_static_dtype())), vec![arr])
+        ChunkedArray::new_with_compute_len(
+            Arc::new(Field::new(name, T::get_static_dtype())),
+            vec![arr],
+        )
     }
 
     /// Create a temporary [`ChunkedArray`] from a slice.

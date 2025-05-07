@@ -115,7 +115,10 @@ where
     V::Array: ArrayFromIter<<F as UnaryFnMut<T::Physical<'a>>>::Ret>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_static_dtype().to_arrow(CompatLevel::newest()));
+        let arr = V::Array::full_null(
+            ca.len(),
+            V::get_static_dtype().to_arrow(CompatLevel::newest()),
+        );
         return ChunkedArray::with_chunk(ca.name().clone(), arr);
     }
 
@@ -139,7 +142,10 @@ where
     V::Array: ArrayFromIter<K>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(ca.len(), V::get_static_dtype().to_arrow(CompatLevel::newest()));
+        let arr = V::Array::full_null(
+            ca.len(),
+            V::get_static_dtype().to_arrow(CompatLevel::newest()),
+        );
         return Ok(ChunkedArray::with_chunk(ca.name().clone(), arr));
     }
 

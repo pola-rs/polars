@@ -133,7 +133,11 @@ where
         drop(arr);
 
         let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
-            arrow::compute::arity::unary(arr, f, S::get_static_dtype().to_arrow(CompatLevel::newest()))
+            arrow::compute::arity::unary(
+                arr,
+                f,
+                S::get_static_dtype().to_arrow(CompatLevel::newest()),
+            )
         };
 
         if owned_arr.values().is_sliced() {

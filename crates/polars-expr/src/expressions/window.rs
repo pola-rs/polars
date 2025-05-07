@@ -837,7 +837,9 @@ where
         unsafe { values.set_len(len) }
         let validity = Bitmap::from(validity);
         let arr = PrimitiveArray::new(
-            T::get_static_dtype().to_physical().to_arrow(CompatLevel::newest()),
+            T::get_static_dtype()
+                .to_physical()
+                .to_arrow(CompatLevel::newest()),
             values.into(),
             Some(validity),
         );

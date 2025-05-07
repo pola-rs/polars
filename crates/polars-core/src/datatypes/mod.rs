@@ -185,7 +185,6 @@ macro_rules! impl_polars_datatype_no_static_dtype {
     };
 }
 
-
 macro_rules! impl_polars_binview_datatype {
     ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty) => {
         impl_polars_datatype_pass_dtype!(
