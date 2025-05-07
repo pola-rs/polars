@@ -1,27 +1,33 @@
 # Logging in
 
-Polars cloud allows authentication through short-lived authentication tokens. There are two ways you
-can get an access token:
+Polars cloud allows authentication through short-lived authentication tokens. There are two main ways to authenticate:
 
-- command line interface
-- Python client
+1. `authenticate` Loads cached tokens, otherwise opens the browser to log in and caches them
+2. `login` Opens the browser to log in, caches tokens but does not reuse them
+
+Generally you would use `authenticate` unless you want to switch between accounts.
+
+Both methods will attempt to authenticate with the following priority:
+
+1. `POLARS_CLOUD_ACCESS_TOKEN` environment variable
+2. `POLARS_CLOUD_CLIENT_ID` / `POLARS_CLOUD_CLIENT_SECRET` service account environment variables
+3. Any cached access or refresh tokens
+
+If all methods fail, the user will be redirected to the browser to log in and get a new access
+token. If you are in a non-interactive workflow and want to fail if there is no valid token you can
+run `pc.authenticate(interactive=False)` instead.
 
 After successful authentication, Polars Cloud stores the token in your OS config directory:
 
 | OS      | Value                                  | Example                                  |
-| ------- | -------------------------------------- | ---------------------------------------- |
+|---------|----------------------------------------|------------------------------------------|
 | Linux   | `$XDG_CONFIG_HOME` or `$HOME/.config/` | home/alice/.config                       |
 | macOS   | `$HOME/Library/Application Support`    | /Users/Alice/Library/Application Support |
 | Windows | `{FOLDERID_RoamingAppData}`            | C:\Users\Alice\AppData\Roaming           |
 
 You can override this path by setting the environment variable `POLARS_CLOUD_ACCESS_TOKEN_PATH`.
 
-There are two main ways to authenticate:
-
-1. `authenticate` Loads cached tokens, otherwise opens the browser to log in and caches them
-2. `login` Opens the browser to log in, caches tokens but does not reuse them
-
-Generally you would use `authenticate` unless you want to switch between accounts.
+### Commands
 
 You can authenticate from the terminal:
 

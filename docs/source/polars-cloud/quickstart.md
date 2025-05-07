@@ -15,7 +15,7 @@ $ pip install polars polars-cloud
 Create an account and login by running the command below.
 
 ```bash
-$ pc login
+$ pc authenticate
 ```
 
 ## Connect your cloud
