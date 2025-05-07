@@ -8,6 +8,7 @@ mod dictionary_to;
 mod primitive_to;
 mod utf8_to;
 
+use arrow::bitmap::MutableBitmap;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
@@ -238,7 +239,8 @@ pub(super) fn cast_list_to_fixed_size_list<O: Offset>(
 }
 
 fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<BinaryViewArray> {
-    let mut result = MutableBinaryViewArray::with_capacity(list.len());
+    let mut views = Vec::with_capacity(list.len());
+    let mut result_validity = MutableBitmap::from_len_set(list.len());
 
     let u8array: &PrimitiveArray<u8> = list.values().as_any().downcast_ref().unwrap();
     let slice = u8array.values().as_slice();
@@ -253,20 +255,30 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
         // Check if there's a null instead of a list:
         if let Some(validity) = validity {
             // SAFETY: We are generating indexes limited to < list.len().
+            debug_assert!(index < validity.len());
             if unsafe { !validity.get_bit_unchecked(index) } {
-                result.push_null();
+                debug_assert!(index < result_validity.len());
+                unsafe {
+                    result_validity.set_unchecked(index, false);
+                }
+                views.push(View::default());
                 continue;
             }
         }
 
         // SAFETY: We are generating indexes limited to < list.len().
+        debug_assert!(index < offsets.len());
         let (start, end) = unsafe { offsets.start_end_unchecked(index) };
         let length = end - start;
 
         // Check if the list contains nulls:
         if let Some(internal_validity) = internal_validity {
             if internal_validity.null_count_range(start, length) > 0 {
-                result.push_null();
+                debug_assert!(index < result_validity.len());
+                unsafe {
+                    result_validity.set_unchecked(index, false);
+                }
+                views.push(View::default());
                 continue;
             }
         }
@@ -292,10 +304,34 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
             unsafe { view.get_slice_unchecked(&cloned_buffers) },
             &slice[start..end]
         );
-        result.push_view(view, &cloned_buffers);
+        views.push(view);
     }
 
-    Ok(result.into())
+    let result_buffers = cloned_buffers.into_boxed_slice().into();
+    let result = if cfg!(debug_assertions) {
+        // A safer wrapper around new_unchecked_unknown_md; it shouldn't ever
+        // fail in practice.
+        BinaryViewArrayGeneric::try_new(
+            ArrowDataType::BinaryView,
+            views.into(),
+            result_buffers,
+            result_validity.into(),
+        )?
+    } else {
+        unsafe {
+            BinaryViewArrayGeneric::new_unchecked_unknown_md(
+                ArrowDataType::BinaryView,
+                views.into(),
+                result_buffers,
+                result_validity.into(),
+                // We could compute this ourselves, but we want to make this code
+                // match debug_assertions path as much as possible.
+                None,
+            )
+        }
+    };
+
+    Ok(result)
 }
 
 pub fn cast_default(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResult<Box<dyn Array>> {
