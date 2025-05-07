@@ -154,3 +154,12 @@ Configuration for cloud credential provisioning.
    CredentialProviderAWS
    CredentialProviderAzure
    CredentialProviderGCP
+
+Scan Cast Options
+~~~~~~~~~~~~~~~~~
+Configuration for type-casting during scans.
+
+.. autosummary::
+   :toctree: api/
+
+   ScanCastOptions

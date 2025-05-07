@@ -243,10 +243,10 @@ impl ApplyExtraOps {
         }
 
         if !extra_columns.is_empty() {
+            df.clear_schema();
             let h = df.height();
             let cols = unsafe { df.get_columns_mut() };
             cols.extend(extra_columns.iter().map(|c| c.resize(h).into_column()));
-            df.clear_schema();
         }
 
         if let Some(predicate) = predicate {

@@ -338,7 +338,10 @@ def test_schema_mismatch_type_mismatch(
         if scan is pl.scan_ndjson
         else pytest.raises(
             pl.exceptions.SchemaError,
-            match="data type mismatch for column xyz_col: expected: i64, found: str",
+            match=(
+                "data type mismatch for column xyz_col: "
+                "incoming: String != target: Int64"
+            ),
         )
     )
 

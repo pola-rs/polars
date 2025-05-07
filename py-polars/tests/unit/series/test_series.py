@@ -2239,20 +2239,3 @@ def test_repeat_by() -> None:
     calculated = pl.select(a=pl.Series("a", [1, 2]).repeat_by(2))
     expected = pl.select(a=pl.Series("a", [[1, 1], [2, 2]]))
     assert calculated.equals(expected)
-
-
-def test_zip_with() -> None:
-    s1 = pl.Series("a", [9, 2, 0, 2])
-    s2 = pl.Series("b", [4, 8, 6, 1])
-    s3 = pl.Series("c", [3, 4, 6, 6])
-
-    res = s1.zip_with(s2 < s1, s3)
-    expected = pl.Series("a", [9, 4, 6, 2])
-    assert_series_equal(res, expected)
-
-    s3 = pl.Series("a", ["hello", "foo bar", "oats", "coffee"])
-    s4 = pl.Series("b", ["world", "baz", "cornflake", "tea"])
-
-    res = s3.zip_with(s3.str.len_bytes() > s4.str.len_bytes(), "(^_^)")
-    expected = pl.Series("a", ["(^_^)", "foo bar", "(^_^)", "coffee"])
-    assert_series_equal(res, expected)

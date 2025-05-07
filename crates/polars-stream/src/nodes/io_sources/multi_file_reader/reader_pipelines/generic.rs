@@ -9,7 +9,7 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
+use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
@@ -453,6 +453,8 @@ impl ReaderStarter {
 
             // Note: We do set_external_columns later below to avoid blocking this loop.
             let predicate = if extra_ops_post.predicate.is_some()
+                // TODO: Support cast columns in parquet
+                && extra_ops_post.cast_columns_policy == CastColumnsPolicy::ERROR_ON_MISMATCH
                 && reader_capabilities.contains(ReaderCapabilities::PARTIAL_FILTER)
                 && extra_ops_post.row_index.is_none()
                 && extra_ops_post.pre_slice.is_none()
