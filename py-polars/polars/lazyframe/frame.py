@@ -2552,10 +2552,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Evaluate the query in streaming mode and write to a Parquet file.
 
-        .. warning::
-            Streaming mode is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
-
         This allows streaming results that are larger than RAM to be written to disk.
 
         Parameters
@@ -3112,7 +3108,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
     ) -> LazyFrame: ...
 
-    @unstable()
     def sink_csv(
         self,
         path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
@@ -3151,10 +3146,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a CSV file.
-
-        .. warning::
-            Streaming mode is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -3216,20 +3207,52 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         type_coercion
             Do type coercion optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         predicate_pushdown
             Do predicate pushdown optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         projection_pushdown
             Do projection pushdown optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         simplify_expression
             Run simplify expressions optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         slice_pushdown
             Slice pushdown optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         collapse_joins
             Collapse a join and filters into a faster join
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         no_optimization
             Turn off (certain) optimizations.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         storage_options
             Options that indicate how to connect to a cloud provider.
 
@@ -3260,10 +3283,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         lazy: bool
             Wait to start execution until `collect` is called.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
