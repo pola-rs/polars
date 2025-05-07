@@ -823,14 +823,24 @@ def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
             "date": ["2020-01-01", "2021-12-31"],
         }
     )
-    expected_series = expected_frame.to_struct()
-
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
-    with alchemy_engine.connect() as conn:
-        query_result = conn.execute(text("SELECT * FROM test_data ORDER BY name"))
-        df = pl.DataFrame(list(query_result))
-        assert_frame_equal(expected_frame, df)
+    query = text("SELECT * FROM test_data ORDER BY name")
 
-        query_result = conn.execute(text("SELECT * FROM test_data ORDER BY name"))
-        s = pl.Series(list(query_result))
-        assert_series_equal(expected_series, s)
+    with alchemy_engine.connect() as conn:
+        # note: sqlalchemy `Row` is a NamedTuple-like object; it additionally has
+        # a `_mapping` attribute that returns a `RowMapping` dict-like object. we
+        # validate frame/series init from each flavour of query result.
+        query_result = list(conn.execute(query))
+        for df in (
+            pl.DataFrame(query_result),
+            pl.DataFrame([row._mapping for row in query_result]),
+            pl.from_records([row._mapping for row in query_result]),
+        ):
+            assert_frame_equal(expected_frame, df)
+
+        expected_series = expected_frame.to_struct()
+        for s in (
+            pl.Series(query_result),
+            pl.Series([row._mapping for row in query_result]),
+        ):
+            assert_series_equal(expected_series, s)
