@@ -215,7 +215,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
                 .as_any_mut()
                 .downcast_mut::<DatetimeChunked>()
                 .unwrap()
-                .0,
+                .phys,
         ))
     }
 

@@ -182,7 +182,7 @@ impl TakeChunked for Series {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
                 let ca = self.decimal().unwrap();
-                let out = ca.0.take_chunked_unchecked(by, sorted, avoid_sharing);
+                let out = ca.phys.take_chunked_unchecked(by, sorted, avoid_sharing);
                 out.into_decimal_unchecked(ca.precision(), ca.scale())
                     .into_series()
             },
@@ -285,7 +285,7 @@ impl TakeChunked for Series {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
                 let ca = self.decimal().unwrap();
-                let out = ca.0.take_opt_chunked_unchecked(by, avoid_sharing);
+                let out = ca.phys.take_opt_chunked_unchecked(by, avoid_sharing);
                 out.into_decimal_unchecked(ca.precision(), ca.scale())
                     .into_series()
             },

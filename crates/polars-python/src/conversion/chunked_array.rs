@@ -101,7 +101,8 @@ impl<'py> IntoPyObject<'py> for &Wrap<&TimeChunked> {
 pub(crate) fn time_to_pyobject_iter(
     ca: &TimeChunked,
 ) -> impl '_ + ExactSizeIterator<Item = Option<NaiveTime>> {
-    ca.0.iter()
+    ca.phys
+        .iter()
         .map(move |opt_v| opt_v.map(nanos_since_midnight_to_naivetime))
 }
 

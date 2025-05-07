@@ -724,20 +724,20 @@ impl Series {
             // NOTE: Don't use cast here, as it might rechunk (if all nulls)
             // which is not allowed in a phys repr.
             #[cfg(feature = "dtype-date")]
-            Date => Cow::Owned(self.date().unwrap().0.clone().into_series()),
+            Date => Cow::Owned(self.date().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-datetime")]
-            Datetime(_, _) => Cow::Owned(self.datetime().unwrap().0.clone().into_series()),
+            Datetime(_, _) => Cow::Owned(self.datetime().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-duration")]
-            Duration(_) => Cow::Owned(self.duration().unwrap().0.clone().into_series()),
+            Duration(_) => Cow::Owned(self.duration().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-time")]
-            Time => Cow::Owned(self.time().unwrap().0.clone().into_series()),
+            Time => Cow::Owned(self.time().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
                 let ca = self.categorical().unwrap();
                 Cow::Owned(ca.physical().clone().into_series())
             },
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => Cow::Owned(self.decimal().unwrap().0.clone().into_series()),
+            Decimal(_, _) => Cow::Owned(self.decimal().unwrap().phys.clone().into_series()),
             List(_) => match self.list().unwrap().to_physical_repr() {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),

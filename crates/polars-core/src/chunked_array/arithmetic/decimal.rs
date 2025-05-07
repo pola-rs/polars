@@ -7,7 +7,7 @@ impl Add for &DecimalChunked {
         let scale = _get_decimal_scale_add_sub(self.scale(), rhs.scale());
         let lhs = self.to_scale(scale)?;
         let rhs = rhs.to_scale(scale)?;
-        Ok((&lhs.0 + &rhs.0).into_decimal_unchecked(None, scale))
+        Ok((&lhs.phys + &rhs.phys).into_decimal_unchecked(None, scale))
     }
 }
 
@@ -18,7 +18,7 @@ impl Sub for &DecimalChunked {
         let scale = _get_decimal_scale_add_sub(self.scale(), rhs.scale());
         let lhs = self.to_scale(scale)?;
         let rhs = rhs.to_scale(scale)?;
-        Ok((&lhs.0 - &rhs.0).into_decimal_unchecked(None, scale))
+        Ok((&lhs.phys - &rhs.phys).into_decimal_unchecked(None, scale))
     }
 }
 
@@ -27,7 +27,7 @@ impl Mul for &DecimalChunked {
 
     fn mul(self, rhs: Self) -> Self::Output {
         let scale = _get_decimal_scale_mul(self.scale(), rhs.scale());
-        Ok((&self.0 * &rhs.0).into_decimal_unchecked(None, scale))
+        Ok((&self.phys * &rhs.phys).into_decimal_unchecked(None, scale))
     }
 }
 
@@ -37,7 +37,7 @@ impl Div for &DecimalChunked {
     fn div(self, rhs: Self) -> Self::Output {
         let scale = _get_decimal_scale_div(self.scale());
         let lhs = self.to_scale(scale + rhs.scale())?;
-        Ok((&lhs.0 / &rhs.0).into_decimal_unchecked(None, scale))
+        Ok((&lhs.phys / &rhs.phys).into_decimal_unchecked(None, scale))
     }
 }
 
