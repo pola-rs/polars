@@ -210,4 +210,58 @@ mod tests {
 
         assert_eq!(r, v);
     }
+
+    #[test]
+    fn test_serde_new_fields_forward_compatible() {
+        // Deserializing an older version with a newly added field will error upon deserialization,
+        // unless the field is tagged with `serde(default)`
+        const FORWARD_COMPATIBLE: bool = true;
+
+        {
+            #[derive(PartialEq, serde::Serialize, serde::Deserialize)]
+            struct StructV1 {
+                field_a: bool,
+            }
+
+            #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+            struct StructV2 {
+                field_a: bool,
+                field_b: bool,
+            }
+
+            let v = StructV1 { field_a: true };
+            let b = super::serialize_to_bytes::<_, FORWARD_COMPATIBLE>(&v).unwrap();
+            let r: Result<StructV2, _> =
+                super::deserialize_from_reader::<_, _, FORWARD_COMPATIBLE>(b.as_slice());
+
+            assert!(matches!(r, Err(_)))
+        }
+
+        {
+            #[derive(PartialEq, serde::Serialize, serde::Deserialize)]
+            struct StructV1 {
+                field_a: bool,
+            }
+
+            #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+            struct StructV2 {
+                field_a: bool,
+                #[serde(default)]
+                field_b: bool,
+            }
+
+            let v = StructV1 { field_a: true };
+            let b = super::serialize_to_bytes::<_, FORWARD_COMPATIBLE>(&v).unwrap();
+            let r: Result<StructV2, _> =
+                super::deserialize_from_reader::<_, _, FORWARD_COMPATIBLE>(b.as_slice());
+
+            assert!(matches!(
+                r,
+                Ok(StructV2 {
+                    field_a: true,
+                    field_b: false
+                })
+            ))
+        }
+    }
 }
