@@ -625,7 +625,7 @@ impl (dyn SeriesTrait + '_) {
     where
         N: 'static + PolarsDataType<IsLogical = FalseT>,
     {
-        polars_ensure!(&N::get_dtype() == self.dtype(), unpack);
+        polars_ensure!(&N::get_static_dtype() == self.dtype(), unpack);
         Ok(self.as_ref())
     }
 }

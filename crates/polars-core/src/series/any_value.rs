@@ -221,12 +221,12 @@ fn any_values_to_integer<T: PolarsIntegerType>(
                     let opt_val = av.extract::<T::Native>();
                     let val = match opt_val {
                         Some(v) => v,
-                        None => return Err(invalid_value_error(&T::get_dtype(), av)),
+                        None => return Err(invalid_value_error(&T::get_static_dtype(), av)),
                     };
                     builder.append_value(val)
                 },
                 AnyValue::Null => builder.append_null(),
-                av => return Err(invalid_value_error(&T::get_dtype(), av)),
+                av => return Err(invalid_value_error(&T::get_static_dtype(), av)),
             }
         }
         Ok(builder.finish())

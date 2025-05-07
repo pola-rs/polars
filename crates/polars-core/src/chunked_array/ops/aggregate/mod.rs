@@ -119,7 +119,7 @@ where
 
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
-                let idx = if T::get_dtype().is_float() {
+                let idx = if T::get_static_dtype().is_float() {
                     float_arg_max_sorted_ascending(self)
                 } else {
                     self.last_non_null().unwrap()
@@ -128,7 +128,7 @@ where
                 unsafe { self.get_unchecked(idx) }
             },
             IsSorted::Descending => {
-                let idx = if T::get_dtype().is_float() {
+                let idx = if T::get_static_dtype().is_float() {
                     float_arg_max_sorted_descending(self)
                 } else {
                     self.first_non_null().unwrap()
@@ -153,7 +153,7 @@ where
             IsSorted::Ascending => {
                 let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
                 let max = {
-                    let idx = if T::get_dtype().is_float() {
+                    let idx = if T::get_static_dtype().is_float() {
                         float_arg_max_sorted_ascending(self)
                     } else {
                         self.last_non_null().unwrap()
@@ -166,7 +166,7 @@ where
             IsSorted::Descending => {
                 let min = unsafe { self.get_unchecked(self.last_non_null().unwrap()) };
                 let max = {
-                    let idx = if T::get_dtype().is_float() {
+                    let idx = if T::get_static_dtype().is_float() {
                         float_arg_max_sorted_descending(self)
                     } else {
                         self.first_non_null().unwrap()
@@ -258,17 +258,17 @@ where
 {
     fn sum_reduce(&self) -> Scalar {
         let v: Option<T::Native> = self.sum();
-        Scalar::new(T::get_dtype(), v.into())
+        Scalar::new(T::get_static_dtype(), v.into())
     }
 
     fn max_reduce(&self) -> Scalar {
         let v = ChunkAgg::max(self);
-        Scalar::new(T::get_dtype(), v.into())
+        Scalar::new(T::get_static_dtype(), v.into())
     }
 
     fn min_reduce(&self) -> Scalar {
         let v = ChunkAgg::min(self);
-        Scalar::new(T::get_dtype(), v.into())
+        Scalar::new(T::get_static_dtype(), v.into())
     }
 
     fn prod_reduce(&self) -> Scalar {
@@ -279,7 +279,7 @@ where
                 prod = prod * *v
             }
         }
-        Scalar::new(T::get_dtype(), prod.into())
+        Scalar::new(T::get_static_dtype(), prod.into())
     }
 }
 

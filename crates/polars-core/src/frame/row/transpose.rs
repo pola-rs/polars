@@ -214,7 +214,7 @@ pub(super) fn numeric_transpose<T>(
             .map(Column::as_materialized_series)
             .enumerate()
             .for_each(|(row_idx, s)| {
-                let s = s.cast(&T::get_dtype()).unwrap();
+                let s = s.cast(&T::get_static_dtype()).unwrap();
                 let ca = s.unpack::<T>().unwrap();
 
                 // SAFETY:
@@ -275,7 +275,7 @@ pub(super) fn numeric_transpose<T>(
             };
 
             let arr = PrimitiveArray::<T::Native>::new(
-                T::get_dtype().to_arrow(CompatLevel::newest()),
+                T::get_static_dtype().to_arrow(CompatLevel::newest()),
                 values.into(),
                 validity,
             );
