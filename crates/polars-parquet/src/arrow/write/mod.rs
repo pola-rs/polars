@@ -90,6 +90,62 @@ pub struct WriteOptions {
     pub data_page_size: Option<usize>,
 }
 
+#[derive(Clone)]
+pub enum ColumnWriteOptions {
+    Leaf(FieldWriteOptions),
+    ListLike(ListLikeFieldWriteOptions),
+    Struct(StructFieldWriteOptions),
+}
+
+impl ColumnWriteOptions {
+    pub fn to_leaves<'a>(&'a self, out: &mut Vec<&'a FieldWriteOptions>) {
+        match self {
+            ColumnWriteOptions::Leaf(o) => out.push(o),
+            ColumnWriteOptions::ListLike(o) => o.child.to_leaves(out),
+            ColumnWriteOptions::Struct(o) => {
+                for o in &o.children {
+                    o.to_leaves(out);
+                }
+            },
+        }
+    }
+
+    pub fn metadata(&self) -> &[KeyValue] {
+        match self {
+            ColumnWriteOptions::Leaf(o) => o.metadata.as_slice(),
+            ColumnWriteOptions::ListLike(o) => o.metadata.as_slice(),
+            ColumnWriteOptions::Struct(o) => o.metadata.as_slice(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct FieldWriteOptions {
+    pub metadata: Vec<KeyValue>,
+    pub encoding: Encoding,
+}
+
+impl FieldWriteOptions {
+    pub fn default_with_encoding(encoding: Encoding) -> Self {
+        Self {
+            metadata: Vec::new(),
+            encoding,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ListLikeFieldWriteOptions {
+    pub metadata: Vec<KeyValue>,
+    pub child: Box<ColumnWriteOptions>,
+}
+
+#[derive(Clone)]
+pub struct StructFieldWriteOptions {
+    pub metadata: Vec<KeyValue>,
+    pub children: Vec<ColumnWriteOptions>,
+}
+
 use arrow::compute::aggregate::estimated_bytes_size;
 use arrow::match_integer_type;
 pub use file::FileWriter;
@@ -186,10 +242,11 @@ fn decimal_length_from_precision(precision: usize) -> usize {
 }
 
 /// Creates a parquet [`SchemaDescriptor`] from a [`ArrowSchema`].
-pub fn to_parquet_schema(schema: &ArrowSchema) -> PolarsResult<SchemaDescriptor> {
+pub fn to_parquet_schema(schema: &ArrowSchema, column_options: &[ColumnWriteOptions]) -> PolarsResult<SchemaDescriptor> {
     let parquet_types = schema
         .iter_values()
-        .map(to_parquet_type)
+        .zip(column_options)
+        .map(|(field, options)| to_parquet_type(field))
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok(SchemaDescriptor::new(
         PlSmallStr::from_static("root"),
@@ -281,8 +338,9 @@ pub fn array_to_pages(
     type_: ParquetPrimitiveType,
     nested: &[Nested],
     options: WriteOptions,
-    mut encoding: Encoding,
+    field_options: &FieldWriteOptions,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
+    let mut encoding = field_options.encoding;
     if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type() {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(

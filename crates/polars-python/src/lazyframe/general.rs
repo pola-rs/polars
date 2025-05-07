@@ -6,6 +6,7 @@ use either::Either;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
+use polars_io::parquet::write::ParquetFieldOverwrites;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
@@ -779,7 +780,7 @@ impl PyLazyFrame {
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (
         target, compression, compression_level, statistics, row_group_size, data_page_size,
-        cloud_options, credential_provider, retries, sink_options, metadata
+        cloud_options, credential_provider, retries, sink_options, metadata, field_overwrites,
     ))]
     fn sink_parquet(
         &self,
@@ -795,6 +796,7 @@ impl PyLazyFrame {
         retries: usize,
         sink_options: Wrap<SinkOptions>,
         metadata: Wrap<Option<KeyValueMetadata>>,
+        field_overwrites: Vec<Wrap<ParquetFieldOverwrites>>,
     ) -> PyResult<PyLazyFrame> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -804,6 +806,7 @@ impl PyLazyFrame {
             row_group_size,
             data_page_size,
             key_value_metadata: metadata.0,
+            field_overwrites: field_overwrites.into_iter().map(|f| f.0).collect(),
         };
 
         let cloud_options = match target.base_path() {
@@ -1514,5 +1517,47 @@ impl PyLazyFrame {
             .merge_sorted(other.ldf, key)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<ParquetFieldOverwrites> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = ob.extract::<pyo3::Bound<'_, PyDict>>()?;
+
+        let name = PyDictMethods::get_item(&parsed, "name")?
+            .map(|v| PyResult::Ok(v.extract::<String>()?.into()))
+            .transpose()?;
+        let children = PyDictMethods::get_item(&parsed, "children")?.map_or(
+            PyResult::Ok(ChildFieldOverwrites::None),
+            |v| {
+                Ok(
+                    if let Ok(overwrites) = v.extract::<Vec<Wrap<ParquetFieldOverwrites>>>() {
+                        ChildFieldOverwrites::Struct(overwrites.into_iter().map(|v| v.0).collect())
+                    } else {
+                        ChildFieldOverwrites::ListLike(Box::new(
+                            v.extract::<Wrap<ParquetFieldOverwrites>>()?.0,
+                        ))
+                    },
+                )
+            },
+        )?;
+
+        let metadata = PyDictMethods::get_item(&parsed, "metadata")?
+            .map(|v| v.extract::<Vec<(String, Option<String>)>>())
+            .transpose()?;
+        let metadata = metadata.map(|v| {
+            v.into_iter()
+                .map(|v| MetadataKeyValue {
+                    key: v.0.into(),
+                    value: v.1.map(|v| v.into()),
+                })
+                .collect()
+        });
+
+        Ok(Wrap(ParquetFieldOverwrites {
+            name,
+            children,
+            metadata,
+        }))
     }
 }

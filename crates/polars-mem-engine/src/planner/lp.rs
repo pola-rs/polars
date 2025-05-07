@@ -283,6 +283,7 @@ fn create_physical_plan_impl(
                             match &file_type {
                                 #[cfg(feature = "parquet")]
                                 FileType::Parquet(options) => {
+                                    dbg!(&options);
                                     use polars_io::parquet::write::ParquetWriter;
                                     ParquetWriter::new(BufWriter::new(writer))
                                         .with_compression(options.compression)

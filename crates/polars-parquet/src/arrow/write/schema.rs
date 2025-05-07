@@ -1,11 +1,14 @@
+use std::borrow::Cow;
+
 use arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Field, TimeUnit};
 use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::Engine as _;
 use base64::engine::general_purpose;
-use polars_error::{PolarsResult, polars_bail};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::super::ARROW_SCHEMA_META_KEY;
+use super::ColumnWriteOptions;
 use crate::arrow::write::decimal_length_from_precision;
 use crate::parquet::metadata::KeyValue;
 use crate::parquet::schema::Repetition;
@@ -80,13 +83,40 @@ pub fn schema_to_metadata_key(schema: &ArrowSchema) -> KeyValue {
 }
 
 /// Creates a [`ParquetType`] from a [`Field`].
-pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
+pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsResult<ParquetType> {
     let name = field.name.clone();
     let repetition = if field.is_nullable {
         Repetition::Optional
     } else {
         Repetition::Required
     };
+
+    let mut field = Cow::Borrowed(field);
+    let mut field_id = None;
+
+    let additional_metadata = options.metadata();
+    if !additional_metadata.is_empty() {
+        let mut field_mut = field.into_owned();
+        let mut metadata = field_mut.metadata.as_deref().cloned().unwrap_or_default();
+
+        for kv in additional_metadata {
+            if kv.key == "PARQUET:field_id" {
+                field_id = Some(kv.value.ok_or_else(|| {
+                    polars_err!(InvalidOperation: "PARQUET:field_id expected value")
+                })?.parse().map_err(|_| polars_err!(InvalidOperation: "PARQUET:field_id invalid value: {:?}", kv.value))?);
+            }
+
+            metadata.insert(
+                kv.key.as_str().into(),
+                kv.value.as_deref().unwrap_or_default().into(),
+            );
+        }
+
+        
+
+        field = Cow::Owned(field_mut.with_metadata(metadata));
+    }
+
     // create type from field
     match field.dtype().to_logical_type() {
         ArrowDataType::Null => Ok(ParquetType::try_from_primitive(

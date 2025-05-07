@@ -448,6 +448,7 @@ impl PyDataFrame {
                     row_group_size,
                     data_page_size,
                     key_value_metadata: metadata.0,
+                    field_overwrites: Vec::new(),
                 };
                 write_partitioned_dataset(
                     &mut self.df,
