@@ -1,7 +1,7 @@
 use polars::frame::row::{Row, rows_to_schema_supertypes, rows_to_supertypes};
 use polars::prelude::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyMapping};
+use pyo3::types::{PyDict, PyMapping, PyString};
 
 use super::PyDataFrame;
 use crate::conversion::any_value::py_object_to_any_value;
@@ -166,8 +166,12 @@ fn dicts_to_rows<'a>(
     names: &'a [String],
     strict: bool,
 ) -> PyResult<Vec<Row<'a>>> {
+    let py = data.py();
     let mut rows = Vec::with_capacity(data.len()?);
     let null_row = Row::new(vec![AnyValue::Null; names.len()]);
+
+    // pre-convert keys/names so we don't repeatedly create them in the loop
+    let py_keys: Vec<Py<PyString>> = names.iter().map(|k| PyString::new(py, k).into()).collect();
 
     for d in data.try_iter()? {
         let d = d?;
@@ -176,10 +180,10 @@ fn dicts_to_rows<'a>(
         } else {
             let d = d.downcast::<PyDict>()?;
             let mut row = Vec::with_capacity(names.len());
-            for k in names.iter() {
+            for k in &py_keys {
                 let val = match d.get_item(k)? {
                     None => AnyValue::Null,
-                    Some(val) => py_object_to_any_value(&val.as_borrowed(), strict, true)?,
+                    Some(py_val) => py_object_to_any_value(&py_val.as_borrowed(), strict, true)?,
                 };
                 row.push(val)
             }
@@ -194,8 +198,12 @@ fn mappings_to_rows<'a>(
     names: &'a [String],
     strict: bool,
 ) -> PyResult<Vec<Row<'a>>> {
+    let py = data.py();
     let mut rows = Vec::with_capacity(data.len()?);
     let null_row = Row::new(vec![AnyValue::Null; names.len()]);
+
+    // pre-convert keys/names so we don't repeatedly create them in the loop
+    let py_keys: Vec<Py<PyString>> = names.iter().map(|k| PyString::new(py, k).into()).collect();
 
     for d in data.try_iter()? {
         let d = d?;
@@ -204,12 +212,12 @@ fn mappings_to_rows<'a>(
         } else {
             let d = d.downcast::<PyMapping>()?;
             let mut row = Vec::with_capacity(names.len());
-            for k in names.iter() {
-                let py_obj = d.get_item(k)?;
-                let val = if py_obj.is_none() {
+            for k in &py_keys {
+                let py_val = d.get_item(k)?;
+                let val = if py_val.is_none() {
                     AnyValue::Null
                 } else {
-                    py_object_to_any_value(&py_obj, strict, true)?
+                    py_object_to_any_value(&py_val, strict, true)?
                 };
                 row.push(val)
             }
