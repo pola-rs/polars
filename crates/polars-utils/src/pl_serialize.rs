@@ -199,8 +199,7 @@ mod tests {
             let r: Result<StructV2, _> =
                 super::deserialize_from_reader::<_, _, FORWARD_COMPATIBLE>(b.as_slice());
 
-            #[allow(clippy::redundant_pattern_matching)]
-            assert!(matches!(r, Err(_)))
+            assert!(r.is_err())
         }
 
         {
@@ -242,6 +241,7 @@ mod tests {
         #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
         enum Enum {
             A,
+            #[expect(dead_code)]
             #[serde(skip)]
             B(MyType),
         }
