@@ -910,3 +910,30 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingContext>) -> O
         _ => return None,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use arrow::array::proptest::array;
+
+    use super::*;
+
+    proptest::prop_compose! {
+        fn arrays
+            ()
+            (length in 0..100usize)
+            (arrays in proptest::collection::vec(array(length), 1..3))
+        -> Vec<Box<dyn Array>> {
+            arrays
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn test_encode_arrays
+            (arrays in arrays())
+         {
+            let dicts: Vec<Option<RowEncodingContext>> = (0..arrays.len()).map(|_| None).collect();
+            convert_columns_no_order(arrays[0].len(), &arrays, &dicts);
+        }
+    }
+}

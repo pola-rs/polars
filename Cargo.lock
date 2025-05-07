@@ -3684,6 +3684,7 @@ dependencies = [
  "polars-compute",
  "polars-error",
  "polars-utils",
+ "proptest",
 ]
 
 [[package]]
