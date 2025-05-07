@@ -2520,7 +2520,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         metadata: ParquetMetadata | None = None,
     ) -> LazyFrame: ...
 
-    @unstable()
     def sink_parquet(
         self,
         path: str | Path | IO[bytes] | PartitioningScheme,
@@ -2603,20 +2602,52 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         type_coercion
             Do type coercion optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         predicate_pushdown
             Do predicate pushdown optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         projection_pushdown
             Do projection pushdown optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         simplify_expression
             Run simplify expressions optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         slice_pushdown
             Slice pushdown optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         collapse_joins
             Collapse a join and filters into a faster join
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         no_optimization
             Turn off (certain) optimizations.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         storage_options
             Options that indicate how to connect to a cloud provider.
 
@@ -2647,6 +2678,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         metadata
             A dictionary or callback to add key-values to the file-level Parquet
             metadata.
@@ -2656,8 +2691,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 changed at any point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         lazy: bool
             Wait to start execution until `collect` is called.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
