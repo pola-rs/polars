@@ -175,46 +175,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_serde_skip_enum() {
-        #[derive(Default, Debug, PartialEq)]
-        struct MyType(Option<usize>);
-
-        // Note: serde(skip) must be at the end of enums
-        #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-        enum Enum {
-            A,
-            #[serde(skip)]
-            B(MyType),
-        }
-
-        impl Default for Enum {
-            fn default() -> Self {
-                Self::B(MyType(None))
-            }
-        }
-
-        let v = Enum::A;
-        let b = super::serialize_to_bytes::<_, false>(&v).unwrap();
-        let r: Enum = super::deserialize_from_reader::<_, _, false>(b.as_slice()).unwrap();
-
-        assert_eq!(r, v);
-
-        let v = Enum::A;
-        let b = super::SerializeOptions::default()
-            .serialize_to_bytes::<_, false>(&v)
-            .unwrap();
-        let r: Enum = super::SerializeOptions::default()
-            .deserialize_from_reader::<_, _, false>(b.as_slice())
-            .unwrap();
-
-        assert_eq!(r, v);
-    }
 
     #[test]
-    fn test_serde_new_fields_forward_compatible() {
-        // Deserializing an older version with a newly added field will error upon deserialization,
-        // unless the field is tagged with `serde(default)`
+    fn test_serde_forward_compatibility_new_fields() {
+        // Behavior:  Deserializing an older version with a newly added field will error upon
+        // deserialization, unless the field is tagged with `serde(default)`
         const FORWARD_COMPATIBLE: bool = true;
 
         {
@@ -234,6 +199,7 @@ mod tests {
             let r: Result<StructV2, _> =
                 super::deserialize_from_reader::<_, _, FORWARD_COMPATIBLE>(b.as_slice());
 
+            #[expect(clippy::redundant_pattern_matching)]
             assert!(matches!(r, Err(_)))
         }
 
@@ -263,5 +229,37 @@ mod tests {
                 })
             ))
         }
+    }
+
+    #[test]
+    fn test_serde_skip_non_serializable_enum_variant() {
+        // Behavior: Enums containing non-serializable variants can be serialized using serde(skip).
+
+        #[derive(Default, Debug, PartialEq)]
+        struct MyType(Option<usize>);
+
+        // Note: serde(skip) must be at the end of enums
+        #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+        enum Enum {
+            A,
+            #[serde(skip)]
+            B(MyType),
+        }
+
+        let v = Enum::A;
+        let b = super::serialize_to_bytes::<_, false>(&v).unwrap();
+        let r: Enum = super::deserialize_from_reader::<_, _, false>(b.as_slice()).unwrap();
+
+        assert_eq!(r, v);
+
+        let v = Enum::A;
+        let b = super::SerializeOptions::default()
+            .serialize_to_bytes::<_, false>(&v)
+            .unwrap();
+        let r: Enum = super::SerializeOptions::default()
+            .deserialize_from_reader::<_, _, false>(b.as_slice())
+            .unwrap();
+
+        assert_eq!(r, v);
     }
 }
