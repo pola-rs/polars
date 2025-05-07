@@ -5691,7 +5691,7 @@ class Series:
         ]
         """
         if not isinstance(other, Series):
-            other = Series([], dtype=self.dtype).extend_constant(other, n=len(self))
+            other = Series([other], dtype=self.dtype)
         return self._from_pyseries(self._s.zip_with(mask._s, other._s))
 
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
