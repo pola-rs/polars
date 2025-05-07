@@ -80,7 +80,7 @@ aws = ["async", "cloud", "polars-io/aws"]
 http = ["async", "cloud", "polars-io/http"]
 azure = ["async", "cloud", "polars-io/azure"]
 gcp = ["async", "cloud", "polars-io/gcp"]
-lazy = ["polars-core/lazy", "polars-lazy"]
+lazy = ["polars-core/lazy", "polars-core/dtype-categorical", "polars-lazy"]
 # commented out until UB is fixed
 # parallel = ["polars-core/parallel"]
 
