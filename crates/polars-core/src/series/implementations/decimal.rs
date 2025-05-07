@@ -247,7 +247,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
                 .as_any_mut()
                 .downcast_mut::<DecimalChunked>()
                 .unwrap()
-                .0,
+                .phys,
         ))
     }
 

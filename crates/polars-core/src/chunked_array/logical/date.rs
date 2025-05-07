@@ -20,11 +20,11 @@ impl LogicalType for DateChunked {
     }
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        self.0.get_any_value(i).map(|av| av.as_date())
+        self.phys.get_any_value(i).map(|av| av.as_date())
     }
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        self.0.get_any_value_unchecked(i).as_date()
+        self.phys.get_any_value_unchecked(i).as_date()
     }
 
     fn cast_with_options(
@@ -37,7 +37,7 @@ impl LogicalType for DateChunked {
             Date => Ok(self.clone().into_series()),
             #[cfg(feature = "dtype-datetime")]
             Datetime(tu, tz) => {
-                let casted = self.0.cast_with_options(dtype, cast_options)?;
+                let casted = self.phys.cast_with_options(dtype, cast_options)?;
                 let casted = casted.datetime().unwrap();
                 let conversion = match tu {
                     TimeUnit::Nanoseconds => NS_IN_DAY,
@@ -48,7 +48,7 @@ impl LogicalType for DateChunked {
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             },
-            dt if dt.is_primitive_numeric() => self.0.cast_with_options(dtype, cast_options),
+            dt if dt.is_primitive_numeric() => self.phys.cast_with_options(dtype, cast_options),
             dt => {
                 polars_bail!(
                     InvalidOperation:
