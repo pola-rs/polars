@@ -245,8 +245,8 @@ impl DslPlan {
         // The DSL serialization is forward compatible if fields don't change,
         // so we don't check equality here, we just use this version
         // to inform users when the deserialization fails.
-        let major = u16::from_be_bytes(version_magic[MAGIC_LEN..MAGIC_LEN + 2].try_into().unwrap());
-        let minor = u16::from_be_bytes(
+        let major = u16::from_le_bytes(version_magic[MAGIC_LEN..MAGIC_LEN + 2].try_into().unwrap());
+        let minor = u16::from_le_bytes(
             version_magic[MAGIC_LEN + 2..MAGIC_LEN + 4]
                 .try_into()
                 .unwrap(),
