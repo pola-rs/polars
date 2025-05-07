@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_serde_forward_compatibility_new_fields() {
-        // Behavior:  Deserializing an older version with a newly added field will error upon
+        // Behavior: Deserializing an older version with a newly added field will error upon
         // deserialization, unless the field is tagged with `serde(default)`
         const FORWARD_COMPATIBLE: bool = true;
 
@@ -199,7 +199,7 @@ mod tests {
             let r: Result<StructV2, _> =
                 super::deserialize_from_reader::<_, _, FORWARD_COMPATIBLE>(b.as_slice());
 
-            #[expect(clippy::redundant_pattern_matching)]
+            #[allow(clippy::redundant_pattern_matching)]
             assert!(matches!(r, Err(_)))
         }
 
