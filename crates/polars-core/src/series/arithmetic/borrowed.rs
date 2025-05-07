@@ -164,7 +164,7 @@ pub mod checked {
             lhs: &ChunkedArray<Self>,
             _rhs: T,
         ) -> PolarsResult<Series> {
-            polars_bail!(opq = checked_div_num, lhs.dtype(), Self::get_dtype());
+            polars_bail!(opq = checked_div_num, lhs.dtype(), Self::get_static_dtype());
         }
     }
 

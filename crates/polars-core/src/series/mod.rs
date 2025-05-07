@@ -1069,7 +1069,7 @@ where
         let Some(ca) = self.as_any().downcast_ref::<ChunkedArray<T>>() else {
             panic!(
                 "implementation error, cannot get ref {:?} from {:?}",
-                T::get_dtype(),
+                T::get_static_dtype(),
                 self.dtype()
             );
         };
@@ -1086,7 +1086,7 @@ where
         if !self.as_any_mut().is::<ChunkedArray<T>>() {
             panic!(
                 "implementation error, cannot get ref {:?} from {:?}",
-                T::get_dtype(),
+                T::get_static_dtype(),
                 self.dtype()
             );
         }
