@@ -251,6 +251,8 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
     let internal_validity = list.values().validity();
     let offsets = list.offsets();
 
+    let mut all_views_inline = true;
+
     // In a View for BinaryViewArray, both length and offset are u32.
     #[cfg(not(test))]
     const MAX_BUF_SIZE: usize = u32::MAX as usize;
@@ -313,11 +315,19 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
             buf_index,
             (start - previous_buf_lengths) as u32,
         );
+        if !view.is_inline() {
+            all_views_inline = false;
+        }
         debug_assert_eq!(
             unsafe { view.get_slice_unchecked(&cloned_buffers) },
             &slice[start..end]
         );
         views.push(view);
+    }
+
+    // Optimization: don't actually need buffers if Views are all inline.
+    if all_views_inline {
+        cloned_buffers.clear();
     }
 
     let result_buffers = cloned_buffers.into_boxed_slice().into();
