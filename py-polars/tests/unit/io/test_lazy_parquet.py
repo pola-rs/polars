@@ -905,7 +905,7 @@ import io
 import polars as pl
 from polars.testing import assert_frame_equal
 
-assert pl.thread_pool_size() == 1
+assert pl.thread_pool_size() == 2
 
 f = io.BytesIO()
 
