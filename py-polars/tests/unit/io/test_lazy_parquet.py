@@ -989,7 +989,7 @@ print("OK", end="", file=sys.stderr)
 
     assert out.endswith(b"OK")
 
-    def ensure_caches_droped(verbose_log: str) -> None:
+    def ensure_caches_dropped(verbose_log: str) -> None:
         cache_hit_prefix = "CACHE HIT: cache id: "
 
         ids_hit = {
@@ -1011,4 +1011,4 @@ print("OK", end="", file=sys.stderr)
     out_str = out.decode()
 
     for logs in out_str.split("QUERY-FENCE"):
-        ensure_caches_droped(logs)
+        ensure_caches_dropped(logs)
