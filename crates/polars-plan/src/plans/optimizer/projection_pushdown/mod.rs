@@ -435,6 +435,7 @@ impl ProjectionPushDown {
                 predicate,
                 mut unified_scan_args,
                 mut output_schema,
+                id: _,
             } => {
                 let do_optimization = match &*scan_type {
                     FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
@@ -561,6 +562,7 @@ impl ProjectionPushDown {
                     scan_type,
                     predicate,
                     unified_scan_args,
+                    id: Default::default(),
                 };
 
                 Ok(lp)

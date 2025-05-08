@@ -70,6 +70,7 @@ impl IR {
                     scan_type,
                     output_schema: _,
                     unified_scan_args,
+                    id: _,
                 } = ir.clone()
                 else {
                     unreachable!()

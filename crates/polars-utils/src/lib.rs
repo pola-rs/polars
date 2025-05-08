@@ -38,6 +38,7 @@ pub mod sync;
 #[cfg(feature = "sysinfo")]
 pub mod sys;
 pub mod total_ord;
+pub mod unique_id;
 
 pub use functions::*;
 pub mod file;

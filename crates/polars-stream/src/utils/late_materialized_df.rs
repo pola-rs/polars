@@ -36,6 +36,7 @@ impl LateMaterializedDataFrame {
                 function: self,
             }),
             unified_scan_args: Box::new(UnifiedScanArgs::default()),
+            id: Default::default(),
         }
     }
 }

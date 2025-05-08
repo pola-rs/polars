@@ -292,6 +292,14 @@ impl ScanSources {
     pub fn at(&self, idx: usize) -> ScanSourceRef {
         self.get(idx).unwrap()
     }
+
+    pub fn arc_addr(&self) -> usize {
+        match self {
+            Self::Paths(v) => Arc::as_ptr(v) as *const () as usize,
+            Self::Files(v) => Arc::as_ptr(v) as *const () as usize,
+            Self::Buffers(v) => Arc::as_ptr(v) as *const () as usize,
+        }
+    }
 }
 
 impl ScanSourceRef<'_> {
