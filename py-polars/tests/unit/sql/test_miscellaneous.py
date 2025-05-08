@@ -569,4 +569,3 @@ def test_sqlcontext_frames_type_check() -> None:
     ctx6 = pl.SQLContext(df=df, lf=lf)
     assert "df" in ctx6.tables()
     assert "lf" in ctx6.tables()
-
