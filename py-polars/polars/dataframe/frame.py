@@ -29,7 +29,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._typing import DbWriteMode, JaxExportType, TorchExportType
+from polars._typing import DbWriteMode, EngineType, JaxExportType, TorchExportType
 from polars._utils.construction import (
     arrow_to_pydf,
     dataframe_to_pydf,
@@ -4039,8 +4039,8 @@ class DataFrame:
             return
 
         target: str | Path | IO[bytes] | PartitioningScheme = file
-        mkdir = False
-        engine = "in-memory"
+        mkdir: bool = False
+        engine: EngineType = "in-memory"
         if partition_by is not None:
             if not isinstance(file, str):
                 msg = "expected file to be a `str` since partition-by is set"
