@@ -2673,9 +2673,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         engine = _select_engine(engine)
         if metadata is not None:
-            msg = (
-                "the `metadata` parameter of `sink_parquet` is considered experimental."
-            )
+            msg = "`metadata` parameter is considered experimental"
             issue_unstable_warning(msg)
 
         if isinstance(statistics, bool) and statistics:
