@@ -47,6 +47,15 @@ impl PyExpr {
         self.inner.clone().list().eval(expr.inner, parallel).into()
     }
 
+    #[cfg(feature = "list_filter")]
+    fn list_filter(&self, predicate: PyExpr, parallel: bool) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .list_filter(predicate.inner, parallel)
+            .into()
+    }
+
     fn list_get(&self, index: PyExpr, null_on_oob: bool) -> Self {
         self.inner
             .clone()
@@ -183,10 +192,6 @@ impl PyExpr {
             .list()
             .sample_fraction(fraction.inner, with_replacement, shuffle, seed)
             .into()
-    }
-    #[cfg(feature = "list_filter")]
-    fn list_filter(&self, predicate: PyExpr) -> Self {
-        self.inner.clone().list().filter(predicate.inner).into()
     }
 
     #[cfg(feature = "list_gather")]

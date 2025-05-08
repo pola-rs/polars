@@ -1,7 +1,10 @@
 use std::sync::Mutex;
 
 use arrow::array::ValueSize;
+use arrow::array::builder::make_builder;
+use arrow::bitmap::BitmapBuilder;
 use arrow::legacy::utils::CustomIterTools;
+use arrow::offset::Offsets;
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::prelude::*;
 use polars_plan::constants::MAP_LIST_NAME;
@@ -212,6 +215,81 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
             )
             .with_fmt("eval")
     }
+    fn list_filter(self, predicate: Expr, parallel: bool) -> Expr {
+        let this = self.into_list_name_space();
+        this.0
+            .map(
+                move |col: Column| {
+                    let series = col.as_series().unwrap();
+                    let out = list_filter_expr(series, &predicate, parallel)?;
+                    Ok(Some(out.into_column()))
+                },
+                GetOutput::map_field(move |f| Ok(Field::new(f.name().clone(), f.dtype().clone()))),
+            )
+            .with_fmt("filter_expr")
+    }
+}
+
+fn run_per_sublist_fused_filter(
+    lst: &ListChunked,
+    predicate: &Arc<dyn PhysicalExpr>,
+    parallel: bool,
+) -> PolarsResult<ListChunked> {
+    let state = ExecutionState::new();
+    let list_dtype = lst.dtype().clone();
+    let name = lst.name().clone();
+    let err_slot = Mutex::new(None);
+
+    let process = |opt_series: Option<Series>| -> Option<Series> {
+        let sub = opt_series?;
+        let df = sub.clone().into_frame();
+        let ms = match predicate.evaluate(&df, &state) {
+            Ok(mask_series) => mask_series,
+            Err(e) => {
+                *err_slot.lock().unwrap() = Some(e);
+                return None;
+            },
+        };
+        let mask_bool = ms.bool().unwrap().clone();
+        match sub.filter(&mask_bool) {
+            Ok(filtered) => Some(filtered),
+            Err(e) => {
+                *err_slot.lock().unwrap() = Some(e);
+                None
+            },
+        }
+    };
+
+    let filtered = if parallel {
+        lst.par_iter()
+            .map(process)
+            .collect_ca_with_dtype(name, list_dtype)
+    } else {
+        lst.into_iter().map(process).collect_trusted()
+    };
+
+    err_slot.into_inner().unwrap().map_or(Ok(filtered), Err)
+}
+
+pub fn list_filter_expr(
+    list_series: &Series,
+    predicate: &Expr,
+    parallel: bool,
+) -> PolarsResult<Series> {
+    let lst_ca = list_series.list()?.clone();
+    let inner_dtype = lst_ca.inner_dtype().clone();
+
+    let phys_expr = prepare_expression_for_context(
+        PlSmallStr::EMPTY,
+        predicate,
+        &inner_dtype,
+        Context::Default,
+    )?;
+
+    let filtered_ca = run_per_sublist_fused_filter(&lst_ca, &phys_expr, parallel)?;
+    Ok(filtered_ca
+        .into_series()
+        .with_name(list_series.name().clone()))
 }
 
 impl ListNameSpaceExtension for ListNameSpace {}

@@ -156,13 +156,6 @@ impl ListNameSpace {
         )
     }
 
-    #[cfg(feature = "list_filter")]
-    pub fn filter(self, predicate: Expr) -> Expr {
-        self.0
-            .map_binary(FunctionExpr::ListExpr(ListFunction::Filter), predicate)
-    }
-
-
     #[cfg(feature = "list_gather")]
     pub fn gather_every(self, n: Expr, offset: Expr) -> Expr {
         self.0

@@ -500,10 +500,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.rename(name);
         self
     }
-
-    pub fn lst_filter(&self, mask: &Series) -> _ {
-        todo!()
-    }
 }
 
 impl<T> ChunkedArray<T>

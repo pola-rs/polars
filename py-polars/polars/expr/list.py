@@ -1233,6 +1233,10 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
 
+    def filter(self, expr: Expr, *, parallel: bool = False) -> Expr:
+        """Todo"""
+        return wrap_expr(self._pyexpr.list_filter(expr._pyexpr, parallel))
+
     def set_union(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET UNION between the elements in this list and the elements of `other`.

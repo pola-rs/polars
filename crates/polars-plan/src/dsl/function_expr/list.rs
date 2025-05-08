@@ -21,8 +21,6 @@ pub enum ListFunction {
     },
     Slice,
     Shift,
-    #[cfg(feature = "list_filter")]
-    Filter,
     Get(bool),
     #[cfg(feature = "list_gather")]
     Gather(bool),
@@ -76,8 +74,6 @@ impl ListFunction {
             Slice => mapper.with_same_dtype(),
             Shift => mapper.with_same_dtype(),
             Get(_) => mapper.map_to_list_and_array_inner_dtype(),
-            #[cfg(feature = "list_filter")]
-            Filter => mapper.with_same_dtype(),
             #[cfg(feature = "list_gather")]
             Gather(_) => mapper.with_same_dtype(),
             #[cfg(feature = "list_gather")]
@@ -136,8 +132,6 @@ impl ListFunction {
             L::Contains => FunctionOptions::elementwise(),
             #[cfg(feature = "list_sample")]
             L::Sample { .. } => FunctionOptions::elementwise(),
-            #[cfg(feature = "list_filter")]
-            L::Filter => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
             L::Gather(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
@@ -214,8 +208,6 @@ impl Display for ListFunction {
             Slice => "slice",
             Shift => "shift",
             Get(_) => "get",
-            #[cfg(feature = "list_filter")]
-            Filter => "filter",
             #[cfg(feature = "list_gather")]
             Gather(_) => "gather",
             #[cfg(feature = "list_gather")]
@@ -285,8 +277,6 @@ impl From<ListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Slice => wrap!(slice),
             Shift => map_as_slice!(shift),
             Get(null_on_oob) => wrap!(get, null_on_oob),
-            #[cfg(feature = "list_filter")]
-            Filter => map_as_slice!(filter),
             #[cfg(feature = "list_gather")]
             Gather(null_on_oob) => map_as_slice!(gather, null_on_oob),
             #[cfg(feature = "list_gather")]
@@ -644,14 +634,6 @@ pub(super) fn gather(args: &[Column], null_on_oob: bool) -> PolarsResult<Column>
         ca.lst_gather(idx.as_materialized_series(), null_on_oob)
             .map(Column::from)
     }
-}
-
-#[cfg(feature = "list_filter")]
-pub(super) fn filter(args: &[Column]) -> PolarsResult<Column> {
-    let list = args[0].list()?;
-    let mask = args[1].as_materialized_series();
-    list.lst_filter(mask)
-        .map(|ca| ca.into_column())
 }
 
 #[cfg(feature = "list_gather")]
