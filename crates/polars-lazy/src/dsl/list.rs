@@ -1,10 +1,7 @@
 use std::sync::Mutex;
 
 use arrow::array::ValueSize;
-use arrow::array::builder::make_builder;
-use arrow::bitmap::BitmapBuilder;
 use arrow::legacy::utils::CustomIterTools;
-use arrow::offset::Offsets;
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::prelude::*;
 use polars_plan::constants::MAP_LIST_NAME;
