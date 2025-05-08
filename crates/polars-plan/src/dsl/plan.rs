@@ -274,7 +274,9 @@ impl DslPlan {
     pub fn deserialize_versioned<R: Read>(mut reader: R) -> PolarsResult<Self> {
         const MAGIC_LEN: usize = DSL_MAGIC_BYTES.len();
         let mut version_magic = [0u8; MAGIC_LEN + 4];
-        reader.read_exact(&mut version_magic)?;
+        reader
+            .read_exact(&mut version_magic)
+            .map_err(|e| polars_err!(ComputeError: "failed to read incoming DSL_VERSION: {e}"))?;
 
         if &version_magic[..MAGIC_LEN] != DSL_MAGIC_BYTES {
             polars_bail!(ComputeError: "dsl magic bytes not found")
