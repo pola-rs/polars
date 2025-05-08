@@ -45,5 +45,13 @@ mmap = ["memmap"]
 bigidx = []
 nightly = []
 ir_serde = ["serde"]
-serde = ["dep:serde", "serde/derive", "dep:rmp-serde", "dep:bincode", "dep:flate2", "dep:serde_json", "dep:serde_ignored"]
+serde = [
+  "dep:serde",
+  "serde/derive",
+  "dep:rmp-serde",
+  "dep:bincode",
+  "dep:flate2",
+  "dep:serde_json",
+  "dep:serde_ignored",
+]
 python = ["pyo3", "polars-error/python"]
