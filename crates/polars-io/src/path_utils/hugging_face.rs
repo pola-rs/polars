@@ -265,24 +265,24 @@ pub(super) async fn expand_paths_hf(
             None
         };
 
-        if !path_parts.path.ends_with("/") && expansion.is_none() {
-            hive_idx_tracker.update(0, path_idx)?;
-            let file_uri = repo_location.get_file_uri(rel_path);
-            let file_uri = file_uri.as_str();
+        let file_uri = repo_location.get_file_uri(rel_path);
 
+        if !path_parts.path.ends_with("/") && expansion.is_none() {
+            // Confirm that this is a file using a HEAD request.
             if with_concurrency_budget(1, || async {
-                client.head(file_uri).send().await.map_err(to_compute_err)
+                client.head(&file_uri).send().await.map_err(to_compute_err)
             })
             .await?
             .status()
                 == 200
             {
+                hive_idx_tracker.update(0, path_idx)?;
                 out_paths.push(PathBuf::from(file_uri));
                 continue;
             }
         }
 
-        hive_idx_tracker.update(repo_location.get_file_uri(rel_path).len(), path_idx)?;
+        hive_idx_tracker.update(file_uri.len(), path_idx)?;
 
         assert!(stack.is_empty());
         stack.push_back(prefix.into_owned());
