@@ -42,6 +42,15 @@ def test_search_sorted() -> None:
     assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
 
 
+def test_search_sorted_multivalue() -> None:
+    a = pl.Series([5, 7, 12, 14])
+    # This is deprecated, should only search with pl.Series for multiple values
+    # going forward:
+    assert_series_equal(a.search_sorted([14, 7]), pl.Series([3, 1]))
+    # This is the preferred way to do it:
+    assert_series_equal(a.search_sorted(pl.Series([14, 7])), pl.Series([3, 1]))
+
+
 def test_search_sorted_multichunk() -> None:
     for seed in [1, 2, 3]:
         np.random.seed(seed)
@@ -119,7 +128,7 @@ def test_search_sorted_struct() -> None:
     series = pl.Series([v1, v0]).sort()
     assert series.search_sorted(v0) == 0
     assert series.search_sorted(v1) == 1
-    assert series.search_sorted([v1, v0]).to_list() == [1, 0]
+    assert series.search_sorted(pl.Series([v1, v0])).to_list() == [1, 0]
 
 
 def assert_can_find_values(values: list[Any], dtype: PolarsDataType) -> None:

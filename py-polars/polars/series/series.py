@@ -3505,19 +3505,16 @@ class Series:
     @overload
     def search_sorted(
         self,
-        element: NonNestedLiteral | None | dict[str, Any],
+        element: (
+            NonNestedLiteral | None | dict[str, Any] | list[Any] | np.ndarray[Any, Any]
+        ),
         side: SearchSortedSide = ...,
     ) -> int: ...
 
     @overload
     def search_sorted(
         self,
-        element: (
-            list[NonNestedLiteral | None | dict[str, Any]]
-            | np.ndarray[Any, Any]
-            | Expr
-            | Series
-        ),
+        element: Expr | Series,
         side: SearchSortedSide = ...,
     ) -> Series: ...
 
@@ -3538,9 +3535,11 @@ class Series:
             If this value matches the dtype of values in self, the return result is an
             integer.
             If self's dtype is ``pl.List``/``pl.Array``, we assume an element that is
-            ``list`` or NumPy array is a single value, and return an integer. For other
+            ``list`` or NumPy array is a single value, and return an integer. (For other
             dtypes, a ``list``/NumPy array element is assumed to be searching for
-            multiple values, and the return result is a ``Series``.
+            multiple values, and the return result is a ``Series``; this is deprecated,
+            you should switch to using a ``Series`` if you want to search for multiple
+            values.)
             If this is a ``Series`` or ``Expr``, the return result is a ``Series``.
 
         side : {'any', 'left', 'right'}
@@ -3600,30 +3599,27 @@ class Series:
         # Does this mean searching multiple values, which should return a
         # pl.Series of length 0, or does it mean searching for a single empty
         # list and it should return an integer? Who can say! Arguably this API
-        # design was a mistake once you allow searching pl.List series, and
-        # probably the solution is deprecate searching for multiple values with
-        # lists, and force people to use Series for that case.
+        # design was a mistake once you allow searching pl.List series, and so
+        # in the Rust side we deprecate searching for multiple values with
+        # lists. In Polars 2 this can be dropped.
         #
-        # For now, we disallow searching for multiple values via lists when
-        # self's dtype is pl.List or pl.Array, so that we have a non-ambiguous
-        # API.
-        if isinstance(element, (list, np.ndarray)):
-            if isinstance(self.dtype, (List, Array)):
-                # Catch (most) disallowed multi-value-search cases by casting
-                # the needle to the haystack's dtype:
-                try:
-                    F.select(F.lit(element, dtype=self.dtype))
-                except TypeError as err:
-                    message = (
-                        f"{element} does not match dtype {self.dtype}. "
-                        "If you were trying to search for multiple values, "
-                        "use a ``pl.Series`` instead of a list/ndarray."
-                    )
-                    raise TypeError(message) from err
-            else:
-                # We're definitely searching for multiple values. Wrap in
-                # Series so we don't have issues with casting:
-                element = pl.Series(element)
+        # For pl.List/pl.Array, searching for multiple values with a list was
+        # never actually supported, so there is no need for backwards
+        # compatibility, and so we more aggressively disallow it.
+        if isinstance(element, (list, np.ndarray)) and isinstance(
+            self.dtype, (List, Array)
+        ):
+            # Catch (most) disallowed multi-value-search cases by casting
+            # the needle to the haystack's dtype:
+            try:
+                F.select(F.lit(element, dtype=self.dtype))
+            except TypeError as err:
+                message = (
+                    f"{element} does not match dtype {self.dtype}. "
+                    "If you were trying to search for multiple values, "
+                    "use a ``pl.Series`` instead of a list/ndarray."
+                )
+                raise TypeError(message) from err
 
         df = F.select(F.lit(self).search_sorted(element, side))
         # These types unambiguously return a Series:
