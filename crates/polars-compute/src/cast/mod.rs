@@ -999,7 +999,7 @@ mod tests {
     fn cast_list_uint8_to_binary_across_buffer_max_size() {
         let dtype =
             ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
-        let values = PrimitiveArray::from_slice((0u8..20).into_iter().collect::<Vec<_>>()).boxed();
+        let values = PrimitiveArray::from_slice((0u8..20).collect::<Vec<_>>()).boxed();
         let list_u8 = ListArray::try_new(
             dtype,
             unsafe { OffsetsBuffer::new_unchecked(vec![0, 13, 18, 20].into()) },
@@ -1069,7 +1069,7 @@ mod tests {
     /// result because all views are inline.
     #[test]
     fn cast_list_uint8_to_binary_drops_small_buffers() {
-        let values = PrimitiveArray::from_slice(&vec![10u8; 12]);
+        let values = PrimitiveArray::from_slice(vec![10u8; 12]);
         let dtype =
             ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
         let list_u8 = ListArray::new(
