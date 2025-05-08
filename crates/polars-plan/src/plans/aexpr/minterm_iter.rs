@@ -33,7 +33,7 @@ impl Iterator for MintermIter<'_> {
 
         while let AExpr::BinaryExpr {
             left,
-            op: Operator::And,
+            op: Operator::And | Operator::LogicalAnd,
             right,
         } = self.expr_arena.get(top)
         {

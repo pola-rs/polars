@@ -116,6 +116,7 @@ type TwoParents = [Option<Node>; 2];
 // - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
 // - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
 // - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
+#[expect(clippy::too_many_arguments)]
 pub(super) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<IR>,
@@ -123,6 +124,7 @@ pub(super) fn set_cache_states(
     scratch: &mut Vec<Node>,
     expr_eval: ExprEval<'_>,
     verbose: bool,
+    pushdown_maintain_errors: bool,
     new_streaming: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
@@ -254,7 +256,9 @@ pub(super) fn set_cache_states(
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
-        let mut pred_pd = PredicatePushDown::new(expr_eval, new_streaming).block_at_cache(false);
+        let mut pred_pd =
+            PredicatePushDown::new(expr_eval, pushdown_maintain_errors, new_streaming)
+                .block_at_cache(false);
         for (_cache_id, v) in cache_schema_and_children {
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't
