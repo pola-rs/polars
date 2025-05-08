@@ -524,6 +524,7 @@ def test_select_explode_height_filter_order_by() -> None:
         pl.Series("list", [2, 1, 3, 4, 5, 6]).to_frame(),
     )
 
+
 def test_sqlcontext_frames_type_check() -> None:
     """Test proper error messages when SQLContext is initialized with invalid args."""
     # Test the issue #21891
@@ -534,14 +535,14 @@ def test_sqlcontext_frames_type_check() -> None:
     # Test that passing a DataFrame directly raises the correct error
     # Use non-typed call to test runtime behavior
     with pytest.raises(InvalidOperationError, match="All values must be named"):
-        pl.SQLContext(df)  # type: ignore
+        pl.SQLContext(df)  # type: ignore[call-overload]
 
     # Test other non-dict values also raise the same error
     with pytest.raises(InvalidOperationError, match="All values must be named"):
-        pl.SQLContext(frames=[df])  # type: ignore
+        pl.SQLContext(frames=[df])  # type: ignore[call-overload]
 
     with pytest.raises(InvalidOperationError, match="All values must be named"):
-        pl.SQLContext(frames=123)  # type: ignore
+        pl.SQLContext(frames=123)  # type: ignore[call-overload]
 
     # Test that proper usage works correctly
     # 1. Using named parameters
