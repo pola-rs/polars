@@ -26,19 +26,15 @@ use super::*;
 // - DSL serialized with the previous Polars version is still fully compatible with this version.
 //
 // You need to be sure that every possible DSL serialized with the previous Polars version is still
-// valid and has the same meaning in this Polars version. You also need to be sure that older Polars
-// versions fail to deserialize the new DSL when the new functionality you are adding is being
-// requested by the DSL.
+// valid and has the same meaning in this Polars version.
 //
 // Allowed changes:
 // - adding a new enum variant,
-// - adding a field with a default value, where the default value matched the behavior of the
-//   previous Polars version that didn't have this field; ensure that the containing
-//   struct/enum already had `#[serde(deny_unknown_fields)]` on it in the previous version,
-//   otherwise this needs a major version bump,
-// - adding new flags to bitflags; make sure that unknown bitflags already fail to deserialize
-//   in the previous Polars version, and again, the default value has to preserve the
-//   previous behavior.
+// - adding a field with a default value, where the default value matches the behavior of the
+//   previous Polars version that didn't have this field,
+// - adding new flags to bitflags; again, the default value has to preserve the previous behavior,
+// - allowing field values that were previously rejected, e.g. a value that would cause an error or
+//   panic if it was greater than 10 can be allowed to go up to 20 in the new version).
 //
 // # Major version
 //
@@ -51,6 +47,7 @@ use super::*;
 // - removing a field or an enum variant
 // - changing a name, type, or meaning of a field or an enum variant
 // - changing a default value of a field or a default enum variant
+// - restricting the range of allowed values a field can have
 pub static DSL_VERSION: (u16, u16) = (3, 1);
 static DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
@@ -305,7 +302,7 @@ impl DslPlan {
             );
         }
 
-        pl_serialize::SerializeOptions::default().deserialize_from_reader::<_, _, true>(reader).map_err(|e| {
+        let (dsl, unknown_fields) = pl_serialize::SerializeOptions::default().deserialize_from_reader_with_unknown_fields(reader).map_err(|e| {
             // The DSL serialization is forward compatible if there are no unknown fields
             if minor > MINOR {
                 // Convey that the failure might also be due to broken forward compatibility
@@ -318,6 +315,23 @@ impl DslPlan {
                     "deserialization failed\n\nerror: {e}",
                 )
             }
-        })
+        })?;
+
+        if !unknown_fields.is_empty() {
+            if minor > MINOR {
+                polars_bail!(ComputeError:
+                    "deserialization failed\n\ngiven DSL_VERSION: {major}.{minor} is higher than this Polars version which uses DSL_VERSION: {MAJOR}.{MINOR}\n{}\nencountered unknown fields: {:?}",
+                    "the plan requires functionality not supported in this Polars version",
+                    unknown_fields,
+                )
+            } else {
+                polars_bail!(ComputeError:
+                    "deserialization failed\n\ngiven DSL_VERSION: {major}.{minor} should be supported in this Polars version which uses DSL_VERSION: {MAJOR}.{MINOR}\nencountered unknown fields: {:?}",
+                    unknown_fields,
+                )
+            }
+        }
+
+        Ok(dsl)
     }
 }
