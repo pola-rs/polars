@@ -184,6 +184,10 @@ impl PyExpr {
             .sample_fraction(fraction.inner, with_replacement, shuffle, seed)
             .into()
     }
+    #[cfg(feature = "list_filter")]
+    fn list_filter(&self, predicate: PyExpr) -> Self {
+        self.inner.clone().list().filter(predicate.inner).into()
+    }
 
     #[cfg(feature = "list_gather")]
     fn list_gather(&self, index: PyExpr, null_on_oob: bool) -> Self {

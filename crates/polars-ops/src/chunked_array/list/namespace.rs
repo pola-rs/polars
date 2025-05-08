@@ -384,6 +384,123 @@ pub trait ListNameSpaceImpl: AsList {
         unsafe { s.from_physical_unchecked(ca.inner_dtype()) }
     }
 
+    #[cfg(feature = "list_filter")]
+    fn lst_filter(&self, mask: &Series) -> PolarsResult<ListChunked> {
+        use arrow::{array::{builder::{make_builder, ShareStrategy}, Array, BooleanArray, ListArray}, bitmap::BitmapBuilder, offset::Offsets, pushable::Pushable};
+
+        let list_ca = self.as_list().rechunk();
+        let mask_ca = mask.list()?;
+
+        let list_arr = list_ca.downcast_iter().next().unwrap();
+        let mask_arr = mask_ca.downcast_iter().next().unwrap();
+
+        let values_arr: &dyn Array = list_arr.values().as_ref();
+        let mask_values_arr = mask_arr
+            .values()
+            .as_any()
+            .downcast_ref::<BooleanArray>()
+            .ok_or_else(|| {
+                polars_err!(
+                    SchemaMismatch:
+                    "mask inside `list.filter` must be Boolean; got `{:?}`",
+                    mask_arr.values().dtype()
+                )
+            })?;
+
+        let rows = list_arr.len();
+        let list_offsets = list_arr.offsets().as_slice();
+        let mask_offsets = mask_arr.offsets().as_slice();
+
+        let mut total_inner = 0usize;
+        let mask_values = mask_values_arr.values();
+        for row in 0..rows {
+            if !list_arr.is_valid(row) || !mask_arr.is_valid(row) {
+                continue;
+            }
+
+            let list_len = (list_offsets[row + 1] - list_offsets[row]) as usize;
+            let mask_len = (mask_offsets[row + 1] - mask_offsets[row]) as usize;
+
+            polars_ensure!(
+                list_len == mask_len,
+                ComputeError:
+                "`list.filter`: sub-list length ({}) differs from mask length ({}) at row {}",
+                list_len, mask_len, row
+            );
+
+            let start = mask_offsets[row] as usize;
+            let set_bits = mask_values.clone().sliced(start, mask_len).set_bits();
+            total_inner += set_bits;
+        }
+
+        let inner_arrow_type: ArrowDataType = values_arr.dtype().clone();
+        let mut builder = make_builder(&inner_arrow_type);
+        builder.reserve(total_inner);
+
+        let mut validity = BitmapBuilder::with_capacity(rows);
+        let mut offsets = Offsets::with_capacity(rows + 1);
+
+        for row in 0..rows {
+            let is_valid_row = list_arr.is_valid(row) && mask_arr.is_valid(row);
+            if !is_valid_row {
+                offsets.push_null();
+                validity.push(false);
+                continue;
+            }
+
+            let lst_start = list_offsets[row] as usize;
+            let lst_end = list_offsets[row + 1] as usize;
+            let mask_start = mask_offsets[row] as usize;
+
+            let row_len = lst_end - lst_start;
+
+            let mut kept = 0usize;
+            let mut seg_start: Option<usize> = None;
+
+            for i in 0..row_len {
+                let keep =
+                    mask_values_arr.is_valid(mask_start + i) && mask_values_arr.value(mask_start + i);
+
+                match (keep, seg_start) {
+                    (true, None) => seg_start = Some(i),
+                    (false, Some(beg)) => {
+                        builder.subslice_extend(
+                            values_arr,
+                            lst_start + beg,
+                            i - beg,
+                            ShareStrategy::Always,
+                        );
+                        kept += i - beg;
+                        seg_start = None;
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(beg) = seg_start {
+                builder.subslice_extend(
+                    values_arr,
+                    lst_start + beg,
+                    row_len - beg,
+                    ShareStrategy::Always,
+                );
+                kept += row_len - beg;
+            }
+
+            offsets.push(kept);
+            validity.push(true);
+        }
+
+        let values = builder.freeze_reset();
+        let list_dt = ListArray::<i64>::default_datatype(inner_arrow_type);
+        let out_arr = ListArray::new(
+            list_dt,
+            offsets.into(),
+            values,
+            validity.into_opt_validity(),
+        );
+        Ok(out_arr.into())
+    }
+
     #[cfg(feature = "list_gather")]
     fn lst_gather_every(&self, n: &IdxCa, offset: &IdxCa) -> PolarsResult<Series> {
         let list_ca = self.as_list();
