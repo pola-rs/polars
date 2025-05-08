@@ -3747,11 +3747,14 @@ class DataFrame:
         >>> df.write_ipc(path)
         """
         return_bytes = file is None
-        if return_bytes:
-            file = BytesIO()
+        target: str | Path | IO[bytes]
+        if file is None:
+            target = BytesIO()
+        else:
+            target = file
 
         self.lazy().sink_ipc(
-            file,
+            target,
             compression=compression,
             compat_level=compat_level,
             storage_options=storage_options,
