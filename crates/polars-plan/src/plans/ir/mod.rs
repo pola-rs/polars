@@ -71,7 +71,7 @@ pub enum IR {
         /// same set of ScanSources with different scan options.
         ///
         /// NOTE: This must be reset to a new Arc during e.g. predicate / slice pushdown.
-        #[serde(skip, default)]
+        #[cfg_attr(feature = "serde", serde(skip, default))]
         id: UniqueId,
     },
     DataFrameScan {
