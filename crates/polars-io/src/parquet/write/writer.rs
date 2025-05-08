@@ -5,9 +5,9 @@ use arrow::datatypes::PhysicalType;
 use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::write::{
-    ColumnWriteOptions, CompressionOptions, Encoding, FieldWriteOptions, FileWriter, KeyValue,
-    ListLikeFieldWriteOptions, StatisticsOptions, StructFieldWriteOptions, Version, WriteOptions,
-    to_parquet_schema,
+    ChildWriteOptions, ColumnWriteOptions, CompressionOptions, Encoding, FieldWriteOptions,
+    FileWriter, KeyValue, ListLikeFieldWriteOptions, StatisticsOptions, StructFieldWriteOptions,
+    Version, WriteOptions, to_parquet_schema,
 };
 
 use super::batched_writer::BatchedWriter;
@@ -121,10 +121,15 @@ where
 
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
-        let parquet_schema = to_parquet_schema(&schema)?;
-        let options = self.materialize_options();
         let column_options = get_column_options(&schema, &self.field_overwrites);
-        let writer = Mutex::new(FileWriter::try_new(self.writer, schema, options)?);
+        let parquet_schema = to_parquet_schema(&schema, &column_options)?;
+        let options = self.materialize_options();
+        let writer = Mutex::new(FileWriter::try_new(
+            self.writer,
+            schema,
+            options,
+            &column_options,
+        )?);
 
         Ok(BatchedWriter {
             writer,
@@ -173,15 +178,27 @@ fn transverse_recursive(
     field: &ArrowField,
     overwrites: Option<&ParquetFieldOverwrites>,
 ) -> ColumnWriteOptions {
+    let mut column_options = ColumnWriteOptions {
+        field_id: None,
+        metadata: Vec::new(),
+
+        // Dummy value.
+        children: ChildWriteOptions::Leaf(FieldWriteOptions {
+            encoding: Encoding::Plain,
+        }),
+    };
+
+    if let Some(overwrites) = overwrites {
+        column_options.metadata = convert_metadata(&overwrites.metadata);
+    }
+
     use arrow::datatypes::PhysicalType::*;
     match field.dtype().to_physical_type() {
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
         | Dictionary(_) | LargeUtf8 | BinaryView | Utf8View => {
-            let mut options = FieldWriteOptions::default_with_encoding(encoding_map(field.dtype()));
-            if let Some(overwrites) = overwrites {
-                options.metadata = convert_metadata(&overwrites.metadata);
-            }
-            ColumnWriteOptions::Leaf(options)
+            column_options.children = ChildWriteOptions::Leaf(FieldWriteOptions {
+                encoding: encoding_map(field.dtype()),
+            });
         },
         List | FixedSizeList | LargeList => {
             let child_overwrites = overwrites.map(|o| match &o.children {
@@ -200,14 +217,10 @@ fn transverse_recursive(
                 unreachable!()
             };
 
-            let mut options = ListLikeFieldWriteOptions {
-                metadata: Vec::new(),
-                child: Box::new(child),
-            };
-            if let Some(overwrites) = overwrites {
-                options.metadata = convert_metadata(&overwrites.metadata);
-            }
-            ColumnWriteOptions::ListLike(options)
+            column_options.children =
+                ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions {
+                    child: Box::new(child),
+                }));
         },
         Struct => {
             if let ArrowDataType::Struct(fields) = field.dtype().to_logical_type() {
@@ -230,14 +243,8 @@ fn transverse_recursive(
                     })
                     .collect();
 
-                let mut options = StructFieldWriteOptions {
-                    metadata: Vec::new(),
-                    children,
-                };
-                if let Some(overwrites) = overwrites {
-                    options.metadata = convert_metadata(&overwrites.metadata);
-                }
-                ColumnWriteOptions::Struct(options)
+                column_options.children =
+                    ChildWriteOptions::Struct(Box::new(StructFieldWriteOptions { children }));
             } else {
                 unreachable!()
             }
@@ -245,6 +252,8 @@ fn transverse_recursive(
         Map => unreachable!(),
         Union => todo!(),
     }
+
+    column_options
 }
 
 pub fn get_column_options(

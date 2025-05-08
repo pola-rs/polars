@@ -6,7 +6,7 @@ use arrow::datatypes::PhysicalType;
 use arrow::offset::{Offset, OffsetsBuffer};
 use polars_error::{PolarsResult, polars_bail};
 
-use super::{array_to_pages, Encoding, ColumnWriteOptions, WriteOptions};
+use super::{ColumnWriteOptions, WriteOptions, array_to_pages};
 use crate::arrow::read::schema::is_nullable;
 use crate::parquet::page::Page;
 use crate::parquet::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};

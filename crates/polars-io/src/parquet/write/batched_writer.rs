@@ -5,11 +5,10 @@ use arrow::record_batch::RecordBatch;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_parquet::read::{ParquetError, fallible_streaming_iterator};
-use polars_parquet::write::ColumnWriteOptions;
 use polars_parquet::write::{
-    CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding, FallibleStreamingIterator,
-    FileWriter, Page, ParquetType, RowGroupIterColumns, SchemaDescriptor, WriteOptions,
-    array_to_columns, schema_to_metadata_key,
+    ColumnWriteOptions, CompressedPage, Compressor, DynIter, DynStreamingIterator,
+    FallibleStreamingIterator, FileWriter, Page, ParquetType, RowGroupIterColumns,
+    SchemaDescriptor, WriteOptions, array_to_columns, schema_to_metadata_key,
 };
 use rayon::prelude::*;
 
@@ -127,7 +126,7 @@ impl<W: Write> BatchedWriter<W> {
             .key_value_metadata
             .as_ref()
             .map(|meta| {
-                let arrow_schema = schema_to_metadata_key(writer.schema());
+                let arrow_schema = schema_to_metadata_key(writer.schema(), &self.column_options);
                 let ctx = ParquetMetadataContext {
                     arrow_schema: arrow_schema.value.as_ref().unwrap(),
                 };
@@ -139,7 +138,7 @@ impl<W: Write> BatchedWriter<W> {
             })
             .transpose()?;
 
-        let size = writer.end(key_value_metadata)?;
+        let size = writer.end(key_value_metadata, &self.column_options)?;
         Ok(size)
     }
 }
@@ -156,8 +155,13 @@ fn prepare_rg_iter<'a>(
     rb_iter.filter_map(move |batch| match batch.len() {
         0 => None,
         _ => {
-            let row_group =
-                create_serializer(batch, parquet_schema.fields(), column_options, options, parallel);
+            let row_group = create_serializer(
+                batch,
+                parquet_schema.fields(),
+                column_options,
+                options,
+                parallel,
+            );
 
             Some(row_group)
         },
@@ -207,9 +211,10 @@ fn create_serializer(
     options: WriteOptions,
     parallel: bool,
 ) -> PolarsResult<RowGroupIterColumns<'static, PolarsError>> {
-    let func = move |((array, type_), column_options): ((&ArrayRef, &ParquetType), &ColumnWriteOptions)| {
-        array_to_pages_iter(array, type_, column_options, options)
-    };
+    let func = move |((array, type_), column_options): (
+        (&ArrayRef, &ParquetType),
+        &ColumnWriteOptions,
+    )| { array_to_pages_iter(array, type_, column_options, options) };
 
     let columns = if parallel {
         POOL.install(|| {
@@ -244,9 +249,10 @@ fn create_eager_serializer(
     column_options: &[ColumnWriteOptions],
     options: WriteOptions,
 ) -> PolarsResult<RowGroupIterColumns<'static, PolarsError>> {
-    let func = move |((array, type_), column_options): ((&ArrayRef, &ParquetType), &ColumnWriteOptions)| {
-        array_to_pages_iter(array, type_, column_options, options)
-    };
+    let func = move |((array, type_), column_options): (
+        (&ArrayRef, &ParquetType),
+        &ColumnWriteOptions,
+    )| { array_to_pages_iter(array, type_, column_options, options) };
 
     let columns = batch
         .columns()

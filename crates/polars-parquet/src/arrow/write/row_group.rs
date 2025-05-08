@@ -4,7 +4,8 @@ use arrow::record_batch::RecordBatchT;
 use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 
 use super::{
-    array_to_columns, to_parquet_schema, ColumnWriteOptions, DynIter, DynStreamingIterator, Encoding, RowGroupIterColumns, SchemaDescriptor, WriteOptions
+    ColumnWriteOptions, DynIter, DynStreamingIterator, RowGroupIterColumns, SchemaDescriptor,
+    WriteOptions, array_to_columns, to_parquet_schema,
 };
 use crate::parquet::FallibleStreamingIterator;
 use crate::parquet::error::ParquetError;
@@ -87,7 +88,7 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<RecordBatchT
                 "The number of column options must equal the number of fields".to_string(),
             )
         }
-        let parquet_schema = to_parquet_schema(schema)?;
+        let parquet_schema = to_parquet_schema(schema, &column_options)?;
 
         Ok(Self {
             iter,

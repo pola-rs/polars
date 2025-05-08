@@ -91,44 +91,41 @@ pub struct WriteOptions {
 }
 
 #[derive(Clone)]
-pub enum ColumnWriteOptions {
+pub struct ColumnWriteOptions {
+    pub field_id: Option<i32>,
+    pub metadata: Vec<KeyValue>,
+    pub children: ChildWriteOptions,
+}
+
+#[derive(Clone)]
+pub enum ChildWriteOptions {
     Leaf(FieldWriteOptions),
-    ListLike(ListLikeFieldWriteOptions),
-    Struct(StructFieldWriteOptions),
+    ListLike(Box<ListLikeFieldWriteOptions>),
+    Struct(Box<StructFieldWriteOptions>),
 }
 
 impl ColumnWriteOptions {
     pub fn to_leaves<'a>(&'a self, out: &mut Vec<&'a FieldWriteOptions>) {
-        match self {
-            ColumnWriteOptions::Leaf(o) => out.push(o),
-            ColumnWriteOptions::ListLike(o) => o.child.to_leaves(out),
-            ColumnWriteOptions::Struct(o) => {
+        match &self.children {
+            ChildWriteOptions::Leaf(o) => out.push(o),
+            ChildWriteOptions::ListLike(o) => o.child.to_leaves(out),
+            ChildWriteOptions::Struct(o) => {
                 for o in &o.children {
                     o.to_leaves(out);
                 }
             },
         }
     }
-
-    pub fn metadata(&self) -> &[KeyValue] {
-        match self {
-            ColumnWriteOptions::Leaf(o) => o.metadata.as_slice(),
-            ColumnWriteOptions::ListLike(o) => o.metadata.as_slice(),
-            ColumnWriteOptions::Struct(o) => o.metadata.as_slice(),
-        }
-    }
 }
 
 #[derive(Clone)]
 pub struct FieldWriteOptions {
-    pub metadata: Vec<KeyValue>,
     pub encoding: Encoding,
 }
 
 impl FieldWriteOptions {
     pub fn default_with_encoding(encoding: Encoding) -> Self {
         Self {
-            metadata: Vec::new(),
             encoding,
         }
     }
@@ -136,13 +133,11 @@ impl FieldWriteOptions {
 
 #[derive(Clone)]
 pub struct ListLikeFieldWriteOptions {
-    pub metadata: Vec<KeyValue>,
     pub child: Box<ColumnWriteOptions>,
 }
 
 #[derive(Clone)]
 pub struct StructFieldWriteOptions {
-    pub metadata: Vec<KeyValue>,
     pub children: Vec<ColumnWriteOptions>,
 }
 
@@ -242,11 +237,14 @@ fn decimal_length_from_precision(precision: usize) -> usize {
 }
 
 /// Creates a parquet [`SchemaDescriptor`] from a [`ArrowSchema`].
-pub fn to_parquet_schema(schema: &ArrowSchema, column_options: &[ColumnWriteOptions]) -> PolarsResult<SchemaDescriptor> {
+pub fn to_parquet_schema(
+    schema: &ArrowSchema,
+    column_options: &[ColumnWriteOptions],
+) -> PolarsResult<SchemaDescriptor> {
     let parquet_types = schema
         .iter_values()
         .zip(column_options)
-        .map(|(field, options)| to_parquet_type(field))
+        .map(|(field, options)| to_parquet_type(field, options))
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok(SchemaDescriptor::new(
         PlSmallStr::from_static("root"),
