@@ -1069,7 +1069,7 @@ mod tests {
     /// result because all views are inline.
     #[test]
     fn cast_list_uint8_to_binary_drops_small_buffers() {
-        let values = PrimitiveArray::from_slice(&vec![0u8; 12]);
+        let values = PrimitiveArray::from_slice(&vec![10u8; 12]);
         let dtype =
             ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
         let list_u8 = ListArray::new(
@@ -1086,5 +1086,12 @@ mod tests {
         .unwrap();
         let binary_array: &BinaryViewArray = binary.as_ref().as_any().downcast_ref().unwrap();
         assert!(binary_array.data_buffers().is_empty());
+        assert_eq!(
+            binary_array
+                .values_iter()
+                .map(|s| s.to_vec())
+                .collect::<Vec<Vec<u8>>>(),
+            vec![vec![10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10],]
+        );
     }
 }
