@@ -17,10 +17,10 @@ if TYPE_CHECKING:
 def test_simplify_expression_lit_true_4376() -> None:
     df = pl.DataFrame([[1, 4, 7], [2, 5, 8], [3, 6, 9]])
     assert df.lazy().filter(pl.lit(True) | (pl.col("column_0") == 1)).collect(
-        simplify_expression=True
+        optimizations=pl.QueryOptFlags(simplify_expression=True),
     ).rows() == [(1, 2, 3), (4, 5, 6), (7, 8, 9)]
     assert df.lazy().filter((pl.col("column_0") == 1) | pl.lit(True)).collect(
-        simplify_expression=True
+        optimizations=pl.QueryOptFlags(simplify_expression=True),
     ).rows() == [(1, 2, 3), (4, 5, 6), (7, 8, 9)]
 
 
@@ -212,7 +212,7 @@ def test_agg_function_of_filter_10565() -> None:
     ) == {"a": []}
 
     assert df_str.lazy().filter(pl.col("a").n_unique().over("a") == 1).collect(
-        predicate_pushdown=False
+        optimizations=pl.QueryOptFlags(predicate_pushdown=False)
     ).to_dict(as_series=False) == {"a": []}
 
 

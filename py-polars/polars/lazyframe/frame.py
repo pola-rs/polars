@@ -96,6 +96,7 @@ from polars.interchange.protocol import CompatLevel
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
+from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
 from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
@@ -107,6 +108,8 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Iterable, Sequence
     from io import IOBase
     from typing import IO, Literal
+
+    from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars.polars import PyPartitioning
@@ -1102,13 +1105,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return df_summary
 
     @deprecate_streaming_parameter()
+    @forward_old_opt_flags()
     def explain(
         self,
         *,
         format: ExplainFormat = "plain",
         optimized: bool = True,
         type_coercion: bool = True,
-        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1120,7 +1123,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         engine: EngineType = "auto",
         tree_format: bool | None = None,
-        _check_order: bool = True,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> str:
         """
         Create a string representation of the query plan.
@@ -1138,22 +1141,49 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             run.
         type_coercion
             Do type coercion optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         predicate_pushdown
             Do predicate pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         projection_pushdown
             Do projection pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         simplify_expression
             Run simplify expressions optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         slice_pushdown
             Slice pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         comm_subplan_elim
             Will try to cache branching subplans that occur on self-joins or unions.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         collapse_joins
             Collapse a join and filters into a faster join
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query
@@ -1177,7 +1207,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                The GPU engine does not support streaming, if streaming
                is enabled then GPU execution is switched off.
+        optimizations
+            The optimization passes done during query optimization.
 
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
         tree_format
             Format the output as a tree.
 
@@ -1212,23 +1247,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("streaming mode is considered unstable.")
 
         if optimized:
-            type_check = _type_check
-            ldf = self._ldf.optimization_toggle(
-                type_coercion=type_coercion,
-                type_check=type_check,
-                predicate_pushdown=predicate_pushdown,
-                projection_pushdown=projection_pushdown,
-                simplify_expression=simplify_expression,
-                slice_pushdown=slice_pushdown,
-                comm_subplan_elim=comm_subplan_elim,
-                comm_subexpr_elim=comm_subexpr_elim,
-                cluster_with_columns=cluster_with_columns,
-                collapse_joins=collapse_joins,
-                streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
-                _eager=False,
-                _check_order=_check_order,
-                new_streaming=engine == "streaming",
-            )
+            optimizations = optimizations.__copy__()
+            optimizations._pyoptflags.streaming = engine == "streaming"
+            optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
+
+            ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
             if format == "tree":
                 return ldf.describe_optimized_plan_tree()
             else:
@@ -1240,6 +1263,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return self._ldf.describe_plan()
 
     @deprecate_streaming_parameter()
+    @forward_old_opt_flags()
     def show_graph(
         self,
         *,
@@ -1258,10 +1282,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
-        streaming: bool = False,
         engine: EngineType = "auto",
         plan_stage: PlanStage = "ir",
         _check_order: bool = True,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> str | None:
         """
         Show a plot of the query plan.
@@ -1283,22 +1307,49 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Passed to matplotlib if `show == True`.
         type_coercion
             Do type coercion optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         predicate_pushdown
             Do predicate pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         projection_pushdown
             Do projection pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         simplify_expression
             Run simplify expressions optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         slice_pushdown
             Slice pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         comm_subplan_elim
             Will try to cache branching subplans that occur on self-joins or unions.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         cluster_with_columns
             Combine sequential independent calls to with_columns.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         collapse_joins
             Collapse a join and filters into a faster join.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query
@@ -1346,23 +1397,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if engine in ("streaming", "old-streaming"):
             issue_unstable_warning("streaming mode is considered unstable.")
 
-        type_check = _type_check
-        _ldf = self._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=engine == "streaming",
-        )
+        optimizations = optimizations.__copy__()
+        optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
+        optimizations._pyoptflags.streaming = engine == "streaming"
+        _ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
         if plan_stage == "ir":
             dot = _ldf.to_dot(optimized)
@@ -1769,11 +1807,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         reverse = extend_bool(reverse, len(by), "reverse", "by")
         return self._from_pyldf(self._ldf.bottom_k(k, by=by, reverse=reverse))
 
+    @forward_old_opt_flags()
     def profile(
         self,
         *,
         type_coercion: bool = True,
-        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1787,7 +1825,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         engine: EngineType = "auto",
-        _check_order: bool = True,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         **_kwargs: Any,
     ) -> tuple[DataFrame, DataFrame]:
         """
@@ -1803,24 +1841,54 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         type_coercion
             Do type coercion optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         predicate_pushdown
             Do predicate pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         projection_pushdown
             Do projection pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         simplify_expression
             Run simplify expressions optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         no_optimization
             Turn off (certain) optimizations.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         slice_pushdown
             Slice pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         comm_subplan_elim
             Will try to cache branching subplans that occur on self-joins or unions.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         collapse_joins
             Collapse a join and filters into a faster join
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         show_plot
             Show a gantt chart of the profiling result
         truncate_nodes
@@ -1851,6 +1919,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                The GPU engine does not support streaming, if streaming
                is enabled then GPU execution is switched off.
+        optimizations
+            The optimization passes done during query optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
 
         Examples
@@ -1893,31 +1967,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
         engine = _select_engine(engine)
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            comm_subplan_elim = False
-            comm_subexpr_elim = False
-            cluster_with_columns = False
-            collapse_joins = False
 
-        type_check = _type_check
-        ldf = self._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=False,
-        )
+        optimizations = optimizations.__copy__()
+        optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
+        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
+
         callback = _gpu_engine_callback(
             engine,
             streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
@@ -1975,7 +2029,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
-        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1987,8 +2040,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         no_optimization: bool = False,
         engine: EngineType = "auto",
         background: Literal[True],
-        _eager: bool = False,
-        _check_order: bool = True,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> InProcessQuery: ...
 
     @overload
@@ -1996,7 +2048,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
-        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2008,16 +2059,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         no_optimization: bool = False,
         engine: EngineType = "auto",
         background: Literal[False] = False,
-        _check_order: bool = True,
-        _eager: bool = False,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> DataFrame: ...
 
     @deprecate_streaming_parameter()
+    @forward_old_opt_flags()
     def collect(
         self,
         *,
         type_coercion: bool = True,
-        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2029,8 +2079,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         no_optimization: bool = False,
         engine: EngineType = "auto",
         background: bool = False,
-        _check_order: bool = True,
-        _eager: bool = False,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         **_kwargs: Any,
     ) -> DataFrame | InProcessQuery:
         """
@@ -2043,24 +2092,54 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         type_coercion
             Do type coercion optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         predicate_pushdown
             Do predicate pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         projection_pushdown
             Do projection pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         simplify_expression
             Run simplify expressions optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         slice_pushdown
             Slice pushdown optimization.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         comm_subplan_elim
             Will try to cache branching subplans that occur on self-joins or unions.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         comm_subexpr_elim
             Common subexpressions will be cached and reused.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         cluster_with_columns
             Combine sequential independent calls to with_columns
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         collapse_joins
             Collapse a join and filters into a faster join
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         no_optimization
             Turn off (certain) optimizations.
+
+            .. deprecated:: 1.30.0
+                Use the `optimizations` parameters.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query
@@ -2084,13 +2163,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                The GPU engine does not support streaming, or running in the
                background. If either are enabled, then GPU execution is switched off.
-
         background
             Run the query in the background and get a handle to the query.
             This handle can be used to fetch the result or cancel the query.
 
             .. warning::
                 Background mode is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        optimizations
+            The optimization passes done during query optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
 
         Returns
@@ -2188,16 +2272,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if new_streaming:
             engine = "streaming"
 
-        if no_optimization or _eager:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-            comm_subplan_elim = False
-            comm_subexpr_elim = False
-            cluster_with_columns = False
-            collapse_joins = False
-            _check_order = False
-
         if engine in ("old-streaming", "streaming"):
             issue_unstable_warning("streaming mode is considered unstable.")
 
@@ -2206,29 +2280,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
             background=background,
             new_streaming=new_streaming,
-            _eager=_eager,
-        )
-        type_check = _type_check
-        ldf = self._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=False,
-            _eager=_eager,
-            _check_order=_check_order,
-            new_streaming=False,
+            _eager=optimizations._pyoptflags.eager,
         )
 
         if isinstance(engine, GPUEngine):
             engine = "gpu"
 
+        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
         if background:
             issue_unstable_warning("background mode is considered unstable.")
             return InProcessQuery(ldf.collect_concurrently())
@@ -2242,18 +2300,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         gevent: Literal[True],
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        no_optimization: bool = True,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> _GeventDataFrameResult[DataFrame]: ...
 
     @overload
@@ -2261,18 +2309,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         gevent: Literal[False] = False,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        no_optimization: bool = True,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> Awaitable[DataFrame]: ...
 
     @deprecate_streaming_parameter()
@@ -2280,19 +2318,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         gevent: bool = False,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        no_optimization: bool = False,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
         engine: EngineType = "auto",
-        _check_order: bool = True,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
         Collect DataFrame asynchronously in thread pool.
@@ -2312,26 +2339,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         gevent
             Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
-        type_coercion
-            Do type coercion optimization.
-        predicate_pushdown
-            Do predicate pushdown optimization.
-        projection_pushdown
-            Do projection pushdown optimization.
-        simplify_expression
-            Run simplify expressions optimization.
-        no_optimization
-            Turn off (certain) optimizations.
-        slice_pushdown
-            Slice pushdown optimization.
-        comm_subplan_elim
-            Will try to cache branching subplans that occur on self-joins or unions.
-        comm_subexpr_elim
-            Common subexpressions will be cached and reused.
-        cluster_with_columns
-            Combine sequential independent calls to with_columns
-        collapse_joins
-            Collapse a join and filters into a faster join
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query
@@ -2344,6 +2351,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                The GPU engine does not support async, or running in the
                background. If either are enabled, then GPU execution is switched off.
+        optimizations
+            The optimization passes done during query optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -2390,36 +2403,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-            comm_subplan_elim = False
-            comm_subexpr_elim = False
-            cluster_with_columns = False
-            collapse_joins = False
         engine = _select_engine(engine)
 
         if engine in ("streaming", "old-streaming"):
             issue_unstable_warning("streaming mode is considered unstable.")
 
-        type_check = _type_check
-        ldf = self._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=False,
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=False,
-        )
+        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
         result: _GeventDataFrameResult[DataFrame] | _AioDataFrameResult[DataFrame] = (
             _GeventDataFrameResult() if gevent else _AioDataFrameResult()
@@ -2470,14 +2459,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -2492,6 +2473,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> None: ...
 
     @overload
@@ -2505,14 +2487,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -2527,6 +2501,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
     def sink_parquet(
@@ -2539,14 +2514,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -2561,6 +2528,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | Mapping[str, ParquetFieldOverwrites]
         | None = None,
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -2611,48 +2579,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        type_coercion
-            Do type coercion optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        predicate_pushdown
-            Do predicate pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        projection_pushdown
-            Do projection pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        simplify_expression
-            Run simplify expressions optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        slice_pushdown
-            Slice pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        collapse_joins
-            Collapse a join and filters into a faster join
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        no_optimization
-            Turn off (certain) optimizations.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
@@ -2727,6 +2653,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars streaming
             engine.
+        optimizations
+            The optimization passes done during query optimization.
+
+            This has no effect if `lazy` is set to `True`.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -2738,18 +2672,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
         """
         engine = _select_engine(engine)
-        lf = self._set_sink_optimizations(
-            engine,
-            type_coercion=type_coercion,
-            _type_check=_type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            collapse_joins=collapse_joins,
-            no_optimization=no_optimization,
-        )
-
         if metadata is not None:
             msg = (
                 "the `metadata` parameter of `sink_parquet` is considered experimental."
@@ -2831,7 +2753,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 msg = f"field_overwrites got the wrong type {type(field_overwrites)}"
                 raise TypeError(msg)
 
-        lf = lf.sink_parquet(
+        ldf = self._ldf.sink_parquet(
             target=target,
             compression=compression,
             compression_level=compression_level,
@@ -2845,12 +2767,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             metadata=metadata,
             field_overwrites=field_overwrites_dicts,
         )
-        lf = LazyFrame._from_pyldf(lf)
 
         if not lazy:
-            lf.collect(engine=engine)
+            ldf = ldf.with_optimizations(optimizations._pyoptflags)
+            ldf = LazyFrame._from_pyldf(ldf)
+            ldf.collect(engine=engine)
             return None
-        return lf
+        return LazyFrame._from_pyldf(ldf)
 
     @overload
     def sink_ipc(
@@ -2860,14 +2783,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compression: IpcCompression | None = "zstd",
         compat_level: CompatLevel | None = None,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -2877,6 +2792,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> None: ...
 
     @overload
@@ -2887,14 +2803,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compression: IpcCompression | None = "zstd",
         compat_level: CompatLevel | None = None,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -2904,6 +2812,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[True],
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
     def sink_ipc(
@@ -2913,14 +2822,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -2930,6 +2831,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
@@ -2949,48 +2851,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        type_coercion
-            Do type coercion optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        predicate_pushdown
-            Do predicate pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        projection_pushdown
-            Do projection pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        simplify_expression
-            Run simplify expressions optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        slice_pushdown
-            Slice pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        collapse_joins
-            Collapse a join and filters into a faster join
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        no_optimization
-            Turn off (certain) optimizations.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
@@ -3052,6 +2912,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             .. note::
                The GPU engine is currently not supported.
+        optimizations
+            The optimization passes done during query optimization.
+
+            This has no effect if `lazy` is set to `True`.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -3063,17 +2931,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_ipc("out.arrow")  # doctest: +SKIP
         """
         engine = _select_engine(engine)
-        lf = self._set_sink_optimizations(
-            engine,
-            type_coercion=type_coercion,
-            _type_check=_type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            collapse_joins=collapse_joins,
-            no_optimization=no_optimization,
-        )
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
@@ -3105,7 +2962,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if compression is None:
             compression = "uncompressed"
 
-        lf = lf.sink_ipc(
+        ldf = self._ldf.sink_ipc(
             target=target,
             compression=compression,
             compat_level=compat_level,
@@ -3114,12 +2971,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             retries=retries,
             sink_options=sink_options,
         )
-        lf = LazyFrame._from_pyldf(lf)
 
         if not lazy:
-            lf.collect(engine=engine)
+            ldf = ldf.with_optimizations(optimizations._pyoptflags)
+            ldf = LazyFrame._from_pyldf(ldf)
+            ldf.collect(engine=engine)
             return None
-        return lf
+        return LazyFrame._from_pyldf(ldf)
 
     @overload
     def sink_csv(
@@ -3140,14 +2998,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -3157,6 +3007,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> None: ...
 
     @overload
@@ -3178,14 +3029,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -3195,6 +3038,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[True],
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
     def sink_csv(
@@ -3215,14 +3059,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -3232,6 +3068,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a CSV file.
@@ -3300,48 +3137,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
-        type_coercion
-            Do type coercion optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        predicate_pushdown
-            Do predicate pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        projection_pushdown
-            Do projection pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        simplify_expression
-            Run simplify expressions optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        slice_pushdown
-            Slice pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        collapse_joins
-            Collapse a join and filters into a faster join
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
-        no_optimization
-            Turn off (certain) optimizations.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed at any
-                point without it being considered a breaking change.
         storage_options
             Options that indicate how to connect to a cloud provider.
 
@@ -3396,6 +3191,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars streaming
             engine.
+        optimizations
+            The optimization passes done during query optimization.
+
+            This has no effect if `lazy` is set to `True`.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -3413,17 +3216,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if not null_value:
             null_value = None
         engine = _select_engine(engine)
-        lf = self._set_sink_optimizations(
-            engine,
-            type_coercion=type_coercion,
-            _type_check=_type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            collapse_joins=collapse_joins,
-            no_optimization=no_optimization,
-        )
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
@@ -3447,7 +3239,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "mkdir": mkdir,
         }
 
-        lf = lf.sink_csv(
+        ldf = self._ldf.sink_csv(
             target=target,
             include_bom=include_bom,
             include_header=include_header,
@@ -3467,12 +3259,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             retries=retries,
             sink_options=sink_options,
         )
-        lf = LazyFrame._from_pyldf(lf)
 
         if not lazy:
-            lf.collect(engine=engine)
+            ldf = ldf.with_optimizations(optimizations._pyoptflags)
+            ldf = LazyFrame._from_pyldf(ldf)
+            ldf.collect(engine=engine)
             return None
-        return lf
+        return LazyFrame._from_pyldf(ldf)
 
     @overload
     def sink_ndjson(
@@ -3480,14 +3273,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
         *,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -3497,6 +3282,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> None: ...
 
     @overload
@@ -3505,14 +3291,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
         *,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -3522,6 +3300,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: Literal[True],
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
     def sink_ndjson(
@@ -3529,14 +3308,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         path: str | Path | IO[bytes] | IO[str] | PartitioningScheme,
         *,
         maintain_order: bool = True,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         storage_options: dict[str, Any] | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -3546,6 +3317,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to an NDJSON file.
@@ -3559,48 +3331,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-        type_coercion
-            Do type coercion optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-        predicate_pushdown
-            Do predicate pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-        projection_pushdown
-            Do projection pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-        simplify_expression
-            Run simplify expressions optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-        slice_pushdown
-            Slice pushdown optimization.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-        collapse_joins
-            Collapse a join and filters into a faster join
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-        no_optimization
-            Turn off (certain) optimizations.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed
@@ -3659,6 +3389,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars streaming
             engine.
+        optimizations
+            The optimization passes done during query optimization.
+
+            This has no effect if `lazy` is set to `True`.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -3670,17 +3408,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_ndjson("out.ndjson")  # doctest: +SKIP
         """
         engine = _select_engine(engine)
-        lf = self._set_sink_optimizations(
-            engine,
-            type_coercion=type_coercion,
-            _type_check=_type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            collapse_joins=collapse_joins,
-            no_optimization=no_optimization,
-        )
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
@@ -3704,59 +3431,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "mkdir": mkdir,
         }
 
-        lf = lf.sink_json(
+        ldf = self._ldf.sink_json(
             target=target,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
         )
-        lf = LazyFrame._from_pyldf(lf)
 
         if not lazy:
-            lf.collect(engine=engine)
+            ldf = ldf.with_optimizations(optimizations._pyoptflags)
+            ldf = LazyFrame._from_pyldf(ldf)
+            ldf.collect(engine=engine)
             return None
-        return lf
-
-    def _set_sink_optimizations(
-        self,
-        engine: EngineType = "auto",
-        *,
-        type_coercion: bool = True,
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        collapse_joins: bool = True,
-        cluster_with_columns: bool = True,
-        no_optimization: bool = False,
-        comm_subplan_elim: bool = False,
-        comm_subexpr_elim: bool = False,
-        _check_order: bool = True,
-    ) -> PyLazyFrame:
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-            _check_order = False
-
-        return self._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=_type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=engine in ("auto", "streaming"),
-        )
+        return LazyFrame._from_pyldf(ldf)
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "

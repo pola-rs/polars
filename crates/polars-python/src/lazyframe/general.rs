@@ -16,7 +16,7 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
 
-use super::{PyLazyFrame, SinkTarget};
+use super::{PyLazyFrame, PyOptFlags, SinkTarget};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
@@ -705,6 +705,12 @@ impl PyLazyFrame {
     fn cache(&self) -> Self {
         let ldf = self.ldf.clone();
         ldf.cache().into()
+    }
+
+    #[pyo3(signature = (optflags))]
+    fn with_optimizations(&self, optflags: PyOptFlags) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.with_optimizations(optflags.inner).into()
     }
 
     #[pyo3(signature = (lambda_post_opt=None))]

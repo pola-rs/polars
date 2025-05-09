@@ -3,14 +3,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.polars as plr
+from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS
 
 if TYPE_CHECKING:
-    from polars import LazyFrame
+    from polars import LazyFrame, QueryOptFlags
 
 
 def prepare_cloud_plan(
     lf: LazyFrame,
-    **optimizations: bool,
+    *,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> bytes:
     """
     Prepare the given LazyFrame for execution on Polars Cloud.
@@ -19,9 +21,8 @@ def prepare_cloud_plan(
     ----------
     lf
         The LazyFrame to prepare.
-    **optimizations
-        Optimizations to enable or disable in the query optimizer, e.g.
-        `projection_pushdown=False`.
+    optimizations
+        Optimizations to enable or disable in the query optimizer.
 
     Raises
     ------
@@ -34,5 +35,7 @@ def prepare_cloud_plan(
     ComputeError
         If the given LazyFrame cannot be serialized.
     """
-    pylf = lf._set_sink_optimizations(engine="old-streaming", **optimizations)  # type: ignore[arg-type]
+    optimizations = optimizations.__copy__()
+    optimizations._pyoptflags.old_streaming = True
+    pylf = lf._ldf.with_optimizations(optimizations._pyoptflags)
     return plr.prepare_cloud_plan(pylf)

@@ -205,7 +205,11 @@ def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
         .filter((pl.col("b") >= 1) & (pl.col("b") < 1))
     )
     assert (
-        re.search(r"FILTER.*FROM\n\s*DF", out.explain(predicate_pushdown=True)) is None
+        re.search(
+            r"FILTER.*FROM\n\s*DF",
+            out.explain(optimizations=pl.QueryOptFlags(predicate_pushdown=True)),
+        )
+        is None
     )
 
 
@@ -248,7 +252,7 @@ def test_predicate_pushdown_boundary_12102() -> None:
     )
 
     result = lf.collect()
-    result_no_ppd = lf.collect(predicate_pushdown=False)
+    result_no_ppd = lf.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False))
     assert_frame_equal(result, result_no_ppd)
 
 
@@ -260,7 +264,7 @@ def test_take_can_block_predicate_pushdown() -> None:
         .filter(pl.col("x") == pl.col("x").gather(0))
         .filter(pl.col("y"))
     )
-    result = lf.collect(predicate_pushdown=True)
+    result = lf.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
     assert result.to_dict(as_series=False) == {"x": [2], "y": [True]}
 
 
@@ -466,7 +470,7 @@ def test_hconcat_predicate() -> None:
             "b2": [6, 7, 8],
         }
     )
-    result = query.collect(predicate_pushdown=True)
+    result = query.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
     assert_frame_equal(result, expected)
 
 
@@ -524,7 +528,7 @@ def test_predicate_pushdown_block_join(how: Any) -> None:
         )
         .filter(pl.col("a") == 1)
     )
-    assert_frame_equal(q.collect(no_optimization=True), q.collect())
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), q.collect())
 
 
 def test_predicate_push_down_with_alias_15442() -> None:
@@ -532,7 +536,7 @@ def test_predicate_push_down_with_alias_15442() -> None:
     output = (
         df.lazy()
         .filter(pl.col("a").alias("x").drop_nulls() > 0)
-        .collect(predicate_pushdown=True)
+        .collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
     )
     assert output.to_dict(as_series=False) == {"a": [1]}
 
@@ -650,7 +654,7 @@ def test_predicate_pushdown_join_19772(
     if join_type == "right":
         expect = expect.select("v", "b", "k")
 
-    assert_frame_equal(q.collect(no_optimization=True), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
     assert_frame_equal(q.collect(), expect)
 
 
@@ -671,7 +675,12 @@ def test_predicates_not_split_when_pushdown_disabled_20475() -> None:
     q = pl.LazyFrame({"a": 1, "b": 1, "c": 1}).filter(
         pl.col("a") > 0, pl.col("b") > 0, pl.col("c") > 0
     )
-    assert q.explain(predicate_pushdown=False).count("FILTER") == 1
+    assert (
+        q.explain(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).count(
+            "FILTER"
+        )
+        == 1
+    )
 
 
 def test_predicate_filtering_against_nulls() -> None:

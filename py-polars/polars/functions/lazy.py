@@ -21,7 +21,10 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
-from polars.lazyframe.opt_flags import OptFlags
+from polars.lazyframe.opt_flags import (
+    DEFAULT_QUERY_OPT_FLAGS,
+    forward_old_opt_flags,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -39,6 +42,9 @@ if TYPE_CHECKING:
         IntoExpr,
         PolarsDataType,
         QuantileMethod,
+    )
+    from polars.lazyframe.opt_flags import (
+        QueryOptFlags,
     )
 
     if sys.version_info >= (3, 13):
@@ -1757,11 +1763,11 @@ def arg_sort_by(
 
 
 @deprecate_streaming_parameter()
+@forward_old_opt_flags()
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
     type_coercion: bool = True,
-    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1771,7 +1777,7 @@ def collect_all(
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
     collapse_joins: bool = True,
-    _check_order: bool = True,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
 ) -> list[DataFrame]:
     """
@@ -1788,24 +1794,60 @@ def collect_all(
         A list of LazyFrames to collect.
     type_coercion
         Do type coercion optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     predicate_pushdown
         Do predicate pushdown optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     projection_pushdown
         Do projection pushdown optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     simplify_expression
         Run simplify expressions optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     no_optimization
         Turn off optimizations.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     slice_pushdown
         Slice pushdown optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     comm_subplan_elim
         Will try to cache branching subplans that occur on self-joins or unions.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     cluster_with_columns
         Combine sequential independent calls to with_columns
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     collapse_joins
         Collapse a join and filters into a faster join
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
+    optimizations
+        The optimization passes done during query optimization.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     engine
         Select the engine used to process the query, optional.
         At the moment, if set to `"auto"` (default), the query
@@ -1825,27 +1867,11 @@ def collect_all(
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
-    optflags = OptFlags(
-        _type_coercion=type_coercion,
-        _type_check=_type_check,
-        predicate_pushdown=predicate_pushdown,
-        projection_pushdown=projection_pushdown,
-        simplify_expression=simplify_expression,
-        slice_pushdown=slice_pushdown,
-        comm_subplan_elim=comm_subplan_elim,
-        comm_subexpr_elim=comm_subexpr_elim,
-        cluster_with_columns=cluster_with_columns,
-        collapse_joins=collapse_joins,
-        check_order_observe=_check_order,
-    )
-    if no_optimization:
-        optflags.no_optimizations()
-
     if engine in ("streaming", "old-streaming"):
         issue_unstable_warning("streaming mode is considered unstable.")
 
     lfs = [lf._ldf for lf in lazy_frames]
-    out = plr.collect_all(lfs, engine, optflags._pyoptflags)
+    out = plr.collect_all(lfs, engine, optimizations._pyoptflags)
 
     # wrap the pydataframes into dataframe
     result = [wrap_df(pydf) for pydf in out]
@@ -1858,18 +1884,8 @@ def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
     gevent: Literal[True],
-    type_coercion: bool = True,
-    _type_check: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = True,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
     engine: EngineType = "auto",
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
 
@@ -1878,18 +1894,8 @@ def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
     gevent: Literal[False] = False,
-    type_coercion: bool = True,
-    _type_check: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = False,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
     engine: EngineType = "auto",
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> Awaitable[list[DataFrame]]: ...
 
 
@@ -1899,19 +1905,8 @@ def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
     gevent: bool = False,
-    type_coercion: bool = True,
-    _type_check: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = False,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
-    _check_order: bool = True,
     engine: EngineType = "auto",
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
@@ -1933,26 +1928,12 @@ def collect_all_async(
         A list of LazyFrames to collect.
     gevent
         Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
-    type_coercion
-        Do type coercion optimization.
-    predicate_pushdown
-        Do predicate pushdown optimization.
-    projection_pushdown
-        Do projection pushdown optimization.
-    simplify_expression
-        Run simplify expressions optimization.
-    no_optimization
-        Turn off (certain) optimizations.
-    slice_pushdown
-        Slice pushdown optimization.
-    comm_subplan_elim
-        Will try to cache branching subplans that occur on self-joins or unions.
-    comm_subexpr_elim
-        Common subexpressions will be cached and reused.
-    cluster_with_columns
-        Combine sequential independent calls to with_columns
-    collapse_joins
-        Collapse a join and filters into a faster join
+    optimizations
+        The optimization passes done during query optimization.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     engine
         Select the engine used to process the query, optional.
         At the moment, if set to `"auto"` (default), the query
@@ -1983,22 +1964,6 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    optflags = OptFlags(
-        _type_coercion=type_coercion,
-        _type_check=_type_check,
-        predicate_pushdown=predicate_pushdown,
-        projection_pushdown=projection_pushdown,
-        simplify_expression=simplify_expression,
-        slice_pushdown=slice_pushdown,
-        comm_subplan_elim=comm_subplan_elim,
-        comm_subexpr_elim=comm_subexpr_elim,
-        cluster_with_columns=cluster_with_columns,
-        collapse_joins=collapse_joins,
-        check_order_observe=_check_order,
-    )
-    if no_optimization:
-        optflags.no_optimizations()
-
     if engine in ("streaming", "old-streaming"):
         issue_unstable_warning("streaming mode is considered unstable.")
 
@@ -2007,7 +1972,7 @@ def collect_all_async(
     ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
     lfs = [lf._ldf for lf in lazy_frames]
     plr.collect_all_with_callback(
-        lfs, engine, optflags._pyoptflags, result._callback_all
+        lfs, engine, optimizations._pyoptflags, result._callback_all
     )
     return result
 
@@ -2016,18 +1981,7 @@ def collect_all_async(
 def explain_all(
     lazy_frames: Iterable[LazyFrame],
     *,
-    type_coercion: bool = True,
-    _type_check: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = False,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
-    _check_order: bool = True,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> str:
     """
     Explain multiple LazyFrames as if passed to `collect_all`.
@@ -2039,49 +1993,19 @@ def explain_all(
     ----------
     lazy_frames
         A list of LazyFrames to collect.
-    type_coercion
-        Do type coercion optimization.
-    predicate_pushdown
-        Do predicate pushdown optimization.
-    projection_pushdown
-        Do projection pushdown optimization.
-    simplify_expression
-        Run simplify expressions optimization.
-    no_optimization
-        Turn off optimizations.
-    slice_pushdown
-        Slice pushdown optimization.
-    comm_subplan_elim
-        Will try to cache branching subplans that occur on self-joins or unions.
-    comm_subexpr_elim
-        Common subexpressions will be cached and reused.
-    cluster_with_columns
-        Combine sequential independent calls to with_columns
-    collapse_joins
-        Collapse a join and filters into a faster join
+    optimizations
+        The optimization passes done during query optimization.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Returns
     -------
     Explained plan.
     """
-    optflags = OptFlags(
-        _type_coercion=type_coercion,
-        _type_check=_type_check,
-        predicate_pushdown=predicate_pushdown,
-        projection_pushdown=projection_pushdown,
-        simplify_expression=simplify_expression,
-        slice_pushdown=slice_pushdown,
-        comm_subplan_elim=comm_subplan_elim,
-        comm_subexpr_elim=comm_subexpr_elim,
-        cluster_with_columns=cluster_with_columns,
-        collapse_joins=collapse_joins,
-        check_order_observe=_check_order,
-    )
-    if no_optimization:
-        optflags.no_optimizations()
-
     lfs = [lf._ldf for lf in lazy_frames]
-    return plr.explain_all(lfs, optflags._pyoptflags)
+    return plr.explain_all(lfs, optimizations._pyoptflags)
 
 
 @overload

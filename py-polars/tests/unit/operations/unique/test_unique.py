@@ -47,7 +47,10 @@ def test_unique_predicate_pd() -> None:
                 .filter(pl.col("x") == "abc")
                 .filter(pl.col("z"))
             )
-            assert_frame_equal(q.collect(predicate_pushdown=False), q.collect())
+            assert_frame_equal(
+                q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+                q.collect(),
+            )
 
 
 def test_unique_on_list_df() -> None:

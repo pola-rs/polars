@@ -749,7 +749,7 @@ def test_cast_python_dtypes() -> None:
 
 
 def test_overflowing_cast_literals_21023() -> None:
-    for no_optimization in [True, False]:
+    for optimizations in [pl.QueryOptFlags(), pl.QueryOptFlags.none()]:
         assert_frame_equal(
             (
                 pl.LazyFrame()
@@ -758,7 +758,7 @@ def test_overflowing_cast_literals_21023() -> None:
                         pl.Int8, wrap_numerical=True
                     )
                 )
-                .collect(no_optimization=no_optimization)
+                .collect(optimizations=optimizations)
             ),
             pl.Series([-128], dtype=pl.Int8).to_frame(),
         )

@@ -1491,10 +1491,10 @@ def test_join_numeric_key_upcast_15338(
     )
 
     # join_where
-    for no_optimization in [True, False]:
+    for optimizations in [pl.QueryOptFlags(), pl.QueryOptFlags.none()]:
         assert_frame_equal(
             left.join_where(right, pl.col("a") == pl.col("a_right")).collect(
-                no_optimization=no_optimization
+                optimizations=optimizations,
             ),
             pl.select(
                 a=pl.Series([1, 1]).cast(ltype),
@@ -1523,12 +1523,12 @@ def test_join_numeric_key_upcast_forbid_float_int() -> None:
     with pytest.raises(SchemaError, match="datatypes of join keys don't match"):
         left.join(right, on="a", how="left").collect()
 
-    for no_optimization in [True, False]:
+    for optimizations in [pl.QueryOptFlags(), pl.QueryOptFlags.none()]:
         with pytest.raises(
             SchemaError, match="'join_where' cannot compare Float64 with Int128"
         ):
             left.join_where(right, pl.col("a") == pl.col("a_right")).collect(
-                no_optimization=no_optimization
+                optimizations=optimizations,
             )
 
         with pytest.raises(
@@ -1536,7 +1536,7 @@ def test_join_numeric_key_upcast_forbid_float_int() -> None:
         ):
             left.join_where(
                 right, pl.col("a") == (pl.col("a") == pl.col("a_right"))
-            ).collect(no_optimization=no_optimization)
+            ).collect(optimizations=optimizations)
 
 
 def test_join_numeric_key_upcast_order() -> None:
