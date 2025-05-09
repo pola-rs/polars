@@ -11,7 +11,6 @@ from polars.io.ipc import read_ipc, read_ipc_schema, read_ipc_stream, scan_ipc
 from polars.io.json import read_json
 from polars.io.ndjson import read_ndjson, scan_ndjson
 from polars.io.parquet import (
-    ParquetFieldOverwrites,
     read_parquet,
     read_parquet_metadata,
     read_parquet_schema,
