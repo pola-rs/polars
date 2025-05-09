@@ -310,13 +310,6 @@ impl ReaderStarter {
             current_row_position = IdxSize::MAX;
         }
 
-        if verbose {
-            eprintln!(
-                "[ReaderStarter]: max_concurrent_scans: {}",
-                max_concurrent_scans
-            )
-        }
-
         let wait_group = WaitGroup::default();
 
         loop {

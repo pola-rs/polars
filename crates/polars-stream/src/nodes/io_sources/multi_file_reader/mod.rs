@@ -304,16 +304,11 @@ impl MultiScanState {
 }
 
 fn calc_n_readers_pre_init(num_pipelines: usize, config: &MultiFileReaderConfig) -> usize {
-    if let Ok(v) = std::env::var("POLARS_MULTISCAN_N_READERS_PRE_INIT").map(|x| {
+    if let Ok(v) = std::env::var("POLARS_N_READERS_PRE_INIT").map(|x| {
         x.parse::<usize>()
             .ok()
             .filter(|x| *x > 0)
-            .unwrap_or_else(|| {
-                panic!(
-                    "invalid value for POLARS_MULTISCAN_N_READERS_PRE_INIT: {}",
-                    x
-                )
-            })
+            .unwrap_or_else(|| panic!("invalid value for POLARS_N_READERS_PRE_INIT: {}", x))
     }) {
         return v;
     }
