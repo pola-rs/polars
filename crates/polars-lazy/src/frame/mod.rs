@@ -775,9 +775,6 @@ impl LazyFrame {
             }
         }
 
-        dbg!(&engine);
-        dbg!(self.get_opt_state().streaming());
-
         match engine {
             Engine::Auto => unreachable!(),
             Engine::Streaming => {

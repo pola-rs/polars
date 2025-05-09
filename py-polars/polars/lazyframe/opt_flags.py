@@ -254,21 +254,21 @@ DEFAULT_QUERY_OPT_FLAGS = QueryOptFlags()
 def forward_old_opt_flags() -> Callable[[Callable[P, T]], Callable[P, T]]:
     """Decorator to mark to forward the old optimization flags."""
 
-    def helper(f: QueryOptFlags, field_name: str, value: bool) -> QueryOptFlags:
+    def helper(f: QueryOptFlags, field_name: str, value: bool) -> QueryOptFlags:  # noqa: FBT001
         setattr(f, field_name, value)
         return f
 
-    def helper_hidden(f: QueryOptFlags, field_name: str, value: bool) -> QueryOptFlags:
+    def helper_hidden(f: QueryOptFlags, field_name: str, value: bool) -> QueryOptFlags:  # noqa: FBT001
         setattr(f._pyoptflags, field_name, value)
         return f
 
-    def clear_optimizations(f: QueryOptFlags, value: bool) -> QueryOptFlags:
+    def clear_optimizations(f: QueryOptFlags, value: bool) -> QueryOptFlags:  # noqa: FBT001
         if value:
             return QueryOptFlags.none()
         else:
             return f
 
-    def eager(f: QueryOptFlags, value: bool) -> QueryOptFlags:
+    def eager(f: QueryOptFlags, value: bool) -> QueryOptFlags:  # noqa: FBT001
         if value:
             return QueryOptFlags._eager()
         else:

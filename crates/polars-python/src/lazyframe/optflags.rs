@@ -15,6 +15,7 @@ macro_rules! flag_getter_setters {
             }
 
             #[staticmethod]
+            #[allow(clippy::should_implement_trait)]
             pub fn default() -> Self {
                 let mut inner = OptFlags::empty();
                 $(

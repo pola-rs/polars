@@ -23,7 +23,6 @@ from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
-    QueryOptFlags,
     forward_old_opt_flags,
 )
 
@@ -43,6 +42,9 @@ if TYPE_CHECKING:
         IntoExpr,
         PolarsDataType,
         QuantileMethod,
+    )
+    from polars.lazyframe.opt_flags import (
+        QueryOptFlags,
     )
 
     if sys.version_info >= (3, 13):
