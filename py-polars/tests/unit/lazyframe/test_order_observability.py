@@ -5,11 +5,13 @@ from polars.testing import assert_frame_equal
 def test_order_observability() -> None:
     q = pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).sort("a")
 
-    assert "SORT" not in q.group_by("a").sum().explain(_check_order=True)
-    assert "SORT" not in q.group_by("a").min().explain(_check_order=True)
-    assert "SORT" not in q.group_by("a").max().explain(_check_order=True)
-    assert "SORT" in q.group_by("a").last().explain(_check_order=True)
-    assert "SORT" in q.group_by("a").first().explain(_check_order=True)
+    args = { 'optimizations': pl.QueryOptFlags(check_order_observe=True) }
+
+    assert "SORT" not in q.group_by("a").sum().explain(**args)
+    assert "SORT" not in q.group_by("a").min().explain(**args)
+    assert "SORT" not in q.group_by("a").max().explain(**args)
+    assert "SORT" in q.group_by("a").last().explain(**args)
+    assert "SORT" in q.group_by("a").first().explain(**args)
 
 
 def test_order_observability_group_by_dynamic() -> None:

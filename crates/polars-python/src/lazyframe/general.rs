@@ -740,8 +740,10 @@ impl PyLazyFrame {
         engine: Wrap<Engine>,
         lambda_post_opt: Option<PyObject>,
     ) -> PyResult<PyDataFrame> {
+        dbg!(&engine.0);
         py.enter_polars_df(|| {
             let ldf = self.ldf.clone();
+            dbg!(&self.ldf.get_current_optimizations());
             if let Some(lambda) = lambda_post_opt {
                 ldf._collect_post_opt(|root, lp_arena, expr_arena, _| {
                     post_opt_callback(&lambda, root, lp_arena, expr_arena, None)

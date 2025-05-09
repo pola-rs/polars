@@ -41,7 +41,7 @@ def test_engine_selection_background_warns(
 def test_engine_selection_eager_quiet(df: pl.LazyFrame, engine: EngineType) -> None:
     expect = df.collect()
     # _eager collection turns off GPU engine quietly
-    got = df.collect(engine=engine, _eager=True)
+    got = df.collect(engine=engine, optimizations=pl.QueryOptFlags._eager())
     assert_frame_equal(expect, got)
 
 

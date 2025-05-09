@@ -24,7 +24,9 @@ def test_cross_join_predicate_pushdown_block_16956() -> None:
             )
         )
         .select("start_datetime", "end_datetime_right")
-    ).collect(predicate_pushdown=True).to_dict(as_series=False) == {
+    ).collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True)).to_dict(
+        as_series=False
+    ) == {
         "start_datetime": [
             datetime(2024, 6, 11, 8, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),
             datetime(2024, 6, 11, 8, 0, tzinfo=ZoneInfo(key="Europe/Amsterdam")),

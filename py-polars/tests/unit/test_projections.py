@@ -414,9 +414,9 @@ def test_projection_pushdown_full_outer_join_duplicates() -> None:
 def test_rolling_key_projected_13617() -> None:
     df = pl.DataFrame({"idx": [1, 2], "value": ["a", "b"]}).set_sorted("idx")
     ldf = df.lazy().select(pl.col("value").rolling("idx", period="1i"))
-    plan = ldf.explain(projection_pushdown=True)
+    plan = ldf.explain(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     assert r"2/2 COLUMNS" in plan
-    out = ldf.collect(projection_pushdown=True)
+    out = ldf.collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}
 
 
@@ -444,7 +444,9 @@ def test_cached_schema_15651() -> None:
     q = q.with_row_index()
     q = q.filter(~pl.col("col1").is_null())
     # create a subplan diverging from q
-    _ = q.select(pl.len()).collect(projection_pushdown=True)
+    _ = q.select(pl.len()).collect(
+        optimizations=pl.QueryOptFlags(projection_pushdown=True)
+    )
 
     # ensure that q's "cached" columns are still correct
     assert q.collect_schema().names() == q.collect().columns
@@ -456,7 +458,7 @@ def test_double_projection_pushdown_15895() -> None:
         .select(C="A", A="B")
         .group_by(1)
         .all()
-        .collect(projection_pushdown=True)
+        .collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     )
     assert df.to_dict(as_series=False) == {
         "literal": [1],

@@ -624,7 +624,9 @@ def test_deadlock_linearize(scan: Any, write: Any) -> None:
     lf = scan(fs).head(100)
 
     assert_frame_equal(
-        lf.collect(engine="streaming", slice_pushdown=False),
+        lf.collect(
+            engine="streaming", optimizations=pl.QueryOptFlags(slice_pushdown=False)
+        ),
         pl.concat([df] * 10),
     )
 

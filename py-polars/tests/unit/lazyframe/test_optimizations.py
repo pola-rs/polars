@@ -216,12 +216,14 @@ def test_collapse_joins() -> None:
 
     cross = a.join(b, how="cross")
 
+    no_collapse_joins = {"optimizations": pl.QueryOptFlags(collapse_joins=False)}
+
     inner_join = cross.filter(pl.col.a == pl.col.x)
     e = inner_join.explain()
     assert "INNER JOIN" in e
     assert "FILTER" not in e
     assert_frame_equal(
-        inner_join.collect(collapse_joins=False),
+        inner_join.collect(**no_collapse_joins),
         inner_join.collect(),
         check_row_order=False,
     )
@@ -231,7 +233,7 @@ def test_collapse_joins() -> None:
     assert "INNER JOIN" in e
     assert "FILTER" not in e
     assert_frame_equal(
-        inner_join.collect(collapse_joins=False),
+        inner_join.collect(**no_collapse_joins),
         inner_join.collect(),
         check_row_order=False,
     )
@@ -241,7 +243,7 @@ def test_collapse_joins() -> None:
     assert "INNER JOIN" in e
     assert "FILTER" not in e
     assert_frame_equal(
-        double_inner_join.collect(collapse_joins=False),
+        double_inner_join.collect(**no_collapse_joins),
         double_inner_join.collect(),
         check_row_order=False,
     )
@@ -251,7 +253,7 @@ def test_collapse_joins() -> None:
     assert "NESTED LOOP JOIN" in e
     assert "FILTER" not in e
     assert_frame_equal(
-        dont_mix.collect(collapse_joins=False),
+        dont_mix.collect(**no_collapse_joins),
         dont_mix.collect(),
         check_row_order=False,
     )
@@ -260,7 +262,7 @@ def test_collapse_joins() -> None:
     e = no_literals.explain()
     assert "NESTED LOOP JOIN" in e
     assert_frame_equal(
-        no_literals.collect(collapse_joins=False),
+        no_literals.collect(**no_collapse_joins),
         no_literals.collect(),
         check_row_order=False,
     )
@@ -272,7 +274,7 @@ def test_collapse_joins() -> None:
     assert "CROSS JOIN" not in e
     assert "FILTER" not in e
     assert_frame_equal(
-        iejoin.collect(collapse_joins=False),
+        iejoin.collect(**no_collapse_joins),
         iejoin.collect(),
         check_row_order=False,
     )
@@ -284,7 +286,7 @@ def test_collapse_joins() -> None:
     assert "NESTED LOOP JOIN" not in e
     assert "FILTER" not in e
     assert_frame_equal(
-        iejoin.collect(collapse_joins=False), iejoin.collect(), check_row_order=False
+        iejoin.collect(**no_collapse_joins), iejoin.collect(), check_row_order=False
     )
 
 

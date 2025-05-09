@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.lazyframe.opt_flags import QueryOptFlags
 from polars.testing import assert_frame_equal
 
 
@@ -25,7 +24,7 @@ def test_cse_rename_cross_join_5405() -> None:
     left = pl.DataFrame({"C": [3, 4]}).lazy().join(right.select("A"), how="cross")
 
     result = left.join(right.rename({"B": "C"}), on=["A", "C"], how="left").collect(
-        comm_subplan_elim=True
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
     )
 
     expected = pl.DataFrame(
@@ -65,7 +64,7 @@ def test_cse_with_struct_expr_11116() -> None:
             (pl.col("s").struct.field("a") <= pl.col("c"))
             & (pl.col("s").struct.field("b") > pl.col("c"))
         ).alias("c_between_a_and_b"),
-    ).collect(optimization=pl.QueryOptFlags(comm_subexpr_elim=True))
+    ).collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
 
     expected = pl.DataFrame(
         {
@@ -97,7 +96,7 @@ def test_cse_schema_6081() -> None:
     )
 
     result = df.join(min_value_by_group, on=["date", "id"], how="left").collect(
-        comm_subplan_elim=True, projection_pushdown=True
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True, projection_pushdown=True)
     )
     expected = pl.DataFrame(
         {
@@ -131,7 +130,7 @@ def test_cse_9630() -> None:
     intersected_df2 = all_subsections.join(lf2, on="key")
 
     result = intersected_df1.join(intersected_df2, on=["key"], how="left").collect(
-        comm_subplan_elim=True
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
     )
 
     expected = pl.DataFrame(
@@ -197,7 +196,14 @@ def test_cse_expr_selection_context() -> None:
     result = q.select(exprs).collect(
         optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
     )
-    assert num_cse_occurrences(q.select(exprs).explain(comm_subexpr_elim=True)) == 2
+    assert (
+        num_cse_occurrences(
+            q.select(exprs).explain(
+                optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
+            )
+        )
+        == 2
+    )
     expected = pl.DataFrame(
         {
             "d1": [30],
@@ -531,7 +537,9 @@ def test_cse_slice_11594() -> None:
         optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
     )
 
-    assert q.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
+    assert q.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)).to_dict(
+        as_series=False
+    ) == {
         "1": [2, 1, 2, 1, 2],
         "2": [1, 2, 1, 2, 1],
     }
@@ -576,7 +584,9 @@ def test_cse_11958() -> None:
     assert "__POLARS_CSE" in q.explain(
         optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
     )
-    assert q.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
+    assert q.collect(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)).to_dict(
+        as_series=False
+    ) == {
         "diff1": [None, 10, 10, 10, 10],
         "diff2": [None, None, 20, 20, 20],
         "diff3": [None, None, None, 30, 30],
@@ -651,8 +661,12 @@ def test_cse_15548() -> None:
     ldf2 = ldf.filter(pl.col("a") == 1).cache()
     ldf3 = pl.concat([ldf, ldf2])
 
-    assert len(ldf3.collect(comm_subplan_elim=False)) == 4
-    assert len(ldf3.collect(comm_subplan_elim=True)) == 4
+    assert (
+        len(ldf3.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False))) == 4
+    )
+    assert (
+        len(ldf3.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=True))) == 4
+    )
 
 
 @pytest.mark.debug
@@ -669,9 +683,9 @@ def test_cse_and_schema_update_projection_pd() -> None:
             .then(0.2 * pl.col("b"))
         )
     )
-    assert q.collect(comm_subplan_elim=False).to_dict(as_series=False) == {
-        "literal": [19.8, 19.8]
-    }
+    assert q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)).to_dict(
+        as_series=False
+    ) == {"literal": [19.8, 19.8]}
     assert (
         num_cse_occurrences(
             q.explain(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))
@@ -705,7 +719,11 @@ def test_cse_manual_cache_15688() -> None:
     df2 = df2.cache()
     res = df2.group_by("b").agg(pl.all().sum())
 
-    print(res.cache().with_columns(foo=1).explain(comm_subplan_elim=True))
+    print(
+        res.cache()
+        .with_columns(foo=1)
+        .explain(optimizations=pl.QueryOptFlags(comm_subplan_elim=True))
+    )
     assert res.cache().with_columns(foo=1).collect().to_dict(as_series=False) == {
         "b": [1],
         "a": [6],

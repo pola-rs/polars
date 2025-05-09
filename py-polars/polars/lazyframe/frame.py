@@ -1219,6 +1219,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("streaming mode is considered unstable.")
 
         if optimized:
+            optimizations = optimizations.__copy__()
             optimizations._pyoptflags.streaming = engine == "streaming"
             optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
 
@@ -1341,6 +1342,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if engine in ("streaming", "old-streaming"):
             issue_unstable_warning("streaming mode is considered unstable.")
 
+        optimizations = optimizations.__copy__()
         optimizations._pyoptflags.old_streaming = engine == "old-streaming"
         optimizations._pyoptflags.streaming = engine == "streaming"
         _ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
@@ -1750,11 +1752,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         reverse = extend_bool(reverse, len(by), "reverse", "by")
         return self._from_pyldf(self._ldf.bottom_k(k, by=by, reverse=reverse))
 
+    @forward_old_opt_flags()
     def profile(
         self,
         *,
         type_coercion: bool = True,
-        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1768,7 +1770,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         engine: EngineType = "auto",
-        _check_order: bool = True,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         **_kwargs: Any,
     ) -> tuple[DataFrame, DataFrame]:
@@ -1882,7 +1883,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise TypeError(error_msg)
         engine = _select_engine(engine)
 
-        optimizations._pyoptflags.old_streaming = (engine == "old-streaming",)  # type: ignore[comparison-overlap]
+        optimizations = optimizations.__copy__()
+        optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
         callback = _gpu_engine_callback(
@@ -2169,9 +2171,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(engine, GPUEngine):
             engine = "gpu"
 
-        print(engine)
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
-
         if background:
             issue_unstable_warning("background mode is considered unstable.")
             return InProcessQuery(ldf.collect_concurrently())

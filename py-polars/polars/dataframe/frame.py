@@ -5874,14 +5874,18 @@ class DataFrame:
         │ c   ┆ 1   │
         └─────┴─────┘
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.lazy()
             .top_k(k, by=by, reverse=reverse)
             .collect(
-                projection_pushdown=False,
-                predicate_pushdown=False,
-                comm_subplan_elim=False,
-                slice_pushdown=True,
+                optimizations=QueryOptFlags(
+                    projection_pushdown=False,
+                    predicate_pushdown=False,
+                    comm_subplan_elim=False,
+                    slice_pushdown=True,
+                )
             )
         )
 
@@ -5959,14 +5963,18 @@ class DataFrame:
         │ b   ┆ 2   │
         └─────┴─────┘
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.lazy()
             .bottom_k(k, by=by, reverse=reverse)
             .collect(
-                projection_pushdown=False,
-                predicate_pushdown=False,
-                comm_subplan_elim=False,
-                slice_pushdown=True,
+                optimizations=QueryOptFlags(
+                    projection_pushdown=False,
+                    predicate_pushdown=False,
+                    comm_subplan_elim=False,
+                    slice_pushdown=True,
+                )
             )
         )
 

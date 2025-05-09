@@ -33,36 +33,97 @@ class QueryOptFlags:
     def __init__(
         self,
         *,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
-        check_order_observe: bool = True,
+        predicate_pushdown: None | bool = None,
+        projection_pushdown: None | bool = None,
+        simplify_expression: None | bool = None,
+        slice_pushdown: None | bool = None,
+        comm_subplan_elim: None | bool = None,
+        comm_subexpr_elim: None | bool = None,
+        cluster_with_columns: None | bool = None,
+        collapse_joins: None | bool = None,
+        check_order_observe: None | bool = None,
     ) -> None:
-        self._pyoptflags = PyOptFlags.empty()
+        self._pyoptflags = PyOptFlags.default()
+        self.update(
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            check_order_observe=check_order_observe,
+        )
 
-        self._pyoptflags.type_check = True
-        self._pyoptflags.type_coercion = True
-
-        self._pyoptflags.predicate_pushdown = predicate_pushdown
-        self._pyoptflags.projection_pushdown = projection_pushdown
-        self._pyoptflags.simplify_expression = simplify_expression
-        self._pyoptflags.slice_pushdown = slice_pushdown
-        self._pyoptflags.comm_subplan_elim = comm_subplan_elim
-        self._pyoptflags.comm_subexpr_elim = comm_subexpr_elim
-        self._pyoptflags.collapse_joins = collapse_joins
-        self._pyoptflags.check_order_observe = check_order_observe
+    @classmethod
+    def _from_pyoptflags(self, pyoptflags: PyOptFlags) -> QueryOptFlags:
+        optflags = self.__new__(self)
+        optflags._pyoptflags = pyoptflags
+        return optflags
 
     @staticmethod
-    def none() -> QueryOptFlags:
+    def none(
+        *,
+        predicate_pushdown: None | bool = None,
+        projection_pushdown: None | bool = None,
+        simplify_expression: None | bool = None,
+        slice_pushdown: None | bool = None,
+        comm_subplan_elim: None | bool = None,
+        comm_subexpr_elim: None | bool = None,
+        cluster_with_columns: None | bool = None,
+        collapse_joins: None | bool = None,
+        check_order_observe: None | bool = None,
+    ) -> QueryOptFlags:
         """Create new empty set off optimizations."""
         optflags = QueryOptFlags()
         optflags.no_optimizations()
-        return optflags
+        return optflags.update(
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            check_order_observe=check_order_observe,
+        )
+
+    def update(
+        self,
+        *,
+        predicate_pushdown: None | bool = None,
+        projection_pushdown: None | bool = None,
+        simplify_expression: None | bool = None,
+        slice_pushdown: None | bool = None,
+        comm_subplan_elim: None | bool = None,
+        comm_subexpr_elim: None | bool = None,
+        cluster_with_columns: None | bool = None,
+        collapse_joins: None | bool = None,
+        check_order_observe: None | bool = None,
+    ) -> QueryOptFlags:
+        """Update the current optimization flags."""
+        if predicate_pushdown is not None:
+            self.predicate_pushdown = predicate_pushdown
+        if projection_pushdown is not None:
+            self.projection_pushdown = projection_pushdown
+        if simplify_expression is not None:
+            self.simplify_expression = simplify_expression
+        if slice_pushdown is not None:
+            self.slice_pushdown = slice_pushdown
+        if comm_subplan_elim is not None:
+            self.comm_subplan_elim = comm_subplan_elim
+        if comm_subexpr_elim is not None:
+            self.comm_subexpr_elim = comm_subexpr_elim
+        if cluster_with_columns is not None:
+            self.cluster_with_columns = cluster_with_columns
+        if collapse_joins is not None:
+            self.collapse_joins = collapse_joins
+        if check_order_observe is not None:
+            self.check_order_observe = check_order_observe
+
+        return self
 
     @staticmethod
     def _eager() -> QueryOptFlags:
@@ -71,6 +132,12 @@ class QueryOptFlags:
         optflags.no_optimizations()
         optflags._pyoptflags.eager = True
         return optflags
+
+    def __copy__(self) -> QueryOptFlags:
+        return QueryOptFlags._from_pyoptflags(self._pyoptflags.copy())
+
+    def __deepcopy__(self) -> QueryOptFlags:
+        return QueryOptFlags._from_pyoptflags(self._pyoptflags.copy())
 
     def no_optimizations(self) -> None:
         """Remove selected optimizations."""
@@ -122,22 +189,22 @@ class QueryOptFlags:
         self._pyoptflags.slice_pushdown = value
 
     @property
-    def common_subplan_elim(self) -> bool:
+    def comm_subplan_elim(self) -> bool:
         """Elide duplicate plans and caches their outputs."""
-        return self._pyoptflags.common_subplan_elim
+        return self._pyoptflags.comm_subplan_elim
 
-    @common_subplan_elim.setter
-    def common_subplan_elim(self, value: bool) -> None:
-        self._pyoptflags.common_subplan_elim = value
+    @comm_subplan_elim.setter
+    def comm_subplan_elim(self, value: bool) -> None:
+        self._pyoptflags.comm_subplan_elim = value
 
     @property
-    def common_subexpr_elim(self) -> bool:
+    def comm_subexpr_elim(self) -> bool:
         """Elide duplicate expressions and caches their outputs."""
-        return self._pyoptflags.common_subexpr_elim
+        return self._pyoptflags.comm_subexpr_elim
 
-    @common_subexpr_elim.setter
-    def common_subexpr_elim(self, value: bool) -> None:
-        self._pyoptflags.common_subexpr_elim = value
+    @comm_subexpr_elim.setter
+    def comm_subexpr_elim(self, value: bool) -> None:
+        self._pyoptflags.comm_subexpr_elim = value
 
     @property
     def collapse_joins(self) -> bool:
@@ -156,6 +223,28 @@ class QueryOptFlags:
     @check_order_observe.setter
     def check_order_observe(self, value: bool) -> None:
         self._pyoptflags.check_order_observe = value
+
+    def __str__(self) -> str:
+        return f"""
+QueryOptFlags {{
+    type_coercion: {self._pyoptflags.type_coercion}
+    type_check: {self._pyoptflags.type_check}
+
+    predicate_pushdown: {self.predicate_pushdown}
+    projection_pushdown: {self.projection_pushdown}
+    simplify_expression: {self.simplify_expression}
+    slice_pushdown: {self.slice_pushdown}
+    comm_subplan_elim: {self.comm_subplan_elim}
+    comm_subexpr_elim: {self.comm_subexpr_elim}
+    cluster_with_columns: {self.cluster_with_columns}
+    collapse_joins: {self.collapse_joins}
+    check_order_observe: {self.check_order_observe}
+
+    eager: {self._pyoptflags.eager}
+    old_streaming: {self._pyoptflags.old_streaming}
+    streaming: {self._pyoptflags.streaming}
+}}
+        """.strip()
 
 
 DEFAULT_QUERY_OPT_FLAGS = QueryOptFlags()
@@ -205,7 +294,7 @@ def forward_old_opt_flags() -> Callable[[Callable[P, T]], Callable[P, T]]:
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             optflags: QueryOptFlags = kwargs.get(
                 "optimizations", DEFAULT_QUERY_OPT_FLAGS
-            )
+            ).__copy__()
             for key in list(kwargs.keys()):
                 cb = OLD_OPT_PARAMETERS_MAPPING.get(key)
                 if cb is not None:
