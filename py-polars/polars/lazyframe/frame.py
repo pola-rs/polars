@@ -1219,7 +1219,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("streaming mode is considered unstable.")
 
         if optimized:
+            print(optimizations)
             optimizations = optimizations.__copy__()
+            print(optimizations)
             optimizations._pyoptflags.streaming = engine == "streaming"
             optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
 
@@ -1227,7 +1229,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if format == "tree":
                 return ldf.describe_optimized_plan_tree()
             else:
-                return ldf.describe_optimized_plan()
+                x = ldf.describe_optimized_plan()
+                print(x)
+                return x
 
         if format == "tree":
             return self._ldf.describe_plan_tree()

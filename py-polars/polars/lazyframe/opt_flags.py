@@ -131,6 +131,7 @@ class QueryOptFlags:
         optflags = QueryOptFlags()
         optflags.no_optimizations()
         optflags._pyoptflags.eager = True
+        optflags.simplify_expression = True
         return optflags
 
     def __copy__(self) -> QueryOptFlags:
