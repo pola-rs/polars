@@ -6,7 +6,6 @@ use either::Either;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
-use polars_io::parquet::write::ParquetFieldOverwrites;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
@@ -1520,8 +1519,11 @@ impl PyLazyFrame {
     }
 }
 
-impl<'py> FromPyObject<'py> for Wrap<ParquetFieldOverwrites> {
+#[cfg(feature = "parquet")]
+impl<'py> FromPyObject<'py> for Wrap<polars_io::parquet::write::ParquetFieldOverwrites> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        use polars_io::parquet::write::ParquetFieldOverwrites;
+
         let parsed = ob.extract::<pyo3::Bound<'_, PyDict>>()?;
 
         let name = PyDictMethods::get_item(&parsed, "name")?
