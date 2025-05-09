@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
-from polars.io.database._inference import _infer_dtype_from_database_typename
+from polars.io.database._inference import dtype_from_database_typename
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -48,6 +48,9 @@ if TYPE_CHECKING:
         ("int4", pl.Int32),
         ("int2", pl.Int16),
         ("int(16)", pl.Int16),
+        ("uint32", pl.UInt32),
+        ("int128", pl.Int128),
+        ("HUGEINT", pl.Int128),
         ("ROWID", pl.UInt64),
         ("mediumint", pl.Int32),
         ("unsigned mediumint", pl.UInt32),
@@ -77,7 +80,7 @@ def test_dtype_inference_from_string(
     value: str,
     expected_dtype: PolarsDataType,
 ) -> None:
-    inferred_dtype = _infer_dtype_from_database_typename(value)
+    inferred_dtype = dtype_from_database_typename(value)
     assert inferred_dtype == expected_dtype  # type: ignore[operator]
 
 
@@ -93,9 +96,9 @@ def test_dtype_inference_from_string(
 )
 def test_dtype_inference_from_invalid_string(value: str) -> None:
     with pytest.raises(ValueError, match="cannot infer dtype"):
-        _infer_dtype_from_database_typename(value)
+        dtype_from_database_typename(value)
 
-    inferred_dtype = _infer_dtype_from_database_typename(
+    inferred_dtype = dtype_from_database_typename(
         value=value,
         raise_unmatched=False,
     )
