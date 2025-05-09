@@ -24,7 +24,6 @@ from polars.io._utils import (
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
-from polars.io.scan_options import ScanOptions
 
 with contextlib.suppress(ImportError):
     from polars.polars import PyLazyFrame
@@ -38,6 +37,7 @@ if TYPE_CHECKING:
     from polars._typing import FileSource, ParallelStrategy, SchemaDict
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
+    from polars.io.scan_options import ScanOptions
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -534,8 +534,6 @@ def scan_parquet(
     if scan_options is not None:
         msg = "The `scan_options` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
-    else:
-        scan_options = ScanOptions._default()
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
