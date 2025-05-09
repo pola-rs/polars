@@ -21,7 +21,11 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
-from polars.lazyframe.opt_flags import OptFlags
+from polars.lazyframe.opt_flags import (
+    DEFAULT_QUERY_OPT_FLAGS,
+    QueryOptFlags,
+    forward_old_opt_flags,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -1757,11 +1761,11 @@ def arg_sort_by(
 
 
 @deprecate_streaming_parameter()
+@forward_old_opt_flags()
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
     type_coercion: bool = True,
-    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1771,7 +1775,7 @@ def collect_all(
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
     collapse_joins: bool = True,
-    _check_order: bool = True,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
 ) -> list[DataFrame]:
     """
@@ -1825,27 +1829,24 @@ def collect_all(
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
-    optflags = OptFlags(
-        _type_coercion=type_coercion,
-        _type_check=_type_check,
-        predicate_pushdown=predicate_pushdown,
-        projection_pushdown=projection_pushdown,
-        simplify_expression=simplify_expression,
-        slice_pushdown=slice_pushdown,
-        comm_subplan_elim=comm_subplan_elim,
-        comm_subexpr_elim=comm_subexpr_elim,
-        cluster_with_columns=cluster_with_columns,
-        collapse_joins=collapse_joins,
-        check_order_observe=_check_order,
-    )
+    # Deprecated
+    optimizations.type_coercion=type_coercion
+    optimizations.predicate_pushdown=predicate_pushdown
+    optimizations.projection_pushdown=projection_pushdown
+    optimizations.simplify_expression=simplify_expression
+    optimizations.slice_pushdown=slice_pushdown
+    optimizations.comm_subplan_elim=comm_subplan_elim
+    optimizations.comm_subexpr_elim=comm_subexpr_elim
+    optimizations.cluster_with_columns=cluster_with_columns
+    optimizations.collapse_joins=collapse_joins
     if no_optimization:
-        optflags.no_optimizations()
+        optimizations.no_optimizations()
 
     if engine in ("streaming", "old-streaming"):
         issue_unstable_warning("streaming mode is considered unstable.")
 
     lfs = [lf._ldf for lf in lazy_frames]
-    out = plr.collect_all(lfs, engine, optflags._pyoptflags)
+    out = plr.collect_all(lfs, engine, optimizations._pyoptflags)
 
     # wrap the pydataframes into dataframe
     result = [wrap_df(pydf) for pydf in out]
@@ -1983,7 +1984,7 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    optflags = OptFlags(
+    optflags = QueryOptFlags(
         _type_coercion=type_coercion,
         _type_check=_type_check,
         predicate_pushdown=predicate_pushdown,
@@ -2064,7 +2065,7 @@ def explain_all(
     -------
     Explained plan.
     """
-    optflags = OptFlags(
+    optflags = QueryOptFlags(
         _type_coercion=type_coercion,
         _type_check=_type_check,
         predicate_pushdown=predicate_pushdown,

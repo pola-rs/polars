@@ -52,4 +52,5 @@ flag_getter_setters! {
     (COMM_SUBEXPR_ELIM, get_comm_subexpr_elim, set_comm_subexpr_elim)
     (COLLAPSE_JOINS, get_collapse_joins, set_collapse_joins)
     (CHECK_ORDER_OBSERVE, get_check_order_observe, set_check_order_observe)
+    (EAGER, get_eager, set_eager)
 }
