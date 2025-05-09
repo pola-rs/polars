@@ -7,13 +7,13 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::write::BatchedWriter;
-use polars_io::prelude::{ParquetWriteOptions, get_encodings};
+use polars_io::prelude::{ParquetWriteOptions, get_column_write_options};
 use polars_io::schema_to_arrow_checked;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
-    CompressedPage, Compressor, Encoding, FileWriter, SchemaDescriptor, Version, WriteOptions,
-    array_to_columns, to_parquet_schema,
+    ColumnWriteOptions, CompressedPage, Compressor, FileWriter, SchemaDescriptor, Version,
+    WriteOptions, array_to_columns, to_parquet_schema,
 };
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
@@ -39,7 +39,7 @@ pub struct ParquetSinkNode {
 
     parquet_schema: SchemaDescriptor,
     arrow_schema: ArrowSchema,
-    encodings: Vec<Vec<Encoding>>,
+    column_options: Vec<ColumnWriteOptions>,
     cloud_options: Option<CloudOptions>,
 }
 
@@ -52,8 +52,9 @@ impl ParquetSinkNode {
         cloud_options: Option<CloudOptions>,
     ) -> PolarsResult<Self> {
         let schema = schema_to_arrow_checked(&input_schema, CompatLevel::newest(), "parquet")?;
-        let parquet_schema = to_parquet_schema(&schema)?;
-        let encodings: Vec<Vec<Encoding>> = get_encodings(&schema);
+        let column_options: Vec<ColumnWriteOptions> =
+            get_column_write_options(&schema, &write_options.field_overwrites);
+        let parquet_schema = to_parquet_schema(&schema, &column_options)?;
 
         Ok(Self {
             target,
@@ -64,7 +65,7 @@ impl ParquetSinkNode {
 
             parquet_schema,
             arrow_schema: schema,
-            encodings,
+            column_options,
             cloud_options,
         })
     }
@@ -128,12 +129,12 @@ impl SinkNode for ParquetSinkNode {
                 .zip(lin_txs)
                 .map(|(mut dist_rx, mut lin_tx)| {
                     let parquet_schema = self.parquet_schema.clone();
-                    let encodings = self.encodings.clone();
+                    let column_options = self.column_options.clone();
 
                     spawn(TaskPriority::High, async move {
                         while let Ok((rg_idx, col_idx, column)) = dist_rx.recv().await {
                             let type_ = &parquet_schema.fields()[col_idx];
-                            let encodings = &encodings[col_idx];
+                            let column_options = &column_options[col_idx];
 
                             let array = column.as_materialized_series().rechunk();
                             let array = array.to_arrow(0, CompatLevel::newest());
@@ -146,7 +147,7 @@ impl SinkNode for ParquetSinkNode {
 
                             // Array -> Parquet pages.
                             let encoded_columns =
-                                array_to_columns(array, type_.clone(), options, encodings)?;
+                                array_to_columns(array, type_.clone(), column_options, options)?;
 
                             // Compress the pages.
                             let compressed_pages = encoded_columns
@@ -239,7 +240,7 @@ impl SinkNode for ParquetSinkNode {
         let write_options = self.write_options.clone();
         let arrow_schema = self.arrow_schema.clone();
         let parquet_schema = self.parquet_schema.clone();
-        let encodings = self.encodings.clone();
+        let column_options = self.column_options.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             let mut file = target
                 .open_into_writeable_async(&sink_options, cloud_options.as_ref())
@@ -261,7 +262,7 @@ impl SinkNode for ParquetSinkNode {
             ));
             let mut writer = BatchedWriter::new(
                 file_writer,
-                encodings,
+                column_options,
                 write_options,
                 false,
                 key_value_metadata,

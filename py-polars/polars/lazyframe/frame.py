@@ -146,6 +146,7 @@ if TYPE_CHECKING:
     )
     from polars.dependencies import numpy as np
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.parquet import ParquetFieldOverwrites
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec
@@ -2466,6 +2467,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
+        field_overwrites: ParquetFieldOverwrites
+        | Sequence[ParquetFieldOverwrites]
+        | Mapping[str, ParquetFieldOverwrites]
+        | None = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -2490,6 +2495,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
+        field_overwrites: ParquetFieldOverwrites
+        | Sequence[ParquetFieldOverwrites]
+        | Mapping[str, ParquetFieldOverwrites]
+        | None = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -2514,6 +2523,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         metadata: ParquetMetadata | None = None,
         mkdir: bool = False,
         lazy: bool = False,
+        field_overwrites: ParquetFieldOverwrites
+        | Sequence[ParquetFieldOverwrites]
+        | Mapping[str, ParquetFieldOverwrites]
+        | None = None,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame | None:
@@ -2623,6 +2636,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+        field_overwrites
+            Property overwrites for individual Parquet fields.
+
+            This allows more control over the writing process to the granularity of a
+            Parquet field.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
@@ -2704,6 +2726,33 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         elif callable(metadata):
             metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
 
+        # Convert the field overwrites into something that can be ingested by Rust.
+        field_overwrites_dicts: list[dict[str, Any]] = []
+        if field_overwrites is not None:
+            import collections
+
+            from polars.io.parquet.field_overwrites import (
+                ParquetFieldOverwrites,
+                _parquet_field_overwrites_dict_to_dict_list,
+                _parquet_field_overwrites_to_dict,
+            )
+
+            if isinstance(field_overwrites, ParquetFieldOverwrites):
+                field_overwrites_dicts = [
+                    _parquet_field_overwrites_to_dict(field_overwrites)
+                ]
+            elif isinstance(field_overwrites, collections.abc.Mapping):
+                field_overwrites_dicts = _parquet_field_overwrites_dict_to_dict_list(
+                    dict(field_overwrites)
+                )
+            elif isinstance(field_overwrites, collections.abc.Sequence):
+                field_overwrites_dicts = [
+                    _parquet_field_overwrites_to_dict(c) for c in field_overwrites
+                ]
+            else:
+                msg = f"field_overwrites got the wrong type {type(field_overwrites)}"
+                raise TypeError(msg)
+
         ldf = self._ldf.sink_parquet(
             target=target,
             compression=compression,
@@ -2716,6 +2765,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             retries=retries,
             sink_options=sink_options,
             metadata=metadata,
+            field_overwrites=field_overwrites_dicts,
         )
 
         if not lazy:
