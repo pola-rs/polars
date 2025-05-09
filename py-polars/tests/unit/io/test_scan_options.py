@@ -107,7 +107,7 @@ from polars.testing import assert_frame_equal
         ),
     ],
 )
-def test_cast_options_cast(
+def test_scan_cast_options(
     literal_values: tuple[pl.Expr, pl.Expr],
     expected: pl.Series,
     cast_options: pl.ScanCastOptions | None,
@@ -151,7 +151,7 @@ def test_cast_options_cast(
     )
 
 
-def test_cast_options_cast_forbid_int_downcast() -> None:
+def test_scan_cast_options_forbid_int_downcast() -> None:
     # Test to ensure that passing `integer_cast='upcast'` does not accidentally
     # permit casting to smaller integer types.
     lv1, lv2 = pl.lit(1, dtype=pl.Int8), pl.lit(2, dtype=pl.Int32)
@@ -184,7 +184,7 @@ def test_cast_options_cast_forbid_int_downcast() -> None:
         q.collect()
 
 
-def test_cast_options_cast_extra_struct_fields() -> None:
+def test_scan_cast_options_extra_struct_fields() -> None:
     cast_options = pl.ScanCastOptions(extra_struct_fields="ignore")
 
     expected = pl.Series([{"a": 1}, {"a": 2}], dtype=pl.Struct({"a": pl.Int32}))
