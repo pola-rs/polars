@@ -37,5 +37,5 @@ def prepare_cloud_plan(
     """
     optimizations = optimizations.__copy__()
     optimizations._pyoptflags.old_streaming = True
-    pylf = lf._ldf.with_optimizations(optimizations._pyoptflags)  # type: ignore[arg-type]
+    pylf = lf._ldf.with_optimizations(optimizations._pyoptflags)
     return plr.prepare_cloud_plan(pylf)

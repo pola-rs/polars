@@ -312,7 +312,8 @@ def forward_old_opt_flags() -> Callable[[Callable[P, T]], Callable[P, T]]:
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             optflags: QueryOptFlags = kwargs.get(
                 "optimizations", DEFAULT_QUERY_OPT_FLAGS
-            ).__copy__()
+            )
+            optflags = optflags.__copy__()
             for key in list(kwargs.keys()):
                 cb = OLD_OPT_PARAMETERS_MAPPING.get(key)
                 if cb is not None:
