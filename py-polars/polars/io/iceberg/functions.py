@@ -45,8 +45,9 @@ def scan_iceberg(
         polars will by default automatically select the best reader.
 
         Available options:
+
         * native: Uses polars native reader. This allows for more optimizations to
-        improve performance.
+          improve performance.
         * pyiceberg: Uses PyIceberg, which may support more features.
 
     Returns
