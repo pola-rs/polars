@@ -461,6 +461,7 @@ class ListNameSpace:
         ]
         """
 
+
     def gather_every(
         self, n: int | IntoExprColumn, offset: int | IntoExprColumn = 0
     ) -> Series:
@@ -954,6 +955,39 @@ class ListNameSpace:
             [2.0, 1.0]
         ]
         """
+
+
+    def filter(self, predicate: Expr, *, parallel: bool = False) -> Series:
+        """
+        Filter elements in each list by a boolean expression, returning a new Series of lists.
+
+        Parameters
+        ----------
+        expr
+            A boolean expression evaluated on each list element.
+            Use `pl.element()` to refer to the current element, or
+            `pl.col()` to select other columns in scope.
+        parallel
+            Run all expression parallel. Don't activate this blindly.
+            Parallelism is worth it if there is enough work to do per thread.
+
+            This likely should not be use in the group by context, because we already
+            parallel execution per group
+
+        Examples
+        --------
+        >>> import polars as pl
+        >>> s = pl.Series("a", [[1, 4], [8, 5], [3, 2]])
+        >>> # keep only even values in each list
+        >>> s.list.filter(pl.element() % 2 == 0)
+        shape: (3,)
+        Series: 'a' [list[i64]]
+        [
+            [4]
+            [8]
+            [2]
+        ]
+        """  # noqa: W505
 
     def set_union(self, other: Series | Collection[Any]) -> Series:
         """

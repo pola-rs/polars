@@ -1233,8 +1233,46 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
 
-    def filter(self, expr: Expr, *, parallel: bool = False) -> Expr:
-        """Todo"""
+    def filter(self, predicate: Expr, *, parallel: bool = False) -> Expr:
+        """
+        Filter elements in each list by a boolean expression.
+
+        Parameters
+        ----------
+        expr
+            A boolean expression that is evaluated per list element.
+            You can refer to the current element with `pl.element()`, or
+            select with `pl.col()`.
+        parallel
+            Run all expression parallel. Don't activate this blindly.
+            Parallelism is worth it if there is enough work to do per thread.
+
+            This likely should not be used in the group by context, because we already
+            parallel execution per group
+
+        Examples
+        --------
+        >>> import polars as pl
+        >>> df = pl.DataFrame({
+        ...     "a": [1, 8, 3],
+        ...     "b": [4, 5, 2]
+        ... })
+        >>> # keep only even values in each concatenated list
+        >>> df.with_columns(
+        ...     evens=pl.concat_list("a", "b")
+        ...             .list.filter(pl.element() % 2 == 0)
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ evens     │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ list[i64] │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ 4   ┆ [4]       │
+        │ 8   ┆ 5   ┆ [8]       │
+        │ 3   ┆ 2   ┆ [2]       │
+        └─────┴─────┴───────────┘
+        """
         return wrap_expr(self._pyexpr.list_filter(expr._pyexpr, parallel))
 
     def set_union(self, other: IntoExpr | Collection[Any]) -> Expr:

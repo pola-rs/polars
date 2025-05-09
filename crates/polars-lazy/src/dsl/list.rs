@@ -116,6 +116,75 @@ fn run_per_sublist(
     }
 }
 
+fn filter_per_sublist(
+    lst: &ListChunked,
+    predicate: &Arc<dyn PhysicalExpr>,
+    parallel: bool,
+) -> PolarsResult<ListChunked> {
+    let state = ExecutionState::new();
+    let name = lst.name().clone();
+
+    let filter_sublist = |opt_series: Option<Series>| -> PolarsResult<Option<Series>> {
+        let sub = match opt_series {
+            Some(sub) => sub,
+            None => return Ok(None),
+        };
+        let mask = predicate
+            .evaluate(&sub.clone().into_frame(), &state)?
+            .bool()
+            .map_err(|_| PolarsError::ComputeError("predicate must return Boolean".into()))?
+            .clone();
+        Ok(Some(sub.filter(&mask)?))
+    };
+
+    let chunks: Vec<Option<Series>> = if parallel {
+        lst.par_iter().map(filter_sublist).collect::<PolarsResult<_>>()?
+    } else {
+        lst.into_iter().map(filter_sublist).collect::<PolarsResult<_>>()?
+    };
+
+    let lc: ListChunked = chunks.into_iter().collect_trusted();
+    Ok(lc.with_name(name))
+}
+
+pub fn list_filter_expr(
+    list_series: &Series,
+    predicate: &Expr,
+    parallel: bool,
+) -> PolarsResult<Series> {
+    let lst_ca = list_series.list()?.clone();
+    let inner_dtype = lst_ca.inner_dtype().clone();
+
+    let phys_expr = prepare_expression_for_context(
+        PlSmallStr::EMPTY,
+        predicate,
+        &inner_dtype,
+        Context::Default,
+    )?;
+
+    let schema = Schema::from_iter([Field::new(PlSmallStr::EMPTY, inner_dtype.clone())]);
+
+    let pred_field = phys_expr
+        .to_field(&schema)
+        .map_err(|e| {
+            PolarsError::SchemaMismatch(
+                format!("invalid predicate in list.filter: {}", e).into(),
+            )
+        })?;
+
+    polars_ensure!(
+        matches!(pred_field.dtype, DataType::Boolean),
+        ComputeError:
+        "list.filter predicate must return Boolean, got `{}`",
+        pred_field.dtype
+    );
+
+    let filtered_ca = filter_per_sublist(&lst_ca, &phys_expr, parallel)?;
+    Ok(filtered_ca
+        .into_series()
+        .with_name(list_series.name().clone()))
+}
+
 fn run_on_group_by_engine(
     name: PlSmallStr,
     lst: &ListChunked,
@@ -227,66 +296,5 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
     }
 }
 
-fn run_per_sublist_fused_filter(
-    lst: &ListChunked,
-    predicate: &Arc<dyn PhysicalExpr>,
-    parallel: bool,
-) -> PolarsResult<ListChunked> {
-    let state = ExecutionState::new();
-    let list_dtype = lst.dtype().clone();
-    let name = lst.name().clone();
-    let err_slot = Mutex::new(None);
-
-    let process = |opt_series: Option<Series>| -> Option<Series> {
-        let sub = opt_series?;
-        let df = sub.clone().into_frame();
-        let ms = match predicate.evaluate(&df, &state) {
-            Ok(mask_series) => mask_series,
-            Err(e) => {
-                *err_slot.lock().unwrap() = Some(e);
-                return None;
-            },
-        };
-        let mask_bool = ms.bool().unwrap().clone();
-        match sub.filter(&mask_bool) {
-            Ok(filtered) => Some(filtered),
-            Err(e) => {
-                *err_slot.lock().unwrap() = Some(e);
-                None
-            },
-        }
-    };
-
-    let filtered = if parallel {
-        lst.par_iter()
-            .map(process)
-            .collect_ca_with_dtype(name, list_dtype)
-    } else {
-        lst.into_iter().map(process).collect_trusted()
-    };
-
-    err_slot.into_inner().unwrap().map_or(Ok(filtered), Err)
-}
-
-pub fn list_filter_expr(
-    list_series: &Series,
-    predicate: &Expr,
-    parallel: bool,
-) -> PolarsResult<Series> {
-    let lst_ca = list_series.list()?.clone();
-    let inner_dtype = lst_ca.inner_dtype().clone();
-
-    let phys_expr = prepare_expression_for_context(
-        PlSmallStr::EMPTY,
-        predicate,
-        &inner_dtype,
-        Context::Default,
-    )?;
-
-    let filtered_ca = run_per_sublist_fused_filter(&lst_ca, &phys_expr, parallel)?;
-    Ok(filtered_ca
-        .into_series()
-        .with_name(list_series.name().clone()))
-}
 
 impl ListNameSpaceExtension for ListNameSpace {}
