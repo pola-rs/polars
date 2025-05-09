@@ -2821,7 +2821,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 ]
             elif isinstance(field_overwrites, collections.abc.Mapping):
                 field_overwrites_dicts = _parquet_field_overwrites_dict_to_dict_list(
-                    field_overwrites
+                    dict(field_overwrites)
                 )
             elif isinstance(field_overwrites, collections.abc.Sequence):
                 field_overwrites_dicts = [

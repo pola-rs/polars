@@ -18,7 +18,7 @@ def _parquet_field_overwrites_dict_to_dict_list(
 
 
 def _parquet_field_overwrites_to_dict(pqo: ParquetFieldOverwrites) -> dict[str, Any]:
-    d = {}
+    d: dict[str, Any] = {}
 
     # Name
     if pqo.name is not None:
@@ -68,7 +68,7 @@ class ParquetFieldOverwrites:
     ...             {"x": "Y", "y": 15},
     ...         ],
     ...     }
-    ... )
+    ... )  # doctest: +SKIP
     >>> lf.sink_parquet(
     ...     "./out/parquet",
     ...     field_overwrites={
@@ -80,17 +80,20 @@ class ParquetFieldOverwrites:
     ...         "c": ParquetFieldOverwrites(
     ...             children=[
     ...                 ParquetFieldOverwrites(name="x", metadata={"md": "yes"}),
-    ...                 ParquetFieldOverwrites(name="x", metadata={"md2": "Yes!"}),
+    ...                 ParquetFieldOverwrites(name="y", metadata={"md2": "Yes!"}),
     ...             ],
     ...             metadata={"struct": "true"},
     ...         ),
     ...     },
-    ... )
+    ... )  # doctest: +SKIP
     """
 
     name: None | str  #: Name of the column or field
     children: (
-        None | ParquetFieldOverwrites | dict[str, ParquetFieldOverwrites]
+        None
+        | ParquetFieldOverwrites
+        | list[ParquetFieldOverwrites]
+        | dict[str, ParquetFieldOverwrites]
     )  #: Children of the column or field.
     #
     # For flat types (e.g. `Int32`), this should be `None`. For lists, this can be a
