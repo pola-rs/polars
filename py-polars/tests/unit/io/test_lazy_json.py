@@ -118,7 +118,7 @@ def test_projection_pushdown_ndjson(io_files_path: Path) -> None:
     assert "simple π" not in explain
     assert "PROJECT 1/4 COLUMNS" in explain
 
-    assert_frame_equal(df.collect(no_optimization=True), df.collect())
+    assert_frame_equal(df.collect(optimizations=pl.QueryOptFlags.none()), df.collect())
 
 
 def test_predicate_pushdown_ndjson(io_files_path: Path) -> None:
@@ -130,7 +130,7 @@ def test_predicate_pushdown_ndjson(io_files_path: Path) -> None:
     assert "FILTER" not in explain
     assert """SELECTION: [(col("calories")) > (80)]""" in explain
 
-    assert_frame_equal(df.collect(no_optimization=True), df.collect())
+    assert_frame_equal(df.collect(optimizations=pl.QueryOptFlags.none()), df.collect())
 
 
 def test_glob_n_rows(io_files_path: Path) -> None:
@@ -210,7 +210,9 @@ def test_scan_ndjson_slicing(
         lf.slice(-999),
         lf.slice(-3, 999),
     ]:
-        assert_frame_equal(q.collect(), q.collect(no_optimization=True))
+        assert_frame_equal(
+            q.collect(), q.collect(optimizations=pl.QueryOptFlags.none())
+        )
 
 
 @pytest.mark.parametrize(

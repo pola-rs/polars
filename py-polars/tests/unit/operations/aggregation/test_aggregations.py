@@ -350,7 +350,9 @@ def test_binary_op_agg_context_no_simplify_expr_12423() -> None:
             pl.LazyFrame({"x": [1]})
             .group_by("x")
             .agg(y=pl.lit(1) * pl.lit(1))
-            .collect(simplify_expression=simplify_expression),
+            .collect(
+                optimizations=pl.QueryOptFlags(simplify_expression=simplify_expression)
+            ),
         )
 
 

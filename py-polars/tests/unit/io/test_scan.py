@@ -889,7 +889,7 @@ def test_predicate_stats_eval_nested_binary() -> None:
         (
             pl.scan_parquet(bufs)
             .filter(pl.col("x") % 2 == 0)
-            .collect(no_optimization=True)
+            .collect(optimizations=pl.QueryOptFlags.none())
         ),
         pl.DataFrame({"x": [0, 2, 4, 6, 8]}),
     )

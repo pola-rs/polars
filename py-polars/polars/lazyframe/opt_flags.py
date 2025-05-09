@@ -33,8 +33,6 @@ class QueryOptFlags:
     def __init__(
         self,
         *,
-        _type_check: bool = True,
-        _type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -47,8 +45,9 @@ class QueryOptFlags:
     ) -> None:
         self._pyoptflags = PyOptFlags.empty()
 
-        self._pyoptflags.type_check = _type_check
-        self._pyoptflags.type_coercion = _type_coercion
+        self._pyoptflags.type_check = True
+        self._pyoptflags.type_coercion = True
+
         self._pyoptflags.predicate_pushdown = predicate_pushdown
         self._pyoptflags.projection_pushdown = projection_pushdown
         self._pyoptflags.simplify_expression = simplify_expression
@@ -65,18 +64,17 @@ class QueryOptFlags:
         optflags.no_optimizations()
         return optflags
 
+    @staticmethod
+    def _eager() -> QueryOptFlags:
+        """Create new empty set off optimizations."""
+        optflags = QueryOptFlags()
+        optflags.no_optimizations()
+        optflags._pyoptflags.eager = True
+        return optflags
+
     def no_optimizations(self) -> None:
         """Remove selected optimizations."""
         self._pyoptflags.no_optimizations()
-
-    @property
-    def type_coercion(self) -> bool:
-        """Do type coercion."""
-        return self._pyoptflags.type_coercion
-
-    @type_coercion.setter
-    def type_coercion(self, value: bool) -> None:
-        self._pyoptflags.type_coercion = value
 
     @property
     def projection_pushdown(self) -> bool:
@@ -182,17 +180,15 @@ def forward_old_opt_flags() -> Callable[[Callable[P, T]], Callable[P, T]]:
 
     def eager(f: QueryOptFlags, value: bool) -> QueryOptFlags:
         if value:
-            f.no_optimization()
-            f._pyoptflags.eager = True
-            return f
+            return QueryOptFlags._eager()
         else:
             return f
 
     OLD_OPT_PARAMETERS_MAPPING = {
         "no_optimization": lambda f, v: clear_optimizations(f, v),
         "_eager": lambda f, v: eager(f, v),
-        "type_coercion": lambda f, v: helper(f, "_type_coercion", v),
-        "_type_check": lambda f, v: helper(f, "_type_check", v),
+        "type_coercion": lambda f, v: helper_hidden(f, "type_coercion", v),
+        "_type_check": lambda f, v: helper_hidden(f, "type_check", v),
         "predicate_pushdown": lambda f, v: helper(f, "predicate_pushdown", v),
         "projection_pushdown": lambda f, v: helper(f, "projection_pushdown", v),
         "simplify_expression": lambda f, v: helper(f, "simplify_expression", v),

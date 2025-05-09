@@ -1104,13 +1104,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return df_summary
 
     @deprecate_streaming_parameter()
+    @forward_old_opt_flags()
     def explain(
         self,
         *,
         format: ExplainFormat = "plain",
         optimized: bool = True,
         type_coercion: bool = True,
-        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1122,7 +1122,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         engine: EngineType = "auto",
         tree_format: bool | None = None,
-        _check_order: bool = True,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> str:
         """
         Create a string representation of the query plan.
@@ -1179,7 +1179,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                The GPU engine does not support streaming, if streaming
                is enabled then GPU execution is switched off.
+        optimizations
+            The optimization passes done during query optimization.
 
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
         tree_format
             Format the output as a tree.
 
@@ -1214,23 +1219,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("streaming mode is considered unstable.")
 
         if optimized:
-            type_check = _type_check
-            ldf = self._ldf.optimization_toggle(
-                type_coercion=type_coercion,
-                type_check=type_check,
-                predicate_pushdown=predicate_pushdown,
-                projection_pushdown=projection_pushdown,
-                simplify_expression=simplify_expression,
-                slice_pushdown=slice_pushdown,
-                comm_subplan_elim=comm_subplan_elim,
-                comm_subexpr_elim=comm_subexpr_elim,
-                cluster_with_columns=cluster_with_columns,
-                collapse_joins=collapse_joins,
-                streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
-                _eager=False,
-                _check_order=_check_order,
-                new_streaming=engine == "streaming",
-            )
+            optimizations._pyoptflags.streaming = engine == "streaming"
+            optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
+
+            ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
             if format == "tree":
                 return ldf.describe_optimized_plan_tree()
             else:
@@ -1242,6 +1234,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return self._ldf.describe_plan()
 
     @deprecate_streaming_parameter()
+    @forward_old_opt_flags()
     def show_graph(
         self,
         *,
@@ -1260,10 +1253,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
-        streaming: bool = False,
         engine: EngineType = "auto",
         plan_stage: PlanStage = "ir",
         _check_order: bool = True,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> str | None:
         """
         Show a plot of the query plan.
@@ -1348,23 +1341,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if engine in ("streaming", "old-streaming"):
             issue_unstable_warning("streaming mode is considered unstable.")
 
-        type_check = _type_check
-        _ldf = self._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=engine == "streaming",
-        )
+        optimizations._pyoptflags.old_streaming = engine == "old-streaming"
+        optimizations._pyoptflags.streaming = engine == "streaming"
+        _ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
         if plan_stage == "ir":
             dot = _ldf.to_dot(optimized)
@@ -1790,6 +1769,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         figsize: tuple[int, int] = (18, 8),
         engine: EngineType = "auto",
         _check_order: bool = True,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         **_kwargs: Any,
     ) -> tuple[DataFrame, DataFrame]:
         """
@@ -1853,6 +1833,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                The GPU engine does not support streaming, if streaming
                is enabled then GPU execution is switched off.
+        optimizations
+            The optimization passes done during query optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
 
         Examples
@@ -1895,31 +1881,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
         engine = _select_engine(engine)
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            comm_subplan_elim = False
-            comm_subexpr_elim = False
-            cluster_with_columns = False
-            collapse_joins = False
 
-        type_check = _type_check
-        ldf = self._ldf.optimization_toggle(
-            type_coercion=type_coercion,
-            type_check=type_check,
-            predicate_pushdown=predicate_pushdown,
-            projection_pushdown=projection_pushdown,
-            simplify_expression=simplify_expression,
-            slice_pushdown=slice_pushdown,
-            comm_subplan_elim=comm_subplan_elim,
-            comm_subexpr_elim=comm_subexpr_elim,
-            cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
-            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
-            _eager=False,
-            _check_order=_check_order,
-            new_streaming=False,
-        )
+        optimizations._pyoptflags.old_streaming = (engine == "old-streaming",)  # type: ignore[comparison-overlap]
+        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
+
         callback = _gpu_engine_callback(
             engine,
             streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
@@ -1977,7 +1942,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
-        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1989,8 +1953,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         no_optimization: bool = False,
         engine: EngineType = "auto",
         background: Literal[True],
-        _eager: bool = False,
-        _check_order: bool = True,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> InProcessQuery: ...
 
@@ -1999,7 +1961,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
-        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2011,8 +1972,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         no_optimization: bool = False,
         engine: EngineType = "auto",
         background: Literal[False] = False,
-        _check_order: bool = True,
-        _eager: bool = False,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> DataFrame: ...
 
@@ -2022,7 +1981,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
-        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2034,8 +1992,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         no_optimization: bool = False,
         engine: EngineType = "auto",
         background: bool = False,
-        _check_order: bool = True,
-        _eager: bool = False,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         **_kwargs: Any,
     ) -> DataFrame | InProcessQuery:
@@ -2101,7 +2057,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             The optimization passes done during query optimization.
 
             .. warning::
-                This feature is considered **unstable**. It may be changed
+                This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
 
         Returns
@@ -2207,12 +2163,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
             background=background,
             new_streaming=new_streaming,
-            _eager=_eager,
+            _eager=optimizations._pyoptflags.eager,
         )
 
         if isinstance(engine, GPUEngine):
             engine = "gpu"
 
+        print(engine)
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
         if background:
@@ -2283,7 +2240,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             The optimization passes done during query optimization.
 
             .. warning::
-                This feature is considered **unstable**. It may be changed
+                This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
 
         Returns
@@ -2566,7 +2523,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This has no effect if `lazy` is set to `True`.
 
             .. warning::
-                This feature is considered **unstable**. It may be changed
+                This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
 
         Returns
@@ -2797,7 +2754,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This has no effect if `lazy` is set to `True`.
 
             .. warning::
-                This feature is considered **unstable**. It may be changed
+                This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
 
         Returns
@@ -3076,7 +3033,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This has no effect if `lazy` is set to `True`.
 
             .. warning::
-                This feature is considered **unstable**. It may be changed
+                This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
 
         Returns
@@ -3274,7 +3231,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This has no effect if `lazy` is set to `True`.
 
             .. warning::
-                This feature is considered **unstable**. It may be changed
+                This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
 
         Returns

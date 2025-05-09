@@ -53,4 +53,6 @@ flag_getter_setters! {
     (COLLAPSE_JOINS, get_collapse_joins, set_collapse_joins)
     (CHECK_ORDER_OBSERVE, get_check_order_observe, set_check_order_observe)
     (EAGER, get_eager, set_eager)
+    (STREAMING, get_old_streaming, set_old_streaming)
+    (NEW_STREAMING, get_streaming, set_streaming)
 }

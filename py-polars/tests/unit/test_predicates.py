@@ -524,7 +524,7 @@ def test_predicate_pushdown_block_join(how: Any) -> None:
         )
         .filter(pl.col("a") == 1)
     )
-    assert_frame_equal(q.collect(no_optimization=True), q.collect())
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), q.collect())
 
 
 def test_predicate_push_down_with_alias_15442() -> None:
@@ -650,7 +650,7 @@ def test_predicate_pushdown_join_19772(
     if join_type == "right":
         expect = expect.select("v", "b", "k")
 
-    assert_frame_equal(q.collect(no_optimization=True), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
     assert_frame_equal(q.collect(), expect)
 
 
