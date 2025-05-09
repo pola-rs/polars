@@ -1642,6 +1642,8 @@ class Expr:
         """
         Round underlying floating point data by `decimals` digits.
 
+        The default rounding mode is "half to even" (also known as "bankers' rounding").
+
         Parameters
         ----------
         decimals

@@ -5126,6 +5126,15 @@ class Series:
         """
         Round underlying floating point data by `decimals` digits.
 
+        The default rounding mode is "half to even" (also known as "bankers' rounding").
+
+        Parameters
+        ----------
+        decimals
+            Number of decimals to round by.
+        mode : {'half_to_even', 'half_away_from_zero'}
+            Rounding mode.
+
         Examples
         --------
         >>> s = pl.Series("a", [1.12345, 2.56789, 3.901234])
@@ -5138,10 +5147,21 @@ class Series:
                 3.9
         ]
 
-        Parameters
-        ----------
-        decimals
-            number of decimals to round by.
+        >>> s = pl.Series([-3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5])
+        >>> s.round(mode="half_to_even")
+        shape: (8,)
+        Series: '' [f64]
+        [
+            -4.0
+            -2.0
+            -2.0
+            -0.0
+            0.0
+            2.0
+            2.0
+            4.0
+        ])
+
         """
 
     def round_sig_figs(self, digits: int) -> Series:
