@@ -9,7 +9,7 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::dsl::{
-    ExtraColumnsPolicy, FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, SinkTypeIR,
+    FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, SinkTypeIR,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
@@ -573,14 +573,9 @@ pub fn lower_ir(
                                 .as_ref()
                                 .map(|x| x.as_str()),
                         );
-                    let has_projection = unified_scan_args.projection.is_some();
 
                     // TODO: Add this to unified scan args.
-                    let extra_columns_policy = if has_projection {
-                        ExtraColumnsPolicy::Ignore
-                    } else {
-                        ExtraColumnsPolicy::Raise
-                    };
+                    let extra_columns_policy = unified_scan_args.extra_columns_policy;
 
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,

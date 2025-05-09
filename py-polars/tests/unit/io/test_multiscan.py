@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING, Any, Callable
+from typing import IO, TYPE_CHECKING, Any, Callable
 
 import pyarrow.parquet as pq
 import pytest
@@ -669,3 +669,29 @@ def test_row_index_filter_22612(scan: Any, write: Any) -> None:
             .collect(),
             df.with_row_index().slice(end - 2, 3),
         )
+
+
+def test_extra_columns_not_ignored_22218() -> None:
+    dfs = [pl.DataFrame({"a": 1, "b": 1}), pl.DataFrame({"a": 2, "c": 2})]
+
+    files: list[IO[bytes]] = [io.BytesIO(), io.BytesIO()]
+
+    dfs[0].write_parquet(files[0])
+    dfs[1].write_parquet(files[1])
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match="extra column in file outside of expected schema: c, hint: pass",
+    ):
+        (pl.scan_parquet(files, allow_missing_columns=True).select(pl.all()).collect())
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            files,
+            allow_missing_columns=True,
+            scan_options=pl.ScanOptions(extra_columns="ignore"),
+        )
+        .select(pl.all())
+        .collect(),
+        pl.DataFrame({"a": [1, 2], "b": [1, None]}),
+    )

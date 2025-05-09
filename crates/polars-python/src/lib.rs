@@ -23,6 +23,7 @@ pub mod file;
 #[cfg(feature = "pymethods")]
 pub mod functions;
 pub mod interop;
+pub mod io;
 pub mod lazyframe;
 pub mod lazygroupby;
 pub mod map;

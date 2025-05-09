@@ -14,8 +14,8 @@ FloatCastOption: TypeAlias = Literal["upcast", "downcast"]
 DatetimeCastOption: TypeAlias = Literal["nanosecond-downcast", "convert-timezone"]
 
 
-class ScanCastOptions:
-    """Options for type-casting when scanning files."""
+class ScanOptions:
+    """Options for scanning files."""
 
     def __init__(
         self,
@@ -28,15 +28,12 @@ class ScanCastOptions:
         | DatetimeCastOption
         | Collection[DatetimeCastOption] = "forbid",
         missing_struct_fields: Literal["insert", "raise"] = "raise",
+        extra_columns: Literal["ignore", "raise"] = "raise",
         extra_struct_fields: Literal["ignore", "raise"] = "raise",
         _internal_call: bool = False,
     ) -> None:
         """
-        Configuration for type-casting of columns when reading files.
-
-        This can be useful for scanning datasets with schemas that have been
-        modified. This configuration object is generally passed to a supported
-        `scan_*` function via the `cast_options` parameter.
+        Common configuration for scanning files.
 
         .. warning::
                 This functionality is considered **unstable**. It may be changed
@@ -80,18 +77,24 @@ class ScanCastOptions:
             * `ignore`: Silently ignores.
             * `raise`: Raises an error.
 
+        extra_columns
+            Configuration for behavior when extra columns outside of the defined
+            schema are encountered in the data:
+
+            * `ignore`: Silently ignores.
+            * `raise`: Raises an error.
+
         """
         if not _internal_call:
-            issue_unstable_warning("ScanCastOptions is considered unstable.")
+            issue_unstable_warning("ScanOptions is considered unstable.")
 
         self.integer_cast = integer_cast
         self.float_cast = float_cast
         self.datetime_cast = datetime_cast
         self.missing_struct_fields = missing_struct_fields
+        self.extra_columns = extra_columns
         self.extra_struct_fields = extra_struct_fields
 
-    # This is called from the Rust-side, we have it so that we don't accidentally
-    # print unstable messages.
     @staticmethod
-    def _default() -> ScanCastOptions:
-        return ScanCastOptions(_internal_call=True)
+    def _default() -> ScanOptions:
+        return ScanOptions(_internal_call=True)

@@ -142,7 +142,7 @@ impl PolicyWrap<'_> {
                         MissingColumnsPolicy::Raise => {
                             return mismatch_err(&format!(
                                 "encountered missing struct field: {}, \
-                                hint: pass cast_options=pl.ScanCastOptions(missing_struct_fields='insert')",
+                                hint: pass missing_struct_fields='insert' in scan options",
                                 target_field.name(),
                             ));
                         },
@@ -189,7 +189,7 @@ impl PolicyWrap<'_> {
                         ExtraColumnsPolicy::Raise => {
                             return mismatch_err(&format!(
                                 "encountered extra struct field: {}, \
-                                hint: pass cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
+                                hint: pass extra_struct_fields='ignore' in scan options",
                                 &fld.name,
                             ));
                         },
@@ -235,9 +235,7 @@ impl PolicyWrap<'_> {
 
         if target_dtype.is_integer() && incoming_dtype.is_integer() {
             if !self.integer_upcast {
-                return mismatch_err(
-                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')",
-                );
+                return mismatch_err("hint: pass integer_cast='upcast' in scan options");
             }
 
             return match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
@@ -252,9 +250,7 @@ impl PolicyWrap<'_> {
                     if self.float_upcast {
                         Ok(true)
                     } else {
-                        mismatch_err(
-                            "hint: pass cast_options=pl.ScanCastOptions(float_cast='upcast')",
-                        )
+                        mismatch_err("hint: pass float_cast='upcast' in scan options")
                     }
                 },
 
@@ -262,9 +258,7 @@ impl PolicyWrap<'_> {
                     if self.float_downcast {
                         Ok(true)
                     } else {
-                        mismatch_err(
-                            "hint: pass cast_options=pl.ScanCastOptions(float_cast='downcast')",
-                        )
+                        mismatch_err("hint: pass float_cast='downcast' in scan options")
                     }
                 },
 
@@ -281,9 +275,7 @@ impl PolicyWrap<'_> {
             if !self.datetime_convert_timezone
                 && !TimeZone::eq_none_as_utc(incoming_zone.as_ref(), target_zone.as_ref())
             {
-                return mismatch_err(
-                    "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='convert-timezone')",
-                );
+                return mismatch_err("hint: pass datetime_cast='convert-timezone' in scan options");
             }
 
             // Check unit
@@ -293,7 +285,7 @@ impl PolicyWrap<'_> {
                         Ok(true)
                     } else {
                         mismatch_err(
-                            "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='nanosecond-downcast')",
+                            "hint: pass datetime_cast='nanosecond-downcast' in scan options",
                         )
                     }
                 } else {

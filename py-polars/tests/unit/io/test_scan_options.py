@@ -12,22 +12,22 @@ from polars.testing import assert_frame_equal
 
 
 @pytest.mark.parametrize(
-    ("literal_values", "expected", "cast_options"),
+    ("literal_values", "expected", "scan_options"),
     [
         (
             (pl.lit(1, dtype=pl.Int64), pl.lit(2, dtype=pl.Int32)),
             pl.Series([1, 2], dtype=pl.Int64),
-            pl.ScanCastOptions(integer_cast="upcast"),
+            pl.ScanOptions(integer_cast="upcast"),
         ),
         (
             (pl.lit(1.0, dtype=pl.Float64), pl.lit(2.0, dtype=pl.Float32)),
             pl.Series([1, 2], dtype=pl.Float64),
-            pl.ScanCastOptions(float_cast="upcast"),
+            pl.ScanOptions(float_cast="upcast"),
         ),
         (
             (pl.lit(1.0, dtype=pl.Float32), pl.lit(2.0, dtype=pl.Float64)),
             pl.Series([1, 2], dtype=pl.Float32),
-            pl.ScanCastOptions(float_cast=["upcast", "downcast"]),
+            pl.ScanOptions(float_cast=["upcast", "downcast"]),
         ),
         (
             (
@@ -38,7 +38,7 @@ from polars.testing import assert_frame_equal
                 [datetime(2025, 1, 1), datetime(2025, 1, 2)],
                 dtype=pl.Datetime(time_unit="ms"),
             ),
-            pl.ScanCastOptions(datetime_cast="nanosecond-downcast"),
+            pl.ScanOptions(datetime_cast="nanosecond-downcast"),
         ),
         (
             (
@@ -58,9 +58,7 @@ from polars.testing import assert_frame_equal
                 ],
                 dtype=pl.Datetime(time_unit="ms", time_zone="Europe/Amsterdam"),
             ),
-            pl.ScanCastOptions(
-                datetime_cast=["nanosecond-downcast", "convert-timezone"]
-            ),
+            pl.ScanOptions(datetime_cast=["nanosecond-downcast", "convert-timezone"]),
         ),
         (
             (  # We also test nested primitive upcast policy with this one
@@ -79,7 +77,7 @@ from polars.testing import assert_frame_equal
                 [{"a": [[1]], "b": 1}, {"a": [[2]], "b": None}],
                 dtype=pl.Struct({"a": pl.List(pl.Array(pl.Int32, 1)), "b": pl.Int32}),
             ),
-            pl.ScanCastOptions(
+            pl.ScanOptions(
                 integer_cast="upcast",
                 missing_struct_fields="insert",
             ),
@@ -107,10 +105,10 @@ from polars.testing import assert_frame_equal
         ),
     ],
 )
-def test_scan_cast_options(
+def test_scan_options_cast(
     literal_values: tuple[pl.Expr, pl.Expr],
     expected: pl.Series,
-    cast_options: pl.ScanCastOptions | None,
+    scan_options: pl.ScanOptions | None,
 ) -> None:
     expected = expected.alias("literal")
     lv1, lv2 = literal_values
@@ -139,19 +137,19 @@ def test_scan_cast_options(
 
     # Note: Schema is taken from the first file
 
-    if cast_options is not None:
+    if scan_options is not None:
         q = pl.scan_parquet(files)
 
         with pytest.raises(pl.exceptions.SchemaError, match=r"hint: pass "):
             q.collect()
 
     assert_frame_equal(
-        pl.scan_parquet(files, cast_options=cast_options).collect(),
+        pl.scan_parquet(files, scan_options=scan_options).collect(),
         expected.to_frame(),
     )
 
 
-def test_scan_cast_options_forbid_int_downcast() -> None:
+def test_scan_options_cast_forbid_int_downcast() -> None:
     # Test to ensure that passing `integer_cast='upcast'` does not accidentally
     # permit casting to smaller integer types.
     lv1, lv2 = pl.lit(1, dtype=pl.Int8), pl.lit(2, dtype=pl.Int32)
@@ -177,15 +175,15 @@ def test_scan_cast_options_forbid_int_downcast() -> None:
 
     q = pl.scan_parquet(
         files,
-        cast_options=pl.ScanCastOptions(integer_cast="upcast"),
+        scan_options=pl.ScanOptions(integer_cast="upcast"),
     )
 
     with pytest.raises(pl.exceptions.SchemaError):
         q.collect()
 
 
-def test_scan_cast_options_extra_struct_fields() -> None:
-    cast_options = pl.ScanCastOptions(extra_struct_fields="ignore")
+def test_scan_options_cast_extra_struct_fields() -> None:
+    scan_options = pl.ScanOptions(extra_struct_fields="ignore")
 
     expected = pl.Series([{"a": 1}, {"a": 2}], dtype=pl.Struct({"a": pl.Int32}))
     expected = expected.alias("literal")
@@ -215,6 +213,28 @@ def test_scan_cast_options_extra_struct_fields() -> None:
         q.collect()
 
     assert_frame_equal(
-        pl.scan_parquet(files, cast_options=cast_options).collect(),
+        pl.scan_parquet(files, scan_options=scan_options).collect(),
         expected.to_frame(),
+    )
+
+
+def test_scan_options_ignore_extra_columns() -> None:
+    files: list[IO[bytes]] = [io.BytesIO(), io.BytesIO()]
+
+    pl.DataFrame({"a": 1}).write_parquet(files[0])
+    pl.DataFrame({"a": 2, "b": 1}).write_parquet(files[1])
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match="extra column in file outside of expected schema: b, hint: pass",
+    ):
+        pl.scan_parquet(files, schema={"a": pl.Int64}).collect()
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            files,
+            schema={"a": pl.Int64},
+            scan_options=pl.ScanOptions(extra_columns="ignore"),
+        ).collect(),
+        pl.DataFrame({"a": [1, 2]}),
     )

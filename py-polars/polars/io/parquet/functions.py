@@ -24,6 +24,7 @@ from polars.io._utils import (
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
+from polars.io.scan_options import ScanOptions
 
 with contextlib.suppress(ImportError):
     from polars.polars import PyLazyFrame
@@ -35,7 +36,6 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, DataType, LazyFrame
     from polars._typing import FileSource, ParallelStrategy, SchemaDict
-    from polars.io.cast_options import ScanCastOptions
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
@@ -385,7 +385,7 @@ def scan_parquet(
     retries: int = 2,
     include_file_paths: str | None = None,
     allow_missing_columns: bool = False,
-    cast_options: ScanCastOptions | None = None,
+    scan_options: ScanOptions | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a local or cloud-hosted parquet file (or files).
@@ -493,7 +493,7 @@ def scan_parquet(
         raise an error. However, if `allow_missing_columns` is set to
         `True`, a full-NULL column is returned instead of erroring for the files
         that do not contain the column.
-    cast_options
+    scan_options
         Configuration for column type-casting during scans. Useful for datasets
         containing files that have differing schemas.
 
@@ -531,9 +531,11 @@ def scan_parquet(
         msg = "the `hive_schema` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
-    if cast_options is not None:
-        msg = "The `cast_options` parameter of `scan_parquet` is considered unstable."
+    if scan_options is not None:
+        msg = "The `scan_options` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
+    else:
+        scan_options = ScanOptions._default()
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
@@ -566,7 +568,7 @@ def scan_parquet(
         glob=glob,
         include_file_paths=include_file_paths,
         allow_missing_columns=allow_missing_columns,
-        cast_options=cast_options,
+        scan_options=scan_options,
     )
 
 
@@ -591,7 +593,7 @@ def _scan_parquet_impl(
     retries: int = 2,
     include_file_paths: str | None = None,
     allow_missing_columns: bool = False,
-    cast_options: ScanCastOptions | None = None,
+    scan_options: ScanOptions | None = None,
 ) -> LazyFrame:
     if isinstance(source, list):
         sources = source
@@ -625,6 +627,6 @@ def _scan_parquet_impl(
         glob=glob,
         include_file_paths=include_file_paths,
         allow_missing_columns=allow_missing_columns,
-        cast_options=cast_options,
+        scan_options=scan_options,
     )
     return wrap_ldf(pylf)

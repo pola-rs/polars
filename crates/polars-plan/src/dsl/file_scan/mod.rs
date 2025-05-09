@@ -195,6 +195,7 @@ pub struct UnifiedScanArgs {
 
     pub cast_columns_policy: CastColumnsPolicy,
     pub missing_columns_policy: MissingColumnsPolicy,
+    pub extra_columns_policy: ExtraColumnsPolicy,
     pub include_file_paths: Option<PlSmallStr>,
 }
 
