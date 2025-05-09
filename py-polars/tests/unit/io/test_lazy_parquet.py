@@ -589,7 +589,9 @@ def test_predicate_slice_pushdown_row_index_20485(tmp_path: Path) -> None:
     ldf = pl.scan_parquet(file_path)
     sliced_df = ldf.with_row_index().slice(slice_start, slice_len).collect()
     sliced_df_no_pushdown = (
-        ldf.with_row_index().slice(slice_start, slice_len).collect(slice_pushdown=False)
+        ldf.with_row_index()
+        .slice(slice_start, slice_len)
+        .collect(optimizations=pl.QueryOptFlags(slice_pushdown=False))
     )
 
     expected_index = list(range(slice_start, slice_start + slice_len))
