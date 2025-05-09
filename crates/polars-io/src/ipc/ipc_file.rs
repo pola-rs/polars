@@ -53,6 +53,12 @@ use crate::shared::{ArrowReader, finish_reader};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions;
 
+impl Default for IpcScanOptions {
+    fn default() -> Self {
+        Self {}
+    }
+}
+
 /// Read Arrows IPC format into a DataFrame
 ///
 /// # Example
