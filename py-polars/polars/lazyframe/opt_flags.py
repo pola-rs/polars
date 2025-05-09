@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 class QueryOptFlags:
     """
-    Optimization flags used during query optimization.
+    The set of the optimizations considered during query optimization.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
@@ -42,6 +42,7 @@ class QueryOptFlags:
         cluster_with_columns: None | bool = None,
         collapse_joins: None | bool = None,
         check_order_observe: None | bool = None,
+        fast_projection: None | bool = None,
     ) -> None:
         self._pyoptflags = PyOptFlags.default()
         self.update(
@@ -54,6 +55,7 @@ class QueryOptFlags:
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
             check_order_observe=check_order_observe,
+            fast_projection=fast_projection,
         )
 
     @classmethod
@@ -74,6 +76,7 @@ class QueryOptFlags:
         cluster_with_columns: None | bool = None,
         collapse_joins: None | bool = None,
         check_order_observe: None | bool = None,
+        fast_projection: None | bool = None,
     ) -> QueryOptFlags:
         """Create new empty set off optimizations."""
         optflags = QueryOptFlags()
@@ -88,6 +91,7 @@ class QueryOptFlags:
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
             check_order_observe=check_order_observe,
+            fast_projection=fast_projection,
         )
 
     def update(
@@ -102,6 +106,7 @@ class QueryOptFlags:
         cluster_with_columns: None | bool = None,
         collapse_joins: None | bool = None,
         check_order_observe: None | bool = None,
+        fast_projection: None | bool = None,
     ) -> QueryOptFlags:
         """Update the current optimization flags."""
         if predicate_pushdown is not None:
@@ -122,6 +127,8 @@ class QueryOptFlags:
             self.collapse_joins = collapse_joins
         if check_order_observe is not None:
             self.check_order_observe = check_order_observe
+        if fast_projection is not None:
+            self.fast_projection = fast_projection
 
         return self
 
@@ -225,6 +232,15 @@ class QueryOptFlags:
     def check_order_observe(self, value: bool) -> None:
         self._pyoptflags.check_order_observe = value
 
+    @property
+    def fast_projection(self) -> bool:
+        """Replace simple projections with a faster inlined projection that skips the expression engine."""  # noqa: W505
+        return self._pyoptflags.fast_projection
+
+    @fast_projection.setter
+    def fast_projection(self, value: bool) -> None:
+        self._pyoptflags.fast_projection = value
+
     def __str__(self) -> str:
         return f"""
 QueryOptFlags {{
@@ -240,6 +256,7 @@ QueryOptFlags {{
     cluster_with_columns: {self.cluster_with_columns}
     collapse_joins: {self.collapse_joins}
     check_order_observe: {self.check_order_observe}
+    fast_projection: {self.fast_projection}
 
     eager: {self._pyoptflags.eager}
     old_streaming: {self._pyoptflags.old_streaming}

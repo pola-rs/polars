@@ -1794,24 +1794,54 @@ def collect_all(
         A list of LazyFrames to collect.
     type_coercion
         Do type coercion optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     predicate_pushdown
         Do predicate pushdown optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     projection_pushdown
         Do projection pushdown optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     simplify_expression
         Run simplify expressions optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     no_optimization
         Turn off optimizations.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     slice_pushdown
         Slice pushdown optimization.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     comm_subplan_elim
         Will try to cache branching subplans that occur on self-joins or unions.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     comm_subexpr_elim
         Common subexpressions will be cached and reused.
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     cluster_with_columns
         Combine sequential independent calls to with_columns
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     collapse_joins
         Collapse a join and filters into a faster join
+
+        .. deprecated:: 1.30.0
+            Use the `optimizations` parameters.
     optimizations
         The optimization passes done during query optimization.
 

@@ -318,7 +318,9 @@ def test_collapse_joins_combinations() -> None:
                 # IE-join is unspecified. Therefore, this might not necessarily
                 # create the exact same dataframe.
                 optimized = cross.filter(e).sort(pl.all()).collect()
-                unoptimized = cross.filter(e).collect(collapse_joins=False)
+                unoptimized = cross.filter(e).collect(
+                    optimizations=pl.QueryOptFlags(collapse_joins=False)
+                )
 
                 try:
                     assert_frame_equal(optimized, unoptimized, check_row_order=False)
@@ -330,7 +332,11 @@ def test_collapse_joins_combinations() -> None:
                     print(optimized)
                     print()
                     print("Unoptimized")
-                    print(cross.filter(e).explain(collapse_joins=False))
+                    print(
+                        cross.filter(e).explain(
+                            optimizations=pl.QueryOptFlags(collapse_joins=False)
+                        )
+                    )
                     print(unoptimized)
                     print()
 

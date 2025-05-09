@@ -947,6 +947,7 @@ class DynamicGroupBy:
 
     def __iter__(self) -> Self:
         from polars.lazyframe.opt_flags import QueryOptFlags
+
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
@@ -1000,6 +1001,7 @@ class DynamicGroupBy:
             The resulting columns will be renamed to the keyword used.
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .group_by_dynamic(

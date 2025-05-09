@@ -5,7 +5,7 @@ from polars.testing import assert_frame_equal
 def test_order_observability() -> None:
     q = pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).sort("a")
 
-    args = { 'optimizations': pl.QueryOptFlags(check_order_observe=True) }
+    args = {"optimizations": pl.QueryOptFlags(check_order_observe=True)}
 
     assert "SORT" not in q.group_by("a").sum().explain(**args)
     assert "SORT" not in q.group_by("a").min().explain(**args)
