@@ -805,7 +805,7 @@ def test_parquet_schema_arg(
 
     with pytest.raises(
         pl.exceptions.SchemaError,
-        match="data type mismatch for column b: expected: i8, found: i64",
+        match="data type mismatch for column b: incoming: Int64 != target: Int8",
     ):
         lf.collect(engine="streaming" if streaming else "in-memory")
 

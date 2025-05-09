@@ -303,6 +303,7 @@ impl PyLazyFrame {
         source, sources, n_rows, cache, parallel, rechunk, row_index, low_memory, cloud_options,
         credential_provider, use_statistics, hive_partitioning, schema, hive_schema,
         try_parse_hive_dates, retries, glob, include_file_paths, allow_missing_columns,
+        cast_options,
     ))]
     fn new_from_parquet(
         source: Option<PyObject>,
@@ -324,10 +325,52 @@ impl PyLazyFrame {
         glob: bool,
         include_file_paths: Option<String>,
         allow_missing_columns: bool,
+        cast_options: Wrap<CastColumnsPolicy>,
     ) -> PyResult<Self> {
         use cloud::credential_provider::PlCredentialProvider;
+        use polars_utils::slice_enum::Slice;
+
+        use crate::utils::to_py_err;
 
         let parallel = parallel.0;
+
+        let options = ParquetOptions {
+            schema: schema.map(|x| Arc::new(x.0)),
+            parallel,
+            low_memory,
+            use_statistics,
+        };
+
+        let sources = sources.0;
+        let (first_path, sources) = match source {
+            None => (sources.first_path().map(|p| p.to_path_buf()), sources),
+            Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
+        };
+
+        let cloud_options = if let Some(first_path) = first_path {
+            #[cfg(feature = "cloud")]
+            {
+                let first_path_url = first_path.to_string_lossy();
+                let cloud_options =
+                    parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
+
+                Some(
+                    cloud_options
+                        .with_max_retries(retries)
+                        .with_credential_provider(
+                            credential_provider.map(PlCredentialProvider::from_python_builder),
+                        ),
+                )
+            }
+
+            #[cfg(not(feature = "cloud"))]
+            {
+                None
+            }
+        } else {
+            None
+        };
+
         let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 
         let row_index = row_index.map(|(name, offset)| RowIndex {
@@ -342,43 +385,29 @@ impl PyLazyFrame {
             try_parse_dates: try_parse_hive_dates,
         };
 
-        let mut args = ScanArgsParquet {
-            n_rows,
-            cache,
-            parallel,
-            rechunk,
-            row_index,
-            low_memory,
-            cloud_options: None,
-            use_statistics,
-            schema: schema.map(|x| Arc::new(x.0)),
+        let unified_scan_args = UnifiedScanArgs {
+            schema: None,
+            cloud_options,
             hive_options,
+            rechunk,
+            cache,
             glob,
+            projection: None,
+            row_index,
+            pre_slice: n_rows.map(|len| Slice::Positive { offset: 0, len }),
+            cast_columns_policy: cast_options.0,
+            missing_columns_policy: if allow_missing_columns {
+                MissingColumnsPolicy::Insert
+            } else {
+                MissingColumnsPolicy::Raise
+            },
             include_file_paths: include_file_paths.map(|x| x.into()),
-            allow_missing_columns,
         };
 
-        let sources = sources.0;
-        let (first_path, sources) = match source {
-            None => (sources.first_path().map(|p| p.to_path_buf()), sources),
-            Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
-        };
-
-        #[cfg(feature = "cloud")]
-        if let Some(first_path) = first_path {
-            let first_path_url = first_path.to_string_lossy();
-            let cloud_options =
-                parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
-            args.cloud_options = Some(
-                cloud_options
-                    .with_max_retries(retries)
-                    .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_builder),
-                    ),
-            );
-        }
-
-        let lf = LazyFrame::scan_parquet_sources(sources, args).map_err(PyPolarsErr::from)?;
+        let lf: LazyFrame = DslBuilder::scan_parquet(sources, options, unified_scan_args)
+            .map_err(to_py_err)?
+            .build()
+            .into();
 
         Ok(lf.into())
     }

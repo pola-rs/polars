@@ -5628,19 +5628,19 @@ class Series:
         ]
         """
 
-    def zip_with(self, mask: Series, other: Series | PythonLiteral) -> Self:
+    def zip_with(self, mask: Series, other: Series) -> Self:
         """
-        Take values from `self` or `other`, based on the given mask.
+        Take values from self or other based on the given mask.
 
-        Where `mask` evaluates True, take values from `self`.
-        Where `mask` evaluates False, take values from `other`.
+        Where mask evaluates true, take values from self. Where mask evaluates false,
+        take values from other.
 
         Parameters
         ----------
         mask
             Boolean Series.
         other
-            Series or literal value of the same type.
+            Series of same type.
 
         Returns
         -------
@@ -5648,13 +5648,11 @@ class Series:
 
         Examples
         --------
-        Create the mask from a comparison between two Series.
-
-        >>> s1 = pl.Series("a", [1, 2, 3, 4, 5])
-        >>> s2 = pl.Series("b", [5, 4, 3, 2, 1])
+        >>> s1 = pl.Series([1, 2, 3, 4, 5])
+        >>> s2 = pl.Series([5, 4, 3, 2, 1])
         >>> s1.zip_with(s1 < s2, s2)
         shape: (5,)
-        Series: 'a' [i64]
+        Series: '' [i64]
         [
                 1
                 2
@@ -5662,13 +5660,10 @@ class Series:
                 2
                 1
         ]
-
-        Supply the mask as a Series of booleans.
-
         >>> mask = pl.Series([True, False, True, False, True])
         >>> s1.zip_with(mask, s2)
         shape: (5,)
-        Series: 'a' [i64]
+        Series: '' [i64]
         [
                 1
                 4
@@ -5676,22 +5671,7 @@ class Series:
                 2
                 5
         ]
-
-        Provide `other` as a literal value.
-
-        >>> s1.zip_with(mask, 999)
-        shape: (5,)
-        Series: 'a' [i64]
-        [
-            1
-            999
-            3
-            999
-            5
-        ]
         """
-        if not isinstance(other, Series):
-            other = Series([other], dtype=self.dtype)
         return self._from_pyseries(self._s.zip_with(mask._s, other._s))
 
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")

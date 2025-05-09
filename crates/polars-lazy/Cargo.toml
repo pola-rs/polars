@@ -109,6 +109,7 @@ dtype-full = [
 dtype-array = [
   "polars-plan/dtype-array",
   "polars-pipe?/dtype-array",
+  "polars-stream?/dtype-array",
   "polars-ops/dtype-array",
   "polars-expr/dtype-array",
 ]

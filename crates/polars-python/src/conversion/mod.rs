@@ -31,6 +31,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
+use pyo3::sync::GILOnceCell;
 use pyo3::types::{PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
@@ -1229,6 +1230,159 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
             },
         };
         Ok(Wrap(parsed))
+    }
+}
+
+// Conversion from ScanCastOptions class from the Python side.
+impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if ob.is_none() {
+            // Initialize the default ScanCastOptions from Python.
+
+            static DEFAULT: GILOnceCell<Wrap<CastColumnsPolicy>> = GILOnceCell::new();
+
+            let out = DEFAULT.get_or_try_init(ob.py(), || {
+                let ob = PyModule::import(ob.py(), "polars.io.cast_options")
+                    .unwrap()
+                    .getattr("ScanCastOptions")
+                    .unwrap()
+                    .call_method0("_default")
+                    .unwrap();
+
+                let out = Self::extract_bound(&ob)?;
+
+                // The default policy should match ERROR_ON_MISMATCH (but this can change).
+                debug_assert_eq!(&out.0, &CastColumnsPolicy::ERROR_ON_MISMATCH);
+
+                PyResult::Ok(out)
+            })?;
+
+            return Ok(out.clone());
+        }
+
+        let integer_upcast = match &*ob.getattr("integer_cast")?.extract::<PyBackedStr>()? {
+            "upcast" => true,
+            "forbid" => false,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for integer_cast: {}",
+                    v
+                )));
+            },
+        };
+
+        let mut float_upcast = false;
+        let mut float_downcast = false;
+
+        let mut parse_float_cast_option = |v: &str| -> PyResult<()> {
+            match v {
+                "forbid" => {},
+                "upcast" => float_upcast = true,
+                "downcast" => float_downcast = true,
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for float_cast: {}",
+                        v
+                    )));
+                },
+            }
+
+            Ok(())
+        };
+
+        let float_cast_object = ob.getattr("float_cast")?;
+
+        parse_multiple_options(
+            "float_cast",
+            float_cast_object,
+            &mut parse_float_cast_option,
+        )?;
+
+        let mut datetime_nanoseconds_downcast = false;
+        let mut datetime_convert_timezone = false;
+
+        let mut parse_datetime_cast_option = |v: &str| -> PyResult<()> {
+            match v {
+                "forbid" => {},
+                "nanosecond-downcast" => datetime_nanoseconds_downcast = true,
+                "convert-timezone" => datetime_convert_timezone = true,
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for datetime_cast: {}",
+                        v
+                    )));
+                },
+            };
+
+            Ok(())
+        };
+
+        let datetime_cast_object = ob.getattr("datetime_cast")?;
+
+        parse_multiple_options(
+            "datetime_cast",
+            datetime_cast_object,
+            &mut parse_datetime_cast_option,
+        )?;
+
+        let missing_struct_fields = match &*ob
+            .getattr("missing_struct_fields")?
+            .extract::<PyBackedStr>()?
+        {
+            "insert" => MissingColumnsPolicy::Insert,
+            "raise" => MissingColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for missing_struct_fields: {}",
+                    v
+                )));
+            },
+        };
+
+        let extra_struct_fields = match &*ob
+            .getattr("extra_struct_fields")?
+            .extract::<PyBackedStr>()?
+        {
+            "ignore" => ExtraColumnsPolicy::Ignore,
+            "raise" => ExtraColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for extra_struct_fields: {}",
+                    v
+                )));
+            },
+        };
+
+        return Ok(Wrap(CastColumnsPolicy {
+            integer_upcast,
+            float_upcast,
+            float_downcast,
+            datetime_nanoseconds_downcast,
+            datetime_convert_timezone,
+            missing_struct_fields,
+            extra_struct_fields,
+        }));
+
+        fn parse_multiple_options<'a>(
+            parameter_name: &'static str,
+            py_object: Bound<'a, PyAny>,
+            parser_func: &mut dyn FnMut(&str) -> PyResult<()>,
+        ) -> PyResult<()> {
+            if let Ok(v) = py_object.extract::<PyBackedStr>() {
+                parser_func(&v)?;
+            } else if let Ok(v) = py_object.try_iter() {
+                for v in v {
+                    parser_func(&v?.extract::<PyBackedStr>()?)?;
+                }
+            } else {
+                return Err(PyValueError::new_err(format!(
+                    "unknown type for {}: {}",
+                    parameter_name, py_object
+                )));
+            }
+
+            Ok(())
+        }
     }
 }
 
