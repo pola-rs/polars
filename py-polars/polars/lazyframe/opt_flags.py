@@ -325,7 +325,7 @@ def forward_old_opt_flags() -> Callable[[Callable[P, T]], Callable[P, T]]:
 
                     message = f"optimization flag `{key}` is deprecated. Please use `optimizations` parameter\n(Deprecated in version 1.30.0)"
                     issue_warning(message, DeprecationWarning)
-                    optflags = cb(optflags, kwargs.pop(key))
+                    optflags = cb(optflags, kwargs.pop(key))  # type: ignore[no-untyped-call]
 
             kwargs["optimizations"] = optflags
             return function(*args, **kwargs)
