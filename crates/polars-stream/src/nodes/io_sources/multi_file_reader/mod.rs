@@ -324,6 +324,7 @@ fn calc_n_readers_pre_init(num_pipelines: usize, config: &MultiFileReaderConfig)
         .saturating_add(3)
         .min(max_files_with_slice)
         .min(config.sources.len().max(1))
+        .min(128)
 }
 
 fn calc_max_concurrent_scans(num_pipelines: usize, config: &MultiFileReaderConfig) -> usize {
@@ -336,5 +337,5 @@ fn calc_max_concurrent_scans(num_pipelines: usize, config: &MultiFileReaderConfi
         return v;
     }
 
-    num_pipelines.min(config.sources.len().max(1))
+    num_pipelines.min(config.sources.len().max(1)).min(128)
 }
