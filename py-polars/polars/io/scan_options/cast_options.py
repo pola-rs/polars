@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from functools import cache, partial
-from typing import TYPE_CHECKING, Literal, Callable
+from typing import TYPE_CHECKING, Literal
 
 from polars._utils.unstable import issue_unstable_warning
 

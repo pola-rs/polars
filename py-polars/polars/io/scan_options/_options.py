@@ -1,5 +1,9 @@
-from typing import Literal
-from polars.io.scan_options.cast_options import ScanCastOptions
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from polars.io.scan_options.cast_options import ScanCastOptions
 
 
 class ScanOptions:

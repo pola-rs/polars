@@ -24,7 +24,6 @@ from polars.io._utils import (
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
-from polars.io.scan_options import ScanCastOptions
 from polars.io.scan_options._options import ScanOptions
 
 with contextlib.suppress(ImportError):
@@ -39,6 +38,7 @@ if TYPE_CHECKING:
     from polars._typing import FileSource, ParallelStrategy, SchemaDict
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
+    from polars.io.scan_options import ScanCastOptions
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
