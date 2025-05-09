@@ -1273,7 +1273,7 @@ class ExprListNameSpace:
         │ 3   ┆ 2   ┆ [2]       │
         └─────┴─────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_filter(expr._pyexpr, parallel))
+        return wrap_expr(self._pyexpr.list_filter(predicate._pyexpr, parallel))
 
     def set_union(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
