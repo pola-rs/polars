@@ -513,7 +513,6 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
         Default::default(),
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
-            glob: true,
             ..Default::default()
         },
     )
@@ -526,7 +525,6 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
         Default::default(),
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
-            glob: true,
             ..Default::default()
         },
     )
@@ -539,7 +537,6 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
         Default::default(),
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
-            glob: true,
             ..Default::default()
         },
     )
