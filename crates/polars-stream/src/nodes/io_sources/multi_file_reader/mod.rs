@@ -285,7 +285,7 @@ impl MultiScanState {
         );
 
         config.max_concurrent_scans.store(
-            calc_concurrent_scans(num_pipelines, &config),
+            calc_max_concurrent_scans(num_pipelines, &config),
             std::sync::atomic::Ordering::Relaxed,
         );
 
@@ -326,7 +326,7 @@ fn calc_n_readers_pre_init(num_pipelines: usize, config: &MultiFileReaderConfig)
         .min(config.sources.len().max(1))
 }
 
-fn calc_concurrent_scans(num_pipelines: usize, config: &MultiFileReaderConfig) -> usize {
+fn calc_max_concurrent_scans(num_pipelines: usize, config: &MultiFileReaderConfig) -> usize {
     if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCANS").map(|x| {
         x.parse::<usize>()
             .ok()
