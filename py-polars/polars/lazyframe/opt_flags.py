@@ -265,7 +265,10 @@ QueryOptFlags {{
         """.strip()
 
 
-DEFAULT_QUERY_OPT_FLAGS = QueryOptFlags()
+try:  # Module not available when building docs
+    DEFAULT_QUERY_OPT_FLAGS = QueryOptFlags()
+except ImportError as _:
+    DEFAULT_QUERY_OPT_FLAGS: QueryOptFlags = ()  # type: ignore[assignment]
 
 
 def forward_old_opt_flags() -> Callable[[Callable[P, T]], Callable[P, T]]:
@@ -312,7 +315,7 @@ def forward_old_opt_flags() -> Callable[[Callable[P, T]], Callable[P, T]]:
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             optflags: QueryOptFlags = kwargs.get(
                 "optimizations", DEFAULT_QUERY_OPT_FLAGS
-            )
+            )  # type: ignore[assignment]
             optflags = optflags.__copy__()
             for key in list(kwargs.keys()):
                 cb = OLD_OPT_PARAMETERS_MAPPING.get(key)
