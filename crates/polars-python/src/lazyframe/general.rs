@@ -1542,6 +1542,10 @@ impl<'py> FromPyObject<'py> for Wrap<ParquetFieldOverwrites> {
             },
         )?;
 
+        let field_id = PyDictMethods::get_item(&parsed, "field_id")?
+            .map(|v| v.extract::<i32>())
+            .transpose()?;
+
         let metadata = PyDictMethods::get_item(&parsed, "metadata")?
             .map(|v| v.extract::<Vec<(String, Option<String>)>>())
             .transpose()?;
@@ -1557,6 +1561,7 @@ impl<'py> FromPyObject<'py> for Wrap<ParquetFieldOverwrites> {
         Ok(Wrap(ParquetFieldOverwrites {
             name,
             children,
+            field_id,
             metadata,
         }))
     }

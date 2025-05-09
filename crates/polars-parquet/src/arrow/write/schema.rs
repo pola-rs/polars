@@ -104,7 +104,9 @@ fn insert_field_metadata(field: &mut Cow<Field>, options: &ColumnWriteOptions) {
                         child_field.into_owned()
                     }),
             );
-            *field = Cow::Owned(field.with_dtype(D::Struct(new_fields)));
+            field
+                .to_mut()
+                .map_dtype_mut(|dtype| *dtype = D::Struct(new_fields));
         },
         D::List(f) | D::FixedSizeList(f, _) | D::LargeList(f) => {
             let ChildWriteOptions::ListLike(o) = &options.children else {
@@ -112,16 +114,18 @@ fn insert_field_metadata(field: &mut Cow<Field>, options: &ColumnWriteOptions) {
             };
 
             let mut child_field = Cow::Borrowed(f.as_ref());
-            insert_field_metadata(&mut child_field, o.child.as_ref());
+            insert_field_metadata(&mut child_field, &o.child);
 
             if let Cow::Owned(child_field) = child_field {
                 let child_field = Box::new(child_field);
-                *field = Cow::Owned(field.with_dtype(match field.dtype() {
-                    D::List(_) => D::List(child_field),
-                    D::LargeList(_) => D::LargeList(child_field),
-                    D::FixedSizeList(_, width) => D::FixedSizeList(child_field, *width),
-                    _ => unreachable!(),
-                }));
+                field.to_mut().map_dtype_mut(|dtype| {
+                    *dtype = match dtype {
+                        D::List(_) => D::List(child_field),
+                        D::LargeList(_) => D::LargeList(child_field),
+                        D::FixedSizeList(_, width) => D::FixedSizeList(child_field, *width),
+                        _ => unreachable!(),
+                    }
+                });
             }
         },
         _ => {},
@@ -136,7 +140,7 @@ pub fn schema_to_metadata_key(schema: &ArrowSchema, options: &[ColumnWriteOption
 
         if let Cow::Owned(field) = field {
             let schema_mut = schema_mut.get_or_insert_with(|| schema.clone());
-            *schema_mut.get_mut((&f.name).as_str()).unwrap() = field;
+            *schema_mut.get_mut(f.name.as_str()).unwrap() = field;
         }
     }
 
@@ -392,7 +396,7 @@ pub fn to_parquet_type(field: &Field, options: &ColumnWriteOptions) -> PolarsRes
                     Repetition::Repeated,
                     None,
                     None,
-                    vec![to_parquet_type(&f, list_write_options.child.as_ref())?],
+                    vec![to_parquet_type(&f, &list_write_options.child)?],
                     None,
                 )],
                 field_id,

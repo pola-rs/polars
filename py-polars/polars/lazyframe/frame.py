@@ -2486,6 +2486,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
+        field_overwrites: ParquetFieldOverwrites
+        | Sequence[ParquetFieldOverwrites]
+        | Mapping[str, ParquetFieldOverwrites]
+        | None = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
     ) -> None: ...
@@ -2517,6 +2521,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
+        field_overwrites: ParquetFieldOverwrites
+        | Sequence[ParquetFieldOverwrites]
+        | Mapping[str, ParquetFieldOverwrites]
+        | None = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
     ) -> LazyFrame: ...
@@ -2702,6 +2710,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+        field_overwrites
+            Property overwrites for individual Parquet fields.
+
+            This allows more control over the writing process to the granularity of a
+            Parquet field.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run

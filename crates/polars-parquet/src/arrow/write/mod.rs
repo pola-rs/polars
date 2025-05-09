@@ -123,17 +123,29 @@ pub struct FieldWriteOptions {
     pub encoding: Encoding,
 }
 
+impl ColumnWriteOptions {
+    pub fn default_with(children: ChildWriteOptions) -> Self {
+        Self {
+            field_id: None,
+            metadata: Vec::new(),
+            children,
+        }
+    }
+}
+
 impl FieldWriteOptions {
     pub fn default_with_encoding(encoding: Encoding) -> Self {
-        Self {
-            encoding,
-        }
+        Self { encoding }
+    }
+
+    pub fn into_default_column_write_options(self) -> ColumnWriteOptions {
+        ColumnWriteOptions::default_with(ChildWriteOptions::Leaf(self))
     }
 }
 
 #[derive(Clone)]
 pub struct ListLikeFieldWriteOptions {
-    pub child: Box<ColumnWriteOptions>,
+    pub child: ColumnWriteOptions,
 }
 
 #[derive(Clone)]

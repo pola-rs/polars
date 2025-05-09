@@ -12,4 +12,4 @@ pub use options::{
     ParquetFieldOverwrites, ParquetWriteOptions, ZstdLevel,
 };
 pub use polars_parquet::write::{RowGroupIterColumns, StatisticsOptions};
-pub use writer::{ParquetWriter, get_column_options};
+pub use writer::{ParquetWriter, get_column_write_options};

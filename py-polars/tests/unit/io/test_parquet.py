@@ -21,6 +21,7 @@ from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.io.parquet import ParquetFieldOverwrites
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
 from polars.testing.parametric.strategies.core import series
@@ -3288,3 +3289,45 @@ def test_metadata_callback_info(tmp_path: Path) -> None:
     df.write_parquet(tmp_path, partition_by="a", metadata=fn_metadata)
 
     assert num_writes == len(df)
+
+
+def test_field_overwrites_metadata() -> None:
+    f = io.BytesIO()
+    lf = pl.LazyFrame(
+        {
+            "a": [None, 2, 3, 4],
+            "b": [[1, 2, 3], [42], [13], [37]],
+            "c": [
+                {"x": "a", "y": 42},
+                {"x": "b", "y": 13},
+                {"x": "X", "y": 37},
+                {"x": "Y", "y": 15},
+            ],
+        }
+    )
+    lf.sink_parquet(
+        f,
+        field_overwrites={
+            "a": ParquetFieldOverwrites(metadata={"flat_from_polars": "yes"}),
+            "b": ParquetFieldOverwrites(
+                children=ParquetFieldOverwrites(metadata={"listitem": "yes"}),
+                metadata={"list": "true"},
+            ),
+            "c": ParquetFieldOverwrites(
+                children=[
+                    ParquetFieldOverwrites(name="x", metadata={"md": "yes"}),
+                    ParquetFieldOverwrites(name="y", metadata={"md2": "Yes!"}),
+                ],
+                metadata={"struct": "true"},
+            ),
+        },
+    )
+
+    f.seek(0)
+    schema = pq.read_schema(f)
+    assert schema[0].metadata[b"flat_from_polars"] == b"yes"
+    assert schema[1].metadata[b"list"] == b"true"
+    assert schema[1].type.value_field.metadata[b"listitem"] == b"yes"
+    assert schema[2].metadata[b"struct"] == b"true"
+    assert schema[2].type.fields[0].metadata[b"md"] == b"yes"
+    assert schema[2].type.fields[1].metadata[b"md2"] == b"Yes!"

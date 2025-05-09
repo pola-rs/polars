@@ -49,6 +49,7 @@ pub struct MetadataKeyValue {
 pub struct ParquetFieldOverwrites {
     pub name: Option<PlSmallStr>,
     pub children: ChildFieldOverwrites,
+    pub field_id: Option<i32>,
     pub metadata: Option<Vec<MetadataKeyValue>>,
 }
 

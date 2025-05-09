@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
-use polars_core::prelude::{DataType, Field, PlHashMap};
+use polars_core::prelude::{DataType, Field, PlHashMap, PlHashSet};
 use polars_core::schema::Schema;
 use polars_io::prelude::{ChildFieldOverwrites, ParquetFieldOverwrites, ParquetWriteOptions};
 use polars_utils::arena::{Arena, Node};
@@ -137,12 +137,20 @@ fn type_check_parquet_field_overwrites(
         Ok(())
     }
 
+    let mut fields_lut = PlHashMap::default();
+    let mut seen = PlHashSet::default();
+
     for o in field_overwrites {
         let Some(name) = &o.name else {
             polars_bail!(InvalidOperation: "cannot do a top-level parquet field overwrite without name");
         };
 
         let dtype = schema.try_get(name.as_str())?;
+
+        if !seen.insert(name.as_str()) {
+            polars_bail!(InvalidOperation: "duplicate parquet field overwrite for struct field `{name}`");
+        }
+
         push_children(&mut stack, &o.children, dtype)?;
     }
 
@@ -156,16 +164,23 @@ fn type_check_parquet_field_overwrites(
             },
             Item::Struct(fields, os) => {
                 // @NOTE: Avoid quadratic behavior through HashMap.
-                let fields =
-                    PlHashMap::from(fields.iter().map(|f| (f.name().as_str(), f)).collect());
+                fields_lut.clear();
+                seen.clear();
+
+                fields_lut.extend(fields.iter().map(|f| (f.name().as_str(), f)));
                 for o in os {
                     let Some(name) = &o.name else {
                         polars_bail!(InvalidOperation: "cannot do a struct child parquet field overwrite without name");
                     };
 
-                    let Some(field) = fields.get(name.as_str()) else {
+                    let Some(field) = fields_lut.get(name.as_str()) else {
                         polars_bail!(InvalidOperation: "cannot find parquet field overwrite struct field `{name}`");
                     };
+
+                    if !seen.insert(name.as_str()) {
+                        polars_bail!(InvalidOperation: "duplicate parquet field overwrite for struct field `{name}`");
+                    }
+
                     push_children(&mut stack, &o.children, field.dtype())?;
                 }
             },

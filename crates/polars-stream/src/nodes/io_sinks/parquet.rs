@@ -7,13 +7,13 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::write::BatchedWriter;
-use polars_io::prelude::{ParquetWriteOptions, get_column_options};
+use polars_io::prelude::{ParquetWriteOptions, get_column_write_options};
 use polars_io::schema_to_arrow_checked;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
-    ColumnWriteOptions, CompressedPage, Compressor, FileWriter, SchemaDescriptor,
-    Version, WriteOptions, array_to_columns, to_parquet_schema,
+    ColumnWriteOptions, CompressedPage, Compressor, FileWriter, SchemaDescriptor, Version,
+    WriteOptions, array_to_columns, to_parquet_schema,
 };
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
@@ -53,7 +53,7 @@ impl ParquetSinkNode {
     ) -> PolarsResult<Self> {
         let schema = schema_to_arrow_checked(&input_schema, CompatLevel::newest(), "parquet")?;
         let column_options: Vec<ColumnWriteOptions> =
-            get_column_options(&schema, &write_options.field_overwrites);
+            get_column_write_options(&schema, &write_options.field_overwrites);
         let parquet_schema = to_parquet_schema(&schema, &column_options)?;
 
         Ok(Self {

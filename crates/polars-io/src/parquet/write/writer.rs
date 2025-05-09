@@ -121,7 +121,7 @@ where
 
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let schema = schema_to_arrow_checked(schema, CompatLevel::newest(), "parquet")?;
-        let column_options = get_column_options(&schema, &self.field_overwrites);
+        let column_options = get_column_write_options(&schema, &self.field_overwrites);
         let parquet_schema = to_parquet_schema(&schema, &column_options)?;
         let options = self.materialize_options();
         let writer = Mutex::new(FileWriter::try_new(
@@ -174,7 +174,7 @@ fn convert_metadata(md: &Option<Vec<MetadataKeyValue>>) -> Vec<KeyValue> {
         .unwrap_or_default()
 }
 
-fn transverse_recursive(
+fn to_column_write_options_rec(
     field: &ArrowField,
     overwrites: Option<&ParquetFieldOverwrites>,
 ) -> ColumnWriteOptions {
@@ -189,6 +189,7 @@ fn transverse_recursive(
     };
 
     if let Some(overwrites) = overwrites {
+        column_options.field_id = overwrites.field_id;
         column_options.metadata = convert_metadata(&overwrites.metadata);
     }
 
@@ -208,19 +209,17 @@ fn transverse_recursive(
 
             let a = field.dtype().to_logical_type();
             let child = if let ArrowDataType::List(inner) = a {
-                transverse_recursive(&inner, child_overwrites)
+                to_column_write_options_rec(inner, child_overwrites)
             } else if let ArrowDataType::LargeList(inner) = a {
-                transverse_recursive(&inner, child_overwrites)
+                to_column_write_options_rec(inner, child_overwrites)
             } else if let ArrowDataType::FixedSizeList(inner, _) = a {
-                transverse_recursive(&inner, child_overwrites)
+                to_column_write_options_rec(inner, child_overwrites)
             } else {
                 unreachable!()
             };
 
             column_options.children =
-                ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions {
-                    child: Box::new(child),
-                }));
+                ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions { child }));
         },
         Struct => {
             if let ArrowDataType::Struct(fields) = field.dtype().to_logical_type() {
@@ -238,8 +237,8 @@ fn transverse_recursive(
                     .map(|f| {
                         let overwrites = children_overwrites
                             .as_ref()
-                            .and_then(|o| o.get(&f.name).map(|x| *x));
-                        transverse_recursive(f, overwrites)
+                            .and_then(|o| o.get(&f.name).copied());
+                        to_column_write_options_rec(f, overwrites)
                     })
                     .collect();
 
@@ -249,14 +248,14 @@ fn transverse_recursive(
                 unreachable!()
             }
         },
-        Map => unreachable!(),
-        Union => todo!(),
+
+        Map | Union => unreachable!(),
     }
 
     column_options
 }
 
-pub fn get_column_options(
+pub fn get_column_write_options(
     schema: &ArrowSchema,
     field_overwrites: &[ParquetFieldOverwrites],
 ) -> Vec<ColumnWriteOptions> {
@@ -268,7 +267,7 @@ pub fn get_column_options(
     );
     schema
         .iter_values()
-        .map(|f| transverse_recursive(&f, field_overwrites.get(&f.name).map(|x| *x)))
+        .map(|f| to_column_write_options_rec(f, field_overwrites.get(&f.name).copied()))
         .collect()
 }
 
