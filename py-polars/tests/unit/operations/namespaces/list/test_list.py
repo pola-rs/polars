@@ -1080,3 +1080,41 @@ def test_list_shift_unequal_lengths_22018() -> None:
 
 def test_list_shift_self_broadcast() -> None:
     assert pl.Series("a", [[1, 2]]).list.shift(pl.Series([1, 2, 1])).len() == 3
+
+
+def test_list_slice_input_validation_22025() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series(
+                "a",
+                [
+                    ["a"],
+                    ["eb", "d"],
+                ],
+                pl.List(pl.String),
+            ),
+            pl.Series("b", ["blah", "blah"]),
+        ]
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="unexpected value while building Series of type String; found value of type Int64: 2",
+    ):
+        df.select(pl.col.a.list.slice(0, [2, 2, "a"]))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        SchemaError,
+        match=re.escape(
+            "expected integer type input to list.slice(), got list[i64] instead"
+        ),
+    ):
+        df.select(pl.col.a.list.slice(0, [0, 0]))
+
+    with pytest.raises(
+        SchemaError,
+        match=re.escape(
+            "expected integer type input to list.slice(), got list[i64] instead"
+        ),
+    ):
+        df.select(pl.col.a.list.slice([0, 0], 0))
