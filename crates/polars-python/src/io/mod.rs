@@ -59,7 +59,7 @@ impl PyScanOptions<'_> {
                     .call_method0("_default")
                     .unwrap();
 
-                let out = Self(ob).extract_cast_options()?;
+                let out = extract_cast_options_impl(ob)?;
 
                 // The default policy should match ERROR_ON_MISMATCH (but this can change).
                 debug_assert_eq!(&out, &CastColumnsPolicy::ERROR_ON_MISMATCH);
@@ -70,100 +70,106 @@ impl PyScanOptions<'_> {
             return Ok(out.clone());
         }
 
-        let integer_upcast = match &*ob
-            .getattr(intern!(py, "integer_cast"))?
-            .extract::<PyBackedStr>()?
-        {
-            "upcast" => true,
-            "forbid" => false,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown option for integer_cast: {}",
-                    v
-                )));
-            },
-        };
-
-        let mut float_upcast = false;
-        let mut float_downcast = false;
-
-        let float_cast_object = ob.getattr(intern!(py, "float_cast"))?;
-
-        parse_multiple_options("float_cast", float_cast_object, |v| {
-            match v {
-                "forbid" => {},
-                "upcast" => float_upcast = true,
-                "downcast" => float_downcast = true,
-                v => {
-                    return Err(PyValueError::new_err(format!(
-                        "unknown option for float_cast: {}",
-                        v
-                    )));
-                },
-            }
-
-            Ok(())
-        })?;
-
-        let mut datetime_nanoseconds_downcast = false;
-        let mut datetime_convert_timezone = false;
-
-        let datetime_cast_object = ob.getattr(intern!(py, "datetime_cast"))?;
-
-        parse_multiple_options("datetime_cast", datetime_cast_object, |v| {
-            match v {
-                "forbid" => {},
-                "nanosecond-downcast" => datetime_nanoseconds_downcast = true,
-                "convert-timezone" => datetime_convert_timezone = true,
-                v => {
-                    return Err(PyValueError::new_err(format!(
-                        "unknown option for datetime_cast: {}",
-                        v
-                    )));
-                },
-            };
-
-            Ok(())
-        })?;
-
-        let missing_struct_fields = match &*ob
-            .getattr(intern!(py, "missing_struct_fields"))?
-            .extract::<PyBackedStr>()?
-        {
-            "insert" => MissingColumnsPolicy::Insert,
-            "raise" => MissingColumnsPolicy::Raise,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown option for missing_struct_fields: {}",
-                    v
-                )));
-            },
-        };
-
-        let extra_struct_fields = match &*ob
-            .getattr(intern!(py, "extra_struct_fields"))?
-            .extract::<PyBackedStr>()?
-        {
-            "ignore" => ExtraColumnsPolicy::Ignore,
-            "raise" => ExtraColumnsPolicy::Raise,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown option for extra_struct_fields: {}",
-                    v
-                )));
-            },
-        };
-
-        Ok(CastColumnsPolicy {
-            integer_upcast,
-            float_upcast,
-            float_downcast,
-            datetime_nanoseconds_downcast,
-            datetime_convert_timezone,
-            missing_struct_fields,
-            extra_struct_fields,
-        })
+        extract_cast_options_impl(ob)
     }
+}
+
+fn extract_cast_options_impl(ob: Bound<'_, PyAny>) -> PyResult<CastColumnsPolicy> {
+    let py = ob.py();
+
+    let integer_upcast = match &*ob
+        .getattr(intern!(py, "integer_cast"))?
+        .extract::<PyBackedStr>()?
+    {
+        "upcast" => true,
+        "forbid" => false,
+        v => {
+            return Err(PyValueError::new_err(format!(
+                "unknown option for integer_cast: {}",
+                v
+            )));
+        },
+    };
+
+    let mut float_upcast = false;
+    let mut float_downcast = false;
+
+    let float_cast_object = ob.getattr(intern!(py, "float_cast"))?;
+
+    parse_multiple_options("float_cast", float_cast_object, |v| {
+        match v {
+            "forbid" => {},
+            "upcast" => float_upcast = true,
+            "downcast" => float_downcast = true,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for float_cast: {}",
+                    v
+                )));
+            },
+        }
+
+        Ok(())
+    })?;
+
+    let mut datetime_nanoseconds_downcast = false;
+    let mut datetime_convert_timezone = false;
+
+    let datetime_cast_object = ob.getattr(intern!(py, "datetime_cast"))?;
+
+    parse_multiple_options("datetime_cast", datetime_cast_object, |v| {
+        match v {
+            "forbid" => {},
+            "nanosecond-downcast" => datetime_nanoseconds_downcast = true,
+            "convert-timezone" => datetime_convert_timezone = true,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for datetime_cast: {}",
+                    v
+                )));
+            },
+        };
+
+        Ok(())
+    })?;
+
+    let missing_struct_fields = match &*ob
+        .getattr(intern!(py, "missing_struct_fields"))?
+        .extract::<PyBackedStr>()?
+    {
+        "insert" => MissingColumnsPolicy::Insert,
+        "raise" => MissingColumnsPolicy::Raise,
+        v => {
+            return Err(PyValueError::new_err(format!(
+                "unknown option for missing_struct_fields: {}",
+                v
+            )));
+        },
+    };
+
+    let extra_struct_fields = match &*ob
+        .getattr(intern!(py, "extra_struct_fields"))?
+        .extract::<PyBackedStr>()?
+    {
+        "ignore" => ExtraColumnsPolicy::Ignore,
+        "raise" => ExtraColumnsPolicy::Raise,
+        v => {
+            return Err(PyValueError::new_err(format!(
+                "unknown option for extra_struct_fields: {}",
+                v
+            )));
+        },
+    };
+
+    Ok(CastColumnsPolicy {
+        integer_upcast,
+        float_upcast,
+        float_downcast,
+        datetime_nanoseconds_downcast,
+        datetime_convert_timezone,
+        missing_struct_fields,
+        extra_struct_fields,
+    })
 }
 
 fn parse_multiple_options(
