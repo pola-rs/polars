@@ -3,6 +3,7 @@ use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::hive_partitions_from_paths;
 
+use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::plans::conversion::expr_expansion::expand_selectors;
@@ -76,6 +77,8 @@ pub fn to_alp(
         lp_arena,
         conversion_optimizer,
         opt_flags,
+        nodes_scratch: &mut unitvec![],
+        pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
@@ -114,6 +117,8 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) lp_arena: &'a mut Arena<IR>,
     pub(super) conversion_optimizer: ConversionOptimizer,
     pub(super) opt_flags: &'a mut OptFlags,
+    pub(super) nodes_scratch: &'a mut UnitVec<Node>,
+    pub(super) pushdown_maintain_errors: bool,
 }
 
 pub(super) fn run_conversion(
@@ -449,54 +454,46 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let predicate_ae = to_expr_ir(predicate.clone(), ctxt.expr_arena)?;
 
-            // TODO: We could do better here by using `pushdown_eligibility()`
-            return if ctxt.opt_flags.predicate_pushdown()
-                && permits_filter_pushdown_rec(
-                    ctxt.expr_arena.get(predicate_ae.node()),
+            if ctxt.opt_flags.predicate_pushdown() {
+                ctxt.nodes_scratch.clear();
+
+                if let Some(SplitPredicates { pushable, fallible }) = SplitPredicates::new(
+                    predicate_ae.node(),
                     ctxt.expr_arena,
+                    Some(ctxt.nodes_scratch),
+                    ctxt.pushdown_maintain_errors,
                 ) {
-                // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
-                // push them down independently. Especially if they refer columns from different tables
-                // this will be more performant.
-                // So:
-                // filter[foo == bar & ham == spam]
-                // filter [foo == bar]
-                // filter [ham == spam]
-                let mut predicates = vec![];
+                    let mut update_input = |predicate: Node| -> PolarsResult<()> {
+                        let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
+                        ctxt.conversion_optimizer
+                            .push_scratch(predicate.node(), ctxt.expr_arena);
+                        let lp = IR::Filter { input, predicate };
+                        input = run_conversion(lp, ctxt, "filter")?;
 
-                let mut stack = vec![predicate_ae.node()];
-                while let Some(n) = stack.pop() {
-                    if let AExpr::BinaryExpr {
-                        left,
-                        op: Operator::And | Operator::LogicalAnd,
-                        right,
-                    } = ctxt.expr_arena.get(n)
-                    {
-                        stack.push(*left);
-                        stack.push(*right);
-                    } else {
-                        predicates.push(n)
+                        Ok(())
+                    };
+
+                    // Pushables first, then fallible.
+
+                    for predicate in pushable {
+                        update_input(predicate)?;
                     }
-                }
 
-                for predicate in predicates {
-                    let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
-                    ctxt.conversion_optimizer
-                        .push_scratch(predicate.node(), ctxt.expr_arena);
-                    let lp = IR::Filter { input, predicate };
-                    input = run_conversion(lp, ctxt, "filter")?;
-                }
+                    if let Some(node) = fallible {
+                        update_input(node)?;
+                    }
 
-                Ok(input)
-            } else {
-                ctxt.conversion_optimizer
-                    .push_scratch(predicate_ae.node(), ctxt.expr_arena);
-                let lp = IR::Filter {
-                    input,
-                    predicate: predicate_ae,
+                    return Ok(input);
                 };
-                run_conversion(lp, ctxt, "filter")
             };
+
+            ctxt.conversion_optimizer
+                .push_scratch(predicate_ae.node(), ctxt.expr_arena);
+            let lp = IR::Filter {
+                input,
+                predicate: predicate_ae,
+            };
+            return run_conversion(lp, ctxt, "filter");
         },
         DslPlan::Slice { input, offset, len } => {
             let input =

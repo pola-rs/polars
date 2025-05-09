@@ -134,64 +134,137 @@ pub fn is_elementwise_rec_no_cat_cast<'a>(mut ae: &'a AExpr, expr_arena: &'a Are
     true
 }
 
-/// Check whether filters can be pushed past this expression.
-///
-/// A query, `with_columns(C).filter(P)` can be re-ordered as `filter(P).with_columns(C)`, iff
-/// both P and C permit filter pushdown.
-///
-/// If filter pushdown is permitted, `stack` is extended with any input expression nodes that this
-/// expression may have.
-///
-/// Note that this  function is not recursive - the caller should repeatedly
-/// call this function with the `stack` to perform a recursive check.
-pub(crate) fn permits_filter_pushdown(
-    stack: &mut UnitVec<Node>,
-    ae: &AExpr,
-    expr_arena: &Arena<AExpr>,
-) -> bool {
-    // This is a subset of an `is_elementwise` check that also blocks exprs that raise errors
-    // depending on the data. The idea is that, although the success value of these functions
-    // are elementwise, their error behavior is non-elementwise. Their error behavior is essentially
-    // performing an aggregation `ANY(evaluation_result_was_error)`, and if this is the case then
-    // the query result should be an error.
-    match ae {
-        // Rows that go OOB on get/gather may be filtered out in earlier operations,
-        // so we don't push these down.
-        AExpr::Function {
-            function: FunctionExpr::ListExpr(ListFunction::Get(false)),
-            ..
-        } => false,
-        #[cfg(feature = "list_gather")]
-        AExpr::Function {
-            function: FunctionExpr::ListExpr(ListFunction::Gather(false)),
-            ..
-        } => false,
-        #[cfg(feature = "dtype-array")]
-        AExpr::Function {
-            function: FunctionExpr::ArrayExpr(ArrayFunction::Get(false)),
-            ..
-        } => false,
-        // TODO: There are a lot more functions that should be caught here.
-        ae => is_elementwise(stack, ae, expr_arena),
-    }
+#[derive(Debug, Clone)]
+pub enum ExprPushdownGroup {
+    /// Can be pushed. (elementwise, infallible)
+    ///
+    /// e.g. non-strict cast
+    Pushable,
+    /// Cannot be pushed, but doesn't block pushables. (elementwise, fallible)
+    ///
+    /// Fallible expressions are categorized into this group rather than the Barrier group. The
+    /// effect of this means we push more predicates, but the expression may no longer error
+    /// if the problematic rows are filtered out.
+    ///
+    /// e.g. strict-cast, list.get(null_on_oob=False), to_datetime(strict=True)
+    Fallible,
+    /// Cannot be pushed, and blocks all expressions at the current level. (non-elementwise)
+    ///
+    /// e.g. sort()
+    Barrier,
 }
 
-pub fn permits_filter_pushdown_rec<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>) -> bool {
-    let mut stack = unitvec![];
+impl ExprPushdownGroup {
+    /// Note:
+    /// * `stack` is not extended with any nodes if a barrier expression is seen.
+    /// * This function is not recursive - the caller should repeatedly
+    ///   call this function with the `stack` to perform a recursive check.
+    pub fn update_with_expr(
+        &mut self,
+        stack: &mut UnitVec<Node>,
+        ae: &AExpr,
+        expr_arena: &Arena<AExpr>,
+    ) -> &mut Self {
+        match self {
+            ExprPushdownGroup::Pushable | ExprPushdownGroup::Fallible => {
+                // Downgrade to unpushable if fallible
+                if match ae {
+                    // Rows that go OOB on get/gather may be filtered out in earlier operations,
+                    // so we don't push these down.
+                    AExpr::Function {
+                        function: FunctionExpr::ListExpr(ListFunction::Get(false)),
+                        ..
+                    } => true,
 
-    loop {
-        if !permits_filter_pushdown(&mut stack, ae, expr_arena) {
-            return false;
+                    #[cfg(feature = "list_gather")]
+                    AExpr::Function {
+                        function: FunctionExpr::ListExpr(ListFunction::Gather(false)),
+                        ..
+                    } => true,
+
+                    #[cfg(feature = "dtype-array")]
+                    AExpr::Function {
+                        function: FunctionExpr::ArrayExpr(ArrayFunction::Get(false)),
+                        ..
+                    } => true,
+
+                    #[cfg(feature = "temporal")]
+                    AExpr::Function {
+                        input,
+                        function:
+                            FunctionExpr::StringExpr(StringFunction::Strptime(_, strptime_options)),
+                        ..
+                    } => {
+                        debug_assert!(input.len() <= 2);
+
+                        // `ambiguous` parameter to `to_datetime()`. Should always be a literal.
+                        debug_assert!(matches!(
+                            input.get(1).map(|x| expr_arena.get(x.node())),
+                            Some(AExpr::Literal(_)) | None
+                        ));
+
+                        match input.first().map(|x| expr_arena.get(x.node())) {
+                            Some(AExpr::Literal(_)) | None => false,
+                            _ => strptime_options.strict,
+                        }
+                    },
+
+                    AExpr::Cast {
+                        expr,
+                        dtype: _,
+                        options: CastOptions::Strict,
+                    } => !matches!(expr_arena.get(*expr), AExpr::Literal(_)),
+
+                    _ => false,
+                } {
+                    *self = ExprPushdownGroup::Fallible;
+                }
+
+                // Downgrade to barrier if non-elementwise
+                if !is_elementwise(stack, ae, expr_arena) {
+                    *self = ExprPushdownGroup::Barrier
+                }
+            },
+
+            ExprPushdownGroup::Barrier => {},
         }
 
-        let Some(node) = stack.pop() else {
-            break;
-        };
-
-        ae = expr_arena.get(node);
+        self
     }
 
-    true
+    pub fn update_with_expr_rec<'a>(
+        &mut self,
+        mut ae: &'a AExpr,
+        expr_arena: &'a Arena<AExpr>,
+        scratch: Option<&mut UnitVec<Node>>,
+    ) -> &mut Self {
+        let mut local_scratch = unitvec![];
+        let stack = scratch.unwrap_or(&mut local_scratch);
+
+        loop {
+            self.update_with_expr(stack, ae, expr_arena);
+
+            if let ExprPushdownGroup::Barrier = self {
+                return self;
+            }
+
+            let Some(node) = stack.pop() else {
+                break;
+            };
+
+            ae = expr_arena.get(node);
+        }
+
+        self
+    }
+
+    pub fn blocks_pushdown(&self, maintain_errors: bool) -> bool {
+        match self {
+            ExprPushdownGroup::Barrier => true,
+            ExprPushdownGroup::Fallible => maintain_errors,
+            ExprPushdownGroup::Pushable => false,
+        }
+    }
 }
 
 pub fn can_pre_agg_exprs(
