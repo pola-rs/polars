@@ -5160,8 +5160,7 @@ class Series:
             2.0
             2.0
             4.0
-        ])
-
+        ]
         """
 
     def round_sig_figs(self, digits: int) -> Series:
