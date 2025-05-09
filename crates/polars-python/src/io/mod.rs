@@ -46,6 +46,30 @@ impl PyScanOptions<'_> {
         let py = self.py();
         let ob = self.getattr(intern!(py, "cast_options"))?;
 
+        if ob.is_none() {
+            // Initialize the default ScanCastOptions from Python.
+
+            static DEFAULT: GILOnceCell<CastColumnsPolicy> = GILOnceCell::new();
+
+            let out = DEFAULT.get_or_try_init(ob.py(), || {
+                let ob = PyModule::import(ob.py(), "polars.io.cast_options")
+                    .unwrap()
+                    .getattr("ScanCastOptions")
+                    .unwrap()
+                    .call_method0("_default")
+                    .unwrap();
+
+                let out = Self(ob).extract_cast_options()?;
+
+                // The default policy should match ERROR_ON_MISMATCH (but this can change).
+                debug_assert_eq!(&out, &CastColumnsPolicy::ERROR_ON_MISMATCH);
+
+                PyResult::Ok(out)
+            })?;
+
+            return Ok(out.clone());
+        }
+
         let integer_upcast = match &*ob
             .getattr(intern!(py, "integer_cast"))?
             .extract::<PyBackedStr>()?

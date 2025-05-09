@@ -88,17 +88,5 @@ class ScanCastOptions:
         self.extra_struct_fields = extra_struct_fields
 
     @staticmethod
-    def _default_shared() -> ScanCastOptions:
-        """
-        Default ScanCastOptions.
-
-        Warning: Do not mutate. This points to a shared global object. For internal
-        use only.
-        """
-
-        return DEFAULT()
-
-
-DEFAULT: Callable[[], ScanCastOptions] = cache(
-    partial(ScanCastOptions, _internal_call=True)
-)
+    def _default() -> ScanCastOptions:
+        return ScanCastOptions(_internal_call=True)
