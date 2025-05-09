@@ -14,6 +14,18 @@ impl PyExpr {
         self.inner.clone().arr().len().into()
     }
 
+    fn arr_slice(&self, offset: i64, length: usize) -> Self {
+        self.inner.clone().arr().slice(offset, length).into()
+    }
+
+    fn arr_head(&self, length: usize) -> Self {
+        self.inner.clone().arr().head(length).into()
+    }
+
+    fn arr_tail(&self, length: usize) -> Self {
+        self.inner.clone().arr().tail(length).into()
+    }
+
     fn arr_max(&self) -> Self {
         self.inner.clone().arr().max().into()
     }

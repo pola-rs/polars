@@ -231,6 +231,123 @@ class ArrayNameSpace:
         ]
         """
 
+    def slice(self, offset: int, length: int = 5) -> Series:
+        """
+        Slice the sub-arrays.
+
+        Parameters
+        ----------
+        offset
+            The starting index of the slice.
+        length
+            The length of the slice.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Array`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]],
+        ...     dtype=pl.Array(pl.Int64, 6),
+        ... )
+        >>> s.arr.slice(1)
+        shape: (2,)
+        Series: '' [array[i64, 5]]
+        [
+            [2, 3, 4, 5, 6]
+            [8, 9, 10, 11, 12]
+        ]
+        >>> s.arr.slice(1, 3)
+        shape: (2,)
+        Series: '' [array[i64, 3]]
+        [
+            [2, 3, 4]
+            [8, 9, 10]
+        ]
+        >>> s.arr.slice(-2)
+        shape: (2,)
+        Series: '' [array[i64, 2]]
+        [
+            [5, 6]
+            [11, 12]
+        ]
+        """
+
+    def head(self, length: int = 5) -> Series:
+        """
+        Get the first `length` elements of each sub-array.
+
+        Parameters
+        ----------
+        length
+            The number of elements to return.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Array`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]],
+        ...     dtype=pl.Array(pl.Int64, 6),
+        ... )
+        >>> s.arr.head()
+        shape: (2,)
+        Series: '' [array[i64, 5]]
+        [
+            [1, 2, 3, 4, 5]
+            [7, 8, 9, 10, 11]
+        ]
+        >>> s.arr.head(3)
+        shape: (2,)
+        Series: '' [array[i64, 3]]
+        [
+            [1, 2, 3]
+            [7, 8, 9]
+        ]
+        """
+
+    def tail(self, length: int = 5) -> Series:
+        """
+        Get the last `length` elements of each sub-array.
+
+        Parameters
+        ----------
+        length
+            The number of elements to return.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Array`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]],
+        ...     dtype=pl.Array(pl.Int64, 6),
+        ... )
+        >>> s.arr.tail()
+        shape: (2,)
+        Series: '' [array[i64, 5]]
+        [
+            [2, 3, 4, 5, 6]
+            [8, 9, 10, 11, 12]
+        ]
+        >>> s.arr.tail(3)
+        shape: (2,)
+        Series: '' [array[i64, 3]]
+        [
+            [4, 5, 6]
+            [10, 11, 12]
+        ]
+        """
+
     def all(self) -> Series:
         """
         Evaluate whether all boolean values are true for every subarray.
