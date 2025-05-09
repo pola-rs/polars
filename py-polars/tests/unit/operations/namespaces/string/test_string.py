@@ -2002,5 +2002,5 @@ def test_replace_many_mapping_in_list() -> None:
         pl.Series([["a", "b"]]).list.eval(
             pl.element().replace_strict({"a": 1, "b": 2})
         ),
-        pl.Series([[1, 2]]).list.eval(pl.element().replace_strict({"a": 1, "b": 2})),
+        pl.Series([[1, 2]]),
     )
