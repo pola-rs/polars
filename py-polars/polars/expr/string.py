@@ -2654,8 +2654,8 @@ class ExprStringNameSpace:
             # Early return in case of an empty mapping.
             if not patterns:
                 return wrap_expr(self._pyexpr)
-            replace_with = pl.Series(patterns.values())
-            patterns = pl.Series(patterns.keys())
+            replace_with = list(patterns.values())
+            patterns = list(patterns.keys())
 
         patterns = parse_into_expression(
             patterns,  # type: ignore[arg-type]
