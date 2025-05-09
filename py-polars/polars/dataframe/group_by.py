@@ -1014,7 +1014,7 @@ class DynamicGroupBy:
                 start_by=self.start_by,
             )
             .agg(*aggs, **named_aggs)
-            .collect(optimizations=QueryOptFlags.none()
+            .collect(optimizations=QueryOptFlags.none())
         )
 
     def map_groups(
