@@ -200,7 +200,7 @@ impl Default for GzipLevel {
 
 impl CompressionLevel<u8> for GzipLevel {
     const MINIMUM_LEVEL: u8 = 0;
-    const MAXIMUM_LEVEL: u8 = 10;
+    const MAXIMUM_LEVEL: u8 = 9;
 }
 
 impl GzipLevel {

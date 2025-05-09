@@ -3902,7 +3902,7 @@ class DataFrame:
             The level of compression to use. Higher compression means smaller files on
             disk.
 
-            - "gzip" : min-level: 0, max-level: 10.
+            - "gzip" : min-level: 0, max-level: 9.
             - "brotli" : min-level: 0, max-level: 11.
             - "zstd" : min-level: 1, max-level: 22.
 
