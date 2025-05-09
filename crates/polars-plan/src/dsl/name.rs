@@ -1,6 +1,8 @@
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "regex")]
+use regex::Regex;
 
 use super::*;
 
@@ -47,6 +49,23 @@ impl ExprNameNameSpace {
     pub fn suffix(self, suffix: &str) -> Expr {
         let suffix = suffix.to_string();
         self.map(move |name| Ok(format_pl_smallstr!("{name}{suffix}")))
+    }
+
+    /// Replace matching string pattern in the root column name with a new value.
+    #[cfg(feature = "regex")]
+    pub fn replace(self, pattern: &str, value: &str, literal: bool) -> Expr {
+        let value = value.to_string();
+        let pattern = pattern.to_string();
+        if literal {
+            self.map(move |name| Ok(PlSmallStr::from_string(name.replace(&pattern, &value))))
+        } else {
+            let rx = Regex::new(&pattern);
+            self.map(move |name| {
+                Ok(PlSmallStr::from_string(
+                    rx.clone()?.replace_all(name, &value).to_string(),
+                ))
+            })
+        }
     }
 
     /// Update the root column name to use lowercase characters.
