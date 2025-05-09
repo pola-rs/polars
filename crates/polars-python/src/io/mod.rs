@@ -43,11 +43,10 @@ impl PyScanOptions<'_> {
 
         if ob.is_none() {
             // Initialize the default ScanCastOptions from Python.
-
             static DEFAULT: GILOnceCell<CastColumnsPolicy> = GILOnceCell::new();
 
             let out = DEFAULT.get_or_try_init(ob.py(), || {
-                let ob = PyModule::import(ob.py(), "polars.io.cast_options")
+                let ob = PyModule::import(ob.py(), "polars.io.scan_options")
                     .unwrap()
                     .getattr("ScanCastOptions")
                     .unwrap()
