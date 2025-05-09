@@ -53,6 +53,7 @@ use crate::shared::{ArrowReader, finish_reader};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions;
 
+#[expect(clippy::derivable_impls)]
 impl Default for IpcScanOptions {
     fn default() -> Self {
         Self {}
