@@ -83,4 +83,19 @@ impl Field {
             false
         }
     }
+
+    pub fn map_dtype(mut self, f: impl FnOnce(ArrowDataType) -> ArrowDataType) -> Self {
+        self.dtype = f(self.dtype);
+        self
+    }
+
+    pub fn map_dtype_mut(&mut self, f: impl FnOnce(&mut ArrowDataType)) {
+        f(&mut self.dtype);
+    }
+
+    pub fn with_dtype(&self, dtype: ArrowDataType) -> Self {
+        let mut field = self.clone();
+        field.dtype = dtype;
+        field
+    }
 }

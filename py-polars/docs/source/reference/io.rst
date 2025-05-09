@@ -134,6 +134,15 @@ Parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
 
+.. currentmodule:: polars.io.parquet
+
+.. autosummary::
+   :toctree: api/
+
+   ParquetFieldOverwrites
+
+.. currentmodule:: polars
+
 PyArrow Datasets
 ~~~~~~~~~~~~~~~~
 Connect to pyarrow datasets.
