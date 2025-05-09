@@ -265,10 +265,11 @@ QueryOptFlags {{
         """.strip()
 
 
+DEFAULT_QUERY_OPT_FLAGS: QueryOptFlags
 try:  # Module not available when building docs
     DEFAULT_QUERY_OPT_FLAGS = QueryOptFlags()
-except ImportError as _:
-    DEFAULT_QUERY_OPT_FLAGS: QueryOptFlags = ()  # type: ignore[assignment]
+except (ImportError, NameError) as _:
+    DEFAULT_QUERY_OPT_FLAGS = ()  # type: ignore[assignment,no-redef]
 
 
 def forward_old_opt_flags() -> Callable[[Callable[P, T]], Callable[P, T]]:
