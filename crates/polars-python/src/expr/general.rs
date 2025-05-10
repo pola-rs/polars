@@ -457,7 +457,7 @@ impl PyExpr {
     fn rechunk(&self) -> Self {
         self.inner
             .clone()
-            .map(|s| Ok(Some(s.rechunk())), GetOutput::same_type())
+            .apply(|s| Ok(Some(s.rechunk())), GetOutput::same_type())
             .into()
     }
 
