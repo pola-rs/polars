@@ -4985,7 +4985,7 @@ class Expr:
         """
         return self.head(n)
 
-    def and_(self, *others: Any) -> Expr:
+    def and_(self, *others: IntoExprColumn | int | bool) -> Expr:
         """
         Method equivalent of bitwise "and" operator `expr & other & ...`.
 
@@ -5026,9 +5026,9 @@ class Expr:
         │ false │
         └───────┘
         """
-        return reduce(operator.and_, (self, *others))
+        return reduce(operator.and_, (self, *others))  # type: ignore[return-value]
 
-    def or_(self, *others: Any) -> Expr:
+    def or_(self, *others: IntoExprColumn | int | bool) -> Expr:
         """
         Method equivalent of bitwise "or" operator `expr | other | ...`.
 
@@ -5068,9 +5068,9 @@ class Expr:
         │ false │
         └───────┘
         """
-        return reduce(operator.or_, (self,) + others)
+        return reduce(operator.or_, (self,) + others)  # type: ignore[return-value]
 
-    def eq(self, other: Any) -> Expr:
+    def eq(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of equality operator `expr == other`.
 
@@ -5104,7 +5104,7 @@ class Expr:
         """
         return self.__eq__(other)
 
-    def eq_missing(self, other: Any) -> Expr:
+    def eq_missing(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of equality operator `expr == other` where `None == None`.
 
@@ -5144,7 +5144,7 @@ class Expr:
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.eq_missing(other))
 
-    def ge(self, other: Any) -> Expr:
+    def ge(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of "greater than or equal" operator `expr >= other`.
 
@@ -5178,7 +5178,7 @@ class Expr:
         """
         return self.__ge__(other)
 
-    def gt(self, other: Any) -> Expr:
+    def gt(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of "greater than" operator `expr > other`.
 
@@ -5212,7 +5212,7 @@ class Expr:
         """
         return self.__gt__(other)
 
-    def le(self, other: Any) -> Expr:
+    def le(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of "less than or equal" operator `expr <= other`.
 
@@ -5246,7 +5246,7 @@ class Expr:
         """
         return self.__le__(other)
 
-    def lt(self, other: Any) -> Expr:
+    def lt(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of "less than" operator `expr < other`.
 
@@ -5280,7 +5280,7 @@ class Expr:
         """
         return self.__lt__(other)
 
-    def ne(self, other: Any) -> Expr:
+    def ne(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of inequality operator `expr != other`.
 
@@ -5314,7 +5314,7 @@ class Expr:
         """
         return self.__ne__(other)
 
-    def ne_missing(self, other: Any) -> Expr:
+    def ne_missing(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of equality operator `expr != other` where `None == None`.
 
@@ -5354,7 +5354,7 @@ class Expr:
         other = parse_into_expression(other, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.neq_missing(other))
 
-    def add(self, other: Any) -> Expr:
+    def add(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of addition operator `expr + other`.
 
@@ -5400,7 +5400,7 @@ class Expr:
         """
         return self.__add__(other)
 
-    def floordiv(self, other: Any) -> Expr:
+    def floordiv(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of integer division operator `expr // other`.
 
@@ -5487,7 +5487,7 @@ class Expr:
         """
         return self.__floordiv__(other)
 
-    def mod(self, other: Any) -> Expr:
+    def mod(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of modulus operator `expr % other`.
 
@@ -5515,7 +5515,7 @@ class Expr:
         """
         return self.__mod__(other)
 
-    def mul(self, other: Any) -> Expr:
+    def mul(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of multiplication operator `expr * other`.
 
@@ -5546,7 +5546,7 @@ class Expr:
         """
         return self.__mul__(other)
 
-    def sub(self, other: Any) -> Expr:
+    def sub(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of subtraction operator `expr - other`.
 
@@ -5599,7 +5599,7 @@ class Expr:
         """
         return self.__neg__()
 
-    def truediv(self, other: Any) -> Expr:
+    def truediv(self, other: IntoExpr) -> Expr:
         """
         Method equivalent of float division operator `expr / other`.
 
@@ -5696,7 +5696,7 @@ class Expr:
         """
         return self.__pow__(exponent)
 
-    def xor(self, other: Any) -> Expr:
+    def xor(self, other: IntoExprColumn | int | bool) -> Expr:
         """
         Method equivalent of bitwise exclusive-or operator `expr ^ other`.
 
