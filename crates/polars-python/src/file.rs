@@ -12,8 +12,7 @@ use std::sync::Arc;
 use polars::io::mmap::MmapBytesReader;
 use polars::prelude::file::DynWriteable;
 use polars::prelude::sync_on_close::SyncOnCloseType;
-use polars_error::{PolarsResult, polars_err};
-use polars_io::cloud::CloudOptions;
+use polars_error::polars_err;
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::MemSlice;
@@ -260,13 +259,6 @@ impl EitherRustPythonFile {
             Self::Rust(f) => Box::new(f),
         }
     }
-
-    pub(crate) fn into_dyn_writeable(self) -> Box<dyn WriteClose + Send> {
-        match self {
-            EitherRustPythonFile::Py(f) => Box::new(f),
-            EitherRustPythonFile::Rust(f) => Box::new(f),
-        }
-    }
 }
 
 pub(crate) enum PythonScanSourceInput {
@@ -477,28 +469,4 @@ pub(crate) fn get_mmap_bytes_reader_and_path(
             },
         }
     }
-}
-
-pub(crate) fn try_get_writeable(
-    py_f: PyObject,
-    cloud_options: Option<&CloudOptions>,
-) -> PyResult<Box<dyn WriteClose + Send>> {
-    Python::with_gil(|py| {
-        let py_f = py_f.into_bound(py);
-
-        if let Ok(s) = py_f.extract::<Cow<str>>() {
-            polars::prelude::file::try_get_writeable(&s, cloud_options)
-                .map_err(PyPolarsErr::from)
-                .map_err(|e| e.into())
-        } else {
-            Ok(try_get_pyfile(py, py_f, true)?.0.into_dyn_writeable())
-        }
-    })
-}
-
-pub(crate) fn close_file(f: Box<dyn WriteClose>) -> PolarsResult<()> {
-    f.close().map_err(|e| {
-        let err: polars_error::PolarsError = e.into();
-        err
-    })
 }
