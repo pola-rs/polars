@@ -14,6 +14,8 @@ The following methods are available under the `Series.cat` attribute.
     Series.cat.is_local
     Series.cat.len_bytes
     Series.cat.len_chars
+    Series.cat.slice
     Series.cat.starts_with
+    Series.cat.str_eval
     Series.cat.to_local
     Series.cat.uses_lexical_ordering

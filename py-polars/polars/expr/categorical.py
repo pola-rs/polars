@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 
@@ -304,3 +305,40 @@ class ExprCatNameSpace:
         └─────────────┴───────┘
         """
         return wrap_expr(self._pyexpr.cat_slice(offset, length))
+
+    @unstable()
+    def str_eval(self, expr: Expr) -> Expr:
+        """
+        Run any polars expression against the categories and re-broadcast.
+
+        `str_eval` allows arbitrary expressions to be applied to the categories of a
+        categorical column, with the result re-broadcast to the input. This effectively
+        treats the column as a String column while maintaining the efficiency afforded
+        by the Categorical dtype.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.first()`, or
+            `pl.col()`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": ["hamburger", "nuts", None]}).cast(pl.Categorical)
+        >>> df.with_columns(b=pl.col("a").cat.str_eval(pl.element().str.slice(2, 4)))
+        shape: (3, 2)
+        ┌───────────┬──────┐
+        │ a         ┆ b    │
+        │ ---       ┆ ---  │
+        │ cat       ┆ str  │
+        ╞═══════════╪══════╡
+        │ hamburger ┆ mbur │
+        │ nuts      ┆ ts   │
+        │ null      ┆ null │
+        └───────────┴──────┘
+        """
+        return wrap_expr(self._pyexpr.cat_str_eval(expr._pyexpr))

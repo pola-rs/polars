@@ -36,11 +36,11 @@ impl CategoricalFunction {
     }
 
     pub fn function_options(&self) -> FunctionOptions {
-        use CategoricalFunction as C;
+        use CategoricalFunction::*;
         match self {
-            C::GetCategories => FunctionOptions::groupwise(),
+            GetCategories => FunctionOptions::groupwise(),
             #[cfg(feature = "strings")]
-            C::LenBytes | C::LenChars | C::StartsWith(_) | C::EndsWith(_) | C::Slice(_, _) => {
+            LenBytes | LenChars | StartsWith(_) | EndsWith(_) | Slice(_, _) => {
                 FunctionOptions::elementwise()
             },
         }
@@ -100,9 +100,9 @@ fn get_categories(s: &Column) -> PolarsResult<Column> {
     Series::try_from((ca.name().clone(), arr)).map(Column::from)
 }
 
-// Determine mapping between categories and underlying physical. For local, this is just 0..n.
-// For global, this is the global indexes.
-fn _get_cat_phys_map(ca: &CategoricalChunked) -> (StringChunked, Series) {
+// Determine mapping between categories and underlying local physical.
+// For Global revmaps, we must traverse the map to get the correct
+pub fn get_cat_phys_map(ca: &CategoricalChunked) -> (StringChunked, Series) {
     let (categories, phys) = match &**ca.get_rev_map() {
         RevMapping::Local(c, _) => (c, ca.physical().cast(&IDX_DTYPE).unwrap()),
         RevMapping::Global(physical_map, c, _) => {
@@ -128,7 +128,7 @@ where
     T: PolarsDataType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
 {
     let ca = c.categorical()?;
-    let (categories, phys) = _get_cat_phys_map(ca);
+    let (categories, phys) = get_cat_phys_map(ca);
     let result = op(&categories);
     // SAFETY: physical idx array is valid.
     let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
@@ -144,7 +144,7 @@ where
     T: PolarsDataType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
 {
     let ca = c.categorical()?;
-    let (categories, phys) = _get_cat_phys_map(ca);
+    let (categories, phys) = get_cat_phys_map(ca);
     let result = op(&categories.as_binary());
     // SAFETY: physical idx array is valid.
     let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
@@ -175,7 +175,7 @@ fn ends_with(c: &Column, suffix: &str) -> PolarsResult<Column> {
 fn slice(c: &Column, offset: i64, length: Option<usize>) -> PolarsResult<Column> {
     let length = length.unwrap_or(usize::MAX) as u64;
     let ca = c.categorical()?;
-    let (categories, phys) = _get_cat_phys_map(ca);
+    let (categories, phys) = get_cat_phys_map(ca);
 
     let result = unsafe {
         categories.apply_views(|view, val| {
