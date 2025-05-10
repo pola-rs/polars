@@ -35,11 +35,13 @@ defaults:
 jobs:
   test-python:
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHON_GIL: ${{ matrix.python-version == '3.13t' && '0' || '1' }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.9', '3.12', '3.13']
+        python-version: ['3.9', '3.12', '3.13', '3.13t']
         include:
           - os: windows-latest
             python-version: '3.13'
@@ -64,6 +66,10 @@ jobs:
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/py-polars/.venv" >> $GITHUB_ENV
 
       - name: Install Python dependencies
+        env:
+          AIOHTTP_NO_EXTENSIONS: ${{ matrix.python-version == '3.13t' && '1' || '' }} # TODO aiohttp does not support free-threading yet
+          UV_CONSTRAINT: ${{ matrix.python-version == '3.13t' && 'requirements-nogil-constraints.txt' || '' }}
+          UV_BUILD_CONSTRAINT: ${{ matrix.python-version == '3.13t' && 'requirements-nogil-constraints.txt' || '' }}
         run: |
           pip install uv
           # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
