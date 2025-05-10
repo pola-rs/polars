@@ -103,6 +103,11 @@ fn buffer_and_distribute_columns_task(
             outcome.stopped();
         }
 
+        // Don't write an empty row group at the end.
+        if buffer.is_empty() {
+            return Ok(());
+        }
+
         // Flush the remaining rows.
         assert!(buffer.height() <= chunk_size);
         for (i, column) in buffer.take_columns().into_iter().enumerate() {

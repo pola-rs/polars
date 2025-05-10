@@ -27,7 +27,10 @@ use crate::prelude::resolve_homedir;
 
 pub(crate) struct PyFileLikeObject {
     inner: PyObject,
+    /// The object expects a string instead of a bytes for `write`.
     expects_str: bool,
+    /// The object has a flush method.
+    has_flush: bool,
 }
 
 impl WriteClose for PyFileLikeObject {}
@@ -51,6 +54,7 @@ impl Clone for PyFileLikeObject {
         Python::with_gil(|py| Self {
             inner: self.inner.clone_ref(py),
             expects_str: self.expects_str,
+            has_flush: self.has_flush,
         })
     }
 }
@@ -60,10 +64,11 @@ impl PyFileLikeObject {
     /// Creates an instance of a `PyFileLikeObject` from a `PyObject`.
     /// To assert the object has the required methods,
     /// instantiate it with `PyFileLikeObject::require`
-    pub(crate) fn new(object: PyObject, expects_str: bool) -> Self {
+    pub(crate) fn new(object: PyObject, expects_str: bool, has_flush: bool) -> Self {
         PyFileLikeObject {
             inner: object,
             expects_str,
+            has_flush,
         }
     }
 
@@ -174,7 +179,7 @@ impl Write for PyFileLikeObject {
                     "write",
                     (PyString::new(
                         py,
-                        str::from_utf8(buf).map_err(io::Error::other)?,
+                        std::str::from_utf8(buf).map_err(io::Error::other)?,
                     ),),
                     None,
                 )
@@ -191,13 +196,15 @@ impl Write for PyFileLikeObject {
     }
 
     fn flush(&mut self) -> Result<(), io::Error> {
-        Python::with_gil(|py| {
-            self.inner
-                .call_method(py, "flush", (), None)
-                .map_err(pyerr_to_io_err)?;
+        if self.has_flush {
+            Python::with_gil(|py| {
+                self.inner
+                    .call_method(py, "flush", (), None)
+                    .map_err(pyerr_to_io_err)
+            })?;
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 }
 
@@ -357,7 +364,10 @@ pub(crate) fn try_get_pyfile(
     };
     PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
     let expects_str = py_f.is_instance(&io.getattr("TextIOBase").unwrap())?;
-    let f = PyFileLikeObject::new(py_f.unbind(), expects_str);
+    let has_flush = py_f
+        .getattr_opt("flush")?
+        .is_some_and(|flush| flush.is_callable());
+    let f = PyFileLikeObject::new(py_f.unbind(), expects_str, has_flush);
     Ok((EitherRustPythonFile::Py(f), None))
 }
 
