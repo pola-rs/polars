@@ -387,6 +387,23 @@ impl OptimizationRule for TypeCoercionRule {
                                     }
                                 }
                             }
+                            if !(super_type.is_null()
+                                || super_type.is_enum()
+                                || super_type.is_categorical())
+                            {
+                                let is_string = super_type.is_string();
+                                for other in &input[1..] {
+                                    let other =
+                                        other.dtype(&input_schema, Context::Default, expr_arena)?;
+                                    if other.is_string() != is_string
+                                        && !(other.is_null()
+                                            || other.is_categorical()
+                                            || other.is_enum())
+                                    {
+                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
+                                    }
+                                }
+                            }
                         },
                     }
 

@@ -1258,9 +1258,9 @@ impl FunctionExpr {
                 FunctionOptions::aggregation().with_casting_rules(CastingRules::FirstArgLossless)
             },
             #[cfg(feature = "search_sorted")]
-            F::SearchSorted(_) => FunctionOptions::groupwise().with_supertyping(
-                (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
-            ),
+            F::SearchSorted(_) => {
+                FunctionOptions::groupwise().with_casting_rules(CastingRules::FirstArgLossless)
+            },
             #[cfg(feature = "trigonometry")]
             F::Trigonometry(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "trigonometry")]

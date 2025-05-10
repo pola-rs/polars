@@ -1,8 +1,19 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 import polars as pl
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from typing import Any
+
+    from polars._typing import PolarsDataType
 
 
 def test_search_sorted() -> None:
@@ -76,3 +87,99 @@ def test_raise_literal_numeric_search_sorted_18096() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.with_columns(idx=pl.col("foo").search_sorted("bar"))
+
+
+def test_search_sorted_list() -> None:
+    series = pl.Series([[1], [2], [3]])
+    assert series.search_sorted([2]) == 1
+    assert series.search_sorted(pl.Series([[3], [2]])).to_list() == [2, 1]
+    assert series.search_sorted(pl.lit([3], dtype=pl.List(pl.Int64()))).to_list() == [2]
+    with pytest.raises(
+        TypeError, match="If you were trying to search for multiple values"
+    ):
+        series.search_sorted([[1]])  # type: ignore[list-item]
+
+
+def test_search_sorted_array() -> None:
+    dtype = pl.Array(pl.Int64(), 1)
+    series = pl.Series([[1], [2], [3]], dtype=dtype)
+    assert series.search_sorted([2]) == 1
+    assert series.search_sorted(pl.Series([[3], [2]], dtype=dtype)).to_list() == [2, 1]
+    assert series.search_sorted(pl.lit([3])).to_list() == [2]
+    assert series.search_sorted(pl.lit([3], dtype=dtype)).to_list() == [2]
+    with pytest.raises(
+        TypeError, match="If you were trying to search for multiple values"
+    ):
+        series.search_sorted([[1]])  # type: ignore[list-item]
+
+
+def test_search_sorted_struct() -> None:
+    v0 = {"a": 0, "b": 0}
+    v1 = {"a": 1, "b": 2}
+    series = pl.Series([v1, v0]).sort()
+    assert series.search_sorted(v0) == 0
+    assert series.search_sorted(v1) == 1
+    assert series.search_sorted([v1, v0]).to_list() == [1, 0]
+
+
+def assert_can_find_values(values: list[Any], dtype: PolarsDataType) -> None:
+    series = pl.Series(values, dtype=dtype)
+    for descending in [True, False]:
+        for nulls_last in [True, False]:
+            sorted_series = series.sort(descending=descending, nulls_last=nulls_last)
+            as_list = sorted_series.to_list()
+            for value in values:
+                idx = sorted_series.search_sorted(value, "left")
+                assert as_list.index(value) == idx
+                lookup = sorted_series[idx]
+                if isinstance(lookup, pl.Series):
+                    lookup = lookup.to_list()
+                assert lookup == value
+
+
+@given(values=st.lists(st.integers(min_value=-10, max_value=10) | st.none()))
+def test_nulls_and_ascending(values: list[int | None]) -> None:
+    assert_can_find_values(values, pl.Int64())
+
+
+@given(
+    values=st.lists(
+        st.none() | st.lists(st.integers(min_value=-10, max_value=10) | st.none())
+    )
+)
+@example([[1], [-2], None, [None, 3], [3, None]])
+@example([[None], [0]])
+@example([[], [None], [0]])
+def test_search_sorted_list_with_nulls(values: list[list[int | None] | None]) -> None:
+    """For all nulls_last options, values can be found in arbitrary lists."""
+    assert_can_find_values(values, dtype=pl.List(pl.Int64()))
+
+
+@given(
+    values=st.lists(
+        st.none()
+        | st.lists(
+            st.integers(min_value=-10, max_value=10) | st.none(), min_size=3, max_size=3
+        )
+    )
+)
+@example(values=[[None, None, None], [0, 0, None]])
+def test_search_sorted_array_with_nulls(values: list[list[int | None] | None]) -> None:
+    """For all nulls_last options, values can be found in arbitrary arrays."""
+    assert_can_find_values(values, dtype=pl.Array(pl.Int64(), 3))
+
+
+@given(
+    values=st.lists(
+        st.none()
+        | st.fixed_dictionaries(
+            {"key": st.integers(min_value=-10, max_value=10) | st.none()}
+        )
+    )
+)
+@example(values=[{"key": 0}, {"key": None}])
+def test_search_sorted_structs_with_nulls(
+    values: list[dict[str, int | None] | None],
+) -> None:
+    """For all nulls_last options, values can be found in arbitrary structs."""
+    assert_can_find_values(values, pl.Struct)

@@ -2363,7 +2363,9 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.index_of(element))
 
     def search_sorted(
-        self, element: IntoExpr | np.ndarray[Any, Any], side: SearchSortedSide = "any"
+        self,
+        element: IntoExpr | np.ndarray[Any, Any] | dict[str, Any],
+        side: SearchSortedSide = "any",
     ) -> Expr:
         """
         Find indices where elements should be inserted to maintain order.
@@ -2402,7 +2404,7 @@ class Expr:
         │ 0    ┆ 2     ┆ 4   │
         └──────┴───────┴─────┘
         """
-        element = parse_into_expression(element, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
+        element = parse_into_expression(element, str_as_lit=True, list_as_series=False)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.search_sorted(element, side))
 
     def sort_by(
