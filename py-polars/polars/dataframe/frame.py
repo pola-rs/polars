@@ -23,6 +23,7 @@ from typing import (
     ClassVar,
     NoReturn,
     TypeVar,
+    cast,
     get_args,
     overload,
 )
@@ -2766,23 +2767,27 @@ class DataFrame:
         should_return_buffer = False
         target: str | Path | IO[bytes] | IO[str]
         if file is None:
-            target = BytesIO()
+            target = cast(IO[bytes], BytesIO())
             should_return_buffer = True
         elif isinstance(file, (str, os.PathLike)):
             target = normalize_filepath(file)
         else:
             target = file
 
+        engine: EngineType = "in-memory"
+
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         self.lazy().sink_ndjson(
             target,
             optimizations=QueryOptFlags._eager(),
-            engine="in-memory",
+            engine=engine,
         )
 
         if should_return_buffer:
-            return str(target.getvalue(), encoding="utf-8")
+            return str(target.getvalue(), encoding="utf-8")  # type: ignore[union-attr]
+
+        return None
 
     @overload
     def write_csv(
@@ -2960,27 +2965,20 @@ class DataFrame:
         should_return_buffer = False
         target: str | Path | IO[bytes] | IO[str]
         if file is None:
-            target = BytesIO()
+            target = cast(IO[bytes], BytesIO())
             should_return_buffer = True
         elif isinstance(file, (str, os.PathLike)):
             target = normalize_filepath(file)
         else:
             target = file
 
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
-        )
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, file, storage_options, "write_csv"
-        )
-        del credential_provider
-
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
         else:
             # Handle empty dict input
             storage_options = None
+
+        engine: EngineType = "in-memory"
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 
@@ -3000,14 +2998,16 @@ class DataFrame:
             null_value=null_value,
             quote_style=quote_style,
             storage_options=storage_options,
-            credential_provider=credential_provider_builder,
+            credential_provider=credential_provider,
             retries=retries,
             optimizations=QueryOptFlags._eager(),
-            engine="in-memory",
+            engine=engine,
         )
 
         if should_return_buffer:
-            return str(target.getvalue(), encoding="utf-8")
+            return str(target.getvalue(), encoding="utf-8")  # type: ignore[union-attr]
+
+        return None
 
     def write_clipboard(self, *, separator: str = "\t", **kwargs: Any) -> None:
         """
