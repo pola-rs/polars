@@ -29,7 +29,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._typing import DbWriteMode, EngineType, JaxExportType, TorchExportType
+from polars._typing import DbWriteMode, JaxExportType, TorchExportType
 from polars._utils.construction import (
     arrow_to_pydf,
     dataframe_to_pydf,
@@ -143,6 +143,7 @@ if TYPE_CHECKING:
         ConnectionOrCursor,
         CsvQuoteStyle,
         DbWriteEngine,
+        EngineType,
         FillNullStrategy,
         FrameInitTypes,
         IndexOrder,
@@ -2737,9 +2738,11 @@ class DataFrame:
     def write_ndjson(self, file: None = None) -> str: ...
 
     @overload
-    def write_ndjson(self, file: IOBase | str | Path) -> None: ...
+    def write_ndjson(self, file: str | Path | IO[bytes] | IO[str]) -> None: ...
 
-    def write_ndjson(self, file: IOBase | str | Path | None = None) -> str | None:
+    def write_ndjson(
+        self, file: str | Path | IO[bytes] | IO[str] | None = None
+    ) -> str | None:
         r"""
         Serialize to newline delimited JSON representation.
 
@@ -2760,26 +2763,26 @@ class DataFrame:
         >>> df.write_ndjson()
         '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
         """
-
-        def write_ndjson_to_string() -> str:
-            with BytesIO() as buf:
-                self._df.write_ndjson(buf)
-                ndjson_bytes = buf.getvalue()
-            return ndjson_bytes.decode("utf8")
-
+        should_return_buffer = False
+        target: str | Path | IO[bytes] | IO[str]
         if file is None:
-            return write_ndjson_to_string()
-        elif isinstance(file, StringIO):
-            ndjson_str = write_ndjson_to_string()
-            file.write(ndjson_str)
-            return None
-        elif isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-            self._df.write_ndjson(file)
-            return None
+            target = BytesIO()
+            should_return_buffer = True
+        elif isinstance(file, (str, os.PathLike)):
+            target = normalize_filepath(file)
         else:
-            self._df.write_ndjson(file)
-            return None
+            target = file
+
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        self.lazy().sink_ndjson(
+            target,
+            optimizations=QueryOptFlags._eager(),
+            engine="in-memory",
+        )
+
+        if should_return_buffer:
+            return str(target.getvalue(), encoding="utf-8")
 
     @overload
     def write_csv(
@@ -2954,37 +2957,15 @@ class DataFrame:
         if not null_value:
             null_value = None
 
-        def write_csv_to_string() -> str:
-            with BytesIO() as buf:
-                self.write_csv(
-                    buf,
-                    include_bom=include_bom,
-                    include_header=include_header,
-                    separator=separator,
-                    line_terminator=line_terminator,
-                    quote_char=quote_char,
-                    batch_size=batch_size,
-                    datetime_format=datetime_format,
-                    date_format=date_format,
-                    time_format=time_format,
-                    float_scientific=float_scientific,
-                    float_precision=float_precision,
-                    null_value=null_value,
-                    quote_style=quote_style,
-                )
-                csv_bytes = buf.getvalue()
-            return csv_bytes.decode("utf8")
-
         should_return_buffer = False
+        target: str | Path | IO[bytes] | IO[str]
         if file is None:
-            buffer = file = BytesIO()
+            target = BytesIO()
             should_return_buffer = True
-        elif isinstance(file, StringIO):
-            csv_str = write_csv_to_string()
-            file.write(csv_str)
-            return None
         elif isinstance(file, (str, os.PathLike)):
-            file = normalize_filepath(file)
+            target = normalize_filepath(file)
+        else:
+            target = file
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
@@ -3001,30 +2982,32 @@ class DataFrame:
             # Handle empty dict input
             storage_options = None
 
-        self._df.write_csv(
-            file,
-            include_bom,
-            include_header,
-            ord(separator),
-            line_terminator,
-            ord(quote_char),
-            batch_size,
-            datetime_format,
-            date_format,
-            time_format,
-            float_scientific,
-            float_precision,
-            null_value,
-            quote_style,
-            cloud_options=storage_options,
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        self.lazy().sink_csv(
+            target,
+            include_bom=include_bom,
+            include_header=include_header,
+            separator=separator,
+            line_terminator=line_terminator,
+            quote_char=quote_char,
+            batch_size=batch_size,
+            datetime_format=datetime_format,
+            date_format=date_format,
+            time_format=time_format,
+            float_scientific=float_scientific,
+            float_precision=float_precision,
+            null_value=null_value,
+            quote_style=quote_style,
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,
+            optimizations=QueryOptFlags._eager(),
+            engine="in-memory",
         )
 
         if should_return_buffer:
-            return str(buffer.getvalue(), encoding="utf-8")
-
-        return None
+            return str(target.getvalue(), encoding="utf-8")
 
     def write_clipboard(self, *, separator: str = "\t", **kwargs: Any) -> None:
         """
@@ -3753,6 +3736,8 @@ class DataFrame:
         else:
             target = file
 
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         self.lazy().sink_ipc(
             target,
             compression=compression,
@@ -3760,10 +3745,10 @@ class DataFrame:
             storage_options=storage_options,
             credential_provider=credential_provider,
             retries=retries,
-            no_optimization=True,
+            optimizations=QueryOptFlags._eager(),
             engine="in-memory",
         )
-        return file if return_bytes else None  # type: ignore[return-value]
+        return target if return_bytes else None  # type: ignore[return-value]
 
     @overload
     def write_ipc_stream(
@@ -4052,6 +4037,8 @@ class DataFrame:
             mkdir = True
             engine = "streaming"
 
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         self.lazy().sink_parquet(
             target,
             compression=compression,
@@ -4063,9 +4050,9 @@ class DataFrame:
             credential_provider=credential_provider,
             retries=retries,
             metadata=metadata,
-            no_optimization=True,
             engine=engine,
             mkdir=mkdir,
+            optimizations=QueryOptFlags._eager(),
         )
 
     def write_database(

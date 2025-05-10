@@ -180,6 +180,9 @@ def _to_sink_target(
         return path
     elif isinstance(path, PartitioningScheme):
         return path._py_partitioning
+    elif callable(getattr(path, "write", None)):
+        # This allows for custom writers
+        return path
     else:
         msg = f"`path` argument has invalid type {qualified_type_name(path)!r}, and cannot be turned into a sink target"
         raise TypeError(msg)

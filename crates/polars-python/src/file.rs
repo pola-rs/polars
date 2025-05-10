@@ -27,6 +27,7 @@ use crate::prelude::resolve_homedir;
 
 pub(crate) struct PyFileLikeObject {
     inner: PyObject,
+    expects_str: bool,
 }
 
 impl WriteClose for PyFileLikeObject {}
@@ -49,6 +50,7 @@ impl Clone for PyFileLikeObject {
     fn clone(&self) -> Self {
         Python::with_gil(|py| Self {
             inner: self.inner.clone_ref(py),
+            expects_str: self.expects_str,
         })
     }
 }
@@ -58,8 +60,11 @@ impl PyFileLikeObject {
     /// Creates an instance of a `PyFileLikeObject` from a `PyObject`.
     /// To assert the object has the required methods,
     /// instantiate it with `PyFileLikeObject::require`
-    pub(crate) fn new(object: PyObject) -> Self {
-        PyFileLikeObject { inner: object }
+    pub(crate) fn new(object: PyObject, expects_str: bool) -> Self {
+        PyFileLikeObject {
+            inner: object,
+            expects_str,
+        }
     }
 
     pub(crate) fn to_memslice(&self) -> MemSlice {
@@ -163,14 +168,25 @@ impl Read for PyFileLikeObject {
 impl Write for PyFileLikeObject {
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         Python::with_gil(|py| {
-            let pybytes = PyBytes::new(py, buf);
+            let number_bytes_written = if self.expects_str {
+                self.inner.call_method(
+                    py,
+                    "write",
+                    (PyString::new(
+                        py,
+                        str::from_utf8(buf).map_err(io::Error::other)?,
+                    ),),
+                    None,
+                )
+            } else {
+                self.inner
+                    .call_method(py, "write", (PyBytes::new(py, buf),), None)
+            }
+            .map_err(pyerr_to_io_err)?;
 
-            let number_bytes_written = self
-                .inner
-                .call_method(py, "write", (pybytes,), None)
-                .map_err(pyerr_to_io_err)?;
+            let n = number_bytes_written.extract(py).map_err(pyerr_to_io_err)?;
 
-            number_bytes_written.extract(py).map_err(pyerr_to_io_err)
+            Ok(n)
         })
     }
 
@@ -340,7 +356,8 @@ pub(crate) fn try_get_pyfile(
         py_f
     };
     PyFileLikeObject::ensure_requirements(&py_f, !write, write, !write)?;
-    let f = PyFileLikeObject::new(py_f.unbind());
+    let expects_str = py_f.is_instance(&io.getattr("TextIOBase").unwrap())?;
+    let f = PyFileLikeObject::new(py_f.unbind(), expects_str);
     Ok((EitherRustPythonFile::Py(f), None))
 }
 
