@@ -72,7 +72,7 @@ def test_replace_invalid_old_dtype() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]})
     mapping = {"a": 10, "b": 20}
     with pytest.raises(
-        InvalidOperationError, match="conversion from `str` to `i64` failed"
+        InvalidOperationError, match=r"conversion from `list\[str\]` to `list\[i64\]` failed"
     ):
         lf.select(pl.col("a").replace(mapping)).collect()
 
@@ -103,7 +103,7 @@ def test_replace_int_to_str() -> None:
     df = pl.DataFrame({"int": [None, 1, None, 3]}, schema={"int": pl.Int16})
     mapping = {1: "b", 3: "d"}
     with pytest.raises(
-        InvalidOperationError, match="conversion from `str` to `i16` failed"
+        InvalidOperationError, match=r"conversion from `list\[str\]` to `list\[i16\]` failed"
     ):
         df.select(replaced=pl.col("int").replace(mapping))
 
@@ -112,7 +112,7 @@ def test_replace_int_to_str_with_null() -> None:
     df = pl.DataFrame({"int": [None, 1, None, 3]}, schema={"int": pl.Int16})
     mapping = {1: "b", 3: "d", None: "e"}
     with pytest.raises(
-        InvalidOperationError, match="conversion from `str` to `i16` failed"
+        InvalidOperationError, match=r"conversion from `list\[str\]` to `list\[i16\]` failed"
     ):
         df.select(replaced=pl.col("int").replace(mapping))
 

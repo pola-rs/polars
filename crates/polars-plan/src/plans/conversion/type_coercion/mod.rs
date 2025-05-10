@@ -6,7 +6,9 @@ mod is_in;
 use binary::process_binary;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
-use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
+use polars_core::utils::{
+    get_supertype, get_supertype_with_options, materialize_dyn_int, try_get_supertype,
+};
 use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
 
@@ -657,6 +659,11 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 options,
             } => {
                 let input_schema = get_schema(lp_arena, lp_node);
+                let (_, type_self) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
                 let (_, type_old) = unpack!(get_aexpr_and_type(
                     expr_arena,
                     input[1].node(),
@@ -668,16 +675,43 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     &input_schema
                 ));
 
-                let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
+                dbg!(&type_self);
+                dbg!(&type_old);
+                dbg!(&type_new);
+
+                let type_self_nl = type_self.nesting_level();
+                let type_old_nl = type_old.nesting_level();
+                let type_new_nl = type_new.nesting_level();
+
+                let is_replace_strict = matches!(function, FunctionExpr::ReplaceStrict { .. });
+
+                if type_self_nl + 1 != type_old_nl
+                    || (is_replace_strict && type_new_nl == 0)
+                    || (!is_replace_strict && type_self_nl + 1 != type_new_nl)
+                {
+                    let valid_old_cast =
+                        type_self_nl + 1 == type_old_nl || type_self_nl == type_old_nl;
+                    let valid_new_cast =
+                        type_self_nl + 1 == type_new_nl || type_self_nl == type_new_nl;
+                    polars_ensure!(
+                        valid_old_cast && (is_replace_strict || valid_new_cast),
+                        op = function.to_string(),
+                        type_self,
+                        type_old,
+                        type_new
+                    );
+
                     let function = function.clone();
                     let mut input = input.clone();
 
-                    if !type_old.is_list() {
+                    if type_self_nl == type_old_nl {
                         let other_input =
                             expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
                         input[1].set_node(other_input);
                     }
-                    if !type_new.is_list() {
+                    if (is_replace_strict && type_new_nl == 0)
+                        && (!is_replace_strict && type_self_nl == type_new_nl)
+                    {
                         let other_input =
                             expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[2].node())));
                         input[2].set_node(other_input);
@@ -689,6 +723,174 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         options,
                     }));
                 };
+
+                let (Some(type_old_inner), Some(type_new_inner)) =
+                    (type_old.inner_dtype(), type_new.inner_dtype())
+                else {
+                    unreachable!();
+                };
+
+                if !string_cache::using_string_cache()
+                    && type_self.contains_non_global_categoricals()
+                {
+                    return Ok(None);
+                }
+
+                match function {
+                    FunctionExpr::Replace => {
+                        if &type_self != type_old_inner || &type_self != type_new_inner {
+                            let function = function.clone();
+                            let mut input = input.clone();
+
+                            let list_type_self = DataType::List(Box::new(type_self));
+                            cast_expr_ir(
+                                &mut input[1],
+                                &type_old,
+                                &list_type_self,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+                            cast_expr_ir(
+                                &mut input[2],
+                                &type_new,
+                                &list_type_self,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+
+                            return Ok(Some(AExpr::Function {
+                                function,
+                                input,
+                                options,
+                            }));
+                        }
+                    },
+                    // replace_or_default
+                    FunctionExpr::ReplaceStrict { return_dtype: _ } if input.len() == 4 => {
+                        let (_, type_default) = unpack!(get_aexpr_and_type(
+                            expr_arena,
+                            input[3].node(),
+                            &input_schema
+                        ));
+
+                        dbg!(&type_default);
+
+                        // If either dtype is null, we need to materialize.
+                        let out_dtype = if type_new_inner.is_null() {
+                            type_default.clone().materialize_unknown(false)?
+                        } else if type_default.is_null() {
+                            type_new_inner.clone().materialize_unknown(false)?
+                        } else {
+                            try_get_supertype(type_new_inner, &type_default)?
+                        };
+
+                        dbg!(&out_dtype);
+
+                        if type_old_inner != &type_self
+                            || type_new_inner != &out_dtype
+                            || type_default != out_dtype
+                        {
+                            let function = function.clone();
+                            let mut input = input.clone();
+
+                            let list_type_self = DataType::List(Box::new(type_self));
+                            let list_out_dtype = DataType::List(Box::new(out_dtype.clone()));
+
+                            cast_expr_ir(
+                                &mut input[1],
+                                &type_old,
+                                &list_type_self,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+                            cast_expr_ir(
+                                &mut input[2],
+                                &type_new,
+                                &list_out_dtype,
+                                expr_arena,
+                                CastOptions::NonStrict,
+                            )?;
+                            cast_expr_ir(
+                                &mut input[3],
+                                &type_default,
+                                &out_dtype,
+                                expr_arena,
+                                CastOptions::NonStrict,
+                            )?;
+
+                            let (_, type_default) = unpack!(get_aexpr_and_type(
+                                expr_arena,
+                                input[3].node(),
+                                &input_schema
+                            ));
+                            dbg!(&type_default);
+
+                            return Ok(Some(AExpr::Function {
+                                function,
+                                input,
+                                options,
+                            }));
+                        }
+                    },
+                    FunctionExpr::ReplaceStrict { return_dtype: None } => {
+                        if &type_self != type_old_inner {
+                            let function = function.clone();
+                            let mut input = input.clone();
+
+                            let list_type_self = DataType::List(Box::new(type_self));
+                            cast_expr_ir(
+                                &mut input[1],
+                                &type_old,
+                                &list_type_self,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+
+                            return Ok(Some(AExpr::Function {
+                                function,
+                                input,
+                                options,
+                            }));
+                        }
+                    },
+                    FunctionExpr::ReplaceStrict {
+                        return_dtype: Some(return_dtype),
+                    } => {
+                        // We cannot the categorical casting here.
+                        if !string_cache::using_string_cache()
+                            && return_dtype.contains_non_global_categoricals()
+                            && (&type_self != type_old_inner || return_dtype != type_new_inner)
+                        {
+                            let function = function.clone();
+                            let mut input = input.clone();
+
+                            let list_type_self = DataType::List(Box::new(type_self));
+                            let list_return_dtype = DataType::List(Box::new(return_dtype.clone()));
+
+                            cast_expr_ir(
+                                &mut input[1],
+                                &type_old,
+                                &list_type_self,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+                            cast_expr_ir(
+                                &mut input[2],
+                                &type_new,
+                                &list_return_dtype,
+                                expr_arena,
+                                CastOptions::Strict,
+                            )?;
+
+                            return Ok(Some(AExpr::Function {
+                                function,
+                                input,
+                                options,
+                            }));
+                        }
+                    },
+                    _ => unreachable!(),
+                }
 
                 None
             },
@@ -811,6 +1013,38 @@ fn try_inline_literal_cast(
     Ok(Some(lv))
 }
 
+fn remove_categorical_revmaps(dt: &DataType) -> Cow<DataType> {
+    use DataType::*;
+    match dt {
+        #[cfg(feature = "dtype-categorical")]
+        Categorical(Some(_), ordering) => Cow::Owned(Categorical(None, *ordering)),
+
+        List(inner) => match remove_categorical_revmaps(inner.as_ref()) {
+            Cow::Owned(dt) => Cow::Owned(List(Box::new(dt))),
+            _ => Cow::Borrowed(dt),
+        },
+        #[cfg(feature = "dtype-array")]
+        Array(inner, width) => match remove_categorical_revmaps(inner.as_ref()) {
+            Cow::Owned(dt) => Cow::Owned(Array(Box::new(dt), *width)),
+            _ => Cow::Borrowed(dt),
+        },
+        #[cfg(feature = "dtype-struct")]
+        Struct(fields) => Cow::Owned(Struct(
+            fields
+                .iter()
+                .map(|field| {
+                    Field::new(
+                        field.name.clone(),
+                        remove_categorical_revmaps(&field.dtype).into_owned(),
+                    )
+                })
+                .collect(),
+        )),
+
+        _ => Cow::Borrowed(dt),
+    }
+}
+
 fn cast_expr_ir(
     e: &mut ExprIR,
     from_dtype: &DataType,
@@ -821,6 +1055,9 @@ fn cast_expr_ir(
     if from_dtype == to_dtype {
         return Ok(());
     }
+
+    let to_dtype = remove_categorical_revmaps(to_dtype);
+    let to_dtype = to_dtype.as_ref();
 
     check_cast(from_dtype, to_dtype)?;
 
