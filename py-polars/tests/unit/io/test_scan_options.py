@@ -218,3 +218,25 @@ def test_scan_cast_options_extra_struct_fields() -> None:
         pl.scan_parquet(files, cast_options=cast_options).collect(),
         expected.to_frame(),
     )
+
+
+def test_cast_options_ignore_extra_columns() -> None:
+    files: list[IO[bytes]] = [io.BytesIO(), io.BytesIO()]
+
+    pl.DataFrame({"a": 1}).write_parquet(files[0])
+    pl.DataFrame({"a": 2, "b": 1}).write_parquet(files[1])
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match="extra column in file outside of expected schema: b, hint: pass",
+    ):
+        pl.scan_parquet(files, schema={"a": pl.Int64}).collect()
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            files,
+            schema={"a": pl.Int64},
+            extra_columns="ignore",
+        ).collect(),
+        pl.DataFrame({"a": [1, 2]}),
+    )
