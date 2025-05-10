@@ -559,6 +559,12 @@ def test_to_struct() -> None:
     )
 
 
+def test_to_struct_empty() -> None:
+    df = pl.DataFrame({"y": [[], [], []]}, schema={"y": pl.List(pl.Int64)})
+    empty_df = df.select(pl.col("y").list.to_struct(fields=[]).struct.unnest())
+    assert empty_df.shape == (0, 0)
+
+
 def test_sort() -> None:
     a = pl.Series("a", [2, 1, 3])
     assert_series_equal(a.sort(), pl.Series("a", [1, 2, 3]))

@@ -212,7 +212,7 @@ impl PyExpr {
         &self,
         width_strat: Wrap<ListToStructWidthStrategy>,
         name_gen: Option<PyObject>,
-        upper_bound: usize,
+        upper_bound: Option<usize>,
     ) -> PyResult<Self> {
         let name_gen = name_gen.map(|lambda| {
             NameGenerator::from_func(move |idx: usize| {
