@@ -98,10 +98,8 @@ class Schema(BaseSchema):
         *,
         check_dtypes: bool = True,
     ) -> None:
-        input = (
-            schema.items() if schema and isinstance(schema, Mapping) else (schema or {})
-        )
-        for name, tp in input:  # type: ignore[misc]
+        input = schema.items() if isinstance(schema, Mapping) else (schema or ())
+        for name, tp in input:
             if not check_dtypes:
                 super().__setitem__(name, tp)  # type: ignore[assignment]
             elif is_polars_dtype(tp):
