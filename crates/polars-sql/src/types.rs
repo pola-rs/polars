@@ -9,9 +9,9 @@ use sqlparser::ast::{
 };
 
 polars_utils::regex_cache::cached_regex! {
-    static DATETIME_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$";
+    static DATETIME_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d[ T](?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9](\.\d{1,9})?)?$";
     static DATE_LITERAL_RE = r"^\d{4}-[01]\d-[0-3]\d$";
-    static TIME_LITERAL_RE = r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d{1,9})?$";
+    static TIME_LITERAL_RE = r"^(?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9](\.\d{1,9})?)?$";
 }
 
 pub fn bitstring_to_bytes_literal(b: &String) -> PolarsResult<Expr> {
