@@ -164,17 +164,15 @@ impl DslBuilder {
                 all_horizontal(
                     subset
                         .into_iter()
-                        .map(|v| v.is_not_nan())
+                        .map(|v| v.clone().is_not_nan().or(v.is_null()))
                         .collect::<Vec<_>>(),
                 )
                 .unwrap(),
             )
         } else {
-            self.filter(
-                // TODO: when Decimal supports NaN, include here
-                all_horizontal([dtype_cols([DataType::Float32, DataType::Float64]).is_not_nan()])
-                    .unwrap(),
-            )
+            // TODO: when Decimal supports NaN, include here
+            let cols = dtype_cols([DataType::Float32, DataType::Float64]);
+            self.filter(all_horizontal([cols.clone().is_not_nan().or(cols.is_null())]).unwrap())
         }
     }
 
