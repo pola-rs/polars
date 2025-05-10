@@ -124,7 +124,7 @@ pub fn collect_all(
     lfs: Vec<PyLazyFrame>,
     engine: Wrap<Engine>,
     optflags: PyOptFlags,
-    py: Python,
+    py: Python<'_>,
 ) -> PyResult<Vec<PyDataFrame>> {
     let plans = lfs_to_plans(lfs);
     let dfs =
@@ -145,7 +145,7 @@ pub fn collect_all_with_callback(
     engine: Wrap<Engine>,
     optflags: PyOptFlags,
     lambda: PyObject,
-    py: Python,
+    py: Python<'_>,
 ) {
     let plans = lfs.into_iter().map(|lf| lf.ldf.logical_plan).collect();
     let result = py
@@ -514,7 +514,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
 #[pyfunction]
 #[pyo3(signature = (pyexpr, lambda, output_type, map_groups, returns_scalar))]
 pub fn map_mul(
-    py: Python,
+    py: Python<'_>,
     pyexpr: Vec<PyExpr>,
     lambda: PyObject,
     output_type: Option<Wrap<DataType>>,

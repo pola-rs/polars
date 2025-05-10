@@ -36,7 +36,7 @@ pub(crate) fn to_py_array(
 /// RecordBatch to Python.
 pub(crate) fn to_py_rb(
     rb: &RecordBatch,
-    py: Python,
+    py: Python<'_>,
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
     let mut arrays = Vec::with_capacity(rb.width());
@@ -67,7 +67,7 @@ pub(crate) fn to_py_rb(
 /// Export a series to a C stream via a PyCapsule according to the Arrow PyCapsule Interface
 /// https://arrow.apache.org/docs/dev/format/CDataInterface/PyCapsuleInterface.html
 pub(crate) fn series_to_stream<'py>(
-    series: &'py Series,
+    series: &Series,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let field = series.field().to_arrow(CompatLevel::newest());
@@ -78,7 +78,7 @@ pub(crate) fn series_to_stream<'py>(
 }
 
 pub(crate) fn dataframe_to_stream<'py>(
-    df: &'py DataFrame,
+    df: &DataFrame,
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let iter = Box::new(DataFrameStreamIterator::new(df));

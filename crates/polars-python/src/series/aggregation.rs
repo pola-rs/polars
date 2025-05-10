@@ -12,7 +12,7 @@ fn scalar_to_py(scalar: PyResult<Scalar>, py: Python<'_>) -> PyResult<Bound<'_, 
 
 #[pymethods]
 impl PySeries {
-    fn any(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<bool>> {
+    fn any(&self, py: Python<'_>, ignore_nulls: bool) -> PyResult<Option<bool>> {
         py.enter_polars(|| {
             let s = self.series.bool()?;
             PolarsResult::Ok(if ignore_nulls {
@@ -23,7 +23,7 @@ impl PySeries {
         })
     }
 
-    fn all(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<bool>> {
+    fn all(&self, py: Python<'_>, ignore_nulls: bool) -> PyResult<Option<bool>> {
         py.enter_polars(|| {
             let s = self.series.bool()?;
             PolarsResult::Ok(if ignore_nulls {

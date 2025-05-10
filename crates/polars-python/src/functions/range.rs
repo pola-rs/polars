@@ -19,7 +19,7 @@ pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -
 /// Eager version of `int_range` to avoid overhead from the expression engine.
 #[pyfunction]
 pub fn eager_int_range(
-    py: Python,
+    py: Python<'_>,
     lower: &Bound<'_, PyAny>,
     upper: &Bound<'_, PyAny>,
     step: &Bound<'_, PyAny>,

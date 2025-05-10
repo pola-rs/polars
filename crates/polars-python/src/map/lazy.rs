@@ -12,7 +12,7 @@ use crate::{PyExpr, Wrap};
 pub(crate) trait ToSeries {
     fn to_series(
         &self,
-        py: Python,
+        py: Python<'_>,
         py_polars_module: &Py<PyModule>,
         name: &str,
     ) -> PolarsResult<Series>;
@@ -21,7 +21,7 @@ pub(crate) trait ToSeries {
 impl ToSeries for PyObject {
     fn to_series(
         &self,
-        py: Python,
+        py: Python<'_>,
         py_polars_module: &Py<PyModule>,
         name: &str,
     ) -> PolarsResult<Series> {
@@ -65,7 +65,7 @@ impl ToSeries for PyObject {
 }
 
 pub(crate) fn call_lambda_with_series(
-    py: Python,
+    py: Python<'_>,
     s: &Series,
     lambda: &PyObject,
 ) -> PyResult<PyObject> {
@@ -171,7 +171,7 @@ pub fn map_single(
 }
 
 pub(crate) fn call_lambda_with_columns_slice(
-    py: Python,
+    py: Python<'_>,
     s: &[Column],
     lambda: &PyObject,
     pypolars: &Py<PyModule>,
@@ -196,7 +196,7 @@ pub(crate) fn call_lambda_with_columns_slice(
 
 pub fn map_mul(
     pyexpr: &[PyExpr],
-    py: Python,
+    py: Python<'_>,
     lambda: PyObject,
     output_type: Option<Wrap<DataType>>,
     map_groups: bool,
