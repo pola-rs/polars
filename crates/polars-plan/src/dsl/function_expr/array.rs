@@ -7,6 +7,9 @@ use crate::{map, map_as_slice};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ArrayFunction {
     Length,
+    Slice(i64, usize),
+    Head(usize),
+    Tail(usize),
     Min,
     Max,
     Sum,
@@ -51,6 +54,9 @@ impl ArrayFunction {
                 )?,
             )),
             Length => mapper.with_dtype(IDX_DTYPE),
+            Slice(_, _) => mapper.with_same_dtype(),
+            Head(_) => mapper.with_same_dtype(),
+            Tail(_) => mapper.with_same_dtype(),
             Min | Max => mapper.map_to_list_and_array_inner_dtype(),
             Sum => mapper.nested_sum_type(),
             ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
@@ -85,6 +91,9 @@ impl ArrayFunction {
             #[cfg(feature = "array_count")]
             A::CountMatches => FunctionOptions::elementwise(),
             A::Length
+            | A::Slice(_, _)
+            | A::Head(_)
+            | A::Tail(_)
             | A::Min
             | A::Max
             | A::Sum
@@ -121,6 +130,9 @@ impl Display for ArrayFunction {
         let name = match self {
             Concat => "concat",
             Length => "length",
+            Slice(_, _) => "slice",
+            Head(_) => "head",
+            Tail(_) => "tail",
             Min => "min",
             Max => "max",
             Sum => "sum",
@@ -157,6 +169,9 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
         match func {
             Concat => map_as_slice!(concat_arr),
             Length => map!(length),
+            Slice(offset, length) => map!(slice, offset, length),
+            Head(length) => map!(head, length),
+            Tail(length) => map!(tail, length),
             Min => map!(min),
             Max => map!(max),
             Sum => map!(sum),
@@ -207,6 +222,39 @@ pub(super) fn length(s: &Column) -> PolarsResult<Column> {
     }
 
     Ok(c)
+}
+
+pub(super) fn slice(s: &Column, offset: i64, length: usize) -> PolarsResult<Column> {
+    let ca = s.array()?;
+
+    let series = ca.apply_to_inner(&|inner: Series| {
+        let sliced = inner.array()?.slice(offset, length);
+        Ok(sliced.into_series())
+    })?;
+
+    Ok(series.into_column())
+}
+
+pub(super) fn head(s: &Column, length: usize) -> PolarsResult<Column> {
+    let ca = s.array()?;
+
+    let series = ca.apply_to_inner(&|inner: Series| {
+        let sliced = inner.array()?.head(Some(length));
+        Ok(sliced.into_series())
+    })?;
+
+    Ok(series.into_column())
+}
+
+pub(super) fn tail(s: &Column, length: usize) -> PolarsResult<Column> {
+    let ca = s.array()?;
+
+    let series = ca.apply_to_inner(&|inner: Series| {
+        let sliced = inner.array()?.tail(Some(length));
+        Ok(sliced.into_series())
+    })?;
+
+    Ok(series.into_column())
 }
 
 pub(super) fn max(s: &Column) -> PolarsResult<Column> {

@@ -44,6 +44,147 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_len())
 
+    def slice(self, offset: int, length: int = 5) -> Expr:
+        """
+        Slice the sub-arrays.
+
+        Parameters
+        ----------
+        offset
+            The starting index of the slice.
+        length
+            The length of the slice.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Array`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]]},
+        ...     schema={"a": pl.Array(pl.Int64, 6)},
+        ... )
+        >>> df.with_columns(slice=pl.col("a").arr.slice(1))
+        shape: (2, 2)
+        ┌───────────────────────┬────────────────────┐
+        │ a                     ┆ slice              │
+        │ ---                   ┆ ---                │
+        │ array[i64, 6]         ┆ array[i64, 5]      │
+        ╞═══════════════════════╪════════════════════╡
+        │ [1, 2, 3, 4, 5, 6]    ┆ [2, 3, 4, 5, 6]    │
+        │ [7, 8, 9, 10, 11, 12] ┆ [8, 9, 10, 11, 12] │
+        └───────────────────────┴────────────────────┘
+        >>> df.with_columns(slice=pl.col("a").arr.slice(2, 3))
+        shape: (2, 2)
+        ┌───────────────────────┬───────────────┐
+        │ a                     ┆ slice         │
+        │ ---                   ┆ ---           │
+        │ array[i64, 6]         ┆ array[i64, 3] │
+        ╞═══════════════════════╪═══════════════╡
+        │ [1, 2, 3, 4, 5, 6]    ┆ [3, 4, 5]     │
+        │ [7, 8, 9, 10, 11, 12] ┆ [9, 10, 11]   │
+        └───────────────────────┴───────────────┘
+        >>> df.with_columns(slice=pl.col("a").arr.slice(-2))
+        shape: (2, 2)
+        ┌───────────────────────┬───────────────┐
+        │ a                     ┆ slice         │
+        │ ---                   ┆ ---           │
+        │ array[i64, 6]         ┆ array[i64, 2] │
+        ╞═══════════════════════╪═══════════════╡
+        │ [1, 2, 3, 4, 5, 6]    ┆ [5, 6]        │
+        │ [7, 8, 9, 10, 11, 12] ┆ [11, 12]      │
+        └───────────────────────┴───────────────┘
+        """
+        return wrap_expr(self._pyexpr.arr_slice(offset, length))
+
+    def head(self, length: int = 5) -> Expr:
+        """
+        Get the first `length` elements of the sub-arrays.
+
+        Parameters
+        ----------
+        length
+            The number of elements to return.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Array`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]]},
+        ...     schema={"a": pl.Array(pl.Int64, 6)},
+        ... )
+        >>> df.with_columns(head=pl.col("a").arr.head())
+        shape: (2, 2)
+        ┌───────────────────────┬───────────────────┐
+        │ a                     ┆ head              │
+        │ ---                   ┆ ---               │
+        │ array[i64, 6]         ┆ array[i64, 5]     │
+        ╞═══════════════════════╪═══════════════════╡
+        │ [1, 2, 3, 4, 5, 6]    ┆ [1, 2, 3, 4, 5]   │
+        │ [7, 8, 9, 10, 11, 12] ┆ [7, 8, 9, 10, 11] │
+        └───────────────────────┴───────────────────┘
+        >>> df.with_columns(head=pl.col("a").arr.head(3))
+        shape: (2, 2)
+        ┌───────────────────────┬───────────────┐
+        │ a                     ┆ head          │
+        │ ---                   ┆ ---           │
+        │ array[i64, 6]         ┆ array[i64, 3] │
+        ╞═══════════════════════╪═══════════════╡
+        │ [1, 2, 3, 4, 5, 6]    ┆ [1, 2, 3]     │
+        │ [7, 8, 9, 10, 11, 12] ┆ [7, 8, 9]     │
+        └───────────────────────┴───────────────┘
+        """
+        return wrap_expr(self._pyexpr.arr_head(length))
+
+    def tail(self, length: int = 5) -> Expr:
+        """
+        Get the last `length` elements of the sub-arrays.
+
+        Parameters
+        ----------
+        length
+            The number of elements to return.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Array`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]]},
+        ...     schema={"a": pl.Array(pl.Int64, 6)},
+        ... )
+        >>> df.with_columns(tail=pl.col("a").arr.tail())
+        shape: (2, 2)
+        ┌───────────────────────┬────────────────────┐
+        │ a                     ┆ tail               │
+        │ ---                   ┆ ---                │
+        │ array[i64, 6]         ┆ array[i64, 5]      │
+        ╞═══════════════════════╪════════════════════╡
+        │ [1, 2, 3, 4, 5, 6]    ┆ [2, 3, 4, 5, 6]    │
+        │ [7, 8, 9, 10, 11, 12] ┆ [8, 9, 10, 11, 12] │
+        └───────────────────────┴────────────────────┘
+        >>> df.with_columns(tail=pl.col("a").arr.tail(3))
+        shape: (2, 2)
+        ┌───────────────────────┬───────────────┐
+        │ a                     ┆ tail          │
+        │ ---                   ┆ ---           │
+        │ array[i64, 6]         ┆ array[i64, 3] │
+        ╞═══════════════════════╪═══════════════╡
+        │ [1, 2, 3, 4, 5, 6]    ┆ [4, 5, 6]     │
+        │ [7, 8, 9, 10, 11, 12] ┆ [10, 11, 12]  │
+        └───────────────────────┴───────────────┘
+        """
+        return wrap_expr(self._pyexpr.arr_tail(length))
+
     def min(self) -> Expr:
         """
         Compute the min values of the sub-arrays.
