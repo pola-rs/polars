@@ -359,7 +359,10 @@ impl SQLExprVisitor<'_> {
 
     /// Handle implicit temporal string comparisons.
     ///
-    /// eg: "dt >= '2024-04-30'", or "dtm::date = '2077-10-10'"
+    /// eg: clauses such as -
+    ///   "dt >= '2024-04-30'"
+    ///   "dt = '2077-10-10'::date"
+    ///   "dtm::date = '2077-10-10'
     fn convert_temporal_strings(&mut self, left: &Expr, right: &Expr) -> Expr {
         if let (Some(name), Some(s), expr_dtype) = match (left, right) {
             // identify "col <op> string" expressions
