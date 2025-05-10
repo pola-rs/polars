@@ -124,29 +124,39 @@ def test_drop_nans(lazy: bool) -> None:
     DataFrame = pl.LazyFrame if lazy else pl.DataFrame
     df = DataFrame(
         {
-            "a": [1.0, float("nan"), 3.0, 4.0],
-            "b": [10000, 20000, 30000, 40000],
-            "c": [-90.5, 25.0, 0.0, float("nan")],
+            "a": [1.0, float("nan"), 3.0, 4.0, None],
+            "b": [10000, 20000, 30000, 40000, None],
+            "c": [-90.5, 25.0, 0.0, float("nan"), None],
         }
     )
     expected = DataFrame(
         {
-            "a": [1.0, 3.0],
-            "b": [10000, 30000],
-            "c": [-90.5, 0.0],
+            "a": [1.0, 3.0, None],
+            "b": [10000, 30000, None],
+            "c": [-90.5, 0.0, None],
         }
     )
     assert_frame_equal(expected, df.drop_nans())
 
     expected = DataFrame(
         {
-            "a": [1.0, float("nan"), 3.0],
-            "b": [10000, 20000, 30000],
-            "c": [-90.5, 25.0, 0.0],
+            "a": [1.0, float("nan"), 3.0, None],
+            "b": [10000, 20000, 30000, None],
+            "c": [-90.5, 25.0, 0.0, None],
         }
     )
     assert_frame_equal(expected, df.drop_nans(subset=["c"]))
     assert_frame_equal(expected, df.drop_nans(subset=cs.ends_with("c")))
+
+    expected = DataFrame(
+        {
+            "a": [1.0, 3.0, None],
+            "b": [10000, 30000, None],
+            "c": [-90.5, 0.0, None],
+        }
+    )
+    assert_frame_equal(expected, df.drop_nans(subset=["a", "c"]))
+    assert_frame_equal(expected, df.drop_nans(subset=cs.float()))
 
 
 def test_drop_nan_ignore_null_3525() -> None:
