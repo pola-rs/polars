@@ -71,6 +71,7 @@ where
             predicate,
             output_schema,
             scan_type,
+            id: _,
         } => {
             let paths = sources.into_paths();
             let schema = output_schema.as_ref().unwrap_or(&file_info.schema);

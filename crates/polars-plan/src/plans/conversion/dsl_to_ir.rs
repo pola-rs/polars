@@ -374,6 +374,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         scan_type,
                         output_schema: None,
                         unified_scan_args,
+                        id: Default::default(),
                     }
                 };
 

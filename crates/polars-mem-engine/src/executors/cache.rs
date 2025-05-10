@@ -5,6 +5,7 @@ use super::*;
 pub struct CacheExec {
     pub input: Option<Box<dyn Executor>>,
     pub id: usize,
+    /// `(cache_hits_before_drop - 1)`
     pub count: u32,
 }
 
@@ -20,6 +21,9 @@ impl Executor for CacheExec {
                 let out = cache.1.get().expect("prefilled").clone();
                 let previous = cache.0.fetch_sub(1, Ordering::Relaxed);
                 if previous == 0 {
+                    if state.verbose() {
+                        eprintln!("CACHE DROP: cache id: {:x}", self.id);
+                    }
                     state.remove_df_cache(self.id);
                 }
 
@@ -40,7 +44,7 @@ impl Executor for CacheExec {
 }
 
 pub struct CachePrefiller {
-    pub caches: PlIndexMap<usize, Box<dyn Executor>>,
+    pub caches: PlIndexMap<usize, Box<CacheExec>>,
     pub phys_plan: Box<dyn Executor>,
 }
 
