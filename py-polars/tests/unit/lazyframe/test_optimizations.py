@@ -17,7 +17,7 @@ def test_is_null_followed_by_all() -> None:
     assert (
         r'[[(col("val").count()) == (col("val").null_count())]]' in result_lf.explain()
     )
-    assert "is_null" not in result_lf
+    assert "is_null" not in result_lf.collect_schema()
     assert_frame_equal(expected_df, result_lf.collect())
 
     # verify we don't optimize on chained expressions when last one is not col
