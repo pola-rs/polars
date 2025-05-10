@@ -119,3 +119,23 @@ fn test_quantile_disc_conformance() {
         "expected {expected:?}, got {actual:?}"
     )
 }
+
+#[test]
+fn test_corr() {
+    let df = df! {
+        "a" => [1, 2, 3, 4, 5],
+        "b" => [2, 4, 6, 8, 10]
+    }
+    .unwrap()
+    .lazy();
+
+    let expr = pearson_corr(col("a"), col("b")).alias("corr");
+    let expected = df.clone().select(&[expr]).collect().unwrap();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let sql = "SELECT CORR(a, b) as corr FROM df";
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+}

@@ -595,7 +595,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT VARIANCE(column_1) FROM df;
     /// ```
     Variance,
-
+    /// SQL 'corr' function.
+    /// Returns the Pearson correlation coefficient between two columns.
+    /// ```sql
+    /// SELECT CORR(column_1, column_2) FROM df;
+    /// ```
+    Corr,
     // ----
     // Array functions
     // ----
@@ -910,6 +915,7 @@ impl PolarsSQLFunctions {
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "sum" => Self::Sum,
             "var" | "variance" | "var_samp" => Self::Variance,
+            "corr" => Self::Corr,
 
             // ----
             // Array functions
@@ -1468,6 +1474,7 @@ impl SQLFunctionVisitor<'_> {
             StdDev => self.visit_unary(|e| e.std(1)),
             Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
             Variance => self.visit_unary(|e| e.var(1)),
+            Corr => self.visit_binary(polars_lazy::dsl::pearson_corr),
 
             // ----
             // Array functions
