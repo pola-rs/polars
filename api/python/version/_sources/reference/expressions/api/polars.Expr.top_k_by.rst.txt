@@ -1,0 +1,6 @@
+﻿polars.Expr.top\_k\_by
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.top_k_by

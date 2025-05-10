@@ -1,0 +1,6 @@
+﻿polars.SQLContext.register\_globals
+===================================
+
+.. currentmodule:: polars
+
+.. automethod:: SQLContext.register_globals

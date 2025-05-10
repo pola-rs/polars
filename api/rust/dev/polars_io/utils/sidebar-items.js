@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["URL_ENCODE_CHAR_SET"],"fn":["apply_projection","columns_to_projection","decode_json_response","get_reader_bytes","materialize_projection","overwrite_schema"],"mod":["byte_source","compression","file","mkdir","slice","sync_on_close"],"static":["BOOLEAN_RE","FLOAT_RE","FLOAT_RE_DECIMAL","INTEGER_RE"]};

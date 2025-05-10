@@ -1,0 +1,6 @@
+﻿polars.DataFrame.pivot
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.pivot
