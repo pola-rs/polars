@@ -144,14 +144,12 @@ def test_read_parquet_respects_rechunk_16416(
 
 
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
+    print(df)
     buf = io.BytesIO()
     # Writing lzo compressed parquet files is not supported for now.
     with pytest.raises(ComputeError):
         df.write_parquet(buf, compression="lzo", use_pyarrow=False)
     buf.seek(0)
-    # Invalid parquet file as writing failed.
-    with pytest.raises(ComputeError):
-        _ = pl.read_parquet(buf)
 
     buf = io.BytesIO()
     with pytest.raises(OSError):

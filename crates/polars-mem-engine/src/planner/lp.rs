@@ -289,6 +289,7 @@ fn create_physical_plan_impl(
                                         .with_statistics(options.statistics)
                                         .with_row_group_size(options.row_group_size)
                                         .with_data_page_size(options.data_page_size)
+                                        .with_key_value_metadata(options.key_value_metadata.clone())
                                         .finish(&mut df)?;
                                 },
                                 #[cfg(feature = "ipc")]

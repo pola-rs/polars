@@ -23,6 +23,7 @@ from typing import (
     ClassVar,
     NoReturn,
     TypeVar,
+    cast,
     get_args,
     overload,
 )
@@ -47,7 +48,6 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_df_item_by_key
-from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import parse_into_expression
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
@@ -144,6 +144,7 @@ if TYPE_CHECKING:
         ConnectionOrCursor,
         CsvQuoteStyle,
         DbWriteEngine,
+        EngineType,
         FillNullStrategy,
         FrameInitTypes,
         IndexOrder,
@@ -160,6 +161,7 @@ if TYPE_CHECKING:
         Orientation,
         ParquetCompression,
         ParquetMetadata,
+        PartitioningScheme,
         PivotAgg,
         PolarsDataType,
         PythonDataType,
@@ -2737,9 +2739,11 @@ class DataFrame:
     def write_ndjson(self, file: None = None) -> str: ...
 
     @overload
-    def write_ndjson(self, file: IOBase | str | Path) -> None: ...
+    def write_ndjson(self, file: str | Path | IO[bytes] | IO[str]) -> None: ...
 
-    def write_ndjson(self, file: IOBase | str | Path | None = None) -> str | None:
+    def write_ndjson(
+        self, file: str | Path | IO[bytes] | IO[str] | None = None
+    ) -> str | None:
         r"""
         Serialize to newline delimited JSON representation.
 
@@ -2760,26 +2764,30 @@ class DataFrame:
         >>> df.write_ndjson()
         '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
         """
-
-        def write_ndjson_to_string() -> str:
-            with BytesIO() as buf:
-                self._df.write_ndjson(buf)
-                ndjson_bytes = buf.getvalue()
-            return ndjson_bytes.decode("utf8")
-
+        should_return_buffer = False
+        target: str | Path | IO[bytes] | IO[str]
         if file is None:
-            return write_ndjson_to_string()
-        elif isinstance(file, StringIO):
-            ndjson_str = write_ndjson_to_string()
-            file.write(ndjson_str)
-            return None
-        elif isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-            self._df.write_ndjson(file)
-            return None
+            target = cast(IO[bytes], BytesIO())
+            should_return_buffer = True
+        elif isinstance(file, (str, os.PathLike)):
+            target = normalize_filepath(file)
         else:
-            self._df.write_ndjson(file)
-            return None
+            target = file
+
+        engine: EngineType = "in-memory"
+
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        self.lazy().sink_ndjson(
+            target,
+            optimizations=QueryOptFlags._eager(),
+            engine=engine,
+        )
+
+        if should_return_buffer:
+            return str(target.getvalue(), encoding="utf-8")  # type: ignore[union-attr]
+
+        return None
 
     @overload
     def write_csv(
@@ -2954,46 +2962,15 @@ class DataFrame:
         if not null_value:
             null_value = None
 
-        def write_csv_to_string() -> str:
-            with BytesIO() as buf:
-                self.write_csv(
-                    buf,
-                    include_bom=include_bom,
-                    include_header=include_header,
-                    separator=separator,
-                    line_terminator=line_terminator,
-                    quote_char=quote_char,
-                    batch_size=batch_size,
-                    datetime_format=datetime_format,
-                    date_format=date_format,
-                    time_format=time_format,
-                    float_scientific=float_scientific,
-                    float_precision=float_precision,
-                    null_value=null_value,
-                    quote_style=quote_style,
-                )
-                csv_bytes = buf.getvalue()
-            return csv_bytes.decode("utf8")
-
         should_return_buffer = False
+        target: str | Path | IO[bytes] | IO[str]
         if file is None:
-            buffer = file = BytesIO()
+            target = cast(IO[bytes], BytesIO())
             should_return_buffer = True
-        elif isinstance(file, StringIO):
-            csv_str = write_csv_to_string()
-            file.write(csv_str)
-            return None
         elif isinstance(file, (str, os.PathLike)):
-            file = normalize_filepath(file)
-
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
-        )
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, file, storage_options, "write_csv"
-        )
-        del credential_provider
+            target = normalize_filepath(file)
+        else:
+            target = file
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -3001,28 +2978,34 @@ class DataFrame:
             # Handle empty dict input
             storage_options = None
 
-        self._df.write_csv(
-            file,
-            include_bom,
-            include_header,
-            ord(separator),
-            line_terminator,
-            ord(quote_char),
-            batch_size,
-            datetime_format,
-            date_format,
-            time_format,
-            float_scientific,
-            float_precision,
-            null_value,
-            quote_style,
-            cloud_options=storage_options,
-            credential_provider=credential_provider_builder,
+        engine: EngineType = "in-memory"
+
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        self.lazy().sink_csv(
+            target,
+            include_bom=include_bom,
+            include_header=include_header,
+            separator=separator,
+            line_terminator=line_terminator,
+            quote_char=quote_char,
+            batch_size=batch_size,
+            datetime_format=datetime_format,
+            date_format=date_format,
+            time_format=time_format,
+            float_scientific=float_scientific,
+            float_precision=float_precision,
+            null_value=null_value,
+            quote_style=quote_style,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
             retries=retries,
+            optimizations=QueryOptFlags._eager(),
+            engine=engine,
         )
 
         if should_return_buffer:
-            return str(buffer.getvalue(), encoding="utf-8")
+            return str(target.getvalue(), encoding="utf-8")  # type: ignore[union-attr]
 
         return None
 
@@ -3747,47 +3730,25 @@ class DataFrame:
         >>> df.write_ipc(path)
         """
         return_bytes = file is None
-        if return_bytes:
-            file = BytesIO()
-        elif isinstance(file, (str, Path)):
-            file = normalize_filepath(file)
-
-        if compat_level is None:
-            compat_level = True  # type: ignore[assignment]
-        elif isinstance(compat_level, CompatLevel):
-            compat_level = compat_level._version  # type: ignore[attr-defined]
-
-        if compression is None:
-            compression = "uncompressed"
-
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
-        )
-
-        credential_provider_builder = (
-            None
-            if return_bytes
-            else _init_credential_provider_builder(
-                credential_provider, file, storage_options, "write_ipc"
-            )
-        )
-        del credential_provider
-
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
+        target: str | Path | IO[bytes]
+        if file is None:
+            target = BytesIO()
         else:
-            # Handle empty dict input
-            storage_options = None
+            target = file
 
-        self._df.write_ipc(
-            file,
-            compression,
-            compat_level,
-            cloud_options=storage_options,
-            credential_provider=credential_provider_builder,
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        self.lazy().sink_ipc(
+            target,
+            compression=compression,
+            compat_level=compat_level,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
             retries=retries,
+            optimizations=QueryOptFlags._eager(),
+            engine="in-memory",
         )
-        return file if return_bytes else None  # type: ignore[return-value]
+        return target if return_bytes else None  # type: ignore[return-value]
 
     @overload
     def write_ipc_stream(
@@ -4062,73 +4023,36 @@ class DataFrame:
 
             return
 
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
-        )
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, file, storage_options, "write_parquet"
-        )
-        del credential_provider
-
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
-        if isinstance(metadata, dict):
-            if metadata:
-                metadata = list(metadata.items())  # type: ignore[assignment]
-            else:
-                # Handle empty dict input
-                metadata = None
-        elif callable(metadata):
-            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
-
-        if isinstance(statistics, bool) and statistics:
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": False,
-                "null_count": True,
-            }
-        elif isinstance(statistics, bool) and not statistics:
-            statistics = {}
-        elif statistics == "full":
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": True,
-                "null_count": True,
-            }
-
+        target: str | Path | IO[bytes] | PartitioningScheme = file
+        mkdir: bool = False
+        engine: EngineType = "in-memory"
         if partition_by is not None:
-            msg = "the `partition_by` parameter of `write_parquet` is considered unstable."
-            issue_unstable_warning(msg)
+            if not isinstance(file, str):
+                msg = "expected file to be a `str` since partition-by is set"
+                raise TypeError(msg)
 
-        if metadata is not None:
-            msg = (
-                "the `metadata` parameter of `sink_parquet` is considered experimental."
-            )
-            issue_unstable_warning(msg)
+            from polars.io import PartitionByKey
 
-        if isinstance(partition_by, str):
-            partition_by = [partition_by]
+            target = PartitionByKey(file, by=partition_by[::-1])
+            mkdir = True
+            engine = "streaming"
 
-        self._df.write_parquet(
-            file,
-            compression,
-            compression_level,
-            statistics,
-            row_group_size,
-            data_page_size,
-            partition_by=partition_by,
-            partition_chunk_size_bytes=partition_chunk_size_bytes,
-            cloud_options=storage_options,
-            credential_provider=credential_provider_builder,
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        self.lazy().sink_parquet(
+            target,
+            compression=compression,
+            compression_level=compression_level,
+            statistics=statistics,
+            row_group_size=row_group_size,
+            data_page_size=data_page_size,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
             retries=retries,
             metadata=metadata,
+            engine=engine,
+            mkdir=mkdir,
+            optimizations=QueryOptFlags._eager(),
         )
 
     def write_database(
