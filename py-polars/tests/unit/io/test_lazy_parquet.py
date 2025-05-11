@@ -962,6 +962,11 @@ results = [pl.DataFrame(), pl.DataFrame(), pl.DataFrame(), pl.DataFrame()]
 
 
 def run():
+    # Also test just a single scan
+    pl.scan_parquet(f).collect()
+
+    print("QUERY-FENCE", file=sys.stderr)
+
     results[0] = q.collect()
 
     print("QUERY-FENCE", file=sys.stderr)
