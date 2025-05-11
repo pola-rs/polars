@@ -585,16 +585,20 @@ impl PyExpr {
     #[pyo3(signature = (partition_by, order_by, order_by_descending, order_by_nulls_last, mapping_strategy))]
     fn over(
         &self,
-        partition_by: Vec<Self>,
+        partition_by: Option<Vec<Self>>,
         order_by: Option<Vec<Self>>,
         order_by_descending: bool,
         order_by_nulls_last: bool,
         mapping_strategy: Wrap<WindowMapping>,
     ) -> Self {
-        let partition_by = partition_by
-            .into_iter()
-            .map(|e| e.inner)
-            .collect::<Vec<Expr>>();
+        let partition_by = if let Some(partition_by) = partition_by {
+            partition_by
+                .into_iter()
+                .map(|e| e.inner)
+                .collect::<Vec<Expr>>()
+        } else {
+            vec![lit(1)]
+        };
 
         let order_by = order_by.map(|order_by| {
             (
