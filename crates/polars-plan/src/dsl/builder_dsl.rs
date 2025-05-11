@@ -156,24 +156,13 @@ impl DslBuilder {
     }
 
     pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> Self {
-        if let Some(subset) = subset {
-            if subset.is_empty() {
-                return self;
-            }
-            self.filter(
-                all_horizontal(
-                    subset
-                        .into_iter()
-                        .map(|v| v.clone().is_not_nan().or(v.is_null()))
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap(),
-            )
-        } else {
-            // TODO: when Decimal supports NaN, include here
-            let cols = dtype_cols([DataType::Float32, DataType::Float64]);
-            self.filter(all_horizontal([cols.clone().is_not_nan().or(cols.is_null())]).unwrap())
-        }
+        let is_nan = match subset {
+            Some(subset) if subset.is_empty() => return self,
+            Some(subset) => subset.into_iter().map(Expr::is_nan).collect(),
+            // TODO: when Decimal supports NaN values, include that dtype here
+            None => vec![dtype_cols([DataType::Float32, DataType::Float64]).is_nan()],
+        };
+        self.remove(any_horizontal(is_nan).unwrap())
     }
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
@@ -220,10 +209,20 @@ impl DslBuilder {
         .into()
     }
 
-    /// Apply a filter
+    /// Apply a filter predicate, keeping the rows that match it.
     pub fn filter(self, predicate: Expr) -> Self {
         DslPlan::Filter {
             predicate,
+            input: Arc::new(self.0),
+        }
+        .into()
+    }
+
+    /// Remove rows matching a filter predicate (note that rows
+    /// where the predicate resolves to `null` are *not* removed).
+    pub fn remove(self, predicate: Expr) -> Self {
+        DslPlan::Filter {
+            predicate: predicate.neq_missing(lit(true)),
             input: Arc::new(self.0),
         }
         .into()
