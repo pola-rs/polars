@@ -64,6 +64,7 @@ fn iss_7436() {
             col("calories")
                 .mean()
                 .over(vec![col("category")])
+                .unwrap()
                 .alias("avg_calories_by_category"),
         ])
         .limit(5)

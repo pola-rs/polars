@@ -1857,7 +1857,7 @@ impl SQLFunctionVisitor<'_> {
                             }))
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
-                    expr.over(exprs)?
+                    expr.over(exprs)
                 } else {
                     // Process for simple window specification, partition by first
                     let partition_by = window_spec
@@ -1865,7 +1865,7 @@ impl SQLFunctionVisitor<'_> {
                         .iter()
                         .map(|p| parse_sql_expr(p, self.ctx, self.active_schema))
                         .collect::<PolarsResult<Vec<_>>>()?;
-                    expr.over(partition_by)?
+                    expr.over(partition_by)
                 }
             },
             Some(WindowType::NamedWindow(named_window)) => polars_bail!(
