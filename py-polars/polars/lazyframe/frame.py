@@ -180,6 +180,9 @@ def _to_sink_target(
         return path
     elif isinstance(path, PartitioningScheme):
         return path._py_partitioning
+    elif callable(getattr(path, "write", None)):
+        # This allows for custom writers
+        return path
     else:
         msg = f"`path` argument has invalid type {qualified_type_name(path)!r}, and cannot be turned into a sink target"
         raise TypeError(msg)
@@ -2673,9 +2676,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         engine = _select_engine(engine)
         if metadata is not None:
-            msg = (
-                "the `metadata` parameter of `sink_parquet` is considered experimental."
-            )
+            msg = "`metadata` parameter is considered experimental"
             issue_unstable_warning(msg)
 
         if isinstance(statistics, bool) and statistics:
