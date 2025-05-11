@@ -590,15 +590,13 @@ impl PyExpr {
         order_by_descending: bool,
         order_by_nulls_last: bool,
         mapping_strategy: Wrap<WindowMapping>,
-    ) -> Self {
-        let partition_by = if let Some(partition_by) = partition_by {
+    ) -> PyResult<Self> {
+        let partition_by = partition_by.map(|partition_by| {
             partition_by
                 .into_iter()
                 .map(|e| e.inner)
                 .collect::<Vec<Expr>>()
-        } else {
-            vec![lit(1)]
-        };
+        });
 
         let order_by = order_by.map(|order_by| {
             (
@@ -612,10 +610,12 @@ impl PyExpr {
             )
         });
 
-        self.inner
+        Ok(self
+            .inner
             .clone()
             .over_with_options(partition_by, order_by, mapping_strategy.0)
-            .into()
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 
     fn rolling(

@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -31,3 +33,9 @@ def test_over_no_partition_by() -> None:
     result = df.with_columns(b=pl.col("a").cum_sum().over(order_by="i"))
     expected = pl.DataFrame({"a": [1, 1, 2], "i": [2, 1, 3], "b": [2, 1, 4]})
     assert_frame_equal(result, expected)
+
+
+def test_over_no_partition_by_no_over() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "i": [2, 1, 3]})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.with_columns(b=pl.col("a").cum_sum().over())
