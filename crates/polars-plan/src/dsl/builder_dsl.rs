@@ -166,22 +166,12 @@ impl DslBuilder {
     }
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
-        if let Some(subset) = subset {
-            if subset.is_empty() {
-                return self;
-            }
-            self.filter(
-                all_horizontal(
-                    subset
-                        .into_iter()
-                        .map(|v| v.is_not_null())
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap(),
-            )
-        } else {
-            self.filter(all_horizontal([all().is_not_null()]).unwrap())
-        }
+        let is_not_null = match subset {
+            Some(subset) if subset.is_empty() => return self,
+            Some(subset) => subset.into_iter().map(Expr::is_not_null).collect(),
+            None => vec![all().is_not_null()],
+        };
+        self.filter(all_horizontal(is_not_null).unwrap())
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
