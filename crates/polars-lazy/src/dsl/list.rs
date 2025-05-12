@@ -192,8 +192,9 @@ fn run_elementwise_on_values(
 
         phys_expr.evaluate(&df, &state).map(|mut values| {
             // Infer if we need to broadcast using the lengths.
-            // It's technically not a good idea to do this here, but it should be safe to do since
-            // we've checked the `ExprPushdownGroup` of this expression.
+            // It's technically not a good idea to do this here (this is very deep in execution),
+            // but it should be safe to do since we've checked the `ExprPushdownGroup` of this
+            // expression.
             if values.len() != arr.len() && values.len() == 1 {
                 values = values.new_from_index(0, arr.len());
             }
