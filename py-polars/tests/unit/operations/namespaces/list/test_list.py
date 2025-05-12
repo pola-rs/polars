@@ -1103,7 +1103,9 @@ def test_list_struct_field_perf() -> None:
     # Timings (Apple M3 Pro 11-core)
     # * Debug build w/ elementwise: ~8.9x
     # * Release pypi 1.29.0: ~45x
-    threshold = 18
+    # Timings (Unknown GitHub runner):
+    # * Debug build w/ elementwise: ~18.7x
+    threshold = 27
 
     if slowdown > threshold:
         msg = f"slowdown ({slowdown}) > {threshold}x ({t0 = }, {t1 = })"
