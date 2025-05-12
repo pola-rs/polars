@@ -26,6 +26,8 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::POOL;
+#[cfg(feature = "new_streaming")]
+use polars_core::StringCacheHolder;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
@@ -2574,7 +2576,7 @@ impl JoinBuilder {
     }
 }
 
-const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorBuilder> = {
+pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorBuilder> = {
     #[cfg(not(feature = "new_streaming"))]
     {
         None
@@ -2584,6 +2586,8 @@ const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorBuild
         Some(streaming_dispatch::build_streaming_query_executor)
     }
 };
+#[cfg(feature = "new_streaming")]
+pub use streaming_dispatch::build_streaming_query_executor;
 
 #[cfg(feature = "new_streaming")]
 mod streaming_dispatch {

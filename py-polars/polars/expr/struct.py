@@ -4,6 +4,7 @@ import os
 from typing import TYPE_CHECKING
 
 from polars._utils.parse import parse_into_list_of_expressions
+from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -27,7 +28,7 @@ class ExprStructNameSpace:
         elif isinstance(item, int):
             return wrap_expr(self._pyexpr.struct_field_by_index(item))
         else:
-            msg = f"expected type 'int | str', got {type(item).__name__!r} ({item!r})"
+            msg = f"expected type 'int | str', got {qualified_type_name(item)!r} ({item!r})"
             raise TypeError(msg)
 
     def field(self, name: str | list[str], *more_names: str) -> Expr:

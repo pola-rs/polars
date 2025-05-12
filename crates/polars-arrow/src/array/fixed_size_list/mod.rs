@@ -13,6 +13,8 @@ pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::format_tuple;
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 
@@ -226,32 +228,6 @@ impl FixedSizeListArray {
             prev_array = &a.values;
         }
         dims
-    }
-
-    pub fn propagate_nulls(&self) -> Self {
-        let Some(validity) = self.validity() else {
-            return self.clone();
-        };
-
-        let propagated_validity = if self.size == 1 {
-            validity.clone()
-        } else {
-            Bitmap::from_trusted_len_iter(
-                (0..self.size * validity.len())
-                    .map(|i| unsafe { validity.get_bit_unchecked(i / self.size) }),
-            )
-        };
-
-        let propagated_validity = match self.values.validity() {
-            None => propagated_validity,
-            Some(val) => val & &propagated_validity,
-        };
-        Self::new(
-            self.dtype().clone(),
-            self.length,
-            self.values.with_validity(Some(propagated_validity)),
-            self.validity.clone(),
-        )
     }
 }
 

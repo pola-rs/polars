@@ -31,6 +31,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
+use pyo3::sync::GILOnceCell;
 use pyo3::types::{PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
@@ -40,6 +41,7 @@ use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::{pl_series, polars};
 use crate::series::PySeries;
+use crate::utils::to_py_err;
 use crate::{PyDataFrame, PyLazyFrame};
 
 /// # Safety
@@ -266,7 +268,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
             },
             DataType::Datetime(tu, tz) => {
                 let datetime_class = pl.getattr(intern!(py, "Datetime"))?;
-                datetime_class.call1((tu.to_ascii(), tz.as_deref()))
+                datetime_class.call1((tu.to_ascii(), tz.as_deref().map(|x| x.as_str())))
             },
             DataType::Duration(tu) => {
                 let duration_class = pl.getattr(intern!(py, "Duration"))?;
@@ -416,7 +418,10 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
                 let time_zone = ob.getattr(intern!(py, "time_zone")).unwrap();
                 let time_zone = time_zone.extract::<Option<PyBackedStr>>()?;
-                DataType::Datetime(time_unit, time_zone.as_deref().map(|x| x.into()))
+                DataType::Datetime(
+                    time_unit,
+                    TimeZone::opt_try_new(time_zone.as_deref()).map_err(to_py_err)?,
+                )
             },
             "Duration" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
@@ -835,6 +840,21 @@ impl<'py> FromPyObject<'py> for Wrap<ClosedWindow> {
     }
 }
 
+impl<'py> FromPyObject<'py> for Wrap<RoundMode> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "half_to_even" => RoundMode::HalfToEven,
+            "half_away_from_zero" => RoundMode::HalfAwayFromZero,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`mode` must be one of {{'half_to_even', 'half_away_from_zero'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 #[cfg(feature = "csv")]
 impl<'py> FromPyObject<'py> for Wrap<CsvEncoding> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
@@ -1213,6 +1233,159 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
     }
 }
 
+// Conversion from ScanCastOptions class from the Python side.
+impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if ob.is_none() {
+            // Initialize the default ScanCastOptions from Python.
+
+            static DEFAULT: GILOnceCell<Wrap<CastColumnsPolicy>> = GILOnceCell::new();
+
+            let out = DEFAULT.get_or_try_init(ob.py(), || {
+                let ob = PyModule::import(ob.py(), "polars.io.cast_options")
+                    .unwrap()
+                    .getattr("ScanCastOptions")
+                    .unwrap()
+                    .call_method0("_default")
+                    .unwrap();
+
+                let out = Self::extract_bound(&ob)?;
+
+                // The default policy should match ERROR_ON_MISMATCH (but this can change).
+                debug_assert_eq!(&out.0, &CastColumnsPolicy::ERROR_ON_MISMATCH);
+
+                PyResult::Ok(out)
+            })?;
+
+            return Ok(out.clone());
+        }
+
+        let integer_upcast = match &*ob.getattr("integer_cast")?.extract::<PyBackedStr>()? {
+            "upcast" => true,
+            "forbid" => false,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for integer_cast: {}",
+                    v
+                )));
+            },
+        };
+
+        let mut float_upcast = false;
+        let mut float_downcast = false;
+
+        let mut parse_float_cast_option = |v: &str| -> PyResult<()> {
+            match v {
+                "forbid" => {},
+                "upcast" => float_upcast = true,
+                "downcast" => float_downcast = true,
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for float_cast: {}",
+                        v
+                    )));
+                },
+            }
+
+            Ok(())
+        };
+
+        let float_cast_object = ob.getattr("float_cast")?;
+
+        parse_multiple_options(
+            "float_cast",
+            float_cast_object,
+            &mut parse_float_cast_option,
+        )?;
+
+        let mut datetime_nanoseconds_downcast = false;
+        let mut datetime_convert_timezone = false;
+
+        let mut parse_datetime_cast_option = |v: &str| -> PyResult<()> {
+            match v {
+                "forbid" => {},
+                "nanosecond-downcast" => datetime_nanoseconds_downcast = true,
+                "convert-timezone" => datetime_convert_timezone = true,
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for datetime_cast: {}",
+                        v
+                    )));
+                },
+            };
+
+            Ok(())
+        };
+
+        let datetime_cast_object = ob.getattr("datetime_cast")?;
+
+        parse_multiple_options(
+            "datetime_cast",
+            datetime_cast_object,
+            &mut parse_datetime_cast_option,
+        )?;
+
+        let missing_struct_fields = match &*ob
+            .getattr("missing_struct_fields")?
+            .extract::<PyBackedStr>()?
+        {
+            "insert" => MissingColumnsPolicy::Insert,
+            "raise" => MissingColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for missing_struct_fields: {}",
+                    v
+                )));
+            },
+        };
+
+        let extra_struct_fields = match &*ob
+            .getattr("extra_struct_fields")?
+            .extract::<PyBackedStr>()?
+        {
+            "ignore" => ExtraColumnsPolicy::Ignore,
+            "raise" => ExtraColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown option for extra_struct_fields: {}",
+                    v
+                )));
+            },
+        };
+
+        return Ok(Wrap(CastColumnsPolicy {
+            integer_upcast,
+            float_upcast,
+            float_downcast,
+            datetime_nanoseconds_downcast,
+            datetime_convert_timezone,
+            missing_struct_fields,
+            extra_struct_fields,
+        }));
+
+        fn parse_multiple_options<'a>(
+            parameter_name: &'static str,
+            py_object: Bound<'a, PyAny>,
+            parser_func: &mut dyn FnMut(&str) -> PyResult<()>,
+        ) -> PyResult<()> {
+            if let Ok(v) = py_object.extract::<PyBackedStr>() {
+                parser_func(&v)?;
+            } else if let Ok(v) = py_object.try_iter() {
+                for v in v {
+                    parser_func(&v?.extract::<PyBackedStr>()?)?;
+                }
+            } else {
+                return Err(PyValueError::new_err(format!(
+                    "unknown type for {}: {}",
+                    parameter_name, py_object
+                )));
+            }
+
+            Ok(())
+        }
+    }
+}
+
 pub(crate) fn parse_fill_null_strategy(
     strategy: &str,
     limit: FillNullLimit,
@@ -1327,5 +1500,33 @@ impl<'py> FromPyObject<'py> for Wrap<UnicodeForm> {
             },
         };
         Ok(Wrap(parsed))
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl<'py> FromPyObject<'py> for Wrap<Option<KeyValueMetadata>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        #[derive(FromPyObject)]
+        enum Metadata {
+            Static(Vec<(String, String)>),
+            Dynamic(PyObject),
+        }
+
+        let metadata = Option::<Metadata>::extract_bound(ob)?;
+        let key_value_metadata = metadata.map(|x| match x {
+            Metadata::Static(kv) => KeyValueMetadata::from_static(kv),
+            Metadata::Dynamic(func) => KeyValueMetadata::from_py_function(func),
+        });
+        Ok(Wrap(key_value_metadata))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<Option<TimeZone>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let tz = Option::<Wrap<PlSmallStr>>::extract_bound(ob)?;
+
+        let tz = tz.map(|x| x.0);
+
+        Ok(Wrap(TimeZone::opt_try_new(tz).map_err(to_py_err)?))
     }
 }

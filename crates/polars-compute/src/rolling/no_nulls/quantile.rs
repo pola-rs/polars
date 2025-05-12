@@ -28,22 +28,28 @@ impl<
         + Sub<Output = T>,
 > RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    fn new(
+        slice: &'a [T],
+        start: usize,
+        end: usize,
+        params: Option<RollingFnParams>,
+        window_size: Option<usize>,
+    ) -> Self {
         let params = params.unwrap();
         let RollingFnParams::Quantile(params) = params else {
             unreachable!("expected Quantile params");
         };
 
         Self {
-            sorted: SortedBuf::new(slice, start, end),
+            sorted: SortedBuf::new(slice, start, end, window_size),
             prob: params.prob,
             method: params.method,
         }
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let vals = self.sorted.update(start, end);
-        let length = vals.len();
+        self.sorted.update(start, end);
+        let length = self.sorted.len();
 
         let idx = match self.method {
             Linear => {
@@ -54,11 +60,11 @@ impl<
                 let float_idx_top = (length_f - 1.0) * self.prob;
                 let top_idx = float_idx_top.ceil() as usize;
                 return if idx == top_idx {
-                    Some(unsafe { *vals.get_unchecked(idx) })
+                    Some(self.sorted.get(idx))
                 } else {
                     let proportion = T::from(float_idx_top - idx as f64).unwrap();
-                    let vi = unsafe { *vals.get_unchecked(idx) };
-                    let vj = unsafe { *vals.get_unchecked(top_idx) };
+                    let vi = self.sorted.get(idx);
+                    let vj = self.sorted.get(top_idx);
 
                     Some(proportion * (vj - vi) + vi)
                 };
@@ -70,14 +76,9 @@ impl<
 
                 let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
                 return if top_idx == idx {
-                    // SAFETY:
-                    // we are in bounds
-                    Some(unsafe { *vals.get_unchecked(idx) })
+                    Some(self.sorted.get(idx))
                 } else {
-                    // SAFETY:
-                    // we are in bounds
-                    let (mid, mid_plus_1) =
-                        unsafe { (*vals.get_unchecked(idx), *vals.get_unchecked(idx + 1)) };
+                    let (mid, mid_plus_1) = (self.sorted.get(idx), (self.sorted.get(idx + 1)));
 
                     Some((mid + mid_plus_1) / (T::one() + T::one()))
                 };
@@ -94,9 +95,7 @@ impl<
             Equiprobable => ((length as f64 * self.prob).ceil() - 1.0).max(0.0) as usize,
         };
 
-        // SAFETY:
-        // we are in bounds
-        Some(unsafe { *vals.get_unchecked(idx) })
+        Some(self.sorted.get(idx))
     }
 }
 

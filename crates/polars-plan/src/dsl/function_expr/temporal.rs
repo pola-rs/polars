@@ -1,6 +1,3 @@
-#[cfg(feature = "timezones")]
-use polars_core::chunked_array::temporal::validate_time_zone;
-
 use super::*;
 use crate::{map, map_as_slice};
 
@@ -61,14 +58,14 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Replace => map_as_slice!(datetime::replace),
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz, non_existent) => {
-                map_as_slice!(dispatch::replace_time_zone, tz.as_deref(), non_existent)
+                map_as_slice!(dispatch::replace_time_zone, tz.as_ref(), non_existent)
             },
             Combine(tu) => map_as_slice!(temporal::combine, tu),
             DatetimeFunction {
                 time_unit,
                 time_zone,
             } => {
-                map_as_slice!(temporal::datetime, &time_unit, time_zone.as_deref())
+                map_as_slice!(temporal::datetime, &time_unit, time_zone.as_ref())
             },
         }
     }
@@ -78,7 +75,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 pub(super) fn datetime(
     s: &[Column],
     time_unit: &TimeUnit,
-    time_zone: Option<&str>,
+    time_zone: Option<&TimeZone>,
 ) -> PolarsResult<Column> {
     let col_name = PlSmallStr::from_static("datetime");
 
@@ -87,12 +84,9 @@ pub(super) fn datetime(
             col_name,
             &DataType::Datetime(
                 time_unit.to_owned(),
-                match time_zone {
+                match time_zone.cloned() {
                     #[cfg(feature = "timezones")]
-                    Some(time_zone) => {
-                        validate_time_zone(time_zone)?;
-                        Some(PlSmallStr::from_str(time_zone))
-                    },
+                    Some(v) => Some(v),
                     _ => {
                         assert!(
                             time_zone.is_none(),
@@ -165,7 +159,16 @@ pub(super) fn datetime(
     let ambiguous = _ambiguous.str()?;
 
     let ca = DatetimeChunked::new_from_parts(
-        year, month, day, hour, minute, second, nanosecond, ambiguous, time_unit, time_zone,
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        nanosecond,
+        ambiguous,
+        time_unit,
+        time_zone.cloned(),
         col_name,
     );
     ca.map(|s| s.into_column())

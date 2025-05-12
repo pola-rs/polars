@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, overload
 
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
+from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import (
     Array,
@@ -139,7 +140,7 @@ def repeat(
     if isinstance(n, int):
         n = F.lit(n)
     if not hasattr(n, "_pyexpr"):
-        msg = f"`n` parameter of `repeat expected a `int` or `Expr` got a `{type(n).__name__}`"
+        msg = f"`n` parameter of `repeat expected a `int` or `Expr` got a `{qualified_type_name(n)}`"
         raise TypeError(msg)
     value = parse_into_expression(value, str_as_lit=True, dtype=dtype)
     expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))

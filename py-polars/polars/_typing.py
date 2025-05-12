@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
+    from polars.dependencies import torch
     from polars.lazyframe.engine_config import GPUEngine
     from polars.selectors import _selector_proxy_
 
@@ -127,8 +128,12 @@ ParquetCompression: TypeAlias = Literal[
 PivotAgg: TypeAlias = Literal[
     "min", "max", "first", "last", "sum", "mean", "median", "len"
 ]
+QuantileMethod: TypeAlias = Literal[
+    "nearest", "higher", "lower", "midpoint", "linear", "equiprobable"
+]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
+RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero"]
 SerializationFormat: TypeAlias = Literal["binary", "json"]
 Endianness: TypeAlias = Literal["little", "big"]
 SizeUnit: TypeAlias = Literal[
@@ -168,9 +173,6 @@ InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
     "inner", "left", "right", "full", "semi", "anti", "cross", "outer"
 ]  # JoinType
-RollingInterpolationMethod: TypeAlias = Literal[
-    "nearest", "higher", "lower", "midpoint", "linear"
-]  # QuantileInterpolOptions
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
@@ -208,6 +210,7 @@ FrameInitTypes: TypeAlias = Union[
     "pd.DataFrame",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
+    "torch.Tensor",
 ]
 
 # Excel IO
@@ -282,7 +285,6 @@ ConnectionOrCursor: TypeAlias = Union[
     BasicConnection, BasicCursor, Cursor, AlchemyConnection
 ]
 
-
 # Annotations for `__getitem__` methods
 SingleIndexSelector: TypeAlias = int
 MultiIndexSelector: TypeAlias = Union[
@@ -312,6 +314,8 @@ EngineType: TypeAlias = Union[
     Literal["auto", "in-memory", "streaming", "gpu"], "GPUEngine"
 ]
 
+PlanStage: TypeAlias = Literal["ir", "physical"]
+
 FileSource: TypeAlias = Union[
     str,
     Path,
@@ -324,6 +328,14 @@ FileSource: TypeAlias = Union[
 ]
 
 JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
+
+DeprecationType: TypeAlias = Literal[
+    "function",
+    "renamed_parameter",
+    "streaming_parameter",
+    "nonkeyword_arguments",
+    "parameter_as_multi_positional",
+]
 
 
 class PartitioningScheme:
@@ -363,6 +375,7 @@ __all__ = [
     "DbReadEngine",
     "DbWriteEngine",
     "DbWriteMode",
+    "DeprecationType",
     "Endianness",
     "EngineType",
     "EpochTimeUnit",
@@ -406,9 +419,9 @@ __all__ = [
     "PolarsType",
     "PythonDataType",
     "PythonLiteral",
+    "QuantileMethod",
     "RankMethod",
     "Roll",
-    "RollingInterpolationMethod",
     "RowTotalsDefinition",
     "SchemaDefinition",
     "SchemaDict",
@@ -431,3 +444,22 @@ __all__ = [
     "UnstackDirection",
     "WindowMappingStrategy",
 ]
+
+
+class ParquetMetadataContext:
+    """
+    The context given when writing file-level parquet metadata.
+
+    .. warning::
+        This functionality is considered **experimental**. It may be removed or
+        changed at any point without it being considered a breaking change.
+    """
+
+    def __init__(self, *, arrow_schema: str) -> None:
+        self.arrow_schema = arrow_schema
+
+    arrow_schema: str  #: The base64 encoded arrow schema that is going to be written into metadata.
+
+
+ParquetMetadataFn: TypeAlias = Callable[[ParquetMetadataContext], dict[str, str]]
+ParquetMetadata: TypeAlias = Union[dict[str, str], ParquetMetadataFn]

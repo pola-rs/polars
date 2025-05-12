@@ -12,8 +12,8 @@ use arrow::temporal_conversions::{
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{
-    PolarsResult, datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
-    polars_bail,
+    PolarsResult, TimeZone, datetime_to_timestamp_ms, datetime_to_timestamp_ns,
+    datetime_to_timestamp_us, polars_bail,
 };
 use polars_error::polars_ensure;
 #[cfg(feature = "serde")]
@@ -446,8 +446,8 @@ impl Duration {
         self.nsecs == 0
     }
 
-    pub fn is_constant_duration(&self, time_zone: Option<&str>) -> bool {
-        if time_zone.is_none() || time_zone == Some("UTC") {
+    pub fn is_constant_duration(&self, time_zone: Option<&TimeZone>) -> bool {
+        if time_zone.is_none() || time_zone == Some(&TimeZone::UTC) {
             self.months == 0
         } else {
             // For non-native, non-UTC time zones, 1 calendar day is not
@@ -730,7 +730,7 @@ impl Duration {
             original_dt_local.year() as i64,
             original_dt_local.month() as i64,
         );
-        let total = (year * 12) + (month - 1);
+        let total = ((year - 1970) * 12) + (month - 1);
         let mut remainder_months = total % self.months;
         if remainder_months < 0 {
             remainder_months += self.months
@@ -1029,7 +1029,7 @@ fn new_datetime(
 
 pub fn ensure_is_constant_duration(
     duration: Duration,
-    time_zone: Option<&str>,
+    time_zone: Option<&TimeZone>,
     variable_name: &str,
 ) -> PolarsResult<()> {
     polars_ensure!(duration.is_constant_duration(time_zone),

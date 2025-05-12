@@ -24,10 +24,7 @@ fn update_and_parse<T: atoi_simd::Parse>(
     let bytes = vals.get(offset..new_offset)?;
     let (val, parsed) = atoi_simd::parse_any(bytes).ok()?;
     if parsed != incr {
-        panic!(
-            "Invariant when calling StrpTimeState.parse was not upheld. Expected {} parsed digits, got {}.",
-            incr, parsed
-        );
+        None
     } else {
         Some((val, new_offset))
     }

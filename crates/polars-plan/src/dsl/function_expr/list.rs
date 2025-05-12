@@ -133,19 +133,15 @@ impl ListFunction {
             #[cfg(feature = "list_sample")]
             L::Sample { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
-            L::Gather(_) => FunctionOptions::groupwise(),
+            L::Gather(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
             L::GatherEvery => FunctionOptions::elementwise(),
             #[cfg(feature = "list_sets")]
-            L::SetOperation(_) => FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                cast_options: Some(CastingRules::Supertype(SuperTypeOptions {
+            L::SetOperation(_) => FunctionOptions::elementwise()
+                .with_casting_rules(CastingRules::Supertype(SuperTypeOptions {
                     flags: SuperTypeFlags::default() | SuperTypeFlags::ALLOW_IMPLODE_LIST,
-                })),
-
-                flags: FunctionFlags::default() & !FunctionFlags::RETURNS_SCALAR,
-                ..Default::default()
-            },
+                }))
+                .with_flags(|f| f & !FunctionFlags::RETURNS_SCALAR),
             #[cfg(feature = "diff")]
             L::Diff { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_drop_nulls")]
@@ -566,6 +562,48 @@ pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Option<Co
                     })
                     .collect::<Result<IdxCa, _>>()?
             };
+            let s = Series::try_from((ca.name().clone(), arr.values().clone())).unwrap();
+            unsafe { s.take_unchecked(&take_by) }
+                .cast(ca.inner_dtype())
+                .map(Column::from)
+                .map(Some)
+        },
+        _ if ca.len() == 1 => {
+            if ca.null_count() > 0 {
+                return Ok(Some(Column::full_null(
+                    ca.name().clone(),
+                    index.len(),
+                    ca.inner_dtype(),
+                )));
+            }
+            let tmp = ca.rechunk();
+            let arr = tmp.downcast_as_array();
+            let offsets = arr.offsets().as_slice();
+            let start = offsets[0];
+            let end = offsets[1];
+            let out_of_bounds = |offset| offset >= end || offset < start || start == end;
+            let take_by: IdxCa = index
+                .iter()
+                .map(|opt_idx| match opt_idx {
+                    Some(idx) => {
+                        let offset = if idx >= 0 { start + idx } else { end + idx };
+                        if out_of_bounds(offset) {
+                            if null_on_oob {
+                                Ok(None)
+                            } else {
+                                polars_bail!(ComputeError: "get index is out of bounds");
+                            }
+                        } else {
+                            let Ok(offset) = IdxSize::try_from(offset) else {
+                                polars_bail!(ComputeError: "get index is out of bounds");
+                            };
+                            Ok(Some(offset))
+                        }
+                    },
+                    None => Ok(None),
+                })
+                .collect::<Result<IdxCa, _>>()?;
+
             let s = Series::try_from((ca.name().clone(), arr.values().clone())).unwrap();
             unsafe { s.take_unchecked(&take_by) }
                 .cast(ca.inner_dtype())

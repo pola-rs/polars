@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use polars_core::error::{PolarsResult, to_compute_err};
+use polars_core::error::PolarsResult;
 use polars_core::prelude::DataType;
 use polars_core::scalar::Scalar;
 use polars_io::cloud::CloudOptions;
@@ -67,6 +67,15 @@ impl SinkTarget {
                 memory_writer.lock().unwrap().take().unwrap(),
             )),
         }
+    }
+
+    #[cfg(not(feature = "cloud"))]
+    pub async fn open_into_writeable_async(
+        &self,
+        sink_options: &SinkOptions,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Writeable> {
+        self.open_into_writeable(sink_options, cloud_options)
     }
 
     #[cfg(feature = "cloud")]
@@ -240,11 +249,10 @@ impl PartitionTargetCallback {
             Self::Rust(f) => f(ctx),
             #[cfg(feature = "python")]
             Self::Python(f) => pyo3::Python::with_gil(|py| {
-                let sink_target = f.call1(py, (ctx,)).map_err(to_compute_err)?;
+                let sink_target = f.call1(py, (ctx,))?;
                 let converter =
                     polars_utils::python_convert_registry::get_python_convert_registry();
-                let sink_target =
-                    (converter.from_py.sink_target)(sink_target).map_err(to_compute_err)?;
+                let sink_target = (converter.from_py.sink_target)(sink_target)?;
                 let sink_target = sink_target.downcast_ref::<SinkTarget>().unwrap().clone();
                 PolarsResult::Ok(sink_target)
             }),
@@ -385,22 +393,6 @@ impl PartitionVariantIR {
                     key_expr.traverse_and_hash(expr_arena, state);
                 }
             },
-        }
-    }
-}
-
-impl SinkType {
-    pub(crate) fn is_cloud_destination(&self) -> bool {
-        match self {
-            Self::Memory => false,
-            Self::File(f) => {
-                let SinkTarget::Path(p) = &f.target else {
-                    return false;
-                };
-
-                polars_io::is_cloud_url(p.as_path())
-            },
-            Self::Partition(f) => polars_io::is_cloud_url(f.base_path.as_path()),
         }
     }
 }

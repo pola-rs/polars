@@ -35,7 +35,7 @@ where
         )));
     }
     // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, 0, 0, params);
+    let mut agg_window = Agg::new(values, 0, 0, params, None);
 
     let out = offsets
         .map(|result| {
@@ -98,7 +98,7 @@ where
     }
     let sorting_indices = sorting_indices.expect("`sorting_indices` should have been set");
     // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, 0, 0, params);
+    let mut agg_window = Agg::new(values, 0, 0, params, None);
 
     let mut out = zeroed_vec(values.len());
     let mut validity: Option<MutableBitmap> = None;

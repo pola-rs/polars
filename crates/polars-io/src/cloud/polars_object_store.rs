@@ -5,7 +5,7 @@ use futures::{StreamExt, TryStreamExt};
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore};
 use polars_core::prelude::{InitHashMaps, PlHashMap};
-use polars_error::{PolarsError, PolarsResult, to_compute_err};
+use polars_error::{PolarsError, PolarsResult};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use crate::pl_async::{
@@ -157,10 +157,12 @@ impl PolarsObjectStore {
     ) -> impl StreamExt<Item = PolarsResult<Bytes>>
     + TryStreamExt<Ok = Bytes, Error = PolarsError, Item = PolarsResult<Bytes>>
     + use<'a, T> {
-        futures::stream::iter(
-            ranges
-                .map(|range| async { store.get_range(path, range).await.map_err(to_compute_err) }),
-        )
+        futures::stream::iter(ranges.map(move |range| async move {
+            let out = store
+                .get_range(path, range.start as u64..range.end as u64)
+                .await?;
+            Ok(out)
+        }))
         // Add a limit locally as this gets run inside a single `tune_with_concurrency_budget`.
         .buffered(get_concurrency_limit() as usize)
     }
@@ -170,14 +172,19 @@ impl PolarsObjectStore {
             let range = range.clone();
             let st = store.clone();
 
-            async {
+            async move {
                 let store = st;
                 let parts = split_range(range.clone());
 
                 if parts.len() == 1 {
-                    tune_with_concurrency_budget(1, || async { store.get_range(path, range).await })
-                        .await
-                        .map_err(to_compute_err)
+                    let out = tune_with_concurrency_budget(1, move || async move {
+                        store
+                            .get_range(path, range.start as u64..range.end as u64)
+                            .await
+                    })
+                    .await?;
+
+                    Ok(out)
                 } else {
                     let parts = tune_with_concurrency_budget(
                         parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
@@ -317,7 +324,9 @@ impl PolarsObjectStore {
                 file.set_len(initial_pos).await?; // Reset if this function was called again.
 
                 let store = st;
-                let parts = opt_size.map(|x| split_range(0..x)).filter(|x| x.len() > 1);
+                let parts = opt_size
+                    .map(|x| split_range(0..x as usize))
+                    .filter(|x| x.len() > 1);
 
                 if let Some(parts) = parts {
                     tune_with_concurrency_budget(
@@ -327,10 +336,10 @@ impl PolarsObjectStore {
                             let mut len = 0;
                             while let Some(bytes) = stream.try_next().await? {
                                 len += bytes.len();
-                                file.write_all(&bytes).await.map_err(to_compute_err)?;
+                                file.write_all(&bytes).await?;
                             }
 
-                            assert_eq!(len, opt_size.unwrap());
+                            assert_eq!(len, opt_size.unwrap() as usize);
 
                             PolarsResult::Ok(pl_async::Size::from(len as u64))
                         },
@@ -338,13 +347,12 @@ impl PolarsObjectStore {
                     .await?
                 } else {
                     tune_with_concurrency_budget(1, || async {
-                        let mut stream =
-                            store.get(path).await.map_err(to_compute_err)?.into_stream();
+                        let mut stream = store.get(path).await?.into_stream();
 
                         let mut len = 0;
                         while let Some(bytes) = stream.try_next().await? {
                             len += bytes.len();
-                            file.write_all(&bytes).await.map_err(to_compute_err)?;
+                            file.write_all(&bytes).await?;
                         }
 
                         PolarsResult::Ok(pl_async::Size::from(len as u64))
@@ -390,10 +398,11 @@ impl PolarsObjectStore {
                         }
                     }
 
-                    head_result
+                    let out = head_result?;
+
+                    Ok(out)
                 })
                 .await
-                .map_err(to_compute_err)
             }
         })
         .await

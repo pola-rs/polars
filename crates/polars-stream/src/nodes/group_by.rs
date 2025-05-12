@@ -23,6 +23,11 @@ use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
+#[cfg(debug_assertions)]
+const DEFAULT_HOT_TABLE_SIZE: usize = 4;
+#[cfg(not(debug_assertions))]
+const DEFAULT_HOT_TABLE_SIZE: usize = 4096;
+
 struct LocalGroupBySinkState {
     hot_grouper: Box<dyn HotGrouper>,
     hot_grouped_reductions: Vec<Box<dyn GroupedReduction>>,
@@ -135,7 +140,7 @@ impl GroupBySinkState {
                         key_columns.push(s.into_column());
                     }
                     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
-                    let hash_keys = HashKeys::from_df(&keys, *random_state, true, true);
+                    let hash_keys = HashKeys::from_df(&keys, *random_state, true, false);
 
                     hot_idxs.clear();
                     hot_group_idxs.clear();
@@ -354,7 +359,7 @@ impl GroupBySinkState {
                                 );
                                 for (pre_agg, r) in pre_aggs.iter().zip(&mut p_reductions) {
                                     r.resize(p_grouper.num_groups());
-                                    r.gather_combine(&**pre_agg, p_pre_agg_idxs, &group_idxs)?;
+                                    r.combine_subset(&**pre_agg, p_pre_agg_idxs, &group_idxs)?;
                                 }
                             }
                         }
@@ -426,8 +431,8 @@ struct GroupByPartition {
 }
 
 impl GroupByPartition {
-    fn into_df(self, output_schema: &Schema) -> PolarsResult<DataFrame> {
-        let mut out = self.grouper.get_keys_in_group_order();
+    fn into_df(self, key_schema: &Schema, output_schema: &Schema) -> PolarsResult<DataFrame> {
+        let mut out = self.grouper.get_keys_in_group_order(key_schema);
         let out_names = output_schema.iter_names().skip(out.width());
         for (mut r, name) in self.grouped_reductions.into_iter().zip(out_names) {
             unsafe {
@@ -446,6 +451,7 @@ enum GroupByState {
 
 pub struct GroupByNode {
     state: GroupByState,
+    key_schema: Arc<Schema>,
     output_schema: Arc<Schema>,
 }
 
@@ -463,7 +469,7 @@ impl GroupByNode {
     ) -> Self {
         let hot_table_size = std::env::var("POLARS_HOT_TABLE_SIZE")
             .map(|sz| sz.parse::<usize>().unwrap())
-            .unwrap_or(4096);
+            .unwrap_or(DEFAULT_HOT_TABLE_SIZE);
         let num_partitions = num_pipelines;
         let uniq_grouped_reduction_cols = grouped_reduction_cols
             .iter()
@@ -494,6 +500,7 @@ impl GroupByNode {
                 locals,
                 partitioner,
             }),
+            key_schema,
             output_schema,
         }
     }
@@ -501,7 +508,7 @@ impl GroupByNode {
 
 impl ComputeNode for GroupByNode {
     fn name(&self) -> &str {
-        "group_by"
+        "group-by"
     }
 
     fn update_state(
@@ -529,7 +536,7 @@ impl ComputeNode for GroupByNode {
                 let dfs = POOL.install(|| {
                     partitions
                         .into_par_iter()
-                        .map(|p| p.into_df(&self.output_schema))
+                        .map(|p| p.into_df(&self.key_schema, &self.output_schema))
                         .collect::<Result<Vec<_>, _>>()
                 })?;
 

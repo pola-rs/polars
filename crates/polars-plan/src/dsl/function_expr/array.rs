@@ -31,7 +31,9 @@ pub enum ArrayFunction {
     #[cfg(feature = "array_count")]
     CountMatches,
     Shift,
-    Explode,
+    Explode {
+        skip_empty: bool,
+    },
     Concat,
 }
 
@@ -69,7 +71,7 @@ impl ArrayFunction {
             #[cfg(feature = "array_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
             Shift => mapper.with_same_dtype(),
-            Explode => mapper.try_map_to_array_inner_dtype(),
+            Explode { .. } => mapper.try_map_to_array_inner_dtype(),
         }
     }
 
@@ -100,7 +102,7 @@ impl ArrayFunction {
             | A::Get(_)
             | A::Join(_)
             | A::Shift => FunctionOptions::elementwise(),
-            A::Explode => FunctionOptions::row_separable(),
+            A::Explode { .. } => FunctionOptions::row_separable(),
         }
     }
 }
@@ -143,7 +145,7 @@ impl Display for ArrayFunction {
             #[cfg(feature = "array_count")]
             CountMatches => "count_matches",
             Shift => "shift",
-            Explode => "explode",
+            Explode { .. } => "explode",
         };
         write!(f, "arr.{name}")
     }
@@ -179,7 +181,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "array_count")]
             CountMatches => map_as_slice!(count_matches),
             Shift => map_as_slice!(shift),
-            Explode => map_as_slice!(explode),
+            Explode { skip_empty } => map_as_slice!(explode, skip_empty),
         }
     }
 }
@@ -325,8 +327,8 @@ pub(super) fn shift(s: &[Column]) -> PolarsResult<Column> {
     ca.array_shift(n.as_materialized_series()).map(Column::from)
 }
 
-fn explode(c: &[Column]) -> PolarsResult<Column> {
-    c[0].explode()
+fn explode(c: &[Column], skip_empty: bool) -> PolarsResult<Column> {
+    c[0].explode(skip_empty)
 }
 
 fn concat_arr(args: &[Column]) -> PolarsResult<Column> {

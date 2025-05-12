@@ -174,7 +174,7 @@ def test_deprecated() -> None:
 def test_deprecated_parameter_join_nulls() -> None:
     df = pl.DataFrame({"a": [1, None]})
     with pytest.deprecated_call(
-        match=r"The argument `join_nulls` for `DataFrame.join` is deprecated. It has been renamed to `nulls_equal`"
+        match=r"the argument `join_nulls` for `DataFrame.join` is deprecated. It was renamed to `nulls_equal`"
     ):
         result = df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
     assert_frame_equal(result, df, check_row_order=False)
@@ -1491,10 +1491,10 @@ def test_join_numeric_key_upcast_15338(
     )
 
     # join_where
-    for no_optimization in [True, False]:
+    for optimizations in [pl.QueryOptFlags(), pl.QueryOptFlags.none()]:
         assert_frame_equal(
             left.join_where(right, pl.col("a") == pl.col("a_right")).collect(
-                no_optimization=no_optimization
+                optimizations=optimizations,
             ),
             pl.select(
                 a=pl.Series([1, 1]).cast(ltype),
@@ -1523,12 +1523,12 @@ def test_join_numeric_key_upcast_forbid_float_int() -> None:
     with pytest.raises(SchemaError, match="datatypes of join keys don't match"):
         left.join(right, on="a", how="left").collect()
 
-    for no_optimization in [True, False]:
+    for optimizations in [pl.QueryOptFlags(), pl.QueryOptFlags.none()]:
         with pytest.raises(
             SchemaError, match="'join_where' cannot compare Float64 with Int128"
         ):
             left.join_where(right, pl.col("a") == pl.col("a_right")).collect(
-                no_optimization=no_optimization
+                optimizations=optimizations,
             )
 
         with pytest.raises(
@@ -1536,7 +1536,7 @@ def test_join_numeric_key_upcast_forbid_float_int() -> None:
         ):
             left.join_where(
                 right, pl.col("a") == (pl.col("a") == pl.col("a_right"))
-            ).collect(no_optimization=no_optimization)
+            ).collect(optimizations=optimizations)
 
 
 def test_join_numeric_key_upcast_order() -> None:
@@ -2132,3 +2132,10 @@ def test_empty_outer_join_22206() -> None:
         df,
         check_row_order=False,
     )
+
+
+def test_join_coalesce_22498() -> None:
+    df_a = pl.DataFrame({"y": [2]})
+    df_b = pl.DataFrame({"x": [1], "y": [2]})
+    df_j = df_a.lazy().join(df_b.lazy(), how="full", on="y", coalesce=True)
+    assert_frame_equal(df_j.collect(), pl.DataFrame({"y": [2], "x": [1]}))

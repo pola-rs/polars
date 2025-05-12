@@ -142,7 +142,10 @@ impl From<IRAggExpr> for GroupByMethod {
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum AExpr {
-    Explode(Node),
+    Explode {
+        expr: Node,
+        skip_empty: bool,
+    },
     Alias(Node, PlSmallStr),
     Column(PlSmallStr),
     Literal(LiteralValue),

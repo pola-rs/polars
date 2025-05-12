@@ -302,22 +302,6 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         Ok(())
     }
 
-    unsafe fn update_groups(
-        &mut self,
-        values: &Column,
-        group_idxs: &[IdxSize],
-        seq_id: u64,
-    ) -> PolarsResult<()> {
-        let seq_id = seq_id + 1; // We use 0 for 'no value'.
-        for (i, g) in group_idxs.iter().enumerate() {
-            if P::should_replace(seq_id, *self.seqs.get_unchecked(*g as usize)) {
-                *self.values.get_unchecked_mut(*g as usize) = values.get_unchecked(i).into_static();
-                *self.seqs.get_unchecked_mut(*g as usize) = seq_id;
-            }
-        }
-        Ok(())
-    }
-
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &Column,
@@ -342,25 +326,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        for (i, g) in group_idxs.iter().enumerate() {
-            if P::should_replace(
-                *other.seqs.get_unchecked(i),
-                *self.seqs.get_unchecked(*g as usize),
-            ) {
-                *self.values.get_unchecked_mut(*g as usize) = other.values.get_unchecked(i).clone();
-                *self.seqs.get_unchecked_mut(*g as usize) = *other.seqs.get_unchecked(i);
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],

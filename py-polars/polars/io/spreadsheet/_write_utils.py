@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, overload
 
 from polars import functions as F
+from polars._utils.various import qualified_type_name
 from polars.datatypes import (
     Date,
     Datetime,
@@ -350,7 +351,9 @@ def _xl_setup_table_columns(
 
     # no excel support for compound types; cast to their simple string representation
     def _map_str(s: Series) -> Series:
-        return s.__class__(s.name, [str(v) for v in s.to_list()])
+        return s.__class__(
+            s.name, [(None if v is None else str(v)) for v in s.to_list()]
+        )
 
     cast_cols = [
         F.col(col).map_batches(_map_str).alias(col)
@@ -443,7 +446,7 @@ def _xl_setup_table_columns(
             dtype_formats.update(dict.fromkeys(tp, dtype_formats.pop(tp)))
     for fmt in dtype_formats.values():
         if not isinstance(fmt, str):
-            msg = f"invalid dtype_format value: {fmt!r} (expected format string, got {type(fmt).__name__!r})"
+            msg = f"invalid dtype_format value: {fmt!r} (expected format string, got {qualified_type_name(fmt)!r})"
             raise TypeError(msg)
 
     # inject sparkline/row-total placeholder(s)

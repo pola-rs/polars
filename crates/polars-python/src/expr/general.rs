@@ -461,8 +461,8 @@ impl PyExpr {
             .into()
     }
 
-    fn round(&self, decimals: u32) -> Self {
-        self.inner.clone().round(decimals).into()
+    fn round(&self, decimals: u32, mode: Wrap<RoundMode>) -> Self {
+        self.inner.clone().round(decimals, mode.0).into()
     }
 
     fn round_sig_figs(&self, digits: i32) -> Self {

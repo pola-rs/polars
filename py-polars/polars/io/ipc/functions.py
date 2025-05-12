@@ -58,6 +58,10 @@ def read_ipc(
     See "File or Random Access format" on https://arrow.apache.org/docs/python/ipc.html.
     Arrow IPC files are also known as Feather (v2) files.
 
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
     Parameters
     ----------
     source
@@ -244,6 +248,10 @@ def read_ipc_stream(
 
     See "Streaming format" on https://arrow.apache.org/docs/python/ipc.html.
 
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
     Parameters
     ----------
     source
@@ -356,14 +364,16 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_ipc(
-    source: str
-    | Path
-    | IO[bytes]
-    | bytes
-    | list[str]
-    | list[Path]
-    | list[IO[bytes]]
-    | list[bytes],
+    source: (
+        str
+        | Path
+        | IO[bytes]
+        | bytes
+        | list[str]
+        | list[Path]
+        | list[IO[bytes]]
+        | list[bytes]
+    ),
     *,
     n_rows: int | None = None,
     cache: bool = True,
@@ -385,6 +395,10 @@ def scan_ipc(
 
     This allows the query optimizer to push down predicates and projections to the scan
     level, thereby potentially reducing memory overhead.
+
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
 
     Parameters
     ----------

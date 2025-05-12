@@ -34,9 +34,10 @@ impl DslBuilder {
         })?;
 
         Ok(DslPlan::Scan {
-            sources: ScanSources::Buffers(Arc::default()),
+            sources: ScanSources::default(),
             file_info: Some(FileInfo {
-                schema,
+                schema: schema.clone(),
+                reader_schema: Some(either::Either::Right(schema)),
                 ..Default::default()
             }),
             unified_scan_args: Box::new(unified_scan_args),
@@ -106,6 +107,25 @@ impl DslBuilder {
         .into())
     }
 
+    #[cfg(feature = "python")]
+    pub fn scan_python_dataset(
+        dataset_object: polars_utils::python_function::PythonObject,
+    ) -> DslBuilder {
+        use super::python_dataset::PythonDatasetProvider;
+
+        DslPlan::Scan {
+            sources: ScanSources::default(),
+            file_info: None,
+            unified_scan_args: Default::default(),
+            scan_type: Box::new(FileScan::PythonDataset {
+                dataset_object: Arc::new(PythonDatasetProvider::new(dataset_object)),
+                cached_ir: Default::default(),
+            }),
+            cached_ir: Default::default(),
+        }
+        .into()
+    }
+
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
         let id = input.as_ref() as *const DslPlan as usize;
@@ -137,6 +157,9 @@ impl DslBuilder {
 
     pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> Self {
         if let Some(subset) = subset {
+            if subset.is_empty() {
+                return self;
+            }
             self.filter(
                 all_horizontal(
                     subset
@@ -157,6 +180,9 @@ impl DslBuilder {
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
         if let Some(subset) = subset {
+            if subset.is_empty() {
+                return self;
+            }
             self.filter(
                 all_horizontal(
                     subset

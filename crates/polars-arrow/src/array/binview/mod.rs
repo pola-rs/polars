@@ -7,6 +7,8 @@ mod ffi;
 pub(super) mod fmt;
 mod iterator;
 mod mutable;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 mod view;
 
 use std::any::Any;

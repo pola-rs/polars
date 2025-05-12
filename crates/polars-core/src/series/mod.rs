@@ -379,18 +379,22 @@ impl Series {
 
     /// Cast [`Series`] to another [`DataType`].
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
-        use DataType as D;
+        let slf = self
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(self), Cow::Owned);
+        let slf = slf.propagate_nulls().map_or(slf, Cow::Owned);
 
+        use DataType as D;
         let do_clone = match dtype {
             D::Unknown(UnknownKind::Any) => true,
-            D::Unknown(UnknownKind::Int(_)) if self.dtype().is_integer() => true,
-            D::Unknown(UnknownKind::Float) if self.dtype().is_float() => true,
+            D::Unknown(UnknownKind::Int(_)) if slf.dtype().is_integer() => true,
+            D::Unknown(UnknownKind::Float) if slf.dtype().is_float() => true,
             D::Unknown(UnknownKind::Str)
-                if self.dtype().is_string() | self.dtype().is_categorical() =>
+                if slf.dtype().is_string() | slf.dtype().is_categorical() =>
             {
                 true
             },
-            dt if dt.is_primitive() && dt == self.dtype() => true,
+            dt if dt.is_primitive() && dt == slf.dtype() => true,
             #[cfg(feature = "dtype-categorical")]
             D::Enum(None, _) => {
                 polars_bail!(InvalidOperation: "cannot cast / initialize Enum without categories present");
@@ -399,7 +403,7 @@ impl Series {
         };
 
         if do_clone {
-            return Ok(self.clone());
+            return Ok(slf.into_owned());
         }
 
         pub fn cast_dtype(dtype: &DataType) -> Option<DataType> {
@@ -442,16 +446,21 @@ impl Series {
             }
         }
 
-        let casted = cast_dtype(dtype);
+        let mut casted = cast_dtype(dtype);
+        if dtype.is_list() && dtype.inner_dtype().is_some_and(|dt| dt.is_null()) {
+            if let Some(from_inner_dtype) = slf.dtype().inner_dtype() {
+                casted = Some(DataType::List(Box::new(from_inner_dtype.clone())));
+            }
+        }
         let dtype = match casted {
             None => dtype,
             Some(ref dtype) => dtype,
         };
 
         // Always allow casting all nulls to other all nulls.
-        let len = self.len();
-        if self.null_count() == len {
-            return Ok(Series::full_null(self.name().clone(), len, dtype));
+        let len = slf.len();
+        if slf.null_count() == len {
+            return Ok(Series::full_null(slf.name().clone(), len, dtype));
         }
 
         let new_options = match options {
@@ -460,18 +469,11 @@ impl Series {
             opt => opt,
         };
 
-        let ret = self.0.cast(dtype, new_options);
-
-        match options {
-            CastOptions::NonStrict | CastOptions::Overflowing => ret,
-            CastOptions::Strict => {
-                let ret = ret?;
-                if self.null_count() != ret.null_count() {
-                    handle_casting_failures(self, &ret)?;
-                }
-                Ok(ret)
-            },
+        let out = slf.0.cast(dtype, new_options)?;
+        if options.is_strict() {
+            handle_casting_failures(slf.as_ref(), &out)?;
         }
+        Ok(out)
     }
 
     /// Cast from physical to logical types without any checks on the validity of the cast.
@@ -627,11 +629,11 @@ impl Series {
     }
 
     /// Explode a list Series. This expands every item to a new row..
-    pub fn explode(&self) -> PolarsResult<Series> {
+    pub fn explode(&self, skip_empty: bool) -> PolarsResult<Series> {
         match self.dtype() {
-            DataType::List(_) => self.list().unwrap().explode(),
+            DataType::List(_) => self.list().unwrap().explode(skip_empty),
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => self.array().unwrap().explode(),
+            DataType::Array(_, _) => self.array().unwrap().explode(skip_empty),
             _ => Ok(self.clone()),
         }
     }
@@ -722,20 +724,20 @@ impl Series {
             // NOTE: Don't use cast here, as it might rechunk (if all nulls)
             // which is not allowed in a phys repr.
             #[cfg(feature = "dtype-date")]
-            Date => Cow::Owned(self.date().unwrap().0.clone().into_series()),
+            Date => Cow::Owned(self.date().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-datetime")]
-            Datetime(_, _) => Cow::Owned(self.datetime().unwrap().0.clone().into_series()),
+            Datetime(_, _) => Cow::Owned(self.datetime().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-duration")]
-            Duration(_) => Cow::Owned(self.duration().unwrap().0.clone().into_series()),
+            Duration(_) => Cow::Owned(self.duration().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-time")]
-            Time => Cow::Owned(self.time().unwrap().0.clone().into_series()),
+            Time => Cow::Owned(self.time().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
                 let ca = self.categorical().unwrap();
                 Cow::Owned(ca.physical().clone().into_series())
             },
             #[cfg(feature = "dtype-decimal")]
-            Decimal(_, _) => Cow::Owned(self.decimal().unwrap().0.clone().into_series()),
+            Decimal(_, _) => Cow::Owned(self.decimal().unwrap().phys.clone().into_series()),
             List(_) => match self.list().unwrap().to_physical_repr() {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
@@ -1067,7 +1069,7 @@ where
         let Some(ca) = self.as_any().downcast_ref::<ChunkedArray<T>>() else {
             panic!(
                 "implementation error, cannot get ref {:?} from {:?}",
-                T::get_dtype(),
+                T::get_static_dtype(),
                 self.dtype()
             );
         };
@@ -1084,7 +1086,7 @@ where
         if !self.as_any_mut().is::<ChunkedArray<T>>() {
             panic!(
                 "implementation error, cannot get ref {:?} from {:?}",
-                T::get_dtype(),
+                T::get_static_dtype(),
                 self.dtype()
             );
         }

@@ -9,7 +9,6 @@ mod rename;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
 
-use arrow::Either;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
@@ -212,15 +211,12 @@ fn update_scan_schema(
 
 pub struct ProjectionPushDown {
     pub is_count_star: bool,
-    // @TODO: This is a hack to support both pre-NEW_MULTIFILE and post-NEW_MULTIFILE.
-    pub in_new_streaming_engine: bool,
 }
 
 impl ProjectionPushDown {
-    pub(super) fn new(in_new_streaming_engine: bool) -> Self {
+    pub(super) fn new() -> Self {
         Self {
             is_count_star: false,
-            in_new_streaming_engine,
         }
     }
 
@@ -391,6 +387,7 @@ impl ProjectionPushDown {
                 mut output_schema,
                 ..
             } => {
+                // TODO: Just project 0-width morsels.
                 if self.is_count_star {
                     ctx.process_count_star_at_scan(&schema, expr_arena);
                 }
@@ -439,13 +436,6 @@ impl ProjectionPushDown {
                 mut unified_scan_args,
                 mut output_schema,
             } => {
-                // TODO: Remove
-                let in_new_streaming_engine = true;
-
-                if self.is_count_star && !in_new_streaming_engine {
-                    ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
-                }
-
                 let do_optimization = match &*scan_type {
                     FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
@@ -456,47 +446,59 @@ impl ProjectionPushDown {
                     FileScan::Csv { .. } => true,
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => true,
+                    // MultiScan will handle it if the PythonDataset cannot do projections.
+                    #[cfg(feature = "python")]
+                    FileScan::PythonDataset { .. } => true,
                 };
 
-                if do_optimization {
+                #[expect(clippy::never_loop)]
+                loop {
+                    if !do_optimization {
+                        break;
+                    }
+
+                    if self.is_count_star {
+                        if let FileScan::Anonymous { .. } = &*scan_type {
+                            // Anonymous scan is not controlled by us, we don't know if it can support
+                            // 0-column projections, so we always project one.
+                            use either::Either;
+
+                            let projection: Arc<[PlSmallStr]> = match &file_info.reader_schema {
+                                Some(Either::Left(s)) => s.iter_names().next(),
+                                Some(Either::Right(s)) => s.iter_names().next(),
+                                None => None,
+                            }
+                            .into_iter()
+                            .cloned()
+                            .collect();
+
+                            unified_scan_args.projection = Some(projection.clone());
+
+                            if projection.is_empty() {
+                                output_schema = Some(Default::default());
+                                break;
+                            }
+
+                            ctx.acc_projections.push(ColumnNode(
+                                expr_arena.add(AExpr::Column(projection[0].clone())),
+                            ));
+
+                            unified_scan_args.projection = Some(projection)
+                        } else {
+                            // All nodes in new-streaming support projecting empty morsels with the correct height
+                            // from the file.
+                            unified_scan_args.projection = Some(Arc::from([]));
+                            output_schema = Some(Default::default());
+                            break;
+                        };
+                    }
+
                     unified_scan_args.projection = get_scan_columns(
                         &ctx.acc_projections,
                         expr_arena,
                         unified_scan_args.row_index.as_ref(),
                         unified_scan_args.include_file_paths.as_deref(),
                     );
-
-                    if let Some(projection) = unified_scan_args.projection.as_mut() {
-                        if projection.is_empty() {
-                            match &*scan_type {
-                                #[cfg(feature = "parquet")]
-                                FileScan::Parquet { .. } => {},
-                                #[cfg(feature = "ipc")]
-                                FileScan::Ipc { .. } => {},
-                                // All nodes in new-streaming support projecting empty morsels with the correct height
-                                // from the file.
-                                _ if self.in_new_streaming_engine => {},
-                                // Other scan types do not yet support projection of e.g. only the row index or file path
-                                // column - ensure at least 1 column is projected from the file.
-                                _ => {
-                                    *projection = match &file_info.reader_schema {
-                                        Some(Either::Left(s)) => s.iter_names().next(),
-                                        Some(Either::Right(s)) => s.iter_names().next(),
-                                        None => None,
-                                    }
-                                    .into_iter()
-                                    .cloned()
-                                    .collect();
-
-                                    // TODO: Don't know why this works without needing to remove it
-                                    // later.
-                                    ctx.acc_projections.push(ColumnNode(
-                                        expr_arena.add(AExpr::Column(projection[0].clone())),
-                                    ));
-                                },
-                            }
-                        }
-                    }
 
                     output_schema = if unified_scan_args.projection.is_some() {
                         let mut schema = update_scan_schema(
@@ -517,10 +519,8 @@ impl ProjectionPushDown {
                     } else {
                         None
                     };
-                }
 
-                if self.is_count_star && self.in_new_streaming_engine {
-                    output_schema = Some(output_schema.unwrap_or_default());
+                    break;
                 }
 
                 // File builder has a row index, but projected columns
@@ -563,20 +563,7 @@ impl ProjectionPushDown {
                     unified_scan_args,
                 };
 
-                if self.is_count_star {
-                    return Ok(lp);
-                }
-
-                // TODO: Our scans don't perfectly give the right projection order with combinations
-                // of hive columns that exist in the file, so we always add a `Select {}` node here.
-
-                if in_new_streaming_engine {
-                    Ok(lp)
-                } else {
-                    let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
-                    let builder = builder.project_simple_nodes(ctx.acc_projections)?;
-                    Ok(builder.build())
-                }
+                Ok(lp)
             },
             Sort {
                 input,

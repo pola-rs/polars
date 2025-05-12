@@ -21,7 +21,7 @@ impl StreamingSliceNode {
 
 impl ComputeNode for StreamingSliceNode {
     fn name(&self) -> &str {
-        "streaming_slice"
+        "streaming-slice"
     }
 
     fn update_state(

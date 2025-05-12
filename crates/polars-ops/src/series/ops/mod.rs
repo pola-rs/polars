@@ -55,7 +55,7 @@ mod rle;
 #[cfg(feature = "rolling_window")]
 mod rolling;
 #[cfg(feature = "round_series")]
-mod round;
+pub mod round;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 #[cfg(feature = "to_dummies")]

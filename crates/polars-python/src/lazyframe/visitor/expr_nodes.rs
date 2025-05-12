@@ -532,7 +532,7 @@ impl PyGroupbyOptions {
 
 pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
     match expr {
-        AExpr::Explode(_) => Err(PyNotImplementedError::new_err("explode")),
+        AExpr::Explode { .. } => Err(PyNotImplementedError::new_err("explode")),
         AExpr::Alias(inner, name) => Alias {
             expr: inner.0,
             name: name.into_py_any(py)?,
@@ -1183,7 +1183,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Log1p => ("log1p",).into_py_any(py),
                 FunctionExpr::Exp => ("exp",).into_py_any(py),
                 FunctionExpr::Unique(maintain_order) => ("unique", maintain_order).into_py_any(py),
-                FunctionExpr::Round { decimals } => ("round", decimals).into_py_any(py),
+                FunctionExpr::Round { decimals, mode } => {
+                    ("round", decimals, Into::<&str>::into(mode)).into_py_any(py)
+                },
                 FunctionExpr::RoundSF { digits } => ("round_sig_figs", digits).into_py_any(py),
                 FunctionExpr::Floor => ("floor",).into_py_any(py),
                 FunctionExpr::Ceil => ("ceil",).into_py_any(py),

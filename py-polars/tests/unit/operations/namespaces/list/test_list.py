@@ -10,6 +10,7 @@ import pytest
 import polars as pl
 from polars.exceptions import (
     ComputeError,
+    InvalidOperationError,
     OutOfBoundsError,
     SchemaError,
 )
@@ -233,7 +234,10 @@ def test_list_gather_wrong_indices_list_type() -> None:
         }
     )
     with pytest.raises(
-        ComputeError, match=re.escape("cannot use dtype `list[str]` as an index")
+        InvalidOperationError,
+        match=re.escape(
+            "list.gather operation not supported for dtypes `list[i64]` and `list[str]`"
+        ),
     ):
         df.select(pl.col("lists").list.gather(pl.col("index")))
 
@@ -560,7 +564,7 @@ def test_list_gather() -> None:
     s = pl.Series([[42, 1, 2], [5, 6, 7]])
 
     with pytest.raises(OutOfBoundsError, match=r"gather indices are out of bounds"):
-        s.list.gather([[0, 1, 2, 3], [0, 1, 2, 3]])
+        s.list.gather(pl.Series([[0, 1, 2, 3], [0, 1, 2, 3]]))
 
     assert s.list.gather([0, 1, 2, 3], null_on_oob=True).to_list() == [
         [42, 1, 2, None],
@@ -589,7 +593,7 @@ def test_list_function_group_awareness() -> None:
         "get_scalar": [100, 105, 100],
         "take_no_implode": [[100], [105], [100]],
         "implode_get": [100, 105, 100],
-        "implode_take": [[[100]], [[105]], [[100]]],
+        "implode_take": [[100], [105], [100]],
         "implode_slice": [[100, 103], [105, 106, 105], [100, 102]],
     }
 

@@ -4,7 +4,7 @@ use super::*;
 
 pub(super) fn ewm_mean_by(s: &[Column], half_life: Duration) -> PolarsResult<Column> {
     let time_zone = match s[1].dtype() {
-        DataType::Datetime(_, Some(time_zone)) => Some(time_zone.as_str()),
+        DataType::Datetime(_, Some(time_zone)) => Some(time_zone),
         _ => None,
     };
     polars_ensure!(!half_life.negative(), InvalidOperation: "half_life cannot be negative");

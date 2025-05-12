@@ -208,7 +208,7 @@ class PartitionMaxSize(PartitioningScheme):
         | None = None,
         max_size: int,
     ) -> None:
-        issue_unstable_warning("Partitioning strategies are considered unstable.")
+        issue_unstable_warning("partitioning strategies are considered unstable.")
         super().__init__(
             PyPartitioning.new_max_size(
                 base_path=base_path,
@@ -321,7 +321,7 @@ class PartitionByKey(PartitioningScheme):
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
     ) -> None:
-        issue_unstable_warning("Partitioning strategies are considered unstable.")
+        issue_unstable_warning("partitioning strategies are considered unstable.")
 
         lowered_by = _lower_by(by)
         super().__init__(
@@ -395,7 +395,7 @@ class PartitionParted(PartitioningScheme):
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
     ) -> None:
-        issue_unstable_warning("Partitioning strategies are considered unstable.")
+        issue_unstable_warning("partitioning strategies are considered unstable.")
 
         lowered_by = _lower_by(by)
         super().__init__(

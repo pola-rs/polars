@@ -96,7 +96,7 @@ pub struct MultiFileReader {
 
 impl MultiFileReader {
     pub fn new(config: Arc<MultiFileReaderConfig>) -> Self {
-        let name = format_pl_smallstr!("MultiScan[{}]", config.file_reader_builder.reader_name());
+        let name = format_pl_smallstr!("multi-scan[{}]", config.file_reader_builder.reader_name());
         let verbose = config.verbose;
 
         MultiFileReader {

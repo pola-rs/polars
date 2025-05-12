@@ -96,6 +96,12 @@ def test_drop_nulls_misc() -> None:
     }
 
 
+def test_drop_nulls_empty_subset() -> None:
+    df = pl.DataFrame({"a": [1, None]})
+    assert_frame_equal(df.drop_nulls([]), df)
+    assert_frame_equal(df.drop_nulls(()), df)
+
+
 def test_drop_columns() -> None:
     out = pl.LazyFrame({"a": [1], "b": [2], "c": [3]}).drop(["a", "b"])
     assert out.collect_schema().names() == ["c"]
@@ -152,6 +158,12 @@ def test_drop_nan_ignore_null_3525() -> None:
         3.0,
         4.0,
     ]
+
+
+def test_drop_nans_empty_subset() -> None:
+    df = pl.DataFrame({"a": [1.0, float("NaN")]})
+    assert_frame_equal(df.drop_nans([]), df)
+    assert_frame_equal(df.drop_nans(()), df)
 
 
 def test_drop_without_parameters() -> None:

@@ -120,7 +120,7 @@ jobs:
           tool: cargo-hack
 
       - name: Run cargo hack
-        run: cargo hack check -p polars --each-feature --no-dev-deps
+        run: cargo hack check -p polars --each-feature --no-dev-deps && cargo check -p polars-stream
 
   check-wasm:
     runs-on: ubuntu-latest

@@ -66,7 +66,7 @@ pub fn into_reduction(
                 //   project to the height of the DataFrame (in the PhysicalExpr impl).
                 // * This approach is not sound for `update_groups()`, but currently that case is
                 //   not hit (it would need group-by -> len on empty morsels).
-                let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::new_idxsize());
+                let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::IDX_DTYPE);
                 let expr = expr_arena.add(AExpr::Len);
 
                 (out, expr)

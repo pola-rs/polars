@@ -275,6 +275,17 @@ impl StaticArrayBuilder for NullArrayBuilder {
         self.length += length * repeats;
     }
 
+    fn subslice_extend_each_repeated(
+        &mut self,
+        _other: &NullArray,
+        _start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        self.length += length * repeats;
+    }
+
     unsafe fn gather_extend(
         &mut self,
         _other: &NullArray,

@@ -62,8 +62,11 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
         """
         for it in items:
             if not isinstance(it, (DataType, DataTypeClass)):
-                msg = f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
+                from polars._utils.various import qualified_type_name
+
+                msg = f"DataTypeGroup items must be dtypes; found {qualified_type_name(it)!r}"
                 raise TypeError(msg)
+
         dtype_group = super().__new__(cls, items)
         dtype_group._match_base_type = match_base_type
         return dtype_group

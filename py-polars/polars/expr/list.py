@@ -523,8 +523,9 @@ class ExprListNameSpace:
             Index to return per sublist
         null_on_oob
             Behavior if an index is out of bounds:
-            True -> set as null
-            False -> raise an error
+
+            * True -> set as null
+            * False -> raise an error
 
         Examples
         --------
@@ -581,8 +582,6 @@ class ExprListNameSpace:
         │ [1, 2, … 5] ┆ [1, 5]       │
         └─────────────┴──────────────┘
         """
-        if isinstance(indices, list):
-            indices = pl.Series(indices)
         indices = parse_into_expression(indices)
         return wrap_expr(self._pyexpr.list_gather(indices, null_on_oob))
 

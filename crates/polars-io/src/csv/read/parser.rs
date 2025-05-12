@@ -105,6 +105,7 @@ pub fn count_rows_from_slice_par(
                 .count()
         } else {
             CountLines::new(quote_char, eol_char).count(bytes).0
+                + bytes.last().is_some_and(|x| *x != b'\n') as usize
         }
     });
 
@@ -135,6 +136,7 @@ pub fn count_rows_from_slice(
             .count()
     } else {
         CountLines::new(quote_char, eol_char).count(bytes).0
+            + bytes.last().is_some_and(|x| *x != b'\n') as usize
     };
 
     Ok(n - (has_header as usize))

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
+from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     import datetime as dt
+    import sys
     from collections.abc import Iterable
 
     from polars import Series
@@ -23,6 +24,11 @@ if TYPE_CHECKING:
         TimeUnit,
     )
     from polars.polars import PySeries
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 @expr_dispatch
@@ -53,6 +59,9 @@ class DateTimeNameSpace:
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.27.0
+            Parameters after `n` should now be passed as keyword arguments.
 
         Parameters
         ----------
@@ -161,13 +170,13 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
-    @deprecate_function("Use `Series.median` instead.", version="1.0.0")
+    @deprecated("`Series.dt.median` is deprecated; use `Series.median` instead.")
     def median(self) -> TemporalLiteral | None:
         """
         Return median as python DateTime.
 
         .. deprecated:: 1.0.0
-            Use `Series.median` instead.
+            Use the `Series.median` method instead.
 
         Examples
         --------
@@ -191,13 +200,13 @@ class DateTimeNameSpace:
         """
         return self._s.median()
 
-    @deprecate_function("Use `Series.mean` instead.", version="1.0.0")
+    @deprecated("`Series.dt.mean` is deprecated; use `Series.mean` instead.")
     def mean(self) -> TemporalLiteral | None:
         """
         Return mean as python DateTime.
 
         .. deprecated:: 1.0.0
-            Use `Series.mean` instead.
+            Use the `Series.mean` method instead.
 
         Examples
         --------
@@ -858,7 +867,10 @@ class DateTimeNameSpace:
         ]
         """
 
-    @deprecate_function("Use `dt.replace_time_zone(None)` instead.", version="0.20.4")
+    @deprecated(
+        "`Series.dt.datetime` is deprecated; "
+        "use `Series.dt.replace_time_zone(None)` instead."
+    )
     def datetime(self) -> Series:
         """
         Extract (local) datetime.
@@ -1784,16 +1796,20 @@ class DateTimeNameSpace:
         Divide the date/ datetime range into buckets.
 
         Each date/datetime is mapped to the start of its bucket using the corresponding
-        local datetime. Note that weekly buckets start on Monday.
-        Ambiguous results are localised using the DST offset of the original timestamp -
-        for example, truncating `'2022-11-06 01:30:00 CST'` by `'1h'` results in
-        `'2022-11-06 01:00:00 CST'`, whereas truncating `'2022-11-06 01:30:00 CDT'` by
-        `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
+        local datetime. Note that:
+
+        - Weekly buckets start on Monday.
+        - All other buckets start on the Unix epoch (1970-01-01).
+        - Ambiguous results are localised using the DST offset of the original
+          timestamp - for example, truncating `'2022-11-06 01:30:00 CST'` by
+          `'1h'` results in `'2022-11-06 01:00:00 CST'`, whereas truncating
+          `'2022-11-06 01:30:00 CDT'` by `'1h'` results in
+          `'2022-11-06 01:00:00 CDT'`.
 
         Parameters
         ----------
         every
-            Every interval start and period length
+            The size of each bucket.
 
         Notes
         -----

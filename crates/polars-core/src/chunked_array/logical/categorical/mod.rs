@@ -60,7 +60,7 @@ impl CategoricalChunked {
 
     /// Get the physical array (the category indexes).
     pub fn into_physical(self) -> UInt32Chunked {
-        self.physical.0
+        self.physical.phys
     }
 
     // TODO: Rename this
@@ -87,7 +87,7 @@ impl CategoricalChunked {
             RevMapping::Local(_, _) => {
                 // Change dtype from Enum to Categorical
                 let mut local = self.clone();
-                local.physical.2 = Some(DataType::Categorical(
+                local.physical.dtype = Some(DataType::Categorical(
                     Some(rev_map.clone()),
                     self.get_ordering(),
                 ));
@@ -208,7 +208,7 @@ impl CategoricalChunked {
 
     pub fn get_ordering(&self) -> CategoricalOrdering {
         if let DataType::Categorical(_, ordering) | DataType::Enum(_, ordering) =
-            &self.physical.2.as_ref().unwrap()
+            &self.physical.dtype.as_ref().unwrap()
         {
             *ordering
         } else {
@@ -227,7 +227,7 @@ impl CategoricalChunked {
             DataType::Enum { .. } | DataType::Categorical { .. }
         ));
         let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(idx);
-        logical.2 = Some(dtype);
+        logical.dtype = Some(dtype);
         Self {
             physical: logical,
             bit_settings: Default::default(),
@@ -246,9 +246,9 @@ impl CategoricalChunked {
     ) -> Self {
         let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(idx);
         if is_enum {
-            logical.2 = Some(DataType::Enum(Some(rev_map), ordering));
+            logical.dtype = Some(DataType::Enum(Some(rev_map), ordering));
         } else {
-            logical.2 = Some(DataType::Categorical(Some(rev_map), ordering));
+            logical.dtype = Some(DataType::Categorical(Some(rev_map), ordering));
         }
         Self {
             physical: logical,
@@ -261,7 +261,7 @@ impl CategoricalChunked {
         ordering: CategoricalOrdering,
         keep_fast_unique: bool,
     ) -> Self {
-        self.physical.2 = match self.dtype() {
+        self.physical.dtype = match self.dtype() {
             DataType::Enum(_, _) => {
                 Some(DataType::Enum(Some(self.get_rev_map().clone()), ordering))
             },
@@ -281,7 +281,7 @@ impl CategoricalChunked {
     /// # Safety
     /// The existing index values must be in bounds of the new [`RevMapping`].
     pub(crate) unsafe fn set_rev_map(&mut self, rev_map: Arc<RevMapping>, keep_fast_unique: bool) {
-        self.physical.2 = match self.dtype() {
+        self.physical.dtype = match self.dtype() {
             DataType::Enum(_, _) => Some(DataType::Enum(Some(rev_map), self.get_ordering())),
             DataType::Categorical(_, _) => {
                 Some(DataType::Categorical(Some(rev_map), self.get_ordering()))
@@ -328,7 +328,7 @@ impl CategoricalChunked {
     /// Get a reference to the mapping of categorical types to the string values.
     pub fn get_rev_map(&self) -> &Arc<RevMapping> {
         if let DataType::Categorical(Some(rev_map), _) | DataType::Enum(Some(rev_map), _) =
-            &self.physical.2.as_ref().unwrap()
+            &self.physical.dtype.as_ref().unwrap()
         {
             rev_map
         } else {
@@ -348,7 +348,7 @@ impl CategoricalChunked {
 
 impl LogicalType for CategoricalChunked {
     fn dtype(&self) -> &DataType {
-        self.physical.2.as_ref().unwrap()
+        self.physical.dtype.as_ref().unwrap()
     }
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
@@ -357,7 +357,7 @@ impl LogicalType for CategoricalChunked {
     }
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        match self.physical.0.get_unchecked(i) {
+        match self.physical.phys.get_unchecked(i) {
             Some(i) => match self.dtype() {
                 DataType::Enum(_, _) => AnyValue::Enum(i, self.get_rev_map(), SyncPtr::new_null()),
                 DataType::Categorical(_, _) => {
@@ -597,7 +597,7 @@ mod test {
             },
             _ => panic!(),
         }
-        let flat = aggregated.explode()?;
+        let flat = aggregated.explode(false)?;
         let ca = flat.categorical().unwrap();
         let vals = ca.iter_str().map(|v| v.unwrap()).collect::<Vec<_>>();
         assert_eq!(vals, &["a", "b", "c"]);

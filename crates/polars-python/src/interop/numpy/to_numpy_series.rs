@@ -85,7 +85,6 @@ fn try_series_to_numpy_view(
         return None;
     }
     let (s_owned, writable_flag) = handle_chunks(py, s, allow_rechunk)?;
-
     let array = series_to_numpy_view_recursive(py, s_owned, writable_flag);
     Some((array, writable_flag))
 }
@@ -115,6 +114,7 @@ fn series_to_numpy_view_recursive(py: Python, s: Series, writable: bool) -> PyOb
         _ => panic!("invalid data type"),
     }
 }
+
 /// Create a NumPy view of a numeric Series.
 fn numeric_series_to_numpy_view(py: Python, s: Series, writable: bool) -> PyObject {
     let dims = [s.len()].into_dimension();
@@ -141,6 +141,7 @@ fn numeric_series_to_numpy_view(py: Python, s: Series, writable: bool) -> PyObje
         }
     })
 }
+
 /// Create a NumPy view of a Datetime or Duration Series.
 fn temporal_series_to_numpy_view(py: Python, s: Series, writable: bool) -> PyObject {
     let np_dtype = polars_dtype_to_np_temporal_dtype(py, s.dtype());
@@ -166,6 +167,7 @@ fn temporal_series_to_numpy_view(py: Python, s: Series, writable: bool) -> PyObj
         )
     }
 }
+
 /// Create a NumPy view of an Array Series.
 fn array_series_to_numpy_view(py: Python, s: &Series, writable: bool) -> PyObject {
     let ca = s.array().unwrap();
@@ -303,6 +305,7 @@ where
         PyArray1::from_iter(py, values).into_py_any(py).unwrap()
     }
 }
+
 /// Convert booleans to u8 if no nulls are present, otherwise convert to objects.
 fn boolean_series_to_numpy(py: Python, s: &Series) -> PyObject {
     let ca = s.bool().unwrap();
@@ -316,6 +319,7 @@ fn boolean_series_to_numpy(py: Python, s: &Series) -> PyObject {
         PyArray1::from_iter(py, values).into_py_any(py).unwrap()
     }
 }
+
 /// Convert dates directly to i64 with i64::MIN representing a null value.
 fn date_series_to_numpy(py: Python, s: &Series) -> PyObject {
     use numpy::datetime::{Datetime, units};
@@ -343,6 +347,7 @@ fn date_series_to_numpy(py: Python, s: &Series) -> PyObject {
             .unwrap()
     }
 }
+
 /// Convert datetimes and durations with i64::MIN representing a null value.
 fn temporal_series_to_numpy<T>(py: Python, s: &Series) -> PyObject
 where
@@ -364,6 +369,7 @@ fn list_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
     });
     PyArray1::from_iter(py, iter).into_py_any(py).unwrap()
 }
+
 /// Convert arrays by flattening first, converting the flat Series, and then reshaping.
 fn array_series_to_numpy(py: Python, s: &Series, writable: bool) -> PyObject {
     let ca = s.array().unwrap();

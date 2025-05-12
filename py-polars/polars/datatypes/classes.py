@@ -398,7 +398,7 @@ class Decimal(NumericType):
         from polars._utils.unstable import issue_unstable_warning
 
         issue_unstable_warning(
-            "The Decimal data type is considered unstable."
+            "the Decimal data type is considered unstable."
             " It is a work-in-progress feature and may not always work as expected."
         )
 
@@ -839,7 +839,7 @@ class Array(NestedType):
             from polars._utils.deprecation import issue_deprecation_warning
 
             issue_deprecation_warning(
-                "The `width` parameter for `Array` is deprecated. Use `shape` instead.",
+                "the `width` parameter for `Array` is deprecated. Use `shape` instead.",
                 version="0.20.31",
             )
             shape = width
@@ -903,7 +903,7 @@ class Array(NestedType):
         from polars._utils.deprecation import issue_deprecation_warning
 
         issue_deprecation_warning(
-            "The `width` attribute for `Array` is deprecated. Use `size` instead.",
+            "the `width` attribute for `Array` is deprecated. Use `size` instead.",
             version="0.20.31",
         )
         return self.size

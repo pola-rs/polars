@@ -468,11 +468,7 @@ pub(crate) fn to_datetime(
                 Pattern::DatetimeYMDZ => infer.coerce_string(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
                     // `tz` has already been validated.
-                    ca.set_time_unit_and_time_zone(
-                        tu,
-                        tz.cloned()
-                            .unwrap_or_else(|| PlSmallStr::from_static("UTC")),
-                    )?;
+                    ca.set_time_unit_and_time_zone(tu, tz.cloned().unwrap_or(TimeZone::UTC))?;
                     Ok(ca)
                 })?,
                 _ => infer.coerce_string(ca).datetime().map(|ca| {

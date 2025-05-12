@@ -386,7 +386,9 @@ impl CloudOptions {
             builder
         };
 
-        builder.build().map_err(to_compute_err)
+        let out = builder.build()?;
+
+        Ok(out)
     }
 
     /// Set the configuration for Azure connections. This is the preferred API from rust.
@@ -438,7 +440,9 @@ impl CloudOptions {
             builder
         };
 
-        builder.build().map_err(to_compute_err)
+        let out = builder.build()?;
+
+        Ok(out)
     }
 
     /// Set the configuration for GCP connections. This is the preferred API from rust.
@@ -487,12 +491,14 @@ impl CloudOptions {
             builder
         };
 
-        builder.build().map_err(to_compute_err)
+        let out = builder.build()?;
+
+        Ok(out)
     }
 
     #[cfg(feature = "http")]
     pub fn build_http(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
-        object_store::http::HttpBuilder::new()
+        let out = object_store::http::HttpBuilder::new()
             .with_url(url)
             .with_client_options({
                 let mut opts = super::get_client_options();
@@ -503,8 +509,9 @@ impl CloudOptions {
                 }
                 opts
             })
-            .build()
-            .map_err(to_compute_err)
+            .build()?;
+
+        Ok(out)
     }
 
     /// Parse a configuration from a Hashmap. This is the interface from Python.

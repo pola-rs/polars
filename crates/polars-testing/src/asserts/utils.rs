@@ -439,8 +439,8 @@ pub fn assert_series_nested_values_equal(
                 let s2_series = Series::new("".into(), &[s2.clone()]);
 
                 match assert_series_values_equal(
-                    &s1_series.explode()?,
-                    &s2_series.explode()?,
+                    &s1_series.explode(false)?,
+                    &s2_series.explode(false)?,
                     true,
                     check_exact,
                     rtol,

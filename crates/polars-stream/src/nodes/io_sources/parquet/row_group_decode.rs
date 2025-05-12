@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    ArrowField, ArrowSchema, BooleanChunked, ChunkFilter, Column, DataType, IdxCa, IntoColumn,
+    ArrowField, ArrowSchema, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn,
 };
-use polars_core::series::{IsSorted, Series};
+use polars_core::series::Series;
 use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_error::{PolarsResult, polars_bail};
-use polars_io::hive;
+use polars_error::PolarsResult;
+use polars_io::RowIndex;
 use polars_io::predicates::{
     ColumnPredicateExpr, ColumnPredicates, ScanIOPredicate, SpecializedColumnPredicateExpr,
 };
@@ -17,18 +17,16 @@ use polars_io::prelude::_internal::calc_prefilter_cost;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, ParquetType, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::IdxSize;
-use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::row_group_data_fetch::RowGroupData;
-use crate::async_executor;
-use crate::nodes::TaskPriority;
+use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
 
 /// Turns row group data into DataFrames.
 pub(super) struct RowGroupDecoder {
     pub(super) num_pipelines: usize,
     pub(super) projected_arrow_schema: Arc<ArrowSchema>,
-    pub(super) row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
+    pub(super) row_index: Option<RowIndex>,
     pub(super) predicate: Option<ScanIOPredicate>,
     pub(super) use_prefiltered: Option<PrefilterMaskSetting>,
     /// Indices into `projected_arrow_schema. This must be sorted.
@@ -122,35 +120,22 @@ impl RowGroupDecoder {
         row_group_data: &RowGroupData,
         slice_range: core::ops::Range<usize>,
     ) -> PolarsResult<Option<Column>> {
-        if let Some((name, offset)) = self.row_index.as_deref() {
-            let offset = offset.load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(RowIndex { name, offset }) = self.row_index.clone() {
             let projection_height = slice_range.len();
 
-            let Some(offset) = (|| {
-                let offset = offset
-                    .checked_add((row_group_data.row_offset + slice_range.start) as IdxSize)?;
-                offset.checked_add(projection_height as IdxSize)?;
-
-                Some(offset)
-            })() else {
-                let msg = format!(
-                    "adding a row index column with offset {} overflows at {} rows",
-                    offset,
-                    row_group_data.row_offset + slice_range.end
-                );
-                polars_bail!(ComputeError: msg)
-            };
+            let offset = offset.saturating_add(
+                IdxSize::try_from(row_group_data.row_offset + slice_range.start)
+                    .unwrap_or(IdxSize::MAX),
+            );
 
             // The DataFrame can be empty at this point if no columns were projected from the file,
             // so we create the row index column manually instead of using `df.with_row_index` to
             // ensure it has the correct number of rows.
-            let mut ca = IdxCa::from_vec(
-                name.clone(),
-                (offset..offset + projection_height as IdxSize).collect(),
-            );
-            ca.set_sorted_flag(IsSorted::Ascending);
-
-            Ok(Some(ca.into_column()))
+            Ok(Some(Column::new_row_index(
+                name,
+                offset,
+                projection_height,
+            )?))
         } else {
             Ok(None)
         }
@@ -171,7 +156,7 @@ impl RowGroupDecoder {
                 x.num_rows(row_group_data.row_group_metadata.num_rows())
             });
 
-        let Some((cols_per_thread, remainder)) = calc_cols_per_thread(
+        let Some((cols_per_thread, _)) = calc_cols_per_thread(
             row_group_data.row_group_metadata.num_rows(),
             projected_arrow_schema.len(),
             self.min_values_per_thread,
@@ -198,56 +183,39 @@ impl RowGroupDecoder {
             let projected_arrow_schema = projected_arrow_schema.clone();
             let filter = filter.clone();
 
-            (remainder..projected_arrow_schema.len())
-                .step_by(cols_per_thread)
-                .map(move |offset| {
-                    let row_group_data = row_group_data_2.clone();
-                    let projected_arrow_schema = projected_arrow_schema.clone();
-                    let filter = filter.clone();
+            parallelize_first_to_local(
+                (0..projected_arrow_schema.len())
+                    .step_by(cols_per_thread)
+                    .map(move |offset| {
+                        let row_group_data = row_group_data_2.clone();
+                        let projected_arrow_schema = projected_arrow_schema.clone();
+                        let filter = filter.clone();
 
-                    async move {
-                        // This is exact as we have already taken out the remainder.
-                        (offset..offset + cols_per_thread)
-                            .map(|i| {
-                                let (_, arrow_field) =
-                                    projected_arrow_schema.get_at_index(i).unwrap();
+                        async move {
+                            // This is exact as we have already taken out the remainder.
+                            (offset
+                                ..offset
+                                    .saturating_add(cols_per_thread)
+                                    .min(projected_arrow_schema.len()))
+                                .map(|i| {
+                                    let (_, arrow_field) =
+                                        projected_arrow_schema.get_at_index(i).unwrap();
 
-                                decode_column(
-                                    arrow_field,
-                                    &row_group_data,
-                                    filter.clone(),
-                                    expected_num_rows,
-                                )
-                            })
-                            .collect::<PolarsResult<Vec<_>>>()
-                    }
-                })
-                .map(|fut| {
-                    async_executor::AbortOnDropHandle::new(async_executor::spawn(
-                        TaskPriority::Low,
-                        fut,
-                    ))
-                })
-                .collect::<Vec<_>>()
+                                    decode_column(
+                                        arrow_field,
+                                        &row_group_data,
+                                        filter.clone(),
+                                        expected_num_rows,
+                                    )
+                                })
+                                .collect::<PolarsResult<Vec<_>>>()
+                        }
+                    }),
+            )
         };
 
-        for out in projected_arrow_schema
-            .iter_values()
-            .take(remainder)
-            .map(|arrow_field| {
-                decode_column(
-                    arrow_field,
-                    row_group_data,
-                    filter.clone(),
-                    expected_num_rows,
-                )
-            })
-        {
-            out_vec.push(out?.0);
-        }
-
-        for handle in task_handles {
-            out_vec.extend(handle.await?.into_iter().map(|(c, _)| c));
+        for fut in task_handles {
+            out_vec.extend(fut.await?.into_iter().map(|(c, _)| c));
         }
 
         Ok(())
@@ -326,7 +294,7 @@ async unsafe fn filter_cols(
         return Ok(cols);
     }
 
-    let Some((cols_per_thread, remainder)) =
+    let Some((cols_per_thread, _)) =
         calc_cols_per_thread(cols[0].len(), cols.len(), min_values_per_thread)
     else {
         for s in cols.iter_mut() {
@@ -344,32 +312,19 @@ async unsafe fn filter_cols(
         let cols = &cols;
         let mask = &mask;
 
-        (remainder..cols.len())
-            .step_by(cols_per_thread)
-            .map(move |offset| {
-                let cols = cols.clone();
-                let mask = mask.clone();
-                async move {
-                    (offset..offset + cols_per_thread)
-                        .map(|i| cols[i].filter(&mask))
-                        .collect::<PolarsResult<Vec<_>>>()
-                }
-            })
-            .map(|fut| {
-                async_executor::AbortOnDropHandle::new(async_executor::spawn(
-                    TaskPriority::Low,
-                    fut,
-                ))
-            })
-            .collect::<Vec<_>>()
+        parallelize_first_to_local((0..cols.len()).step_by(cols_per_thread).map(move |offset| {
+            let cols = cols.clone();
+            let mask = mask.clone();
+            async move {
+                (offset..offset + cols_per_thread)
+                    .map(|i| cols[i].filter(&mask))
+                    .collect::<PolarsResult<Vec<_>>>()
+            }
+        }))
     };
 
-    for out in cols.iter().take(remainder).map(|s| s.filter(&mask)) {
-        out_vec.push(out?);
-    }
-
-    for handle in task_handles {
-        out_vec.extend(handle.await?)
+    for fut in task_handles {
+        out_vec.extend(fut.await?)
     }
 
     Ok(out_vec)
@@ -451,7 +406,9 @@ impl RowGroupDecoder {
         let projection_height = row_group_data.row_group_metadata.num_rows();
 
         let mut live_columns = Vec::with_capacity(
-            self.row_index.is_some() as usize + self.predicate_arrow_field_indices.len(),
+            self.row_index.is_some() as usize
+                + self.predicate_arrow_field_indices.len()
+                + self.non_predicate_arrow_field_indices.len(),
         );
         let mut masks = Vec::with_capacity(
             self.row_index.is_some() as usize + self.predicate_arrow_field_indices.len(),
@@ -465,12 +422,6 @@ impl RowGroupDecoder {
         }
 
         let scan_predicate = self.predicate.as_ref().unwrap();
-
-        // Materialize file and hive columns in sorted order - this is important for correct merging
-        // later.
-        //
-        // We do a trick to turn `Iterator<Item = Result<Column>>` into `Iterator<Item = Column>`
-        // for `hive::merge_sorted_to_schema_order`.
 
         let use_column_predicates = scan_predicate.column_predicates.is_sumwise_complete
             && self.row_index.is_none()
@@ -500,40 +451,37 @@ impl RowGroupDecoder {
             let projected_arrow_schema = self.projected_arrow_schema.clone();
             let row_group_data = row_group_data.clone();
 
-            (0..self.predicate_arrow_field_indices.len())
-                .step_by(cols_per_thread)
-                .map(move |offset| {
-                    let row_group_data = row_group_data.clone();
-                    let predicate_arrow_field_indices = predicate_arrow_field_indices.clone();
-                    let projected_arrow_schema = projected_arrow_schema.clone();
-                    let column_predicates = scan_predicate.column_predicates.clone();
+            parallelize_first_to_local(
+                (0..self.predicate_arrow_field_indices.len())
+                    .step_by(cols_per_thread)
+                    .map(move |offset| {
+                        let row_group_data = row_group_data.clone();
+                        let predicate_arrow_field_indices = predicate_arrow_field_indices.clone();
+                        let projected_arrow_schema = projected_arrow_schema.clone();
+                        let column_predicates = scan_predicate.column_predicates.clone();
 
-                    async move {
-                        // This is exact as we have already taken out the remainder.
-                        (offset..offset + cols_per_thread)
-                            .map(|i| {
-                                let (_, arrow_field) = projected_arrow_schema
-                                    .get_at_index(predicate_arrow_field_indices[i])
-                                    .unwrap();
+                        async move {
+                            (offset
+                                ..offset
+                                    .saturating_add(cols_per_thread)
+                                    .min(predicate_arrow_field_indices.len()))
+                                .map(|i| {
+                                    let (_, arrow_field) = projected_arrow_schema
+                                        .get_at_index(predicate_arrow_field_indices[i])
+                                        .unwrap();
 
-                                decode_column_in_filter(
-                                    arrow_field,
-                                    use_column_predicates,
-                                    column_predicates.as_ref(),
-                                    row_group_data.as_ref(),
-                                    projection_height,
-                                )
-                            })
-                            .collect::<PolarsResult<Vec<_>>>()
-                    }
-                })
-                .map(|fut| {
-                    async_executor::AbortOnDropHandle::new(async_executor::spawn(
-                        TaskPriority::Low,
-                        fut,
-                    ))
-                })
-                .collect::<Vec<_>>()
+                                    decode_column_in_filter(
+                                        arrow_field,
+                                        use_column_predicates,
+                                        column_predicates.as_ref(),
+                                        row_group_data.as_ref(),
+                                        projection_height,
+                                    )
+                                })
+                                .collect::<PolarsResult<Vec<_>>>()
+                        }
+                    }),
+            )
         };
 
         for fut in task_handles {
@@ -607,7 +555,7 @@ impl RowGroupDecoder {
             let iter = self.projected_arrow_schema.iter_names().cloned();
             return Ok(if let Some(ri) = self.row_index.as_ref() {
                 live_df_filtered
-                    .select(std::iter::once(ri.0.clone()).chain(iter))
+                    .select(std::iter::once(ri.name.clone()).chain(iter))
                     .unwrap()
             } else {
                 live_df_filtered.select(iter).unwrap()
@@ -633,22 +581,25 @@ impl RowGroupDecoder {
         .max(1);
         let task_handles = {
             let non_predicate_arrow_field_indices = self.non_predicate_arrow_field_indices.clone();
+            let non_predicate_len = non_predicate_arrow_field_indices.len();
             let projected_arrow_schema = self.projected_arrow_schema.clone();
             let row_group_data = row_group_data.clone();
             let prefilter_setting = *prefilter_setting;
-            (0..self.non_predicate_arrow_field_indices.len())
-                .step_by(cols_per_thread)
-                .map(move |offset| {
+
+            parallelize_first_to_local((0..non_predicate_len).step_by(cols_per_thread).map(
+                move |offset| {
                     let row_group_data = row_group_data.clone();
                     let non_predicate_arrow_field_indices =
                         non_predicate_arrow_field_indices.clone();
                     let projected_arrow_schema = projected_arrow_schema.clone();
                     let mask = mask.clone();
                     let mask_bitmap = mask_bitmap.clone();
+                    let max_col = offset
+                        .saturating_add(cols_per_thread)
+                        .min(non_predicate_len);
 
                     async move {
-                        // This is exact as we have already taken out the remainder.
-                        (offset..offset + cols_per_thread)
+                        (offset..max_col)
                             .map(|i| {
                                 let (_, arrow_field) = projected_arrow_schema
                                     .get_at_index(non_predicate_arrow_field_indices[i])
@@ -666,14 +617,8 @@ impl RowGroupDecoder {
                             })
                             .collect::<PolarsResult<Vec<_>>>()
                     }
-                })
-                .map(|fut| {
-                    async_executor::AbortOnDropHandle::new(async_executor::spawn(
-                        TaskPriority::Low,
-                        fut,
-                    ))
-                })
-                .collect::<Vec<_>>()
+                },
+            ))
         };
 
         let live_columns = live_df_filtered.take_columns();
@@ -683,28 +628,8 @@ impl RowGroupDecoder {
             dead_cols.extend(fut.await?);
         }
 
-        // dead_columns
-        // [ ..arrow_fields ]
-        // live_df_filtered
-        // [ row_index?, ..arrow_fields, ..hive_cols, file_path? ]
-        // We re-use `hive::merge_sorted_to_schema_order()` as it performs most of the merge operation we want.
-        // But we take out the `row_index` column as it isn't on the correct side.
-
-        let mut merged = Vec::with_capacity(live_columns.len() + dead_cols.len());
-
-        if self.row_index.is_some() {
-            merged.push(live_columns[0].clone());
-        };
-
-        hive::merge_sorted_to_schema_order(
-            &mut dead_cols.into_iter(), // df_columns
-            &mut live_columns
-                .into_iter()
-                .skip(self.row_index.is_some() as usize), // hive_columns
-            &self.projected_arrow_schema,
-            &mut merged,
-        );
-
+        let mut merged = live_columns;
+        merged.extend(dead_cols);
         let df = unsafe { DataFrame::new_no_checks(expected_num_rows, merged) };
         Ok(df)
     }

@@ -86,7 +86,7 @@ where
     // start with a dummy index, will be overwritten on first iteration.
     // SAFETY:
     // we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params) };
+    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, params, None) };
 
     let mut validity = MutableBitmap::with_capacity(output_len);
     validity.extend_constant(output_len, true);
@@ -136,7 +136,7 @@ where
         return PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None);
     }
     // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, 0, 0, params);
+    let mut agg_window = Agg::new(values, 0, 0, params, None);
 
     offsets
         .map(|(start, len)| {
@@ -299,7 +299,7 @@ where
             if _use_rolling_kernels(groups, ca.chunks()) {
                 // this cast is a no-op for floats
                 let s = ca
-                    .cast_with_options(&K::get_dtype(), CastOptions::Overflowing)
+                    .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
                     .unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
                 let arr = ca.downcast_iter().next().unwrap();

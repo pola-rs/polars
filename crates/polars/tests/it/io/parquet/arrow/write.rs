@@ -7,9 +7,9 @@ fn round_trip(
     file: &str,
     version: Version,
     compression: CompressionOptions,
-    encodings: Vec<Encoding>,
+    column_options: Vec<ColumnWriteOptions>,
 ) -> PolarsResult<()> {
-    round_trip_opt_stats(column, file, version, compression, encodings)
+    round_trip_opt_stats(column, file, version, compression, column_options)
 }
 
 fn round_trip_opt_stats(
@@ -17,7 +17,7 @@ fn round_trip_opt_stats(
     file: &str,
     version: Version,
     compression: CompressionOptions,
-    encodings: Vec<Encoding>,
+    column_options: Vec<ColumnWriteOptions>,
 ) -> PolarsResult<()> {
     let array = match file {
         "nested" => pyarrow_nested_nullable(column),
@@ -45,15 +45,15 @@ fn round_trip_opt_stats(
     )];
 
     let row_groups =
-        RowGroupIterator::try_new(iter.into_iter(), &schema, options, vec![encodings])?;
+        RowGroupIterator::try_new(iter.into_iter(), &schema, options, column_options.clone())?;
 
     let writer = Cursor::new(vec![]);
-    let mut writer = FileWriter::try_new(writer, schema, options)?;
+    let mut writer = FileWriter::try_new(writer, schema, options, &column_options)?;
 
     for group in row_groups {
         writer.write(group?)?;
     }
-    writer.end(None)?;
+    writer.end(None, &column_options)?;
 
     let data = writer.into_inner().into_inner();
 
@@ -72,7 +72,10 @@ fn int64_optional_v1() -> PolarsResult<()> {
         "nullable",
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -83,7 +86,10 @@ fn int64_required_v1() -> PolarsResult<()> {
         "required",
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -94,7 +100,10 @@ fn int64_optional_v2() -> PolarsResult<()> {
         "nullable",
         Version::V2,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -105,7 +114,10 @@ fn int64_optional_delta() -> PolarsResult<()> {
         "nullable",
         Version::V2,
         CompressionOptions::Uncompressed,
-        vec![Encoding::DeltaBinaryPacked],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::DeltaBinaryPacked)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -116,7 +128,10 @@ fn int64_required_delta() -> PolarsResult<()> {
         "required",
         Version::V2,
         CompressionOptions::Uncompressed,
-        vec![Encoding::DeltaBinaryPacked],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::DeltaBinaryPacked)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -128,7 +143,10 @@ fn int64_optional_v2_compressed() -> PolarsResult<()> {
         "nullable",
         Version::V2,
         CompressionOptions::Snappy,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -139,7 +157,10 @@ fn utf8_optional_v1() -> PolarsResult<()> {
         "nullable",
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -150,7 +171,10 @@ fn utf8_required_v1() -> PolarsResult<()> {
         "required",
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -161,7 +185,10 @@ fn utf8_optional_v2() -> PolarsResult<()> {
         "nullable",
         Version::V2,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -172,7 +199,10 @@ fn utf8_required_v2() -> PolarsResult<()> {
         "required",
         Version::V2,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -184,7 +214,10 @@ fn utf8_optional_v2_compressed() -> PolarsResult<()> {
         "nullable",
         Version::V2,
         CompressionOptions::Snappy,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -196,7 +229,10 @@ fn utf8_required_v2_compressed() -> PolarsResult<()> {
         "required",
         Version::V2,
         CompressionOptions::Snappy,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -207,7 +243,10 @@ fn bool_optional_v1() -> PolarsResult<()> {
         "nullable",
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -218,7 +257,10 @@ fn bool_required_v1() -> PolarsResult<()> {
         "required",
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -229,7 +271,10 @@ fn bool_optional_v2_uncompressed() -> PolarsResult<()> {
         "nullable",
         Version::V2,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -240,7 +285,10 @@ fn bool_required_v2_uncompressed() -> PolarsResult<()> {
         "required",
         Version::V2,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -252,7 +300,10 @@ fn bool_required_v2_compressed() -> PolarsResult<()> {
         "required",
         Version::V2,
         CompressionOptions::Snappy,
-        vec![Encoding::Plain],
+        vec![
+            FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                .into_default_column_write_options(),
+        ],
     )
 }
 
@@ -263,7 +314,12 @@ fn list_int64_optional_v2() -> PolarsResult<()> {
         "nested",
         Version::V2,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![ColumnWriteOptions::default_with(
+            ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions {
+                child: FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                    .into_default_column_write_options(),
+            })),
+        )],
     )
 }
 
@@ -274,7 +330,12 @@ fn list_int64_optional_v1() -> PolarsResult<()> {
         "nested",
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![ColumnWriteOptions::default_with(
+            ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions {
+                child: FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                    .into_default_column_write_options(),
+            })),
+        )],
     )
 }
 
@@ -285,7 +346,12 @@ fn list_int64_required_required_v1() -> PolarsResult<()> {
         "nested",
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![ColumnWriteOptions::default_with(
+            ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions {
+                child: FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                    .into_default_column_write_options(),
+            })),
+        )],
     )
 }
 
@@ -296,7 +362,12 @@ fn list_int64_required_required_v2() -> PolarsResult<()> {
         "nested",
         Version::V2,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![ColumnWriteOptions::default_with(
+            ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions {
+                child: FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                    .into_default_column_write_options(),
+            })),
+        )],
     )
 }
 
@@ -307,7 +378,12 @@ fn list_bool_optional_v2() -> PolarsResult<()> {
         "nested",
         Version::V2,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![ColumnWriteOptions::default_with(
+            ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions {
+                child: FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                    .into_default_column_write_options(),
+            })),
+        )],
     )
 }
 
@@ -318,7 +394,12 @@ fn list_bool_optional_v1() -> PolarsResult<()> {
         "nested",
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![ColumnWriteOptions::default_with(
+            ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions {
+                child: FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                    .into_default_column_write_options(),
+            })),
+        )],
     )
 }
 
@@ -329,7 +410,12 @@ fn list_utf8_optional_v2() -> PolarsResult<()> {
         "nested",
         Version::V2,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![ColumnWriteOptions::default_with(
+            ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions {
+                child: FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                    .into_default_column_write_options(),
+            })),
+        )],
     )
 }
 
@@ -340,127 +426,11 @@ fn list_utf8_optional_v1() -> PolarsResult<()> {
         "nested",
         Version::V1,
         CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
-    )
-}
-
-#[test]
-fn list_nested_inner_required_required_i64() -> PolarsResult<()> {
-    round_trip_opt_stats(
-        "list_nested_inner_required_required_i64",
-        "nested",
-        Version::V1,
-        CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
-    )
-}
-
-#[test]
-fn v1_nested_struct_list_nullable() -> PolarsResult<()> {
-    round_trip_opt_stats(
-        "struct_list_nullable",
-        "nested",
-        Version::V1,
-        CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
-    )
-}
-
-#[test]
-fn v1_nested_list_struct_list_nullable() -> PolarsResult<()> {
-    round_trip_opt_stats(
-        "list_struct_list_nullable",
-        "nested",
-        Version::V1,
-        CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
-    )
-}
-
-#[test]
-fn utf8_optional_v2_delta() -> PolarsResult<()> {
-    round_trip(
-        "string",
-        "nullable",
-        Version::V2,
-        CompressionOptions::Uncompressed,
-        vec![Encoding::DeltaLengthByteArray],
-    )
-}
-
-#[test]
-fn utf8_required_v2_delta() -> PolarsResult<()> {
-    round_trip(
-        "string",
-        "required",
-        Version::V2,
-        CompressionOptions::Uncompressed,
-        vec![Encoding::DeltaLengthByteArray],
-    )
-}
-
-#[test]
-fn struct_v1() -> PolarsResult<()> {
-    round_trip(
-        "struct",
-        "struct",
-        Version::V1,
-        CompressionOptions::Uncompressed,
-        vec![Encoding::Plain, Encoding::Plain],
-    )
-}
-
-#[test]
-fn struct_v2() -> PolarsResult<()> {
-    round_trip(
-        "struct",
-        "struct",
-        Version::V2,
-        CompressionOptions::Uncompressed,
-        vec![Encoding::Plain, Encoding::Plain],
-    )
-}
-
-#[test]
-fn nested_edge_simple() -> PolarsResult<()> {
-    round_trip(
-        "simple",
-        "nested_edge",
-        Version::V1,
-        CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
-    )
-}
-
-#[test]
-fn nested_edge_null() -> PolarsResult<()> {
-    round_trip(
-        "null",
-        "nested_edge",
-        Version::V1,
-        CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
-    )
-}
-
-#[test]
-fn v1_nested_edge_struct_list_nullable() -> PolarsResult<()> {
-    round_trip(
-        "struct_list_nullable",
-        "nested_edge",
-        Version::V1,
-        CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
-    )
-}
-
-#[test]
-fn nested_edge_list_struct_list_nullable() -> PolarsResult<()> {
-    round_trip(
-        "list_struct_list_nullable",
-        "nested_edge",
-        Version::V1,
-        CompressionOptions::Uncompressed,
-        vec![Encoding::Plain],
+        vec![ColumnWriteOptions::default_with(
+            ChildWriteOptions::ListLike(Box::new(ListLikeFieldWriteOptions {
+                child: FieldWriteOptions::default_with_encoding(Encoding::Plain)
+                    .into_default_column_write_options(),
+            })),
+        )],
     )
 }

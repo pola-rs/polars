@@ -197,11 +197,12 @@ impl HiveIdxTracker<'_> {
         if check_directory_level
             && ![usize::MAX, i].contains(&self.idx)
             // They could still be the same directory level, just with different name length
-            && (paths[path_idx].parent() != paths[path_idx - 1].parent())
+            && (path_idx > 0 && paths[path_idx].parent() != paths[path_idx - 1].parent())
         {
             polars_bail!(
                 InvalidOperation:
-                "attempted to read from different directory levels with hive partitioning enabled: first path: {}, second path: {}",
+                "attempted to read from different directory levels with hive partitioning enabled: \
+                first path: {}, second path: {}",
                 paths[path_idx - 1].to_str().unwrap(),
                 paths[path_idx].to_str().unwrap(),
             )
@@ -366,7 +367,7 @@ pub fn expand_paths_hive(
 
                                 async {
                                     let store = st;
-                                    store
+                                    let out = store
                                         .list(Some(&prefix))
                                         .try_filter_map(|x| async move {
                                             let out = (x.size > 0).then(|| {
@@ -381,8 +382,9 @@ pub fn expand_paths_hive(
                                             Ok(out)
                                         })
                                         .try_collect::<Vec<_>>()
-                                        .await
-                                        .map_err(to_compute_err)
+                                        .await?;
+
+                                    Ok(out)
                                 }
                             })
                             .await?;

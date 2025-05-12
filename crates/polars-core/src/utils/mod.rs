@@ -720,7 +720,7 @@ macro_rules! df {
 }
 
 pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
-    use TimeUnit::*;
+    use crate::datatypes::time_unit::TimeUnit::*;
     match (tu_l, tu_r) {
         (Nanoseconds, Microseconds) => Microseconds,
         (_, Milliseconds) => Milliseconds,
@@ -815,7 +815,7 @@ where
             return Err(width_mismatch(&acc_df, &df));
         }
 
-        acc_df.vstack_mut(&df)?;
+        acc_df.vstack_mut_owned(df)?;
     }
 
     Ok(acc_df)
@@ -913,6 +913,46 @@ where
                 Cow::Owned(left.match_chunks(right.chunk_lengths())),
                 Cow::Borrowed(right),
             )
+        },
+    }
+}
+
+/// Ensure the chunks in ChunkedArray and Series have the same length.
+/// # Panics
+/// This will panic if `left.len() != right.len()` and array is chunked.
+pub fn align_chunks_binary_ca_series<'a, T>(
+    left: &'a ChunkedArray<T>,
+    right: &'a Series,
+) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, Series>)
+where
+    T: PolarsDataType,
+{
+    let assert = || {
+        assert_eq!(
+            left.len(),
+            right.len(),
+            "expected arrays of the same length"
+        )
+    };
+    match (left.chunks.len(), right.chunks().len()) {
+        // All chunks are equal length
+        (1, 1) => (Cow::Borrowed(left), Cow::Borrowed(right)),
+        // All chunks are equal length
+        (a, b)
+            if a == b
+                && left
+                    .chunk_lengths()
+                    .zip(right.chunk_lengths())
+                    .all(|(l, r)| l == r) =>
+        {
+            assert();
+            (Cow::Borrowed(left), Cow::Borrowed(right))
+        },
+        (_, 1) => (left.rechunk(), Cow::Borrowed(right)),
+        (1, _) => (Cow::Borrowed(left), Cow::Owned(right.rechunk())),
+        (_, _) => {
+            assert();
+            (left.rechunk(), Cow::Owned(right.rechunk()))
         },
     }
 }

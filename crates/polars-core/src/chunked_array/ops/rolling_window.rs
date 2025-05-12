@@ -273,7 +273,7 @@ mod inner_mod {
                 }
             }
             let arr = PrimitiveArray::new(
-                T::get_dtype().to_arrow(CompatLevel::newest()),
+                T::get_static_dtype().to_arrow(CompatLevel::newest()),
                 values.into(),
                 Some(validity.into()),
             );

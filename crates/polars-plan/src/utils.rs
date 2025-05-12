@@ -216,29 +216,6 @@ pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> &PlSmallSt
     }
 }
 
-/// If the leaf names match `current`, the node will be replaced
-/// with a renamed expression.
-pub(crate) fn rename_matching_aexpr_leaf_names(
-    node: Node,
-    arena: &mut Arena<AExpr>,
-    current: &str,
-    new_name: PlSmallStr,
-) -> Node {
-    let mut leaves = aexpr_to_column_nodes_iter(node, arena);
-
-    if leaves.any(|node| matches!(arena.get(node.0), AExpr::Column(name) if &**name == current)) {
-        // we convert to expression as we cannot easily copy the aexpr.
-        let mut new_expr = node_to_expr(node, arena);
-        new_expr = new_expr.map_expr(|e| match e {
-            Expr::Column(name) if &*name == current => Expr::Column(new_name.clone()),
-            e => e,
-        });
-        to_aexpr(new_expr, arena).expect("infallible")
-    } else {
-        node
-    }
-}
-
 /// Get all leaf column expressions in the expression tree.
 pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item = &Expr> {
     expr.into_iter().flat_map(|e| match e {

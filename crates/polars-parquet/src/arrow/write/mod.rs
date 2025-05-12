@@ -90,13 +90,76 @@ pub struct WriteOptions {
     pub data_page_size: Option<usize>,
 }
 
+#[derive(Clone)]
+pub struct ColumnWriteOptions {
+    pub field_id: Option<i32>,
+    pub metadata: Vec<KeyValue>,
+    pub children: ChildWriteOptions,
+}
+
+#[derive(Clone)]
+pub enum ChildWriteOptions {
+    Leaf(FieldWriteOptions),
+    ListLike(Box<ListLikeFieldWriteOptions>),
+    Struct(Box<StructFieldWriteOptions>),
+}
+
+impl ColumnWriteOptions {
+    pub fn to_leaves<'a>(&'a self, out: &mut Vec<&'a FieldWriteOptions>) {
+        match &self.children {
+            ChildWriteOptions::Leaf(o) => out.push(o),
+            ChildWriteOptions::ListLike(o) => o.child.to_leaves(out),
+            ChildWriteOptions::Struct(o) => {
+                for o in &o.children {
+                    o.to_leaves(out);
+                }
+            },
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct FieldWriteOptions {
+    pub encoding: Encoding,
+}
+
+impl ColumnWriteOptions {
+    pub fn default_with(children: ChildWriteOptions) -> Self {
+        Self {
+            field_id: None,
+            metadata: Vec::new(),
+            children,
+        }
+    }
+}
+
+impl FieldWriteOptions {
+    pub fn default_with_encoding(encoding: Encoding) -> Self {
+        Self { encoding }
+    }
+
+    pub fn into_default_column_write_options(self) -> ColumnWriteOptions {
+        ColumnWriteOptions::default_with(ChildWriteOptions::Leaf(self))
+    }
+}
+
+#[derive(Clone)]
+pub struct ListLikeFieldWriteOptions {
+    pub child: ColumnWriteOptions,
+}
+
+#[derive(Clone)]
+pub struct StructFieldWriteOptions {
+    pub children: Vec<ColumnWriteOptions>,
+}
+
 use arrow::compute::aggregate::estimated_bytes_size;
 use arrow::match_integer_type;
 pub use file::FileWriter;
 pub use pages::{Nested, array_to_columns, arrays_to_columns};
 use polars_error::{PolarsResult, polars_bail};
 pub use row_group::{RowGroupIterator, row_group_iter};
-pub use schema::to_parquet_type;
+pub use schema::{schema_to_metadata_key, to_parquet_type};
 
 use self::pages::{FixedSizeListNested, PrimitiveNested, StructNested};
 use crate::write::dictionary::encode_as_dictionary_optional;
@@ -186,10 +249,14 @@ fn decimal_length_from_precision(precision: usize) -> usize {
 }
 
 /// Creates a parquet [`SchemaDescriptor`] from a [`ArrowSchema`].
-pub fn to_parquet_schema(schema: &ArrowSchema) -> PolarsResult<SchemaDescriptor> {
+pub fn to_parquet_schema(
+    schema: &ArrowSchema,
+    column_options: &[ColumnWriteOptions],
+) -> PolarsResult<SchemaDescriptor> {
     let parquet_types = schema
         .iter_values()
-        .map(to_parquet_type)
+        .zip(column_options)
+        .map(|(field, options)| to_parquet_type(field, options))
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok(SchemaDescriptor::new(
         PlSmallStr::from_static("root"),
@@ -281,8 +348,9 @@ pub fn array_to_pages(
     type_: ParquetPrimitiveType,
     nested: &[Nested],
     options: WriteOptions,
-    mut encoding: Encoding,
+    field_options: &FieldWriteOptions,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
+    let mut encoding = field_options.encoding;
     if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type() {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(

@@ -1692,7 +1692,7 @@ impl ExprSqlProjectionHeightBehavior {
 
                 Literal(v) => !v.is_scalar(),
 
-                Explode(_) | Filter { .. } | Gather { .. } | Slice { .. } => true,
+                Explode { .. } | Filter { .. } | Gather { .. } | Slice { .. } => true,
 
                 Agg { .. } | Len => true,
 

@@ -123,13 +123,12 @@ fn list_num_column_bytes<O: Offset>(
     masked_out_max_width: &mut usize,
 ) -> Encoder {
     let array = array.as_any().downcast_ref::<ListArray<O>>().unwrap();
-    let array = array.trim_to_normalized_offsets_recursive();
     let values = array.values();
 
     let mut list_row_widths = RowWidths::new(values.len());
     let encoder = get_encoder(
         values.as_ref(),
-        opt,
+        opt.into_nested(),
         dicts,
         &mut list_row_widths,
         masked_out_max_width,
@@ -171,7 +170,7 @@ fn list_num_column_bytes<O: Offset>(
     };
 
     Encoder {
-        array: array.boxed(),
+        array: array.to_boxed(),
         state: Some(Box::new(EncoderState::List(
             Box::new(encoder),
             list_row_widths,
@@ -261,13 +260,12 @@ fn get_encoder(
         let state = match dtype {
             D::FixedSizeList(_, width) => {
                 let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
-                let array = array.propagate_nulls();
 
                 debug_assert_eq!(array.values().len(), array.len() * width);
                 let mut nested_row_widths = RowWidths::new(array.values().len());
                 let nested_encoder = get_encoder(
                     array.values().as_ref(),
-                    opt,
+                    opt.into_nested(),
                     dict,
                     &mut nested_row_widths,
                     masked_out_max_width,
@@ -280,7 +278,6 @@ fn get_encoder(
             },
             D::Struct(_) => {
                 let struct_array = array.as_any().downcast_ref::<StructArray>().unwrap();
-                let struct_array = struct_array.propagate_nulls();
 
                 Some(EncoderState::Struct(match dict {
                     None => struct_array
@@ -289,7 +286,7 @@ fn get_encoder(
                         .map(|array| {
                             get_encoder(
                                 array.as_ref(),
-                                opt,
+                                opt.into_nested(),
                                 None,
                                 &mut RowWidths::new(row_widths.num_rows()),
                                 masked_out_max_width,
@@ -326,13 +323,12 @@ fn get_encoder(
     match dtype {
         D::FixedSizeList(_, width) => {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
-            let array = array.propagate_nulls();
 
             debug_assert_eq!(array.values().len(), array.len() * width);
             let mut nested_row_widths = RowWidths::new(array.values().len());
             let nested_encoder = get_encoder(
                 array.values().as_ref(),
-                opt,
+                opt.into_nested(),
                 dict,
                 &mut nested_row_widths,
                 masked_out_max_width,
@@ -353,7 +349,6 @@ fn get_encoder(
         },
         D::Struct(_) => {
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
-            let array = array.propagate_nulls();
 
             let mut nested_encoders = Vec::with_capacity(array.values().len());
             row_widths.push_constant(1); // validity byte
@@ -362,7 +357,7 @@ fn get_encoder(
                     for array in array.values() {
                         let encoder = get_encoder(
                             array.as_ref(),
-                            opt,
+                            opt.into_nested(),
                             None,
                             row_widths,
                             masked_out_max_width,
@@ -374,7 +369,7 @@ fn get_encoder(
                     for (array, dict) in array.values().iter().zip(dicts) {
                         let encoder = get_encoder(
                             array.as_ref(),
-                            opt,
+                            opt.into_nested(),
                             dict.as_ref(),
                             row_widths,
                             masked_out_max_width,
@@ -756,7 +751,7 @@ unsafe fn encode_array(
                 encode_array(
                     buffer,
                     nested_encoder,
-                    opt,
+                    opt.into_nested(),
                     dict,
                     nested_offsets,
                     masked_out_write_offset,
@@ -778,10 +773,11 @@ unsafe fn encode_array(
                     *offset += nested_row_widths.get((i * width) + j);
                 }
             }
+
             encode_array(
                 buffer,
                 array.as_ref(),
-                opt,
+                opt.into_nested(),
                 dict,
                 &mut child_offsets,
                 masked_out_write_offset,
@@ -800,7 +796,7 @@ unsafe fn encode_array(
                         encode_array(
                             buffer,
                             array,
-                            opt,
+                            opt.into_nested(),
                             None,
                             offsets,
                             masked_out_write_offset,
@@ -813,7 +809,7 @@ unsafe fn encode_array(
                         encode_array(
                             buffer,
                             array,
-                            opt,
+                            opt.into_nested(),
                             dict.as_ref(),
                             offsets,
                             masked_out_write_offset,
@@ -913,4 +909,39 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingContext>) -> O
         },
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::array::proptest::{
+        ArrayArbitraryOptions, ArrowDataTypeArbitraryOptions, ArrowDataTypeArbitrarySelection,
+        array_with_options,
+    };
+
+    use super::*;
+
+    proptest::prop_compose! {
+        fn arrays
+            ()
+            (length in 0..100usize)
+            (arrays in proptest::collection::vec(array_with_options(length, ArrayArbitraryOptions {
+                dtype: ArrowDataTypeArbitraryOptions {
+                    allowed_dtypes: ArrowDataTypeArbitrarySelection::all() & !ArrowDataTypeArbitrarySelection::BINARY,
+                    ..Default::default()
+                }
+            }), 1..3))
+        -> Vec<Box<dyn Array>> {
+            arrays
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn test_encode_arrays
+            (arrays in arrays())
+         {
+            let dicts: Vec<Option<RowEncodingContext>> = (0..arrays.len()).map(|_| None).collect();
+            convert_columns_no_order(arrays[0].len(), &arrays, &dicts);
+        }
+    }
 }

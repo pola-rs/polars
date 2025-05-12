@@ -15,7 +15,7 @@ mod field;
 mod into_scalar;
 #[cfg(feature = "object")]
 mod static_array_collect;
-mod time_unit;
+mod temporal;
 
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
@@ -50,7 +50,7 @@ use serde::de::{EnumAccess, VariantAccess, Visitor};
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
-pub use time_unit::*;
+pub use temporal::*;
 
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
@@ -80,7 +80,9 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
     type IsObject;
     type IsLogical;
 
-    fn get_dtype() -> DataType
+    /// Returns the DataType variant associated with this PolarsDataType.
+    /// Not implemented for types whose DataTypes have parameters.
+    fn get_static_dtype() -> DataType
     where
         Self: Sized;
 }
@@ -122,7 +124,7 @@ macro_rules! impl_polars_num_datatype {
             type IsLogical = FalseT;
 
             #[inline]
-            fn get_dtype() -> DataType {
+            fn get_static_dtype() -> DataType {
                 DataType::$variant
             }
         }
@@ -152,12 +154,37 @@ macro_rules! impl_polars_datatype_pass_dtype {
             type IsLogical = $is_logical;
 
             #[inline]
-            fn get_dtype() -> DataType {
+            fn get_static_dtype() -> DataType {
                 $dtype
             }
         }
     };
 }
+
+macro_rules! impl_polars_datatype_no_static_dtype {
+    ($ca:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty, $has_views:ident, $is_logical:ident) => {
+        #[derive(Clone, Copy)]
+        pub struct $ca {}
+
+        unsafe impl PolarsDataType for $ca {
+            type Physical<$lt> = $phys;
+            type OwnedPhysical = $owned_phys;
+            type ZeroablePhysical<$lt> = $zerophys;
+            type Array = $arr;
+            type IsNested = FalseT;
+            type HasViews = $has_views;
+            type IsStruct = FalseT;
+            type IsObject = FalseT;
+            type IsLogical = $is_logical;
+
+            #[inline]
+            fn get_static_dtype() -> DataType {
+                unimplemented!()
+            }
+        }
+    };
+}
+
 macro_rules! impl_polars_binview_datatype {
     ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty) => {
         impl_polars_datatype_pass_dtype!(
@@ -211,10 +238,10 @@ impl_polars_datatype!(BinaryOffsetType, BinaryOffset, BinaryArray<i64>, 'a, &'a 
 impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool, bool, bool, FalseT);
 
 #[cfg(feature = "dtype-decimal")]
-impl_polars_datatype_pass_dtype!(DecimalType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i128>, 'a, i128, i128, i128, FalseT, TrueT);
-impl_polars_datatype_pass_dtype!(DatetimeType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT, TrueT);
-impl_polars_datatype_pass_dtype!(DurationType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT, TrueT);
-impl_polars_datatype_pass_dtype!(CategoricalType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<u32>, 'a, u32, u32, u32, FalseT, TrueT);
+impl_polars_datatype_no_static_dtype!(DecimalType, PrimitiveArray<i128>, 'a, i128, i128, i128, FalseT, TrueT);
+impl_polars_datatype_no_static_dtype!(DatetimeType, PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT, TrueT);
+impl_polars_datatype_no_static_dtype!(DurationType, PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT, TrueT);
+impl_polars_datatype_no_static_dtype!(CategoricalType, PrimitiveArray<u32>, 'a, u32, u32, u32, FalseT, TrueT);
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
@@ -229,7 +256,7 @@ unsafe impl PolarsDataType for ListType {
     type IsObject = FalseT;
     type IsLogical = FalseT;
 
-    fn get_dtype() -> DataType {
+    fn get_static_dtype() -> DataType {
         // Null as we cannot know anything without self.
         DataType::List(Box::new(DataType::Null))
     }
@@ -254,7 +281,7 @@ unsafe impl PolarsDataType for StructType {
     type IsObject = FalseT;
     type IsLogical = FalseT;
 
-    fn get_dtype() -> DataType
+    fn get_static_dtype() -> DataType
     where
         Self: Sized,
     {
@@ -276,7 +303,7 @@ unsafe impl PolarsDataType for FixedSizeListType {
     type IsObject = FalseT;
     type IsLogical = FalseT;
 
-    fn get_dtype() -> DataType {
+    fn get_static_dtype() -> DataType {
         // Null as we cannot know anything without self.
         DataType::Array(Box::new(DataType::Null), 0)
     }
@@ -296,7 +323,7 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type IsObject = TrueT;
     type IsLogical = FalseT;
 
-    fn get_dtype() -> DataType {
+    fn get_static_dtype() -> DataType {
         DataType::Object(T::type_name())
     }
 }

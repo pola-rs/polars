@@ -1,4 +1,5 @@
 use std::hash::Hash;
+use std::sync::Mutex;
 
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
@@ -16,6 +17,11 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 use super::*;
+
+#[cfg(feature = "python")]
+pub mod python_dataset;
+#[cfg(feature = "python")]
+pub use python_dataset::{DATASET_PROVIDER_VTABLE, PythonDatasetProviderVTable};
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +52,14 @@ pub enum FileScan {
         options: IpcScanOptions,
         #[cfg_attr(feature = "serde", serde(skip))]
         metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
+    },
+
+    #[cfg(feature = "python")]
+    PythonDataset {
+        dataset_object: Arc<python_dataset::PythonDatasetProvider>,
+
+        #[cfg_attr(feature = "serde", serde(skip, default))]
+        cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
     },
 
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -109,12 +123,46 @@ pub enum MissingColumnsPolicy {
     Insert,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
+/// Used by scans.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum CastColumnsPolicy {
-    /// Raise an error if the datatypes do not match
-    #[default]
-    ErrorOnMismatch,
+pub struct CastColumnsPolicy {
+    /// Allow casting when target dtype is lossless supertype
+    pub integer_upcast: bool,
+
+    /// Allow Float32 -> Float64
+    pub float_upcast: bool,
+    /// Allow Float64 -> Float32
+    pub float_downcast: bool,
+
+    /// Allow datetime[ns] to be casted to any lower precision. Important for
+    /// being able to read datasets written by spark.
+    pub datetime_nanoseconds_downcast: bool,
+
+    /// Allow casting to change time units.
+    pub datetime_convert_timezone: bool,
+
+    pub missing_struct_fields: MissingColumnsPolicy,
+    pub extra_struct_fields: ExtraColumnsPolicy,
+}
+
+impl CastColumnsPolicy {
+    /// Configuration variant that defaults to raising on mismatch.
+    pub const ERROR_ON_MISMATCH: Self = Self {
+        integer_upcast: false,
+        float_upcast: false,
+        float_downcast: false,
+        datetime_nanoseconds_downcast: false,
+        datetime_convert_timezone: false,
+        missing_struct_fields: MissingColumnsPolicy::Raise,
+        extra_struct_fields: ExtraColumnsPolicy::Raise,
+    };
+}
+
+impl Default for CastColumnsPolicy {
+    fn default() -> Self {
+        Self::ERROR_ON_MISMATCH
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
@@ -199,10 +247,20 @@ mod _file_scan_eq_hash {
             metadata: Option<usize>,
         },
 
+        #[cfg(feature = "python")]
+        PythonDataset {
+            dataset_object: usize,
+            cached_ir: usize,
+        },
+
         Anonymous {
             options: &'a crate::dsl::AnonymousScanOptions,
             function: usize,
         },
+
+        /// Variant to ensure the lifetime is used regardless of feature gate combination.
+        #[expect(unused)]
+        Phantom(&'a ()),
     }
 
     impl<'a> From<&'a FileScan> for FileScanEqHashWrap<'a> {
@@ -224,6 +282,15 @@ mod _file_scan_eq_hash {
                 FileScan::Ipc { options, metadata } => FileScanEqHashWrap::Ipc {
                     options,
                     metadata: metadata.as_ref().map(arc_as_ptr),
+                },
+
+                #[cfg(feature = "python")]
+                FileScan::PythonDataset {
+                    dataset_object,
+                    cached_ir,
+                } => FileScanEqHashWrap::PythonDataset {
+                    dataset_object: arc_as_ptr(dataset_object),
+                    cached_ir: arc_as_ptr(cached_ir),
                 },
 
                 FileScan::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {

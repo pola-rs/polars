@@ -118,13 +118,14 @@ dtype-struct = []
 
 # scale to terabytes?
 bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
-python = []
+python = ["polars-error/python"]
 
 serde = [
   "dep:serde",
   "bitflags/serde",
   "polars-schema/serde",
   "polars-utils/serde",
+  "polars-compute/serde",
   "arrow/io_ipc",
   "arrow/io_ipc_compression",
   "serde_json",

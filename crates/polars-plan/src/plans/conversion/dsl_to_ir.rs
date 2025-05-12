@@ -3,6 +3,7 @@ use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::hive_partitions_from_paths;
 
+use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::plans::conversion::expr_expansion::expand_selectors;
@@ -76,29 +77,37 @@ pub fn to_alp(
         lp_arena,
         conversion_optimizer,
         opt_flags,
+        nodes_scratch: &mut unitvec![],
+        pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
         Ok(out) => Ok(out),
         Err(err) => {
-            if let Some(ir_until_then) = lp_arena.last_node() {
-                let node_name = if let PolarsError::Context { msg, .. } = &err {
-                    msg
-                } else {
-                    "THIS_NODE"
-                };
-                let plan = IRPlan::new(
-                    ir_until_then,
-                    std::mem::take(lp_arena),
-                    std::mem::take(expr_arena),
-                );
-                let location = format!("{}", plan.display());
-                Err(err.wrap_msg(|msg| {
-                    format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
-                }))
+            if opt_flags.contains(OptFlags::EAGER) {
+                // If we dispatched to the lazy engine from the eager API, we don't want to resolve
+                // where in the query plan it went wrong. It is clear from the backtrace anyway.
+                return Err(err.remove_context());
+            };
+
+            let Some(ir_until_then) = lp_arena.last_node() else {
+                return Err(err);
+            };
+
+            let node_name = if let PolarsError::Context { msg, .. } = &err {
+                msg
             } else {
-                Err(err)
-            }
+                "THIS_NODE"
+            };
+            let plan = IRPlan::new(
+                ir_until_then,
+                std::mem::take(lp_arena),
+                std::mem::take(expr_arena),
+            );
+            let location = format!("{}", plan.display());
+            Err(err.wrap_msg(|msg| {
+                format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
+            }))
         },
     }
 }
@@ -108,6 +117,8 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) lp_arena: &'a mut Arena<IR>,
     pub(super) conversion_optimizer: ConversionOptimizer,
     pub(super) opt_flags: &'a mut OptFlags,
+    pub(super) nodes_scratch: &'a mut UnitVec<Node>,
+    pub(super) pushdown_maintain_errors: bool,
 }
 
 pub(super) fn run_conversion(
@@ -180,6 +191,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         FileScan::NDJson { .. } => {
                             sources.expand_paths(unified_scan_args, cloud_options)?
                         },
+                        #[cfg(feature = "python")]
+                        FileScan::PythonDataset { .. } => {
+                            // There are a lot of places that short-circuit if the paths is empty,
+                            // so we just give a dummy path here.
+                            ScanSources::Paths(Arc::from(["dummy".into()]))
+                        },
                         FileScan::Anonymous { .. } => sources,
                     };
 
@@ -244,6 +261,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         cloud_options,
                     )
                     .map_err(|e| e.context(failed_here!(ndjson scan)))?,
+                    #[cfg(feature = "python")]
+                    FileScan::PythonDataset { dataset_object, .. } => {
+                        if crate::dsl::DATASET_PROVIDER_VTABLE.get().is_none() {
+                            polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
+                        }
+
+                        let schema = dataset_object.schema()?;
+
+                        FileInfo {
+                            schema: schema.clone(),
+                            reader_schema: Some(either::Either::Right(schema)),
+                            row_estimation: (None, usize::MAX),
+                        }
+                    },
                     FileScan::Anonymous { .. } => {
                         file_info.expect("FileInfo should be set for AnonymousScan")
                     },
@@ -291,22 +322,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     // schema.
                     file_info.update_schema_with_hive_schema(hive_schema);
                 }
-
-                unified_scan_args.include_file_paths = unified_scan_args
-                    .include_file_paths
-                    .as_ref()
-                    .filter(|_| match &*scan_type {
-                        #[cfg(feature = "parquet")]
-                        FileScan::Parquet { .. } => true,
-                        #[cfg(feature = "ipc")]
-                        FileScan::Ipc { .. } => true,
-                        #[cfg(feature = "csv")]
-                        FileScan::Csv { .. } => true,
-                        #[cfg(feature = "json")]
-                        FileScan::NDJson { .. } => true,
-                        FileScan::Anonymous { .. } => false,
-                    })
-                    .cloned();
 
                 if let Some(ref file_path_col) = unified_scan_args.include_file_paths {
                     let schema = Arc::make_mut(&mut file_info.schema);
@@ -439,54 +454,46 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let predicate_ae = to_expr_ir(predicate.clone(), ctxt.expr_arena)?;
 
-            // TODO: We could do better here by using `pushdown_eligibility()`
-            return if ctxt.opt_flags.predicate_pushdown()
-                && permits_filter_pushdown_rec(
-                    ctxt.expr_arena.get(predicate_ae.node()),
+            if ctxt.opt_flags.predicate_pushdown() {
+                ctxt.nodes_scratch.clear();
+
+                if let Some(SplitPredicates { pushable, fallible }) = SplitPredicates::new(
+                    predicate_ae.node(),
                     ctxt.expr_arena,
+                    Some(ctxt.nodes_scratch),
+                    ctxt.pushdown_maintain_errors,
                 ) {
-                // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
-                // push them down independently. Especially if they refer columns from different tables
-                // this will be more performant.
-                // So:
-                // filter[foo == bar & ham == spam]
-                // filter [foo == bar]
-                // filter [ham == spam]
-                let mut predicates = vec![];
+                    let mut update_input = |predicate: Node| -> PolarsResult<()> {
+                        let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
+                        ctxt.conversion_optimizer
+                            .push_scratch(predicate.node(), ctxt.expr_arena);
+                        let lp = IR::Filter { input, predicate };
+                        input = run_conversion(lp, ctxt, "filter")?;
 
-                let mut stack = vec![predicate_ae.node()];
-                while let Some(n) = stack.pop() {
-                    if let AExpr::BinaryExpr {
-                        left,
-                        op: Operator::And | Operator::LogicalAnd,
-                        right,
-                    } = ctxt.expr_arena.get(n)
-                    {
-                        stack.push(*left);
-                        stack.push(*right);
-                    } else {
-                        predicates.push(n)
+                        Ok(())
+                    };
+
+                    // Pushables first, then fallible.
+
+                    for predicate in pushable {
+                        update_input(predicate)?;
                     }
-                }
 
-                for predicate in predicates {
-                    let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
-                    ctxt.conversion_optimizer
-                        .push_scratch(predicate.node(), ctxt.expr_arena);
-                    let lp = IR::Filter { input, predicate };
-                    input = run_conversion(lp, ctxt, "filter")?;
-                }
+                    if let Some(node) = fallible {
+                        update_input(node)?;
+                    }
 
-                Ok(input)
-            } else {
-                ctxt.conversion_optimizer
-                    .push_scratch(predicate_ae.node(), ctxt.expr_arena);
-                let lp = IR::Filter {
-                    input,
-                    predicate: predicate_ae,
+                    return Ok(input);
                 };
-                run_conversion(lp, ctxt, "filter")
             };
+
+            ctxt.conversion_optimizer
+                .push_scratch(predicate_ae.node(), ctxt.expr_arena);
+            let lp = IR::Filter {
+                input,
+                predicate: predicate_ae,
+            };
+            return run_conversion(lp, ctxt, "filter");
         },
         DslPlan::Slice { input, offset, len } => {
             let input =

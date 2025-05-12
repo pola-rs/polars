@@ -9,6 +9,7 @@ use polars_plan::prelude::{FileScan, FunctionIR, PythonPredicate, UnifiedScanArg
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyString;
 
 use super::expr_nodes::PyGroupbyOptions;
 use crate::PyDataFrame;
@@ -43,6 +44,9 @@ fn scan_type_to_pyobject(
             let options = serde_json::to_string(options)
                 .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
             Ok(("ndjson", options).into_py_any(py)?)
+        },
+        FileScan::PythonDataset { .. } => {
+            Err(PyNotImplementedError::new_err("python dataset scan"))
         },
         FileScan::Anonymous { .. } => Err(PyNotImplementedError::new_err("anonymous scan")),
     }
@@ -654,12 +658,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             contexts: contexts.iter().map(|n| n.0).collect(),
         }
         .into_py_any(py),
-        IR::Sink {
-            input: _,
-            payload: _,
-        } => Err(PyNotImplementedError::new_err(
-            "Not expecting to see a Sink node",
-        )),
+        IR::Sink { input, payload } => Sink {
+            input: input.0,
+            payload: PyString::new(
+                py,
+                &serde_json::to_string(payload)
+                    .map_err(|err| PyValueError::new_err(format!("{err:?}")))?,
+            )
+            .into(),
+        }
+        .into_py_any(py),
         IR::SinkMultiple { .. } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a SinkMultiple node",
         )),

@@ -6,16 +6,14 @@ use polars_core::prelude::ArrowSchema;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
-use polars_io::pl_async;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder, MemSliceByteSource};
+use polars_io::{RowIndex, pl_async};
 use polars_parquet::read::schema::infer_schema_with_options;
 use polars_plan::dsl::{CastColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
-use polars_utils::index::AtomicIdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 
 use super::multi_file_reader::extra_ops::cast_columns::CastColumns;
@@ -229,10 +227,13 @@ impl FileReader for ParquetFileReader {
         // If are handling predicates we apply missing / cast columns policy here as those need to
         // happen before filtering. Otherwise we leave it to post.
         if let Some(predicate) = predicate.as_mut() {
-            if !matches!(cast_columns_policy, CastColumnsPolicy::ErrorOnMismatch) {
+            if cast_columns_policy != CastColumnsPolicy::ERROR_ON_MISMATCH {
                 unimplemented!("column casting w/ predicate in parquet")
             }
 
+            // Note: This currently could return a Some(_) for the case where
+            // there are struct fields ordered differently, but that should not
+            // affect predicates.
             CastColumns::try_init_from_policy_from_iter(
                 &cast_columns_policy,
                 &projected_schema,
@@ -263,7 +264,7 @@ impl FileReader for ParquetFileReader {
             schema: file_schema.clone(),
             projected_arrow_schema,
             memory_prefetch_func,
-            row_index: row_index.map(|ri| Arc::new((ri.name, AtomicIdxSize::new(ri.offset)))),
+            row_index,
         }
         .run();
 
@@ -334,11 +335,7 @@ struct ParquetReadImpl {
     schema: Arc<ArrowSchema>,
     projected_arrow_schema: Arc<ArrowSchema>,
     memory_prefetch_func: fn(&[u8]) -> (),
-    /// The offset is an AtomicIdxSize, as in the negative slice case, the row
-    /// offset becomes relative to the starting point in the list of files,
-    /// so the row index offset needs to be updated by the initializer to
-    /// reflect this (https://github.com/pola-rs/polars/issues/19607).
-    row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
+    row_index: Option<RowIndex>,
 }
 
 #[derive(Debug)]

@@ -172,7 +172,7 @@ impl DataType {
             },
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => {
-                DataType::Datetime(tu.into(), DataType::canonical_timezone(tz))
+                DataType::Datetime(tu.into(), TimeZone::opt_try_new(tz.clone()).unwrap())
             },
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),

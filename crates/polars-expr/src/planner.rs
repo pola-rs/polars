@@ -502,10 +502,13 @@ fn create_physical_expr_inner(
                 expr: node_to_expr(expression, expr_arena),
             }))
         },
-        Explode(expr) => {
+        Explode { expr, skip_empty } => {
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
+            let skip_empty = *skip_empty;
             let function = SpecialEq::new(Arc::new(
-                move |c: &mut [polars_core::frame::column::Column]| c[0].explode().map(Some),
+                move |c: &mut [polars_core::frame::column::Column]| {
+                    c[0].explode(skip_empty).map(Some)
+                },
             ) as Arc<dyn ColumnsUdf>);
 
             let field = expr_arena
@@ -516,10 +519,7 @@ fn create_physical_expr_inner(
                 vec![input],
                 function,
                 node_to_expr(expression, expr_arena),
-                FunctionOptions {
-                    collect_groups: ApplyOptions::GroupWise,
-                    ..Default::default()
-                },
+                FunctionOptions::groupwise(),
                 state.allow_threading,
                 schema.clone(),
                 field,

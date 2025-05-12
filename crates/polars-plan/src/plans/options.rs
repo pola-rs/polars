@@ -22,21 +22,6 @@ pub struct DistinctOptionsIR {
     pub slice: Option<(i64, usize)>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum ApplyOptions {
-    /// Collect groups to a list and apply the function over the groups.
-    /// This can be important in aggregation context.
-    /// e.g. [g1, g1, g2] -> [[g1, g1], g2]
-    GroupWise,
-    /// collect groups to a list and then apply
-    /// e.g. [g1, g1, g2] -> list([g1, g1, g2])
-    ApplyList,
-    /// do not collect before apply
-    /// e.g. [g1, g1, g2] -> [g1, g1, g2]
-    ElementWise,
-}
-
 // a boolean that can only be set to `false` safely
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -51,17 +36,15 @@ bitflags!(
         #[repr(transparent)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-        pub struct FunctionFlags: u8 {
-            // Raise if use in group by
+        pub struct FunctionFlags: u16 {
+            /// Raise if use in group by
             const ALLOW_GROUP_AWARE = 1 << 0;
-            // For example a `unique` or a `slice`
-            const CHANGES_LENGTH = 1 << 1;
-            // The physical expression may rename the output of this function.
-            // If set to `false` the physical engine will ensure the left input
-            // expression is the output name.
+            /// The physical expression may rename the output of this function.
+            /// If set to `false` the physical engine will ensure the left input
+            /// expression is the output name.
             const ALLOW_RENAME = 1 << 2;
-            // if set, then the `Series` passed to the function in the group_by operation
-            // will ensure the name is set. This is an extra heap allocation per group.
+            /// if set, then the `Series` passed to the function in the group_by operation
+            /// will ensure the name is set. This is an extra heap allocation per group.
             const PASS_NAME_TO_APPLY = 1 << 3;
             /// There can be two ways of expanding wildcards:
             ///
@@ -84,6 +67,8 @@ bitflags!(
             ///
             /// head_1(x) -> {1}
             /// sum(x) -> {4}
+            ///
+            /// mutually exclusive with `RETURNS_SCALAR`
             const RETURNS_SCALAR = 1 << 5;
             /// This can happen with UDF's that use Polars within the UDF.
             /// This can lead to recursively entering the engine and sometimes deadlocks.
@@ -91,8 +76,34 @@ bitflags!(
             const OPTIONAL_RE_ENTRANT = 1 << 6;
             /// Whether this function allows no inputs.
             const ALLOW_EMPTY_INPUTS = 1 << 7;
+
+            /// Given a function f and a column of values [v1, ..., vn]
+            /// f is row-separable i.f.f.
+            /// f([v1, ..., vn]) = concat(f(v1, ... vm), f(vm+1, ..., vn))
+            const ROW_SEPARABLE = 1 << 8;
+            /// Given a function f and a column of values [v1, ..., vn]
+            /// f is length preserving i.f.f. len(f([v1, ..., vn])) = n
+            ///
+            /// mutually exclusive with `RETURNS_SCALAR`
+            const LENGTH_PRESERVING = 1 << 9;
+            /// Aggregate the values of the expression into a list before applying the function.
+            const APPLY_LIST = 1 << 10;
         }
 );
+
+impl FunctionFlags {
+    pub fn set_elementwise(&mut self) {
+        *self |= Self::ROW_SEPARABLE | Self::LENGTH_PRESERVING;
+    }
+
+    pub fn is_elementwise(self) -> bool {
+        self.contains(Self::ROW_SEPARABLE | Self::LENGTH_PRESERVING)
+    }
+
+    pub fn returns_scalar(self) -> bool {
+        self.contains(Self::RETURNS_SCALAR)
+    }
+}
 
 impl Default for FunctionFlags {
     fn default() -> Self {
@@ -118,10 +129,6 @@ impl CastingRules {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(any(feature = "serde"), derive(Serialize, Deserialize))]
 pub struct FunctionOptions {
-    /// Collect groups to a list and apply the function over the groups.
-    /// This can be important in aggregation context.
-    pub collect_groups: ApplyOptions,
-
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
@@ -145,47 +152,48 @@ impl FunctionOptions {
     }
 
     pub fn set_elementwise(&mut self) {
-        self.collect_groups = ApplyOptions::ElementWise
+        self.flags.set_elementwise();
     }
 
     pub fn is_elementwise(&self) -> bool {
-        matches!(
-            self.collect_groups,
-            ApplyOptions::ElementWise | ApplyOptions::ApplyList
-        ) && !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
-            && !self.flags.contains(FunctionFlags::RETURNS_SCALAR)
+        self.flags.is_elementwise()
     }
 
     pub fn is_length_preserving(&self) -> bool {
-        !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
+        self.flags.contains(FunctionFlags::LENGTH_PRESERVING)
     }
 
     pub fn returns_scalar(&self) -> bool {
-        self.flags.contains(FunctionFlags::RETURNS_SCALAR)
+        self.flags.returns_scalar()
     }
 
     pub fn elementwise() -> FunctionOptions {
         FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
             ..Default::default()
         }
+        .with_flags(|f| f | FunctionFlags::ROW_SEPARABLE | FunctionFlags::LENGTH_PRESERVING)
     }
 
     pub fn elementwise_with_infer() -> FunctionOptions {
-        Self::groupwise()
+        Self::length_preserving()
     }
 
     pub fn row_separable() -> FunctionOptions {
-        Self::groupwise()
+        FunctionOptions {
+            ..Default::default()
+        }
+        .with_flags(|f| f | FunctionFlags::ROW_SEPARABLE)
     }
 
     pub fn length_preserving() -> FunctionOptions {
-        Self::groupwise()
+        FunctionOptions {
+            ..Default::default()
+        }
+        .with_flags(|f| f | FunctionFlags::LENGTH_PRESERVING)
     }
 
     pub fn groupwise() -> FunctionOptions {
         FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
             ..Default::default()
         }
     }
@@ -205,37 +213,13 @@ impl FunctionOptions {
         self
     }
 
-    pub fn with_allow_rename(mut self, allow_rename: bool) -> FunctionOptions {
-        self.flags.set(FunctionFlags::ALLOW_RENAME, allow_rename);
+    pub fn with_flags(mut self, f: impl Fn(FunctionFlags) -> FunctionFlags) -> FunctionOptions {
+        self.flags = f(self.flags);
         self
     }
 
-    pub fn with_pass_name_to_apply(mut self, pass_name_to_apply: bool) -> Self {
-        self.flags
-            .set(FunctionFlags::PASS_NAME_TO_APPLY, pass_name_to_apply);
-        self
-    }
-
-    pub fn with_input_wildcard_expansion(
-        mut self,
-        input_wildcard_expansion: bool,
-    ) -> FunctionOptions {
-        self.flags.set(
-            FunctionFlags::INPUT_WILDCARD_EXPANSION,
-            input_wildcard_expansion,
-        );
-        self
-    }
-
-    pub fn with_allow_empty_inputs(mut self, allow_empty_inputs: bool) -> FunctionOptions {
-        self.flags
-            .set(FunctionFlags::ALLOW_EMPTY_INPUTS, allow_empty_inputs);
-        self
-    }
-
-    pub fn with_changes_length(mut self, changes_length: bool) -> FunctionOptions {
-        self.flags
-            .set(FunctionFlags::ALLOW_EMPTY_INPUTS, changes_length);
+    pub fn with_fmt_str(mut self, fmt_str: &'static str) -> FunctionOptions {
+        self.fmt_str = fmt_str;
         self
     }
 }
@@ -243,7 +227,6 @@ impl FunctionOptions {
 impl Default for FunctionOptions {
     fn default() -> Self {
         FunctionOptions {
-            collect_groups: ApplyOptions::GroupWise,
             check_lengths: UnsafeBool(true),
             fmt_str: Default::default(),
             cast_options: Default::default(),

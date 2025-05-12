@@ -26,7 +26,13 @@ impl<T: ToPrimitive + Copy, M: StateUpdate> MomentWindow<'_, T, M> {
 impl<'a, T: NativeType + IsFloat + Float + ToPrimitive + FromPrimitive, M: StateUpdate>
     RollingAggWindowNoNulls<'a, T> for MomentWindow<'a, T, M>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    fn new(
+        slice: &'a [T],
+        start: usize,
+        end: usize,
+        params: Option<RollingFnParams>,
+        _window_size: Option<usize>,
+    ) -> Self {
         let mut out = Self {
             slice,
             moment: M::new(params),

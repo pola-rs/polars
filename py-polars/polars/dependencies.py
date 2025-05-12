@@ -21,6 +21,7 @@ _POLARS_CLOUD_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
 _PYICEBERG_AVAILABLE = True
+_TORCH_AVAILABLE = True
 _PYTZ_AVAILABLE = True
 
 
@@ -166,6 +167,8 @@ if TYPE_CHECKING:
     import pydantic
     import pyiceberg
     import pytz
+    import torch
+
 else:
     # infrequently-used builtins
     dataclasses, _ = _lazy_import("dataclasses")
@@ -178,6 +181,7 @@ else:
     altair, _ALTAIR_AVAILABLE = _lazy_import("altair")
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
+    gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
     great_tables, _GREAT_TABLES_AVAILABLE = _lazy_import("great_tables")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
@@ -186,7 +190,7 @@ else:
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
     pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
-    gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
+    torch, _TORCH_AVAILABLE = _lazy_import("torch")
     pytz, _PYTZ_AVAILABLE = _lazy_import("pytz")
 
 
@@ -222,6 +226,12 @@ def _check_for_pyarrow(obj: Any, *, check_type: bool = True) -> bool:
 def _check_for_pydantic(obj: Any, *, check_type: bool = True) -> bool:
     return _PYDANTIC_AVAILABLE and _might_be(
         cast(Hashable, type(obj) if check_type else obj), "pydantic"
+    )
+
+
+def _check_for_torch(obj: Any, *, check_type: bool = True) -> bool:
+    return _TORCH_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "torch"
     )
 
 
@@ -315,22 +325,27 @@ __all__ = [
     "pydantic",
     "pyiceberg",
     "pyarrow",
+    "torch",
     "pytz",
     # lazy utilities
     "_check_for_numpy",
     "_check_for_pandas",
     "_check_for_pyarrow",
     "_check_for_pydantic",
+    "_check_for_torch",
     "_check_for_pytz",
     # exported flags/guards
     "_ALTAIR_AVAILABLE",
     "_DELTALAKE_AVAILABLE",
-    "_PYICEBERG_AVAILABLE",
     "_FSSPEC_AVAILABLE",
     "_GEVENT_AVAILABLE",
+    "_GREAT_TABLES_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",
     "_POLARS_CLOUD_AVAILABLE",
     "_PYARROW_AVAILABLE",
+    "_PYDANTIC_AVAILABLE",
+    "_PYICEBERG_AVAILABLE",
+    "_TORCH_AVAILABLE",
 ]

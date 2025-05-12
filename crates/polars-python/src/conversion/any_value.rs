@@ -11,7 +11,7 @@ use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
 use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, TimeUnit};
-use polars::prelude::{AnyValue, PlSmallStr, Series};
+use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
@@ -247,7 +247,7 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_date(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        const UNIX_EPOCH: NaiveDate = NaiveDateTime::UNIX_EPOCH.date();
+        const UNIX_EPOCH: NaiveDate = DateTime::UNIX_EPOCH.naive_utc().date();
         let date = ob.extract::<NaiveDate>()?;
         let elapsed = date.signed_duration_since(UNIX_EPOCH);
         Ok(AnyValue::Date(elapsed.num_days() as i32))
@@ -259,7 +259,7 @@ pub(crate) fn py_object_to_any_value<'py>(
 
         if tzinfo.is_none() {
             let datetime = ob.extract::<NaiveDateTime>()?;
-            let delta = datetime - NaiveDateTime::UNIX_EPOCH;
+            let delta = datetime - DateTime::UNIX_EPOCH.naive_utc();
             let timestamp = delta.num_microseconds().unwrap();
             return Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None));
         }
@@ -281,7 +281,7 @@ pub(crate) fn py_object_to_any_value<'py>(
 
         let (timestamp, tz) = if tzinfo.hasattr(intern!(py, "key"))? {
             let datetime = ob.extract::<DateTime<Tz>>()?;
-            let tz = datetime.timezone().name().into();
+            let tz = unsafe { TimeZone::from_static(datetime.timezone().name()) };
             if datetime.year() >= 2100 {
                 // chrono-tz does not support dates after 2100
                 // https://github.com/chronotope/chrono-tz/issues/135
@@ -300,7 +300,7 @@ pub(crate) fn py_object_to_any_value<'py>(
         } else {
             let datetime = ob.extract::<DateTime<FixedOffset>>()?;
             let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
-            (delta.num_microseconds().unwrap(), "UTC".into())
+            (delta.num_microseconds().unwrap(), TimeZone::UTC)
         };
 
         Ok(AnyValue::DatetimeOwned(

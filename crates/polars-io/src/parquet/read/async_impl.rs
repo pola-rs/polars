@@ -39,7 +39,7 @@ impl ParquetObjectStore {
     /// Initialize the length property of the object, unless it has already been fetched.
     async fn length(&mut self) -> PolarsResult<usize> {
         if self.length.is_none() {
-            self.length = Some(self.store.head(&self.path).await?.size);
+            self.length = Some(self.store.head(&self.path).await?.size as usize);
         }
         Ok(self.length.unwrap())
     }

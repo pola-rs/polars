@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 from typing import TYPE_CHECKING, Any, Callable
 
+import pyarrow.parquet as pq
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -337,7 +338,10 @@ def test_schema_mismatch_type_mismatch(
         if scan is pl.scan_ndjson
         else pytest.raises(
             pl.exceptions.SchemaError,
-            match="data type mismatch for column xyz_col: expected: i64, found: str",
+            match=(
+                "data type mismatch for column xyz_col: "
+                "incoming: String != target: Int64"
+            ),
         )
     )
 
@@ -620,6 +624,50 @@ def test_deadlock_linearize(scan: Any, write: Any) -> None:
     lf = scan(fs).head(100)
 
     assert_frame_equal(
-        lf.collect(engine="streaming", slice_pushdown=False),
+        lf.collect(
+            engine="streaming", optimizations=pl.QueryOptFlags(slice_pushdown=False)
+        ),
         pl.concat([df] * 10),
     )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+    ],
+)
+def test_row_index_filter_22612(scan: Any, write: Any) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        }
+    )
+
+    f = io.BytesIO()
+
+    if write is pl.DataFrame.write_parquet:
+        df.write_parquet(f, row_group_size=5)
+        assert pq.read_metadata(f).num_row_groups == 2
+    else:
+        write(df, f)
+
+    for end in range(2, 10):
+        assert_frame_equal(
+            scan(f)
+            .with_row_index()
+            .filter(pl.col("index") >= end - 2, pl.col("index") <= end)
+            .collect(),
+            df.with_row_index().slice(end - 2, 3),
+        )
+
+        assert_frame_equal(
+            scan(f)
+            .with_row_index()
+            .filter(pl.col("index").is_between(end - 2, end))
+            .collect(),
+            df.with_row_index().slice(end - 2, 3),
+        )

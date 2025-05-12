@@ -1,7 +1,9 @@
+use polars_ops::series::round::RoundMode;
+
 use super::*;
 
-pub(super) fn round(c: &Column, decimals: u32) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(|s| s.round(decimals))
+pub(super) fn round(c: &Column, decimals: u32, mode: RoundMode) -> PolarsResult<Column> {
+    c.try_apply_unary_elementwise(|s| s.round(decimals, mode))
 }
 
 pub(super) fn round_sig_figs(c: &Column, digits: i32) -> PolarsResult<Column> {

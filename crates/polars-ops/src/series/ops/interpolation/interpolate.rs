@@ -99,7 +99,7 @@ where
         }
 
         let array = PrimitiveArray::new(
-            T::get_dtype().to_arrow(CompatLevel::newest()),
+            T::get_static_dtype().to_arrow(CompatLevel::newest()),
             out.into(),
             Some(validity.into()),
         );
@@ -125,7 +125,11 @@ fn interpolate_nearest(s: &Series) -> Series {
                 ($ca:expr) => {{ interpolate_impl($ca, near_interp).into_series() }};
             }
             let out = downcast_as_macro_arg_physical!(s, dispatch);
-            out.cast(logical).unwrap()
+            match logical {
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(_, _) => unsafe { out.from_physical_unchecked(logical).unwrap() },
+                _ => out.cast(logical).unwrap(),
+            }
         },
     }
 }
@@ -142,6 +146,14 @@ fn interpolate_linear(s: &Series) -> Series {
             let logical = s.dtype();
 
             let s = s.to_physical_repr();
+
+            #[cfg(feature = "dtype-decimal")]
+            {
+                if matches!(logical, DataType::Decimal(_, _)) {
+                    let out = linear_interp_signed(s.i128().unwrap());
+                    return unsafe { out.from_physical_unchecked(logical).unwrap() };
+                }
+            }
 
             let out = if matches!(
                 logical,

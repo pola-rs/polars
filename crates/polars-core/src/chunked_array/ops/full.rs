@@ -21,7 +21,10 @@ where
     T: PolarsNumericType,
 {
     fn full_null(name: PlSmallStr, length: usize) -> Self {
-        let arr = PrimitiveArray::new_null(T::get_dtype().to_arrow(CompatLevel::newest()), length);
+        let arr = PrimitiveArray::new_null(
+            T::get_static_dtype().to_arrow(CompatLevel::newest()),
+            length,
+        );
         ChunkedArray::with_chunk(name, arr)
     }
 }

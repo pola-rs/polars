@@ -316,27 +316,6 @@ impl GroupedReduction for BoolMinGroupedReduction {
         Ok(())
     }
 
-    unsafe fn update_groups(
-        &mut self,
-        values: &Column,
-        group_idxs: &[IdxSize],
-        _seq_id: u64,
-    ) -> PolarsResult<()> {
-        assert!(values.dtype() == &DataType::Boolean);
-        assert!(values.len() == group_idxs.len());
-        let values = values.as_materialized_series(); // @scalar-opt
-        let ca: &BooleanChunked = values.as_ref().as_ref();
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, ov) in group_idxs.iter().zip(ca.iter()) {
-                self.values
-                    .and_pos_unchecked(*g as usize, ov.unwrap_or(true));
-                self.mask.or_pos_unchecked(*g as usize, ov.is_some());
-            }
-        }
-        Ok(())
-    }
-
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &Column,
@@ -367,28 +346,7 @@ impl GroupedReduction for BoolMinGroupedReduction {
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(self.values.len() == other.values.len());
-        assert!(self.mask.len() == other.mask.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, (v, o)) in group_idxs
-                .iter()
-                .zip(other.values.iter().zip(other.mask.iter()))
-            {
-                self.values.and_pos_unchecked(*g as usize, v);
-                self.mask.or_pos_unchecked(*g as usize, o);
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],
@@ -480,29 +438,6 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         Ok(())
     }
 
-    unsafe fn update_groups(
-        &mut self,
-        values: &Column,
-        group_idxs: &[IdxSize],
-        _seq_id: u64,
-    ) -> PolarsResult<()> {
-        // TODO: we should really implement a sum-as-other-type operation instead
-        // of doing this materialized cast.
-        assert!(values.dtype() == &DataType::Boolean);
-        assert!(values.len() == group_idxs.len());
-        let values = values.as_materialized_series(); // @scalar-opt
-        let ca: &BooleanChunked = values.as_ref().as_ref();
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, ov) in group_idxs.iter().zip(ca.iter()) {
-                self.values
-                    .or_pos_unchecked(*g as usize, ov.unwrap_or(false));
-                self.mask.or_pos_unchecked(*g as usize, ov.is_some());
-            }
-        }
-        Ok(())
-    }
-
     unsafe fn update_groups_while_evicting(
         &mut self,
         values: &Column,
@@ -533,27 +468,7 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(other.values.len() == group_idxs.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, (v, o)) in group_idxs
-                .iter()
-                .zip(other.values.iter().zip(other.mask.iter()))
-            {
-                self.values.or_pos_unchecked(*g as usize, v);
-                self.mask.or_pos_unchecked(*g as usize, o);
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],

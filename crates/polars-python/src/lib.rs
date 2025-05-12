@@ -13,6 +13,7 @@ pub mod catalog;
 pub mod cloud;
 pub mod conversion;
 pub mod dataframe;
+pub mod dataset;
 pub mod datatypes;
 pub mod error;
 pub mod exceptions;

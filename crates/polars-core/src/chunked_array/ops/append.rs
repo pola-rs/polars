@@ -149,7 +149,15 @@ where
     ///
     /// See also [`extend`](Self::extend) for appends to the underlying memory
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
-        self.append_owned(other.clone())
+        update_sorted_flag_before_append::<T>(self, other);
+        let len = self.len();
+        self.length = self
+            .length
+            .checked_add(other.length)
+            .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
+        self.null_count += other.null_count;
+        new_chunks(&mut self.chunks, &other.chunks, len);
+        Ok(())
     }
 
     /// Append in place. This is done by adding the chunks of `other` to this [`ChunkedArray`].

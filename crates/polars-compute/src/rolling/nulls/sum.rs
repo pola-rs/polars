@@ -69,6 +69,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + AddAssign
         start: usize,
         end: usize,
         _params: Option<RollingFnParams>,
+        _window_size: Option<usize>,
     ) -> Self {
         let mut out = Self {
             slice,

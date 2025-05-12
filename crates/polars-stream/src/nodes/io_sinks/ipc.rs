@@ -57,7 +57,7 @@ impl IpcSinkNode {
 
 impl SinkNode for IpcSinkNode {
     fn name(&self) -> &str {
-        "ipc_sink"
+        "ipc-sink"
     }
 
     fn is_sink_input_parallel(&self) -> bool {

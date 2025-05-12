@@ -1,9 +1,9 @@
-use super::*;
+use crate::prelude::ArrowTimeUnit;
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
 #[cfg_attr(
     any(feature = "serde-lazy", feature = "serde"),
-    derive(Serialize, Deserialize)
+    derive(serde::Serialize, serde::Deserialize)
 )]
 pub enum TimeUnit {
     Nanoseconds,
@@ -23,8 +23,8 @@ impl From<&ArrowTimeUnit> for TimeUnit {
     }
 }
 
-impl Display for TimeUnit {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Display for TimeUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TimeUnit::Nanoseconds => {
                 write!(f, "ns")

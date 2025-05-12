@@ -40,16 +40,19 @@ mod inner {
         nodes_scratch: UnitVec<Node>,
         #[expect(unused)]
         pub(super) new_streaming: bool,
+        // Controls pushing filters past fallible projections
+        pub(super) maintain_errors: bool,
     }
 
     impl<'a> PredicatePushDown<'a> {
-        pub fn new(expr_eval: ExprEval<'a>, new_streaming: bool) -> Self {
+        pub fn new(expr_eval: ExprEval<'a>, maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
                 expr_eval,
                 verbose: verbose(),
                 block_at_cache: true,
                 nodes_scratch: unitvec![],
                 new_streaming,
+                maintain_errors,
             }
         }
 
@@ -119,12 +122,15 @@ impl PredicatePushDown<'_> {
             }
             let input = inputs[inputs.len() - 1];
 
+            let maintain_errors = self.maintain_errors;
             let (eligibility, alias_rename_map) = pushdown_eligibility(
                 &exprs,
                 &[],
                 &acc_predicates,
                 expr_arena,
                 self.empty_nodes_scratch_mut(),
+                maintain_errors,
+                lp_arena.get(input),
             )?;
 
             let local_predicates = match eligibility {
@@ -142,35 +148,8 @@ impl PredicatePushDown<'_> {
             };
 
             if !alias_rename_map.is_empty() {
-                for (_, e) in acc_predicates.iter_mut() {
-                    let mut needs_rename = false;
-
-                    for (_, ae) in (&*expr_arena).iter(e.node()) {
-                        if let AExpr::Column(name) = ae {
-                            needs_rename |= alias_rename_map.contains_key(name);
-
-                            if needs_rename {
-                                break;
-                            }
-                        }
-                    }
-
-                    if needs_rename {
-                        // TODO! Do this directly on AExpr.
-                        let mut new_expr = node_to_expr(e.node(), expr_arena);
-                        new_expr = new_expr.map_expr(|e| match e {
-                            Expr::Column(name) => {
-                                if let Some(rename_to) = alias_rename_map.get(&*name) {
-                                    Expr::Column(rename_to.clone())
-                                } else {
-                                    Expr::Column(name)
-                                }
-                            },
-                            e => e,
-                        });
-                        let predicate = to_aexpr(new_expr, expr_arena)?;
-                        e.set_node(predicate);
-                    }
+                for (_, expr_ir) in acc_predicates.iter_mut() {
+                    map_column_references(expr_ir, expr_arena, &alias_rename_map);
                 }
             }
 
@@ -284,6 +263,10 @@ impl PredicatePushDown<'_> {
     ) -> PolarsResult<IR> {
         use IR::*;
 
+        // Note: The logic within the match block should ensure `acc_predicates` is left in a state
+        // where it contains only pushable exprs after it is done (although in some cases it may
+        // contain a single fallible expression).
+
         match lp {
             Filter {
                 // Note: We assume AND'ed predicates have already been split to separate IR filter
@@ -302,12 +285,16 @@ impl PredicatePushDown<'_> {
                 let tmp_key = temporary_unique_key(&acc_predicates);
                 acc_predicates.insert(tmp_key.clone(), predicate.clone());
 
+                let maintain_errors = self.maintain_errors;
+
                 let local_predicates = match pushdown_eligibility(
                     &[],
-                    &[predicate.clone()],
+                    &[(&tmp_key, predicate.clone())],
                     &acc_predicates,
                     expr_arena,
                     self.empty_nodes_scratch_mut(),
+                    maintain_errors,
+                    lp_arena.get(input),
                 )?
                 .0
                 {
@@ -506,21 +493,15 @@ impl PredicatePushDown<'_> {
                 if function.allow_predicate_pd() {
                     match function {
                         FunctionIR::Rename { existing, new, .. } => {
-                            let local_predicates =
-                                process_rename(&mut acc_predicates, expr_arena, existing, new)?;
-                            let lp = self.pushdown_and_continue(
+                            process_rename(&mut acc_predicates, expr_arena, existing, new);
+
+                            self.pushdown_and_continue(
                                 lp,
                                 acc_predicates,
                                 lp_arena,
                                 expr_arena,
                                 false,
-                            )?;
-                            Ok(self.optional_apply_predicate(
-                                lp,
-                                local_predicates,
-                                lp_arena,
-                                expr_arena,
-                            ))
+                            )
                         },
                         FunctionIR::Explode { columns, .. } => {
                             let condition = |name: &PlSmallStr| columns.iter().any(|s| s == name);
@@ -639,31 +620,9 @@ impl PredicatePushDown<'_> {
                 acc_predicates,
             ),
             lp @ Union { .. } => {
-                if cfg!(debug_assertions) {
-                    for v in acc_predicates.values() {
-                        let ae = expr_arena.get(v.node());
-                        assert!(permits_filter_pushdown(
-                            self.empty_nodes_scratch_mut(),
-                            ae,
-                            expr_arena
-                        ));
-                    }
-                }
-
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
             lp @ Sort { .. } => {
-                if cfg!(debug_assertions) {
-                    for v in acc_predicates.values() {
-                        let ae = expr_arena.get(v.node());
-                        assert!(permits_filter_pushdown(
-                            self.empty_nodes_scratch_mut(),
-                            ae,
-                            expr_arena
-                        ));
-                    }
-                }
-
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
             lp @ Sink { .. } | lp @ SinkMultiple { .. } => {

@@ -185,8 +185,8 @@ def test_cross_join_concat_list_18587() -> None:
     lf3 = lf.select(pl.struct(pl.all()).alias("3"))
 
     result = (
-        lf1.join(lf2, how="cross")
-        .join(lf3, how="cross")
+        lf1.join(lf2, how="cross", maintain_order="left_right")
+        .join(lf3, how="cross", maintain_order="left_right")
         .select(pl.concat_list("1", "2", "3"))
         .collect()
     )

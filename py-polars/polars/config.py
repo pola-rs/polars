@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Self, Unpack
 
-
 __all__ = ["Config"]
 
 TableFormatNames: TypeAlias = Literal[
@@ -1505,7 +1504,7 @@ class Config(contextlib.ContextDecorator):
             raise NotImplementedError(msg)
         supported_engines = get_args(get_args(EngineType)[0])
         if engine not in {*supported_engines, None}:
-            msg = "Invalid engine"
+            msg = "invalid engine"
             raise ValueError(msg)
         if engine is None:
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)

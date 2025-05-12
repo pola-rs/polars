@@ -248,7 +248,7 @@ where
     T: PolarsNumericType,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let dt = format!("{}", T::get_dtype());
+        let dt = format!("{}", T::get_static_dtype());
         format_array!(f, self, dt, self.name(), "ChunkedArray")
     }
 }
