@@ -1,5 +1,7 @@
 use std::sync::atomic::Ordering;
 
+use polars_io::pl_async;
+
 use super::*;
 
 pub struct CacheExec {
@@ -7,6 +9,7 @@ pub struct CacheExec {
     pub id: usize,
     /// `(cache_hits_before_drop - 1)`
     pub count: u32,
+    pub is_new_streaming_scan: bool,
 }
 
 impl Executor for CacheExec {
@@ -53,16 +56,53 @@ impl Executor for CachePrefiller {
         if state.verbose() {
             eprintln!("PREFILL CACHES")
         }
+
+        #[cfg(feature = "async")]
+        let concurrent_scans_limit = {
+            let concurrent_scans_limit = POOL.current_num_threads().min(128);
+
+            if state.verbose() {
+                eprintln!("CachePrefiller: {}", concurrent_scans_limit)
+            }
+
+            Arc::new(tokio::sync::Semaphore::new(concurrent_scans_limit))
+        };
+
+        #[cfg(feature = "async")]
+        let mut scan_handles = vec![];
+
         // Ensure we traverse in discovery order. This will ensure that caches aren't dependent on each
         // other.
-        for cache in self.caches.values_mut() {
+        for (_, mut cache_exec) in self.caches.drain(..) {
             let mut state = state.split();
             state.branch_idx += 1;
-            let _df = cache.execute(&mut state)?;
+
+            #[cfg(feature = "async")]
+            if cache_exec.is_new_streaming_scan {
+                let concurrent_scans_limit = concurrent_scans_limit.clone();
+
+                scan_handles.push(pl_async::get_runtime().spawn(async move {
+                    let _permit = concurrent_scans_limit.acquire().await.unwrap();
+
+                    tokio::task::spawn_blocking(move || cache_exec.execute(&mut state))
+                        .await
+                        .unwrap()
+                }));
+
+                continue;
+            }
+
+            let _df = cache_exec.execute(&mut state)?;
         }
+
         if state.verbose() {
             eprintln!("EXECUTE PHYS PLAN")
         }
+
+        for handle in scan_handles {
+            pl_async::get_runtime().block_on(handle).unwrap()?;
+        }
+
         self.phys_plan.execute(state)
     }
 }

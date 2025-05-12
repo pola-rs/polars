@@ -516,6 +516,7 @@ fn create_physical_plan_impl(
                                 id: scan_mem_id,
                                 // This is (n_hits - 1), because the drop logic is `fetch_sub(1) == 0`.
                                 count: 0,
+                                is_new_streaming_scan: true,
                             }),
                         );
                     } else {
@@ -531,6 +532,7 @@ fn create_physical_plan_impl(
                         // `cache_nodes`.
                         input: None,
                         count: Default::default(),
+                        is_new_streaming_scan: true,
                     }))
                 },
                 #[allow(unreachable_patterns)]
@@ -616,6 +618,7 @@ fn create_physical_plan_impl(
                     id,
                     input: Some(input),
                     count: cache_hits,
+                    is_new_streaming_scan: false,
                 });
 
                 cache_nodes.insert(id, cache);
@@ -625,6 +628,7 @@ fn create_physical_plan_impl(
                 id,
                 input: None,
                 count: cache_hits,
+                is_new_streaming_scan: false,
             }))
         },
         Distinct { input, options } => {
