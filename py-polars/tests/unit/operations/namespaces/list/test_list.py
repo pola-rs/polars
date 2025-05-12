@@ -1092,7 +1092,7 @@ def test_list_struct_field_perf() -> None:
 
     t0 = time_func(q.collect, iterations=5)
 
-    # Note: Rechunk is important here
+    # Note: Rechunk is important here to force single threaded
     df = pl.concat(10_000 * [base_df]).rechunk()
 
     q = df.lazy().select(pl.col("a").list.eval(pl.element().struct.field("fld")))
