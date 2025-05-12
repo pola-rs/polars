@@ -1288,6 +1288,37 @@ impl PyLazyFrame {
         ldf.with_columns_seq(exprs.to_exprs()).into()
     }
 
+    fn match_to_schema(
+        &self,
+        schema: Wrap<Schema>,
+        missing_columns: Vec<Wrap<MissingColumnsPolicyOrExpr>>,
+        missing_struct_fields: Vec<Wrap<MissingColumnsPolicy>>,
+        extra_columns: Wrap<ExtraColumnsPolicy>,
+        extra_struct_fields: Vec<Wrap<ExtraColumnsPolicy>>,
+        integer_cast: Vec<Wrap<UpcastOrForbid>>,
+        float_cast: Vec<Wrap<UpcastOrForbid>>,
+    ) -> Self {
+        let per_column = (0..schema
+            .0
+            .len())
+            .map(|i| MatchToSchemaPerColumn {
+                missing_columns: missing_columns[i].0.clone(),
+                missing_struct_fields: missing_struct_fields[i].0,
+                integer_upcast: integer_cast[i].0,
+                float_upcast: float_cast[i].0,
+                extra_struct_fields: extra_struct_fields[i].0,
+            })
+            .collect();
+
+        let ldf = self.ldf.clone();
+        ldf.match_to_schema(
+            Arc::new(schema.0),
+            per_column,
+            extra_columns.0,
+        )
+        .into()
+    }
+
     fn rename(&mut self, existing: Vec<String>, new: Vec<String>, strict: bool) -> Self {
         let ldf = self.ldf.clone();
         ldf.rename(existing, new, strict).into()

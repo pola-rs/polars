@@ -35,6 +35,7 @@ use pyo3::sync::GILOnceCell;
 use pyo3::types::{PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
+use crate::expr::PyExpr;
 use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
@@ -77,6 +78,7 @@ pub(crate) fn vec_extract_wrapped<T>(buf: Vec<Wrap<T>>) -> Vec<T> {
     reinterpret_vec(buf)
 }
 
+#[derive(PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
 
@@ -1528,5 +1530,69 @@ impl<'py> FromPyObject<'py> for Wrap<Option<TimeZone>> {
         let tz = tz.map(|x| x.0);
 
         Ok(Wrap(TimeZone::opt_try_new(tz).map_err(to_py_err)?))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<UpcastOrForbid> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "upcast" => UpcastOrForbid::Upcast,
+            "forbid" => UpcastOrForbid::Forbid,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "cast parameter must be one of {{'upcast', 'forbid'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<ExtraColumnsPolicy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "ignore" => ExtraColumnsPolicy::Ignore,
+            "raise" => ExtraColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "extra column/field parameter must be one of {{'ignore', 'raise'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicy> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "insert" => MissingColumnsPolicy::Insert,
+            "raise" => MissingColumnsPolicy::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "missing column/field parameter must be one of {{'insert', 'raise'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicyOrExpr> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(pyexpr) = ob.extract::<PyExpr>() {
+            return Ok(Wrap(MissingColumnsPolicyOrExpr::InsertWith(pyexpr.inner)));
+        }
+
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "insert" => MissingColumnsPolicyOrExpr::Insert,
+            "raise" => MissingColumnsPolicyOrExpr::Raise,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "missing column/field parameter must be one of {{'insert', 'raise', expression}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
     }
 }

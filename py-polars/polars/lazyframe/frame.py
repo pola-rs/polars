@@ -8082,6 +8082,75 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
 
+    def match_to_schema(
+        self,
+        schema: Schema,
+        *,
+        missing_columns: Literal["insert" | "raise"]
+        | Mapping[str, Literal["insert" | "raise"] | Expr] = "raise",
+        missing_struct_fields: Literal["insert" | "raise"]
+        | Mapping[str, Literal["insert" | "raise"]] = "raise",
+        extra_columns: Literal["ignore" | "raise"] = "raise",
+        extra_struct_fields: Literal["ignore" | "raise"]
+        | Mapping[str, Literal["ignore" | "raise"]] = "raise",
+        integer_cast: Literal["upcast" | "forbid"]
+        | Mapping[str, Literal["upcast" | "forbid"]] = "forbid",
+        float_cast: Literal["upcast" | "forbid"]
+        | Mapping[str, Literal["upcast" | "forbid"]] = "forbid",
+    ) -> LazyFrame:
+        from polars import Expr
+
+        str_to_index = {name: i for i, name in enumerate(schema.keys())}
+        if isinstance(missing_columns, Mapping):
+            filled_missing_columns = ["raise"] * len(schema)
+            for key, value in missing_columns.items():
+                if isinstance(value, Expr):
+                    filled_missing_columns[str_to_index[key]] = value._pyexpr
+                else:
+                    filled_missing_columns[str_to_index[key]] = value
+        else:
+            filled_missing_columns = [missing_columns] * len(schema)
+
+        if isinstance(missing_struct_fields, Mapping):
+            filled_missing_struct_fields = ["raise"] * len(schema)
+            for key, value in missing_struct_fields.items():
+                filled_missing_struct_fields[str_to_index[key]] = value
+        else:
+            filled_missing_struct_fields = [missing_struct_fields] * len(schema)
+
+        if isinstance(extra_struct_fields, Mapping):
+            filled_extra_struct_fields = ["raise"] * len(schema)
+            for key, value in integer_cast.items():
+                filled_extra_struct_fields[str_to_index[key]] = value
+        else:
+            filled_extra_struct_fields = [extra_struct_fields] * len(schema)
+
+        if isinstance(integer_cast, Mapping):
+            filled_integer_cast = ["forbid"] * len(schema)
+            for key, value in integer_cast.items():
+                filled_integer_cast[str_to_index[key]] = value
+        else:
+            filled_integer_cast = [integer_cast] * len(schema)
+
+        if isinstance(float_cast, Mapping):
+            filled_float_cast = ["forbid"] * len(schema)
+            for key, value in float_cast.items():
+                filled_float_cast[str_to_index[key]] = value
+        else:
+            filled_float_cast = [float_cast] * len(schema)
+
+        return LazyFrame._from_pyldf(
+            self._ldf.match_to_schema(
+                schema=schema,
+                missing_columns=filled_missing_columns,
+                missing_struct_fields=filled_missing_struct_fields,
+                extra_columns=extra_columns,
+                extra_struct_fields=filled_extra_struct_fields,
+                integer_cast=filled_integer_cast,
+                float_cast=filled_float_cast,
+            )
+        )
+
     def _to_metadata(
         self,
         columns: None | str | list[str] = None,

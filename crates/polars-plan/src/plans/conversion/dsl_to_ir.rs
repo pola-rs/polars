@@ -2,6 +2,7 @@ use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::hive_partitions_from_paths;
+use polars_core::chunked_array::cast::CastOptions;
 
 use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
@@ -735,6 +736,132 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options,
             };
             return run_conversion(lp, ctxt, "with_columns");
+        },
+        DslPlan::MatchToSchema {
+            input,
+            match_schema,
+            per_column,
+            extra_columns,
+        } => {
+            let input =
+                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
+            assert_eq!(per_column.len(), match_schema.len());
+
+            if input_schema.as_ref() == &match_schema {
+                return Ok(input);
+            }
+
+            let mut exprs = Vec::with_capacity(match_schema.len());
+            let mut found_missing_columns = Vec::new();
+            let mut used_input_columns = 0;
+
+            for ((column, dtype), per_column) in match_schema.iter().zip(per_column.iter()) {
+                match input_schema.get(column) {
+                    None => match &per_column.missing_columns {
+                        MissingColumnsPolicyOrExpr::Raise => found_missing_columns.push(column),
+                        MissingColumnsPolicyOrExpr::Insert => exprs.push(Expr::Alias(
+                            Arc::new(Expr::Literal(LiteralValue::Scalar(Scalar::null(
+                                dtype.clone(),
+                            )))),
+                            column.clone(),
+                        )),
+                        MissingColumnsPolicyOrExpr::InsertWith(expr) => {
+                            exprs.push(Expr::Alias(Arc::new(expr.clone()), column.clone()))
+                        },
+                    },
+                    Some(input_dtype) if dtype == input_dtype => {
+                        used_input_columns += 1;
+                        exprs.push(Expr::Column(column.clone()))
+                    },
+                    Some(input_dtype) => {
+                        let from_dtype = input_dtype;
+                        let to_dtype = dtype;
+
+                        let policy = CastColumnsPolicy {
+                            integer_upcast: per_column.integer_upcast == UpcastOrForbid::Upcast,
+                            float_upcast: per_column.float_upcast == UpcastOrForbid::Upcast,
+                            float_downcast: false,
+                            datetime_nanoseconds_downcast: false,
+                            datetime_convert_timezone: false,
+                            missing_struct_fields: per_column.missing_struct_fields,
+                            extra_struct_fields: per_column.extra_struct_fields,
+                        };
+
+                        let should_cast =
+                            policy.should_cast_column(column, from_dtype, to_dtype)?;
+
+                        let mut expr = Expr::Column(PlSmallStr::from_str(column));
+                        if should_cast {
+                            expr = Expr::Cast {
+                                expr: Arc::new(expr),
+                                dtype: to_dtype.clone(),
+                                options: CastOptions::NonStrict,
+                            };
+                        }
+
+                        used_input_columns += 1;
+                        exprs.push(expr);
+                    },
+                }
+            }
+
+            if let Some(lst) = found_missing_columns.first() {
+                use std::fmt::Write;
+                let mut formatted = String::new();
+
+                for c in &found_missing_columns[..found_missing_columns.len() - 1] {
+                    write!(&mut formatted, "\"{c}\", ").unwrap();
+                }
+                if found_missing_columns.len() > 1 {
+                    formatted.push_str(" and ");
+                }
+                write!(&mut formatted, "\"{lst}\"").unwrap();
+                polars_bail!(SchemaMismatch: "missing columns in `match_to_schema`: {formatted}");
+            }
+
+            if used_input_columns != input_schema.len()
+                && extra_columns == ExtraColumnsPolicy::Raise
+            {
+                let found_extra_columns = input_schema
+                    .iter_names()
+                    .filter(|n| match_schema.contains(n))
+                    .collect::<Vec<_>>();
+
+                use std::fmt::Write;
+                let mut formatted = String::new();
+
+                for c in &found_extra_columns[..found_extra_columns.len() - 1] {
+                    write!(&mut formatted, "\"{c}\", ").unwrap();
+                }
+                if found_extra_columns.len() > 1 {
+                    formatted.push_str(" and ");
+                }
+                write!(
+                    &mut formatted,
+                    "\"{}\"",
+                    found_extra_columns.last().unwrap()
+                )
+                .unwrap();
+                polars_bail!(SchemaMismatch: "extra columns in `match_to_schema`: {formatted}");
+            }
+
+            let exprs = to_expr_irs(exprs, ctxt.expr_arena)?;
+
+            ctxt.conversion_optimizer
+                .fill_scratch(&exprs, ctxt.expr_arena);
+            let lp = IR::Select {
+                input,
+                expr: exprs,
+                schema: match_schema.clone(),
+                options: ProjectionOptions {
+                    run_parallel: true,
+                    duplicate_check: false,
+                    should_broadcast: true,
+                },
+            };
+            return run_conversion(lp, ctxt, "match_to_schema");
         },
         DslPlan::Distinct { input, options } => {
             let input =
