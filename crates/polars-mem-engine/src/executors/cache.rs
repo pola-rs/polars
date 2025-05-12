@@ -62,14 +62,17 @@ impl Executor for CachePrefiller {
             let concurrent_scans_limit = POOL.current_num_threads().min(128);
 
             if state.verbose() {
-                eprintln!("CachePrefiller: {}", concurrent_scans_limit)
+                eprintln!(
+                    "CachePrefiller: concurrent new-streaming scans limit: {}",
+                    concurrent_scans_limit
+                )
             }
 
             Arc::new(tokio::sync::Semaphore::new(concurrent_scans_limit))
         };
 
         #[cfg(feature = "async")]
-        let mut scan_handles = vec![];
+        let mut scan_handles: Vec<tokio::task::JoinHandle<PolarsResult<()>>> = vec![];
 
         // Ensure we traverse in discovery order. This will ensure that caches aren't dependent on each
         // other.
@@ -84,23 +87,31 @@ impl Executor for CachePrefiller {
                 scan_handles.push(pl_async::get_runtime().spawn(async move {
                     let _permit = concurrent_scans_limit.acquire().await.unwrap();
 
-                    tokio::task::spawn_blocking(move || cache_exec.execute(&mut state))
-                        .await
-                        .unwrap()
+                    tokio::task::spawn_blocking(move || {
+                        cache_exec.execute(&mut state)?;
+
+                        Ok(())
+                    })
+                    .await
+                    .unwrap()
                 }));
 
                 continue;
             }
 
-            let _df = cache_exec.execute(&mut state)?;
-        }
+            for handle in scan_handles.drain(..) {
+                pl_async::get_runtime().block_on(handle).unwrap()?;
+            }
 
-        if state.verbose() {
-            eprintln!("EXECUTE PHYS PLAN")
+            let _df = cache_exec.execute(&mut state)?;
         }
 
         for handle in scan_handles {
             pl_async::get_runtime().block_on(handle).unwrap()?;
+        }
+
+        if state.verbose() {
+            eprintln!("EXECUTE PHYS PLAN")
         }
 
         self.phys_plan.execute(state)
