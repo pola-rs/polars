@@ -207,13 +207,13 @@ fn run_elementwise_on_values(
         POOL.install(|| {
             lst.chunks()
                 .into_par_iter()
-                .map(|arr| apply_to_chunk(arr))
+                .map(&apply_to_chunk)
                 .collect::<PolarsResult<Vec<Box<dyn Array>>>>()
         })?
     } else {
         lst.chunks()
             .iter()
-            .map(|arr| apply_to_chunk(arr))
+            .map(&apply_to_chunk)
             .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?
     };
 
