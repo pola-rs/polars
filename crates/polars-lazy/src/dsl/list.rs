@@ -177,7 +177,7 @@ fn run_elementwise_on_values(
 
     let state = ExecutionState::new();
 
-    let apply_to_chunk = |arr: &Box<dyn Array>| {
+    let apply_to_chunk = |arr: &dyn Array| {
         let arr: &ListArray<i64> = arr.as_any().downcast_ref().unwrap();
 
         let values = unsafe {
