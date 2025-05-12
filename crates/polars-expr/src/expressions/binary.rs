@@ -39,7 +39,7 @@ impl BinaryExpr {
             has_literal,
             allow_threading,
             is_scalar,
-            output_field
+            output_field,
         }
     }
 }
