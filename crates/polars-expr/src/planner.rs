@@ -266,6 +266,7 @@ fn create_physical_expr_inner(
             )))
         },
         BinaryExpr { left, op, right } => {
+            let output_field = expr_arena.get(expression).to_field(schema, Context::Default, expr_arena)?;
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let lhs = create_physical_expr_inner(*left, ctxt, expr_arena, schema, state)?;
             let rhs = create_physical_expr_inner(*right, ctxt, expr_arena, schema, state)?;
@@ -277,6 +278,7 @@ fn create_physical_expr_inner(
                 state.local.has_lit,
                 state.allow_threading,
                 is_scalar,
+                output_field
             )))
         },
         Column(column) => Ok(Arc::new(ColumnExpr::new(
