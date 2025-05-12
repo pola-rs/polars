@@ -64,6 +64,8 @@ impl Executor for CachePrefiller {
                 .unwrap()
                 .parse::<usize>()
                 .unwrap();
+            // Note: This needs to be less than the size of the tokio blocking threadpool (which
+            // defaults to 512).
             // POOL.current_num_threads().min(128);
 
             if state.verbose() {
@@ -102,6 +104,13 @@ impl Executor for CachePrefiller {
                 }));
 
                 continue;
+            }
+
+            // This cache node may have dependency on the in-progress scan nodes,
+            // ensure all of them complete here.
+
+            if state.verbose() && !scan_handles.is_empty() {
+                eprintln!("CachePrefiller: wait for {} scans", scan_handles.len())
             }
 
             for handle in scan_handles.drain(..) {
