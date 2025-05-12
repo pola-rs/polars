@@ -23,5 +23,5 @@ optional arguments:
   -V, --version         Display the version of the Polars Cloud client.
 ```
 
-If you're just starting out with Polars Cloud then `pc setup` will guide you through setting up your environment to be
-able to quickly run queries.
+If you're just starting out with Polars Cloud then `pc setup` will guide you through setting up your
+environment to be able to quickly run queries.

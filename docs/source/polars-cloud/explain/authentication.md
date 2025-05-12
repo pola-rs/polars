@@ -1,6 +1,7 @@
 # Logging in
 
-Polars cloud allows authentication through short-lived authentication tokens. There are two main ways to authenticate:
+Polars cloud allows authentication through short-lived authentication tokens. There are two main
+ways to authenticate:
 
 1. `authenticate` Loads cached tokens, otherwise opens the browser to log in and caches them
 2. `login` Opens the browser to log in, caches tokens but does not reuse them
@@ -20,7 +21,7 @@ run `pc.authenticate(interactive=False)` instead.
 After successful authentication, Polars Cloud stores the token in your OS config directory:
 
 | OS      | Value                                  | Example                                  |
-|---------|----------------------------------------|------------------------------------------|
+| ------- | -------------------------------------- | ---------------------------------------- |
 | Linux   | `$XDG_CONFIG_HOME` or `$HOME/.config/` | home/alice/.config                       |
 | macOS   | `$HOME/Library/Application Support`    | /Users/Alice/Library/Application Support |
 | Windows | `{FOLDERID_RoamingAppData}`            | C:\Users\Alice\AppData\Roaming           |
