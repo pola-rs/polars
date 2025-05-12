@@ -21,6 +21,7 @@ from polars.dataframe import DataFrame
 from polars.dependencies import _check_for_pandas, _check_for_pyarrow
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
+from polars.exceptions import InvalidOperationError
 from polars.lazyframe import LazyFrame
 from polars.series import Series
 
@@ -204,6 +205,14 @@ class SQLContext(Generic[FrameType]):
         )
         self._ctxt = PySQLContext.new()
         self._eager_execution = eager
+
+        if frames is not None:
+            if not isinstance(frames, dict):
+                msg = (
+                    "All values must be named. Use named parameters or pass a dictionary with named frames.\n"
+                    "Example: pl.SQLContext(df=df) or pl.SQLContext(frames={'df': df})"
+                )
+                raise InvalidOperationError(msg)
 
         frames = dict(frames or {})
         if register_globals:
