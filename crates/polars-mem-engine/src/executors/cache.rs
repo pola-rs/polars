@@ -105,6 +105,7 @@ impl Executor for CachePrefiller {
             // This cache node may have dependency on the in-progress scan nodes,
             // ensure all of them complete here.
 
+            #[cfg(feature = "async")]
             if state.verbose() && !scan_handles.is_empty() {
                 eprintln!(
                     "CachePrefiller: wait for {} scans executors",
@@ -112,6 +113,7 @@ impl Executor for CachePrefiller {
                 )
             }
 
+            #[cfg(feature = "async")]
             for handle in scan_handles.drain(..) {
                 pl_async::get_runtime().block_on(handle).unwrap()?;
             }
@@ -119,6 +121,7 @@ impl Executor for CachePrefiller {
             let _df = cache_exec.execute(&mut state)?;
         }
 
+        #[cfg(feature = "async")]
         if state.verbose() && !scan_handles.is_empty() {
             eprintln!(
                 "CachePrefiller: wait for {} scans executors",
@@ -126,6 +129,7 @@ impl Executor for CachePrefiller {
             )
         }
 
+        #[cfg(feature = "async")]
         for handle in scan_handles {
             pl_async::get_runtime().block_on(handle).unwrap()?;
         }
