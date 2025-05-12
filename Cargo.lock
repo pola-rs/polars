@@ -3187,6 +3187,7 @@ dependencies = [
  "async-stream",
  "atoi_simd",
  "avro-schema",
+ "bitflags",
  "bytemuck",
  "chrono",
  "chrono-tz",
