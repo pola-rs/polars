@@ -120,6 +120,10 @@ impl Executor for CachePrefiller {
             let _df = cache_exec.execute(&mut state)?;
         }
 
+        if state.verbose() && !scan_handles.is_empty() {
+            eprintln!("CachePrefiller: wait for {} scans", scan_handles.len())
+        }
+
         for handle in scan_handles {
             pl_async::get_runtime().block_on(handle).unwrap()?;
         }
