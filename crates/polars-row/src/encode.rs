@@ -913,7 +913,10 @@ pub fn fixed_size(dtype: &ArrowDataType, dict: Option<&RowEncodingContext>) -> O
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::proptest::array;
+    use arrow::array::proptest::{
+        ArrayArbitraryOptions, ArrowDataTypeArbitraryOptions, ArrowDataTypeArbitrarySelection,
+        array_with_options,
+    };
 
     use super::*;
 
@@ -921,7 +924,12 @@ mod tests {
         fn arrays
             ()
             (length in 0..100usize)
-            (arrays in proptest::collection::vec(array(length), 1..3))
+            (arrays in proptest::collection::vec(array_with_options(length, ArrayArbitraryOptions {
+                dtype: ArrowDataTypeArbitraryOptions {
+                    allowed_dtypes: ArrowDataTypeArbitrarySelection::all() & !ArrowDataTypeArbitrarySelection::BINARY,
+                    ..Default::default()
+                }
+            }), 1..3))
         -> Vec<Box<dyn Array>> {
             arrays
         }

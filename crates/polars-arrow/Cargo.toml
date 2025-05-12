@@ -13,6 +13,7 @@ repository = { workspace = true }
 description = "Minimal implementation of the Arrow specification forked from arrow2"
 
 [dependencies]
+bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["must_cast"] }
 chrono = { workspace = true }
 # for timezone support
