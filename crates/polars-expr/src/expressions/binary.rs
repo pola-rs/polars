@@ -21,6 +21,7 @@ pub struct BinaryExpr {
 }
 
 impl BinaryExpr {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         left: Arc<dyn PhysicalExpr>,
         op: Operator,
