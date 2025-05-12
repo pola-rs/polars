@@ -11,7 +11,8 @@ from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import Expr, PivotAgg, PolarsIntegerType, PolarsTemporalType
+    from polars import Expr
+    from polars._typing import PivotAgg, PolarsIntegerType, PolarsTemporalType
 
 
 def test_pivot() -> None:
