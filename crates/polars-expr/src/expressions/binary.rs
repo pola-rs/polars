@@ -17,9 +17,11 @@ pub struct BinaryExpr {
     has_literal: bool,
     allow_threading: bool,
     is_scalar: bool,
+    output_field: Field,
 }
 
 impl BinaryExpr {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         left: Arc<dyn PhysicalExpr>,
         op: Operator,
@@ -28,6 +30,7 @@ impl BinaryExpr {
         has_literal: bool,
         allow_threading: bool,
         is_scalar: bool,
+        output_field: Field,
     ) -> Self {
         Self {
             left,
@@ -37,6 +40,7 @@ impl BinaryExpr {
             has_literal,
             allow_threading,
             is_scalar,
+            output_field,
         }
     }
 }
@@ -138,7 +142,7 @@ impl BinaryExpr {
         mut ac_l: AggregationContext<'a>,
         mut ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let name = ac_l.get_values().name().clone();
+        let name = self.output_field.name().clone();
         ac_l.groups();
         ac_r.groups();
         polars_ensure!(ac_l.groups.len() == ac_r.groups.len(), ComputeError: "lhs and rhs should have same group length");
@@ -160,8 +164,8 @@ impl BinaryExpr {
         mut ac_l: AggregationContext<'a>,
         mut ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let name = ac_l.get_values().name().clone();
-        let ca = ac_l
+        let name = self.output_field.name().clone();
+        let mut ca = ac_l
             .iter_groups(false)
             .zip(ac_r.iter_groups(false))
             .map(|(l, r)| {
@@ -173,7 +177,10 @@ impl BinaryExpr {
             })
             .map(|opt_res| opt_res.transpose())
             .collect::<PolarsResult<ListChunked>>()?
-            .with_name(name);
+            .with_name(name.clone());
+        if ca.is_empty() {
+            ca = ListChunked::full_null_with_dtype(name, 0, self.output_field.dtype());
+        }
 
         ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
         ac_l.with_agg_state(AggState::AggregatedList(ca.into_column()));
