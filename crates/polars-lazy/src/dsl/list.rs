@@ -190,8 +190,15 @@ fn run_elementwise_on_values(
 
         let df = values.into_frame();
 
-        phys_expr.evaluate(&df, &state).map(|c| {
-            let values = c.take_materialized_series().rechunk().chunks()[0].clone();
+        phys_expr.evaluate(&df, &state).map(|mut values| {
+            // Infer if we need to broadcast using the lengths.
+            // It's technically not a good idea to do this here, but it should be safe to do since
+            // we've checked the `ExprPushdownGroup` of this expression.
+            if values.len() != arr.len() && values.len() == 1 {
+                values = values.new_from_index(0, arr.len());
+            }
+
+            let values = values.take_materialized_series().rechunk().chunks()[0].clone();
 
             ListArray::<i64>::new(
                 output_arrow_dtype_physical.clone(),
