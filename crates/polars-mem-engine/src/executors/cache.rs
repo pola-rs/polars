@@ -59,7 +59,11 @@ impl Executor for CachePrefiller {
 
         #[cfg(feature = "async")]
         let concurrent_scans_limit = {
-            let concurrent_scans_limit = POOL.current_num_threads().min(128);
+            let concurrent_scans_limit = std::env::var("CACHE_PREFILLER_CONCURRENT_SCANS_LIMIT")
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
+            // POOL.current_num_threads().min(128);
 
             if state.verbose() {
                 eprintln!(
