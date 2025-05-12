@@ -137,7 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([
             col("Type 1")
                 .head(Some(3))
-                .over_with_options(["Type 1"], None, WindowMapping::Explode)
+                .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
                 .flatten(),
             col("Name")
                 .sort_by(
@@ -145,7 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     SortMultipleOptions::default().with_order_descending(true),
                 )
                 .head(Some(3))
-                .over_with_options(["Type 1"], None, WindowMapping::Explode)
+                .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
                 .flatten()
                 .alias("fastest/group"),
             col("Name")
@@ -154,13 +154,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     SortMultipleOptions::default().with_order_descending(true),
                 )
                 .head(Some(3))
-                .over_with_options(["Type 1"], None, WindowMapping::Explode)
+                .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
                 .flatten()
                 .alias("strongest/group"),
             col("Name")
                 .sort(Default::default())
                 .head(Some(3))
-                .over_with_options(["Type 1"], None, WindowMapping::Explode)
+                .over_with_options(Some(["Type 1"]), None, WindowMapping::Explode)?
                 .flatten()
                 .alias("sorted_by_alphabet"),
         ])
