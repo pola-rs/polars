@@ -1110,7 +1110,21 @@ def test_list_struct_field_perf() -> None:
         raise ValueError(msg)
 
 
-def test_list_elementwise_eval_fallible_masked() -> None:
+def test_list_elementwise_eval_fallible_masked_sliced() -> None:
+    # Baseline, no outer nulls
+    out = pl.DataFrame({"a": [["2025-01-01"], ["2025-01-01"]]}).select(
+        pl.col("a").list.eval(pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d"))
+    )
+
+    assert_series_equal(
+        out.to_series(),
+        pl.Series(
+            "a",
+            [[datetime(2025, 1, 1)], [datetime(2025, 1, 1)]],
+            dtype=pl.List(pl.Datetime),
+        ),
+    )
+
     # Ensure fallible expressions do not cause failures on masked-out data.
     out = (
         pl.DataFrame({"a": [["AAA"], ["2025-01-01"]]})
@@ -1124,5 +1138,24 @@ def test_list_elementwise_eval_fallible_masked() -> None:
 
     assert_series_equal(
         out.to_series(),
-        pl.Series("a", [None, [datetime(2025, 1, 1)]], dtype=pl.Datetime),
+        pl.Series("a", [None, [datetime(2025, 1, 1)]], dtype=pl.List(pl.Datetime)),
+    )
+
+    out = (
+        pl.DataFrame({"a": [["AAA"], ["2025-01-01"], ["2025-01-01"]]})
+        .slice(1)
+        .select(
+            pl.col("a").list.eval(
+                pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d")
+            )
+        )
+    )
+
+    assert_series_equal(
+        out.to_series(),
+        pl.Series(
+            "a",
+            [[datetime(2025, 1, 1)], [datetime(2025, 1, 1)]],
+            dtype=pl.List(pl.Datetime),
+        ),
     )

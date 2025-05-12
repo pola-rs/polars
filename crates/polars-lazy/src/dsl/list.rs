@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Mutex;
 
 use arrow::array::{Array, ListArray, ValueSize};
@@ -167,53 +168,61 @@ fn run_elementwise_on_values(
         Context::Default,
     )?;
 
+    let lst = lst
+        .trim_lists_to_normalized_offsets()
+        .map_or(Cow::Borrowed(lst), Cow::Owned);
+
     let output_arrow_dtype = output_field.dtype().clone().to_arrow(CompatLevel::newest());
+    let output_arrow_dtype_physical = output_arrow_dtype.underlying_physical_type();
 
     let state = ExecutionState::new();
 
-    macro_rules! apply_to_chunk {
-        ($arr:expr) => {{
-            let arr = $arr;
+    let apply_to_chunk = |arr: &Box<dyn Array>| {
+        let arr: &ListArray<i64> = arr.as_any().downcast_ref().unwrap();
 
-            let arr: &ListArray<i64> = arr.as_any().downcast_ref().unwrap();
+        let values = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr.values().clone()],
+                lst.inner_dtype(),
+            )
+        };
 
-            let values = unsafe {
-                Series::from_chunks_and_dtype_unchecked(
-                    PlSmallStr::EMPTY,
-                    vec![arr.values().clone()],
-                    lst.inner_dtype(),
-                )
-            };
+        let df = values.into_frame();
 
-            let df = values.into_frame();
+        phys_expr.evaluate(&df, &state).map(|c| {
+            let values = c.take_materialized_series().rechunk().chunks()[0].clone();
 
-            phys_expr.evaluate(&df, &state).map(|c| {
-                ListArray::<i64>::new(
-                    output_arrow_dtype.clone(),
-                    arr.offsets().clone(),
-                    c.take_materialized_series().rechunk().chunks()[0].clone(),
-                    arr.validity().cloned(),
-                )
-                .boxed()
-            })
-        }};
-    }
+            ListArray::<i64>::new(
+                output_arrow_dtype_physical.clone(),
+                arr.offsets().clone(),
+                values,
+                arr.validity().cloned(),
+            )
+            .boxed()
+        })
+    };
 
     let chunks = if parallel && lst.chunks().len() > 1 {
         POOL.install(|| {
             lst.chunks()
                 .into_par_iter()
-                .map(|arr| apply_to_chunk!(arr))
+                .map(|arr| apply_to_chunk(arr))
                 .collect::<PolarsResult<Vec<Box<dyn Array>>>>()
         })?
     } else {
         lst.chunks()
             .iter()
-            .map(|arr| apply_to_chunk!(arr))
+            .map(|arr| apply_to_chunk(arr))
             .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?
     };
 
-    Ok(unsafe { ListChunked::from_chunks(output_field.name, chunks) }.into_column())
+    Ok(unsafe {
+        ListChunked::from_chunks(output_field.name.clone(), chunks)
+            .cast_unchecked(output_field.dtype())
+            .unwrap()
+    }
+    .into_column())
 }
 
 pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
