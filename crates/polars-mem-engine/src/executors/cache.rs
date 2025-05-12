@@ -1,5 +1,6 @@
 use std::sync::atomic::Ordering;
 
+#[cfg(feature = "async")]
 use polars_io::pl_async;
 
 use super::*;
