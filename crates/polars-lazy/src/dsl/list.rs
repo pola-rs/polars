@@ -190,15 +190,7 @@ fn run_elementwise_on_values(
 
         let df = values.into_frame();
 
-        phys_expr.evaluate(&df, &state).map(|mut values| {
-            // Infer if we need to broadcast using the lengths.
-            // It's technically not a good idea to do this here (this is very deep in execution),
-            // but it should be safe to do since we've checked the `ExprPushdownGroup` of this
-            // expression.
-            if values.len() != arr.len() && values.len() == 1 {
-                values = values.new_from_index(0, arr.len());
-            }
-
+        phys_expr.evaluate(&df, &state).map(|values| {
             let values = values.take_materialized_series().rechunk().chunks()[0].clone();
 
             ListArray::<i64>::new(
@@ -238,12 +230,15 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
     fn eval(self, expr: Expr, parallel: bool) -> Expr {
         let mut expr_arena = Arena::with_capacity(4);
 
-        let pd_group =
-            to_aexpr(expr.clone(), &mut expr_arena).map_or(ExprPushdownGroup::Barrier, |node| {
+        let (pd_group, returns_scalar) = to_aexpr(expr.clone(), &mut expr_arena).map_or(
+            (ExprPushdownGroup::Barrier, true),
+            |node| {
                 let mut pd_group = ExprPushdownGroup::Pushable;
                 pd_group.update_with_expr_rec(expr_arena.get(node), &expr_arena, None);
-                pd_group
-            });
+
+                (pd_group, is_scalar_ae(node, &expr_arena))
+            },
+        );
 
         let this = self.into_list_name_space();
 
@@ -297,7 +292,8 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                 ExprPushdownGroup::Pushable => true,
                 ExprPushdownGroup::Fallible => !lst.has_nulls(),
                 ExprPushdownGroup::Barrier => false,
-            } {
+            } && !returns_scalar
+            {
                 run_elementwise_on_values(&lst, &expr, parallel, output_field).map(Some)
             } else if fits_idx_size && c.null_count() == 0 && !is_user_apply() {
                 run_on_group_by_engine(c.name().clone(), &lst, &expr)
