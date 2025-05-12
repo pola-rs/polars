@@ -1111,8 +1111,9 @@ def test_list_struct_field_perf() -> None:
 
 
 def test_list_elementwise_eval_fallible_masked() -> None:
+    # Ensure fallible expressions do not cause failures on masked-out data.
     out = (
-        pl.DataFrame({"a": [["aa"], ["2025-01-01"]]})
+        pl.DataFrame({"a": [["AAA"], ["2025-01-01"]]})
         .with_columns(pl.when(pl.Series([False, True])).then(pl.col("a")).alias("a"))
         .select(
             pl.col("a").list.eval(
