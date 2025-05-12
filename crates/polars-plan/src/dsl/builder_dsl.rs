@@ -159,7 +159,6 @@ impl DslBuilder {
         let is_nan = match subset {
             Some(subset) if subset.is_empty() => return self,
             Some(subset) => subset.into_iter().map(Expr::is_nan).collect(),
-            // TODO: when Decimal supports NaN values, include that dtype here
             None => vec![dtype_cols([DataType::Float32, DataType::Float64]).is_nan()],
         };
         self.remove(any_horizontal(is_nan).unwrap())
