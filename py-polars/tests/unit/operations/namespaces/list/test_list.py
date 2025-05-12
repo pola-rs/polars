@@ -15,6 +15,7 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -1080,3 +1081,94 @@ def test_list_shift_unequal_lengths_22018() -> None:
 
 def test_list_shift_self_broadcast() -> None:
     assert pl.Series("a", [[1, 2]]).list.shift(pl.Series([1, 2, 1])).len() == 3
+
+
+@pytest.mark.slow
+def test_list_struct_field_perf() -> None:
+    base_df = pl.concat(100 * [pl.DataFrame({"a": [[{"fld": 1}]]})]).rechunk()
+    df = base_df
+
+    q = df.lazy().select(pl.col("a").list.eval(pl.element().struct.field("fld")))
+
+    t0 = time_func(q.collect, iterations=5)
+
+    df = pl.concat(100 * [base_df])
+
+    q = df.lazy().select(pl.col("a").list.eval(pl.element().struct.field("fld")))
+
+    t1 = time_func(q.collect, iterations=5)
+
+    slowdown = t1 / t0
+
+    # Timings (Apple M3 Pro 11-core)
+    # * Debug build w/ elementwise: ~8.9x
+    # * Release pypi 1.29.0: ~45x
+    # Timings (Unknown GitHub runner):
+    # * Debug build w/ elementwise: ~18.7x
+    threshold = 27
+
+    if slowdown > threshold:
+        msg = f"slowdown ({slowdown}) > {threshold}x ({t0 = }, {t1 = })"
+        raise ValueError(msg)
+
+
+def test_list_elementwise_eval_logical_output_type() -> None:
+    out = pl.DataFrame({"a": [["2025-01-01"], ["2025-01-01"]]}).select(
+        pl.col("a").list.eval(pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d"))
+    )
+
+    assert_series_equal(
+        out.to_series(),
+        pl.Series(
+            "a",
+            [[datetime(2025, 1, 1)], [datetime(2025, 1, 1)]],
+            dtype=pl.List(pl.Datetime),
+        ),
+    )
+
+
+def test_list_elementwise_eval_fallible_masked_sliced() -> None:
+    # Baseline - fails on invalid data
+    with pytest.raises(
+        InvalidOperationError, match=r"conversion from `str` to `datetime\[μs\]` failed"
+    ):
+        pl.DataFrame({"a": [["AAA"], ["2025-01-01"]]}).select(
+            pl.col("a").list.eval(
+                pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d")
+            )
+        )
+
+    # Ensure fallible expressions do not cause failures on masked-out data.
+    out = (
+        pl.DataFrame({"a": [["AAA"], ["2025-01-01"]]})
+        .with_columns(pl.when(pl.Series([False, True])).then(pl.col("a")).alias("a"))
+        .select(
+            pl.col("a").list.eval(
+                pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d")
+            )
+        )
+    )
+
+    assert_series_equal(
+        out.to_series(),
+        pl.Series("a", [None, [datetime(2025, 1, 1)]], dtype=pl.List(pl.Datetime)),
+    )
+
+    out = (
+        pl.DataFrame({"a": [["AAA"], ["2025-01-01"], ["2025-01-01"]]})
+        .slice(1)
+        .select(
+            pl.col("a").list.eval(
+                pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d")
+            )
+        )
+    )
+
+    assert_series_equal(
+        out.to_series(),
+        pl.Series(
+            "a",
+            [[datetime(2025, 1, 1)], [datetime(2025, 1, 1)]],
+            dtype=pl.List(pl.Datetime),
+        ),
+    )
