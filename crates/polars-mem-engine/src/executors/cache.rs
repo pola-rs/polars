@@ -59,23 +59,19 @@ impl Executor for CachePrefiller {
         }
 
         #[cfg(feature = "async")]
-        let concurrent_scans_limit = {
-            let concurrent_scans_limit = std::env::var("CACHE_PREFILLER_CONCURRENT_SCANS_LIMIT")
-                .unwrap()
-                .parse::<usize>()
-                .unwrap();
-            // Note: This needs to be less than the size of the tokio blocking threadpool (which
+        let concurrent_scans_exec_limit = {
+            // Note, this needs to be less than the size of the tokio blocking threadpool (which
             // defaults to 512).
-            // POOL.current_num_threads().min(128);
+            let concurrent_scans_exec_limit = POOL.current_num_threads().min(128);
 
             if state.verbose() {
                 eprintln!(
-                    "CachePrefiller: concurrent new-streaming scans limit: {}",
-                    concurrent_scans_limit
+                    "CachePrefiller: concurrent streaming scan exec limit: {}",
+                    concurrent_scans_exec_limit
                 )
             }
 
-            Arc::new(tokio::sync::Semaphore::new(concurrent_scans_limit))
+            Arc::new(tokio::sync::Semaphore::new(concurrent_scans_exec_limit))
         };
 
         #[cfg(feature = "async")]
@@ -89,10 +85,10 @@ impl Executor for CachePrefiller {
 
             #[cfg(feature = "async")]
             if cache_exec.is_new_streaming_scan {
-                let concurrent_scans_limit = concurrent_scans_limit.clone();
+                let concurrent_scans_exec_limit = concurrent_scans_exec_limit.clone();
 
                 scan_handles.push(pl_async::get_runtime().spawn(async move {
-                    let _permit = concurrent_scans_limit.acquire().await.unwrap();
+                    let _permit = concurrent_scans_exec_limit.acquire().await.unwrap();
 
                     tokio::task::spawn_blocking(move || {
                         cache_exec.execute(&mut state)?;
@@ -110,7 +106,10 @@ impl Executor for CachePrefiller {
             // ensure all of them complete here.
 
             if state.verbose() && !scan_handles.is_empty() {
-                eprintln!("CachePrefiller: wait for {} scans", scan_handles.len())
+                eprintln!(
+                    "CachePrefiller: wait for {} scans executors",
+                    scan_handles.len()
+                )
             }
 
             for handle in scan_handles.drain(..) {
@@ -121,7 +120,10 @@ impl Executor for CachePrefiller {
         }
 
         if state.verbose() && !scan_handles.is_empty() {
-            eprintln!("CachePrefiller: wait for {} scans", scan_handles.len())
+            eprintln!(
+                "CachePrefiller: wait for {} scans executors",
+                scan_handles.len()
+            )
         }
 
         for handle in scan_handles {
