@@ -1100,7 +1100,7 @@ def test_list_struct_field_perf() -> None:
 
     slowdown = t1 / t0
 
-    # Times (Apple M3 Pro 11-core)
+    # Timings (Apple M3 Pro 11-core)
     # * Debug build w/ elementwise: ~8.9x
     # * Release pypi 1.29.0: ~45x
     threshold = 18
