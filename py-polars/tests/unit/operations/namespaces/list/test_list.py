@@ -1110,8 +1110,7 @@ def test_list_struct_field_perf() -> None:
         raise ValueError(msg)
 
 
-def test_list_elementwise_eval_fallible_masked_sliced() -> None:
-    # Baseline, no outer nulls
+def test_list_elementwise_eval_logical_output_type() -> None:
     out = pl.DataFrame({"a": [["2025-01-01"], ["2025-01-01"]]}).select(
         pl.col("a").list.eval(pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d"))
     )
@@ -1124,6 +1123,18 @@ def test_list_elementwise_eval_fallible_masked_sliced() -> None:
             dtype=pl.List(pl.Datetime),
         ),
     )
+
+
+def test_list_elementwise_eval_fallible_masked_sliced() -> None:
+    # Baseline - fails on invalid data
+    with pytest.raises(
+        InvalidOperationError, match=r"conversion from `str` to `datetime\[μs\]` failed"
+    ):
+        pl.DataFrame({"a": [["AAA"], ["2025-01-01"]]}).select(
+            pl.col("a").list.eval(
+                pl.element().str.strptime(pl.Datetime, format="%Y-%m-%d")
+            )
+        )
 
     # Ensure fallible expressions do not cause failures on masked-out data.
     out = (
