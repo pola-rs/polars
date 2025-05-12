@@ -11,7 +11,7 @@ from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PivotAgg, PolarsIntegerType, PolarsTemporalType
+    from polars._typing import Expr, PivotAgg, PolarsIntegerType, PolarsTemporalType
 
 
 def test_pivot() -> None:
@@ -577,3 +577,44 @@ def test_pivot_empty_index_dtypes(dtype: PolarsIntegerType) -> None:
     result = df.pivot(index="index", on="on", values="values")
     expected = pl.DataFrame({"index": index})
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("agg_fn", "expected_result"),
+    [
+        (pl.element().sort_by("d"), [[7, 9, 8]]),
+        (pl.element().top_k_by("d", k=2), [[8, 9]]),
+        (pl.col("c").top_k_by("d", k=2).first(), [8]),
+    ],
+)
+def test_pivot_custom_agg_function_22479(
+    agg_fn: Expr, expected_result: list[Any]
+) -> None:
+    # Test aggregation functions referencing other columns in the df
+    df = pl.DataFrame(
+        {"a": ["x", "x", "x"], "b": [1, 1, 1], "c": [7, 8, 9], "d": [0, 2, 1]}
+    )
+
+    out = df.pivot(on="a", index="b", values="c", aggregate_function=agg_fn)
+    expected = pl.DataFrame({"b": [1], "x": expected_result})
+    assert_frame_equal(out, expected)
+
+    # out = df.pivot(
+    #     on="a", index="b", values="c", aggregate_function=pl.element().sort_by("d")
+    # )
+    # expected = pl.DataFrame({"b": [1], "x": [[7, 9, 8]]})
+    # assert_frame_equal(out, expected)
+
+    # out = df.pivot(
+    #     on="a",
+    #     index="b",
+    #     values="c",
+    #     aggregate_function=pl.element().top_k_by("d", k=2),
+    # )
+    # expected = pl.DataFrame({"b": [1], "x": [[8, 9]]})
+    # assert_frame_equal(out, expected)
+
+    # agg = pl.col("c").top_k_by("d", k=2).first()
+    # out = df.pivot(on="a", index="b", values="c", aggregate_function=agg)
+    # expected = pl.DataFrame({"b": [1], "x": [8]})
+    # assert_frame_equal(out, expected)
