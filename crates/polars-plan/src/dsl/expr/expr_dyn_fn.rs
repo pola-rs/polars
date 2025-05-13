@@ -269,3 +269,24 @@ where
         self(input_schema, cntxt, fields)
     }
 }
+
+pub type OpaqueColumnUdf = LazySerde<SpecialEq<Arc<dyn ColumnsUdf>>>;
+pub(crate) fn new_column_udf<F: ColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
+    LazySerde::Deserialized(SpecialEq::new(Arc::new(func)))
+}
+
+impl OpaqueColumnUdf {
+    pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn ColumnsUdf>>> {
+        match self {
+            Self::Deserialized(t) => Ok(t),
+            Self::Named(name) => {
+                todo!()
+            },
+            Self::Bytes(_b) => {
+                feature_gated!("serde";"python", {
+                    crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(_b.as_ref()).map(SpecialEq::new)
+                })
+            },
+        }
+    }
+}

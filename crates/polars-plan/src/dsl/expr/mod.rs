@@ -11,6 +11,8 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "serde")]
+mod named_serde;
+#[cfg(feature = "serde")]
 mod serde_expr;
 
 use crate::prelude::*;
@@ -177,11 +179,6 @@ pub enum Expr {
     Selector(super::selector::Selector),
 }
 
-pub type OpaqueColumnUdf = LazySerde<SpecialEq<Arc<dyn ColumnsUdf>>>;
-pub(crate) fn new_column_udf<F: ColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
-    LazySerde::Deserialized(SpecialEq::new(Arc::new(func)))
-}
-
 #[derive(Clone)]
 pub enum LazySerde<T: Clone> {
     Deserialized(T),
@@ -209,22 +206,6 @@ impl<T: Clone> Debug for LazySerde<T> {
             Self::Bytes(_) => write!(f, "lazy-serde<Bytes>"),
             Self::Deserialized(_) => write!(f, "lazy-serde<T>"),
             Self::Named(name) => write!(f, "lazy-serde<Named>: {}", name),
-        }
-    }
-}
-
-impl OpaqueColumnUdf {
-    pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn ColumnsUdf>>> {
-        match self {
-            Self::Deserialized(t) => Ok(t),
-            Self::Named(name) => {
-                todo!()
-            },
-            Self::Bytes(_b) => {
-                feature_gated!("serde";"python", {
-                    crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(_b.as_ref()).map(SpecialEq::new)
-                })
-            },
         }
     }
 }

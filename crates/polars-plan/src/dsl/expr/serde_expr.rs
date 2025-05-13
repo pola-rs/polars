@@ -17,13 +17,20 @@ impl Serialize for SpecialEq<Arc<dyn ColumnsUdf>> {
     }
 }
 
+const NAMED_SERDE_MAGIC_BYTE_MARK: &[u8] = "PLNAMEDFN".as_bytes();
+
 impl<T: Serialize + Clone> Serialize for LazySerde<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         match self {
-            Self::Named(name) => todo!(),
+            Self::Named(name) => {
+                let mut buf = vec![];
+                buf.extend_from_slice(NAMED_SERDE_MAGIC_BYTE_MARK);
+                buf.extend_from_slice(name.as_bytes());
+                serializer.serialize_bytes(&buf)
+            },
             Self::Deserialized(t) => t.serialize(serializer),
             Self::Bytes(b) => b.serialize(serializer),
         }
@@ -47,28 +54,41 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
         D: Deserializer<'a>,
     {
         use serde::de::Error;
-        #[cfg(feature = "python")]
-        {
-            deserialize_map_bytes(deserializer, |buf| {
-                if buf.starts_with(crate::dsl::python_dsl::PYTHON_SERDE_MAGIC_BYTE_MARK) {
-                    let udf = crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(&buf)
-                        .map_err(|e| D::Error::custom(format!("{e}")))?;
-                    Ok(SpecialEq::new(udf))
-                } else {
-                    Err(D::Error::custom(
-                        "deserialization not supported for this 'opaque' function",
-                    ))
-                }
-            })?
-        }
-        #[cfg(not(feature = "python"))]
-        {
-            _ = deserializer;
+        deserialize_map_bytes(deserializer, |buf| {
+            #[cfg(feature = "python")]
+            if buf.starts_with(crate::dsl::python_dsl::PYTHON_SERDE_MAGIC_BYTE_MARK) {
+                let udf = crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(&buf)
+                    .map_err(|e| D::Error::custom(format!("{e}")))?;
+                return Ok(SpecialEq::new(udf));
+            };
 
-            Err(D::Error::custom(
-                "deserialization not supported for this 'opaque' function",
-            ))
-        }
+            if buf.starts_with(NAMED_SERDE_MAGIC_BYTE_MARK) {
+                let bytes = &buf[NAMED_SERDE_MAGIC_BYTE_MARK.len()..];
+                let Ok(name) = std::str::from_utf8(bytes) else {
+                    return Err(D::Error::custom("named-serde name should be valid utf8"));
+                };
+
+                let registry = named_serde::NAMED_SERDE_REGISTRY_EXPR.read().unwrap();
+                let msg = match &*registry {
+                    Some(reg) => {
+                        if let Some(func) = reg.get_function(name) {
+                            return Ok(SpecialEq::new(func));
+                        } else {
+                            "name not found in named serde registry"
+                        }
+                    },
+                    None => "named serde registry not set",
+                };
+
+                Err(D::Error::custom(
+                    "deserialization not supported for this 'opaque' function",
+                ))
+            } else {
+                Err(D::Error::custom(
+                    "deserialization not supported for this 'opaque' function",
+                ))
+            }
+        })?
     }
 }
 
