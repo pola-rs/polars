@@ -99,48 +99,6 @@ impl Debug for dyn RenameAliasFn {
 /// depending on the inner type specialization
 pub struct SpecialEq<T>(T);
 
-#[cfg(feature = "serde")]
-impl Serialize for SpecialEq<Series> {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.0.serialize(serializer)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'a> Deserialize<'a> for SpecialEq<Series> {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        let t = Series::deserialize(deserializer)?;
-        Ok(SpecialEq(t))
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<T: Serialize> Serialize for SpecialEq<Arc<T>> {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.0.serialize(serializer)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'a, T: Deserialize<'a>> Deserialize<'a> for SpecialEq<Arc<T>> {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        let t = T::deserialize(deserializer)?;
-        Ok(SpecialEq(Arc::new(t)))
-    }
-}
-
 impl<T> SpecialEq<T> {
     pub fn new(val: T) -> Self {
         SpecialEq(val)

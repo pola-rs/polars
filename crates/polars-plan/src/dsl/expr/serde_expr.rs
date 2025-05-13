@@ -143,3 +143,43 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn RenameAliasFn>> {
         ))
     }
 }
+
+impl Serialize for SpecialEq<Series> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s: &Series = &self;
+        s.serialize(serializer)
+    }
+}
+
+impl<'a> Deserialize<'a> for SpecialEq<Series> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        let t = Series::deserialize(deserializer)?;
+        Ok(SpecialEq::new(t))
+    }
+}
+
+impl<T: Serialize> Serialize for SpecialEq<Arc<T>> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.as_ref().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'a, T: Deserialize<'a>> Deserialize<'a> for SpecialEq<Arc<T>> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        let t = T::deserialize(deserializer)?;
+        Ok(SpecialEq::new(Arc::new(t)))
+    }
+}
