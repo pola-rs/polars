@@ -118,9 +118,7 @@ def test_search_sorted_list() -> None:
     assert series.search_sorted(pl.Series([[3], [2]])).to_list() == [2, 1]
     assert series.search_sorted(pl.lit([3], dtype=pl.List(pl.Int64()))).to_list() == [2]
 
-    with pytest.raises(
-        TypeError, match="If you were trying to search for multiple values"
-    ):
+    with pytest.raises(InvalidOperationError, match="cannot cast List type"):
         series.search_sorted([[1]])  # type: ignore[list-item]
 
 
@@ -159,9 +157,7 @@ def test_search_sorted_array() -> None:
     assert series.search_sorted(pl.Series([[3], [2]], dtype=dtype)).to_list() == [2, 1]
     assert series.search_sorted(pl.lit([3])).to_list() == [2]
     assert series.search_sorted(pl.lit([3], dtype=dtype)).to_list() == [2]
-    with pytest.raises(
-        TypeError, match="If you were trying to search for multiple values"
-    ):
+    with pytest.raises(InvalidOperationError, match="casting from"):
         series.search_sorted([[1]])  # type: ignore[list-item]
 
 

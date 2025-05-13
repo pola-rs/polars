@@ -3581,46 +3581,6 @@ class Series:
                 6
         ]
         """
-        # A list or ndarray passed to search_sorted() has two possible meanings:
-        #
-        # 1. Searching for multiple values, for example the Series is Int64 and
-        #    we're searching for multiple integers.
-        # 2. Searching for a single value, when the Series dtype is List or
-        #    Array.
-        #
-        # Depending which it is, we need to return either a Series (i.e.
-        # multiple results), or a single integer. We can mostly distinguish
-        # which case it is by casting to the dtype of self: if that succeeds,
-        # we assume it's case 2, if it fails, we assume case 1. There is still
-        # an ambiguous case, though:
-        #
-        #   Series([...], dtype=pl.List(pl.List(pl.Int64()))).search_sorted([])
-        #
-        # Does this mean searching multiple values, which should return a
-        # pl.Series of length 0, or does it mean searching for a single empty
-        # list and it should return an integer? Who can say! Arguably this API
-        # design was a mistake once you allow searching pl.List series, and so
-        # in the Rust side we deprecate searching for multiple values with
-        # lists. In Polars 2 this can be dropped.
-        #
-        # For pl.List/pl.Array, searching for multiple values with a list was
-        # never actually supported, so there is no need for backwards
-        # compatibility, and so we more aggressively disallow it.
-        if isinstance(element, (list, np.ndarray)) and isinstance(
-            self.dtype, (List, Array)
-        ):
-            # Catch (most) disallowed multi-value-search cases by casting
-            # the needle to the haystack's dtype:
-            try:
-                F.select(F.lit(element, dtype=self.dtype))
-            except TypeError as err:
-                message = (
-                    f"{element} does not match dtype {self.dtype}. "
-                    "If you were trying to search for multiple values, "
-                    "use a ``pl.Series`` instead of a list/ndarray."
-                )
-                raise TypeError(message) from err
-
         df = F.select(F.lit(self).search_sorted(element, side))
         # These types unambiguously return a Series:
         #
@@ -3635,6 +3595,7 @@ class Series:
         ) and not isinstance(self.dtype, (List, Array)):
             return df.to_series()
         else:
+            assert len(df) == 1
             return df.item()
 
     def unique(self, *, maintain_order: bool = False) -> Series:
