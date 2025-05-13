@@ -186,6 +186,7 @@ pub(crate) fn new_column_udf<F: ColumnsUdf + 'static>(func: F) -> OpaqueColumnUd
 pub enum LazySerde<T: Clone> {
     Deserialized(T),
     Bytes(Bytes),
+    Named(String),
 }
 
 impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
@@ -196,6 +197,7 @@ impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
             (L::Bytes(a), L::Bytes(b)) => {
                 std::ptr::eq(a.as_ptr(), b.as_ptr()) && a.len() == b.len()
             },
+            (L::Named(l), L::Named(r)) => l == r,
             _ => false,
         }
     }
@@ -206,6 +208,7 @@ impl<T: Clone> Debug for LazySerde<T> {
         match self {
             Self::Bytes(_) => write!(f, "lazy-serde<Bytes>"),
             Self::Deserialized(_) => write!(f, "lazy-serde<T>"),
+            Self::Named(name) => write!(f, "lazy-serde<Named>: {}", name),
         }
     }
 }
@@ -214,6 +217,9 @@ impl OpaqueColumnUdf {
     pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn ColumnsUdf>>> {
         match self {
             Self::Deserialized(t) => Ok(t),
+            Self::Named(name) => {
+                todo!()
+            },
             Self::Bytes(_b) => {
                 feature_gated!("serde";"python", {
                     crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(_b.as_ref()).map(SpecialEq::new)

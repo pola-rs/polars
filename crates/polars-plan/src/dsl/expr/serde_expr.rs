@@ -23,6 +23,7 @@ impl<T: Serialize + Clone> Serialize for LazySerde<T> {
         S: Serializer,
     {
         match self {
+            Self::Named(name) => todo!(),
             Self::Deserialized(t) => t.serialize(serializer),
             Self::Bytes(b) => b.serialize(serializer),
         }
