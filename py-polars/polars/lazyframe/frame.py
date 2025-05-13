@@ -6645,6 +6645,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         fill_nan
 
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To fill NaN values, use :func:`fill_nan`.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -6762,14 +6767,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         value
             Value used to fill NaN values.
 
-        Warnings
-        --------
-        Note that floating point NaNs (Not a Number) are not missing values.
-        To replace missing values, use :func:`fill_null`.
-
         See Also
         --------
         fill_null
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To fill null values, use :func:`fill_null`.
 
         Examples
         --------
@@ -7206,14 +7211,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             (default), use all columns (note that only floating-point columns
             can contain NaNs).
 
-        Warnings
-        --------
-        Note that floating point NaNs (Not a Number) are not missing values.
-        To drop missing values, use :func:`drop_nulls`.
-
         See Also
         --------
         drop_nulls
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To drop null values, use :func:`drop_nulls`.
 
         Examples
         --------
@@ -7287,15 +7292,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The original order of the remaining rows is preserved.
 
-        Parameters
-        ----------
-        subset
-            Column name(s) for which null values are considered.
-            If set to `None` (default), use all columns.
-
         See Also
         --------
         drop_nans
+
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To drop NaN values, use :func:`drop_nans`.
+
 
         Examples
         --------

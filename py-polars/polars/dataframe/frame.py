@@ -6137,14 +6137,14 @@ class DataFrame:
             (default), use all columns (note that only floating-point columns
             can contain NaNs).
 
-        Warnings
-        --------
-        Note that floating point NaNs (Not a Number) are not missing values.
-        To drop missing values, use :func:`drop_nulls`.
-
         See Also
         --------
         drop_nulls
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To drop null values, use :func:`drop_nulls`.
 
         Examples
         --------
@@ -6229,6 +6229,11 @@ class DataFrame:
         See Also
         --------
         drop_nans
+
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To drop NaN values, use :func:`drop_nans`.
 
         Examples
         --------
@@ -8647,6 +8652,11 @@ class DataFrame:
         --------
         fill_nan
 
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To fill NaN values, use :func:`fill_nan`.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -8728,14 +8738,14 @@ class DataFrame:
         DataFrame
             DataFrame with NaN values replaced by the given value.
 
-        Warnings
-        --------
-        Note that floating point NaNs (Not a Number) are not missing values.
-        To replace missing values, use :func:`fill_null`.
-
         See Also
         --------
         fill_null
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To fill null values, use :func:`fill_null`.
 
         Examples
         --------
