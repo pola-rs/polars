@@ -8,8 +8,8 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.testing import assert_series_equal, assert_frame_equal
 from polars.exceptions import InvalidOperationError
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from typing import Any
@@ -58,11 +58,15 @@ def test_search_sorted_multivalue() -> None:
 
     # Searching for a list is deprecated and will be removed in Polars 2,
     # should only search with pl.Series for multiple values going forward:
-    assert_series_equal(a.search_sorted([14, 7]), pl.Series([3, 1], dtype=pl.UInt32()))
-    assert_frame_equal(
-        df.select(pl.col("a").search_sorted([14, 7])).collect(),
-        pl.DataFrame({"a": pl.Series([3, 1], dtype=pl.UInt32())}),
-    )
+    with pytest.deprecated_call():
+        assert_series_equal(
+            a.search_sorted([14, 7]), pl.Series([3, 1], dtype=pl.UInt32())  # type: ignore[arg-type]
+        )
+    with pytest.deprecated_call():
+        assert_frame_equal(
+            df.select(pl.col("a").search_sorted([14, 7])).collect(),
+            pl.DataFrame({"a": pl.Series([3, 1], dtype=pl.UInt32())}),
+        )
 
 
 def test_search_sorted_multichunk() -> None:
@@ -119,7 +123,7 @@ def test_search_sorted_list() -> None:
     assert series.search_sorted(pl.lit([3], dtype=pl.List(pl.Int64()))).to_list() == [2]
 
     with pytest.raises(InvalidOperationError, match="cannot cast List type"):
-        series.search_sorted([[1]])  # type: ignore[list-item]
+        series.search_sorted([[1]])
 
 
 def test_search_sorted_list_expr() -> None:
@@ -158,7 +162,7 @@ def test_search_sorted_array() -> None:
     assert series.search_sorted(pl.lit([3])).to_list() == [2]
     assert series.search_sorted(pl.lit([3], dtype=dtype)).to_list() == [2]
     with pytest.raises(InvalidOperationError, match="casting from"):
-        series.search_sorted([[1]])  # type: ignore[list-item]
+        series.search_sorted([[1]])
 
 
 def test_search_sorted_struct() -> None:
