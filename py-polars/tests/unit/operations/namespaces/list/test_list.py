@@ -1092,7 +1092,8 @@ def test_list_struct_field_perf() -> None:
 
     t0 = time_func(q.collect, iterations=5)
 
-    df = pl.concat(100 * [base_df])
+    # Note: Rechunk is important here to force single threaded
+    df = pl.concat(10_000 * [base_df]).rechunk()
 
     q = df.lazy().select(pl.col("a").list.eval(pl.element().struct.field("fld")))
 
@@ -1101,11 +1102,9 @@ def test_list_struct_field_perf() -> None:
     slowdown = t1 / t0
 
     # Timings (Apple M3 Pro 11-core)
-    # * Debug build w/ elementwise: ~8.9x
-    # * Release pypi 1.29.0: ~45x
-    # Timings (Unknown GitHub runner):
-    # * Debug build w/ elementwise: ~18.7x
-    threshold = 27
+    # * Debug build w/ elementwise: 1x
+    # * Release pypi 1.29.0: 80x
+    threshold = 3
 
     if slowdown > threshold:
         msg = f"slowdown ({slowdown}) > {threshold}x ({t0 = }, {t1 = })"
