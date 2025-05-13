@@ -8,7 +8,8 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_series_equal, assert_frame_equal
+from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
     from typing import Any
@@ -44,11 +45,24 @@ def test_search_sorted() -> None:
 
 def test_search_sorted_multivalue() -> None:
     a = pl.Series([5, 7, 12, 14])
-    # This is deprecated, should only search with pl.Series for multiple values
-    # going forward:
-    assert_series_equal(a.search_sorted([14, 7]), pl.Series([3, 1]))
+    df = pl.DataFrame({"a": a}).lazy()
+
     # This is the preferred way to do it:
-    assert_series_equal(a.search_sorted(pl.Series([14, 7])), pl.Series([3, 1]))
+    assert_series_equal(
+        a.search_sorted(pl.Series([14, 7])), pl.Series([3, 1], dtype=pl.UInt32())
+    )
+    assert_frame_equal(
+        df.select(pl.col("a").search_sorted(pl.Series([14, 7]))).collect(),
+        pl.DataFrame({"a": pl.Series([3, 1], dtype=pl.UInt32())}),
+    )
+
+    # Searching for a list is deprecated and will be removed in Polars 2,
+    # should only search with pl.Series for multiple values going forward:
+    assert_series_equal(a.search_sorted([14, 7]), pl.Series([3, 1], dtype=pl.UInt32()))
+    assert_frame_equal(
+        df.select(pl.col("a").search_sorted([14, 7])).collect(),
+        pl.DataFrame({"a": pl.Series([3, 1], dtype=pl.UInt32())}),
+    )
 
 
 def test_search_sorted_multichunk() -> None:
@@ -103,10 +117,39 @@ def test_search_sorted_list() -> None:
     assert series.search_sorted([2]) == 1
     assert series.search_sorted(pl.Series([[3], [2]])).to_list() == [2, 1]
     assert series.search_sorted(pl.lit([3], dtype=pl.List(pl.Int64()))).to_list() == [2]
+
     with pytest.raises(
         TypeError, match="If you were trying to search for multiple values"
     ):
         series.search_sorted([[1]])  # type: ignore[list-item]
+
+
+def test_search_sorted_list_expr() -> None:
+    df = pl.DataFrame({"values": pl.Series([[1], [2], [3]])}).lazy()
+    C = pl.col("values")
+    assert df.select(C.search_sorted([2])).collect().get_column("values").to_list() == [
+        1
+    ]
+    assert df.select(C.search_sorted(pl.Series([[3], [2]]))).collect().get_column(
+        "values"
+    ).to_list() == [2, 1]
+    # Wrong nesting value:
+    with pytest.raises(InvalidOperationError):
+        df.select(C.search_sorted([[3], [2]])).collect()
+
+    # Now try with extra nesting:
+    df = pl.DataFrame({"values": pl.Series([[[1]], [[2]], [[3]]])}).lazy()
+    assert df.select(C.search_sorted([[2]])).collect().get_column(
+        "values"
+    ).to_list() == [1]
+    assert df.select(C.search_sorted(pl.Series([[[3]], [[2]]]))).collect().get_column(
+        "values"
+    ).to_list() == [2, 1]
+    # Wrong nesting values:
+    with pytest.raises(InvalidOperationError):
+        df.select(C.search_sorted([2])).collect()
+    with pytest.raises(InvalidOperationError):
+        df.select(C.search_sorted([[[3], [2]]])).collect()
 
 
 def test_search_sorted_array() -> None:
