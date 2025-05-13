@@ -3384,7 +3384,7 @@ class Expr:
 
     def over(
         self,
-        partition_by: IntoExpr | Iterable[IntoExpr],
+        partition_by: IntoExpr | Iterable[IntoExpr] | None = None,
         *more_exprs: IntoExpr,
         order_by: IntoExpr | Iterable[IntoExpr] | None = None,
         descending: bool = False,
@@ -3547,7 +3547,8 @@ class Expr:
         │ b        ┆ 2024-09-18 ┆ 8     ┆ 18               │
         └──────────┴────────────┴───────┴──────────────────┘
         """
-        partition_by = parse_into_list_of_expressions(partition_by, *more_exprs)
+        if partition_by is not None:
+            partition_by = parse_into_list_of_expressions(partition_by, *more_exprs)
         if order_by is not None:
             order_by = parse_into_list_of_expressions(order_by)
         return self._from_pyexpr(
