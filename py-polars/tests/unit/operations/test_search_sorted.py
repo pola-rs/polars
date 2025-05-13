@@ -60,8 +60,8 @@ def test_search_sorted_multivalue() -> None:
     # should only search with pl.Series for multiple values going forward:
     with pytest.deprecated_call():
         assert_series_equal(
-            a.search_sorted([14, 7]),
-            pl.Series([3, 1], dtype=pl.UInt32()),  # type: ignore[arg-type]
+            a.search_sorted([14, 7]),  # type: ignore[arg-type]
+            pl.Series([3, 1], dtype=pl.UInt32()),
         )
     with pytest.deprecated_call():
         assert_frame_equal(
