@@ -1,15 +1,18 @@
+mod expr_dyn_fn;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use bytes::Bytes;
+pub use expr_dyn_fn::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
+mod serde_expr;
 
-pub use super::expr_dyn_fn::*;
 use crate::prelude::*;
 
 #[derive(PartialEq, Clone, Hash)]
