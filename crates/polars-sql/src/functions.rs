@@ -1798,23 +1798,22 @@ impl SQLFunctionVisitor<'_> {
 
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
-        match (is_distinct, args.as_slice()) {
+        let count_expr = match (is_distinct, args.as_slice()) {
             // count(*), count()
-            (false, [FunctionArgExpr::Wildcard] | []) => Ok(len()),
+            (false, [FunctionArgExpr::Wildcard] | []) => len(),
             // count(column_name)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                let expr = self.apply_window_spec(expr, &self.func.over)?;
-                Ok(expr.count())
+                expr.count()
             },
             // count(distinct column_name)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                let expr = self.apply_window_spec(expr, &self.func.over)?;
-                Ok(expr.clone().n_unique().sub(expr.null_count().gt(lit(0))))
+                expr.clone().n_unique().sub(expr.null_count().gt(lit(0)))
             },
-            _ => self.not_supported_error(),
-        }
+            _ => self.not_supported_error()?,
+        };
+        self.apply_window_spec(count_expr, &self.func.over)
     }
 
     fn apply_order_by(&mut self, expr: Expr, order_by: &[OrderByExpr]) -> PolarsResult<Expr> {

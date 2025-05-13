@@ -507,3 +507,36 @@ def test_select_explode_height_filter_order_by() -> None:
         ),
         pl.Series("list", [2, 1, 3, 4, 5, 6]).to_frame(),
     )
+
+
+@pytest.mark.parametrize(
+    ("query", "result"),
+    [
+        (
+            """SELECT a, COUNT(*) OVER (PARTITION BY a) AS b FROM self""",
+            [3, 3, 3, 1, 3, 3, 3],
+        ),
+        (
+            """SELECT a, COUNT() OVER (PARTITION BY a) AS b FROM self""",
+            [3, 3, 3, 1, 3, 3, 3],
+        ),
+        (
+            """SELECT a, COUNT(i) OVER (PARTITION BY a) AS b FROM self""",
+            [3, 3, 3, 1, 1, 1, 1],
+        ),
+        (
+            """SELECT a, COUNT(DISTINCT i) OVER (PARTITION BY a) AS b FROM self""",
+            [2, 2, 2, 1, 1, 1, 1],
+        ),
+    ],
+)
+def test_count_partition_22665(query: str, result: list[Any]) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 2, 3, 3, 3],
+            "i": [0, 0, 1, 2, 3, None, None],
+        }
+    )
+    out = df.sql(query).select("b")
+    expected = pl.DataFrame({"b": result}).cast({"b": pl.UInt32})
+    assert_frame_equal(out, expected)
