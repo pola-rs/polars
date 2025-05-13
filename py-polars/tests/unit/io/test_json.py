@@ -353,6 +353,12 @@ def test_json_normalize() -> None:
         {"id": 2, "name": "Faye Raker"},
     ]
 
+    assert pl.json_normalize([], schema=pl.Schema({"test": pl.Int32})).to_dict(
+        as_series=False
+    ) == {
+        "test": [],
+    }
+
     assert pl.json_normalize(data, max_level=0).to_dict(as_series=False) == {
         "id": [1, None, 2],
         "name": [
