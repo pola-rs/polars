@@ -27,6 +27,7 @@ from polars.exceptions import (
     OutOfBoundsError,
     ShapeError,
 )
+from polars.polars import PySeries
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -1386,6 +1387,16 @@ def test_from_rows_of_dicts(records: list[dict[str, Any]]) -> None:
         df3 = df_init(records, schema=overrides).remove(pl.col("id").is_null())
         assert df3.rows() == [(1, 100), (2, 101)]
         assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
+
+        # explicitly check "anyvalue" conversion for dict/mapping dtypes
+        py_s = PySeries.new_from_any_values("s", records, True)
+        assert py_s.dtype() == pl.Struct(
+            {
+                "id": pl.Int64,
+                "value": pl.Int64,
+                "_meta": pl.String,
+            }
+        )
 
 
 def test_from_records_with_schema_overrides_12032() -> None:
