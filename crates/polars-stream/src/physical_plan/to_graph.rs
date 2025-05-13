@@ -963,7 +963,7 @@ fn to_graph_rec<'a>(
             let include_file_paths = None;
             let missing_columns_policy = MissingColumnsPolicy::Raise;
             let extra_columns_policy = ExtraColumnsPolicy::Ignore;
-            let cast_columns_policy = CastColumnsPolicy::ErrorOnMismatch;
+            let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
             let verbose = config::verbose();
 
             ctx.graph.add_node(

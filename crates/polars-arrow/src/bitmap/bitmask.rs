@@ -9,7 +9,8 @@ use crate::bitmap::Bitmap;
 
 /// Returns the nth set bit in w, if n+1 bits are set. The indexing is
 /// zero-based, nth_set_bit_u32(w, 0) returns the least significant set bit in w.
-fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
+#[inline]
+pub fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
     // If we have BMI2's PDEP available, we use it. It takes the lower order
     // bits of the first argument and spreads it along its second argument
     // where those bits are 1. So PDEP(abcdefgh, 11001001) becomes ef00g00h.

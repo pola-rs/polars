@@ -197,11 +197,12 @@ impl HiveIdxTracker<'_> {
         if check_directory_level
             && ![usize::MAX, i].contains(&self.idx)
             // They could still be the same directory level, just with different name length
-            && (paths[path_idx].parent() != paths[path_idx - 1].parent())
+            && (path_idx > 0 && paths[path_idx].parent() != paths[path_idx - 1].parent())
         {
             polars_bail!(
                 InvalidOperation:
-                "attempted to read from different directory levels with hive partitioning enabled: first path: {}, second path: {}",
+                "attempted to read from different directory levels with hive partitioning enabled: \
+                first path: {}, second path: {}",
                 paths[path_idx - 1].to_str().unwrap(),
                 paths[path_idx].to_str().unwrap(),
             )

@@ -29,7 +29,7 @@ pub fn replace_time_zone(
         & ((from_tz == UTC) | ((ambiguous.len() == 1) & (ambiguous.get(0) == Some("raise"))))
     {
         let mut out = datetime
-            .0
+            .phys
             .clone()
             .into_datetime(datetime.time_unit(), time_zone.cloned());
         out.set_sorted_flag(datetime.is_sorted_flag());
@@ -93,7 +93,7 @@ pub fn impl_replace_time_zone_fast(
     to_tz: &chrono_tz::Tz,
 ) -> PolarsResult<Int64Chunked> {
     match ambiguous {
-        Some(ambiguous) => datetime.0.try_apply_nonnull_values_generic(|timestamp| {
+        Some(ambiguous) => datetime.phys.try_apply_nonnull_values_generic(|timestamp| {
             let ndt = timestamp_to_datetime(timestamp);
             Ok(datetime_to_timestamp(
                 convert_to_naive_local(
@@ -106,7 +106,7 @@ pub fn impl_replace_time_zone_fast(
                 .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
             ))
         }),
-        _ => Ok(datetime.0.apply(|_| None)),
+        _ => Ok(datetime.phys.apply(|_| None)),
     }
 }
 
@@ -121,7 +121,7 @@ pub fn impl_replace_time_zone(
 ) -> PolarsResult<Int64Chunked> {
     match ambiguous.len() {
         1 => {
-            let iter = datetime.0.downcast_iter().map(|arr| {
+            let iter = datetime.phys.downcast_iter().map(|arr| {
                 let element_iter = arr.iter().map(|timestamp_opt| match timestamp_opt {
                     Some(timestamp) => {
                         let ndt = timestamp_to_datetime(*timestamp);
@@ -138,7 +138,7 @@ pub fn impl_replace_time_zone(
                 });
                 element_iter.try_collect_arr()
             });
-            ChunkedArray::try_from_chunk_iter(datetime.0.name().clone(), iter)
+            ChunkedArray::try_from_chunk_iter(datetime.phys.name().clone(), iter)
         },
         _ => try_binary_elementwise(datetime, ambiguous, |timestamp_opt, ambiguous_opt| {
             match (timestamp_opt, ambiguous_opt) {

@@ -589,7 +589,9 @@ def test_predicate_slice_pushdown_row_index_20485(tmp_path: Path) -> None:
     ldf = pl.scan_parquet(file_path)
     sliced_df = ldf.with_row_index().slice(slice_start, slice_len).collect()
     sliced_df_no_pushdown = (
-        ldf.with_row_index().slice(slice_start, slice_len).collect(slice_pushdown=False)
+        ldf.with_row_index()
+        .slice(slice_start, slice_len)
+        .collect(optimizations=pl.QueryOptFlags(slice_pushdown=False))
     )
 
     expected_index = list(range(slice_start, slice_start + slice_len))
@@ -805,7 +807,7 @@ def test_parquet_schema_arg(
 
     with pytest.raises(
         pl.exceptions.SchemaError,
-        match="data type mismatch for column b: expected: i8, found: i64",
+        match="data type mismatch for column b: incoming: Int64 != target: Int8",
     ):
         lf.collect(engine="streaming" if streaming else "in-memory")
 

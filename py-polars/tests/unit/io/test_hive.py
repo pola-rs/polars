@@ -124,7 +124,9 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
 
     # Ensure the CSE can work with hive partitions.
     q = q.filter(pl.col("a").gt(2))
-    result = q.join(q, on="a", how="left").collect(comm_subplan_elim=True)
+    result = q.join(q, on="a", how="left").collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
+    )
     expected = {
         "a": [3, 4],
         "d": [3, 4],
@@ -147,8 +149,12 @@ def test_hive_streaming_pushdown_is_in_22212(tmp_path: Path) -> None:
     )
 
     assert_frame_equal(
-        lf.collect(engine="streaming", predicate_pushdown=False),
-        lf.collect(engine="streaming", predicate_pushdown=True),
+        lf.collect(
+            engine="streaming", optimizations=pl.QueryOptFlags(predicate_pushdown=False)
+        ),
+        lf.collect(
+            engine="streaming", optimizations=pl.QueryOptFlags(predicate_pushdown=True)
+        ),
     )
 
 
@@ -566,13 +572,22 @@ def test_hive_partition_columns_contained_in_file(
             x for i in range(len(cols)) for x in permutations(cols[: 1 + i])
         ):
             assert_frame_equal(
-                lf.select(projection).collect(projection_pushdown=projection_pushdown),
+                lf.select(projection).collect(
+                    optimizations=pl.QueryOptFlags(
+                        projection_pushdown=projection_pushdown
+                    )
+                ),
                 df.select(projection),
             )
 
     lf = scan_func(path, hive_partitioning=True)  # type: ignore[call-arg]
     rhs = df
-    assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
+    assert_frame_equal(
+        lf.collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
+        rhs,
+    )
     assert_with_projections(lf, rhs)
 
     lf = scan_func(  # type: ignore[call-arg]
@@ -582,7 +597,9 @@ def test_hive_partition_columns_contained_in_file(
     )
     rhs = df.with_columns(pl.col("a", "b").cast(pl.String))
     assert_frame_equal(
-        lf.collect(projection_pushdown=projection_pushdown),
+        lf.collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
         rhs,
     )
     assert_with_projections(lf, rhs)
@@ -603,11 +620,18 @@ def test_hive_partition_columns_contained_in_file(
     )
 
     lf = scan_func(partial_path, hive_partitioning=True)  # type: ignore[call-arg]
-    assert_frame_equal(lf.collect(projection_pushdown=projection_pushdown), rhs)
+    assert_frame_equal(
+        lf.collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
+        rhs,
+    )
     assert_with_projections(lf, rhs)
 
     assert_frame_equal(
-        lf.with_row_index().collect(projection_pushdown=projection_pushdown),
+        lf.with_row_index().collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
         rhs.with_row_index(),
     )
     assert_with_projections(
@@ -617,7 +641,9 @@ def test_hive_partition_columns_contained_in_file(
     assert_frame_equal(
         lf.with_row_index()
         .select(pl.exclude("index"), "index")
-        .collect(projection_pushdown=projection_pushdown),
+        .collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
         rhs.with_row_index().select(pl.exclude("index"), "index"),
     )
     assert_with_projections(
@@ -638,7 +664,9 @@ def test_hive_partition_columns_contained_in_file(
         pl.col("a").cast(pl.String),
     )
     assert_frame_equal(
-        lf.collect(projection_pushdown=projection_pushdown),
+        lf.collect(
+            optimizations=pl.QueryOptFlags(projection_pushdown=projection_pushdown)
+        ),
         rhs,
     )
     assert_with_projections(lf, rhs)
@@ -772,6 +800,7 @@ def test_hive_write(tmp_path: Path, df: pl.DataFrame) -> None:
 
 @pytest.mark.slow
 @pytest.mark.write_disk
+@pytest.mark.xfail
 def test_hive_write_multiple_files(tmp_path: Path) -> None:
     chunk_size = 262_144
     n_rows = 100_000

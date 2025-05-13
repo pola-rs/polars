@@ -820,7 +820,7 @@ pub(crate) fn to_primitive<T: PolarsNumericType>(
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T::Native> {
     PrimitiveArray::new(
-        T::get_dtype().to_arrow(CompatLevel::newest()),
+        T::get_static_dtype().to_arrow(CompatLevel::newest()),
         values.into(),
         validity,
     )
@@ -835,7 +835,7 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
     fn default() -> Self {
-        let dtype = T::get_dtype();
+        let dtype = T::get_static_dtype();
         let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
         ChunkedArray {
             field: Arc::new(Field::new(PlSmallStr::EMPTY, dtype)),

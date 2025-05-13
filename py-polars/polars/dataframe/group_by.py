@@ -100,13 +100,15 @@ class GroupBy:
         └─────┴─────┘
         """
         # Every group gather can trigger a rechunk, so do early.
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         self.df = self.df.rechunk()
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(F.first().agg_groups().alias(temp_col))
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
         self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
@@ -230,11 +232,13 @@ class GroupBy:
         │ b   ┆ 5     ┆ 10.0           │
         └─────┴───────┴────────────────┘
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .agg(*aggs, **named_aggs)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
     def map_groups(self, function: Callable[[DataFrame], DataFrame]) -> DataFrame:
@@ -356,11 +360,13 @@ class GroupBy:
         │ c       ┆ 2   │
         └─────────┴─────┘
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .head(n)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
     def tail(self, n: int = 5) -> DataFrame:
@@ -408,11 +414,13 @@ class GroupBy:
         │ c       ┆ 4   │
         └─────────┴─────┘
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
             .tail(n)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
     def all(self) -> DataFrame:
@@ -790,6 +798,8 @@ class RollingGroupBy:
         self.group_by = group_by
 
     def __iter__(self) -> Self:
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
@@ -801,7 +811,7 @@ class RollingGroupBy:
                 group_by=self.group_by,
             )
             .agg(F.first().agg_groups().alias(temp_col))
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
         self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
@@ -838,6 +848,8 @@ class RollingGroupBy:
             Additional aggregations, specified as keyword arguments.
             The resulting columns will be renamed to the keyword used.
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .rolling(
@@ -848,7 +860,7 @@ class RollingGroupBy:
                 group_by=self.group_by,
             )
             .agg(*aggs, **named_aggs)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
     def map_groups(
@@ -880,6 +892,8 @@ class RollingGroupBy:
             given schema is incorrect, this is a bug in the caller's query and may
             lead to errors. If set to None, polars assumes the schema is unchanged.
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .rolling(
@@ -890,7 +904,7 @@ class RollingGroupBy:
                 group_by=self.group_by,
             )
             .map_groups(function, schema)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
 
@@ -932,6 +946,8 @@ class DynamicGroupBy:
         self.start_by = start_by
 
     def __iter__(self) -> Self:
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         temp_col = "__POLARS_GB_GROUP_INDICES"
         groups_df = (
             self.df.lazy()
@@ -947,7 +963,7 @@ class DynamicGroupBy:
                 start_by=self.start_by,
             )
             .agg(F.first().agg_groups().alias(temp_col))
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
         self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
@@ -984,6 +1000,8 @@ class DynamicGroupBy:
             Additional aggregations, specified as keyword arguments.
             The resulting columns will be renamed to the keyword used.
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .group_by_dynamic(
@@ -998,7 +1016,7 @@ class DynamicGroupBy:
                 start_by=self.start_by,
             )
             .agg(*aggs, **named_aggs)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )
 
     def map_groups(
@@ -1030,6 +1048,8 @@ class DynamicGroupBy:
             given schema is incorrect, this is a bug in the caller's query and may
             lead to errors. If set to None, polars assumes the schema is unchanged.
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         return (
             self.df.lazy()
             .group_by_dynamic(
@@ -1043,5 +1063,5 @@ class DynamicGroupBy:
                 start_by=self.start_by,
             )
             .map_groups(function, schema)
-            .collect(no_optimization=True)
+            .collect(optimizations=QueryOptFlags.none())
         )

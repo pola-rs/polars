@@ -523,8 +523,9 @@ class ExprListNameSpace:
             Index to return per sublist
         null_on_oob
             Behavior if an index is out of bounds:
-            True -> set as null
-            False -> raise an error
+
+            * True -> set as null
+            * False -> raise an error
 
         Examples
         --------

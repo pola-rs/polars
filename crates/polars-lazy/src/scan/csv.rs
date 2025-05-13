@@ -339,7 +339,7 @@ impl LazyFileListReader for LazyCsvReader {
                 projection: None,
                 row_index,
                 pre_slice,
-                cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
+                cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                 missing_columns_policy: MissingColumnsPolicy::Raise,
                 include_file_paths: self.include_file_paths,
             },

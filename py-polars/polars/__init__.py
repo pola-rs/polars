@@ -175,6 +175,7 @@ from polars.io import (
     PartitionByKey,
     PartitionMaxSize,
     PartitionParted,
+    ScanCastOptions,
     defer,
     read_avro,
     read_clipboard,
@@ -209,7 +210,7 @@ from polars.io.cloud import (
     CredentialProviderFunctionReturn,
     CredentialProviderGCP,
 )
-from polars.lazyframe import GPUEngine, LazyFrame
+from polars.lazyframe import GPUEngine, LazyFrame, QueryOptFlags
 from polars.meta import (
     build_info,
     get_index_type,
@@ -284,6 +285,7 @@ __all__ = [
     "PartitionByKey",
     "PartitionMaxSize",
     "PartitionParted",
+    "ScanCastOptions",
     "read_avro",
     "read_clipboard",
     "read_csv",
@@ -435,6 +437,8 @@ __all__ = [
     "sql",
     "sql_expr",
     "CompatLevel",
+    # optimization
+    "QueryOptFlags",
 ]
 
 

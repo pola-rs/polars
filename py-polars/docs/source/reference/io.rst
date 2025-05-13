@@ -134,6 +134,15 @@ Parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
 
+.. currentmodule:: polars.io.parquet
+
+.. autosummary::
+   :toctree: api/
+
+   ParquetFieldOverwrites
+
+.. currentmodule:: polars
+
 PyArrow Datasets
 ~~~~~~~~~~~~~~~~
 Connect to pyarrow datasets.
@@ -154,3 +163,12 @@ Configuration for cloud credential provisioning.
    CredentialProviderAWS
    CredentialProviderAzure
    CredentialProviderGCP
+
+Scan Cast Options
+~~~~~~~~~~~~~~~~~
+Configuration for type-casting during scans.
+
+.. autosummary::
+   :toctree: api/
+
+   ScanCastOptions

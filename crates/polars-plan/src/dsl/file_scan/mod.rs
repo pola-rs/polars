@@ -123,12 +123,46 @@ pub enum MissingColumnsPolicy {
     Insert,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
+/// Used by scans.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum CastColumnsPolicy {
-    /// Raise an error if the datatypes do not match
-    #[default]
-    ErrorOnMismatch,
+pub struct CastColumnsPolicy {
+    /// Allow casting when target dtype is lossless supertype
+    pub integer_upcast: bool,
+
+    /// Allow Float32 -> Float64
+    pub float_upcast: bool,
+    /// Allow Float64 -> Float32
+    pub float_downcast: bool,
+
+    /// Allow datetime[ns] to be casted to any lower precision. Important for
+    /// being able to read datasets written by spark.
+    pub datetime_nanoseconds_downcast: bool,
+
+    /// Allow casting to change time units.
+    pub datetime_convert_timezone: bool,
+
+    pub missing_struct_fields: MissingColumnsPolicy,
+    pub extra_struct_fields: ExtraColumnsPolicy,
+}
+
+impl CastColumnsPolicy {
+    /// Configuration variant that defaults to raising on mismatch.
+    pub const ERROR_ON_MISMATCH: Self = Self {
+        integer_upcast: false,
+        float_upcast: false,
+        float_downcast: false,
+        datetime_nanoseconds_downcast: false,
+        datetime_convert_timezone: false,
+        missing_struct_fields: MissingColumnsPolicy::Raise,
+        extra_struct_fields: ExtraColumnsPolicy::Raise,
+    };
+}
+
+impl Default for CastColumnsPolicy {
+    fn default() -> Self {
+        Self::ERROR_ON_MISMATCH
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]

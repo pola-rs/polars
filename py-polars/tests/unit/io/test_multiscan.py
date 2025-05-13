@@ -338,7 +338,10 @@ def test_schema_mismatch_type_mismatch(
         if scan is pl.scan_ndjson
         else pytest.raises(
             pl.exceptions.SchemaError,
-            match="data type mismatch for column xyz_col: expected: i64, found: str",
+            match=(
+                "data type mismatch for column xyz_col: "
+                "incoming: String != target: Int64"
+            ),
         )
     )
 
@@ -621,7 +624,9 @@ def test_deadlock_linearize(scan: Any, write: Any) -> None:
     lf = scan(fs).head(100)
 
     assert_frame_equal(
-        lf.collect(engine="streaming", slice_pushdown=False),
+        lf.collect(
+            engine="streaming", optimizations=pl.QueryOptFlags(slice_pushdown=False)
+        ),
         pl.concat([df] * 10),
     )
 

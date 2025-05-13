@@ -288,6 +288,7 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
     """Map a PolarsDataType short repr (eg: 'i64', 'list[str]') back into a dtype."""
     if dtype_string is None:
         return None
+
     m = re.match(r"^(\w+)(?:\[(.+)\])?$", dtype_string)
     if m is None:
         return None

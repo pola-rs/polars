@@ -224,6 +224,8 @@ def concat(
     out: Series | DataFrame | LazyFrame | Expr
     first = elems[0]
 
+    from polars.lazyframe.opt_flags import QueryOptFlags
+
     if isinstance(first, pl.DataFrame):
         if how == "vertical":
             out = wrap_df(plr.concat_df(elems))
@@ -235,7 +237,7 @@ def concat(
                     parallel=parallel,
                     to_supertypes=True,
                 )
-            ).collect(no_optimization=True)
+            ).collect(optimizations=QueryOptFlags._eager())
 
         elif how == "diagonal":
             out = wrap_df(plr.concat_df_diagonal(elems))
@@ -247,7 +249,7 @@ def concat(
                     parallel=parallel,
                     to_supertypes=True,
                 )
-            ).collect(no_optimization=True)
+            ).collect(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
             out = wrap_df(plr.concat_df_horizontal(elems))
         else:
@@ -330,9 +332,11 @@ def _alignment_join(
             maintain_order="right_left",
         )
 
+    from polars.lazyframe import QueryOptFlags
+
     joined = reduce(join_func, idx_frames)[1].sort(by=align_on, descending=descending)
     if post_align_collect:
-        joined = joined.collect(no_optimization=True).lazy()
+        joined = joined.collect(optimizations=QueryOptFlags.none()).lazy()
     return joined
 
 

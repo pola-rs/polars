@@ -55,7 +55,7 @@ def test_predicate_pushdown_with_context_11014() -> None:
         out = (
             df1.with_context(df2)
             .filter(pl.col("df1_c1").is_in(pl.col("df2_c1")))
-            .collect(predicate_pushdown=True)
+            .collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
         )
 
     assert out.to_dict(as_series=False) == {"df1_c1": [2, 3], "df1_c2": [3, 4]}

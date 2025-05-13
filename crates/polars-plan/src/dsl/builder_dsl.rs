@@ -157,6 +157,9 @@ impl DslBuilder {
 
     pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> Self {
         if let Some(subset) = subset {
+            if subset.is_empty() {
+                return self;
+            }
             self.filter(
                 all_horizontal(
                     subset
@@ -177,6 +180,9 @@ impl DslBuilder {
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
         if let Some(subset) = subset {
+            if subset.is_empty() {
+                return self;
+            }
             self.filter(
                 all_horizontal(
                     subset

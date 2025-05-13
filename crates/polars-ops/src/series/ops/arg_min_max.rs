@@ -143,7 +143,7 @@ where
 {
     if ca.null_count() == ca.len() {
         None
-    } else if T::get_dtype().is_float() && !matches!(ca.is_sorted_flag(), IsSorted::Not) {
+    } else if T::get_static_dtype().is_float() && !matches!(ca.is_sorted_flag(), IsSorted::Not) {
         arg_max_float_sorted(ca)
     } else if let Ok(vals) = ca.cont_slice() {
         arg_max_numeric_slice(vals, ca.is_sorted_flag())

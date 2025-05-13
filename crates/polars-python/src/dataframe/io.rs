@@ -1,31 +1,21 @@
-use std::borrow::Cow;
 use std::io::BufWriter;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-#[cfg(feature = "cloud")]
-use cloud::credential_provider::PlCredentialProvider;
 use polars::io::RowIndex;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 use polars::prelude::*;
-#[cfg(feature = "parquet")]
-use polars_parquet::arrow::write::StatisticsOptions;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
 use super::PyDataFrame;
 use crate::conversion::Wrap;
-#[cfg(feature = "parquet")]
-use crate::conversion::parse_parquet_compression;
-use crate::error::PyPolarsErr;
 use crate::file::{
     EitherRustPythonFile, get_either_file, get_file_like, get_mmap_bytes_reader,
     get_mmap_bytes_reader_and_path,
 };
 use crate::prelude::PyCompatLevel;
-#[cfg(feature = "cloud")]
-use crate::prelude::parse_cloud_options;
 use crate::utils::EnterPolarsExt;
 
 #[pymethods]
@@ -326,154 +316,6 @@ impl PyDataFrame {
         })
     }
 
-    #[cfg(feature = "csv")]
-    #[pyo3(signature = (
-        py_f, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
-        datetime_format, date_format, time_format, float_scientific, float_precision, null_value,
-        quote_style, cloud_options, credential_provider, retries
-    ))]
-    pub fn write_csv(
-        &mut self,
-        py: Python,
-        py_f: PyObject,
-        include_bom: bool,
-        include_header: bool,
-        separator: u8,
-        line_terminator: String,
-        quote_char: u8,
-        batch_size: NonZeroUsize,
-        datetime_format: Option<String>,
-        date_format: Option<String>,
-        time_format: Option<String>,
-        float_scientific: Option<bool>,
-        float_precision: Option<usize>,
-        null_value: Option<String>,
-        quote_style: Option<Wrap<QuoteStyle>>,
-        cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
-        retries: usize,
-    ) -> PyResult<()> {
-        let null = null_value.unwrap_or_default();
-
-        #[cfg(feature = "cloud")]
-        let cloud_options = if let Ok(path) = py_f.extract::<Cow<str>>(py) {
-            let cloud_options = parse_cloud_options(&path, cloud_options.unwrap_or_default())?;
-            Some(
-                cloud_options
-                    .with_max_retries(retries)
-                    .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_builder),
-                    ),
-            )
-        } else {
-            None
-        };
-
-        #[cfg(not(feature = "cloud"))]
-        let cloud_options = None;
-
-        let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
-
-        py.enter_polars(|| {
-            CsvWriter::new(&mut f)
-                .include_bom(include_bom)
-                .include_header(include_header)
-                .with_separator(separator)
-                .with_line_terminator(line_terminator)
-                .with_quote_char(quote_char)
-                .with_batch_size(batch_size)
-                .with_datetime_format(datetime_format)
-                .with_date_format(date_format)
-                .with_time_format(time_format)
-                .with_float_scientific(float_scientific)
-                .with_float_precision(float_precision)
-                .with_null_value(null)
-                .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
-                .finish(&mut self.df)?;
-
-            crate::file::close_file(f)
-        })
-    }
-
-    #[cfg(feature = "parquet")]
-    #[pyo3(signature = (
-        py_f, compression, compression_level, statistics, row_group_size, data_page_size,
-        partition_by, partition_chunk_size_bytes, cloud_options, credential_provider, retries,
-        metadata
-    ))]
-    pub fn write_parquet(
-        &mut self,
-        py: Python,
-        py_f: PyObject,
-        compression: &str,
-        compression_level: Option<i32>,
-        statistics: Wrap<StatisticsOptions>,
-        row_group_size: Option<usize>,
-        data_page_size: Option<usize>,
-        partition_by: Option<Vec<String>>,
-        partition_chunk_size_bytes: usize,
-        cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
-        retries: usize,
-        metadata: Wrap<Option<KeyValueMetadata>>,
-    ) -> PyResult<()> {
-        use polars_io::partition::write_partitioned_dataset;
-
-        let compression = parse_parquet_compression(compression, compression_level)?;
-
-        #[cfg(feature = "cloud")]
-        let cloud_options = if let Ok(path) = py_f.extract::<Cow<str>>(py) {
-            let cloud_options = parse_cloud_options(&path, cloud_options.unwrap_or_default())?;
-            Some(
-                cloud_options
-                    .with_max_retries(retries)
-                    .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_builder),
-                    ),
-            )
-        } else {
-            None
-        };
-
-        #[cfg(not(feature = "cloud"))]
-        let cloud_options = None;
-
-        if let Some(partition_by) = partition_by {
-            let path = py_f.extract::<String>(py)?;
-
-            return py.enter_polars(|| {
-                let write_options = ParquetWriteOptions {
-                    compression,
-                    statistics: statistics.0,
-                    row_group_size,
-                    data_page_size,
-                    key_value_metadata: metadata.0,
-                };
-                write_partitioned_dataset(
-                    &mut self.df,
-                    std::path::Path::new(path.as_str()),
-                    partition_by.into_iter().map(|x| x.into()).collect(),
-                    &write_options,
-                    cloud_options.as_ref(),
-                    partition_chunk_size_bytes,
-                )
-            });
-        };
-
-        let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
-        py.enter_polars(|| {
-            ParquetWriter::new(BufWriter::new(&mut f))
-                .with_compression(compression)
-                .with_statistics(statistics.0)
-                .with_row_group_size(row_group_size)
-                .with_data_page_size(data_page_size)
-                .with_key_value_metadata(metadata.0)
-                .finish(&mut self.df)?;
-
-            crate::file::close_file(f)
-        })
-    }
-
     #[cfg(feature = "json")]
     pub fn write_json(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
@@ -483,65 +325,6 @@ impl PyDataFrame {
             JsonWriter::new(file)
                 .with_json_format(JsonFormat::Json)
                 .finish(&mut self.df)
-        })
-    }
-
-    #[cfg(feature = "json")]
-    pub fn write_ndjson(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
-        let file = BufWriter::new(get_file_like(py_f, true)?);
-
-        // TODO: Cloud support
-
-        py.enter_polars(|| {
-            // TODO: Cloud support
-
-            JsonWriter::new(file)
-                .with_json_format(JsonFormat::JsonLines)
-                .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)
-        })
-    }
-
-    #[cfg(feature = "ipc")]
-    #[pyo3(signature = (
-        py_f, compression, compat_level, cloud_options, credential_provider, retries
-    ))]
-    pub fn write_ipc(
-        &mut self,
-        py: Python,
-        py_f: PyObject,
-        compression: Wrap<Option<IpcCompression>>,
-        compat_level: PyCompatLevel,
-        cloud_options: Option<Vec<(String, String)>>,
-        credential_provider: Option<PyObject>,
-        retries: usize,
-    ) -> PyResult<()> {
-        #[cfg(feature = "cloud")]
-        let cloud_options = if let Ok(path) = py_f.extract::<Cow<str>>(py) {
-            let cloud_options = parse_cloud_options(&path, cloud_options.unwrap_or_default())?;
-            Some(
-                cloud_options
-                    .with_max_retries(retries)
-                    .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_builder),
-                    ),
-            )
-        } else {
-            None
-        };
-
-        #[cfg(not(feature = "cloud"))]
-        let cloud_options = None;
-
-        let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
-
-        py.enter_polars(|| {
-            IpcWriter::new(&mut f)
-                .with_compression(compression.0)
-                .with_compat_level(compat_level.0)
-                .finish(&mut self.df)?;
-
-            crate::file::close_file(f)
         })
     }
 

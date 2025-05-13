@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import typing
 from collections import OrderedDict
+from collections.abc import Iterator, Mapping
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -40,8 +41,22 @@ if TYPE_CHECKING:
     from polars._typing import JoinStrategy, UniqueKeepStrategy
 
 
+class MappingObject(Mapping[str, Any]):  # noqa: D101
+    def __init__(self, **values: Any) -> None:
+        self._data = {**values}
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __iter__(self) -> Iterator[str]:
+        yield from self._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+
 def test_version() -> None:
-    pl.__version__
+    isinstance(pl.__version__, str)
 
 
 def test_null_count() -> None:
@@ -1320,25 +1335,55 @@ def test_from_rows() -> None:
     assert data == df.rows()
 
 
-def test_from_rows_of_dicts() -> None:
-    records = [
-        {"id": 1, "value": 100, "_meta": "a"},
-        {"id": 2, "value": 101, "_meta": "b"},
-    ]
-    df_init: Callable[..., Any]
+@pytest.mark.parametrize(
+    "records",
+    [
+        [
+            {"id": 1, "value": 100, "_meta": "a"},
+            {"id": 2, "value": 101, "_meta": "b"},
+        ],
+        [
+            None,
+            {"id": 1, "value": 100, "_meta": "a"},
+            {"id": 2, "value": 101, "_meta": "b"},
+        ],
+        [
+            {"id": 1, "value": 100, "_meta": "a"},
+            {"id": 2, "value": 101, "_meta": "b"},
+            None,
+        ],
+        [
+            MappingObject(id=1, value=100, _meta="a"),
+            MappingObject(id=2, value=101, _meta="b"),
+        ],
+        [
+            None,
+            MappingObject(id=1, value=100, _meta="a"),
+            MappingObject(id=2, value=101, _meta="b"),
+        ],
+        [
+            MappingObject(id=1, value=100, _meta="a"),
+            MappingObject(id=2, value=101, _meta="b"),
+            None,
+        ],
+    ],
+)
+def test_from_rows_of_dicts(records: list[dict[str, Any]]) -> None:
     for df_init in (pl.from_dicts, pl.DataFrame):
-        df1 = df_init(records)
+        df1 = df_init(records).remove(pl.col("id").is_null())
         assert df1.rows() == [(1, 100, "a"), (2, 101, "b")]
 
         overrides = {
             "id": pl.Int16,
             "value": pl.Int32,
         }
-        df2 = df_init(records, schema_overrides=overrides)
+        df2 = df_init(records, schema_overrides=overrides).remove(
+            pl.col("id").is_null()
+        )
         assert df2.rows() == [(1, 100, "a"), (2, 101, "b")]
         assert df2.schema == {"id": pl.Int16, "value": pl.Int32, "_meta": pl.String}
 
-        df3 = df_init(records, schema=overrides)
+        df3 = df_init(records, schema=overrides).remove(pl.col("id").is_null())
         assert df3.rows() == [(1, 100), (2, 101)]
         assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
 

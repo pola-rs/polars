@@ -10,7 +10,7 @@ use arrow::datatypes::*;
 use arrow::record_batch::RecordBatchT;
 use arrow::types::{NativeType, i256};
 use ethnum::AsI256;
-use polars::prelude::PlSmallStr;
+use polars::prelude::{PlSmallStr, get_column_write_options};
 use polars_error::PolarsResult;
 use polars_parquet::read::{self as p_read};
 use polars_parquet::write::*;
@@ -675,30 +675,23 @@ fn integration_write(
         data_page_size: None,
     };
 
-    let encodings = schema
-        .iter_values()
-        .map(|f| {
-            transverse(&f.dtype, |x| {
-                if let ArrowDataType::Dictionary(..) = x {
-                    Encoding::RleDictionary
-                } else {
-                    Encoding::Plain
-                }
-            })
-        })
-        .collect();
+    let column_options = get_column_write_options(schema, &[]);
 
-    let row_groups =
-        RowGroupIterator::try_new(chunks.iter().cloned().map(Ok), schema, options, encodings)?;
+    let row_groups = RowGroupIterator::try_new(
+        chunks.iter().cloned().map(Ok),
+        schema,
+        options,
+        column_options.clone(),
+    )?;
 
     let writer = Cursor::new(vec![]);
 
-    let mut writer = FileWriter::try_new(writer, schema.clone(), options)?;
+    let mut writer = FileWriter::try_new(writer, schema.clone(), options, &column_options)?;
 
     for group in row_groups {
         writer.write(group?)?;
     }
-    writer.end(None)?;
+    writer.end(None, &column_options)?;
 
     Ok(writer.into_inner().into_inner())
 }

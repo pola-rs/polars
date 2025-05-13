@@ -63,10 +63,9 @@ def test_prepare_cloud_plan_udf(lf: pl.LazyFrame) -> None:
 def test_prepare_cloud_plan_optimization_toggle() -> None:
     lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).sink_parquet(DST, lazy=True)
 
-    with pytest.raises(TypeError, match="unexpected keyword argument"):
-        prepare_cloud_plan(lf, nonexistent_optimization=False)
-
-    result = prepare_cloud_plan(lf, projection_pushdown=False)
+    result = prepare_cloud_plan(
+        lf, optimizations=pl.QueryOptFlags(projection_pushdown=False)
+    )
     assert isinstance(result, bytes)
 
     # TODO: How to check that this optimization was toggled correctly?
