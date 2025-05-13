@@ -214,5 +214,4 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
     }
 }
 
-
 impl ListNameSpaceExtension for ListNameSpace {}

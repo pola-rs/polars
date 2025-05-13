@@ -49,7 +49,14 @@ impl PyExpr {
 
     #[cfg(feature = "list_filter")]
     fn list_filter(&self, predicate: PyExpr, parallel: bool) -> Self {
-        self.inner.clone().list().eval(Expr::Column(PlSmallStr::EMPTY).filter(predicate.inner), parallel).into()
+        self.inner
+            .clone()
+            .list()
+            .eval(
+                Expr::Column(PlSmallStr::EMPTY).filter(predicate.inner),
+                parallel,
+            )
+            .into()
     }
 
     fn list_get(&self, index: PyExpr, null_on_oob: bool) -> Self {
