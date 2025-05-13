@@ -14,7 +14,6 @@ def random_list():
 
 l = [random_list() for _ in range(N)]
 s = pl.Series("a", l)
-print(s)
 
 # 2. Define the two operations
 def using_eval(series: pl.Series) -> pl.Series:

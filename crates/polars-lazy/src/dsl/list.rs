@@ -116,75 +116,6 @@ fn run_per_sublist(
     }
 }
 
-fn filter_per_sublist(
-    lst: &ListChunked,
-    predicate: &Arc<dyn PhysicalExpr>,
-    parallel: bool,
-) -> PolarsResult<ListChunked> {
-    let state = ExecutionState::new();
-    let name = lst.name().clone();
-
-    let filter_sublist = |opt_series: Option<Series>| -> PolarsResult<Option<Series>> {
-        let sub = match opt_series {
-            Some(sub) => sub,
-            None => return Ok(None),
-        };
-        let mask = predicate
-            .evaluate(&sub.clone().into_frame(), &state)?
-            .bool()
-            .map_err(|_| PolarsError::ComputeError("predicate must return Boolean".into()))?
-            .clone();
-        Ok(Some(sub.filter(&mask)?))
-    };
-
-    let chunks: Vec<Option<Series>> = if parallel {
-        lst.par_iter().map(filter_sublist).collect::<PolarsResult<_>>()?
-    } else {
-        lst.into_iter().map(filter_sublist).collect::<PolarsResult<_>>()?
-    };
-
-    let lc: ListChunked = chunks.into_iter().collect_trusted();
-    Ok(lc.with_name(name))
-}
-
-pub fn list_filter_expr(
-    list_series: &ChunkedArray<ListType>,
-    predicate: &Expr,
-    parallel: bool,
-) -> PolarsResult<Option<Column>> {
-    let lst_ca = list_series;
-    let inner_dtype = lst_ca.inner_dtype().clone();
-
-    let phys_expr = prepare_expression_for_context(
-        PlSmallStr::EMPTY,
-        predicate,
-        &inner_dtype,
-        Context::Default,
-    )?;
-
-    let schema = Schema::from_iter([Field::new(PlSmallStr::EMPTY, inner_dtype.clone())]);
-
-    let pred_field = phys_expr
-        .to_field(&schema)
-        .map_err(|e| {
-            PolarsError::SchemaMismatch(
-                format!("invalid predicate in list.filter: {}", e).into(),
-            )
-        })?;
-
-    polars_ensure!(
-        matches!(pred_field.dtype, DataType::Boolean),
-        ComputeError:
-        "list.filter predicate must return Boolean, got `{}`",
-        pred_field.dtype
-    );
-
-    let filtered_ca = filter_per_sublist(&lst_ca, &phys_expr, parallel)?;
-    Ok(Some(filtered_ca
-        .into_column()
-        .with_name(list_series.name().clone())))
-}
-
 fn run_on_group_by_engine(
     name: PlSmallStr,
     lst: &ListChunked,
@@ -267,12 +198,9 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                 expr.into_iter().any(|e| matches!(e, Expr::AnonymousFunction { options, .. } if options.fmt_str == MAP_LIST_NAME))
             };
 
-            println!("expr: {}", expr);
             if fits_idx_size && c.null_count() == 0 && !is_user_apply() {
-                println!("running on group by engine");
                 run_on_group_by_engine(c.name().clone(), &lst, &expr)
             } else {
-                println!("running on sublists");
                 run_per_sublist(c, &lst, &expr, parallel, output_field)
             }
         };
@@ -283,51 +211,6 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                 GetOutput::map_field(move |f| Ok(eval_field_to_dtype(f, &expr2, true))),
             )
             .with_fmt("eval")
-    }
-    fn list_filter(self, predicate: Expr, parallel: bool) -> Expr {
-        let this = self.into_list_name_space();
-        let filter_func = move |col: Column| {
-            let lst_ca = col.list()?;
-            let inner_dtype = lst_ca.inner_dtype().clone();
-
-            let phys_expr = prepare_expression_for_context(
-                PlSmallStr::EMPTY,
-                &predicate,
-                &inner_dtype,
-                Context::Default,
-            )?;
-
-            let schema = Schema::from_iter([Field::new(PlSmallStr::EMPTY, inner_dtype.clone())]);
-
-            let pred_field = phys_expr
-                .to_field(&schema)
-                .map_err(|e| {
-                    PolarsError::SchemaMismatch(
-                        format!("invalid predicate in list.filter: {}", e).into(),
-                    )
-                })?;
-
-            polars_ensure!(
-                matches!(pred_field.dtype, DataType::Boolean),
-                ComputeError:
-                "list.filter predicate must return Boolean, got `{}`",
-                pred_field.dtype
-            );
-
-            let fits_idx_size = lst_ca.get_values_size() <= (IdxSize::MAX as usize);
-            println!("predicate listfilter: {}", predicate);
-            if fits_idx_size && col.null_count() == 0 {
-                run_on_group_by_engine(col.name().clone(), lst_ca, &predicate)
-            } else {
-                list_filter_expr(lst_ca, &predicate, parallel)
-            }
-        };
-        this.0
-            .map(
-                filter_func,
-                GetOutput::map_field(move |f| Ok(f.clone())),
-            )
-            .with_fmt("filter_expr")
     }
 }
 
