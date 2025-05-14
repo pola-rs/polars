@@ -585,16 +585,18 @@ impl PyExpr {
     #[pyo3(signature = (partition_by, order_by, order_by_descending, order_by_nulls_last, mapping_strategy))]
     fn over(
         &self,
-        partition_by: Vec<Self>,
+        partition_by: Option<Vec<Self>>,
         order_by: Option<Vec<Self>>,
         order_by_descending: bool,
         order_by_nulls_last: bool,
         mapping_strategy: Wrap<WindowMapping>,
-    ) -> Self {
-        let partition_by = partition_by
-            .into_iter()
-            .map(|e| e.inner)
-            .collect::<Vec<Expr>>();
+    ) -> PyResult<Self> {
+        let partition_by = partition_by.map(|partition_by| {
+            partition_by
+                .into_iter()
+                .map(|e| e.inner)
+                .collect::<Vec<Expr>>()
+        });
 
         let order_by = order_by.map(|order_by| {
             (
@@ -608,10 +610,12 @@ impl PyExpr {
             )
         });
 
-        self.inner
+        Ok(self
+            .inner
             .clone()
             .over_with_options(partition_by, order_by, mapping_strategy.0)
-            .into()
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 
     fn rolling(

@@ -1318,3 +1318,9 @@ def test_group_by_empty_rows_with_literal_21959() -> None:
         schema={"d": pl.Int32, "a": pl.Int64, "b": pl.Int64},
     )
     assert_frame_equal(out, expected)
+
+
+def test_group_by_empty_dtype_22716() -> None:
+    df = pl.DataFrame(schema={"a": pl.String, "b": pl.Int64})
+    out = df.group_by("a").agg(x=(pl.col("b") == pl.int_range(pl.len())).all())
+    assert_frame_equal(out, pl.DataFrame(schema={"a": pl.String, "x": pl.Boolean}))
