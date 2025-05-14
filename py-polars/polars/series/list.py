@@ -979,7 +979,6 @@ class ListNameSpace:
         --------
         >>> import polars as pl
         >>> s = pl.Series("a", [[1, 4], [8, 5], [3, 2]])
-        >>> # keep only even values in each list
         >>> s.list.filter(pl.element() % 2 == 0)
         shape: (3,)
         Series: 'a' [list[i64]]
