@@ -546,8 +546,8 @@ fn to_graph_rec<'a>(
                         cast_columns_policy,
                         // Initialized later
                         num_pipelines: AtomicUsize::new(0),
-                        n_readers_pre_init:
-                            nodes::io_sources::multi_file_reader::DEFAULT_N_READERS_PRE_INIT,
+                        n_readers_pre_init: AtomicUsize::new(0),
+                        max_concurrent_scans: AtomicUsize::new(0),
                         verbose,
                     },
                 )),
@@ -985,8 +985,8 @@ fn to_graph_rec<'a>(
                         cast_columns_policy,
                         // Initialized later
                         num_pipelines: AtomicUsize::new(0),
-                        n_readers_pre_init:
-                            nodes::io_sources::multi_file_reader::DEFAULT_N_READERS_PRE_INIT,
+                        n_readers_pre_init: AtomicUsize::new(0),
+                        max_concurrent_scans: AtomicUsize::new(0),
                         verbose,
                     },
                 )),
