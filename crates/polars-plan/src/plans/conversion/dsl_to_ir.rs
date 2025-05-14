@@ -790,7 +790,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         };
 
                         let should_cast =
-                            policy.should_cast_column(column, from_dtype, to_dtype)?;
+                            policy.should_cast_column(column, to_dtype, from_dtype)?;
 
                         let mut expr = Expr::Column(PlSmallStr::from_str(column));
                         if should_cast {

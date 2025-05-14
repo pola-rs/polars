@@ -95,7 +95,7 @@ impl MultiScanTaskInitializer {
         };
 
         let cast_columns_policy = self.config.cast_columns_policy.clone();
-        let missing_columns_policy = self.config.missing_columns_policy.clone();
+        let missing_columns_policy = self.config.missing_columns_policy;
         let include_file_paths = self.config.include_file_paths.clone();
 
         let extra_ops = ExtraOperations {
@@ -240,9 +240,9 @@ impl MultiScanTaskInitializer {
                     hive_parts,
                     final_output_schema,
                     projected_file_schema,
-                    missing_columns_policy: self.config.missing_columns_policy.clone(),
+                    missing_columns_policy: self.config.missing_columns_policy,
                     full_file_schema,
-                    extra_columns_policy: self.config.extra_columns_policy.clone(),
+                    extra_columns_policy: self.config.extra_columns_policy,
                 },
                 num_pipelines,
                 verbose,

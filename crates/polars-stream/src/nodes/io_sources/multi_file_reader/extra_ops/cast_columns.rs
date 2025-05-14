@@ -1,10 +1,9 @@
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{DataType, PlHashMap, TimeUnit, TimeZone};
+use polars_core::prelude::DataType;
 use polars_core::schema::SchemaRef;
-use polars_core::utils::get_numeric_upcast_supertype_lossless;
-use polars_error::{PolarsResult, polars_bail};
-use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
+use polars_error::PolarsResult;
+use polars_plan::dsl::CastColumnsPolicy;
 
 #[derive(Debug)]
 pub struct CastColumns {

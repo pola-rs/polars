@@ -225,7 +225,8 @@ impl DslBuilder {
             match_schema,
             per_column,
             extra_columns,
-        }.into()
+        }
+        .into()
     }
 
     pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
