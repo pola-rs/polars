@@ -17,10 +17,9 @@ use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{
     PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PySequence, PyString, PyTuple,
-    PyType,
+    PyType, PyTzInfo,
 };
 use pyo3::{IntoPyObjectExt, PyTypeCheck, intern};
 
@@ -269,15 +268,15 @@ pub(crate) fn py_object_to_any_value<'py>(
         let (ob, tzinfo) = if let Some(tz) = tzinfo
             .getattr(intern!(py, "zone"))
             .ok()
-            .and_then(|zone| zone.extract::<PyBackedStr>().ok()?.parse::<Tz>().ok())
+            .and_then(|tz| (!tz.is_none()).then_some(tz))
         {
-            let tzinfo = tz.into_pyobject(py)?;
+            let tzinfo = PyTzInfo::timezone(py, tz.downcast_into::<PyString>()?)?;
             (
                 &ob.call_method(intern!(py, "astimezone"), (&tzinfo,), None)?,
                 tzinfo,
             )
         } else {
-            (ob, tzinfo)
+            (ob, tzinfo.downcast_into()?)
         };
 
         let (timestamp, tz) = if tzinfo.hasattr(intern!(py, "key"))? {

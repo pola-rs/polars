@@ -2597,9 +2597,9 @@ dependencies = [
 
 [[package]]
 name = "numpy"
-version = "0.24.0"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7cfbf3f0feededcaa4d289fe3079b03659e85c5b5a177f4ba6fb01ab4fb3e39"
+checksum = "29f1dee9aa8d3f6f8e8b9af3803006101bb3653866ef056d530d53ae68587191"
 dependencies = [
  "libc",
  "ndarray",
@@ -3683,10 +3683,10 @@ dependencies = [
 
 [[package]]
 name = "pyo3"
-version = "0.24.2"
-source = "git+https://github.com/pola-rs/pyo3?branch=build_config_0.24.2#4106d8ffb993bf3da30aa79197f6fe454f46357f"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f239d656363bcee73afef85277f1b281e8ac6212a1d42aa90e55b90ed43c47a4"
 dependencies = [
- "cfg-if",
  "chrono",
  "chrono-tz",
  "indoc",
@@ -3703,8 +3703,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.24.2"
-source = "git+https://github.com/pola-rs/pyo3?branch=build_config_0.24.2#4106d8ffb993bf3da30aa79197f6fe454f46357f"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "755ea671a1c34044fa165247aaf6f419ca39caa6003aee791a0df2713d8f1b6d"
 dependencies = [
  "once_cell",
  "target-lexicon",
@@ -3712,8 +3713,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.24.2"
-source = "git+https://github.com/pola-rs/pyo3?branch=build_config_0.24.2#4106d8ffb993bf3da30aa79197f6fe454f46357f"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc95a2e67091e44791d4ea300ff744be5293f394f1bafd9f78c080814d35956e"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -3721,8 +3723,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.24.2"
-source = "git+https://github.com/pola-rs/pyo3?branch=build_config_0.24.2#4106d8ffb993bf3da30aa79197f6fe454f46357f"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a179641d1b93920829a62f15e87c0ed791b6c8db2271ba0fd7c2686090510214"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
@@ -3732,8 +3735,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.24.2"
-source = "git+https://github.com/pola-rs/pyo3?branch=build_config_0.24.2#4106d8ffb993bf3da30aa79197f6fe454f46357f"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9dff85ebcaab8c441b0e3f7ae40a6963ecea8a9f5e74f647e33fcf5ec9a1e89e"
 dependencies = [
  "heck",
  "proc-macro2",
