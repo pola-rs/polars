@@ -462,7 +462,6 @@ class ListNameSpace:
         ]
         """
 
-
     def gather_every(
         self, n: int | IntoExprColumn, offset: int | IntoExprColumn = 0
     ) -> Series:
@@ -956,7 +955,6 @@ class ListNameSpace:
             [2.0, 1.0]
         ]
         """
-
 
     def filter(self, predicate: Expr, *, parallel: bool = False) -> Series:
         """

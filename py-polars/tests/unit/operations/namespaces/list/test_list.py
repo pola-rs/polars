@@ -1082,36 +1082,46 @@ def test_list_shift_unequal_lengths_22018() -> None:
 def test_list_shift_self_broadcast() -> None:
     assert pl.Series("a", [[1, 2]]).list.shift(pl.Series([1, 2, 1])).len() == 3
 
+
 def test_list_filter_simple() -> None:
-    assert pl.Series([
-        [1, 2, 3, 4, 5],
-        [1, 3, 7, 8],
-        [6, 1, 4, 5],
-    ]).list.filter(pl.element() < 5).to_list() == [
+    assert pl.Series(
+        [
+            [1, 2, 3, 4, 5],
+            [1, 3, 7, 8],
+            [6, 1, 4, 5],
+        ]
+    ).list.filter(pl.element() < 5).to_list() == [
         [1, 2, 3, 4],
         [1, 3],
         [1, 4],
     ]
 
+
 def test_list_filter_result_empty() -> None:
-    assert pl.Series([
-        ["a"],
-        ["b", "c"],
-    ]).list.filter(pl.element() == "d").to_list() == [
+    assert pl.Series(
+        [
+            ["a"],
+            ["b", "c"],
+        ]
+    ).list.filter(pl.element() == "d").to_list() == [
         [],
         [],
     ]
 
+
 def test_list_filter_null() -> None:
-    assert pl.Series([
-        [None, 1, 2],
-        [None, None],
-        [1, 2],
-    ]).list.filter(pl.element().is_not_null()).to_list() == [
+    assert pl.Series(
+        [
+            [None, 1, 2],
+            [None, None],
+            [1, 2],
+        ]
+    ).list.filter(pl.element().is_not_null()).to_list() == [
         [1, 2],
         [],
         [1, 2],
     ]
+
 
 @pytest.mark.slow
 def test_list_struct_field_perf() -> None:

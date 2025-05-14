@@ -1254,13 +1254,9 @@ class ExprListNameSpace:
         Examples
         --------
         >>> import polars as pl
-        >>> df = pl.DataFrame({
-        ...     "a": [1, 8, 3],
-        ...     "b": [4, 5, 2]
-        ... })
+        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
         >>> df.with_columns(
-        ...     evens=pl.concat_list("a", "b")
-        ...             .list.filter(pl.element() % 2 == 0)
+        ...     evens=pl.concat_list("a", "b").list.filter(pl.element() % 2 == 0)
         ... )
         shape: (3, 3)
         ┌─────┬─────┬───────────┐
