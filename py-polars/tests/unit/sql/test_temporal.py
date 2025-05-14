@@ -197,12 +197,15 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
         ("dtm <= '2006-01-01'", []),  # << implies '2006-01-01 00:00:00'
         ("dt != '1960-01-07'", [0, 1]),
         ("tm != '22:10:30'", [0, 2]),
-        ("tm >= '11:00:00' AND tm < '22:00:00'", [0]),
+        ("tm >= '11:00:00' AND tm < '22:00'", [0]),
+        ("tm >= '11:00' AND tm < '22:00:00.000'", [0]),
+        ("tm BETWEEN '12:00' AND '23:59:58'", [0, 1]),
         ("tm BETWEEN '12:00:00' AND '23:59:58'", [0, 1]),
         ("dt BETWEEN '2050-01-01' AND '2100-12-31'", [1]),
         ("dt::datetime = '1960-01-07'", [2]),
+        ("dt::datetime = '1960-01-07 00:00'", [2]),
         ("dt::datetime = '1960-01-07 00:00:00'", [2]),
-        ("dtm BETWEEN '2020-12-30 10:30:44' AND '2023-01-01 00:00:00'", [2]),
+        ("dtm BETWEEN '2020-12-30 10:30:44' AND '2023-01-01 00:00'", [2]),
         ("dt IN ('1960-01-07','2077-01-01','2222-02-22')", [1, 2]),
         (
             "dtm = '2024-01-07 01:02:03.123456000' OR dtm = '2020-12-30 10:30:45.987654'",
@@ -239,10 +242,12 @@ def test_implicit_temporal_strings(constraint: str, expected: list[int]) -> None
 @pytest.mark.parametrize(
     "dtval",
     [
+        # none of these are valid dates
         "2020-12-30T10:30:45",
         "yyyy-mm-dd",
         "2222-22-22",
         "10:30:45",
+        "foo",
     ],
 )
 def test_implicit_temporal_string_errors(dtval: str) -> None:

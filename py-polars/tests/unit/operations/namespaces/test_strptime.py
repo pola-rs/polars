@@ -14,7 +14,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ChronoFormatWarning, ComputeError, InvalidOperationError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsTemporalType, TimeUnit
@@ -650,9 +650,27 @@ def test_strptime_complete_formats(string: str, fmt: str, expected: datetime) ->
 @pytest.mark.parametrize(
     ("data", "format", "expected"),
     [
-        ("05:10:10.074000", "%H:%M:%S%.f", time(5, 10, 10, 74000)),
-        ("05:10:10.074000", "%T%.6f", time(5, 10, 10, 74000)),
-        ("05:10:10.074000", "%H:%M:%S%.3f", time(5, 10, 10, 74000)),
+        ("00:00:00.000005000", "%H:%M:%S%.f", time(0, 0, 0, 5)),
+        ("01:23:10.000500", "%H:%M:%S%.6f", time(1, 23, 10, 500)),
+        ("08:10:11.000", "%H:%M:%S%.3f", time(8, 10, 11)),
+        ("15:50:25", "%T", time(15, 50, 25)),
+        ("22:35", "%R", time(22, 35)),
+    ],
+)
+def test_to_time_inferred(data: str, format: str, expected: time) -> None:
+    df = pl.DataFrame({"tmstr": [data]})
+    expected_df = df.with_columns(tm=pl.Series("tm", values=[expected]))
+    for fmt in (format, None):
+        res = df.with_columns(tm=pl.col("tmstr").str.to_time(fmt))
+        assert_frame_equal(res, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("data", "format", "expected"),
+    [
+        ("05:10:11.740000", "%H:%M:%S%.f", time(5, 10, 11, 740000)),
+        ("13:20:12.000074", "%T%.6f", time(13, 20, 12, 74)),
+        ("21:30:13.007400", "%H:%M:%S%.3f", time(21, 30, 13, 7400)),
     ],
 )
 def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
