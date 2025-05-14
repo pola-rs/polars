@@ -8082,6 +8082,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
 
+    @unstable()
     def match_to_schema(
         self,
         schema: Schema,
@@ -8098,6 +8099,35 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         float_cast: Literal["upcast" | "forbid"]
         | Mapping[str, Literal["upcast" | "forbid"]] = "forbid",
     ) -> LazyFrame:
+        """
+        Match or evolve the schema of a LazyFrame into a specific schema.
+
+        By default, `match_to_schema` errors if the input schema does not equal the
+        `schema`. Several coercion rules can be enabled using the parameters.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        schema
+            Target schema to match or evolve to.
+        missing_columns
+            Determine what to do with columns that are missing from the input schema
+            with respect to the `schema`. This argument can also be given a dictionary
+            with names of columns of the `schema` and behavior per column.
+        missing_struct_fields
+            TODO
+        extra_columns
+            TODO
+        extra_struct_fields
+            TODO
+        integer_cast
+            TODO
+        float_cast
+            TODO
+        """
         from polars import Expr
 
         str_to_index = {name: i for i, name in enumerate(schema.keys())}
