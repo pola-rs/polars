@@ -3672,6 +3672,7 @@ dependencies = [
  "rayon",
  "recursive",
  "serde_json",
+ "url",
  "version_check",
 ]
 
