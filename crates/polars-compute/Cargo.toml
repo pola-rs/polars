@@ -30,6 +30,9 @@ strum_macros = { workspace = true }
 [dev-dependencies]
 rand = { workspace = true }
 
+arrow = { workspace = true, features = ["proptest"] }
+proptest = { workspace = true }
+
 [build-dependencies]
 version_check = { workspace = true }
 
