@@ -15,24 +15,40 @@ where
     f(&mut us)
 }
 
-pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
+pub fn is_deprecated_cast(input_dtype: &DataType, output_dtype: &DataType) -> bool {
     use DataType as D;
+
     #[allow(clippy::single_match)]
-    match (input.dtype(), output.dtype()) {
-        // @Hack to deal with deprecated cast
-        // @2.0
+    match (input_dtype, output_dtype) {
         #[cfg(feature = "dtype-struct")]
         (D::Struct(l_fields), D::Struct(r_fields)) => {
-            if l_fields.len() != r_fields.len()
+            l_fields.len() != r_fields.len()
                 || l_fields
                     .iter()
                     .zip(r_fields.iter())
-                    .any(|(l, r)| l.name() != r.name())
-            {
-                return Ok(());
-            }
+                    .any(|(l, r)| l.name() != r.name() || is_deprecated_cast(l.dtype(), r.dtype()))
         },
-        _ => {},
+        (D::List(input_dtype), D::List(output_dtype)) => {
+            is_deprecated_cast(input_dtype, output_dtype)
+        },
+        #[cfg(feature = "dtype-array")]
+        (D::Array(input_dtype, _), D::Array(output_dtype, _)) => {
+            is_deprecated_cast(input_dtype, output_dtype)
+        },
+        #[cfg(feature = "dtype-array")]
+        (D::List(input_dtype), D::Array(output_dtype, _))
+        | (D::Array(input_dtype, _), D::List(output_dtype)) => {
+            is_deprecated_cast(input_dtype, output_dtype)
+        },
+        _ => false,
+    }
+}
+
+pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
+    // @Hack to deal with deprecated cast
+    // @2.0
+    if is_deprecated_cast(input.dtype(), output.dtype()) {
+        return Ok(());
     }
 
     let mut idxs = Vec::new();

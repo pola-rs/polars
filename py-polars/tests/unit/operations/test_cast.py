@@ -920,3 +920,30 @@ def test_nested_strict_casts_succeeds(
         s.cast(to.dtype),
         to,
     )
+
+
+def test_nested_struct_cast_22744() -> None:
+    s = pl.Series(
+        [{"attrs": {"class": None}}],
+    )
+
+    expected = pl.select(
+        pl.lit(s).struct.with_fields(
+            pl.field("attrs").struct.with_fields(
+                [pl.field("class"), pl.lit(None, dtype=pl.String()).alias("other")]
+            )
+        )
+    )
+
+    assert_series_equal(
+        s.cast(
+            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
+        ),
+        expected.to_series(),
+    )
+    assert_frame_equal(
+        pl.DataFrame([s]).cast(
+            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
+        ),
+        expected.to_series(),
+    )
