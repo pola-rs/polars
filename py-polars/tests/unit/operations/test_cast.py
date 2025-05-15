@@ -924,7 +924,7 @@ def test_nested_strict_casts_succeeds(
 
 def test_nested_struct_cast_22744() -> None:
     s = pl.Series(
-        [{"attrs": {"class": None}}],
+        [{"attrs": {"class": "a"}}],
     )
 
     expected = pl.select(
