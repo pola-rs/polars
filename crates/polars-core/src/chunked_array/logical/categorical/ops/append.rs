@@ -29,6 +29,8 @@ impl CategoricalChunked {
     }
 
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
+        polars_ensure!(!self.is_enum() || self.dtype() == other.dtype(), append);
+
         // fast path all nulls
         if self.physical.null_count() == self.len() && other.physical.null_count() == other.len() {
             let len = self.len();
@@ -37,8 +39,12 @@ impl CategoricalChunked {
             return Ok(());
         }
 
-        let mut new_self = call_categorical_merge_operation(self, other, CategoricalAppend)?;
-        std::mem::swap(self, &mut new_self);
+        if self.is_enum() {
+            self.physical_mut().append(other.physical())?;
+        } else {
+            let mut new_self = call_categorical_merge_operation(self, other, CategoricalAppend)?;
+            std::mem::swap(self, &mut new_self);
+        }
         Ok(())
     }
 

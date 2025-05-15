@@ -1,3 +1,5 @@
+import io
+
 import pytest
 
 import polars as pl
@@ -87,3 +89,17 @@ def test_append_null_series() -> None:
     assert_series_equal(a, expected)
     assert_series_equal(result, expected)
     assert a.n_chunks() == 2
+
+
+def test_append_enum_with_stringcache_22764() -> None:
+    f = io.BytesIO()
+    g = io.BytesIO()
+    with pl.StringCache():
+        pl.DataFrame({"someletter": ["A", "B"]}).write_csv(f)
+
+        schema = pl.Schema(
+            {
+                "someletter": pl.Enum(["A", "B"]),
+            }
+        )
+        pl.scan_csv(f, schema=schema).sink_parquet(g)
