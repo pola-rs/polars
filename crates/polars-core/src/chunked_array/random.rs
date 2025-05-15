@@ -187,7 +187,7 @@ impl DataFrame {
         ComputeError: "Sample size must be a single value."
         );
 
-        let n = n.cast(&IDX_DTYPE)?;
+        let n = n.strict_cast(&IDX_DTYPE)?;
         let n = n.idx()?;
 
         match n.get(0) {
@@ -226,7 +226,7 @@ impl DataFrame {
         ComputeError: "Sample fraction must be a single value."
         );
 
-        let frac = frac.cast(&Float64)?;
+        let frac = frac.strict_cast(&Float64)?;
         let frac = frac.f64()?;
 
         match frac.get(0) {
