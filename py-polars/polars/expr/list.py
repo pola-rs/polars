@@ -1242,8 +1242,7 @@ class ExprListNameSpace:
         ----------
         expr
             A boolean expression that is evaluated per list element.
-            You can refer to the current element with `pl.element()`, or
-            select with `pl.col()`.
+            You can refer to the current element with `pl.element()`.
         parallel
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.

@@ -964,8 +964,7 @@ class ListNameSpace:
         ----------
         expr
             A boolean expression evaluated on each list element.
-            Use `pl.element()` to refer to the current element, or
-            `pl.col()` to select other columns in scope.
+            Use `pl.element()` to refer to the current element.
         parallel
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
