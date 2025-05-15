@@ -45,14 +45,14 @@ fn offset_remainder_saturating() {
 #[test]
 fn offset_remainder_saturating2() {
     let a = BitChunks::<u64>::new(&[0b01001001u8, 0b00000001], 1, 8);
-    assert_eq!(a.remainder(), 0b0010_0100u64);
+    assert_eq!(a.remainder(), 0b1010_0100u64);
 }
 
 #[test]
 fn offset_remainder_saturating3() {
     let input: &[u8] = &[0b01000000, 0b01000001];
     let a = BitChunks::<u64>::new(input, 8, 2);
-    assert_eq!(a.remainder(), 0b0100_0001u64);
+    assert_eq!(a.remainder(), 0b0000_0001u64);
 }
 
 #[test]
