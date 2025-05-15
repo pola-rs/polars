@@ -12,8 +12,8 @@ pub enum ListToStructArgs {
     InferWidth {
         infer_field_strategy: ListToStructWidthStrategy,
         get_index_name: Option<NameGenerator>,
-        /// If this is 0, it means unbounded.
-        max_fields: usize,
+        /// If this is None, it means unbounded.
+        max_fields: Option<usize>,
     },
 }
 
@@ -44,9 +44,9 @@ impl ListToStructArgs {
             )),
             Self::InferWidth {
                 get_index_name,
-                max_fields,
+                max_fields: Some(max_fields),
                 ..
-            } if *max_fields > 0 => {
+            } => {
                 let get_index_name_func = get_index_name.as_ref().map_or(
                     &_default_struct_name_gen as &dyn Fn(usize) -> PlSmallStr,
                     |x| x.0.as_ref(),
@@ -104,7 +104,7 @@ impl ListToStructArgs {
                     },
                 };
 
-                if *max_fields > 0 {
+                if let Some(max_fields) = max_fields {
                     inferred.min(*max_fields)
                 } else {
                     inferred

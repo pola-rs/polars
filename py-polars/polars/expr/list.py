@@ -1095,7 +1095,7 @@ class ExprListNameSpace:
         self,
         n_field_strategy: ListToStructWidthStrategy = "first_non_null",
         fields: Sequence[str] | Callable[[int], str] | None = None,
-        upper_bound: int = 0,
+        upper_bound: int | None = None,
         *,
         _eager: bool = False,
     ) -> Expr:
