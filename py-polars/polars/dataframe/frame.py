@@ -12071,7 +12071,7 @@ class DataFrame:
     @unstable()
     def match_to_schema(
         self,
-        schema: Schema,
+        schema: SchemaDict | Schema,
         *,
         missing_columns: Literal["insert" | "raise"]
         | Mapping[str, Literal["insert" | "raise"] | Expr] = "raise",
@@ -12215,7 +12215,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        self.lazy().match_to_schema(
+        return self.lazy().match_to_schema(
             schema=schema,
             missing_columns=missing_columns,
             missing_struct_fields=missing_struct_fields,

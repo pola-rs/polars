@@ -8085,7 +8085,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def match_to_schema(
         self,
-        schema: Schema,
+        schema: SchemaDict | Schema,
         *,
         missing_columns: Literal["insert" | "raise"]
         | Mapping[str, Literal["insert" | "raise"] | Expr] = "raise",
@@ -8244,6 +8244,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 return value._pyexpr
             return value
 
+        schema_prep: Schema
+        if isinstance(schema, Mapping):
+            schema_prep = Schema(schema)
+        else:
+            schema_prep = schema
+
         missing_columns_pyexpr: (
             Literal["insert" | "raise"]
             | dict[str, Literal["insert" | "raise"] | PyExpr]
@@ -8260,7 +8266,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return LazyFrame._from_pyldf(
             self._ldf.match_to_schema(
-                schema=schema,
+                schema=schema_prep,
                 missing_columns=missing_columns_pyexpr,
                 missing_struct_fields=missing_struct_fields,
                 extra_columns=extra_columns,

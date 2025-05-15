@@ -335,6 +335,7 @@ impl CastColumnsPolicy {
         // We intercept the nested types first to prevent an expensive recursive eq - recursion
         // is instead done manually through this function.
 
+        #[cfg(feature = "dtype-struct")]
         if let DataType::Struct(target_fields) = target_dtype {
             let DataType::Struct(incoming_fields) = incoming_dtype else {
                 return mismatch_err("");
