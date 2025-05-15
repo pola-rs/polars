@@ -945,5 +945,5 @@ def test_nested_struct_cast_22744() -> None:
         pl.DataFrame([s]).cast(
             pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
         ),
-        expected.to_series(),
+        expected,
     )
