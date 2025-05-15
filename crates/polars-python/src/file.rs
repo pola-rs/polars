@@ -9,8 +9,6 @@ use std::os::fd::{FromRawFd, RawFd};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use url::Url;
-
 use polars::io::mmap::MmapBytesReader;
 use polars::prelude::file::DynWriteable;
 use polars::prelude::sync_on_close::SyncOnCloseType;
@@ -22,6 +20,7 @@ use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString, PyStringMethods};
+use url::Url;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
@@ -402,16 +401,20 @@ pub(crate) fn get_python_scan_source_input(
 }
 
 pub(crate) fn parse_file_uri(uri: &str) -> PyResult<PathBuf> {
-    let url = Url::parse(uri).map_err(|e| PyPolarsErr::from(polars_err!(ComputeError: "Invalid URI: {}", e)))?;
+    let url = Url::parse(uri)
+        .map_err(|e| PyPolarsErr::from(polars_err!(ComputeError: "Invalid URI: {}", e)))?;
 
     if url.scheme() != "file" {
-        return Err(PyPolarsErr::from(polars_err!(ComputeError: "Unsupported URI scheme: {}", url.scheme())).into());
+        return Err(PyPolarsErr::from(
+            polars_err!(ComputeError: "Unsupported URI scheme: {}", url.scheme()),
+        )
+        .into());
     }
     url.to_file_path().map_err(|_| {
-        PyPolarsErr::from(polars_err!(ComputeError: "Could not convert URI to file path: {}", uri)).into()
+        PyPolarsErr::from(polars_err!(ComputeError: "Could not convert URI to file path: {}", uri))
+            .into()
     })
 }
-
 
 fn get_either_buffer_or_path(
     py_f: PyObject,
