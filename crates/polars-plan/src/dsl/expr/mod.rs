@@ -11,7 +11,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "serde")]
-mod named_serde;
+pub mod named_serde;
 #[cfg(feature = "serde")]
 mod serde_expr;
 
@@ -183,7 +183,8 @@ pub enum Expr {
 pub enum LazySerde<T: Clone> {
     Deserialized(T),
     Bytes(Bytes),
-    Named(String),
+    // Used by cloud
+    Named { name: String, payload: Bytes },
 }
 
 impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
@@ -194,7 +195,24 @@ impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
             (L::Bytes(a), L::Bytes(b)) => {
                 std::ptr::eq(a.as_ptr(), b.as_ptr()) && a.len() == b.len()
             },
-            (L::Named(l), L::Named(r)) => l == r,
+            (
+                L::Named {
+                    name: l,
+                    payload: pl,
+                },
+                L::Named {
+                    name: r,
+                    payload: pr,
+                },
+            ) => {
+                #[cfg(debug_assertions)]
+                {
+                    if l == r {
+                        assert_eq!(pl, pr, "name should point to unique payload")
+                    }
+                }
+                l == r
+            },
             _ => false,
         }
     }
@@ -205,7 +223,7 @@ impl<T: Clone> Debug for LazySerde<T> {
         match self {
             Self::Bytes(_) => write!(f, "lazy-serde<Bytes>"),
             Self::Deserialized(_) => write!(f, "lazy-serde<T>"),
-            Self::Named(name) => write!(f, "lazy-serde<Named>: {}", name),
+            Self::Named { name, payload: _ } => write!(f, "lazy-serde<Named>: {}", name),
         }
     }
 }

@@ -3,10 +3,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use polars_core::utils::try_get_supertype;
-#[cfg(feature = "python")]
-use polars_utils::pl_serialize::deserialize_map_bytes;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::*;
 
@@ -279,8 +275,11 @@ impl OpaqueColumnUdf {
     pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn ColumnsUdf>>> {
         match self {
             Self::Deserialized(t) => Ok(t),
-            Self::Named(name) => {
-                todo!()
+            Self::Named {
+                name: _,
+                payload: _,
+            } => {
+                panic!("should not be hit")
             },
             Self::Bytes(_b) => {
                 feature_gated!("serde";"python", {

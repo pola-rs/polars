@@ -3,8 +3,13 @@ use std::sync::{Arc, LazyLock, RwLock};
 use super::ColumnsUdf;
 
 pub trait ExprRegistry: Sync + Send {
-    fn get_function(&self, name: &str) -> Option<Arc<dyn ColumnsUdf>>;
+    fn get_function(&self, name: &str, payload: &[u8]) -> Option<Arc<dyn ColumnsUdf>>;
 }
 
 pub(super) static NAMED_SERDE_REGISTRY_EXPR: LazyLock<RwLock<Option<Box<dyn ExprRegistry>>>> =
     LazyLock::new(Default::default);
+
+pub fn set_named_serde_registry(reg: Box<dyn ExprRegistry>) {
+    let mut lock = NAMED_SERDE_REGISTRY_EXPR.write().unwrap();
+    *lock = Some(reg);
+}
