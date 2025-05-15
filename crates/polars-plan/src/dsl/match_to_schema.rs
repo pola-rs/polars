@@ -21,8 +21,8 @@ pub struct MatchToSchemaPerColumn {
     pub missing_columns: MissingColumnsPolicyOrExpr,
     pub missing_struct_fields: MissingColumnsPolicy,
 
-    pub integer_upcast: UpcastOrForbid,
-    pub float_upcast: UpcastOrForbid,
-
     pub extra_struct_fields: ExtraColumnsPolicy,
+
+    pub integer_cast: UpcastOrForbid,
+    pub float_cast: UpcastOrForbid,
 }

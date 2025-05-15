@@ -112,7 +112,7 @@ if TYPE_CHECKING:
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyPartitioning
+        from polars.polars import PyExpr, PyPartitioning
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -8102,8 +8102,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Match or evolve the schema of a LazyFrame into a specific schema.
 
-        By default, `match_to_schema` errors if the input schema does not equal the
-        `schema`. Several coercion rules can be enabled using the parameters.
+        By default, match_to_schema returns an error if the input schema does not
+        exactly match the target schema. It also allows columns to be freely reordered,
+        with additional coercion rules available through optional parameters.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -8114,70 +8115,158 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         schema
             Target schema to match or evolve to.
         missing_columns
-            Determine what to do with columns that are missing from the input schema
-            with respect to the `schema`. This argument can also be given a dictionary
-            with names of columns of the `schema` and behavior per column.
+            Raise of insert missing columns from the input with respect to the `schema`.
+
+            This can also be an expression per column with what to insert if it is
+            missing.
         missing_struct_fields
-            TODO
+            Raise of insert missing struct fields from the input with respect to the
+            `schema`.
         extra_columns
-            TODO
+            Raise of ignore extra columns from the input with respect to the `schema`.
         extra_struct_fields
-            TODO
+            Raise of ignore extra struct fields from the input with respect to the
+            `schema`.
         integer_cast
-            TODO
+            Forbid of upcast for integer columns from the input to the respective column
+            in `schema`.
         float_cast
-            TODO
+            Forbid of upcast for float columns from the input to the respective column
+            in `schema`.
+
+        Examples
+        --------
+        Ensuring the schema matches
+
+        >>> lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["A", "B", "C"]})
+        >>> lf.match_to_schema({"a": pl.Int64, "b": pl.String}).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ A   │
+        │ 2   ┆ B   │
+        │ 3   ┆ C   │
+        └─────┴─────┘
+        >>> (lf.match_to_schema({"a": pl.Int64}).collect())
+        polars.exceptions.SchemaError: extra columns in `match_to_schema`: "b"
+
+        Adding missing columns
+        >>> (
+        ...     pl.LazyFrame({"a": [1, 2, 3]})
+        ...     .match_to_schema(
+        ...         {"a": pl.Int64, "b": pl.String},
+        ...         missing_columns="insert",
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (3, 2)
+        ┌─────┬──────┐
+        │ a   ┆ b    │
+        │ --- ┆ ---  │
+        │ i64 ┆ str  │
+        ╞═════╪══════╡
+        │ 1   ┆ null │
+        │ 2   ┆ null │
+        │ 3   ┆ null │
+        └─────┴──────┘
+        >>> (
+        ...     pl.LazyFrame({"a": [1, 2, 3]})
+        ...     .match_to_schema(
+        ...         {"a": pl.Int64, "b": pl.String},
+        ...         missing_columns={"b": pl.col.a.cast(pl.String)},
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ 1   │
+        │ 2   ┆ 2   │
+        │ 3   ┆ 3   │
+        └─────┴─────┘
+
+        Removing extra columns
+        >>> (
+        ...     pl.LazyFrame({"a": [1, 2, 3], "b": ["A", "B", "C"]})
+        ...     .match_to_schema(
+        ...         {"a": pl.Int64},
+        ...         extra_columns="ignore",
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
+        Upcasting integers and floats
+        >>> (
+        ...     pl.LazyFrame(
+        ...         {"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]},
+        ...         schema={"a": pl.Int32, "b": pl.Float32},
+        ...     )
+        ...     .match_to_schema(
+        ...         {"a": pl.Int64, "b": pl.Float64},
+        ...         integer_cast="upcast",
+        ...         float_cast="upcast",
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1.0 │
+        │ 2   ┆ 2.0 │
+        │ 3   ┆ 3.0 │
+        └─────┴─────┘
         """
         from polars import Expr
 
-        str_to_index = {name: i for i, name in enumerate(schema.keys())}
+        def prepare_missing_columns(
+            value: Literal["insert" | "raise"] | Expr,
+        ) -> Literal["insert" | "raise"] | PyExpr:
+            if isinstance(value, Expr):
+                return value._pyexpr
+            return value
+
+        missing_columns_pyexpr: (
+            Literal["insert" | "raise"]
+            | dict[str, Literal["insert" | "raise"] | PyExpr]
+        )
         if isinstance(missing_columns, Mapping):
-            filled_missing_columns = ["raise"] * len(schema)
-            for key, value in missing_columns.items():
-                if isinstance(value, Expr):
-                    filled_missing_columns[str_to_index[key]] = value._pyexpr
-                else:
-                    filled_missing_columns[str_to_index[key]] = value
+            missing_columns_pyexpr = {
+                key: prepare_missing_columns(value)
+                for key, value in missing_columns.items()
+            }
+        elif isinstance(missing_columns, Expr):
+            missing_columns_pyexpr = prepare_missing_columns(missing_columns)
         else:
-            filled_missing_columns = [missing_columns] * len(schema)
-
-        if isinstance(missing_struct_fields, Mapping):
-            filled_missing_struct_fields = ["raise"] * len(schema)
-            for key, value in missing_struct_fields.items():
-                filled_missing_struct_fields[str_to_index[key]] = value
-        else:
-            filled_missing_struct_fields = [missing_struct_fields] * len(schema)
-
-        if isinstance(extra_struct_fields, Mapping):
-            filled_extra_struct_fields = ["raise"] * len(schema)
-            for key, value in integer_cast.items():
-                filled_extra_struct_fields[str_to_index[key]] = value
-        else:
-            filled_extra_struct_fields = [extra_struct_fields] * len(schema)
-
-        if isinstance(integer_cast, Mapping):
-            filled_integer_cast = ["forbid"] * len(schema)
-            for key, value in integer_cast.items():
-                filled_integer_cast[str_to_index[key]] = value
-        else:
-            filled_integer_cast = [integer_cast] * len(schema)
-
-        if isinstance(float_cast, Mapping):
-            filled_float_cast = ["forbid"] * len(schema)
-            for key, value in float_cast.items():
-                filled_float_cast[str_to_index[key]] = value
-        else:
-            filled_float_cast = [float_cast] * len(schema)
+            missing_columns_pyexpr = missing_columns
 
         return LazyFrame._from_pyldf(
             self._ldf.match_to_schema(
                 schema=schema,
-                missing_columns=filled_missing_columns,
-                missing_struct_fields=filled_missing_struct_fields,
+                missing_columns=missing_columns_pyexpr,
+                missing_struct_fields=missing_struct_fields,
                 extra_columns=extra_columns,
-                extra_struct_fields=filled_extra_struct_fields,
-                integer_cast=filled_integer_cast,
-                float_cast=filled_float_cast,
+                extra_struct_fields=extra_struct_fields,
+                integer_cast=integer_cast,
+                float_cast=float_cast,
             )
         )
 

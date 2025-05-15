@@ -99,7 +99,7 @@ def test_match_to_schema_extra_columns() -> None:
 
     expected = df.select(["a"])
 
-    with pytest.raises(pl.exceptions.SchemaError):
+    with pytest.raises(pl.exceptions.SchemaError, match=r'`match_to_schema`: "b", "c"'):
         df.lazy().match_to_schema(expected.schema).collect()
 
     result = (

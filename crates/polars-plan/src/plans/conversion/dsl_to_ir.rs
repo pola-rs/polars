@@ -780,8 +780,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         let to_dtype = dtype;
 
                         let policy = CastColumnsPolicy {
-                            integer_upcast: per_column.integer_upcast == UpcastOrForbid::Upcast,
-                            float_upcast: per_column.float_upcast == UpcastOrForbid::Upcast,
+                            integer_upcast: per_column.integer_cast == UpcastOrForbid::Upcast,
+                            float_upcast: per_column.float_cast == UpcastOrForbid::Upcast,
                             float_downcast: false,
                             datetime_nanoseconds_downcast: false,
                             datetime_convert_timezone: false,
@@ -807,43 +807,35 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 }
             }
 
+            // Report the error for missing columns
             if let Some(lst) = found_missing_columns.first() {
                 use std::fmt::Write;
                 let mut formatted = String::new();
+                write!(&mut formatted, "\"{}\"", found_missing_columns[0]).unwrap();
+                for c in &found_missing_columns[1..] {
+                    write!(&mut formatted, ", \"{c}\"").unwrap();
+                }
 
-                for c in &found_missing_columns[..found_missing_columns.len() - 1] {
-                    write!(&mut formatted, "\"{c}\", ").unwrap();
-                }
-                if found_missing_columns.len() > 1 {
-                    formatted.push_str(" and ");
-                }
                 write!(&mut formatted, "\"{lst}\"").unwrap();
                 polars_bail!(SchemaMismatch: "missing columns in `match_to_schema`: {formatted}");
             }
 
+            // Report the error for extra columns
             if used_input_columns != input_schema.len()
                 && extra_columns == ExtraColumnsPolicy::Raise
             {
                 let found_extra_columns = input_schema
                     .iter_names()
-                    .filter(|n| match_schema.contains(n))
+                    .filter(|n| !match_schema.contains(n))
                     .collect::<Vec<_>>();
 
                 use std::fmt::Write;
                 let mut formatted = String::new();
+                write!(&mut formatted, "\"{}\"", found_extra_columns[0]).unwrap();
+                for c in &found_extra_columns[1..] {
+                    write!(&mut formatted, ", \"{c}\"").unwrap();
+                }
 
-                for c in &found_extra_columns[..found_extra_columns.len() - 1] {
-                    write!(&mut formatted, "\"{c}\", ").unwrap();
-                }
-                if found_extra_columns.len() > 1 {
-                    formatted.push_str(" and ");
-                }
-                write!(
-                    &mut formatted,
-                    "\"{}\"",
-                    found_extra_columns.last().unwrap()
-                )
-                .unwrap();
                 polars_bail!(SchemaMismatch: "extra columns in `match_to_schema`: {formatted}");
             }
 
