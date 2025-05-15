@@ -6137,6 +6137,15 @@ class DataFrame:
             (default), use all columns (note that only floating-point columns
             can contain NaNs).
 
+        See Also
+        --------
+        drop_nulls
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To drop null values, use :func:`drop_nulls`.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -6207,7 +6216,7 @@ class DataFrame:
         subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
     ) -> DataFrame:
         """
-        Drop all rows that contain null values.
+        Drop all rows that contain one or more null values.
 
         The original order of the remaining rows is preserved.
 
@@ -6216,6 +6225,15 @@ class DataFrame:
         subset
             Column name(s) for which null values are considered.
             If set to `None` (default), use all columns.
+
+        See Also
+        --------
+        drop_nans
+
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To drop NaN values, use :func:`drop_nans`.
 
         Examples
         --------
@@ -8634,6 +8652,11 @@ class DataFrame:
         --------
         fill_nan
 
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To fill NaN values, use :func:`fill_nan`.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -8708,21 +8731,21 @@ class DataFrame:
         Parameters
         ----------
         value
-            Value with which to replace NaN values.
+            Value used to fill NaN values.
 
         Returns
         -------
         DataFrame
             DataFrame with NaN values replaced by the given value.
 
-        Warnings
-        --------
-        Note that floating point NaNs (Not a Number) are not missing values.
-        To replace missing values, use :func:`fill_null`.
-
         See Also
         --------
         fill_null
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To fill null values, use :func:`fill_null`.
 
         Examples
         --------
