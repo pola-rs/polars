@@ -44,6 +44,7 @@ pub struct PartedPartitionSinkNode {
     ///
     /// This is somewhat proportional to the amount of files open at any given point.
     num_retire_tasks: usize,
+    finish_callback: Option<SinkFinishCallback>,
 }
 
 const DEFAULT_RETIRE_TASKS: usize = 1;
@@ -58,6 +59,7 @@ impl PartedPartitionSinkNode {
         ext: PlSmallStr,
         sink_options: SinkOptions,
         include_key: bool,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> Self {
         assert!(!key_cols.is_empty());
 
@@ -93,6 +95,7 @@ impl PartedPartitionSinkNode {
             sink_options,
             num_retire_tasks,
             include_key,
+            finish_callback,
         }
     }
 }

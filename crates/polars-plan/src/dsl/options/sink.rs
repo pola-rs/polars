@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::DataType;
 use polars_core::scalar::Scalar;
 use polars_io::cloud::CloudOptions;
@@ -260,6 +261,31 @@ pub enum PartitionTargetCallback {
     Python(polars_utils::python_function::PythonFunction),
 }
 
+#[cfg_attr(feature = "python", pyo3::pyclass)]
+pub struct SinkWritten {
+    pub file_idx: usize,
+    pub part_idx: usize,
+    pub in_part_idx: usize,
+    pub keys: Vec<PartitionTargetContextKey>,
+    pub file_path: PathBuf,
+    pub full_path: PathBuf,
+    pub num_rows: usize,
+    pub file_size: usize,
+    pub gathered: Option<DataFrame>,
+}
+
+#[cfg_attr(feature = "python", pyo3::pyclass)]
+pub struct SinkFinishContext {
+    pub written: Vec<SinkWritten>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SinkFinishCallback {
+    Rust(SpecialEq<Arc<dyn Fn(SinkFinishContext) -> PolarsResult<()> + Send + Sync>>),
+    #[cfg(feature = "python")]
+    Python(polars_utils::python_function::PythonFunction),
+}
+
 impl PartitionTargetCallback {
     pub fn call(&self, ctx: PartitionTargetContext) -> PolarsResult<SinkTarget> {
         match self {
@@ -273,6 +299,45 @@ impl PartitionTargetCallback {
                 let sink_target = sink_target.downcast_ref::<SinkTarget>().unwrap().clone();
                 PolarsResult::Ok(sink_target)
             }),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for SinkFinishCallback {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::Error;
+
+        #[cfg(feature = "python")]
+        if let Self::Python(v) = self {
+            return v.serialize(_serializer);
+        }
+
+        Err(S::Error::custom(format!("cannot serialize {:?}", self)))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for SinkFinishCallback {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[cfg(feature = "python")]
+        {
+            Ok(Self::Python(
+                polars_utils::python_function::PythonFunction::deserialize(_deserializer)?,
+            ))
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            use serde::de::Error;
+            Err(D::Error::custom(
+                "cannot deserialize PartitionOutputCallback",
+            ))
         }
     }
 }
@@ -334,6 +399,36 @@ impl schemars::JsonSchema for PartitionTargetCallback {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq)]
+pub struct SortColumn {
+    pub expr: Expr,
+    pub descending: bool,
+    pub nulls_last: bool,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SortColumnIR {
+    pub expr: ExprIR,
+    pub descending: bool,
+    pub nulls_last: bool,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PerPartitionPreprocess {
+    pub sort_by: Option<Vec<SortColumn>>,
+    pub gather: Option<Vec<Expr>>,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PerPartitionPreprocessIR {
+    pub sort_by: Option<Vec<SortColumnIR>>,
+    pub gather: Option<Vec<ExprIR>>,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkType {
     pub base_path: Arc<PathBuf>,
     pub file_path_cb: Option<PartitionTargetCallback>,
@@ -341,6 +436,8 @@ pub struct PartitionSinkType {
     pub sink_options: SinkOptions,
     pub variant: PartitionVariant,
     pub cloud_options: Option<polars_io::cloud::CloudOptions>,
+    pub per_partition_preprocess: Option<PerPartitionPreprocess>,
+    pub finish_callback: Option<SinkFinishCallback>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -352,6 +449,8 @@ pub struct PartitionSinkTypeIR {
     pub sink_options: SinkOptions,
     pub variant: PartitionVariantIR,
     pub cloud_options: Option<polars_io::cloud::CloudOptions>,
+    pub per_partition_preprocess: Option<PerPartitionPreprocessIR>,
+    pub finish_callback: Option<SinkFinishCallback>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -393,18 +492,47 @@ pub enum PartitionVariantIR {
 }
 
 impl SinkTypeIR {
-    #[cfg(feature = "cse")]
     pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Memory => {},
             Self::File(f) => f.hash(state),
-            Self::Partition(f) => {
-                f.file_type.hash(state);
-                f.sink_options.hash(state);
-                f.variant.traverse_and_hash(expr_arena, state);
-                f.cloud_options.hash(state);
-            },
+            Self::Partition(f) => f.traverse_and_hash(expr_arena, state),
+        }
+    }
+}
+
+#[cfg(feature = "cse")]
+impl PartitionSinkTypeIR {
+    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+        self.file_type.hash(state);
+        self.sink_options.hash(state);
+        self.variant.traverse_and_hash(expr_arena, state);
+        self.cloud_options.hash(state);
+        std::mem::discriminant(&self.per_partition_preprocess);
+        if let Some(per_partition_preprocess) = &self.per_partition_preprocess {
+            per_partition_preprocess.traverse_and_hash(expr_arena, state);
+        }
+    }
+}
+
+#[cfg(feature = "cse")]
+impl PerPartitionPreprocessIR {
+    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+        std::mem::discriminant(&self.sort_by).hash(state);
+        if let Some(sort_by) = &self.sort_by {
+            for e in sort_by {
+                e.expr.traverse_and_hash(expr_arena, state);
+                e.descending.hash(state);
+                e.nulls_last.hash(state);
+            }
+        }
+
+        std::mem::discriminant(&self.gather).hash(state);
+        if let Some(gather) = &self.gather {
+            for e in gather {
+                e.traverse_and_hash(expr_arena, state);
+            }
         }
     }
 }

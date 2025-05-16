@@ -8,7 +8,7 @@ use polars_core::config;
 use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_plan::dsl::{PartitionTargetCallback, SinkOptions};
+use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -41,6 +41,8 @@ pub struct MaxSizePartitionSinkNode {
     ///
     /// This is somewhat proportional to the amount of files open at any given point.
     num_retire_tasks: usize,
+
+    finish_callback: Option<SinkFinishCallback>,
 }
 
 const DEFAULT_RETIRE_TASKS: usize = 1;
@@ -53,6 +55,7 @@ impl MaxSizePartitionSinkNode {
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
         sink_options: SinkOptions,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> Self {
         assert!(max_size > 0);
         let num_retire_tasks =
@@ -71,6 +74,7 @@ impl MaxSizePartitionSinkNode {
             ext,
             sink_options,
             num_retire_tasks,
+            finish_callback,
         }
     }
 }
