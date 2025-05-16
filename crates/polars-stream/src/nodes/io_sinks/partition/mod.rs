@@ -114,7 +114,7 @@ fn default_by_key_file_path_cb(
     let columns = columns.unwrap();
     assert!(!columns.is_empty());
 
-    let mut file_path = PathBuf::from(format!("{in_part_idx}.{ext}"));
+    let mut file_path = PathBuf::new();
     for c in columns {
         let name = c.name();
         let value = c.head(Some(1)).strict_cast(&DataType::String)?;
@@ -124,8 +124,9 @@ fn default_by_key_file_path_cb(
             .unwrap_or("__HIVE_DEFAULT_PARTITION__")
             .as_bytes();
         let value = percent_encoding::percent_encode(value, polars_io::utils::URL_ENCODE_CHAR_SET);
-        file_path = PathBuf::from(format!("{name}={value}")).join(file_path);
+        file_path = file_path.join(format!("{name}={value}"));
     }
+    file_path = file_path.join(format!("{in_part_idx}.{ext}"));
 
     Ok(file_path)
 }

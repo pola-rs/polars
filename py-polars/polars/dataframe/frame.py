@@ -4033,7 +4033,7 @@ class DataFrame:
 
             from polars.io import PartitionByKey
 
-            target = PartitionByKey(file, by=partition_by[::-1])
+            target = PartitionByKey(file, by=partition_by)
             mkdir = True
             engine = "streaming"
 
