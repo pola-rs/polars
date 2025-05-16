@@ -1023,7 +1023,7 @@ def test_only_project_missing(scan_type: tuple[Any, Any]) -> None:
 
     f.seek(0)
     g.seek(0)
-    s = scan([f, g], allow_missing_columns=True)
+    s = scan([f, g], missing_columns="insert")
 
     assert_frame_equal(
         s.select("missing").collect(),

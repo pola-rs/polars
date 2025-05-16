@@ -1363,12 +1363,12 @@ def test_parquet_pyarrow_map() -> None:
 
     # Test for https://github.com/pola-rs/polars/issues/21317
     # Specifying schema/allow_missing_columns
-    for allow_missing_columns in [True, False]:
+    for missing_columns in ["insert", "raise"]:
         assert_frame_equal(
             pl.read_parquet(
                 f,
                 schema={"x": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Int32}))},
-                allow_missing_columns=allow_missing_columns,
+                missing_columns=missing_columns,
             ).explode(["x"]),
             expected,
         )
@@ -2029,13 +2029,13 @@ def test_allow_missing_columns(
         pl.read_parquet(
             paths,
             parallel=parallel,  # type: ignore[arg-type]
-            allow_missing_columns=True,
+            missing_columns="insert",
         ).select(projection),
         expected,
     )
 
     assert_frame_equal(
-        pl.scan_parquet(paths, parallel=parallel, allow_missing_columns=True)  # type: ignore[arg-type]
+        pl.scan_parquet(paths, parallel=parallel, missing_columns="insert")  # type: ignore[arg-type]
         .select(projection)
         .collect(engine="streaming" if streaming else "in-memory"),
         expected,
@@ -3038,7 +3038,7 @@ def test_scan_parquet_filter_statistics_load_missing_column_21391(
 
     assert_frame_equal(
         (
-            pl.scan_parquet(root, allow_missing_columns=True)
+            pl.scan_parquet(root, missing_columns="insert")
             .filter(pl.col("y") == 1)
             .collect()
         ),
