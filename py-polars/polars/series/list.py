@@ -956,7 +956,7 @@ class ListNameSpace:
         ]
         """
 
-    def filter(self, predicate: Expr, *, parallel: bool = False) -> Series:
+    def filter(self, predicate: Expr) -> Series:
         """
         Filter elements in each list by a boolean expression, returning a new Series of lists.
 
@@ -965,12 +965,6 @@ class ListNameSpace:
         expr
             A boolean expression evaluated on each list element.
             Use `pl.element()` to refer to the current element.
-        parallel
-            Run all expression parallel. Don't activate this blindly.
-            Parallelism is worth it if there is enough work to do per thread.
-
-            This likely should not be use in the group by context, because we already
-            parallel execution per group
 
         Examples
         --------

@@ -1234,21 +1234,15 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
 
-    def filter(self, predicate: Expr, *, parallel: bool = False) -> Expr:
+    def filter(self, predicate: Expr) -> Expr:
         """
         Filter elements in each list by a boolean expression.
 
         Parameters
         ----------
-        expr
+        predicate
             A boolean expression that is evaluated per list element.
             You can refer to the current element with `pl.element()`.
-        parallel
-            Run all expression parallel. Don't activate this blindly.
-            Parallelism is worth it if there is enough work to do per thread.
-
-            This likely should not be used in the group by context, because we already
-            parallel execution per group
 
         Examples
         --------
@@ -1268,7 +1262,7 @@ class ExprListNameSpace:
         │ 3   ┆ 2   ┆ [2]       │
         └─────┴─────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_filter(predicate._pyexpr, parallel))
+        return wrap_expr(self._pyexpr.list_filter(predicate._pyexpr))
 
     def set_union(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
