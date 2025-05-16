@@ -12163,6 +12163,7 @@ class DataFrame:
         polars.exceptions.SchemaError: extra columns in `match_to_schema`: "b"
 
         Adding missing columns
+
         >>> (
         ...     pl.DataFrame({"a": [1, 2, 3]}).match_to_schema(
         ...         {"a": pl.Int64, "b": pl.String},
@@ -12197,6 +12198,7 @@ class DataFrame:
         └─────┴─────┘
 
         Removing extra columns
+
         >>> (
         ...     pl.DataFrame({"a": [1, 2, 3], "b": ["A", "B", "C"]}).match_to_schema(
         ...         {"a": pl.Int64},
@@ -12215,6 +12217,7 @@ class DataFrame:
         └─────┘
 
         Upcasting integers and floats
+
         >>> (
         ...     pl.DataFrame(
         ...         {"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]},
