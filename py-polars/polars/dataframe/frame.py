@@ -12084,7 +12084,7 @@ class DataFrame:
         | Mapping[str, Literal["upcast" | "forbid"]] = "forbid",
         float_cast: Literal["upcast" | "forbid"]
         | Mapping[str, Literal["upcast" | "forbid"]] = "forbid",
-    ) -> LazyFrame:
+    ) -> DataFrame:
         """
         Match or evolve the schema of a LazyFrame into a specific schema.
 
@@ -12136,7 +12136,7 @@ class DataFrame:
         │ 2   ┆ B   │
         │ 3   ┆ C   │
         └─────┴─────┘
-        >>> df.match_to_schema({"a": pl.Int64})
+        >>> df.match_to_schema({"a": pl.Int64})  # doctest: +SKIP
         polars.exceptions.SchemaError: extra columns in `match_to_schema`: "b"
 
         Adding missing columns
@@ -12215,15 +12215,19 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().match_to_schema(
-            schema=schema,
-            missing_columns=missing_columns,
-            missing_struct_fields=missing_struct_fields,
-            extra_columns=extra_columns,
-            extra_struct_fields=extra_struct_fields,
-            integer_cast=integer_cast,
-            float_cast=float_cast,
-        ).collect(optimizations=QueryOptFlags._eager())
+        return (
+            self.lazy()
+            .match_to_schema(
+                schema=schema,
+                missing_columns=missing_columns,
+                missing_struct_fields=missing_struct_fields,
+                extra_columns=extra_columns,
+                extra_struct_fields=extra_struct_fields,
+                integer_cast=integer_cast,
+                float_cast=float_cast,
+            )
+            .collect(optimizations=QueryOptFlags._eager())
+        )
 
     def _to_metadata(
         self,

@@ -8150,7 +8150,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ B   │
         │ 3   ┆ C   │
         └─────┴─────┘
-        >>> (lf.match_to_schema({"a": pl.Int64}).collect())
+        >>> (lf.match_to_schema({"a": pl.Int64}).collect())  # doctest: +SKIP
         polars.exceptions.SchemaError: extra columns in `match_to_schema`: "b"
 
         Adding missing columns
