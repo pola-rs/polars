@@ -473,9 +473,7 @@ impl CastColumnsPolicy {
 
         if target_dtype.is_integer() && incoming_dtype.is_integer() {
             if !self.integer_upcast {
-                if !self.integer_upcast {
-                    return mismatch_err("hint: pass integer_cast='upcast' in scan options");
-                }
+                return mismatch_err("hint: pass integer_cast='upcast' in scan options");
             }
 
             return match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
