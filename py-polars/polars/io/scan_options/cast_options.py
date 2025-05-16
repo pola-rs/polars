@@ -15,7 +15,7 @@ DatetimeCastOption: TypeAlias = Literal["nanosecond-downcast", "convert-timezone
 
 
 class ScanCastOptions:
-    """Options for type-casting when scanning files."""
+    """Options for scanning files."""
 
     def __init__(
         self,
@@ -32,11 +32,7 @@ class ScanCastOptions:
         _internal_call: bool = False,
     ) -> None:
         """
-        Configuration for type-casting of columns when reading files.
-
-        This can be useful for scanning datasets with schemas that have been
-        modified. This configuration object is generally passed to a supported
-        `scan_*` function via the `cast_options` parameter.
+        Common configuration for scanning files.
 
         .. warning::
                 This functionality is considered **unstable**. It may be changed
@@ -90,8 +86,6 @@ class ScanCastOptions:
         self.missing_struct_fields = missing_struct_fields
         self.extra_struct_fields = extra_struct_fields
 
-    # This is called from the Rust-side, we have it so that we don't accidentally
-    # print unstable messages.
     @staticmethod
     def _default() -> ScanCastOptions:
         return ScanCastOptions(_internal_call=True)

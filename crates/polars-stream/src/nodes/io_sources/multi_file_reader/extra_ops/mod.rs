@@ -50,7 +50,9 @@ pub fn apply_extra_columns_policy(
             {
                 polars_bail!(
                     SchemaMismatch:
-                    "extra column in file outside of expected schema: {}",
+                    "extra column in file outside of expected schema: {}, \
+                    hint: specify these columns in the schema, or pass \
+                    extra_columns='ignore' in scan options",
                     extra_col,
                 )
             }
