@@ -649,7 +649,7 @@ def test_parquet_unaligned_schema_read(tmp_path: Path) -> None:
     for df, path in zip(dfs, paths):
         df.write_parquet(path)
 
-    lf = pl.scan_parquet(paths)
+    lf = pl.scan_parquet(paths, extra_columns="ignore")
 
     assert_frame_equal(
         lf.select("a").collect(engine="in-memory"),
