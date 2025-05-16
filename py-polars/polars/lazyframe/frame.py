@@ -8105,17 +8105,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         schema: SchemaDict | Schema,
         *,
-        missing_columns: Literal["insert" | "raise"]
-        | Mapping[str, Literal["insert" | "raise"] | Expr] = "raise",
-        missing_struct_fields: Literal["insert" | "raise"]
-        | Mapping[str, Literal["insert" | "raise"]] = "raise",
-        extra_columns: Literal["ignore" | "raise"] = "raise",
-        extra_struct_fields: Literal["ignore" | "raise"]
-        | Mapping[str, Literal["ignore" | "raise"]] = "raise",
-        integer_cast: Literal["upcast" | "forbid"]
-        | Mapping[str, Literal["upcast" | "forbid"]] = "forbid",
-        float_cast: Literal["upcast" | "forbid"]
-        | Mapping[str, Literal["upcast" | "forbid"]] = "forbid",
+        missing_columns: Literal["insert", "raise"]
+        | Mapping[str, Literal["insert", "raise"] | Expr] = "raise",
+        missing_struct_fields: Literal["insert", "raise"]
+        | Mapping[str, Literal["insert", "raise"]] = "raise",
+        extra_columns: Literal["ignore", "raise"] = "raise",
+        extra_struct_fields: Literal["ignore", "raise"]
+        | Mapping[str, Literal["ignore", "raise"]] = "raise",
+        integer_cast: Literal["upcast", "forbid"]
+        | Mapping[str, Literal["upcast", "forbid"]] = "forbid",
+        float_cast: Literal["upcast", "forbid"]
+        | Mapping[str, Literal["upcast", "forbid"]] = "forbid",
     ) -> LazyFrame:
         """
         Match or evolve the schema of a LazyFrame into a specific schema.
@@ -8259,8 +8259,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         from polars import Expr
 
         def prepare_missing_columns(
-            value: Literal["insert" | "raise"] | Expr,
-        ) -> Literal["insert" | "raise"] | PyExpr:
+            value: Literal["insert", "raise"] | Expr,
+        ) -> Literal["insert", "raise"] | PyExpr:
             if isinstance(value, Expr):
                 return value._pyexpr
             return value
@@ -8272,8 +8272,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             schema_prep = schema
 
         missing_columns_pyexpr: (
-            Literal["insert" | "raise"]
-            | dict[str, Literal["insert" | "raise"] | PyExpr]
+            Literal["insert", "raise"] | dict[str, Literal["insert", "raise"] | PyExpr]
         )
         if isinstance(missing_columns, Mapping):
             missing_columns_pyexpr = {
