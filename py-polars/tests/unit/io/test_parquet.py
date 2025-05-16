@@ -2054,15 +2054,19 @@ def test_allow_missing_columns(
         ):
             assert_frame_equal(
                 pl.scan_parquet(
-                    paths, parallel=parallel, allow_missing_columns=False
-                ).collect(engine="streaming" if streaming else "in-memory"),  # type: ignore[arg-type]
+                    paths,
+                    parallel=parallel,  # type: ignore[arg-type]
+                    allow_missing_columns=False,
+                ).collect(engine="streaming" if streaming else "in-memory"),
                 expected_full,
             )
 
         assert_frame_equal(
             pl.scan_parquet(
-                paths, parallel=parallel, allow_missing_columns=True
-            ).collect(engine="streaming" if streaming else "in-memory"),  # type: ignore[arg-type]
+                paths,
+                parallel=parallel,  # type: ignore[arg-type]
+                allow_missing_columns=True,
+            ).collect(engine="streaming" if streaming else "in-memory"),
             expected_full,
         )
 
