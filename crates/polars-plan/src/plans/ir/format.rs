@@ -77,11 +77,14 @@ fn write_scan(
 ) -> fmt::Result {
     write!(
         f,
-        "{:indent$}{name} SCAN {} [id: {:?}]",
+        "{:indent$}{name} SCAN {}",
         "",
         ScanSourcesDisplay(sources),
-        scan_mem_id,
     )?;
+
+    if let Some(scan_mem_id) = scan_mem_id {
+        write!(f, " [id: {}]", scan_mem_id)?;
+    }
 
     let total_columns = total_columns - usize::from(row_index.is_some());
     if n_columns > 0 {
