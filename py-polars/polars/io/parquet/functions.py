@@ -245,7 +245,7 @@ def read_parquet(
         issue_deprecation_warning(
             "the parameter `allow_missing_columns` for `read_parquet` is deprecated. "
             "Use the parameter `missing_columns` instead and pass one of "
-            "`('ignore', 'raise')`.",
+            "`('insert', 'raise')`.",
             version="1.29.0",
         )
 
@@ -587,7 +587,7 @@ def scan_parquet(
         issue_deprecation_warning(
             "the parameter `allow_missing_columns` for `scan_parquet` is deprecated. "
             "Use the parameter `missing_columns` instead and pass one of "
-            "`('ignore', 'raise')`.",
+            "`('insert', 'raise')`.",
             version="1.29.0",
         )
 
