@@ -9,7 +9,7 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::dsl::{
-    FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, SinkTypeIR,
+    ExtraColumnsPolicy, FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, SinkTypeIR,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
@@ -575,7 +575,20 @@ pub fn lower_ir(
                                 .map(|x| x.as_str()),
                         );
 
-                    let extra_columns_policy = unified_scan_args.extra_columns_policy;
+                    // TODO: We ignore the parameter for some scan types to maintain old behavior,
+                    // as they currently don't expose an API for it to be configured.
+                    let extra_columns_policy = match &*scan_type {
+                        #[cfg(feature = "parquet")]
+                        FileScan::Parquet { .. } => unified_scan_args.extra_columns_policy,
+
+                        _ => {
+                            if unified_scan_args.projection.is_some() {
+                                ExtraColumnsPolicy::Ignore
+                            } else {
+                                ExtraColumnsPolicy::Raise
+                            }
+                        },
+                    };
 
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
