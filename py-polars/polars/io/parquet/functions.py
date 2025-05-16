@@ -117,7 +117,7 @@ def read_parquet(
     schema
         Specify the datatypes of the columns. The datatypes must match the
         datatypes in the file(s). If there are extra columns that are not in the
-        file(s), consider also enabling `allow_missing_columns`.
+        file(s), consider also passing `missing_columns='insert'`.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -466,7 +466,7 @@ def scan_parquet(
     schema
         Specify the datatypes of the columns. The datatypes must match the
         datatypes in the file(s). If there are extra columns that are not in the
-        file(s), consider also enabling `allow_missing_columns`.
+        file(s), consider also passing `missing_columns='insert'`.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed

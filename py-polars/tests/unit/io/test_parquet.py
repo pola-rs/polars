@@ -3,6 +3,7 @@ from __future__ import annotations
 import decimal
 import functools
 import io
+import warnings
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
@@ -2009,17 +2010,18 @@ def test_allow_missing_columns(
     for df, path in zip(dfs, paths):
         df.write_parquet(path)
 
-    expected = pl.DataFrame({"a": [1, 2], "b": [1, None]}).select(projection)
+    expected_full = pl.DataFrame({"a": [1, 2], "b": [1, None]})
+    expected = expected_full.select(projection)
 
     with pytest.raises(
-        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
-        match="enabling `allow_missing_columns`",
+        pl.exceptions.ColumnNotFoundError,
+        match="passing `missing_columns='insert'`",
     ):
         pl.read_parquet(paths, parallel=parallel)  # type: ignore[arg-type]
 
     with pytest.raises(
-        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
-        match="enabling `allow_missing_columns`",
+        pl.exceptions.ColumnNotFoundError,
+        match="passing `missing_columns='insert'`",
     ):
         pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
             engine="streaming" if streaming else "in-memory"
@@ -2040,6 +2042,29 @@ def test_allow_missing_columns(
         .collect(engine="streaming" if streaming else "in-memory"),
         expected,
     )
+
+    # Test deprecated parameter
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+
+        with pytest.raises(
+            pl.exceptions.ColumnNotFoundError,
+            match="passing `missing_columns='insert'`",
+        ):
+            assert_frame_equal(
+                pl.scan_parquet(
+                    paths, parallel=parallel, allow_missing_columns=False
+                ).collect(engine="streaming" if streaming else "in-memory"),  # type: ignore[arg-type]
+                expected_full,
+            )
+
+        assert_frame_equal(
+            pl.scan_parquet(
+                paths, parallel=parallel, allow_missing_columns=True
+            ).collect(engine="streaming" if streaming else "in-memory"),  # type: ignore[arg-type]
+            expected_full,
+        )
 
 
 def test_nested_nonnullable_19158() -> None:
