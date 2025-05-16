@@ -165,20 +165,25 @@ impl OptimizationRule for TypeCoercionRule {
                 let mut matches = matches!(
                     function,
                     FunctionExpr::Boolean(BooleanFunction::IsIn { .. })
-                        | FunctionExpr::ListExpr(ListFunction::Contains)
+                        | FunctionExpr::ListExpr(ListFunction::Contains { .. })
                 );
                 #[cfg(feature = "dtype-array")]
                 {
-                    matches |= matches!(function, FunctionExpr::ArrayExpr(ArrayFunction::Contains));
+                    matches |= matches!(
+                        function,
+                        FunctionExpr::ArrayExpr(ArrayFunction::Contains { .. })
+                    );
                 }
                 matches
             } =>
             {
                 let (op, flat, nested, is_contains) = match function {
                     FunctionExpr::Boolean(BooleanFunction::IsIn { .. }) => ("is_in", 0, 1, false),
-                    FunctionExpr::ListExpr(ListFunction::Contains) => ("list.contains", 1, 0, true),
+                    FunctionExpr::ListExpr(ListFunction::Contains { .. }) => {
+                        ("list.contains", 1, 0, true)
+                    },
                     #[cfg(feature = "dtype-array")]
-                    FunctionExpr::ArrayExpr(ArrayFunction::Contains) => {
+                    FunctionExpr::ArrayExpr(ArrayFunction::Contains { .. }) => {
                         ("arr.contains", 1, 0, true)
                     },
                     _ => unreachable!(),
