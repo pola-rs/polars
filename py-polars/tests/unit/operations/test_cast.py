@@ -924,6 +924,7 @@ def test_nested_strict_casts_succeeds(
 
 def test_nested_struct_cast_22744() -> None:
     s = pl.Series(
+        "x",
         [{"attrs": {"class": "a"}}],
     )
 
@@ -943,7 +944,13 @@ def test_nested_struct_cast_22744() -> None:
     )
     assert_frame_equal(
         pl.DataFrame([s]).cast(
-            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
+            pl.Schema(
+                {
+                    "x": pl.Struct(
+                        {"attrs": pl.Struct({"class": pl.String, "other": pl.String})}
+                    )
+                }
+            )
         ),
         expected,
     )
