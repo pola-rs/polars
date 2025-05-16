@@ -190,6 +190,21 @@ impl DslBuilder {
         .into()
     }
 
+    pub fn match_to_schema(
+        self,
+        match_schema: SchemaRef,
+        per_column: Arc<[MatchToSchemaPerColumn]>,
+        extra_columns: ExtraColumnsPolicy,
+    ) -> Self {
+        DslPlan::MatchToSchema {
+            input: Arc::new(self.0),
+            match_schema,
+            per_column,
+            extra_columns,
+        }
+        .into()
+    }
+
     pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
         DslPlan::ExtContext {
             input: Arc::new(self.0),
