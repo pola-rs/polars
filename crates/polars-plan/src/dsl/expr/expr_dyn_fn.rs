@@ -167,13 +167,13 @@ pub trait FunctionOutputField: Send + Sync {
     }
 }
 
-pub type GetOutput = SpecialEq<Arc<dyn FunctionOutputField>>;
+pub type GetOutput = LazySerde<SpecialEq<Arc<dyn FunctionOutputField>>>;
 
 impl Default for GetOutput {
     fn default() -> Self {
-        SpecialEq::new(Arc::new(
+        LazySerde::Deserialized(SpecialEq::new(Arc::new(
             |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| Ok(fields[0].clone()),
-        ))
+        )))
     }
 }
 
@@ -183,40 +183,44 @@ impl GetOutput {
     }
 
     pub fn first() -> Self {
-        SpecialEq::new(Arc::new(
+        LazySerde::Deserialized(SpecialEq::new(Arc::new(
             |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| Ok(fields[0].clone()),
-        ))
+        )))
     }
 
     pub fn from_type(dt: DataType) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            Ok(Field::new(flds[0].name().clone(), dt.clone()))
-        }))
+        LazySerde::Deserialized(SpecialEq::new(Arc::new(
+            move |_: &Schema, _: Context, flds: &[Field]| {
+                Ok(Field::new(flds[0].name().clone(), dt.clone()))
+            },
+        )))
     }
 
     pub fn map_field<F: 'static + Fn(&Field) -> PolarsResult<Field> + Send + Sync>(f: F) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            f(&flds[0])
-        }))
+        LazySerde::Deserialized(SpecialEq::new(Arc::new(
+            move |_: &Schema, _: Context, flds: &[Field]| f(&flds[0]),
+        )))
     }
 
     pub fn map_fields<F: 'static + Fn(&[Field]) -> PolarsResult<Field> + Send + Sync>(
         f: F,
     ) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            f(flds)
-        }))
+        LazySerde::Deserialized(SpecialEq::new(Arc::new(
+            move |_: &Schema, _: Context, flds: &[Field]| f(flds),
+        )))
     }
 
     pub fn map_dtype<F: 'static + Fn(&DataType) -> PolarsResult<DataType> + Send + Sync>(
         f: F,
     ) -> Self {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            let mut fld = flds[0].clone();
-            let new_type = f(fld.dtype())?;
-            fld.coerce(new_type);
-            Ok(fld)
-        }))
+        LazySerde::Deserialized(SpecialEq::new(Arc::new(
+            move |_: &Schema, _: Context, flds: &[Field]| {
+                let mut fld = flds[0].clone();
+                let new_type = f(fld.dtype())?;
+                fld.coerce(new_type);
+                Ok(fld)
+            },
+        )))
     }
 
     pub fn float_type() -> Self {
@@ -242,13 +246,15 @@ impl GetOutput {
     where
         F: 'static + Fn(&[&DataType]) -> PolarsResult<DataType> + Send + Sync,
     {
-        SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
-            let mut fld = flds[0].clone();
-            let dtypes = flds.iter().map(|fld| fld.dtype()).collect::<Vec<_>>();
-            let new_type = f(&dtypes)?;
-            fld.coerce(new_type);
-            Ok(fld)
-        }))
+        LazySerde::Deserialized(SpecialEq::new(Arc::new(
+            move |_: &Schema, _: Context, flds: &[Field]| {
+                let mut fld = flds[0].clone();
+                let dtypes = flds.iter().map(|fld| fld.dtype()).collect::<Vec<_>>();
+                let new_type = f(&dtypes)?;
+                fld.coerce(new_type);
+                Ok(fld)
+            },
+        )))
     }
 }
 
@@ -278,13 +284,30 @@ impl OpaqueColumnUdf {
             Self::Named {
                 name: _,
                 payload: _,
+                value: _,
             } => {
                 panic!("should not be hit")
             },
             Self::Bytes(_b) => {
                 feature_gated!("serde";"python", {
-                    crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(_b.as_ref()).map(SpecialEq::new)
+                    serde_expr::deserialize_column_udf(_b.as_ref()).map(SpecialEq::new)
                 })
+            },
+        }
+    }
+}
+
+impl GetOutput {
+    pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn FunctionOutputField>>> {
+        match self {
+            Self::Deserialized(t) => Ok(t),
+            Self::Named {
+                name: _,
+                payload: _,
+                value,
+            } => value.ok_or_else(|| polars_err!(ComputeError: "GetOutput Value not set")),
+            Self::Bytes(_b) => {
+                polars_bail!(ComputeError: "should not be hit")
             },
         }
     }

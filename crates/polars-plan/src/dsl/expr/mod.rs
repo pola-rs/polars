@@ -184,7 +184,15 @@ pub enum LazySerde<T: Clone> {
     Deserialized(T),
     Bytes(Bytes),
     // Used by cloud
-    Named { name: String, payload: Bytes },
+    Named {
+        // Name and payload are used by the NamedRegistry
+        // To load the function `T` at runtime.
+        name: String,
+        payload: Option<Bytes>,
+        // Sometimes we need the function `T` before sending
+        // to a different machine, so optionally set it as well.
+        value: Option<T>,
+    },
 }
 
 impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
@@ -199,10 +207,12 @@ impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
                 L::Named {
                     name: l,
                     payload: pl,
+                    value: _,
                 },
                 L::Named {
                     name: r,
                     payload: pr,
+                    value: _,
                 },
             ) => {
                 #[cfg(debug_assertions)]
@@ -223,7 +233,11 @@ impl<T: Clone> Debug for LazySerde<T> {
         match self {
             Self::Bytes(_) => write!(f, "lazy-serde<Bytes>"),
             Self::Deserialized(_) => write!(f, "lazy-serde<T>"),
-            Self::Named { name, payload: _ } => write!(f, "lazy-serde<Named>: {}", name),
+            Self::Named {
+                name,
+                payload: _,
+                value: _,
+            } => write!(f, "lazy-serde<Named>: {}", name),
         }
     }
 }
