@@ -944,13 +944,11 @@ def test_nested_struct_cast_22744() -> None:
     )
     assert_frame_equal(
         pl.DataFrame([s]).cast(
-            pl.Schema(
-                {
-                    "x": pl.Struct(
-                        {"attrs": pl.Struct({"class": pl.String, "other": pl.String})}
-                    )
-                }
-            )
+            {
+                "x": pl.Struct(
+                    {"attrs": pl.Struct({"class": pl.String, "other": pl.String})}
+                )
+            }
         ),
         expected,
     )
