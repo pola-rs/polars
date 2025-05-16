@@ -426,7 +426,7 @@ impl CastColumnsPolicy {
                         ExtraColumnsPolicy::Raise => {
                             return mismatch_err(&format!(
                                 "encountered extra struct field: {}, \
-                                hint: specify these fields in the schema, or pass \
+                                hint: specify this field in the schema, or pass \
                                 extra_struct_fields='ignore' in scan options",
                                 &fld.name,
                             ));
