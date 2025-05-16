@@ -622,12 +622,7 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_explode())
 
-    def contains(
-        self,
-        item: float | str | bool | int | date | datetime | time | IntoExprColumn,
-        *,
-        nulls_equal: bool = True,
-    ) -> Expr:
+    def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
         Check if sub-arrays contain the given item.
 

@@ -497,12 +497,7 @@ class ArrayNameSpace:
         ]
         """
 
-    def contains(
-        self,
-        item: float | str | bool | int | date | datetime | time | IntoExprColumn,
-        *,
-        nulls_equal: bool = True,
-    ) -> Series:
+    def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Series:
         """
         Check if sub-arrays contain the given item.
 

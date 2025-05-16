@@ -558,12 +558,7 @@ class ListNameSpace:
         ]
         """
 
-    def contains(
-        self,
-        item: float | str | bool | int | date | datetime | time | IntoExprColumn,
-        *,
-        nulls_equal: bool = True,
-    ) -> Series:
+    def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Series:
         """
         Check if sublists contain the given item.
 
