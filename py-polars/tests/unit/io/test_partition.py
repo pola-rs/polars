@@ -389,8 +389,8 @@ def test_partition_key_order_22645() -> None:
     )
 
     paths.sort()
-    assert [str(p) for p in paths] == [
-        "b=1/c=43",
-        "b=2/c=44",
-        "b=3/c=45",
+    assert [p.parts for p in paths] == [
+        ("b=1", "c=43"),
+        ("b=2", "c=44"),
+        ("b=3", "c=45"),
     ]
