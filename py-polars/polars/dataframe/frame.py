@@ -12096,17 +12096,17 @@ class DataFrame:
         self,
         schema: SchemaDict | Schema,
         *,
-        missing_columns: Literal["insert" | "raise"]
-        | Mapping[str, Literal["insert" | "raise"] | Expr] = "raise",
-        missing_struct_fields: Literal["insert" | "raise"]
-        | Mapping[str, Literal["insert" | "raise"]] = "raise",
-        extra_columns: Literal["ignore" | "raise"] = "raise",
-        extra_struct_fields: Literal["ignore" | "raise"]
-        | Mapping[str, Literal["ignore" | "raise"]] = "raise",
-        integer_cast: Literal["upcast" | "forbid"]
-        | Mapping[str, Literal["upcast" | "forbid"]] = "forbid",
-        float_cast: Literal["upcast" | "forbid"]
-        | Mapping[str, Literal["upcast" | "forbid"]] = "forbid",
+        missing_columns: Literal["insert", "raise"]
+        | Mapping[str, Literal["insert", "raise"] | Expr] = "raise",
+        missing_struct_fields: Literal["insert", "raise"]
+        | Mapping[str, Literal["insert", "raise"]] = "raise",
+        extra_columns: Literal["ignore", "raise"] = "raise",
+        extra_struct_fields: Literal["ignore", "raise"]
+        | Mapping[str, Literal["ignore", "raise"]] = "raise",
+        integer_cast: Literal["upcast", "forbid"]
+        | Mapping[str, Literal["upcast", "forbid"]] = "forbid",
+        float_cast: Literal["upcast", "forbid"]
+        | Mapping[str, Literal["upcast", "forbid"]] = "forbid",
     ) -> DataFrame:
         """
         Match or evolve the schema of a LazyFrame into a specific schema.
