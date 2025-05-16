@@ -20,6 +20,7 @@ use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString, PyStringMethods};
+use url::Url;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
@@ -265,6 +266,7 @@ pub(crate) enum PythonScanSourceInput {
     Buffer(MemSlice),
     Path(PathBuf),
     File(ClosableFile),
+    Uri(String),
 }
 
 pub(crate) fn try_get_pyfile(
@@ -386,11 +388,31 @@ pub(crate) fn get_python_scan_source_input(
         }
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {
+            // Handle file:// URIs explicitly to avoid PathBuf corruption
+            if s.starts_with("file://") {
+                return Ok(PythonScanSourceInput::Uri(s.into_owned()));
+            }
             let file_path = resolve_homedir(&&*s);
             Ok(PythonScanSourceInput::Path(file_path))
         } else {
             Ok(try_get_pyfile(py, py_f, write)?.0.into_scan_source_input())
         }
+    })
+}
+
+pub(crate) fn parse_file_uri(uri: &str) -> PyResult<PathBuf> {
+    let url = Url::parse(uri)
+        .map_err(|e| PyPolarsErr::from(polars_err!(ComputeError: "Invalid URI: {}", e)))?;
+
+    if url.scheme() != "file" {
+        return Err(PyPolarsErr::from(
+            polars_err!(ComputeError: "Unsupported URI scheme: {}", url.scheme()),
+        )
+        .into());
+    }
+    url.to_file_path().map_err(|_| {
+        PyPolarsErr::from(polars_err!(ComputeError: "Could not convert URI to file path: {}", uri))
+            .into()
     })
 }
 

@@ -35,7 +35,7 @@ use pyo3::sync::GILOnceCell;
 use pyo3::types::{PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
-use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
+use crate::file::{PythonScanSourceInput, get_python_scan_source_input, parse_file_uri};
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
@@ -573,6 +573,12 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
                 sources.push(path);
                 MutableSources::Paths(sources)
             },
+            PythonScanSourceInput::Uri(uri) => {
+                let parsed = parse_file_uri(&uri)?;
+                let mut sources = Vec::with_capacity(num_items);
+                sources.push(parsed);
+                MutableSources::Paths(sources)
+            },
             PythonScanSourceInput::File(file) => {
                 let mut sources = Vec::with_capacity(num_items);
                 sources.push(file.into());
@@ -588,6 +594,9 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         for source in iter {
             match (&mut sources, source?) {
                 (MutableSources::Paths(v), PythonScanSourceInput::Path(p)) => v.push(p),
+                (MutableSources::Paths(v), PythonScanSourceInput::Uri(u)) => {
+                    v.push(parse_file_uri(&u)?)
+                },
                 (MutableSources::Files(v), PythonScanSourceInput::File(f)) => v.push(f.into()),
                 (MutableSources::Buffers(v), PythonScanSourceInput::Buffer(f)) => v.push(f),
                 _ => {
