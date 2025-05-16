@@ -171,4 +171,4 @@ Configuration for type-casting during scans.
 .. autosummary::
    :toctree: api/
 
-   ScanArgs
+   ScanCastOptions
