@@ -142,7 +142,7 @@ def test_scan_cast_options(
     if cast_options is not None:
         q = pl.scan_parquet(files)
 
-        with pytest.raises(pl.exceptions.SchemaError, match=r"hint: pass "):
+        with pytest.raises(pl.exceptions.SchemaError, match=r"hint: .*pass"):
             q.collect()
 
     assert_frame_equal(
@@ -211,7 +211,7 @@ def test_scan_cast_options_extra_struct_fields() -> None:
 
     q = pl.scan_parquet(files)
 
-    with pytest.raises(pl.exceptions.SchemaError, match=r"hint: pass "):
+    with pytest.raises(pl.exceptions.SchemaError, match=r"hint: specify .*or pass"):
         q.collect()
 
     assert_frame_equal(
@@ -228,7 +228,7 @@ def test_cast_options_ignore_extra_columns() -> None:
 
     with pytest.raises(
         pl.exceptions.SchemaError,
-        match="extra column in file outside of expected schema: b, hint: pass",
+        match="extra column in file outside of expected schema: b, hint: specify.* or pass",
     ):
         pl.scan_parquet(files, schema={"a": pl.Int64}).collect()
 

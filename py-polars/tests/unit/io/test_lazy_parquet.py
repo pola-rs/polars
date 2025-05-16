@@ -794,7 +794,12 @@ def test_parquet_schema_arg(
         with pytest.raises(pl.exceptions.SchemaError):
             lf.collect(engine="streaming" if streaming else "in-memory")
 
-    lf = pl.scan_parquet(paths, parallel=parallel, schema=schema).select("a")
+    lf = pl.scan_parquet(
+        paths,
+        parallel=parallel,
+        schema=schema,
+        extra_columns="ignore",
+    ).select("a")
 
     assert_frame_equal(
         lf.collect(engine="in-memory"),
