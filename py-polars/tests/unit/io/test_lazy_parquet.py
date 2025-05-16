@@ -671,6 +671,8 @@ def test_parquet_unaligned_schema_read(tmp_path: Path) -> None:
         pl.DataFrame({"a": [1, 2], "b": [10, 11]}),
     )
 
+    lf = pl.scan_parquet(paths, extra_columns="raise")
+
     with pytest.raises(pl.exceptions.SchemaError):
         lf.collect(engine="in-memory")
 
