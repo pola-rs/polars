@@ -41,6 +41,7 @@ pub struct PartitionByKeySinkNode {
     ext: PlSmallStr,
 
     sink_options: SinkOptions,
+        finish_callback: Option<SinkFinishCallback>,
 }
 
 impl PartitionByKeySinkNode {
@@ -54,6 +55,7 @@ impl PartitionByKeySinkNode {
         ext: PlSmallStr,
         sink_options: SinkOptions,
         include_key: bool,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> Self {
         assert!(!key_cols.is_empty());
 
@@ -89,6 +91,7 @@ impl PartitionByKeySinkNode {
             create_new,
             ext,
             sink_options,
+            finish_callback,
         }
     }
 }

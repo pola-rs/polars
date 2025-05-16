@@ -3,13 +3,16 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::config;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap};
+use polars_core::prelude::{
+    DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, SortMultipleOptions,
+};
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::dsl::{
-    ExtraColumnsPolicy, FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, SinkTypeIR,
+    ExtraColumnsPolicy, FileScan, FileSinkType, Operator, PartitionSinkTypeIR, PartitionVariantIR,
+    SinkTypeIR,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
@@ -276,6 +279,8 @@ pub fn lower_ir(
                 variant,
                 file_type,
                 cloud_options,
+                per_partition_preprocess,
+                finish_callback,
             }) => {
                 let base_path = base_path.clone();
                 let file_path_cb = file_path_cb.clone();
@@ -323,14 +328,111 @@ pub fn lower_ir(
                     },
                 };
 
+                let mut input = input;
+                let mut variant = variant;
+                let mut gather_input = None;
+                let mut per_partition_sort_by = None;
+                if let Some(per_partition_preprocess) = per_partition_preprocess {
+                    if let Some(gather) = per_partition_preprocess.gather {
+                        let multiplexer_key = phys_sm.insert(PhysNode::new(
+                            output_schema,
+                            PhysNodeKind::Multiplexer { input },
+                        ));
+                        input = PhysStream::first(multiplexer_key);
+                        let mut group_by_input = PhysStream::new(multiplexer_key, 1);
+
+                        let (key_exprs, include_key, maintain_order) = match &variant {
+                            PartitionVariantIR::Parted { key_exprs, .. }
+                            | PartitionVariantIR::ByKey { key_exprs, .. } => {
+                                (key_exprs.clone(), true, false)
+                            },
+                            PartitionVariantIR::MaxSize(size) => {
+                                let row_index_name = unique_column_name();
+                                let with_row_index_key = phys_sm.insert(PhysNode::new(
+                                    output_schema,
+                                    PhysNodeKind::WithRowIndex {
+                                        input: group_by_input,
+                                        name: row_index_name.clone(),
+                                        offset: None,
+                                    },
+                                ));
+                                group_by_input = PhysStream::first(with_row_index_key);
+
+                                let row_index = expr_arena.add(AExpr::Column(row_index_name));
+                                let size = expr_arena
+                                    .add(AExpr::Literal(LiteralValue::new_idxsize(*size)));
+                                let row_index_div_size = expr_arena.add(AExpr::BinaryExpr {
+                                    left: row_index,
+                                    op: Operator::FloorDivide,
+                                    right: size,
+                                });
+
+                                let expr = ExprIR::from_node(row_index_div_size, expr_arena);
+
+                                (vec![expr], false, true)
+                            },
+                        };
+
+                        let group_by_key = phys_sm.insert(PhysNode::new(
+                            output_schema,
+                            PhysNodeKind::GroupBy {
+                                input: group_by_input,
+                                key: key_exprs.clone(),
+                                aggs: gather,
+                            },
+                        ));
+                        gather_input = Some(PhysStream::first(group_by_key));
+                    }
+
+                    if let Some(sort_by) = per_partition_preprocess.sort_by {
+                        match variant {
+                            PartitionVariantIR::MaxSize(_) | PartitionVariantIR::Parted { .. } => {
+                            },
+                            PartitionVariantIR::ByKey {
+                                key_exprs,
+                                include_key,
+                            } => {
+                                let (descending, nulls_last) = sort_by
+                                    .iter()
+                                    .map(|s| (s.descending, s.nulls_last))
+                                    .collect();
+                                let by_column = sort_by.into_iter().map(|s| s.expr).collect();
+                                let sort_key = phys_sm.insert(PhysNode::new(
+                                    output_schema,
+                                    PhysNodeKind::Sort {
+                                        input,
+                                        by_column,
+                                        slice: None,
+                                        sort_options: SortMultipleOptions {
+                                            descending,
+                                            nulls_last,
+                                            multithreaded: false,
+                                            maintain_order: true,
+                                            limit: None,
+                                        },
+                                    },
+                                ));
+                                input = PhysStream::first(sort_key);
+                                variant = PartitionVariantIR::Parted {
+                                    key_exprs,
+                                    include_key,
+                                };
+                            },
+                        }
+                    }
+                }
+
                 PhysNodeKind::PartitionSink {
+                    input,
+                    gather_input,
                     base_path,
                     file_path_cb,
                     sink_options,
                     variant,
                     file_type,
-                    input,
                     cloud_options,
+                    per_partition_sort_by,
+                    finish_callback,
                 }
             },
         },
