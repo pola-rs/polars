@@ -844,11 +844,11 @@ def test_scan_parquet_schema_specified_with_empty_files_list(tmp_path: Path) -> 
     )
 
 
-@pytest.mark.parametrize("allow_missing_columns", [True, False])
+@pytest.mark.parametrize("missing_columns", ["insert", "raise"])
 @pytest.mark.write_disk
 def test_scan_parquet_ignores_dtype_mismatch_for_non_projected_columns_19249(
     tmp_path: Path,
-    allow_missing_columns: bool,
+    missing_columns: str,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     paths = [tmp_path / "1", tmp_path / "2"]
@@ -861,7 +861,7 @@ def test_scan_parquet_ignores_dtype_mismatch_for_non_projected_columns_19249(
     ).write_parquet(paths[1])
 
     assert_frame_equal(
-        pl.scan_parquet(paths, allow_missing_columns=allow_missing_columns)
+        pl.scan_parquet(paths, missing_columns=missing_columns)
         .select("a")
         .collect(engine="in-memory"),
         pl.DataFrame({"a": [1, 1]}, schema={"a": pl.Int32}),
