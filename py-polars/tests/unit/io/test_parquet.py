@@ -1368,7 +1368,7 @@ def test_parquet_pyarrow_map() -> None:
             pl.read_parquet(
                 f,
                 schema={"x": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Int32}))},
-                missing_columns=missing_columns,
+                missing_columns=missing_columns,  # type: ignore[arg-type]
             ).explode(["x"]),
             expected,
         )

@@ -788,7 +788,7 @@ def test_parquet_schema_arg(
             paths,
             parallel=parallel,
             schema=schema,
-            missing_columns=missing_columns,
+            missing_columns=missing_columns,  # type: ignore[arg-type]
         )
 
         with pytest.raises(pl.exceptions.SchemaError):
@@ -861,7 +861,7 @@ def test_scan_parquet_ignores_dtype_mismatch_for_non_projected_columns_19249(
     ).write_parquet(paths[1])
 
     assert_frame_equal(
-        pl.scan_parquet(paths, missing_columns=missing_columns)
+        pl.scan_parquet(paths, missing_columns=missing_columns)  # type: ignore[arg-type]
         .select("a")
         .collect(engine="in-memory"),
         pl.DataFrame({"a": [1, 1]}, schema={"a": pl.Int32}),
