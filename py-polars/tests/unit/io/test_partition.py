@@ -18,9 +18,7 @@ from polars.testing.parametric.strategies import dataframes
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars.io.partition import (
-        BasePartitionContext,
-    )
+    from polars.io.partition import BasePartitionContext, KeyedPartitionContext
 
 
 class IOType(TypedDict):
@@ -373,3 +371,26 @@ def test_partition_to_memory(tmp_path: Path, io_type: IOType) -> None:
     for i, (_, value) in enumerate(output_files.items()):
         value.seek(0)
         assert_frame_equal(io_type["scan"](value).collect(), df.slice(i, 1))
+
+
+def test_partition_key_order_22645() -> None:
+    paths = []
+
+    def cb(ctx: KeyedPartitionContext) -> io.BytesIO:
+        paths.append(ctx.file_path.parent)
+        return io.BytesIO()  # return an dummy output
+
+    pl.LazyFrame({"a": [1, 2, 3]}).sink_parquet(
+        pl.io.PartitionByKey(
+            "",
+            file_path=cb,
+            by=[pl.col.a.alias("b"), (pl.col.a + 42).alias("c")],
+        ),
+    )
+
+    paths.sort()
+    assert [p.parts for p in paths] == [
+        ("b=1", "c=43"),
+        ("b=2", "c=44"),
+        ("b=3", "c=45"),
+    ]
