@@ -8172,6 +8172,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         polars.exceptions.SchemaError: extra columns in `match_to_schema`: "b"
 
         Adding missing columns
+
         >>> (
         ...     pl.LazyFrame({"a": [1, 2, 3]})
         ...     .match_to_schema(
@@ -8210,6 +8211,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         Removing extra columns
+
         >>> (
         ...     pl.LazyFrame({"a": [1, 2, 3], "b": ["A", "B", "C"]})
         ...     .match_to_schema(
@@ -8230,6 +8232,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┘
 
         Upcasting integers and floats
+
         >>> (
         ...     pl.LazyFrame(
         ...         {"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]},
