@@ -623,7 +623,10 @@ class ExprArrayNameSpace:
         return wrap_expr(self._pyexpr.arr_explode())
 
     def contains(
-        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
+        self,
+        item: float | str | bool | int | date | datetime | time | IntoExprColumn,
+        *,
+        nulls_equal: bool = True,
     ) -> Expr:
         """
         Check if sub-arrays contain the given item.
@@ -632,6 +635,8 @@ class ExprArrayNameSpace:
         ----------
         item
             Item that will be checked for membership
+        nulls_equal : bool, default True
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -657,7 +662,7 @@ class ExprArrayNameSpace:
         └───────────────┴──────────┘
         """
         item = parse_into_expression(item, str_as_lit=True)
-        return wrap_expr(self._pyexpr.arr_contains(item))
+        return wrap_expr(self._pyexpr.arr_contains(item, nulls_equal))
 
     def count_matches(self, element: IntoExpr) -> Expr:
         """

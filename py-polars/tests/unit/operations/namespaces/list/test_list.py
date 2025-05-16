@@ -1171,3 +1171,24 @@ def test_list_elementwise_eval_fallible_masked_sliced() -> None:
             dtype=pl.List(pl.Datetime),
         ),
     )
+
+
+def test_list_contains() -> None:
+    s = pl.Series([[1, 2, None], [None], None])
+
+    assert_series_equal(
+        s.list.contains(None, nulls_equal=False),
+        pl.Series([None, None, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.list.contains(None, nulls_equal=True),
+        pl.Series([True, True, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.list.contains(1, nulls_equal=False),
+        pl.Series([True, False, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.list.contains(1, nulls_equal=True),
+        pl.Series([True, False, None], dtype=pl.Boolean),
+    )

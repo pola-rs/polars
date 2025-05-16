@@ -27,7 +27,9 @@ pub enum ArrayFunction {
     Get(bool),
     Join(bool),
     #[cfg(feature = "is_in")]
-    Contains,
+    Contains {
+        nulls_equal: bool,
+    },
     #[cfg(feature = "array_count")]
     CountMatches,
     Shift,
@@ -67,7 +69,7 @@ impl ArrayFunction {
             Get(_) => mapper.map_to_list_and_array_inner_dtype(),
             Join(_) => mapper.with_dtype(DataType::String),
             #[cfg(feature = "is_in")]
-            Contains => mapper.with_dtype(DataType::Boolean),
+            Contains { nulls_equal: _ } => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "array_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
             Shift => mapper.with_same_dtype(),
@@ -81,7 +83,7 @@ impl ArrayFunction {
             #[cfg(feature = "array_any_all")]
             A::Any | A::All => FunctionOptions::elementwise(),
             #[cfg(feature = "is_in")]
-            A::Contains => FunctionOptions::elementwise(),
+            A::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
             #[cfg(feature = "array_count")]
             A::CountMatches => FunctionOptions::elementwise(),
             A::Length
@@ -141,7 +143,7 @@ impl Display for ArrayFunction {
             Get(_) => "get",
             Join(_) => "join",
             #[cfg(feature = "is_in")]
-            Contains => "contains",
+            Contains { nulls_equal: _ } => "contains",
             #[cfg(feature = "array_count")]
             CountMatches => "count_matches",
             Shift => "shift",
@@ -177,7 +179,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Get(null_on_oob) => map_as_slice!(get, null_on_oob),
             Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
             #[cfg(feature = "is_in")]
-            Contains => map_as_slice!(contains),
+            Contains { nulls_equal } => map_as_slice!(contains, nulls_equal),
             #[cfg(feature = "array_count")]
             CountMatches => map_as_slice!(count_matches),
             Shift => map_as_slice!(shift),
@@ -291,19 +293,19 @@ pub(super) fn join(s: &[Column], ignore_nulls: bool) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "is_in")]
-pub(super) fn contains(s: &[Column]) -> PolarsResult<Column> {
+pub(super) fn contains(s: &[Column], nulls_equal: bool) -> PolarsResult<Column> {
     let array = &s[0];
     let item = &s[1];
     polars_ensure!(matches!(array.dtype(), DataType::Array(_, _)),
         SchemaMismatch: "invalid series dtype: expected `Array`, got `{}`", array.dtype(),
     );
-    Ok(is_in(
+    let mut ca = is_in(
         item.as_materialized_series(),
         array.as_materialized_series(),
-        true,
-    )?
-    .with_name(array.name().clone())
-    .into_column())
+        nulls_equal,
+    )?;
+    ca.rename(array.name().clone());
+    Ok(ca.into_column())
 }
 
 #[cfg(feature = "array_count")]

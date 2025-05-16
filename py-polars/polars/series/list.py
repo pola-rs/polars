@@ -559,7 +559,10 @@ class ListNameSpace:
         """
 
     def contains(
-        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
+        self,
+        item: float | str | bool | int | date | datetime | time | IntoExprColumn,
+        *,
+        nulls_equal: bool = True,
     ) -> Series:
         """
         Check if sublists contain the given item.
@@ -568,6 +571,8 @@ class ListNameSpace:
         ----------
         item
             Item that will be checked for membership
+        nulls_equal : bool, default True
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------

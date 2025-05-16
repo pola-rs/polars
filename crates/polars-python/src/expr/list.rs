@@ -30,8 +30,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "is_in")]
-    fn list_contains(&self, other: PyExpr) -> Self {
-        self.inner.clone().list().contains(other.inner).into()
+    fn list_contains(&self, other: PyExpr, nulls_equal: bool) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .contains(other.inner, nulls_equal)
+            .into()
     }
 
     #[cfg(feature = "list_count")]

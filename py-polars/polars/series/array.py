@@ -498,7 +498,10 @@ class ArrayNameSpace:
         """
 
     def contains(
-        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
+        self,
+        item: float | str | bool | int | date | datetime | time | IntoExprColumn,
+        *,
+        nulls_equal: bool = True,
     ) -> Series:
         """
         Check if sub-arrays contain the given item.
@@ -507,6 +510,8 @@ class ArrayNameSpace:
         ----------
         item
             Item that will be checked for membership
+        nulls_equal : bool, default True
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
