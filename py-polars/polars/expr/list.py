@@ -12,8 +12,6 @@ from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from datetime import date, datetime, time
-
     from polars import Expr, Series
     from polars._typing import (
         IntoExpr,

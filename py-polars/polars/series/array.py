@@ -8,7 +8,6 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from datetime import date, datetime, time
 
     from polars import Series
     from polars._typing import IntoExpr, IntoExprColumn

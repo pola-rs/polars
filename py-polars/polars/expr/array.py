@@ -7,8 +7,6 @@ from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from datetime import date, datetime, time
-
     from polars import Expr
     from polars._typing import IntoExpr, IntoExprColumn
 
