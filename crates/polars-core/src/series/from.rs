@@ -668,7 +668,7 @@ unsafe fn to_physical_and_dtype(
             (std::mem::take(s.chunks_mut()), dtype)
         },
         dt => {
-            let dtype = DataType::from_arrow(dt, true, md);
+            let dtype = DataType::from_arrow(dt, md);
             (arrays, dtype)
         },
     }

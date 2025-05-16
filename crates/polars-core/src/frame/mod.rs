@@ -3347,7 +3347,8 @@ impl DataFrame {
         let df = DataFrame::from(rb);
         polars_ensure!(
             self.schema() == df.schema(),
-            SchemaMismatch: "cannot append record batch with different schema",
+            SchemaMismatch: "cannot append record batch with different schema\n\n
+        Got {:?}\nexpected: {:?}", df.schema(), self.schema(),
         );
         self.vstack_mut_owned_unchecked(df);
         Ok(())
