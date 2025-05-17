@@ -12,7 +12,7 @@ use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
-use polars_plan::dsl::{JoinOptions, PartitionVariantIR, ScanSources};
+use polars_plan::dsl::{JoinOptions, PartitionVariantIR, PerPartitionPreprocessIR, ScanSources};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
 use polars_plan::prelude::{FileType, FunctionFlags};
@@ -307,16 +307,19 @@ fn to_graph_rec<'a>(
         },
 
         PartitionSink {
+            input,
+            gather_input,
             base_path,
             file_path_cb,
             sink_options,
             variant,
             file_type,
-            input,
             cloud_options,
+            per_partition_sort_by,
+            finish_callback,
         } => {
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
-            let input_key = to_graph_rec(input.node, ctx)?;
+            let mut input_key = to_graph_rec(input.node, ctx)?;
 
             let base_path = base_path.clone();
             let file_path_cb = file_path_cb.clone();
@@ -327,43 +330,63 @@ fn to_graph_rec<'a>(
                 cloud_options.clone(),
             );
 
-            match variant {
-                PartitionVariantIR::MaxSize(max_size) => ctx.graph.add_node(
-                    SinkComputeNode::from(
-                        nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
-                            input_schema,
-                            *max_size,
-                            base_path,
-                            file_path_cb,
-                            create_new,
-                            ext,
-                            sink_options.clone(),
-                        ),
+            let per_partition_sort_by = match per_partition_sort_by {
+                None => None,
+                Some(c) => c
+                    .into_iter()
+                    .map(|c| {
+                        (
+                            create_physical_expr(
+                                c.expr,
+                                Default::default(),
+                                ctx.expr_arena,
+                                &input_schema,
+                                &mut ExpressionConversionState::new(false),
+                            )?,
+                            c.descending,
+                            c.nulls_last,
+                        )
+                    })
+                    .collect::<PolarsResult<Vec<_>>>(),
+            };
+
+            let sink_compute_node = match variant {
+                PartitionVariantIR::MaxSize(max_size) => SinkComputeNode::from(
+                    nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
+                        input_schema,
+                        *max_size,
+                        base_path,
+                        file_path_cb,
+                        create_new,
+                        ext,
+                        sink_options.clone(),
+                        sort_by.take(),
+                        finish_callback.clone(),
                     ),
-                    [(input_key, input.port)],
                 ),
                 PartitionVariantIR::Parted {
                     key_exprs,
                     include_key,
-                } => ctx.graph.add_node(
-                    SinkComputeNode::from(
-                        nodes::io_sinks::partition::parted::PartedPartitionSinkNode::new(
-                            input_schema,
-                            key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                            base_path,
-                            file_path_cb,
-                            create_new,
-                            ext,
-                            sink_options.clone(),
-                            *include_key,
-                        ),
+                } => SinkComputeNode::from(
+                    nodes::io_sinks::partition::parted::PartedPartitionSinkNode::new(
+                        input_schema,
+                        key_exprs.iter().map(|e| e.output_name().clone()).collect(),
+                        base_path,
+                        file_path_cb,
+                        create_new,
+                        ext,
+                        sink_options.clone(),
+                        *include_key,
+                        sort_by.take(),
+                        finish_callback.clone(),
                     ),
-                    [(input_key, input.port)],
                 ),
                 PartitionVariantIR::ByKey {
                     key_exprs,
                     include_key,
-                } => ctx.graph.add_node(
+                } => {
+                    // At the moment, this is needed.
+                    assert!(per_partition_sort_by.is_none());
                     SinkComputeNode::from(
                         nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
                             input_schema,
@@ -374,10 +397,26 @@ fn to_graph_rec<'a>(
                             ext,
                             sink_options.clone(),
                             *include_key,
+                            finish_callback.clone(),
                         ),
-                    ),
-                    [(input_key, input.port)],
-                ),
+                    )
+                },
+            };
+
+            match gather_input {
+                None => ctx
+                    .graph
+                    .add_node(sink_compute_node, [(input_key, input.port)]),
+                Some(gather_input) => {
+                    let mut gather_input_key = to_graph_rec(gather_input.node, ctx)?;
+                    ctx.graph.add_node(
+                        sink_compute_node,
+                        [
+                            (input_key, input.port),
+                            (gather_input_key, gather_input.port),
+                        ],
+                    )
+                },
             }
         },
 
