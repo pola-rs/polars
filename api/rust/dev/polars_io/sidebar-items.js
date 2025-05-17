@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["schema_to_arrow_checked"],"macro":["impl_page_walk"],"mod":["avro","catalog","cloud","csv","file_cache","hive","ipc","json","mmap","ndjson","parquet","partition","path_utils","pl_async","predicates","prelude","utils"],"struct":["HiveOptions","RowIndex"],"trait":["ArrowReader","SerReader","SerWriter","WriteDataFrameToFile"]};
