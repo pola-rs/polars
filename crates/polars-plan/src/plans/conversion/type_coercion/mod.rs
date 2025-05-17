@@ -342,6 +342,48 @@ impl OptimizationRule for TypeCoercionRule {
                 let function = function.clone();
                 let mut input = input.clone();
 
+                // Do some type enforcement and handling of edge cases for
+                // search_sorted() in particular.
+                #[cfg(feature = "search_sorted")]
+                if matches!(function, FunctionExpr::SearchSorted(_)) {
+                    let (_, type_left) = unpack!(get_aexpr_and_type(
+                        expr_arena,
+                        input[0].node(),
+                        &input_schema
+                    ));
+                    let (_, type_other) = unpack!(get_aexpr_and_type(
+                        expr_arena,
+                        input[1].node(),
+                        &input_schema
+                    ));
+
+                    let left_nl = type_left.nesting_level();
+                    let right_nl = type_other.nesting_level();
+                    polars_ensure!(
+                        type_other.is_null() || (right_nl >= left_nl && (right_nl - left_nl) <= 1),
+                        InvalidOperation: "wrong nesting depth {type_left} searching for {type_other}"
+                    );
+
+                    // Backwards compatibility with wrong way to search for
+                    // multiple values (specifically, non-nested ones):
+                    if left_nl == 0 && right_nl == 1 {
+                        polars_warn!(
+                            Deprecation,
+                            "passing a list to search_sorted() for multiple values is deprecated and will be removed in Polars 2. Pass in a `Series` instead."
+                        );
+                        let other_input = expr_arena.add(AExpr::Explode {
+                            expr: input[1].node(),
+                            skip_empty: false,
+                        });
+                        input[1].set_node(other_input);
+                        return Ok(Some(AExpr::Function {
+                            function,
+                            input,
+                            options,
+                        }));
+                    }
+                }
+
                 if let Some(dtypes) =
                     functions::get_function_dtypes(&input, expr_arena, &input_schema, &function)?
                 {
@@ -388,6 +430,23 @@ impl OptimizationRule for TypeCoercionRule {
                                     let other =
                                         other.dtype(&input_schema, Context::Default, expr_arena)?;
                                     if other.is_float() {
+                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
+                                    }
+                                }
+                            }
+                            if !(super_type.is_null()
+                                || super_type.is_enum()
+                                || super_type.is_categorical())
+                            {
+                                let is_string = super_type.is_string();
+                                for other in &input[1..] {
+                                    let other =
+                                        other.dtype(&input_schema, Context::Default, expr_arena)?;
+                                    if other.is_string() != is_string
+                                        && !(other.is_null()
+                                            || other.is_categorical()
+                                            || other.is_enum())
+                                    {
                                         polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
                                     }
                                 }

@@ -3513,19 +3513,23 @@ class Series:
 
     @overload
     def search_sorted(
-        self, element: NonNestedLiteral | None, side: SearchSortedSide = ...
+        self,
+        element: (
+            NonNestedLiteral | None | dict[str, Any] | list[Any] | np.ndarray[Any, Any]
+        ),
+        side: SearchSortedSide = ...,
     ) -> int: ...
 
     @overload
     def search_sorted(
         self,
-        element: list[NonNestedLiteral | None] | np.ndarray[Any, Any] | Expr | Series,
+        element: Expr | Series,
         side: SearchSortedSide = ...,
     ) -> Series: ...
 
     def search_sorted(
         self,
-        element: IntoExpr | np.ndarray[Any, Any] | None,
+        element: IntoExpr | np.ndarray[Any, Any] | dict[str, Any],
         side: SearchSortedSide = "any",
     ) -> int | Series:
         """
@@ -3537,6 +3541,16 @@ class Series:
         ----------
         element
             Expression or scalar value.
+            If this value matches the dtype of values in self, the return result is an
+            integer.
+            If self's dtype is ``pl.List``/``pl.Array``, we assume an element that is
+            ``list`` or NumPy array is a single value, and return an integer. (For other
+            dtypes, a ``list``/NumPy array element is assumed to be searching for
+            multiple values, and the return result is a ``Series``; this is deprecated,
+            you should switch to using a ``Series`` if you want to search for multiple
+            values.)
+            If this is a ``Series`` or ``Expr``, the return result is a ``Series``.
+
         side : {'any', 'left', 'right'}
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
@@ -3577,9 +3591,20 @@ class Series:
         ]
         """
         df = F.select(F.lit(self).search_sorted(element, side))
-        if isinstance(element, (list, Series, pl.Expr, np.ndarray)):
+        # These types unambiguously return a Series:
+        #
+        # * Series means we want to search for multiple values.
+        # * Expr because that always returns a Series, matching Expr.search_sorted().
+        if isinstance(element, (Series, pl.Expr)):
+            return df.to_series()
+
+        if (
+            isinstance(element, list)
+            or (_check_for_numpy(element) and isinstance(element, np.ndarray))
+        ) and not isinstance(self.dtype, (List, Array)):
             return df.to_series()
         else:
+            assert len(df) == 1
             return df.item()
 
     def unique(self, *, maintain_order: bool = False) -> Series:
