@@ -7,7 +7,10 @@ from typing import IO, TYPE_CHECKING, Any
 
 import polars.functions as F
 from polars import concat as plconcat
-from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     is_int_sequence,
@@ -65,7 +68,8 @@ def read_parquet(
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
     include_file_paths: str | None = None,
-    allow_missing_columns: bool = False,
+    missing_columns: Literal["insert", "raise"] = "raise",
+    allow_missing_columns: bool | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -113,7 +117,7 @@ def read_parquet(
     schema
         Specify the datatypes of the columns. The datatypes must match the
         datatypes in the file(s). If there are extra columns that are not in the
-        file(s), consider also enabling `allow_missing_columns`.
+        file(s), consider also passing `missing_columns='insert'`.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -168,12 +172,23 @@ def read_parquet(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
         Only valid when `use_pyarrow=False`.
+    missing_columns
+        Configuration for behavior when columns defined in the schema
+        are missing from the data:
+
+        * `insert`: Inserts the missing columns using NULLs as the row values.
+        * `raise`: Raises an error.
+
     allow_missing_columns
         When reading a list of parquet files, if a column existing in the first
         file cannot be found in subsequent files, the default behavior is to
         raise an error. However, if `allow_missing_columns` is set to
         `True`, a full-NULL column is returned instead of erroring for the files
         that do not contain the column.
+
+        .. deprecated:: 1.29.0
+            Use the parameter `missing_columns` instead and pass one of
+            `('insert', 'raise')`.
 
     Returns
     -------
@@ -226,6 +241,16 @@ def read_parquet(
             rechunk=rechunk,
         )
 
+    if allow_missing_columns is not None:
+        issue_deprecation_warning(
+            "the parameter `allow_missing_columns` for `read_parquet` is deprecated. "
+            "Use the parameter `missing_columns` instead and pass one of "
+            "`('insert', 'raise')`.",
+            version="1.29.0",
+        )
+
+        missing_columns = "insert" if allow_missing_columns else "raise"
+
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
         source,
@@ -246,7 +271,7 @@ def read_parquet(
         retries=retries,
         glob=glob,
         include_file_paths=include_file_paths,
-        allow_missing_columns=allow_missing_columns,
+        missing_columns=missing_columns,
     )
 
     if columns is not None:
@@ -384,7 +409,8 @@ def scan_parquet(
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     retries: int = 2,
     include_file_paths: str | None = None,
-    allow_missing_columns: bool = False,
+    missing_columns: Literal["insert", "raise"] = "raise",
+    allow_missing_columns: bool | None = None,
     cast_options: ScanCastOptions | None = None,
 ) -> LazyFrame:
     """
@@ -440,7 +466,7 @@ def scan_parquet(
     schema
         Specify the datatypes of the columns. The datatypes must match the
         datatypes in the file(s). If there are extra columns that are not in the
-        file(s), consider also enabling `allow_missing_columns`.
+        file(s), consider also passing `missing_columns='insert'`.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -487,12 +513,23 @@ def scan_parquet(
         Number of retries if accessing a cloud instance fails.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+    missing_columns
+        Configuration for behavior when columns defined in the schema
+        are missing from the data:
+
+        * `insert`: Inserts the missing columns using NULLs as the row values.
+        * `raise`: Raises an error.
+
     allow_missing_columns
         When reading a list of parquet files, if a column existing in the first
         file cannot be found in subsequent files, the default behavior is to
         raise an error. However, if `allow_missing_columns` is set to
         `True`, a full-NULL column is returned instead of erroring for the files
         that do not contain the column.
+
+        .. deprecated:: 1.29.0
+            Use the parameter `missing_columns` instead and pass one of
+            `('insert', 'raise')`.
     cast_options
         Configuration for column type-casting during scans. Useful for datasets
         containing files that have differing schemas.
@@ -545,6 +582,25 @@ def scan_parquet(
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_parquet"
     )
+
+    if allow_missing_columns is not None:
+        issue_deprecation_warning(
+            "the parameter `allow_missing_columns` for `scan_parquet` is deprecated. "
+            "Use the parameter `missing_columns` instead and pass one of "
+            "`('insert', 'raise')`.",
+            version="1.29.0",
+        )
+
+        missing_columns = "insert" if allow_missing_columns else "raise"
+
+    # TODO: Move this to Rust-side after https://github.com/pola-rs/polars/pull/22699
+    if missing_columns == "insert":
+        allow_missing_columns = True
+    elif missing_columns == "raise":
+        allow_missing_columns = False
+    else:
+        msg = f"unknown option for missing_columns: {missing_columns}"
+        raise ValueError(msg)
 
     return _scan_parquet_impl(
         source,  # type: ignore[arg-type]
