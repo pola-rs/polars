@@ -11,6 +11,17 @@ pub struct ParquetOptions {
     pub use_statistics: bool,
 }
 
+impl Default for ParquetOptions {
+    fn default() -> Self {
+        Self {
+            schema: None,
+            parallel: ParallelStrategy::default(),
+            low_memory: false,
+            use_statistics: true,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ParallelStrategy {

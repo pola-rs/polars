@@ -176,7 +176,7 @@ pub enum ExtraColumnsPolicy {
 }
 
 /// Scan arguments shared across different scan types.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UnifiedScanArgs {
     /// User-provided schema of the file. Will be inferred during IR conversion
@@ -196,7 +196,28 @@ pub struct UnifiedScanArgs {
 
     pub cast_columns_policy: CastColumnsPolicy,
     pub missing_columns_policy: MissingColumnsPolicy,
+    pub extra_columns_policy: ExtraColumnsPolicy,
     pub include_file_paths: Option<PlSmallStr>,
+}
+
+impl Default for UnifiedScanArgs {
+    fn default() -> Self {
+        Self {
+            schema: None,
+            cloud_options: None,
+            hive_options: HiveOptions::new_enabled(),
+            rechunk: false,
+            cache: false,
+            glob: true,
+            projection: None,
+            row_index: None,
+            pre_slice: None,
+            cast_columns_policy: CastColumnsPolicy::default(),
+            missing_columns_policy: MissingColumnsPolicy::default(),
+            extra_columns_policy: ExtraColumnsPolicy::default(),
+            include_file_paths: None,
+        }
+    }
 }
 
 /// Manual impls of Eq/Hash, as some fields are `Arc<T>` where T does not have Eq/Hash. For these
@@ -358,7 +379,7 @@ impl CastColumnsPolicy {
                         MissingColumnsPolicy::Raise => {
                             return mismatch_err(&format!(
                                 "encountered missing struct field: {}, \
-                                hint: pass cast_options=pl.ScanCastOptions(missing_struct_fields='insert')",
+                                hint: pass missing_struct_fields='insert' in scan options",
                                 target_field.name(),
                             ));
                         },
@@ -405,7 +426,8 @@ impl CastColumnsPolicy {
                         ExtraColumnsPolicy::Raise => {
                             return mismatch_err(&format!(
                                 "encountered extra struct field: {}, \
-                                hint: pass cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
+                                hint: specify this field in the schema, or pass \
+                                extra_struct_fields='ignore' in scan options",
                                 &fld.name,
                             ));
                         },
@@ -451,9 +473,7 @@ impl CastColumnsPolicy {
 
         if target_dtype.is_integer() && incoming_dtype.is_integer() {
             if !self.integer_upcast {
-                return mismatch_err(
-                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')",
-                );
+                return mismatch_err("hint: pass integer_cast='upcast' in scan options");
             }
 
             return match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
@@ -468,9 +488,7 @@ impl CastColumnsPolicy {
                     if self.float_upcast {
                         Ok(true)
                     } else {
-                        mismatch_err(
-                            "hint: pass cast_options=pl.ScanCastOptions(float_cast='upcast')",
-                        )
+                        mismatch_err("hint: pass float_cast='upcast' in scan options")
                     }
                 },
 
@@ -478,9 +496,7 @@ impl CastColumnsPolicy {
                     if self.float_downcast {
                         Ok(true)
                     } else {
-                        mismatch_err(
-                            "hint: pass cast_options=pl.ScanCastOptions(float_cast='downcast')",
-                        )
+                        mismatch_err("hint: pass float_cast='downcast' in scan options")
                     }
                 },
 
@@ -497,9 +513,7 @@ impl CastColumnsPolicy {
             if !self.datetime_convert_timezone
                 && !TimeZone::eq_none_as_utc(incoming_zone.as_ref(), target_zone.as_ref())
             {
-                return mismatch_err(
-                    "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='convert-timezone')",
-                );
+                return mismatch_err("hint: pass datetime_cast='convert-timezone' in scan options");
             }
 
             // Check unit
@@ -509,7 +523,7 @@ impl CastColumnsPolicy {
                         Ok(true)
                     } else {
                         mismatch_err(
-                            "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='nanosecond-downcast')",
+                            "hint: pass datetime_cast='nanosecond-downcast' in scan options",
                         )
                     }
                 } else {
