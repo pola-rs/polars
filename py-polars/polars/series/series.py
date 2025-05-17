@@ -49,6 +49,7 @@ from polars._utils.various import (
     no_default,
     parse_version,
     qualified_type_name,
+    require_same_type,
     scale_bytes,
     sphinx_accessor,
     warn_null_comparison,
@@ -3055,6 +3056,7 @@ class Series:
         >>> a.n_chunks()
         2
         """
+        require_same_type(self, other)
         try:
             self._s.append(other._s)
         except RuntimeError as exc:
@@ -3118,6 +3120,7 @@ class Series:
         >>> a.n_chunks()
         1
         """
+        require_same_type(self, other)
         try:
             self._s.extend(other._s)
         except RuntimeError as exc:
@@ -4126,6 +4129,7 @@ class Series:
         >>> s1.equals(s2)
         False
         """
+        require_same_type(self, other)
         return self._s.equals(
             other._s,
             check_dtypes=check_dtypes,
@@ -5705,6 +5709,7 @@ class Series:
                 5
         ]
         """
+        require_same_type(self, other)
         return self._from_pyseries(self._s.zip_with(mask._s, other._s))
 
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")

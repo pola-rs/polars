@@ -730,3 +730,22 @@ def qualified_type_name(obj: Any, *, qualify_polars: bool = False) -> str:
         return name
 
     return f"{module}.{name}"
+
+
+def require_same_type(current: Any, other: Any) -> None:
+    """
+    Raise an error if the two arguments are not of the same type.
+
+    Parameters
+    ----------
+    current
+        The object the type of which is being checked against.
+    other
+        An object that has to be of the same type.
+    """
+    if not isinstance(other, type(current)):
+        msg = (
+            f"expected `other` to be a {qualified_type_name(current)!r}, "
+            f"not {qualified_type_name(other)!r}"
+        )
+        raise TypeError(msg)
