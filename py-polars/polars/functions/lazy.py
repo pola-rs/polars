@@ -67,7 +67,7 @@ def field(name: str | list[str]) -> Expr:
 
 def element() -> Expr:
     """
-    Alias for an element being evaluated in an `eval` expression.
+    Alias for an element being evaluated in an `eval` or `filter` expression.
 
     Examples
     --------
@@ -114,6 +114,24 @@ def element() -> Expr:
     │ 8   ┆ 5   ┆ [16, 10]    │
     │ 3   ┆ 2   ┆ [6, 4]      │
     └─────┴─────┴─────────────┘
+
+    A filter operation on list elements
+
+    >>> import polars as pl
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+    >>> df.with_columns(
+    ...     evens=pl.concat_list("a", "b").list.filter(pl.element() % 2 == 0)
+    ... )
+    shape: (3, 3)
+    ┌─────┬─────┬───────────┐
+    │ a   ┆ b   ┆ evens     │
+    │ --- ┆ --- ┆ ---       │
+    │ i64 ┆ i64 ┆ list[i64] │
+    ╞═════╪═════╪═══════════╡
+    │ 1   ┆ 4   ┆ [4]       │
+    │ 8   ┆ 5   ┆ [8]       │
+    │ 3   ┆ 2   ┆ [2]       │
+    └─────┴─────┴───────────┘
     """
     return F.col("")
 
