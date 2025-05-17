@@ -1571,6 +1571,100 @@ def test_asof_cross_join() -> None:
     assert out.shape == (15, 4)
 
 
+def test_join_bad_input_type() -> None:
+    left = pl.DataFrame({"a": [1, 2, 3]})
+    right = pl.DataFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        left.join(right.lazy(), on="a")
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        left.join(pl.Series([1, 2, 3]), on="a")
+
+
+def test_join_where() -> None:
+    east = pl.DataFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [120, 140, 160],
+            "rev": [12, 14, 16],
+            "cores": [2, 8, 4],
+        }
+    )
+    west = pl.DataFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [90, 130, 150, 170],
+            "cost": [9, 13, 15, 16],
+            "cores": [4, 2, 1, 4],
+        }
+    )
+    out = east.join_where(
+        west,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") < pl.col("cost"),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "id": [100, 100, 100, 101, 101],
+            "dur": [120, 120, 120, 140, 140],
+            "rev": [12, 12, 12, 14, 14],
+            "cores": [2, 2, 2, 8, 8],
+            "t_id": [498, 676, 742, 676, 742],
+            "time": [130, 150, 170, 150, 170],
+            "cost": [13, 15, 16, 15, 16],
+            "cores_right": [2, 1, 4, 1, 4],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_join_where_bad_input_type() -> None:
+    east = pl.DataFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [120, 140, 160],
+            "rev": [12, 14, 16],
+            "cores": [2, 8, 4],
+        }
+    )
+    west = pl.DataFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [90, 130, 150, 170],
+            "cost": [9, 13, 15, 16],
+            "cores": [4, 2, 1, 4],
+        }
+    )
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        east.join_where(
+            west.lazy(),
+            pl.col("dur") < pl.col("time"),
+            pl.col("rev") < pl.col("cost"),
+        )
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        east.join_where(
+            pl.Series(west),
+            pl.col("dur") < pl.col("time"),
+            pl.col("rev") < pl.col("cost"),
+        )
+
+
 def test_str_concat() -> None:
     df = pl.DataFrame(
         {
@@ -2309,6 +2403,23 @@ def test_asof_by_multiple_keys() -> None:
     ).select(["a", "by"])
     expected = pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]})
     assert_frame_equal(result, expected)
+
+
+def test_asof_bad_input_type() -> None:
+    lhs = pl.DataFrame({"a": [1, 2, 3]})
+    rhs = pl.DataFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        lhs.join_asof(rhs.lazy(), on="a")
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        lhs.join_asof(pl.Series([1, 2, 3]), on="a")
 
 
 def test_list_of_list_of_struct() -> None:
