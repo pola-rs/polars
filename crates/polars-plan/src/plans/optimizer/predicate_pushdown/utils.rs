@@ -161,6 +161,7 @@ fn get_maybe_aliased_projection_to_input_name_map(
     }
 }
 
+#[derive(Debug)]
 pub enum PushdownEligibility {
     Full,
     // Partial can happen when there are window exprs.
@@ -281,7 +282,9 @@ pub fn pushdown_eligibility(
             continue;
         }
 
-        modified_projection_columns.insert(e.output_name().clone());
+        if !does_not_modify_rec(e.node(), expr_arena) {
+            modified_projection_columns.insert(e.output_name().clone());
+        }
 
         debug_assert!(ae_nodes_stack.is_empty());
         ae_nodes_stack.push(e.node());

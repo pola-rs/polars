@@ -1074,3 +1074,15 @@ def test_predicate_does_not_split_barrier_expr() -> None:
         q.collect(),
         pl.DataFrame({"a": 3}).with_row_index(offset=2),
     )
+
+
+def test_predicate_passes_set_sorted_22397() -> None:
+    plan = (
+        pl.DataFrame({"a": [1, 2, 3]})
+        .lazy()
+        .with_columns(MARKER=1, b=pl.lit(1))
+        .set_sorted("a")
+        .filter(pl.col("a") <= 1)
+        .explain()
+    )
+    assert plan.index("FILTER") > plan.index("MARKER")
