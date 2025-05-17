@@ -143,7 +143,7 @@ fn test_corr() {
     let sql = r#"
     SELECT
         CORR(a, b) as corr,
-        COV(a, b) as cov
+        COVAR(a, b) as covar
     FROM df"#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
@@ -171,7 +171,7 @@ fn test_corr_group_by() {
     SELECT
         c,
         CORR(a, b) AS corr,
-        COV(a, b) AS cov
+        COVAR(a, b) AS covar
     FROM df
     GROUP BY c
     ORDER BY c"#;

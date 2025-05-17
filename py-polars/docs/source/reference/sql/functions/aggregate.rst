@@ -13,7 +13,7 @@ Aggregate
      - Returns the Pearson correlation coefficient between two columns.
    * - :ref:`COUNT <count>`
      - Returns the amount of elements in the grouping.
-   * - :ref:`COV <cov>`
+   * - :ref:`COVAR <covar>`
      - Returns the covariance between two columns.
    * - :ref:`FIRST <first>`
      - Returns the first element of the grouping.
@@ -116,9 +116,9 @@ Returns the amount of elements in the grouping.
     # │ 4     ┆ 3            │
     # └───────┴──────────────┘
 
-.. _cov:
+.. _covar:
 
-COV
+COVAR
 ---
 Returns the covariance between two columns.
 
@@ -128,17 +128,17 @@ Returns the covariance between two columns.
 
     df = pl.DataFrame({"foo": [1, 2, 3, 4, 5], "bar": [2, 4, 7, 5, 9]})
     df.sql("""
-      SELECT COV(foo, bar) AS cov FROM self
+      SELECT COVAR(foo, bar) AS covar FROM self
     """)
 
     # shape: (1, 1)
-    # ┌──────┐
-    # │ cov  │
-    # │ ---  │
-    # │ f64  │
-    # ╞══════╡
-    # │ 3.75 │
-    # └──────┘
+    # ┌───────┐
+    # │ covar │
+    # │ ---   │
+    # │ f64   │
+    # ╞═══════╡
+    # │ 3.75  │
+    # └───────┘
 
 
 .. _first:
