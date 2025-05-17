@@ -90,6 +90,21 @@ def test_array_lengths() -> None:
     ).arr.len().to_list() == [3, None, 3]
 
 
+def test_arr_slice() -> None:
+    # TODO: Implement
+    return
+
+
+def test_arr_head() -> None:
+    # TODO: Implement
+    return
+
+
+def test_arr_tail() -> None:
+    # TODO: Implement
+    return
+
+
 def test_arr_unique() -> None:
     df = pl.DataFrame(
         {"a": pl.Series("a", [[1, 1], [4, 3]], dtype=pl.Array(pl.Int64, 2))}
