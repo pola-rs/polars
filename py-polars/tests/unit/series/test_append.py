@@ -33,8 +33,17 @@ def test_append_bad_input() -> None:
     a = pl.Series("a", [1, 2])
     b = a.to_frame()
 
-    with pytest.raises(AttributeError):
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'Series'.* not 'DataFrame'",
+    ):
         a.append(b)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'Series'.* not 'LazyFrame'",
+    ):
+        a.append(b.lazy())  # type: ignore[arg-type]
 
 
 def test_struct_schema_on_append_extend_3452() -> None:

@@ -58,6 +58,7 @@ from polars._utils.various import (
     normalize_filepath,
     parse_version,
     qualified_type_name,
+    require_same_type,
     scale_bytes,
     warn_null_comparison,
 )
@@ -5938,6 +5939,7 @@ class DataFrame:
         >>> df1.equals(df2)
         False
         """
+        require_same_type(self, other)
         return self._df.equals(other._df, null_equal=null_equal)
 
     def slice(self, offset: int, length: int | None = None) -> DataFrame:
@@ -7553,9 +7555,7 @@ class DataFrame:
         │ Netherlands ┆ 2019-01-01 ┆ 17.4       ┆ 910  │
         └─────────────┴────────────┴────────────┴──────┘
         """
-        if not isinstance(other, DataFrame):
-            msg = f"expected `other` join table to be a DataFrame, not {qualified_type_name(other)!r}"
-            raise TypeError(msg)
+        require_same_type(self, other)
 
         if on is not None:
             if not isinstance(on, (str, pl.Expr)):
@@ -7821,9 +7821,7 @@ class DataFrame:
         -----
         For joining on columns with categorical data, see :class:`polars.StringCache`.
         """
-        if not isinstance(other, DataFrame):
-            msg = f"expected `other` join table to be a DataFrame, not {qualified_type_name(other)!r}"
-            raise TypeError(msg)
+        require_same_type(self, other)
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 
@@ -7912,9 +7910,7 @@ class DataFrame:
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
         """
-        if not isinstance(other, DataFrame):
-            msg = f"expected `other` join table to be a DataFrame, not {qualified_type_name(other)!r}"
-            raise TypeError(msg)
+        require_same_type(self, other)
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 
@@ -8117,6 +8113,7 @@ class DataFrame:
         │ 4   ┆ 9   ┆ d   │
         └─────┴─────┴─────┘
         """
+        require_same_type(self, other)
         if in_place:
             try:
                 self._df.vstack_mut(other._df)
@@ -8184,6 +8181,7 @@ class DataFrame:
         │ 30  ┆ 60  │
         └─────┴─────┘
         """
+        require_same_type(self, other)
         try:
             self._df.extend(other._df)
         except RuntimeError as exc:
@@ -11828,6 +11826,8 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
+        require_same_type(self, other)
+
         return (
             self.lazy()
             .merge_sorted(other.lazy(), key)
@@ -12011,6 +12011,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
+        require_same_type(self, other)
         return (
             self.lazy()
             .update(

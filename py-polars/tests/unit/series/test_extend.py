@@ -30,8 +30,17 @@ def test_extend_bad_input() -> None:
     a = pl.Series("a", [1, 2])
     b = a.to_frame()
 
-    with pytest.raises(AttributeError):
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'Series'.* not 'DataFrame'",
+    ):
         a.extend(b)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'Series'.* not 'LazyFrame'",
+    ):
+        a.extend(b.lazy())  # type: ignore[arg-type]
 
 
 def test_extend_with_null_series() -> None:

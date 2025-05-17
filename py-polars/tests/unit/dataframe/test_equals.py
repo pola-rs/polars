@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 
 
@@ -45,3 +47,20 @@ def test_equals() -> None:
     # The null_equal parameter determines if None values are considered equal
     assert df.equals(df) is True
     assert df.equals(df, null_equal=False) is False
+
+
+def test_equals_bad_input_type() -> None:
+    df1 = pl.DataFrame({"a": [1, 2, 3]})
+    df2 = pl.DataFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        df1.equals(df2.lazy())  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        df1.equals(pl.Series([1, 2, 3]))  # type: ignore[arg-type]
