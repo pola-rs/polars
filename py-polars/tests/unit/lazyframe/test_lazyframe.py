@@ -1513,13 +1513,13 @@ def test_join_bad_input_type() -> None:
         TypeError,
         match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
-        left.join(right.collect(), on="a")
+        left.join(right.collect(), on="a")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
         match="expected `other` .*to be a 'LazyFrame'.* not 'Series'",
     ):
-        left.join(pl.Series([1, 2, 3]), on="a")
+        left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
 
 
 def test_join_where() -> None:
@@ -1583,7 +1583,7 @@ def test_join_where_bad_input_type() -> None:
         match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         east.join_where(
-            west.collect(),
+            west.collect(),  # type: ignore[arg-type]
             pl.col("dur") < pl.col("time"),
             pl.col("rev") < pl.col("cost"),
         )
@@ -1593,7 +1593,7 @@ def test_join_where_bad_input_type() -> None:
         match="expected `other` .*to be a 'LazyFrame'.* not 'Series'",
     ):
         east.join_where(
-            pl.Series(west.collect()),
+            pl.Series(west.collect()),  # type: ignore[arg-type]
             pl.col("dur") < pl.col("time"),
             pl.col("rev") < pl.col("cost"),
         )

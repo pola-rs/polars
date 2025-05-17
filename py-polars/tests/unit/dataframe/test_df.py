@@ -1579,13 +1579,13 @@ def test_join_bad_input_type() -> None:
         TypeError,
         match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
-        left.join(right.lazy(), on="a")
+        left.join(right.lazy(), on="a")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
         match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
-        left.join(pl.Series([1, 2, 3]), on="a")
+        left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
 
 
 def test_join_where() -> None:
@@ -1649,7 +1649,7 @@ def test_join_where_bad_input_type() -> None:
         match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         east.join_where(
-            west.lazy(),
+            west.lazy(),  # type: ignore[arg-type]
             pl.col("dur") < pl.col("time"),
             pl.col("rev") < pl.col("cost"),
         )
@@ -1659,7 +1659,7 @@ def test_join_where_bad_input_type() -> None:
         match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         east.join_where(
-            pl.Series(west),
+            pl.Series(west),  # type: ignore[arg-type]
             pl.col("dur") < pl.col("time"),
             pl.col("rev") < pl.col("cost"),
         )
@@ -2413,13 +2413,13 @@ def test_asof_bad_input_type() -> None:
         TypeError,
         match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
-        lhs.join_asof(rhs.lazy(), on="a")
+        lhs.join_asof(rhs.lazy(), on="a")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
         match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
-        lhs.join_asof(pl.Series([1, 2, 3]), on="a")
+        lhs.join_asof(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
 
 
 def test_list_of_list_of_struct() -> None:

@@ -105,10 +105,10 @@ def test_extend_bad_input_type() -> None:
         TypeError,
         match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
-        a.extend(pl.Series(b))
+        a.extend(pl.Series(b))  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
         match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
-        a.extend(b.lazy())
+        a.extend(b.lazy())  # type: ignore[arg-type]
