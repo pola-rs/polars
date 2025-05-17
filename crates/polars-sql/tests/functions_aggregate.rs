@@ -120,21 +120,61 @@ fn test_quantile_disc_conformance() {
     )
 }
 
-#[test]
-fn test_corr() {
-    let df = df! {
-        "a" => [1, 2, 3, 4, 5],
-        "b" => [2, 4, 6, 8, 10]
+fn create_df_corr() -> LazyFrame {
+    df! {
+        "a" => [1, 2, 3, 4, 5, 6],
+        "b" => [2, 4, 10, 8, 9, 13],
+        "c" => ["a", "b", "a", "a", "b", "b"]
     }
     .unwrap()
-    .lazy();
+    .lazy()
+}
 
-    let expr = pearson_corr(col("a"), col("b")).alias("corr");
-    let expected = df.clone().select(&[expr]).collect().unwrap();
+#[test]
+fn test_corr() {
+    let df = create_df_corr();
+
+    let expr_corr = pearson_corr(col("a"), col("b")).alias("corr");
+    let expr_cov = cov(col("a"), col("b"), 1).alias("cov");
+    let expected = df.clone().select(&[expr_corr, expr_cov]).collect().unwrap();
 
     let mut ctx = SQLContext::new();
     ctx.register("df", df);
-    let sql = "SELECT CORR(a, b) as corr FROM df";
+    let sql = r#"
+    SELECT
+        CORR(a, b) as corr,
+        COV(a, b) as cov
+    FROM df"#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+}
+
+#[test]
+fn test_corr_group_by() {
+    let df = create_df_corr();
+
+    let expected = df
+        .clone()
+        .group_by(["c"])
+        .agg([
+            pearson_corr(col("a"), col("b")).alias("corr"),
+            cov(col("a"), col("b"), 1).alias("cov"),
+        ])
+        .sort(["c"], Default::default())
+        .collect()
+        .unwrap();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let sql = r#"
+    SELECT
+        c,
+        CORR(a, b) AS corr,
+        COV(a, b) AS cov
+    FROM df
+    GROUP BY c
+    ORDER BY c"#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
     assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");

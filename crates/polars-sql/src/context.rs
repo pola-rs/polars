@@ -1323,6 +1323,8 @@ impl SQLContext {
                 {
                     projection_overrides
                         .insert(alias.as_ref(), col(name.clone()).alias(alias.clone()));
+                } else if let Expr::Function { .. } = expr.deref() {
+                    // keep as function under alias
                 } else if !is_agg_or_window && !group_by_keys_schema.contains(alias) {
                     projection_aliases.insert(alias.as_ref());
                 }
@@ -1348,6 +1350,10 @@ impl SQLContext {
                 if !group_by_keys_schema.contains(&field.name) {
                     polars_bail!(SQLSyntax: "'{}' should participate in the GROUP BY clause or an aggregate function", &field.name);
                 }
+            } else if let Expr::Function { .. } | Expr::Alias(_, _) = e {
+                aggregation_projection.push(e.clone());
+            } else {
+                polars_bail!(SQLSyntax: "Unsupported operation in the GROUP BY clause: {}", e);
             }
         }
         let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);

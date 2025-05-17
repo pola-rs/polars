@@ -524,6 +524,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT AVG(column_1) FROM df;
     /// ```
     Avg,
+    /// SQL 'corr' function.
+    /// Returns the Pearson correlation coefficient between two columns.
+    /// ```sql
+    /// SELECT CORR(column_1, column_2) FROM df;
+    /// ```
+    Corr,
     /// SQL 'count' function.
     /// Returns the amount of elements in the grouping.
     /// ```sql
@@ -533,6 +539,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT COUNT(DISTINCT *) FROM df;
     /// ```
     Count,
+    /// SQL 'covar_pop' function.
+    /// Returns the population covariance between two columns.
+    /// ```sql
+    /// SELECT COVAR_POP(column_1, column_2) FROM df;
+    /// ```
+    CovarPop,
+    /// SQL 'covar_samp' function.
+    /// Returns the sample covariance between two columns.
+    /// ```sql
+    /// SELECT COVAR_SAMP(column_1, column_2) FROM df;
+    /// ```
+    CovarSamp,
     /// SQL 'first' function.
     /// Returns the first element of the grouping.
     /// ```sql
@@ -595,12 +613,6 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT VARIANCE(column_1) FROM df;
     /// ```
     Variance,
-    /// SQL 'corr' function.
-    /// Returns the Pearson correlation coefficient between two columns.
-    /// ```sql
-    /// SELECT CORR(column_1, column_2) FROM df;
-    /// ```
-    Corr,
     // ----
     // Array functions
     // ----
@@ -726,11 +738,15 @@ impl PolarsSQLFunctions {
             "columns",
             "concat",
             "concat_ws",
+            "corr",
             "cos",
             "cosd",
             "cot",
             "cotd",
             "count",
+            "cov",
+            "covar_pop",
+            "covar_samp",
             "date",
             "date_part",
             "degrees",
@@ -904,7 +920,10 @@ impl PolarsSQLFunctions {
             // Aggregate functions
             // ----
             "avg" => Self::Avg,
+            "corr" => Self::Corr,
             "count" => Self::Count,
+            "covar_pop" => Self::CovarPop,
+            "cov" | "covar_samp" => Self::CovarSamp,
             "first" => Self::First,
             "last" => Self::Last,
             "max" => Self::Max,
@@ -915,7 +934,6 @@ impl PolarsSQLFunctions {
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "sum" => Self::Sum,
             "var" | "variance" | "var_samp" => Self::Variance,
-            "corr" => Self::Corr,
 
             // ----
             // Array functions
@@ -1413,7 +1431,10 @@ impl SQLFunctionVisitor<'_> {
             // Aggregate functions
             // ----
             Avg => self.visit_unary(Expr::mean),
+            Corr => self.visit_binary(polars_lazy::dsl::pearson_corr),
             Count => self.visit_count(),
+            CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
+            CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
@@ -1474,7 +1495,6 @@ impl SQLFunctionVisitor<'_> {
             StdDev => self.visit_unary(|e| e.std(1)),
             Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
             Variance => self.visit_unary(|e| e.var(1)),
-            Corr => self.visit_binary(polars_lazy::dsl::pearson_corr),
 
             // ----
             // Array functions
