@@ -221,6 +221,8 @@ impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
                         assert_eq!(pl, pr, "name should point to unique payload")
                     }
                 }
+                _ = pl;
+                _ = pr;
                 l == r
             },
             _ => false,
