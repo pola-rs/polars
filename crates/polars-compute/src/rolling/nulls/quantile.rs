@@ -94,7 +94,7 @@ impl<
                     )
                 }
             },
-            _ => Some(self.sorted.get(idx).unwrap()),
+            _ => Some(self.sorted.get(idx + null_count).unwrap()),
         }
     }
 

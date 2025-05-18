@@ -1787,6 +1787,21 @@ impl LazyFrame {
         )
     }
 
+    /// Match or evolve to a certain schema.
+    pub fn match_to_schema(
+        self,
+        schema: SchemaRef,
+        per_column: Arc<[MatchToSchemaPerColumn]>,
+        extra_columns: ExtraColumnsPolicy,
+    ) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .match_to_schema(schema, per_column, extra_columns)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     fn with_columns_impl(self, exprs: Vec<Expr>, options: ProjectionOptions) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().with_columns(exprs, options).build();

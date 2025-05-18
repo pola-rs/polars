@@ -236,7 +236,9 @@ impl Expr {
         let return_dtype = func.output_type.clone();
 
         let output_field = PythonGetOutput::new(return_dtype);
-        let output_type = SpecialEq::new(Arc::new(output_field) as Arc<dyn FunctionOutputField>);
+        let output_type = LazySerde::Deserialized(SpecialEq::new(
+            Arc::new(output_field) as Arc<dyn FunctionOutputField>
+        ));
 
         let mut flags = FunctionFlags::default() | FunctionFlags::OPTIONAL_RE_ENTRANT;
         if agg_list {

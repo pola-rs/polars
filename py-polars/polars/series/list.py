@@ -8,7 +8,6 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
-    from datetime import date, datetime, time
 
     from polars import Expr, Series
     from polars._typing import (
@@ -558,9 +557,7 @@ class ListNameSpace:
         ]
         """
 
-    def contains(
-        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
-    ) -> Series:
+    def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Series:
         """
         Check if sublists contain the given item.
 
@@ -568,6 +565,8 @@ class ListNameSpace:
         ----------
         item
             Item that will be checked for membership
+        nulls_equal : bool, default True
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -916,11 +915,10 @@ class ListNameSpace:
             s.to_frame()
             .select(
                 F.col(s.name).list.to_struct(
-                    # note: in eager mode, 'upper_bound' is always zero, as (unlike
+                    # note: in eager mode, 'upper_bound' is always None, as (unlike
                     # in lazy mode) there is no need to determine/track the schema.
                     n_field_strategy,
                     fields,
-                    upper_bound=0,
                     _eager=True,
                 )
             )

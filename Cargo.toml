@@ -141,6 +141,10 @@ features = [
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
 tikv-jemallocator = { git = "https://github.com/pola-rs/jemallocator", rev = "c7991e5bb6b3e9f79db6b0f48dcda67c5c3d2936" }
+pyo3-build-config = { git = "https://github.com/pola-rs/pyo3", branch = "build_config_0.24.2" }
+pyo3 = { git = "https://github.com/pola-rs/pyo3", branch = "build_config_0.24.2" }
+pyo3-macros-backend = { git = "https://github.com/pola-rs/pyo3", branch = "build_config_0.24.2" }
+pyo3-ffi = { git = "https://github.com/pola-rs/pyo3", branch = "build_config_0.24.2" }
 
 [profile.mindebug-dev]
 inherits = "dev"

@@ -20,12 +20,12 @@ pub use builder_dsl::*;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
-mod expr_dyn_fn;
 mod format;
 mod from;
 pub mod function_expr;
 pub mod functions;
 mod list;
+mod match_to_schema;
 #[cfg(feature = "meta")]
 mod meta;
 mod name;
@@ -55,6 +55,7 @@ pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
+pub use match_to_schema::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
 pub use name::*;

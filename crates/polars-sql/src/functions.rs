@@ -1473,7 +1473,7 @@ impl SQLFunctionVisitor<'_> {
             // Array functions
             // ----
             ArrayAgg => self.visit_arr_agg(),
-            ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s)),
+            ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s, true)),
             ArrayGet => {
                 // note: SQL is 1-indexed, not 0-indexed
                 self.visit_binary(|e, idx: Expr| {

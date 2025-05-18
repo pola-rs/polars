@@ -48,7 +48,7 @@ use super::*;
 // - changing a name, type, or meaning of a field or an enum variant
 // - changing a default value of a field or a default enum variant
 // - restricting the range of allowed values a field can have
-pub static DSL_VERSION: (u16, u16) = (3, 1);
+pub static DSL_VERSION: (u16, u16) = (4, 1);
 static DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -117,6 +117,18 @@ pub enum DslPlan {
         input: Arc<DslPlan>,
         exprs: Vec<Expr>,
         options: ProjectionOptions,
+    },
+    /// Match / Evolve into a schema
+    MatchToSchema {
+        input: Arc<DslPlan>,
+        /// The schema to match to.
+        ///
+        /// This is also always the output schema.
+        match_schema: SchemaRef,
+
+        per_column: Arc<[MatchToSchemaPerColumn]>,
+
+        extra_columns: ExtraColumnsPolicy,
     },
     /// Remove duplicates from the table
     Distinct {
@@ -196,6 +208,7 @@ impl Clone for DslPlan {
             Self::GroupBy { input, keys, aggs,  apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
             Self::Join { input_left, input_right, left_on, right_on, predicates, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone(), predicates: predicates.clone() },
             Self::HStack { input, exprs, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(),  options: options.clone() },
+            Self::MatchToSchema { input, match_schema, per_column, extra_columns } => Self::MatchToSchema { input: input.clone(), match_schema: match_schema.clone(), per_column: per_column.clone(), extra_columns: *extra_columns },
             Self::Distinct { input, options } => Self::Distinct { input: input.clone(), options: options.clone() },
             Self::Sort {input,by_column, slice, sort_options } => Self::Sort { input: input.clone(), by_column: by_column.clone(), slice: slice.clone(), sort_options: sort_options.clone() },
             Self::Slice { input, offset, len } => Self::Slice { input: input.clone(), offset: offset.clone(), len: len.clone() },

@@ -45,6 +45,5 @@ Or in Python:
 
 Both flows described above are for interactive logins where a person is present in the process. For
 non-interactive workflows such as orchestration tools there are service accounts. These allow you to
-login programmatically. See the
-[Using service accounts](https://docs.pola.rs/polars-cloud/explain/authentication/) page for more
-information.
+login programmatically. See the page on how to set up and
+[use service acccounts](service-accounts.md) for more information.

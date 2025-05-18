@@ -30,8 +30,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "is_in")]
-    fn list_contains(&self, other: PyExpr) -> Self {
-        self.inner.clone().list().contains(other.inner).into()
+    fn list_contains(&self, other: PyExpr, nulls_equal: bool) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .contains(other.inner, nulls_equal)
+            .into()
     }
 
     #[cfg(feature = "list_count")]
@@ -224,7 +228,7 @@ impl PyExpr {
         &self,
         width_strat: Wrap<ListToStructWidthStrategy>,
         name_gen: Option<PyObject>,
-        upper_bound: usize,
+        upper_bound: Option<usize>,
     ) -> PyResult<Self> {
         let name_gen = name_gen.map(|lambda| {
             NameGenerator::from_func(move |idx: usize| {
