@@ -55,7 +55,6 @@ proptest = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 
 [dev-dependencies]
-
 # used to run formal property testing
 arrow = { workspace = true, features = ["proptest"] }
 proptest = { workspace = true }
