@@ -960,7 +960,7 @@ class ListNameSpace:
 
         Parameters
         ----------
-        expr
+        predicate
             A boolean expression evaluated on each list element.
             Use `pl.element()` to refer to the current element.
 
