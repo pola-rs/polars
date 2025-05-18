@@ -98,7 +98,7 @@ io_avro_async = ["avro-schema/async"]
 # the compute kernels. Disabling this significantly reduces compile time.
 compute_aggregate = []
 compute_arithmetics_decimal = []
-compute_arithmetics = [ "compute_arithmetics_decimal"]
+compute_arithmetics = ["compute_arithmetics_decimal"]
 compute_bitwise = []
 compute_boolean = []
 compute_boolean_kleene = []
