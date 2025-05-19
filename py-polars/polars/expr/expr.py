@@ -2402,6 +2402,7 @@ class Expr:
         self,
         element: IntoExpr | np.ndarray[Any, Any],
         side: SearchSortedSide = "any",
+        *,
         descending: bool = False,
     ) -> Expr:
         """

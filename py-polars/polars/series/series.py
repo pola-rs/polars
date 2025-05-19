@@ -3519,6 +3519,7 @@ class Series:
         self,
         element: NonNestedLiteral | None,
         side: SearchSortedSide = ...,
+        *,
         descending: bool = ...,
     ) -> int: ...
 
@@ -3527,6 +3528,7 @@ class Series:
         self,
         element: list[NonNestedLiteral | None] | np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
+        *,
         descending: bool = ...,
     ) -> Series: ...
 
@@ -3534,6 +3536,7 @@ class Series:
         self,
         element: IntoExpr | np.ndarray[Any, Any] | None,
         side: SearchSortedSide = "any",
+        *,
         descending: bool = False,
     ) -> int | Series:
         """
@@ -3587,7 +3590,7 @@ class Series:
                 6
         ]
         """
-        df = F.select(F.lit(self).search_sorted(element, side, descending))
+        df = F.select(F.lit(self).search_sorted(element, side, descending=descending))
         if isinstance(element, (list, Series, pl.Expr)):
             return df.to_series()
         elif _check_for_numpy(element) and isinstance(element, np.ndarray):
