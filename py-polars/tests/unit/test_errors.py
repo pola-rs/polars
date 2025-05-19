@@ -565,16 +565,16 @@ def test_empty_inputs_error() -> None:
         (
             "d",
             pl.datetime_range(
-                datetime.now(),
-                datetime.now(),
-                interval="2345ns",
-                time_unit="ns",
+                datetime(2025, 1, 1),
+                datetime(2025, 1, 2),
+                interval="1h",
+                time_unit="ms",
                 eager=True,
             ),
             None,
         ),
         ("d", [time(10, 30)], None),
-        ("e", [datetime(1999, 12, 31, 10, 30)], None),
+        ("e", [datetime(1999, 12, 31, 0, 0)], [False, True, None]),
         ("f", ["xx", "zz"], None),
     ],
 )
