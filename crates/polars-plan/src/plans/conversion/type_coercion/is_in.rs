@@ -120,18 +120,32 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
             polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data", &type_other, &type_left)
         },
+        (DataType::Date, dt_rhs @ DataType::Datetime(_, _)) => IsInTypeCoercionResult::SelfCast {
+            dtype: dt_rhs.clone(),
+            strict: false,
+        },
         // can't check for more granular time_unit in less-granular time_unit data,
         // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
-        (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => {
-            if lhs_unit <= rhs_unit {
+        (DataType::Datetime(lhs_unit, _), dt_rhs @ DataType::Datetime(rhs_unit, _)) => {
+            if lhs_unit == rhs_unit {
                 return Ok(None);
+            } else if lhs_unit < rhs_unit {
+                IsInTypeCoercionResult::SelfCast {
+                    dtype: dt_rhs.clone(),
+                    strict: false,
+                }
             } else {
                 polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit)
             }
         },
-        (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
-            if lhs_unit <= rhs_unit {
+        (DataType::Duration(lhs_unit), dt_rhs @ DataType::Duration(rhs_unit)) => {
+            if lhs_unit == rhs_unit {
                 return Ok(None);
+            } else if lhs_unit < rhs_unit {
+                IsInTypeCoercionResult::SelfCast {
+                    dtype: dt_rhs.clone(),
+                    strict: false,
+                }
             } else {
                 polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
             }
@@ -172,7 +186,6 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     // @HACK: `is_in` does supertype casting between primitive numerics, which
                     // honestly makes very little sense. To stay backwards compatible we keep this,
                     // but please in 2.0 remove this.
-
                     let super_type =
                         polars_core::utils::try_get_supertype(&type_left, type_other_inner)?;
                     let other_type = match &type_other {
