@@ -3580,7 +3580,9 @@ class Series:
         ]
         """
         df = F.select(F.lit(self).search_sorted(element, side))
-        if isinstance(element, (list, Series, pl.Expr, np.ndarray)):
+        if isinstance(element, (list, Series, pl.Expr)):
+            return df.to_series()
+        elif _check_for_numpy(element) and isinstance(element, np.ndarray):
             return df.to_series()
         else:
             return df.item()
