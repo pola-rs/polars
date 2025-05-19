@@ -2,7 +2,7 @@
   description = "A basic Nix Flake for eachDefaultSystem";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.11";
+    nixpkgs.url = "github:LucioFranco/nixpkgs/lucio/nixos-24.11-patched-f9ebe33";
     utils.url = "github:numtide/flake-utils";
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
@@ -935,6 +935,10 @@
             src = ./.;
             cargoDeps = pkgs.rustPlatform.importCargoLock {
               lockFile = ./Cargo.lock;
+              outputHashes = {
+                  "pyo3-0.24.2" = "sha256-0V4cT3DstG9mZvdIVZXzoQlNyvtBuLOvlMe1XDZp3/0=";
+                  "tikv-jemalloc-sys-0.6.0+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7" = "sha256-nvXKBd5tKSe4hPTtMKriYhlgAML9gdDHZG8nNRzgjXM=";
+              };
             };
           };
       }
