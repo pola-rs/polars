@@ -1,12 +1,11 @@
 use crate::prelude::ArrowTimeUnit;
 
+// These must be listed from smallest to largest for Ord/PartialOrd to derive proper ordering.
 #[derive(Copy, Clone, Debug, PartialEq, Ord, PartialOrd, Eq, Hash)]
 #[cfg_attr(
     any(feature = "serde-lazy", feature = "serde"),
     derive(serde::Serialize, serde::Deserialize)
 )]
-
-// These must be listed from smallest to largest for Ord/PartialOrd to derive proper ordering.
 pub enum TimeUnit {
     Milliseconds,
     Microseconds,
