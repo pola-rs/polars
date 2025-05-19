@@ -81,3 +81,20 @@ def test_vstack_with_nested_nulls() -> None:
     out = a.vstack(b)
     expected = pl.DataFrame({"x": [[3.5], [None]]}, schema={"x": pl.List(pl.Float32)})
     assert_frame_equal(out, expected)
+
+
+def test_vstack_bad_input_type() -> None:
+    a = pl.DataFrame({"x": [1, 2, 3]})
+    b = pl.DataFrame({"x": [4, 5, 6]})
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+    ):
+        a.vstack(pl.Series(b))  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+    ):
+        a.vstack(b.lazy())  # type: ignore[arg-type]
