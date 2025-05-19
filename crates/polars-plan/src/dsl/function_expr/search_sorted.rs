@@ -1,6 +1,10 @@
 use super::*;
 
-pub(super) fn search_sorted_impl(s: &mut [Column], side: SearchSortedSide, descending: bool) -> PolarsResult<Column> {
+pub(super) fn search_sorted_impl(
+    s: &mut [Column],
+    side: SearchSortedSide,
+    descending: bool,
+) -> PolarsResult<Column> {
     let sorted_array = &s[0];
     let search_value = &s[1];
 
