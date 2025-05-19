@@ -1,4 +1,4 @@
-# From local to cloud query execution
+# Workflow tips
 
 Data processing and analytics often begins small but can quickly grow beyond the capabilities of
 your local machine. A typical workflow starts with exploring a sample dataset locally, developing

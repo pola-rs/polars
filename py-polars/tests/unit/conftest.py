@@ -7,7 +7,7 @@ import string
 import sys
 from contextlib import contextmanager
 from functools import wraps
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
 import pytest
@@ -315,3 +315,17 @@ def with_string_cache_if_auto_streaming(f: Any) -> Any:
             return f(*args, **kwargs)
 
     return with_cache
+
+
+def time_func(func: Callable[[], Any], *, iterations: int = 3) -> float:
+    """Minimum time over 3 iterations."""
+    from time import perf_counter
+
+    times = []
+    for _ in range(iterations):
+        t = perf_counter()
+        func()
+        times.append(perf_counter() - t)
+        times = [min(times)]
+
+    return min(times)

@@ -207,7 +207,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
                 .as_any_mut()
                 .downcast_mut::<DateChunked>()
                 .unwrap()
-                .0,
+                .phys,
         ))
     }
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {

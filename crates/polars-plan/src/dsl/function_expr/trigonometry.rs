@@ -116,7 +116,7 @@ where
     T::Native: Float,
     ChunkedArray<T>: IntoColumn,
 {
-    let dtype = T::get_dtype();
+    let dtype = T::get_static_dtype();
     let x = x.cast(&dtype)?;
     let x = y
         .unpack_series_matching_type(x.as_materialized_series())

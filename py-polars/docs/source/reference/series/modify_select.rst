@@ -39,6 +39,7 @@ Manipulation/selection
     Series.qcut
     Series.rechunk
     Series.rename
+    Series.repeat_by
     Series.reshape
     Series.reverse
     Series.rle

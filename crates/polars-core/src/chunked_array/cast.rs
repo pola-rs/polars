@@ -513,6 +513,25 @@ impl ChunkCast for ListChunked {
                     ))
                 }
             },
+            #[cfg(feature = "dtype-u8")]
+            Binary => {
+                polars_ensure!(
+                    matches!(self.inner_dtype(), UInt8),
+                    InvalidOperation: "cannot cast List type (inner: '{:?}', to: '{:?}')",
+                    self.inner_dtype(),
+                    dtype,
+                );
+                let chunks = cast_chunks(self.chunks(), &DataType::Binary, options)?;
+
+                // SAFETY: we just cast so the dtype matches.
+                unsafe {
+                    Ok(Series::from_chunks_and_dtype_unchecked(
+                        self.name().clone(),
+                        chunks,
+                        &DataType::Binary,
+                    ))
+                }
+            },
             _ => {
                 polars_bail!(
                     InvalidOperation: "cannot cast List type (inner: '{:?}', to: '{:?}')",

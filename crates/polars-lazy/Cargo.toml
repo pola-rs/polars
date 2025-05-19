@@ -109,6 +109,7 @@ dtype-full = [
 dtype-array = [
   "polars-plan/dtype-array",
   "polars-pipe?/dtype-array",
+  "polars-stream?/dtype-array",
   "polars-ops/dtype-array",
   "polars-expr/dtype-array",
 ]
@@ -172,6 +173,7 @@ offset_by = ["polars-plan/offset_by"]
 trigonometry = ["polars-plan/trigonometry"]
 sign = ["polars-plan/sign"]
 timezones = ["polars-plan/timezones"]
+list_filter = ["polars-ops/list_filter", "polars-plan/list_filter"]
 list_gather = ["polars-ops/list_gather", "polars-plan/list_gather"]
 list_count = ["polars-ops/list_count", "polars-plan/list_count"]
 array_count = ["polars-ops/array_count", "polars-plan/array_count", "dtype-array"]
@@ -376,6 +378,7 @@ features = [
   "list_count",
   "list_drop_nulls",
   "list_eval",
+  "list_filter",
   "list_gather",
   "list_sample",
   "list_sets",

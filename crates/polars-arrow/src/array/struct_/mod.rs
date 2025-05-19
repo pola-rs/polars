@@ -8,6 +8,8 @@ mod ffi;
 pub(super) mod fmt;
 mod iterator;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 /// A [`StructArray`] is a nested [`Array`] with an optional validity representing
 /// multiple [`Array`] with the same number of rows.

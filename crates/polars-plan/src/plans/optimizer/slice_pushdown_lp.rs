@@ -15,14 +15,16 @@ mod inner {
         #[expect(unused)]
         pub new_streaming: bool,
         scratch: UnitVec<Node>,
+        pub(super) maintain_errors: bool,
     }
 
     impl SlicePushDown {
-        pub fn new(streaming: bool, new_streaming: bool) -> Self {
+        pub fn new(streaming: bool, maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
                 streaming,
                 new_streaming,
                 scratch: unitvec![],
+                maintain_errors,
             }
         }
 
@@ -61,6 +63,7 @@ fn can_pushdown_slice_past_projections(
     exprs: &[ExprIR],
     arena: &Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
+    maintain_errors: bool,
 ) -> (bool, bool) {
     scratch.clear();
 
@@ -81,6 +84,8 @@ fn can_pushdown_slice_past_projections(
         let mut has_column = false;
         let mut literals_all_scalar = true;
 
+        let mut pd_group = ExprPushdownGroup::Pushable;
+
         while let Some(node) = scratch.pop() {
             let ae = arena.get(node);
 
@@ -93,7 +98,10 @@ fn can_pushdown_slice_past_projections(
                 _ => {},
             }
 
-            if !permits_filter_pushdown(scratch, ae, arena) {
+            if pd_group
+                .update_with_expr(scratch, ae, arena)
+                .blocks_pushdown(maintain_errors)
+            {
                 return (false, false);
             }
         }
@@ -216,6 +224,7 @@ impl SlicePushDown {
                 mut unified_scan_args,
                 predicate,
                 scan_type,
+                id: _,
             }, Some(state)) if predicate.is_none() && match &*scan_type {
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet { .. } => true,
@@ -245,6 +254,7 @@ impl SlicePushDown {
                     scan_type,
                     unified_scan_args,
                     predicate,
+                    id: Default::default(),
                 };
 
                 Ok(lp)
@@ -436,7 +446,8 @@ impl SlicePushDown {
             }
             // there is state, inspect the projection to determine how to deal with it
             (Select {input, expr, schema, options}, Some(_)) => {
-                if can_pushdown_slice_past_projections(&expr, expr_arena, self.empty_nodes_scratch_mut()).1 {
+                let maintain_errors = self.maintain_errors;
+                if can_pushdown_slice_past_projections(&expr, expr_arena, self.empty_nodes_scratch_mut(), maintain_errors).1 {
                     let lp = Select {input, expr, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
                 }
@@ -447,7 +458,8 @@ impl SlicePushDown {
                 }
             }
             (HStack {input, exprs, schema, options}, _) => {
-                let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, self.empty_nodes_scratch_mut());
+                let maintain_errors = self.maintain_errors;
+                let (can_pushdown, can_pushdown_and_any_expr_has_column) = can_pushdown_slice_past_projections(&exprs, expr_arena, self.empty_nodes_scratch_mut(), maintain_errors);
 
                 if can_pushdown_and_any_expr_has_column || (
                     // If the schema length is greater then an input column is being projected, so

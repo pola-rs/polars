@@ -6,6 +6,7 @@ extend-exclude = [
   "dists.dss",
   "**/images/*",
   "**/py-polars/polars/_utils/nest_asyncio.py",
+  "*.nix",
 ]
 ignore-hidden = false
 

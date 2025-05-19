@@ -139,14 +139,14 @@ impl DataType {
     }
 
     pub fn from_arrow_field(field: &ArrowField) -> DataType {
-        Self::from_arrow(&field.dtype, true, field.metadata.as_deref())
+        Self::from_arrow(&field.dtype, field.metadata.as_deref())
     }
 
     pub fn from_arrow_dtype(dt: &ArrowDataType) -> DataType {
-        Self::from_arrow(dt, true, None)
+        Self::from_arrow(dt, None)
     }
 
-    pub fn from_arrow(dt: &ArrowDataType, bin_to_view: bool, md: Option<&Metadata>) -> DataType {
+    pub fn from_arrow(dt: &ArrowDataType, md: Option<&Metadata>) -> DataType {
         match dt {
             ArrowDataType::Null => DataType::Null,
             ArrowDataType::UInt8 => DataType::UInt8,
@@ -210,7 +210,7 @@ impl DataType {
                 ) {
                     DataType::Categorical(None, Default::default())
                 } else {
-                    Self::from_arrow(value_type, bin_to_view, None)
+                    Self::from_arrow(value_type, None)
                 }
             },
             #[cfg(feature = "dtype-struct")]
@@ -239,13 +239,15 @@ impl DataType {
                 DataType::String
             },
             ArrowDataType::BinaryView => DataType::Binary,
-            ArrowDataType::LargeBinary | ArrowDataType::Binary => {
-                if bin_to_view {
-                    DataType::Binary
-                } else {
+            ArrowDataType::LargeBinary if md.is_some() => {
+                let md = md.unwrap();
+                if md.maintain_type() {
                     DataType::BinaryOffset
+                } else {
+                    DataType::Binary
                 }
             },
+            ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::Binary,
             ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
             ArrowDataType::Map(inner, _is_sorted) => {
                 DataType::List(Self::from_arrow_field(inner).boxed())

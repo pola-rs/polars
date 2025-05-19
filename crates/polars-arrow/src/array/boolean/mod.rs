@@ -17,6 +17,8 @@ mod mutable;
 pub use mutable::*;
 mod builder;
 pub use builder::*;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 /// A [`BooleanArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<bool>>`.
 /// It implements [`Array`].

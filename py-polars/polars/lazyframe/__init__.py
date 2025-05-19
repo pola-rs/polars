@@ -1,9 +1,9 @@
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.frame import LazyFrame
-from polars.lazyframe.opt_flags import OptFlags
+from polars.lazyframe.opt_flags import QueryOptFlags
 
 __all__ = [
     "GPUEngine",
     "LazyFrame",
-    "OptFlags",
+    "QueryOptFlags",
 ]

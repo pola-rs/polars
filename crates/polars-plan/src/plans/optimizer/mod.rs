@@ -64,6 +64,10 @@ pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
     PlHashMap::with_capacity(std::cmp::min(max_len.unwrap_or(HASHMAP_SIZE), HASHMAP_SIZE))
 }
 
+pub(crate) fn pushdown_maintain_errors() -> bool {
+    std::env::var("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS").as_deref() == Ok("1")
+}
+
 pub fn optimize(
     logical_plan: DslPlan,
     mut opt_flags: OptFlags,
@@ -111,6 +115,9 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     let comm_subexpr_elim = opt_flags.contains(OptFlags::COMM_SUBEXPR_ELIM);
     #[cfg(not(feature = "cse"))]
     let comm_subexpr_elim = false;
+
+    // Note: This can be in opt_flags in the future if needed.
+    let pushdown_maintain_errors = pushdown_maintain_errors();
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
@@ -184,15 +191,14 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     }
 
     if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt =
-            PredicatePushDown::new(expr_eval, opt_flags.new_streaming());
+        let mut predicate_pushdown_opt = PredicatePushDown::new(
+            expr_eval,
+            pushdown_maintain_errors,
+            opt_flags.new_streaming(),
+        );
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
-    }
-
-    if opt_flags.cluster_with_columns() {
-        cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
     }
 
     // Make sure it is after predicate pushdown
@@ -212,8 +218,15 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     }
 
     if opt_flags.slice_pushdown() {
-        let mut slice_pushdown_opt =
-            SlicePushDown::new(opt_flags.streaming(), opt_flags.new_streaming());
+        let mut slice_pushdown_opt = SlicePushDown::new(
+            opt_flags.streaming(),
+            // We don't maintain errors on slice as the behavior is much more predictable that way.
+            //
+            // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
+            // the new-streaming engine still may not error due to early-stopping.
+            false, // maintain_errors
+            opt_flags.new_streaming(),
+        );
         let alp = lp_arena.take(lp_top);
         let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
 
@@ -222,6 +235,7 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
         // Expressions use the stack optimizer.
         rules.push(Box::new(slice_pushdown_opt));
     }
+
     // This optimization removes branches, so we must do it when type coercion
     // is completed.
     if opt_flags.simplify_expr() {
@@ -237,6 +251,10 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
+    if opt_flags.cluster_with_columns() {
+        cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
+    }
+
     if _cse_plan_changed
         && get_members_opt!()
             .is_some_and(|members| members.has_joins_or_unions && members.has_cache)
@@ -249,6 +267,7 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
             scratch,
             expr_eval,
             verbose,
+            pushdown_maintain_errors,
             opt_flags.new_streaming(),
         )?;
     }

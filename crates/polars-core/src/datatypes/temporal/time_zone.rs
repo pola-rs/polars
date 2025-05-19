@@ -88,6 +88,11 @@ impl TimeZone {
         this == other || this.inner == "*" || other.inner == "*"
     }
 
+    /// Equality where `None` is treated as UTC.
+    pub fn eq_none_as_utc(this: Option<&TimeZone>, other: Option<&TimeZone>) -> bool {
+        this.unwrap_or(&Self::UTC) == other.unwrap_or(&Self::UTC)
+    }
+
     pub fn _canonical_timezone_impl(tz: Option<PlSmallStr>) -> Option<PlSmallStr> {
         match tz.as_deref() {
             Some("") | None => None,

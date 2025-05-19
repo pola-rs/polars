@@ -49,6 +49,7 @@ from polars._utils.various import (
     no_default,
     parse_version,
     qualified_type_name,
+    require_same_type,
     scale_bytes,
     sphinx_accessor,
     warn_null_comparison,
@@ -2614,25 +2615,25 @@ class Series:
         Parameters
         ----------
         sort
-            Sort the output by count in descending order.
-            If set to `False` (default), the order of the output is random.
+            Sort the output by count, in descending order.
+            If set to `False` (default), the order is non-deterministic.
         parallel
             Execute the computation in parallel.
 
             .. note::
-                This option should likely not be enabled in a group by context,
-                as the computation is already parallelized per group.
+                This option should likely *not* be enabled in a `group_by` context,
+                as the computation will already be parallelized per group.
         name
-            Give the resulting count column a specific name;
-            if `normalize` is True defaults to "proportion",
-            otherwise defaults to "count".
+            Give the resulting count column a specific name; if `normalize` is
+            True this defaults to "proportion", otherwise defaults to "count".
         normalize
-            If true gives relative frequencies of the unique values
+            If True, the count is returned as the relative frequency of unique
+            values normalized to 1.0.
 
         Returns
         -------
         DataFrame
-            Mapping of unique values to their count.
+            Columns map the unique values to their count (or proportion).
 
         Examples
         --------
@@ -2662,12 +2663,21 @@ class Series:
         │ red   ┆ 2   │
         │ green ┆ 1   │
         └───────┴─────┘
+
+        Return the count as a relative frequency, normalized to 1.0:
+        >>> s.value_counts(sort=True, normalize=True, name="fraction")
+        shape: (3, 2)
+        ┌───────┬──────────┐
+        │ color ┆ fraction │
+        │ ---   ┆ ---      │
+        │ str   ┆ f64      │
+        ╞═══════╪══════════╡
+        │ blue  ┆ 0.5      │
+        │ red   ┆ 0.333333 │
+        │ green ┆ 0.166667 │
+        └───────┴──────────┘
         """
-        if name is None:
-            if normalize:
-                name = "proportion"
-            else:
-                name = "count"
+        name = name or ("proportion" if normalize else "count")
         return pl.DataFrame._from_pydf(
             self._s.value_counts(
                 sort=sort, parallel=parallel, name=name, normalize=normalize
@@ -3046,6 +3056,7 @@ class Series:
         >>> a.n_chunks()
         2
         """
+        require_same_type(self, other)
         try:
             self._s.append(other._s)
         except RuntimeError as exc:
@@ -3109,6 +3120,7 @@ class Series:
         >>> a.n_chunks()
         1
         """
+        require_same_type(self, other)
         try:
             self._s.extend(other._s)
         except RuntimeError as exc:
@@ -4142,6 +4154,7 @@ class Series:
         >>> s1.equals(s2)
         False
         """
+        require_same_type(self, other)
         return self._s.equals(
             other._s,
             check_dtypes=check_dtypes,
@@ -5005,14 +5018,14 @@ class Series:
         value
             Value used to fill NaN values.
 
-        Warnings
-        --------
-        Note that floating point NaNs (Not a Number) are not missing values.
-        To replace missing values, use :func:`fill_null`.
-
         See Also
         --------
         fill_null
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To fill null values, use :func:`fill_null`.
 
         Examples
         --------
@@ -5052,6 +5065,11 @@ class Series:
         backward_fill
         fill_nan
         forward_fill
+
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To fill NaN values, use :func:`fill_nan`.
 
         Examples
         --------
@@ -5165,6 +5183,15 @@ class Series:
         """
         Round underlying floating point data by `decimals` digits.
 
+        The default rounding mode is "half to even" (also known as "bankers' rounding").
+
+        Parameters
+        ----------
+        decimals
+            Number of decimals to round by.
+        mode : {'half_to_even', 'half_away_from_zero'}
+            Rounding mode.
+
         Examples
         --------
         >>> s = pl.Series("a", [1.12345, 2.56789, 3.901234])
@@ -5177,10 +5204,20 @@ class Series:
                 3.9
         ]
 
-        Parameters
-        ----------
-        decimals
-            number of decimals to round by.
+        >>> s = pl.Series([-3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5])
+        >>> s.round(mode="half_to_even")
+        shape: (8,)
+        Series: '' [f64]
+        [
+            -4.0
+            -2.0
+            -2.0
+            -0.0
+            0.0
+            2.0
+            2.0
+            4.0
+        ]
         """
 
     def round_sig_figs(self, digits: int) -> Series:
@@ -5697,6 +5734,7 @@ class Series:
                 5
         ]
         """
+        require_same_type(self, other)
         return self._from_pyseries(self._s.zip_with(mask._s, other._s))
 
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")

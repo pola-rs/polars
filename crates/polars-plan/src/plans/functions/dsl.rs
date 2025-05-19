@@ -140,7 +140,7 @@ impl DslFunction {
             },
             DslFunction::Unnest(selectors) => {
                 let columns = expand_selectors(selectors, input_schema, &[])?;
-                validate_columns_in_input(columns.as_ref(), input_schema, "explode")?;
+                validate_columns_in_input(columns.as_ref(), input_schema, "unnest")?;
                 FunctionIR::Unnest { columns }
             },
             #[cfg(feature = "python")]

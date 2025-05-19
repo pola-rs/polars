@@ -189,7 +189,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
                 .as_any_mut()
                 .downcast_mut::<TimeChunked>()
                 .unwrap()
-                .0,
+                .phys,
         ))
     }
 

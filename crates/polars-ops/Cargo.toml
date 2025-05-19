@@ -17,7 +17,7 @@ polars-schema = { workspace = true }
 polars-utils = { workspace = true }
 
 aho-corasick = { workspace = true, optional = true }
-argminmax = { version = "0.6.2", default-features = false, features = ["float"] }
+argminmax = { version = "0.6.3", default-features = false, features = ["float"] }
 arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
 bytemuck = { workspace = true }
@@ -128,6 +128,7 @@ iejoin = []
 semi_anti_join = []
 array_any_all = ["dtype-array"]
 array_count = ["dtype-array"]
+list_filter = []
 list_gather = []
 list_sets = []
 list_any_all = []

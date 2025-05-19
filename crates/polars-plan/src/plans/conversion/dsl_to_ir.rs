@@ -2,7 +2,9 @@ use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::hive_partitions_from_paths;
+use polars_core::chunked_array::cast::CastOptions;
 
+use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::plans::conversion::expr_expansion::expand_selectors;
@@ -76,6 +78,8 @@ pub fn to_alp(
         lp_arena,
         conversion_optimizer,
         opt_flags,
+        nodes_scratch: &mut unitvec![],
+        pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
@@ -114,6 +118,8 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) lp_arena: &'a mut Arena<IR>,
     pub(super) conversion_optimizer: ConversionOptimizer,
     pub(super) opt_flags: &'a mut OptFlags,
+    pub(super) nodes_scratch: &'a mut UnitVec<Node>,
+    pub(super) pushdown_maintain_errors: bool,
 }
 
 pub(super) fn run_conversion(
@@ -369,6 +375,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         scan_type,
                         output_schema: None,
                         unified_scan_args,
+                        id: Default::default(),
                     }
                 };
 
@@ -449,54 +456,46 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let predicate_ae = to_expr_ir(predicate.clone(), ctxt.expr_arena)?;
 
-            // TODO: We could do better here by using `pushdown_eligibility()`
-            return if ctxt.opt_flags.predicate_pushdown()
-                && permits_filter_pushdown_rec(
-                    ctxt.expr_arena.get(predicate_ae.node()),
+            if ctxt.opt_flags.predicate_pushdown() {
+                ctxt.nodes_scratch.clear();
+
+                if let Some(SplitPredicates { pushable, fallible }) = SplitPredicates::new(
+                    predicate_ae.node(),
                     ctxt.expr_arena,
+                    Some(ctxt.nodes_scratch),
+                    ctxt.pushdown_maintain_errors,
                 ) {
-                // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
-                // push them down independently. Especially if they refer columns from different tables
-                // this will be more performant.
-                // So:
-                // filter[foo == bar & ham == spam]
-                // filter [foo == bar]
-                // filter [ham == spam]
-                let mut predicates = vec![];
+                    let mut update_input = |predicate: Node| -> PolarsResult<()> {
+                        let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
+                        ctxt.conversion_optimizer
+                            .push_scratch(predicate.node(), ctxt.expr_arena);
+                        let lp = IR::Filter { input, predicate };
+                        input = run_conversion(lp, ctxt, "filter")?;
 
-                let mut stack = vec![predicate_ae.node()];
-                while let Some(n) = stack.pop() {
-                    if let AExpr::BinaryExpr {
-                        left,
-                        op: Operator::And | Operator::LogicalAnd,
-                        right,
-                    } = ctxt.expr_arena.get(n)
-                    {
-                        stack.push(*left);
-                        stack.push(*right);
-                    } else {
-                        predicates.push(n)
+                        Ok(())
+                    };
+
+                    // Pushables first, then fallible.
+
+                    for predicate in pushable {
+                        update_input(predicate)?;
                     }
-                }
 
-                for predicate in predicates {
-                    let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
-                    ctxt.conversion_optimizer
-                        .push_scratch(predicate.node(), ctxt.expr_arena);
-                    let lp = IR::Filter { input, predicate };
-                    input = run_conversion(lp, ctxt, "filter")?;
-                }
+                    if let Some(node) = fallible {
+                        update_input(node)?;
+                    }
 
-                Ok(input)
-            } else {
-                ctxt.conversion_optimizer
-                    .push_scratch(predicate_ae.node(), ctxt.expr_arena);
-                let lp = IR::Filter {
-                    input,
-                    predicate: predicate_ae,
+                    return Ok(input);
                 };
-                run_conversion(lp, ctxt, "filter")
             };
+
+            ctxt.conversion_optimizer
+                .push_scratch(predicate_ae.node(), ctxt.expr_arena);
+            let lp = IR::Filter {
+                input,
+                predicate: predicate_ae,
+            };
+            return run_conversion(lp, ctxt, "filter");
         },
         DslPlan::Slice { input, offset, len } => {
             let input =
@@ -738,6 +737,124 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options,
             };
             return run_conversion(lp, ctxt, "with_columns");
+        },
+        DslPlan::MatchToSchema {
+            input,
+            match_schema,
+            per_column,
+            extra_columns,
+        } => {
+            let input =
+                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
+            assert_eq!(per_column.len(), match_schema.len());
+
+            if input_schema.as_ref() == &match_schema {
+                return Ok(input);
+            }
+
+            let mut exprs = Vec::with_capacity(match_schema.len());
+            let mut found_missing_columns = Vec::new();
+            let mut used_input_columns = 0;
+
+            for ((column, dtype), per_column) in match_schema.iter().zip(per_column.iter()) {
+                match input_schema.get(column) {
+                    None => match &per_column.missing_columns {
+                        MissingColumnsPolicyOrExpr::Raise => found_missing_columns.push(column),
+                        MissingColumnsPolicyOrExpr::Insert => exprs.push(Expr::Alias(
+                            Arc::new(Expr::Literal(LiteralValue::Scalar(Scalar::null(
+                                dtype.clone(),
+                            )))),
+                            column.clone(),
+                        )),
+                        MissingColumnsPolicyOrExpr::InsertWith(expr) => {
+                            exprs.push(Expr::Alias(Arc::new(expr.clone()), column.clone()))
+                        },
+                    },
+                    Some(input_dtype) if dtype == input_dtype => {
+                        used_input_columns += 1;
+                        exprs.push(Expr::Column(column.clone()))
+                    },
+                    Some(input_dtype) => {
+                        let from_dtype = input_dtype;
+                        let to_dtype = dtype;
+
+                        let policy = CastColumnsPolicy {
+                            integer_upcast: per_column.integer_cast == UpcastOrForbid::Upcast,
+                            float_upcast: per_column.float_cast == UpcastOrForbid::Upcast,
+                            float_downcast: false,
+                            datetime_nanoseconds_downcast: false,
+                            datetime_convert_timezone: false,
+                            missing_struct_fields: per_column.missing_struct_fields,
+                            extra_struct_fields: per_column.extra_struct_fields,
+                        };
+
+                        let should_cast =
+                            policy.should_cast_column(column, to_dtype, from_dtype)?;
+
+                        let mut expr = Expr::Column(PlSmallStr::from_str(column));
+                        if should_cast {
+                            expr = Expr::Cast {
+                                expr: Arc::new(expr),
+                                dtype: to_dtype.clone(),
+                                options: CastOptions::NonStrict,
+                            };
+                        }
+
+                        used_input_columns += 1;
+                        exprs.push(expr);
+                    },
+                }
+            }
+
+            // Report the error for missing columns
+            if let Some(lst) = found_missing_columns.first() {
+                use std::fmt::Write;
+                let mut formatted = String::new();
+                write!(&mut formatted, "\"{}\"", found_missing_columns[0]).unwrap();
+                for c in &found_missing_columns[1..] {
+                    write!(&mut formatted, ", \"{c}\"").unwrap();
+                }
+
+                write!(&mut formatted, "\"{lst}\"").unwrap();
+                polars_bail!(SchemaMismatch: "missing columns in `match_to_schema`: {formatted}");
+            }
+
+            // Report the error for extra columns
+            if used_input_columns != input_schema.len()
+                && extra_columns == ExtraColumnsPolicy::Raise
+            {
+                let found_extra_columns = input_schema
+                    .iter_names()
+                    .filter(|n| !match_schema.contains(n))
+                    .collect::<Vec<_>>();
+
+                use std::fmt::Write;
+                let mut formatted = String::new();
+                write!(&mut formatted, "\"{}\"", found_extra_columns[0]).unwrap();
+                for c in &found_extra_columns[1..] {
+                    write!(&mut formatted, ", \"{c}\"").unwrap();
+                }
+
+                polars_bail!(SchemaMismatch: "extra columns in `match_to_schema`: {formatted}");
+            }
+
+            let exprs = to_expr_irs(exprs, ctxt.expr_arena)?;
+
+            ctxt.conversion_optimizer
+                .fill_scratch(&exprs, ctxt.expr_arena);
+            let lp = IR::Select {
+                input,
+                expr: exprs,
+                schema: match_schema.clone(),
+                options: ProjectionOptions {
+                    run_parallel: true,
+                    duplicate_check: false,
+                    should_broadcast: true,
+                },
+            };
+            return run_conversion(lp, ctxt, "match_to_schema");
         },
         DslPlan::Distinct { input, options } => {
             let input =

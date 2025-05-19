@@ -201,7 +201,7 @@ def test_count_compressed_ndjson(
     df = pl.DataFrame({"x": range(5)})
 
     with gzip.open(path, "wb") as f:
-        df.write_ndjson(f)
+        df.write_ndjson(f)  # type: ignore[call-overload]
 
     lf = pl.scan_ndjson(path).select(pl.len())
     assert_fast_count(lf, 5, capfd=capfd, monkeypatch=monkeypatch)

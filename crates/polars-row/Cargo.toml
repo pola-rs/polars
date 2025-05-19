@@ -16,3 +16,7 @@ polars-error = { workspace = true }
 polars-utils = { workspace = true }
 
 arrow = { workspace = true }
+
+[dev-dependencies]
+arrow = { workspace = true, features = ["proptest"] }
+proptest = { workspace = true }

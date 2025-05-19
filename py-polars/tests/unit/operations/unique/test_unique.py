@@ -47,7 +47,10 @@ def test_unique_predicate_pd() -> None:
                 .filter(pl.col("x") == "abc")
                 .filter(pl.col("z"))
             )
-            assert_frame_equal(q.collect(predicate_pushdown=False), q.collect())
+            assert_frame_equal(
+                q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+                q.collect(),
+            )
 
 
 def test_unique_on_list_df() -> None:
@@ -296,3 +299,15 @@ def test_unique_keep_last_with_slice_22470() -> None:
     result = lf.unique(keep="last", maintain_order=True).slice(3, 4).collect()
     expected = pl.DataFrame({"x": [3, 4, 5, 6]})
     assert_frame_equal(result, expected)
+
+
+def test_unique_booleans_22753() -> None:
+    assert_series_equal(
+        pl.Series([None, None, True] + [None] * 128).slice(3).unique(),
+        pl.Series([None], dtype=pl.Boolean()),
+    )
+
+    assert_series_equal(
+        pl.Series([None, None, True]).head(2).unique(),
+        pl.Series([None], dtype=pl.Boolean()),
+    )

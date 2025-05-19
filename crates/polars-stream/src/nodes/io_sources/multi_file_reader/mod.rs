@@ -30,8 +30,6 @@ use crate::graph::PortState;
 use crate::morsel::Morsel;
 use crate::nodes::ComputeNode;
 
-pub const DEFAULT_N_READERS_PRE_INIT: usize = 3;
-
 // Some parts are called MultiFileReader for now to avoid conflict with existing MultiScan.
 
 pub struct MultiFileReaderConfig {
@@ -59,7 +57,8 @@ pub struct MultiFileReaderConfig {
     pub num_pipelines: AtomicUsize,
     /// Number of readers to initialize concurrently. e.g. Parquet will want to fetch metadata in this
     /// step.
-    pub n_readers_pre_init: usize,
+    pub n_readers_pre_init: AtomicUsize,
+    pub max_concurrent_scans: AtomicUsize,
 
     pub verbose: bool,
 }
@@ -67,6 +66,16 @@ pub struct MultiFileReaderConfig {
 impl MultiFileReaderConfig {
     fn num_pipelines(&self) -> usize {
         self.num_pipelines
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn n_readers_pre_init(&self) -> usize {
+        self.n_readers_pre_init
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn max_concurrent_scans(&self) -> usize {
+        self.max_concurrent_scans
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
@@ -270,6 +279,16 @@ impl MultiScanState {
             .num_pipelines
             .store(num_pipelines, std::sync::atomic::Ordering::Relaxed);
 
+        config.n_readers_pre_init.store(
+            calc_n_readers_pre_init(num_pipelines, &config),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+
+        config.max_concurrent_scans.store(
+            calc_max_concurrent_scans(num_pipelines, &config),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+
         let (join_handle, send_phase_tx_to_bridge, bridge_state) =
             MultiScanTaskInitializer::new(config).spawn_background_tasks();
 
@@ -282,4 +301,41 @@ impl MultiScanState {
             join_handle,
         };
     }
+}
+
+fn calc_n_readers_pre_init(num_pipelines: usize, config: &MultiFileReaderConfig) -> usize {
+    if let Ok(v) = std::env::var("POLARS_NUM_READERS_PRE_INIT").map(|x| {
+        x.parse::<usize>()
+            .ok()
+            .filter(|x| *x > 0)
+            .unwrap_or_else(|| panic!("invalid value for POLARS_NUM_READERS_PRE_INIT: {}", x))
+    }) {
+        return v;
+    }
+
+    let max_files_with_slice = match &config.pre_slice {
+        // Calculate the max number of files assuming 1 row per file.
+        Some(v @ Slice::Positive { .. }) => v.end_position().max(1),
+        Some(Slice::Negative { .. }) | None => usize::MAX,
+    };
+
+    // Set this generously high, there are users who scan 10,000's of small files from the cloud.
+    num_pipelines
+        .saturating_add(3)
+        .min(max_files_with_slice)
+        .min(config.sources.len().max(1))
+        .min(128)
+}
+
+fn calc_max_concurrent_scans(num_pipelines: usize, config: &MultiFileReaderConfig) -> usize {
+    if let Ok(v) = std::env::var("POLARS_MAX_CONCURRENT_SCANS").map(|x| {
+        x.parse::<usize>()
+            .ok()
+            .filter(|x| *x > 0)
+            .unwrap_or_else(|| panic!("invalid value for POLARS_MAX_CONCURRENT_SCANS: {}", x))
+    }) {
+        return v;
+    }
+
+    num_pipelines.min(config.sources.len().max(1)).min(128)
 }

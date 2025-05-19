@@ -151,7 +151,7 @@ where
         }
 
         let array = PrimitiveArray::new(
-            T::get_dtype().to_arrow(CompatLevel::newest()),
+            T::get_static_dtype().to_arrow(CompatLevel::newest()),
             out.into(),
             Some(validity.into()),
         );
@@ -253,7 +253,7 @@ where
         }
 
         let array = PrimitiveArray::new(
-            T::get_dtype().to_arrow(CompatLevel::newest()),
+            T::get_static_dtype().to_arrow(CompatLevel::newest()),
             out.into(),
             Some(validity.into()),
         );

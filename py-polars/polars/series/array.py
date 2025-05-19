@@ -8,7 +8,6 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from datetime import date, datetime, time
 
     from polars import Series
     from polars._typing import IntoExpr, IntoExprColumn
@@ -497,9 +496,7 @@ class ArrayNameSpace:
         ]
         """
 
-    def contains(
-        self, item: float | str | bool | int | date | datetime | time | IntoExprColumn
-    ) -> Series:
+    def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Series:
         """
         Check if sub-arrays contain the given item.
 
@@ -507,6 +504,8 @@ class ArrayNameSpace:
         ----------
         item
             Item that will be checked for membership
+        nulls_equal : bool, default True
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------

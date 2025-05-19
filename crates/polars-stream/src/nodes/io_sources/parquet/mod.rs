@@ -227,10 +227,13 @@ impl FileReader for ParquetFileReader {
         // If are handling predicates we apply missing / cast columns policy here as those need to
         // happen before filtering. Otherwise we leave it to post.
         if let Some(predicate) = predicate.as_mut() {
-            if !matches!(cast_columns_policy, CastColumnsPolicy::ErrorOnMismatch) {
+            if cast_columns_policy != CastColumnsPolicy::ERROR_ON_MISMATCH {
                 unimplemented!("column casting w/ predicate in parquet")
             }
 
+            // Note: This currently could return a Some(_) for the case where
+            // there are struct fields ordered differently, but that should not
+            // affect predicates.
             CastColumns::try_init_from_policy_from_iter(
                 &cast_columns_policy,
                 &projected_schema,

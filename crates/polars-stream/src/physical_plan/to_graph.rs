@@ -521,8 +521,8 @@ fn to_graph_rec<'a>(
             let pre_slice = pre_slice.clone();
             let hive_parts = hive_parts.map(Arc::new);
             let include_file_paths = include_file_paths.clone();
-            let missing_columns_policy = missing_columns_policy.clone();
-            let extra_columns_policy = extra_columns_policy.clone();
+            let missing_columns_policy = *missing_columns_policy;
+            let extra_columns_policy = *extra_columns_policy;
             let cast_columns_policy = cast_columns_policy.clone();
 
             let verbose = config::verbose();
@@ -546,8 +546,8 @@ fn to_graph_rec<'a>(
                         cast_columns_policy,
                         // Initialized later
                         num_pipelines: AtomicUsize::new(0),
-                        n_readers_pre_init:
-                            nodes::io_sources::multi_file_reader::DEFAULT_N_READERS_PRE_INIT,
+                        n_readers_pre_init: AtomicUsize::new(0),
+                        max_concurrent_scans: AtomicUsize::new(0),
                         verbose,
                     },
                 )),
@@ -963,7 +963,7 @@ fn to_graph_rec<'a>(
             let include_file_paths = None;
             let missing_columns_policy = MissingColumnsPolicy::Raise;
             let extra_columns_policy = ExtraColumnsPolicy::Ignore;
-            let cast_columns_policy = CastColumnsPolicy::ErrorOnMismatch;
+            let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
             let verbose = config::verbose();
 
             ctx.graph.add_node(
@@ -985,8 +985,8 @@ fn to_graph_rec<'a>(
                         cast_columns_policy,
                         // Initialized later
                         num_pipelines: AtomicUsize::new(0),
-                        n_readers_pre_init:
-                            nodes::io_sources::multi_file_reader::DEFAULT_N_READERS_PRE_INIT,
+                        n_readers_pre_init: AtomicUsize::new(0),
+                        max_concurrent_scans: AtomicUsize::new(0),
                         verbose,
                     },
                 )),

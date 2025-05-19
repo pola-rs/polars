@@ -25,6 +25,8 @@ use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::ArrowDataType;
 
 pub mod physical_binary;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 pub trait Splitable: Sized {
     fn check_bound(&self, offset: usize) -> bool;
@@ -711,6 +713,8 @@ pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
 pub use values::ValueSize;
 
+#[cfg(feature = "proptest")]
+pub use self::boolean::proptest::boolean_array;
 pub(crate) use self::ffi::{FromFfi, ToFfi, offset_buffers_children_dictionary};
 use crate::{match_integer_type, with_match_primitive_type_full};
 

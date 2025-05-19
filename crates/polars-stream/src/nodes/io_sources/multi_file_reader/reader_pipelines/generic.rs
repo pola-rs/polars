@@ -9,7 +9,7 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::{ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
+use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
@@ -24,11 +24,9 @@ use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_columns::ini
 use crate::nodes::io_sources::multi_file_reader::extra_ops::{
     ExtraOperations, apply_extra_columns_policy,
 };
+use crate::nodes::io_sources::multi_file_reader::initialization::MultiScanTaskInitializer;
 use crate::nodes::io_sources::multi_file_reader::initialization::slice::{
     ResolvedSliceInfo, resolve_to_positive_slice,
-};
-use crate::nodes::io_sources::multi_file_reader::initialization::{
-    MultiScanTaskInitializer, max_concurrent_scans_config,
 };
 use crate::nodes::io_sources::multi_file_reader::post_apply_pipeline::PostApplyPool;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
@@ -95,7 +93,7 @@ impl MultiScanTaskInitializer {
         };
 
         let cast_columns_policy = self.config.cast_columns_policy.clone();
-        let missing_columns_policy = self.config.missing_columns_policy.clone();
+        let missing_columns_policy = self.config.missing_columns_policy;
         let include_file_paths = self.config.include_file_paths.clone();
 
         let extra_ops = ExtraOperations {
@@ -206,7 +204,7 @@ impl MultiScanTaskInitializer {
                 })
                 .buffered(
                     self.config
-                        .n_readers_pre_init
+                        .n_readers_pre_init()
                         .min(self.config.sources.len()),
                 )
         };
@@ -218,9 +216,7 @@ impl MultiScanTaskInitializer {
         let projected_file_schema = self.config.projected_file_schema.clone();
         let full_file_schema = self.config.full_file_schema.clone();
         let num_pipelines = self.config.num_pipelines();
-        let max_concurrent_scans = num_pipelines
-            .min(sources.len())
-            .min(max_concurrent_scans_config());
+        let max_concurrent_scans = self.config.max_concurrent_scans();
 
         let (started_reader_tx, started_reader_rx) =
             tokio::sync::mpsc::channel(max_concurrent_scans.max(2) - 1);
@@ -240,9 +236,9 @@ impl MultiScanTaskInitializer {
                     hive_parts,
                     final_output_schema,
                     projected_file_schema,
-                    missing_columns_policy: self.config.missing_columns_policy.clone(),
+                    missing_columns_policy: self.config.missing_columns_policy,
                     full_file_schema,
-                    extra_columns_policy: self.config.extra_columns_policy.clone(),
+                    extra_columns_policy: self.config.extra_columns_policy,
                 },
                 num_pipelines,
                 verbose,
@@ -312,13 +308,6 @@ impl ReaderStarter {
             // Set to IdxSize::MAX if we expect it to be unused. This way if it is incorrectly being
             // used it should cause an error.
             current_row_position = IdxSize::MAX;
-        }
-
-        if verbose {
-            eprintln!(
-                "[ReaderStarter]: max_concurrent_scans: {}",
-                max_concurrent_scans
-            )
         }
 
         let wait_group = WaitGroup::default();
@@ -453,6 +442,8 @@ impl ReaderStarter {
 
             // Note: We do set_external_columns later below to avoid blocking this loop.
             let predicate = if extra_ops_post.predicate.is_some()
+                // TODO: Support cast columns in parquet
+                && extra_ops_post.cast_columns_policy == CastColumnsPolicy::ERROR_ON_MISMATCH
                 && reader_capabilities.contains(ReaderCapabilities::PARTIAL_FILTER)
                 && extra_ops_post.row_index.is_none()
                 && extra_ops_post.pre_slice.is_none()

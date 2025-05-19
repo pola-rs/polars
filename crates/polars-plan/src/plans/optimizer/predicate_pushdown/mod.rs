@@ -40,16 +40,19 @@ mod inner {
         nodes_scratch: UnitVec<Node>,
         #[expect(unused)]
         pub(super) new_streaming: bool,
+        // Controls pushing filters past fallible projections
+        pub(super) maintain_errors: bool,
     }
 
     impl<'a> PredicatePushDown<'a> {
-        pub fn new(expr_eval: ExprEval<'a>, new_streaming: bool) -> Self {
+        pub fn new(expr_eval: ExprEval<'a>, maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
                 expr_eval,
                 verbose: verbose(),
                 block_at_cache: true,
                 nodes_scratch: unitvec![],
                 new_streaming,
+                maintain_errors,
             }
         }
 
@@ -119,12 +122,15 @@ impl PredicatePushDown<'_> {
             }
             let input = inputs[inputs.len() - 1];
 
+            let maintain_errors = self.maintain_errors;
             let (eligibility, alias_rename_map) = pushdown_eligibility(
                 &exprs,
                 &[],
                 &acc_predicates,
                 expr_arena,
                 self.empty_nodes_scratch_mut(),
+                maintain_errors,
+                lp_arena.get(input),
             )?;
 
             let local_predicates = match eligibility {
@@ -257,6 +263,10 @@ impl PredicatePushDown<'_> {
     ) -> PolarsResult<IR> {
         use IR::*;
 
+        // Note: The logic within the match block should ensure `acc_predicates` is left in a state
+        // where it contains only pushable exprs after it is done (although in some cases it may
+        // contain a single fallible expression).
+
         match lp {
             Filter {
                 // Note: We assume AND'ed predicates have already been split to separate IR filter
@@ -275,12 +285,16 @@ impl PredicatePushDown<'_> {
                 let tmp_key = temporary_unique_key(&acc_predicates);
                 acc_predicates.insert(tmp_key.clone(), predicate.clone());
 
+                let maintain_errors = self.maintain_errors;
+
                 let local_predicates = match pushdown_eligibility(
                     &[],
-                    &[predicate.clone()],
+                    &[(&tmp_key, predicate.clone())],
                     &acc_predicates,
                     expr_arena,
                     self.empty_nodes_scratch_mut(),
+                    maintain_errors,
+                    lp_arena.get(input),
                 )?
                 .0
                 {
@@ -348,6 +362,7 @@ impl PredicatePushDown<'_> {
                 scan_type,
                 unified_scan_args,
                 output_schema,
+                id: _,
             } => {
                 let mut blocked_names = Vec::with_capacity(2);
 
@@ -402,6 +417,7 @@ impl PredicatePushDown<'_> {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        id: Default::default(),
                     }
                 } else {
                     let lp = Scan {
@@ -412,6 +428,7 @@ impl PredicatePushDown<'_> {
                         unified_scan_args,
                         output_schema,
                         scan_type,
+                        id: Default::default(),
                     };
                     if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
@@ -606,31 +623,9 @@ impl PredicatePushDown<'_> {
                 acc_predicates,
             ),
             lp @ Union { .. } => {
-                if cfg!(debug_assertions) {
-                    for v in acc_predicates.values() {
-                        let ae = expr_arena.get(v.node());
-                        assert!(permits_filter_pushdown(
-                            self.empty_nodes_scratch_mut(),
-                            ae,
-                            expr_arena
-                        ));
-                    }
-                }
-
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
             lp @ Sort { .. } => {
-                if cfg!(debug_assertions) {
-                    for v in acc_predicates.values() {
-                        let ae = expr_arena.get(v.node());
-                        assert!(permits_filter_pushdown(
-                            self.empty_nodes_scratch_mut(),
-                            ae,
-                            expr_arena
-                        ));
-                    }
-                }
-
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
             lp @ Sink { .. } | lp @ SinkMultiple { .. } => {

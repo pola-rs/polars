@@ -404,7 +404,7 @@ def test_group_by_sorted_empty_dataframe_3680() -> None:
         .sort("key")
         .group_by("key")
         .tail(1)
-        .collect(_check_order=False)
+        .collect(optimizations=pl.QueryOptFlags(check_order_observe=False))
     )
     assert df.rows() == []
     assert df.shape == (0, 2)
@@ -1303,3 +1303,24 @@ def test_group_by_arrays_22574(maintain_order: bool) -> None:
         ),
         check_row_order=maintain_order,
     )
+
+
+def test_group_by_empty_rows_with_literal_21959() -> None:
+    out = (
+        pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [1, 1, 3]})
+        .filter(pl.col("c") == 99)
+        .group_by(pl.lit(1).alias("d"), pl.col("a"), pl.col("b"))
+        .agg()
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {"d": [], "a": [], "b": []},
+        schema={"d": pl.Int32, "a": pl.Int64, "b": pl.Int64},
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_empty_dtype_22716() -> None:
+    df = pl.DataFrame(schema={"a": pl.String, "b": pl.Int64})
+    out = df.group_by("a").agg(x=(pl.col("b") == pl.int_range(pl.len())).all())
+    assert_frame_equal(out, pl.DataFrame(schema={"a": pl.String, "x": pl.Boolean}))

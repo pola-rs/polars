@@ -156,39 +156,21 @@ impl DslBuilder {
     }
 
     pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> Self {
-        if let Some(subset) = subset {
-            self.filter(
-                all_horizontal(
-                    subset
-                        .into_iter()
-                        .map(|v| v.is_not_nan())
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap(),
-            )
-        } else {
-            self.filter(
-                // TODO: when Decimal supports NaN, include here
-                all_horizontal([dtype_cols([DataType::Float32, DataType::Float64]).is_not_nan()])
-                    .unwrap(),
-            )
-        }
+        let is_nan = match subset {
+            Some(subset) if subset.is_empty() => return self,
+            Some(subset) => subset.into_iter().map(Expr::is_nan).collect(),
+            None => vec![dtype_cols([DataType::Float32, DataType::Float64]).is_nan()],
+        };
+        self.remove(any_horizontal(is_nan).unwrap())
     }
 
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
-        if let Some(subset) = subset {
-            self.filter(
-                all_horizontal(
-                    subset
-                        .into_iter()
-                        .map(|v| v.is_not_null())
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap(),
-            )
-        } else {
-            self.filter(all_horizontal([all().is_not_null()]).unwrap())
-        }
+        let is_not_null = match subset {
+            Some(subset) if subset.is_empty() => return self,
+            Some(subset) => subset.into_iter().map(Expr::is_not_null).collect(),
+            None => vec![all().is_not_null()],
+        };
+        self.filter(all_horizontal(is_not_null).unwrap())
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
@@ -208,6 +190,21 @@ impl DslBuilder {
         .into()
     }
 
+    pub fn match_to_schema(
+        self,
+        match_schema: SchemaRef,
+        per_column: Arc<[MatchToSchemaPerColumn]>,
+        extra_columns: ExtraColumnsPolicy,
+    ) -> Self {
+        DslPlan::MatchToSchema {
+            input: Arc::new(self.0),
+            match_schema,
+            per_column,
+            extra_columns,
+        }
+        .into()
+    }
+
     pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
         DslPlan::ExtContext {
             input: Arc::new(self.0),
@@ -216,10 +213,20 @@ impl DslBuilder {
         .into()
     }
 
-    /// Apply a filter
+    /// Apply a filter predicate, keeping the rows that match it.
     pub fn filter(self, predicate: Expr) -> Self {
         DslPlan::Filter {
             predicate,
+            input: Arc::new(self.0),
+        }
+        .into()
+    }
+
+    /// Remove rows matching a filter predicate (note that rows
+    /// where the predicate resolves to `null` are *not* removed).
+    pub fn remove(self, predicate: Expr) -> Self {
+        DslPlan::Filter {
+            predicate: predicate.neq_missing(lit(true)),
             input: Arc::new(self.0),
         }
         .into()

@@ -7,7 +7,7 @@ use either::Either;
 use polars_error::{PolarsResult, polars_bail};
 
 use super::utils::{self, BitChunk, BitChunks, BitmapIter, count_zeros, fmt, get_bit_unchecked};
-use super::{IntoIter, MutableBitmap, chunk_iter_to_vec, intersects_with, num_intersections_with};
+use super::{IntoIter, MutableBitmap, chunk_iter_to_vec, num_intersections_with};
 use crate::array::Splitable;
 use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
@@ -498,7 +498,7 @@ impl Bitmap {
     ///
     /// This is an optimized version of `(self & other) != 0000..`.
     pub fn intersects_with(&self, other: &Self) -> bool {
-        intersects_with(self, other)
+        self.num_intersections_with(other) != 0
     }
 
     /// Calculates the number of shared set bits between two [`Bitmap`]s.

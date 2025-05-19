@@ -30,6 +30,7 @@ Manipulation/selection
     LazyFrame.join_where
     LazyFrame.last
     LazyFrame.limit
+    LazyFrame.match_to_schema
     LazyFrame.melt
     LazyFrame.merge_sorted
     LazyFrame.remove
