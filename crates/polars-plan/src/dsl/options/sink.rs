@@ -417,14 +417,14 @@ pub struct SortColumnIR {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PerPartitionPreprocess {
     pub sort_by: Option<Vec<SortColumn>>,
-    pub gather: Option<Vec<Expr>>,
+    pub reductions: Option<Vec<Expr>>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PerPartitionPreprocessIR {
     pub sort_by: Option<Vec<SortColumnIR>>,
-    pub gather: Option<Vec<ExprIR>>,
+    pub reductions: Option<Vec<ExprIR>>,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -436,7 +436,7 @@ pub struct PartitionSinkType {
     pub sink_options: SinkOptions,
     pub variant: PartitionVariant,
     pub cloud_options: Option<polars_io::cloud::CloudOptions>,
-    pub per_partition_preprocess: Option<PerPartitionPreprocess>,
+    pub per_partition_preprocess: PerPartitionPreprocess,
     pub finish_callback: Option<SinkFinishCallback>,
 }
 
@@ -449,7 +449,7 @@ pub struct PartitionSinkTypeIR {
     pub sink_options: SinkOptions,
     pub variant: PartitionVariantIR,
     pub cloud_options: Option<polars_io::cloud::CloudOptions>,
-    pub per_partition_preprocess: Option<PerPartitionPreprocessIR>,
+    pub per_partition_preprocess: PerPartitionPreprocessIR,
     pub finish_callback: Option<SinkFinishCallback>,
 }
 
@@ -509,10 +509,7 @@ impl PartitionSinkTypeIR {
         self.sink_options.hash(state);
         self.variant.traverse_and_hash(expr_arena, state);
         self.cloud_options.hash(state);
-        std::mem::discriminant(&self.per_partition_preprocess);
-        if let Some(per_partition_preprocess) = &self.per_partition_preprocess {
-            per_partition_preprocess.traverse_and_hash(expr_arena, state);
-        }
+        self.per_partition_preprocess.traverse_and_hash(expr_arena, state);
     }
 }
 
@@ -528,8 +525,8 @@ impl PerPartitionPreprocessIR {
             }
         }
 
-        std::mem::discriminant(&self.gather).hash(state);
-        if let Some(gather) = &self.gather {
+        std::mem::discriminant(&self.reductions).hash(state);
+        if let Some(gather) = &self.reductions {
             for e in gather {
                 e.traverse_and_hash(expr_arena, state);
             }

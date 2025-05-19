@@ -1089,6 +1089,8 @@ impl LazyFrame {
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        per_partition_preprocess: PerPartitionPreprocess,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
             base_path,
@@ -1097,6 +1099,8 @@ impl LazyFrame {
             variant,
             file_type: FileType::Parquet(options),
             cloud_options,
+            per_partition_preprocess,
+            finish_callback,
         }))
     }
 
@@ -1112,6 +1116,8 @@ impl LazyFrame {
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        per_partition_preprocess: PerPartitionPreprocess,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
             base_path,
@@ -1120,6 +1126,8 @@ impl LazyFrame {
             variant,
             file_type: FileType::Ipc(options),
             cloud_options,
+            per_partition_preprocess,
+            finish_callback,
         }))
     }
 
@@ -1135,6 +1143,8 @@ impl LazyFrame {
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        per_partition_preprocess: PerPartitionPreprocess,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
             base_path,
@@ -1143,6 +1153,8 @@ impl LazyFrame {
             variant,
             file_type: FileType::Csv(options),
             cloud_options,
+            per_partition_preprocess,
+            finish_callback,
         }))
     }
 
@@ -1158,6 +1170,8 @@ impl LazyFrame {
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        per_partition_preprocess: PerPartitionPreprocess,
+        finish_callback: Option<SinkFinishCallback>,
     ) -> PolarsResult<Self> {
         self.sink(SinkType::Partition(PartitionSinkType {
             base_path,
@@ -1166,6 +1180,8 @@ impl LazyFrame {
             variant,
             file_type: FileType::Json(options),
             cloud_options,
+            per_partition_preprocess,
+            finish_callback,
         }))
     }
 

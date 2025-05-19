@@ -1143,10 +1143,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 schema: Arc::new(schema),
             }
         },
-        DslPlan::Sink {
-            input,
-            payload,
-        } => {
+        DslPlan::Sink { input, payload } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(sink)))?;
             let payload = match payload {
@@ -1189,42 +1186,35 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         },
                     },
                     cloud_options: f.cloud_options,
-                    per_partition_preprocess: match f.per_partition_preprocess {
-                        None => None,
-
-                        Some(f) => Some(PerPartitionPreprocessIR {
-                            sort_by: match f.sort_by {
-                                None => None,
-                                Some(sort_by) => Some(
-                                    sort_by
-                                        .into_iter()
-                                        .map(|s| {
-                                            let expr = to_expr_ir(s.expr, ctxt.expr_arena)?;
-                                            ctxt.conversion_optimizer
-                                                .push_scratch(expr.node(), ctxt.expr_arena);
-                                            Ok(SortColumnIR {
-                                                expr,
-                                                descending: s.descending,
-                                                nulls_last: s.nulls_last,
-                                            })
+                    per_partition_preprocess: PerPartitionPreprocessIR {
+                        sort_by: match f.per_partition_preprocess.sort_by {
+                            None => None,
+                            Some(sort_by) => Some(
+                                sort_by
+                                    .into_iter()
+                                    .map(|s| {
+                                        let expr = to_expr_ir(s.expr, ctxt.expr_arena)?;
+                                        ctxt.conversion_optimizer
+                                            .push_scratch(expr.node(), ctxt.expr_arena);
+                                        Ok(SortColumnIR {
+                                            expr,
+                                            descending: s.descending,
+                                            nulls_last: s.nulls_last,
                                         })
-                                        .collect::<PolarsResult<Vec<_>>>()?,
-                                ),
-                            },
-                            gather: match f.gather {
-                                None => None,
-                                Some(gather) => Some(to_expr_irs(gather, ctxt.expr_arena)?),
-                            },
-                        }),
+                                    })
+                                    .collect::<PolarsResult<Vec<_>>>()?,
+                            ),
+                        },
+                        reductions: match f.per_partition_preprocess.reductions {
+                            None => None,
+                            Some(gather) => Some(to_expr_irs(gather, ctxt.expr_arena)?),
+                        },
                     },
                     finish_callback: f.finish_callback,
                 }),
             };
 
-            let lp = IR::Sink {
-                input,
-                payload,
-            };
+            let lp = IR::Sink { input, payload };
             return run_conversion(lp, ctxt, "sink");
         },
         DslPlan::SinkMultiple { inputs } => {

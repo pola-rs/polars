@@ -12,7 +12,7 @@ use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions}
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::CreateNewSinkFn;
+use super::{CreateNewSinkFn, PerPartitionSortBy, PerPartitionReductions};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
@@ -42,6 +42,9 @@ pub struct MaxSizePartitionSinkNode {
     /// This is somewhat proportional to the amount of files open at any given point.
     num_retire_tasks: usize,
 
+    per_partition_reductions: Option<PerPartitionReductions>,
+    per_partition_sort_by: Option<PerPartitionSortBy>,
+
     finish_callback: Option<SinkFinishCallback>,
 }
 
@@ -55,6 +58,10 @@ impl MaxSizePartitionSinkNode {
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
         sink_options: SinkOptions,
+
+        per_partition_reductions: Option<PerPartitionReductions>,
+        per_partition_sort_by: Option<PerPartitionSortBy>,
+
         finish_callback: Option<SinkFinishCallback>,
     ) -> Self {
         assert!(max_size > 0);
@@ -74,6 +81,8 @@ impl MaxSizePartitionSinkNode {
             ext,
             sink_options,
             num_retire_tasks,
+            per_partition_sort_by,
+            per_partition_reductions,
             finish_callback,
         }
     }
@@ -123,6 +132,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
         let file_path_cb = self.file_path_cb.clone();
         let create_new = self.create_new.clone();
         let ext = self.ext.clone();
+        let per_partition_sort_by = self.per_partition_sort_by.clone();
         let retire_error = has_error_occurred.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
             struct CurrentSink {
@@ -160,6 +170,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                     ext.as_str(),
                                     verbose,
                                     &state,
+                                    per_partition_sort_by.as_ref(),
                                 )
                                 .await?;
                                 file_idx += 1;

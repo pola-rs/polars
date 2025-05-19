@@ -302,23 +302,22 @@ impl IR {
                             },
                         },
                         cloud_options: f.cloud_options,
-                        per_partition_preprocess: f.per_partition_preprocess.map(|f| {
-                            PerPartitionPreprocess {
-                                sort_by: f.sort_by.map(|sort_by| {
-                                    sort_by
-                                        .into_iter()
-                                        .map(|s| SortColumn {
-                                            expr: s.expr.to_expr(expr_arena),
-                                            descending: s.descending,
-                                            nulls_last: s.descending,
-                                        })
-                                        .collect()
-                                }),
-                                gather: f
-                                    .gather
-                                    .map(|gather| expr_irs_to_exprs(gather, expr_arena)),
-                            }
-                        }),
+                        per_partition_preprocess: PerPartitionPreprocess {
+                            sort_by: f.per_partition_preprocess.sort_by.map(|sort_by| {
+                                sort_by
+                                    .into_iter()
+                                    .map(|s| SortColumn {
+                                        expr: s.expr.to_expr(expr_arena),
+                                        descending: s.descending,
+                                        nulls_last: s.descending,
+                                    })
+                                    .collect()
+                            }),
+                            reductions: f
+                                .per_partition_preprocess
+                                .reductions
+                                .map(|gather| expr_irs_to_exprs(gather, expr_arena)),
+                        },
                         finish_callback: f.finish_callback,
                     }),
                 };

@@ -10,7 +10,7 @@ use polars_core::prelude::{Column, PlHashSet, PlIndexMap, row_encode};
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::buffer::Buffer;
 use polars_error::PolarsResult;
-use polars_plan::dsl::{PartitionTargetCallback, SinkOptions};
+use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 
@@ -41,7 +41,7 @@ pub struct PartitionByKeySinkNode {
     ext: PlSmallStr,
 
     sink_options: SinkOptions,
-        finish_callback: Option<SinkFinishCallback>,
+    finish_callback: Option<SinkFinishCallback>,
 }
 
 impl PartitionByKeySinkNode {
@@ -242,6 +242,7 @@ impl SinkNode for PartitionByKeySinkNode {
                                         ext.as_str(),
                                         verbose,
                                         &state,
+                                        None,
                                     ).await?;
                                     file_idx += 1;
 
@@ -300,7 +301,8 @@ impl SinkNode for PartitionByKeySinkNode {
                             "by-key",
                             ext.as_str(),
                             verbose,
-                            &state
+                            &state,
+                            None,
                         ).await?;
                         file_idx += 1;
                         let Some((mut join_handles, mut sender)) = result else {

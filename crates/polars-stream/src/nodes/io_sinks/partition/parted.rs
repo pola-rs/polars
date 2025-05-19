@@ -9,7 +9,7 @@ use polars_core::prelude::row_encode::_get_rows_encoded_ca_unordered;
 use polars_core::prelude::{AnyValue, IntoColumn, PlHashSet};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_plan::dsl::{PartitionTargetCallback, SinkOptions};
+use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::CreateNewSinkFn;
@@ -213,6 +213,7 @@ impl SinkNode for PartedPartitionSinkNode {
                                     ext.as_str(),
                                     verbose,
                                     &state,
+                                    None,
                                 )
                                 .await?;
                                 file_idx += 1;

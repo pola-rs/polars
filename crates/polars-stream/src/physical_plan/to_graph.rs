@@ -12,7 +12,9 @@ use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
-use polars_plan::dsl::{JoinOptions, PartitionVariantIR, PerPartitionPreprocessIR, ScanSources};
+use polars_plan::dsl::{
+    JoinOptions, PartitionVariantIR, PerPartitionPreprocess, PerPartitionPreprocessIR, ScanSources,
+};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
 use polars_plan::prelude::{FileType, FunctionFlags};
@@ -30,6 +32,7 @@ use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
 use crate::nodes::io_sinks::SinkComputeNode;
+use crate::nodes::io_sinks::partition::PerPartitionSortBy;
 use crate::nodes::io_sources::multi_file_reader::MultiFileReaderConfig;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
@@ -308,14 +311,13 @@ fn to_graph_rec<'a>(
 
         PartitionSink {
             input,
-            gather_input,
             base_path,
             file_path_cb,
             sink_options,
             variant,
             file_type,
             cloud_options,
-            per_partition_sort_by,
+            per_partition_preprocess,
             finish_callback,
         } => {
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
@@ -330,24 +332,27 @@ fn to_graph_rec<'a>(
                 cloud_options.clone(),
             );
 
-            let per_partition_sort_by = match per_partition_sort_by {
+            let per_partition_sort_by = match per_partition_preprocess.sort_by.as_ref() {
                 None => None,
-                Some(c) => c
-                    .into_iter()
-                    .map(|c| {
-                        (
-                            create_physical_expr(
-                                c.expr,
-                                Default::default(),
-                                ctx.expr_arena,
-                                &input_schema,
-                                &mut ExpressionConversionState::new(false),
-                            )?,
-                            c.descending,
-                            c.nulls_last,
-                        )
+                Some(c) => {
+                    let (selectors, descending, nulls_last) = c
+                        .into_iter()
+                        .map(|c| {
+                            Ok((
+                                create_stream_expr(&c.expr, ctx, &input_schema)?,
+                                c.descending,
+                                c.nulls_last,
+                            ))
+                        })
+                        .collect::<PolarsResult<(Vec<_>, Vec<_>, Vec<_>)>>()?;
+
+                    Some(PerPartitionSortBy {
+                        selectors,
+                        descending,
+                        nulls_last,
+                        maintain_order: true,
                     })
-                    .collect::<PolarsResult<Vec<_>>>(),
+                },
             };
 
             let sink_compute_node = match variant {
@@ -360,7 +365,8 @@ fn to_graph_rec<'a>(
                         create_new,
                         ext,
                         sink_options.clone(),
-                        sort_by.take(),
+                        None,
+                        per_partition_sort_by,
                         finish_callback.clone(),
                     ),
                 ),
@@ -377,7 +383,6 @@ fn to_graph_rec<'a>(
                         ext,
                         sink_options.clone(),
                         *include_key,
-                        sort_by.take(),
                         finish_callback.clone(),
                     ),
                 ),
@@ -403,21 +408,8 @@ fn to_graph_rec<'a>(
                 },
             };
 
-            match gather_input {
-                None => ctx
-                    .graph
-                    .add_node(sink_compute_node, [(input_key, input.port)]),
-                Some(gather_input) => {
-                    let mut gather_input_key = to_graph_rec(gather_input.node, ctx)?;
-                    ctx.graph.add_node(
-                        sink_compute_node,
-                        [
-                            (input_key, input.port),
-                            (gather_input_key, gather_input.port),
-                        ],
-                    )
-                },
-            }
+            ctx.graph
+                .add_node(sink_compute_node, [(input_key, input.port)])
         },
 
         InMemoryMap {
