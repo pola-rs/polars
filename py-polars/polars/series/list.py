@@ -954,6 +954,30 @@ class ListNameSpace:
         ]
         """
 
+    def filter(self, predicate: Expr) -> Series:
+        """
+        Filter elements in each list by a boolean expression, returning a new Series of lists.
+
+        Parameters
+        ----------
+        predicate
+            A boolean expression evaluated on each list element.
+            Use `pl.element()` to refer to the current element.
+
+        Examples
+        --------
+        >>> import polars as pl
+        >>> s = pl.Series("a", [[1, 4], [8, 5], [3, 2]])
+        >>> s.list.filter(pl.element() % 2 == 0)
+        shape: (3,)
+        Series: 'a' [list[i64]]
+        [
+            [4]
+            [8]
+            [2]
+        ]
+        """  # noqa: W505
+
     def set_union(self, other: Series | Collection[Any]) -> Series:
         """
         Compute the SET UNION between the elements in this list and the elements of `other`.

@@ -1232,6 +1232,36 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
 
+    def filter(self, predicate: Expr) -> Expr:
+        """
+        Filter elements in each list by a boolean expression.
+
+        Parameters
+        ----------
+        predicate
+            A boolean expression that is evaluated per list element.
+            You can refer to the current element with `pl.element()`.
+
+        Examples
+        --------
+        >>> import polars as pl
+        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+        >>> df.with_columns(
+        ...     evens=pl.concat_list("a", "b").list.filter(pl.element() % 2 == 0)
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ evens     │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ list[i64] │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ 4   ┆ [4]       │
+        │ 8   ┆ 5   ┆ [8]       │
+        │ 3   ┆ 2   ┆ [2]       │
+        └─────┴─────┴───────────┘
+        """
+        return wrap_expr(self._pyexpr.list_filter(predicate._pyexpr))
+
     def set_union(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET UNION between the elements in this list and the elements of `other`.

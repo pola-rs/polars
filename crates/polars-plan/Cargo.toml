@@ -95,6 +95,7 @@ dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
+list_filter = ["polars-ops/list_filter"]
 list_gather = ["polars-ops/list_gather"]
 list_count = ["polars-ops/list_count"]
 array_count = ["polars-ops/array_count", "dtype-array"]
@@ -225,6 +226,7 @@ features = [
   "list_any_all",
   "pct_change",
   "list_gather",
+  "list_filter",
   "dtype-i16",
   "round_series",
   "cutqcut",
