@@ -361,7 +361,9 @@ impl OptimizationRule for TypeCoercionRule {
                     let right_nl = type_other.nesting_level();
                     polars_ensure!(
                         type_other.is_null() || (right_nl >= left_nl && (right_nl - left_nl) <= 1),
-                        InvalidOperation: "wrong nesting depth {type_left} searching for {type_other}"
+                        op = "search_sorted",
+                        type_left,
+                        type_other
                     );
 
                     // Backwards compatibility with wrong way to search for
