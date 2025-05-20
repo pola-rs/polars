@@ -150,11 +150,21 @@ impl fmt::Debug for Expr {
                     write!(f, "{:?}.{function}()", input[0])
                 }
             },
-            AnonymousFunction { input, options, .. } => {
+            AnonymousFunction {
+                input,
+                options,
+                function,
+                ..
+            } => {
+                let name = match function {
+                    LazySerde::Named { name, .. } => name,
+                    _ => options.fmt_str,
+                };
+
                 if input.len() >= 2 {
-                    write!(f, "{:?}.{}({:?})", input[0], options.fmt_str, &input[1..])
+                    write!(f, "{:?}.{}({:?})", input[0], name, &input[1..])
                 } else {
-                    write!(f, "{:?}.{}()", input[0], options.fmt_str)
+                    write!(f, "{:?}.{}()", input[0], name)
                 }
             },
             Slice {
