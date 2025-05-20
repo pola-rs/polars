@@ -49,7 +49,24 @@ impl CategoricalChunked {
     }
 
     pub fn append_owned(&mut self, other: Self) -> PolarsResult<()> {
-        // @TODO: Move the implementation to append_owned and make append dispatch here.
-        self.append(&other)
+        if (self.is_enum() && other.is_enum())
+            || (self.get_rev_map().is_global() && other.get_rev_map().is_global())
+        {
+            if self.get_rev_map().is_global() {
+                let mut rev_map_merger = GlobalRevMapMerger::new(self.get_rev_map().clone());
+                rev_map_merger.merge_map(other.get_rev_map())?;
+
+                // SAFETY: We just merged the revmaps and this is the global one, so it the indices
+                // are the same.
+                unsafe { self.set_rev_map(rev_map_merger.finish(), false) };
+            }
+
+            // In these cases we can just append the physicals. We don't have to do any categorical
+            // merging or anything.
+            self.physical_mut().append_owned(other.into_physical())?;
+            Ok(())
+        } else {
+            self.append(&other)
+        }
     }
 }
