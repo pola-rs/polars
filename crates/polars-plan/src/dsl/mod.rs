@@ -68,7 +68,11 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-#[cfg(any(feature = "search_sorted", feature = "is_between"))]
+#[cfg(any(
+    feature = "search_sorted",
+    feature = "is_between",
+    feature = "list_sets"
+))]
 use polars_core::utils::SuperTypeFlags;
 use polars_core::utils::{SuperTypeOptions, try_get_supertype};
 pub use selector::Selector;
