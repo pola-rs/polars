@@ -137,13 +137,17 @@ fmt:  ## Run autoformatting and linting
 	cargo fmt --all
 	dprint fmt
 	$(VENV_BIN)/typos
-	
+
 .PHONY: fix
 fix:
-	cargo clippy --workspace --all-targets --all-features --fix 
+	cargo clippy --workspace --all-targets --all-features --fix
 	@# Good chance the fixing introduced formatting issues, best to just do a quick format.
 	cargo fmt --all
-	
+
+.PHONY: update-dsl-schema
+update-dsl-schema:  ## Update the DSL schema file
+	cargo build --all-features
+	./target/debug/dsl-schema update
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run all code quality checks

@@ -145,3 +145,22 @@ jobs:
       - name: Check wasm
         working-directory: crates
         run: make check-wasm
+
+  check-dsl-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Build DSL schema check
+        run: cargo build --all-features
+
+      - name: Run DSL schema check
+        run: ./target/debug/dsl-schema check
