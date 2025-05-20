@@ -2605,3 +2605,38 @@ def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) ->
     df2 = pl.DataFrame({"c": [99]})
     df3 = df1.join(df2, how="cross").filter(pl.col("a").eq(filter_value))
     assert df3.write_csv() == expected
+
+
+@pytest.mark.parametrize(
+    ("csv"),
+    [
+        (
+            b"""\
+a,b,x"y
+a,x"y,c
+x"y,b,c
+"""
+        ),
+        (
+            b"""\
+a,x"y,x"y
+x"y,b,x"y
+x"y,x"y,c
+"""
+        ),
+    ],
+)
+@pytest.mark.parametrize(("n"), [1, 10])  # trigger SIMD
+def test_csv_malformed_quote_in_unenclosed_field_22395(csv: str, n: int) -> None:
+    malformed = csv * n
+    # full dataframe
+    with pytest.warns(UserWarning):
+        pl.read_csv(malformed, has_header=False)
+    with pytest.warns(UserWarning):
+        pl.scan_csv(malformed, has_header=False).collect()
+
+    # with projection (nth)
+    with pytest.warns(UserWarning):
+        pl.read_csv(malformed, has_header=False).select(pl.nth(0))
+    with pytest.warns(UserWarning):
+        pl.scan_csv(malformed, has_header=False).select(pl.nth(0)).collect()

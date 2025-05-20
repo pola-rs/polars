@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use polars_core::StringCacheHolder;
 use polars_core::prelude::{Column, Field};
 use polars_core::schema::{SchemaExt, SchemaRef};
-use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::_csv_read_internal::{
@@ -678,6 +678,9 @@ impl ChunkReader {
 
         let height = df.height();
         let n_lines_is_correct = df.height() == n_lines;
+        if df.height() > n_lines {
+            polars_warn!("CSV data malformed: line count mismatch in chunk");
+        }
 
         if slice != NO_SLICE {
             assert!(slice != SLICE_ENDED);
