@@ -56,7 +56,7 @@ strum_macros = { workspace = true }
 
 [dev-dependencies]
 # used to run formal property testing
-arrow = { workspace = true, features = ["proptest"] }
+polars-arrow = { path = ".", features = ["proptest"] }
 proptest = { workspace = true }
 
 # use for flaky testing
