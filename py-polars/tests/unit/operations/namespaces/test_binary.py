@@ -4,6 +4,7 @@ import random
 import struct
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -206,6 +207,64 @@ def test_reinterpret(
         result = df.select(
             pl.col("x").bin.reinterpret(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
         )
+
+        assert_frame_equal(result, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "inner_type_size", "struct_type"),
+    [
+        (pl.Array(pl.Int8, 3), 1, "b"),
+        (pl.Array(pl.UInt8, 3), 1, "B"),
+        (pl.Array(pl.UInt8, (3, 4, 5)), 1, "B"),
+        (pl.Array(pl.Int16, 3), 2, "h"),
+        (pl.Array(pl.UInt16, 3), 2, "H"),
+        (pl.Array(pl.Int32, 3), 4, "i"),
+        (pl.Array(pl.UInt32, 3), 4, "I"),
+        (pl.Array(pl.Int64, 3), 8, "q"),
+        (pl.Array(pl.UInt64, 3), 8, "Q"),
+        (pl.Array(pl.Float32, 3), 4, "f"),
+        (pl.Array(pl.Float64, 3), 8, "d"),
+    ],
+)
+def test_reinterpret_list(
+    dtype: pl.Array,
+    inner_type_size: int,
+    struct_type: str,
+) -> None:
+    # Make test reproducible
+    random.seed(42)
+
+    type_size = inner_type_size
+    shape = dtype.shape
+    if isinstance(shape, int):
+        shape = (shape,)
+    for dim_size in dtype.shape:
+        type_size *= dim_size
+
+    byte_arr = [random.randbytes(type_size) for _ in range(3)]
+    df = pl.DataFrame({"x": byte_arr}, orient="row")
+
+    for endianness in ["little", "big"]:
+        result = df.select(
+            pl.col("x").bin.reinterpret(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
+        )
+
+        # So that mypy doesn't complain
+        struct_endianness = "<" if endianness == "little" else ">"
+        expected = []
+        for elem_bytes in byte_arr:
+            vals = [
+                struct.unpack_from(
+                    f"{struct_endianness}{struct_type}",
+                    elem_bytes[idx : idx + inner_type_size],
+                )[0]
+                for idx in range(0, type_size, inner_type_size)
+            ]
+            if len(shape) > 1:
+                vals = np.reshape(vals, shape).tolist()
+            expected.append(vals)
+        expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
 
         assert_frame_equal(result, expected_df)
 
