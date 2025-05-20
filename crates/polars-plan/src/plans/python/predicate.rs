@@ -1,5 +1,4 @@
 use polars_core::prelude::{AnyValue, PolarsResult};
-use polars_utils::pl_serialize;
 use recursive::recursive;
 
 use crate::prelude::*;
@@ -42,12 +41,13 @@ fn accept_as_io_predicate(e: &Expr) -> bool {
     }
 }
 
+#[cfg(feature = "serde")]
 pub fn serialize(expr: &Expr) -> PolarsResult<Option<Vec<u8>>> {
     if !accept_as_io_predicate(expr) {
         return Ok(None);
     }
     let mut buf = vec![];
-    pl_serialize::serialize_into_writer::<_, _, true>(&mut buf, expr)?;
+    polars_utils::pl_serialize::serialize_into_writer::<_, _, true>(&mut buf, expr)?;
 
     Ok(Some(buf))
 }

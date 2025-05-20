@@ -6,7 +6,7 @@ use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::PhysicalType;
 use crate::parquet::statistics::Statistics;
 
-#[cfg(feature = "serde_types")]
+#[cfg(feature = "serde")]
 mod serde_types {
     pub use std::io::Cursor;
 
@@ -17,7 +17,7 @@ mod serde_types {
     pub use serde::ser::Error as SerializeError;
     pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
 }
-#[cfg(feature = "serde_types")]
+#[cfg(feature = "serde")]
 use serde_types::*;
 
 /// Metadata for a column chunk.
@@ -27,21 +27,18 @@ use serde_types::*;
 ///
 /// This struct is intentionally not `Clone`, as it is a huge struct.
 #[derive(Debug)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct ColumnChunkMetadata {
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_column_chunk"))]
     #[cfg_attr(
-        feature = "serde_types",
-        serde(serialize_with = "serialize_column_chunk")
-    )]
-    #[cfg_attr(
-        feature = "serde_types",
+        feature = "serde",
         serde(deserialize_with = "deserialize_column_chunk")
     )]
     column_chunk: ColumnChunk,
     column_descr: ColumnDescriptor,
 }
 
-#[cfg(feature = "serde_types")]
+#[cfg(feature = "serde")]
 fn serialize_column_chunk<S>(
     column_chunk: &ColumnChunk,
     serializer: S,
@@ -58,7 +55,7 @@ where
     serializer.serialize_bytes(&buf)
 }
 
-#[cfg(feature = "serde_types")]
+#[cfg(feature = "serde")]
 fn deserialize_column_chunk<'de, D>(deserializer: D) -> std::result::Result<ColumnChunk, D::Error>
 where
     D: Deserializer<'de>,

@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "serde_types")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::parquet::schema::types::{ParquetType, PrimitiveType};
@@ -10,7 +10,7 @@ use crate::parquet::schema::types::{ParquetType, PrimitiveType};
 /// A descriptor of a parquet column. It contains the necessary information to deserialize
 /// a parquet column.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Descriptor {
     /// The [`PrimitiveType`] of this column
     pub primitive_type: PrimitiveType,
@@ -23,7 +23,7 @@ pub struct Descriptor {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum BaseType {
     Owned(ParquetType),
     Arc(Arc<ParquetType>),
@@ -59,7 +59,7 @@ impl Deref for BaseType {
 /// This encapsulates information such as definition and repetition levels and is used to
 /// re-assemble nested data.
 #[derive(Debug, PartialEq, Clone)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct ColumnDescriptor {
     /// The descriptor this columns' leaf.
     pub descriptor: Descriptor,

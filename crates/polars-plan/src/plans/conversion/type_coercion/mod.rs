@@ -433,7 +433,7 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
-            #[cfg(feature = "temporal")]
+            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             AExpr::Function {
                 function: ref function @ FunctionExpr::TemporalExpr(TemporalFunction::Duration(_)),
                 ref input,
