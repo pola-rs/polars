@@ -6,6 +6,7 @@ use polars_io::mmap::ReaderBytes;
 use pyo3::prelude::*;
 
 use super::PyDataFrame;
+use crate::error::PyPolarsErr;
 use crate::exceptions::ComputeError;
 use crate::file::{get_file_like, get_mmap_bytes_reader};
 use crate::utils::EnterPolarsExt;
@@ -13,11 +14,20 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PyDataFrame {
     /// Serialize into binary data.
-    fn serialize_binary(&mut self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
+    fn serialize_binary(slf: Bound<'_, Self>, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let mut writer = BufWriter::new(file);
 
-        py.enter_polars(|| self.df.serialize_into_writer(&mut writer))
+        let mut slf_1 = slf.try_borrow_mut();
+        let slf_1: Option<&mut PyDataFrame> = slf_1.as_deref_mut().ok();
+        let mut slf_2: Option<PyDataFrame> = (slf_1.is_none()).then(|| (&*slf.borrow()).clone());
+
+        let slf: &mut PyDataFrame = slf_1.unwrap_or_else(|| slf_2.as_mut().unwrap());
+
+        Ok(slf
+            .df
+            .serialize_into_writer(&mut writer)
+            .map_err(PyPolarsErr::from)?)
     }
 
     /// Deserialize a file-like object containing binary data into a DataFrame.
