@@ -1,4 +1,6 @@
 mod convert_utils;
+#[cfg(feature = "python")]
+mod dataset;
 mod dsl_to_ir;
 mod expr_expansion;
 mod expr_to_ir;

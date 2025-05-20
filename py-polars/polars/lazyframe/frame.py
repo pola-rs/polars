@@ -110,6 +110,12 @@ if TYPE_CHECKING:
     from io import IOBase
     from typing import IO, Literal
 
+    from pyiceberg.table import Table
+
+    from polars._typing import (
+        IcebergWriteMode,
+    )
+    from polars.io.iceberg.dataset import IcebergDataset
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -3483,6 +3489,42 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ldf.collect(engine=engine)
             return None
         return LazyFrame._from_pyldf(ldf)
+
+    def sink_iceberg(
+        self,
+        target: str | Table | IcebergDataset,
+        *,
+        mode: IcebergWriteMode,
+        storage_options: dict[str, Any] | None = None,
+        lazy: bool = False,
+    ) -> LazyFrame | None:
+        """
+        Evaluate the query in streaming mode and writing to an Iceberg table.
+
+        .. warning::
+            This functionality is currently considered **experimental**. It may be
+            changed or removed at any point without it being considered a breaking
+            change.
+
+            Please backup any data before using this.
+        """
+        from polars.io.iceberg.dataset import IcebergDataset
+
+        dataset: IcebergDataset
+        if isinstance(target, IcebergDataset):
+            dataset = target
+        else:
+            dataset = IcebergDataset(
+                target,
+                iceberg_storage_properties=storage_options,
+                reader_override=None,
+            )
+
+        lf = pl.LazyFrame._from_pyldf(self._ldf.sink_iceberg(dataset, mode))
+        if lazy:
+            return lf
+        lf.collect(engine="streaming")
+        return
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
