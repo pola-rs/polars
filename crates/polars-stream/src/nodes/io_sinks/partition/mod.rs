@@ -1,27 +1,29 @@
-use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use arrow::array::builder::ShareStrategy;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
-use polars_core::prelude::{Column, DataType, SortMultipleOptions};
+use polars_core::frame::DataFrame;
+use polars_core::prelude::{
+    ChunkedBuilder, Column, DataType, IntoColumn, PrimitiveChunkedBuilder, SortMultipleOptions,
+    StringChunkedBuilder, StructChunked, UInt64Type,
+};
 use polars_core::scalar::Scalar;
-use polars_core::schema::SchemaRef;
+use polars_core::schema::{Schema, SchemaRef};
+use polars_core::series::IntoSeries;
+use polars_core::series::builder::SeriesBuilder;
 use polars_error::PolarsResult;
-use polars_expr::reduce::GroupedReduction;
+use polars_expr::reduce::{GroupedReduction, new_max_reduction, new_min_reduction};
 use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::{
     FileType, PartitionTargetCallback, PartitionTargetContext, SinkOptions, SinkTarget,
 };
 use polars_utils::format_pl_smallstr;
-use polars_utils::priority::Priority;
+use polars_utils::pl_str::PlSmallStr;
 
-use super::{
-    DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE, SinkInputPort,
-    SinkNode,
-};
+use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
 use crate::async_executor::{AbortOnDropHandle, spawn};
-use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::async_primitives::{connector, distributor_channel};
 use crate::execute::StreamingExecutionState;
@@ -34,13 +36,129 @@ pub mod by_key;
 pub mod max_size;
 pub mod parted;
 
-pub struct PerPartitionReductions {
-    selectors: Vec<StreamExpr>,
-    reductions: Vec<Box<dyn GroupedReduction>>,
+pub struct WrittenPartitionColumn {
+    pub null_count: u64,
+    pub nan_count: u64,
+    pub lower_bound: Box<dyn GroupedReduction>,
+    pub upper_bound: Box<dyn GroupedReduction>,
+}
+
+pub struct WrittenPartition {
+    pub path: String,
+    pub height: u64,
+    pub columns: Vec<WrittenPartitionColumn>,
+}
+
+impl WrittenPartition {
+    pub fn new(path: String, schema: &Schema) -> Self {
+        Self {
+            path,
+            height: 0,
+            columns: schema
+                .iter_values()
+                .map(|dtype| {
+                    let mut lower_bound = new_min_reduction(dtype.clone(), false);
+                    let mut upper_bound = new_max_reduction(dtype.clone(), false);
+
+                    lower_bound.resize(1);
+                    upper_bound.resize(1);
+                    WrittenPartitionColumn {
+                        null_count: 0,
+                        nan_count: 0,
+                        lower_bound,
+                        upper_bound,
+                    }
+                })
+                .collect(),
+        }
+    }
+
+    pub fn append(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        assert_eq!(self.columns.len(), df.width());
+        self.height += df.height() as u64;
+        for (w, c) in self.columns.iter_mut().zip(df.get_columns()) {
+            let null_count = c.null_count();
+            w.null_count += c.null_count() as u64;
+
+            let mut has_non_null_non_nan_values = df.height() != null_count;
+            if c.dtype().is_float() {
+                let nan_count = c.is_nan()?.sum().unwrap_or_default() as u64;
+                has_non_null_non_nan_values = nan_count as usize + null_count < df.height();
+                w.nan_count += nan_count;
+            }
+
+            if has_non_null_non_nan_values {
+                w.lower_bound.update_group(&c, 0, 0)?;
+                w.upper_bound.update_group(&c, 0, 0)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn written_partitions_to_df(wp: Vec<WrittenPartition>, input_schema: &Schema) -> DataFrame {
+    let num_partitions = wp.len();
+
+    let mut path = StringChunkedBuilder::new(PlSmallStr::from_static("path"), wp.len());
+    let mut height =
+        PrimitiveChunkedBuilder::<UInt64Type>::new(PlSmallStr::from_static("height"), wp.len());
+    let mut columns = input_schema
+        .iter_values()
+        .map(|dtype| {
+            let null_count = PrimitiveChunkedBuilder::<UInt64Type>::new(
+                PlSmallStr::from_static("null_count"),
+                wp.len(),
+            );
+            let nan_count = PrimitiveChunkedBuilder::<UInt64Type>::new(
+                PlSmallStr::from_static("nan_count"),
+                wp.len(),
+            );
+            let mut lower_bound = SeriesBuilder::new(dtype.clone());
+            let mut upper_bound = SeriesBuilder::new(dtype.clone());
+            lower_bound.reserve(wp.len());
+            upper_bound.reserve(wp.len());
+
+            (null_count, nan_count, lower_bound, upper_bound)
+        })
+        .collect::<Vec<_>>();
+
+    for p in wp {
+        path.append_value(p.path);
+        height.append_value(p.height);
+
+        for (mut w, c) in p.columns.into_iter().zip(columns.iter_mut()) {
+            c.0.append_value(w.null_count);
+            c.1.append_value(w.nan_count);
+            c.2.extend(&w.lower_bound.finalize().unwrap(), ShareStrategy::Always);
+            c.3.extend(&w.upper_bound.finalize().unwrap(), ShareStrategy::Always);
+        }
+    }
+
+    let mut df_columns = Vec::with_capacity(input_schema.len() + 2);
+    df_columns.push(path.finish().into_column());
+    df_columns.push(height.finish().into_column());
+    for (name, column) in input_schema.iter_names().zip(columns) {
+        let struct_ca = StructChunked::from_series(
+            format_pl_smallstr!("{name}_stats"),
+            num_partitions,
+            [
+                column.0.finish().into_series(),
+                column.1.finish().into_series(),
+                column.2.freeze(PlSmallStr::from_static("lower_bound")),
+                column.3.freeze(PlSmallStr::from_static("upper_bound")),
+            ]
+            .iter(),
+        )
+        .unwrap();
+        df_columns.push(struct_ca.into_column());
+    }
+
+    DataFrame::new_with_height(num_partitions, df_columns).unwrap()
 }
 
 #[derive(Clone)]
 pub struct PerPartitionSortBy {
+    // Invariant: all vecs have the same length.
     pub selectors: Vec<StreamExpr>,
     pub descending: Vec<bool>,
     pub nulls_last: Vec<bool>,
@@ -174,6 +292,7 @@ async fn open_new_sink(
     per_partition_sort_by: Option<&PerPartitionSortBy>,
 ) -> PolarsResult<
     Option<(
+        String,
         FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
         SinkSender,
     )>,
@@ -181,6 +300,7 @@ async fn open_new_sink(
     let file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys)?;
     let path = base_path.join(file_path.as_path());
 
+    let output_path = path.to_string_lossy().into_owned();
     // If the user provided their own callback, modify the path to that.
     let target = if let Some(file_path_cb) = file_path_cb {
         let keys = keys.map_or(Vec::new(), |keys| {
@@ -257,16 +377,16 @@ async fn open_new_sink(
         let nulls_last = per_partition_sort_by.nulls_last.clone();
         let maintain_order = per_partition_sort_by.maintain_order;
 
-        let mut old_sender =
-            std::mem::replace(&mut sender, SinkSender::Connector(tx));
+        // Tell the partitioning sink to send stuff here instead.
+        let mut old_sender = std::mem::replace(&mut sender, SinkSender::Connector(tx));
 
-        // This all happens in a single thread per partition. Acceptable for now, not the best idea
-        // for the future.
+        // This all happens in a single thread per partition. Acceptable for now as the main
+        // usecase here is writing many partitions, not the best idea for the future.
         join_handles.push(spawn(TaskPriority::High, async move {
+            // Gather all morsels for this partition. We expect at least one morsel per partition.
             let Ok(morsel) = rx.recv().await else {
                 return Ok(());
             };
-
             let mut df = morsel.into_df();
             while let Ok(next_morsel) = rx.recv().await {
                 df.vstack_mut_owned(next_morsel.into_df())?;
@@ -316,5 +436,5 @@ async fn open_new_sink(
         return Ok(None);
     }
 
-    Ok(Some((join_handles, sender)))
+    Ok(Some((output_path, join_handles, sender)))
 }

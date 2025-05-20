@@ -1,10 +1,11 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca_unordered;
 use polars_core::prelude::{AnyValue, IntoColumn, PlHashSet};
 use polars_core::schema::SchemaRef;
@@ -17,7 +18,9 @@ use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::execute::StreamingExecutionState;
-use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
+use crate::nodes::io_sinks::partition::{
+    SinkSender, WrittenPartition, open_new_sink, written_partitions_to_df,
+};
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode};
 use crate::nodes::{JoinHandle, Morsel, TaskPriority};
@@ -46,6 +49,7 @@ pub struct PartedPartitionSinkNode {
     num_retire_tasks: usize,
 
     per_partition_sort_by: Option<PerPartitionSortBy>,
+    written_partitions: Arc<OnceLock<DataFrame>>,
     finish_callback: Option<SinkFinishCallback>,
 }
 
@@ -99,6 +103,7 @@ impl PartedPartitionSinkNode {
             num_retire_tasks,
             include_key,
             per_partition_sort_by,
+            written_partitions: Arc::new(OnceLock::new()),
             finish_callback,
         }
     }
@@ -114,6 +119,14 @@ impl SinkNode for PartedPartitionSinkNode {
     }
     fn do_maintain_order(&self) -> bool {
         self.sink_options.maintain_order
+    }
+
+    fn finish(&self) -> PolarsResult<()> {
+        if let Some(finish_callback) = &self.finish_callback {
+            let df = self.written_partitions.get().unwrap();
+            finish_callback.call(df.clone())?;
+        }
+        Ok(())
     }
 
     fn spawn_sink(
@@ -141,6 +154,8 @@ impl SinkNode for PartedPartitionSinkNode {
         let include_key = self.include_key;
         let retire_error = has_error_occurred.clone();
         let per_partition_sort_by = self.per_partition_sort_by.clone();
+        let output_written_partitions = self.written_partitions.clone();
+        let needs_written_partitions = self.finish_callback.is_some();
         join_handles.push(spawn(TaskPriority::High, async move {
             struct CurrentSink {
                 sender: SinkSender,
@@ -152,6 +167,7 @@ impl SinkNode for PartedPartitionSinkNode {
             let mut file_idx = 0;
             let mut current_sink_opt: Option<CurrentSink> = None;
             let mut lengths = Vec::new();
+            let mut written_partitions = Vec::new();
 
             while let Ok((outcome, recv_port)) = recv_port_recv.recv().await {
                 let mut recv_port = recv_port.serial();
@@ -222,9 +238,14 @@ impl SinkNode for PartedPartitionSinkNode {
                                 )
                                 .await?;
                                 file_idx += 1;
-                                let Some((join_handles, sender)) = result else {
+                                let Some((path, join_handles, sender)) = result else {
                                     return Ok(());
                                 };
+
+                                if needs_written_partitions {
+                                    written_partitions
+                                        .push(WrittenPartition::new(path, &sink_input_schema));
+                                }
 
                                 current_sink_opt.insert(CurrentSink {
                                     sender,
@@ -261,6 +282,8 @@ impl SinkNode for PartedPartitionSinkNode {
                 }
             }
 
+            let df = written_partitions_to_df(written_partitions, &sink_input_schema);
+            output_written_partitions.set(df).unwrap();
             Ok(())
         }));
 

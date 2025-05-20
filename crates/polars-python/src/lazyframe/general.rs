@@ -845,7 +845,7 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
-                    partition.per_partition_preprocess,
+                    partition.per_partition_sort_by,
                     partition.finish_callback,
                 ),
             }
@@ -911,7 +911,7 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
-                    partition.per_partition_preprocess,
+                    partition.per_partition_sort_by,
                     partition.finish_callback,
                 ),
             }
@@ -1005,7 +1005,7 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
-                    partition.per_partition_preprocess,
+                    partition.per_partition_sort_by,
                     partition.finish_callback,
                 ),
             }
@@ -1058,7 +1058,7 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
-                    partition.per_partition_preprocess,
+                    partition.per_partition_sort_by,
                     partition.finish_callback,
                 ),
             }

@@ -12,9 +12,7 @@ use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
-use polars_plan::dsl::{
-    JoinOptions, PartitionVariantIR, PerPartitionPreprocess, PerPartitionPreprocessIR, ScanSources,
-};
+use polars_plan::dsl::{JoinOptions, PartitionVariantIR, ScanSources};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
 use polars_plan::prelude::{FileType, FunctionFlags};
@@ -317,11 +315,11 @@ fn to_graph_rec<'a>(
             variant,
             file_type,
             cloud_options,
-            per_partition_preprocess,
+            per_partition_sort_by,
             finish_callback,
         } => {
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
-            let mut input_key = to_graph_rec(input.node, ctx)?;
+            let input_key = to_graph_rec(input.node, ctx)?;
 
             let base_path = base_path.clone();
             let file_path_cb = file_path_cb.clone();
@@ -332,7 +330,7 @@ fn to_graph_rec<'a>(
                 cloud_options.clone(),
             );
 
-            let per_partition_sort_by = match per_partition_preprocess.sort_by.as_ref() {
+            let per_partition_sort_by = match per_partition_sort_by.as_ref() {
                 None => None,
                 Some(c) => {
                     let (selectors, descending, nulls_last) = c
@@ -365,7 +363,6 @@ fn to_graph_rec<'a>(
                         create_new,
                         ext,
                         sink_options.clone(),
-                        None,
                         per_partition_sort_by,
                         finish_callback.clone(),
                     ),
@@ -390,22 +387,20 @@ fn to_graph_rec<'a>(
                 PartitionVariantIR::ByKey {
                     key_exprs,
                     include_key,
-                } => {
-                    SinkComputeNode::from(
-                        nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
-                            input_schema,
-                            key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                            base_path,
-                            file_path_cb,
-                            create_new,
-                            ext,
-                            sink_options.clone(),
-                            *include_key,
-                            per_partition_sort_by,
-                            finish_callback.clone(),
-                        ),
-                    )
-                },
+                } => SinkComputeNode::from(
+                    nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
+                        input_schema,
+                        key_exprs.iter().map(|e| e.output_name().clone()).collect(),
+                        base_path,
+                        file_path_cb,
+                        create_new,
+                        ext,
+                        sink_options.clone(),
+                        *include_key,
+                        per_partition_sort_by,
+                        finish_callback.clone(),
+                    ),
+                ),
             };
 
             ctx.graph

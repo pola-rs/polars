@@ -178,6 +178,10 @@ pub trait SinkNode {
         state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
+
+    fn finish(&self) -> PolarsResult<()> {
+        Ok(())
+    }
 }
 
 /// The state needed to manage a spawned [`SinkNode`].
@@ -294,5 +298,10 @@ impl ComputeNode for SinkComputeNode {
 
             Ok(())
         }));
+    }
+
+    fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
+        self.sink.finish()?;
+        Ok(None)
     }
 }

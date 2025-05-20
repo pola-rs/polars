@@ -2,10 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use polars::prelude::sync_on_close::SyncOnCloseType;
-use polars::prelude::{
-    PartitionVariant, PerPartitionPreprocess, SinkFinishCallback, SinkOptions, SortColumn,
-    SpecialEq,
-};
+use polars::prelude::{PartitionVariant, SinkFinishCallback, SinkOptions, SortColumn, SpecialEq};
 use polars_utils::IdxSize;
 use polars_utils::python_function::{PythonFunction, PythonObject};
 use pyo3::exceptions::PyValueError;
@@ -29,15 +26,12 @@ pub struct PyPartitioning {
     pub base_path: PathBuf,
     pub file_path_cb: Option<PythonFunction>,
     pub variant: PartitionVariant,
-    pub per_partition_preprocess: PerPartitionPreprocess,
+    pub per_partition_sort_by: Option<Vec<SortColumn>>,
     pub finish_callback: Option<SinkFinishCallback>,
 }
 
-fn parse_per_partition_preprocess(
-    sort_by: Option<Vec<PyExpr>>,
-    per_partition_reductions: Option<Vec<PyExpr>>,
-) -> PerPartitionPreprocess {
-    let sort_by = sort_by.map(|exprs| {
+fn parse_per_partition_sort_by(sort_by: Option<Vec<PyExpr>>) -> Option<Vec<SortColumn>> {
+    sort_by.map(|exprs| {
         exprs
             .into_iter()
             .map(|e| SortColumn {
@@ -46,27 +40,19 @@ fn parse_per_partition_preprocess(
                 nulls_last: false,
             })
             .collect()
-    });
-    let reductions =
-        per_partition_reductions.map(|exprs| exprs.into_iter().map(|e| e.inner).collect());
-
-    PerPartitionPreprocess {
-        sort_by,
-        reductions,
-    }
+    })
 }
 
 #[cfg(feature = "pymethods")]
 #[pymethods]
 impl PyPartitioning {
     #[staticmethod]
-    #[pyo3(signature = (base_path, file_path_cb, max_size, per_partition_sort_by, per_partition_reductions, finish_callback))]
+    #[pyo3(signature = (base_path, file_path_cb, max_size, per_partition_sort_by, finish_callback))]
     pub fn new_max_size(
         base_path: PathBuf,
         file_path_cb: Option<PyObject>,
         max_size: IdxSize,
         per_partition_sort_by: Option<Vec<PyExpr>>,
-        per_partition_reductions: Option<Vec<PyExpr>>,
         finish_callback: Option<PyObject>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
@@ -77,23 +63,19 @@ impl PyPartitioning {
             base_path,
             file_path_cb,
             variant: PartitionVariant::MaxSize(max_size),
-            per_partition_preprocess: parse_per_partition_preprocess(
-                per_partition_sort_by,
-                per_partition_reductions,
-            ),
+            per_partition_sort_by: parse_per_partition_sort_by(per_partition_sort_by),
             finish_callback,
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (base_path, file_path_cb, by, include_key, per_partition_sort_by, per_partition_reductions, finish_callback))]
+    #[pyo3(signature = (base_path, file_path_cb, by, include_key, per_partition_sort_by, finish_callback))]
     pub fn new_by_key(
         base_path: PathBuf,
         file_path_cb: Option<PyObject>,
         by: Vec<PyExpr>,
         include_key: bool,
         per_partition_sort_by: Option<Vec<PyExpr>>,
-        per_partition_reductions: Option<Vec<PyExpr>>,
         finish_callback: Option<PyObject>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
@@ -107,23 +89,19 @@ impl PyPartitioning {
                 key_exprs: by.into_iter().map(|e| e.inner).collect(),
                 include_key,
             },
-            per_partition_preprocess: parse_per_partition_preprocess(
-                per_partition_sort_by,
-                per_partition_reductions,
-            ),
+            per_partition_sort_by: parse_per_partition_sort_by(per_partition_sort_by),
             finish_callback,
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (base_path, file_path_cb, by, include_key, per_partition_sort_by, per_partition_reductions, finish_callback))]
+    #[pyo3(signature = (base_path, file_path_cb, by, include_key, per_partition_sort_by, finish_callback))]
     pub fn new_parted(
         base_path: PathBuf,
         file_path_cb: Option<PyObject>,
         by: Vec<PyExpr>,
         include_key: bool,
         per_partition_sort_by: Option<Vec<PyExpr>>,
-        per_partition_reductions: Option<Vec<PyExpr>>,
         finish_callback: Option<PyObject>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
@@ -137,10 +115,7 @@ impl PyPartitioning {
                 key_exprs: by.into_iter().map(|e| e.inner).collect(),
                 include_key,
             },
-            per_partition_preprocess: parse_per_partition_preprocess(
-                per_partition_sort_by,
-                per_partition_reductions,
-            ),
+            per_partition_sort_by: parse_per_partition_sort_by(per_partition_sort_by),
             finish_callback,
         }
     }

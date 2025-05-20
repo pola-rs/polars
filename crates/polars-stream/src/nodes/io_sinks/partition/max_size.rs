@@ -1,10 +1,11 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
@@ -12,12 +13,12 @@ use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions}
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{CreateNewSinkFn, PerPartitionSortBy, PerPartitionReductions};
+use super::{CreateNewSinkFn, PerPartitionSortBy, WrittenPartition};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::execute::StreamingExecutionState;
-use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
+use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink, written_partitions_to_df};
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode};
 use crate::nodes::{JoinHandle, Morsel, TaskPriority};
@@ -42,9 +43,8 @@ pub struct MaxSizePartitionSinkNode {
     /// This is somewhat proportional to the amount of files open at any given point.
     num_retire_tasks: usize,
 
-    per_partition_reductions: Option<PerPartitionReductions>,
     per_partition_sort_by: Option<PerPartitionSortBy>,
-
+    written_partitions: Arc<OnceLock<DataFrame>>,
     finish_callback: Option<SinkFinishCallback>,
 }
 
@@ -59,9 +59,7 @@ impl MaxSizePartitionSinkNode {
         ext: PlSmallStr,
         sink_options: SinkOptions,
 
-        per_partition_reductions: Option<PerPartitionReductions>,
         per_partition_sort_by: Option<PerPartitionSortBy>,
-
         finish_callback: Option<SinkFinishCallback>,
     ) -> Self {
         assert!(max_size > 0);
@@ -82,7 +80,7 @@ impl MaxSizePartitionSinkNode {
             sink_options,
             num_retire_tasks,
             per_partition_sort_by,
-            per_partition_reductions,
+            written_partitions: Arc::new(OnceLock::new()),
             finish_callback,
         }
     }
@@ -110,6 +108,14 @@ impl SinkNode for MaxSizePartitionSinkNode {
         self.sink_options.maintain_order
     }
 
+    fn finish(&self) -> PolarsResult<()> {
+        if let Some(finish_callback) = &self.finish_callback {
+            let df = self.written_partitions.get().unwrap();
+            finish_callback.call(df.clone())?;
+        }
+        Ok(())
+    }
+
     fn spawn_sink(
         &mut self,
         mut recv_port_recv: Receiver<(PhaseOutcome, SinkInputPort)>,
@@ -134,6 +140,8 @@ impl SinkNode for MaxSizePartitionSinkNode {
         let ext = self.ext.clone();
         let per_partition_sort_by = self.per_partition_sort_by.clone();
         let retire_error = has_error_occurred.clone();
+        let output_written_partitions = self.written_partitions.clone();
+        let needs_written_partitions = self.finish_callback.is_some();
         join_handles.push(spawn(TaskPriority::High, async move {
             struct CurrentSink {
                 sender: SinkSender,
@@ -144,6 +152,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
             let verbose = config::verbose();
             let mut file_idx = 0;
             let mut current_sink_opt = None;
+            let mut written_partitions = Vec::new();
 
             while let Ok((outcome, recv_port)) = recv_port_recv.recv().await {
                 let mut recv_port = recv_port.serial();
@@ -174,9 +183,14 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                 )
                                 .await?;
                                 file_idx += 1;
-                                let Some((join_handles, sender)) = result else {
+                                let Some((path, join_handles, sender)) = result else {
                                     return Ok(());
                                 };
+
+                                if needs_written_partitions {
+                                    written_partitions
+                                        .push(WrittenPartition::new(path, &input_schema));
+                                }
 
                                 current_sink_opt.insert(CurrentSink {
                                     sender,
@@ -188,6 +202,10 @@ impl SinkNode for MaxSizePartitionSinkNode {
 
                         // If we can send the whole morsel into sink, do that.
                         if morsel.df().height() < current_sink.num_remaining as usize {
+                            if let Some(wp) = written_partitions.last_mut() {
+                                wp.append(morsel.df())?;
+                            }
+
                             current_sink.num_remaining -= morsel.df().height() as IdxSize;
 
                             // This sends the consume token along so that we don't start buffering here
@@ -211,6 +229,10 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         let (final_sink_df, df) = df.split_at(current_sink.num_remaining as i64);
                         let final_sink_morsel =
                             Morsel::new(final_sink_df, seq, source_token.clone());
+
+                        if let Some(wp) = written_partitions.last_mut() {
+                            wp.append(final_sink_morsel.df())?;
+                        }
 
                         if current_sink.sender.send(final_sink_morsel).await.is_err() {
                             return Ok(());
@@ -239,6 +261,8 @@ impl SinkNode for MaxSizePartitionSinkNode {
                 }
             }
 
+            let df = written_partitions_to_df(written_partitions, &input_schema);
+            output_written_partitions.set(df).unwrap();
             Ok(())
         }));
 

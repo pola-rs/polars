@@ -3,16 +3,13 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::config;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{
-    DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, SortMultipleOptions,
-};
+use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap};
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::dsl::{
-    ExtraColumnsPolicy, FileScan, FileSinkType, Operator, PartitionSinkTypeIR, PartitionVariantIR,
-    SinkTypeIR,
+    ExtraColumnsPolicy, FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, SinkTypeIR,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{
@@ -279,7 +276,7 @@ pub fn lower_ir(
                 variant,
                 file_type,
                 cloud_options,
-                per_partition_preprocess,
+                per_partition_sort_by,
                 finish_callback,
             }) => {
                 let base_path = base_path.clone();
@@ -288,7 +285,7 @@ pub fn lower_ir(
                 let variant = variant.clone();
                 let file_type = file_type.clone();
                 let cloud_options = cloud_options.clone();
-                let per_partition_preprocess = per_partition_preprocess.clone();
+                let per_partition_sort_by = per_partition_sort_by.clone();
                 let finish_callback = finish_callback.clone();
 
                 let mut input = lower_ir!(*input)?;
@@ -338,7 +335,7 @@ pub fn lower_ir(
                     variant,
                     file_type,
                     cloud_options,
-                    per_partition_preprocess,
+                    per_partition_sort_by,
                     finish_callback,
                 }
             },

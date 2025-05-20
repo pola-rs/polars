@@ -10,8 +10,7 @@ use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::{
     CastColumnsPolicy, JoinTypeOptionsIR, MissingColumnsPolicy, PartitionTargetCallback,
-    PartitionVariantIR, PerPartitionPreprocessIR, ScanSources, SinkFinishCallback, SinkOptions,
-    SinkTarget,
+    PartitionVariantIR, ScanSources, SinkFinishCallback, SinkOptions, SinkTarget, SortColumnIR,
 };
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, IR};
@@ -155,7 +154,7 @@ pub enum PhysNodeKind {
         variant: PartitionVariantIR,
         file_type: FileType,
         cloud_options: Option<CloudOptions>,
-        per_partition_preprocess: PerPartitionPreprocessIR,
+        per_partition_sort_by: Option<Vec<SortColumnIR>>,
         finish_callback: Option<SinkFinishCallback>,
     },
 

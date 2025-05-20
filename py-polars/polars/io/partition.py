@@ -5,14 +5,14 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from polars import col
+from polars import DataFrame, col
 from polars._typing import PartitioningScheme
 from polars._utils.unstable import issue_unstable_warning
 from polars.expr import Expr
 
 if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyExpr
+        from polars.polars import PyDataFrame, PyExpr
 
     from typing import IO, Any, Callable
 
@@ -185,27 +185,17 @@ def _prepare_per_partition_sort_by(
         raise TypeError(msg)
 
 
-def _prepare_per_partition_reductions(
-    e: Expr | list[Expr] | None,
-) -> list[PyExpr] | None:
-    def prepare_one(v: str | Expr) -> PyExpr:
-        if isinstance(e, str):
-            return [col(e)._pyexpr]
-        elif isinstance(e, Expr):
-            return [e._pyexpr]
-        else:
-            msg = f"cannot do a per partition reduction for {v!r}"
-            raise TypeError(msg)
-
-    if e is None:
+def _prepare_finish_callback(
+    f: Callable[[DataFrame], None] | None,
+) -> Callable[[PyDataFrame], None] | None:
+    if f is None:
         return None
-    elif isinstance(e, Expr):
-        return [e._pyexpr]
-    elif isinstance(e, list):
-        return [prepare_one(v) for v in e]
-    else:
-        msg = f"cannot do a per partition reduction for {e!r}"
-        raise TypeError(msg)
+
+    def cb(pydf: PyDataFrame) -> None:
+        nonlocal f
+        f(DataFrame._from_pydf(pydf))
+
+    return cb
 
 
 class PartitionMaxSize(PartitioningScheme):
@@ -256,8 +246,7 @@ class PartitionMaxSize(PartitioningScheme):
         | None = None,
         max_size: int,
         per_partition_sort_by: str | Expr | list[str] | list[Expr] | None = None,
-        per_partition_reductions: Expr | list[Expr] | None = None,
-        finish_callback: Callable[[Any], None] | None = None,
+        finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
         super().__init__(
@@ -268,10 +257,7 @@ class PartitionMaxSize(PartitioningScheme):
                 per_partition_sort_by=_prepare_per_partition_sort_by(
                     per_partition_sort_by
                 ),
-                per_partition_reductions=_prepare_per_partition_reductions(
-                    per_partition_reductions
-                ),
-                finish_callback=finish_callback,
+                finish_callback=_prepare_finish_callback(finish_callback),
             )
         )
 
@@ -379,8 +365,7 @@ class PartitionByKey(PartitioningScheme):
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
         per_partition_sort_by: str | Expr | list[str] | list[Expr] | None = None,
-        per_partition_reductions: Expr | list[Expr] | None = None,
-        finish_callback: Callable[[Any], None] | None = None,
+        finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
 
@@ -394,10 +379,7 @@ class PartitionByKey(PartitioningScheme):
                 per_partition_sort_by=_prepare_per_partition_sort_by(
                     per_partition_sort_by
                 ),
-                per_partition_reductions=_prepare_per_partition_reductions(
-                    per_partition_reductions
-                ),
-                finish_callback=finish_callback,
+                finish_callback=_prepare_finish_callback(finish_callback),
             )
         )
 
@@ -463,8 +445,7 @@ class PartitionParted(PartitioningScheme):
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
         per_partition_sort_by: str | Expr | list[str] | list[Expr] | None = None,
-        per_partition_reductions: Expr | list[Expr] | None = None,
-        finish_callback: Callable[[Any], None] | None = None,
+        finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
 
@@ -478,9 +459,6 @@ class PartitionParted(PartitioningScheme):
                 per_partition_sort_by=_prepare_per_partition_sort_by(
                     per_partition_sort_by
                 ),
-                per_partition_reductions=_prepare_per_partition_reductions(
-                    per_partition_reductions
-                ),
-                finish_callback=finish_callback,
+                finish_callback=_prepare_finish_callback(finish_callback),
             )
         )

@@ -281,9 +281,25 @@ pub struct SinkFinishContext {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SinkFinishCallback {
-    Rust(SpecialEq<Arc<dyn Fn(SinkFinishContext) -> PolarsResult<()> + Send + Sync>>),
+    Rust(SpecialEq<Arc<dyn Fn(DataFrame) -> PolarsResult<()> + Send + Sync>>),
     #[cfg(feature = "python")]
     Python(polars_utils::python_function::PythonFunction),
+}
+
+impl SinkFinishCallback {
+    pub fn call(&self, df: DataFrame) -> PolarsResult<()> {
+        match self {
+            Self::Rust(f) => f(df),
+            #[cfg(feature = "python")]
+            Self::Python(f) => pyo3::Python::with_gil(|py| {
+                let converter =
+                    polars_utils::python_convert_registry::get_python_convert_registry();
+                let df = (converter.to_py.df)(Box::new(df) as Box<dyn std::any::Any>)?;
+                f.call1(py, (df,))?;
+                PolarsResult::Ok(())
+            }),
+        }
+    }
 }
 
 impl PartitionTargetCallback {
@@ -415,20 +431,6 @@ pub struct SortColumnIR {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
-pub struct PerPartitionPreprocess {
-    pub sort_by: Option<Vec<SortColumn>>,
-    pub reductions: Option<Vec<Expr>>,
-}
-
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PerPartitionPreprocessIR {
-    pub sort_by: Option<Vec<SortColumnIR>>,
-    pub reductions: Option<Vec<ExprIR>>,
-}
-
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkType {
     pub base_path: Arc<PathBuf>,
     pub file_path_cb: Option<PartitionTargetCallback>,
@@ -436,7 +438,7 @@ pub struct PartitionSinkType {
     pub sink_options: SinkOptions,
     pub variant: PartitionVariant,
     pub cloud_options: Option<polars_io::cloud::CloudOptions>,
-    pub per_partition_preprocess: PerPartitionPreprocess,
+    pub per_partition_sort_by: Option<Vec<SortColumn>>,
     pub finish_callback: Option<SinkFinishCallback>,
 }
 
@@ -449,7 +451,7 @@ pub struct PartitionSinkTypeIR {
     pub sink_options: SinkOptions,
     pub variant: PartitionVariantIR,
     pub cloud_options: Option<polars_io::cloud::CloudOptions>,
-    pub per_partition_preprocess: PerPartitionPreprocessIR,
+    pub per_partition_sort_by: Option<Vec<SortColumnIR>>,
     pub finish_callback: Option<SinkFinishCallback>,
 }
 
@@ -509,28 +511,22 @@ impl PartitionSinkTypeIR {
         self.sink_options.hash(state);
         self.variant.traverse_and_hash(expr_arena, state);
         self.cloud_options.hash(state);
-        self.per_partition_preprocess.traverse_and_hash(expr_arena, state);
+        std::mem::discriminant(&self.per_partition_sort_by).hash(state);
+        if let Some(v) = &self.per_partition_sort_by {
+            v.len().hash(state);
+            for v in v {
+                v.traverse_and_hash(expr_arena, state);
+            }
+        }
     }
 }
 
 #[cfg(feature = "cse")]
-impl PerPartitionPreprocessIR {
+impl SortColumnIR {
     pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
-        std::mem::discriminant(&self.sort_by).hash(state);
-        if let Some(sort_by) = &self.sort_by {
-            for e in sort_by {
-                e.expr.traverse_and_hash(expr_arena, state);
-                e.descending.hash(state);
-                e.nulls_last.hash(state);
-            }
-        }
-
-        std::mem::discriminant(&self.reductions).hash(state);
-        if let Some(gather) = &self.reductions {
-            for e in gather {
-                e.traverse_and_hash(expr_arena, state);
-            }
-        }
+        self.expr.traverse_and_hash(expr_arena, state);
+        self.descending.hash(state);
+        self.nulls_last.hash(state);
     }
 }
 
