@@ -578,7 +578,7 @@ impl PyLazyFrame {
         py.enter_polars(|| self.ldf.describe_optimized_plan_tree())
     }
 
-    fn to_dot(&self, py: Python, optimized: bool) -> PyResult<String> {
+    fn to_dot(&self, py: Python<'_>, optimized: bool) -> PyResult<String> {
         py.enter_polars(|| self.ldf.to_dot(optimized))
     }
 
@@ -717,7 +717,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (lambda_post_opt=None))]
     fn profile(
         &self,
-        py: Python,
+        py: Python<'_>,
         lambda_post_opt: Option<PyObject>,
     ) -> PyResult<(PyDataFrame, PyDataFrame)> {
         let (df, time_df) = py.enter_polars(|| {
@@ -736,7 +736,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (engine, lambda_post_opt=None))]
     fn collect(
         &self,
-        py: Python,
+        py: Python<'_>,
         engine: Wrap<Engine>,
         lambda_post_opt: Option<PyObject>,
     ) -> PyResult<PyDataFrame> {
@@ -755,7 +755,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (engine, lambda))]
     fn collect_with_callback(
         &self,
-        py: Python,
+        py: Python<'_>,
         engine: Wrap<Engine>,
         lambda: PyObject,
     ) -> PyResult<()> {
@@ -790,7 +790,7 @@ impl PyLazyFrame {
     ))]
     fn sink_parquet(
         &self,
-        py: Python,
+        py: Python<'_>,
         target: SinkTarget,
         compression: &str,
         compression_level: Option<i32>,
@@ -860,7 +860,7 @@ impl PyLazyFrame {
     ))]
     fn sink_ipc(
         &self,
-        py: Python,
+        py: Python<'_>,
         target: SinkTarget,
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
@@ -924,7 +924,7 @@ impl PyLazyFrame {
     ))]
     fn sink_csv(
         &self,
-        py: Python,
+        py: Python<'_>,
         target: SinkTarget,
         include_bom: bool,
         include_header: bool,
@@ -1013,7 +1013,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (target, cloud_options, credential_provider, retries, sink_options))]
     fn sink_json(
         &self,
-        py: Python,
+        py: Python<'_>,
         target: SinkTarget,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
@@ -1059,7 +1059,7 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {
+    fn fetch(&self, py: Python<'_>, n_rows: usize) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
         py.enter_polars_df(|| ldf.fetch(n_rows))
     }

@@ -43,8 +43,8 @@ impl<'py> IntoPyObject<'py> for BufferInfo {
         (self.pointer, self.offset, self.length).into_pyobject(py)
     }
 }
-impl<'a> FromPyObject<'a> for BufferInfo {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for BufferInfo {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let (pointer, offset, length) = ob.extract()?;
         Ok(Self {
             pointer,
@@ -257,7 +257,7 @@ impl PySeries {
     #[staticmethod]
     #[pyo3(signature = (dtype, data, validity=None))]
     unsafe fn _from_buffers(
-        py: Python,
+        py: Python<'_>,
         dtype: Wrap<DataType>,
         data: Vec<PySeries>,
         validity: Option<PySeries>,
