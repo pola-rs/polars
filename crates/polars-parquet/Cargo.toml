@@ -45,7 +45,7 @@ proptest = { workspace = true, optional = true }
 
 [dev-dependencies]
 # ensure that the proptest feature is enabled when we are testing
-polars-parquet = { workspace = true, features = ["proptest"] }
+polars-parquet = { path = ".", features = ["proptest"] }
 
 rand = "0.8"
 
