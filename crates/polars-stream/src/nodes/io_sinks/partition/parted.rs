@@ -12,7 +12,7 @@ use polars_error::PolarsResult;
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::CreateNewSinkFn;
+use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
@@ -44,6 +44,8 @@ pub struct PartedPartitionSinkNode {
     ///
     /// This is somewhat proportional to the amount of files open at any given point.
     num_retire_tasks: usize,
+
+    per_partition_sort_by: Option<PerPartitionSortBy>,
     finish_callback: Option<SinkFinishCallback>,
 }
 
@@ -59,6 +61,7 @@ impl PartedPartitionSinkNode {
         ext: PlSmallStr,
         sink_options: SinkOptions,
         include_key: bool,
+        per_partition_sort_by: Option<PerPartitionSortBy>,
         finish_callback: Option<SinkFinishCallback>,
     ) -> Self {
         assert!(!key_cols.is_empty());
@@ -95,6 +98,7 @@ impl PartedPartitionSinkNode {
             sink_options,
             num_retire_tasks,
             include_key,
+            per_partition_sort_by,
             finish_callback,
         }
     }
@@ -136,6 +140,7 @@ impl SinkNode for PartedPartitionSinkNode {
         let ext = self.ext.clone();
         let include_key = self.include_key;
         let retire_error = has_error_occurred.clone();
+        let per_partition_sort_by = self.per_partition_sort_by.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
             struct CurrentSink {
                 sender: SinkSender,
@@ -213,7 +218,7 @@ impl SinkNode for PartedPartitionSinkNode {
                                     ext.as_str(),
                                     verbose,
                                     &state,
-                                    None,
+                                    per_partition_sort_by.as_ref(),
                                 )
                                 .await?;
                                 file_idx += 1;

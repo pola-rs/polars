@@ -33,6 +33,29 @@ pub struct PyPartitioning {
     pub finish_callback: Option<SinkFinishCallback>,
 }
 
+fn parse_per_partition_preprocess(
+    sort_by: Option<Vec<PyExpr>>,
+    per_partition_reductions: Option<Vec<PyExpr>>,
+) -> PerPartitionPreprocess {
+    let sort_by = sort_by.map(|exprs| {
+        exprs
+            .into_iter()
+            .map(|e| SortColumn {
+                expr: e.inner,
+                descending: false,
+                nulls_last: false,
+            })
+            .collect()
+    });
+    let reductions =
+        per_partition_reductions.map(|exprs| exprs.into_iter().map(|e| e.inner).collect());
+
+    PerPartitionPreprocess {
+        sort_by,
+        reductions,
+    }
+}
+
 #[cfg(feature = "pymethods")]
 #[pymethods]
 impl PyPartitioning {
@@ -47,42 +70,36 @@ impl PyPartitioning {
         finish_callback: Option<PyObject>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
-
-        let per_partition_preprocess = PerPartitionPreprocess {
-            sort_by: per_partition_sort_by.map(|exprs| {
-                exprs
-                    .into_iter()
-                    .map(|e| SortColumn {
-                        expr: e.inner,
-                        descending: false,
-                        nulls_last: false,
-                    })
-                    .collect()
-            }),
-            reductions: per_partition_reductions
-                .map(|exprs| exprs.into_iter().map(|e| e.inner).collect()),
-        };
-
         let finish_callback =
             finish_callback.map(|f| SinkFinishCallback::Python(PythonObject(f.into_any())));
+
         PyPartitioning {
             base_path,
             file_path_cb,
             variant: PartitionVariant::MaxSize(max_size),
-            per_partition_preprocess,
+            per_partition_preprocess: parse_per_partition_preprocess(
+                per_partition_sort_by,
+                per_partition_reductions,
+            ),
             finish_callback,
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (base_path, file_path_cb, by, include_key))]
+    #[pyo3(signature = (base_path, file_path_cb, by, include_key, per_partition_sort_by, per_partition_reductions, finish_callback))]
     pub fn new_by_key(
         base_path: PathBuf,
         file_path_cb: Option<PyObject>,
         by: Vec<PyExpr>,
         include_key: bool,
+        per_partition_sort_by: Option<Vec<PyExpr>>,
+        per_partition_reductions: Option<Vec<PyExpr>>,
+        finish_callback: Option<PyObject>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
+        let finish_callback =
+            finish_callback.map(|f| SinkFinishCallback::Python(PythonObject(f.into_any())));
+
         PyPartitioning {
             base_path,
             file_path_cb,
@@ -90,23 +107,29 @@ impl PyPartitioning {
                 key_exprs: by.into_iter().map(|e| e.inner).collect(),
                 include_key,
             },
-            per_partition_preprocess: PerPartitionPreprocess {
-                sort_by: None,
-                reductions: None,
-            },
-            finish_callback: None,
+            per_partition_preprocess: parse_per_partition_preprocess(
+                per_partition_sort_by,
+                per_partition_reductions,
+            ),
+            finish_callback,
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (base_path, file_path_cb, by, include_key))]
+    #[pyo3(signature = (base_path, file_path_cb, by, include_key, per_partition_sort_by, per_partition_reductions, finish_callback))]
     pub fn new_parted(
         base_path: PathBuf,
         file_path_cb: Option<PyObject>,
         by: Vec<PyExpr>,
         include_key: bool,
+        per_partition_sort_by: Option<Vec<PyExpr>>,
+        per_partition_reductions: Option<Vec<PyExpr>>,
+        finish_callback: Option<PyObject>,
     ) -> PyPartitioning {
         let file_path_cb = file_path_cb.map(|f| PythonObject(f.into_any()));
+        let finish_callback =
+            finish_callback.map(|f| SinkFinishCallback::Python(PythonObject(f.into_any())));
+
         PyPartitioning {
             base_path,
             file_path_cb,
@@ -114,11 +137,11 @@ impl PyPartitioning {
                 key_exprs: by.into_iter().map(|e| e.inner).collect(),
                 include_key,
             },
-            per_partition_preprocess: PerPartitionPreprocess {
-                sort_by: None,
-                reductions: None,
-            },
-            finish_callback: None,
+            per_partition_preprocess: parse_per_partition_preprocess(
+                per_partition_sort_by,
+                per_partition_reductions,
+            ),
+            finish_callback,
         }
     }
 }

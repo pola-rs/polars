@@ -383,6 +383,7 @@ fn to_graph_rec<'a>(
                         ext,
                         sink_options.clone(),
                         *include_key,
+                        per_partition_sort_by,
                         finish_callback.clone(),
                     ),
                 ),
@@ -390,8 +391,6 @@ fn to_graph_rec<'a>(
                     key_exprs,
                     include_key,
                 } => {
-                    // At the moment, this is needed.
-                    assert!(per_partition_sort_by.is_none());
                     SinkComputeNode::from(
                         nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
                             input_schema,
@@ -402,6 +401,7 @@ fn to_graph_rec<'a>(
                             ext,
                             sink_options.clone(),
                             *include_key,
+                            per_partition_sort_by,
                             finish_callback.clone(),
                         ),
                     )

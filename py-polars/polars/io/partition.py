@@ -159,8 +159,9 @@ def _cast_keyed_file_path_cb(
         )
     )
 
+
 def _prepare_per_partition_sort_by(
-    e: str | Expr | list[str | Expr] | None
+    e: str | Expr | list[str | Expr] | None,
 ) -> list[PyExpr] | None:
     def prepare_one(v: str | Expr) -> PyExpr:
         if isinstance(e, str):
@@ -168,7 +169,7 @@ def _prepare_per_partition_sort_by(
         elif isinstance(e, Expr):
             return [e._pyexpr]
         else:
-            msg = f"cannot sort_by {v!r}"
+            msg = f"cannot do a per partition sort by for {v!r}"
             raise TypeError(msg)
 
     if e is None:
@@ -179,6 +180,32 @@ def _prepare_per_partition_sort_by(
         return [e._pyexpr]
     elif isinstance(e, list):
         return [prepare_one(v) for v in e]
+    else:
+        msg = f"cannot do a per partition sort by for {e!r}"
+        raise TypeError(msg)
+
+
+def _prepare_per_partition_reductions(
+    e: Expr | list[Expr] | None,
+) -> list[PyExpr] | None:
+    def prepare_one(v: str | Expr) -> PyExpr:
+        if isinstance(e, str):
+            return [col(e)._pyexpr]
+        elif isinstance(e, Expr):
+            return [e._pyexpr]
+        else:
+            msg = f"cannot do a per partition reduction for {v!r}"
+            raise TypeError(msg)
+
+    if e is None:
+        return None
+    elif isinstance(e, Expr):
+        return [e._pyexpr]
+    elif isinstance(e, list):
+        return [prepare_one(v) for v in e]
+    else:
+        msg = f"cannot do a per partition reduction for {e!r}"
+        raise TypeError(msg)
 
 
 class PartitionMaxSize(PartitioningScheme):
@@ -238,8 +265,12 @@ class PartitionMaxSize(PartitioningScheme):
                 base_path=base_path,
                 file_path_cb=_cast_base_file_path_cb(file_path),
                 max_size=max_size,
-                per_partition_sort_by=_prepare_per_partition_sort_by(per_partition_sort_by),
-                per_partition_reductions=per_partition_reductions,
+                per_partition_sort_by=_prepare_per_partition_sort_by(
+                    per_partition_sort_by
+                ),
+                per_partition_reductions=_prepare_per_partition_reductions(
+                    per_partition_reductions
+                ),
                 finish_callback=finish_callback,
             )
         )
@@ -347,6 +378,9 @@ class PartitionByKey(PartitioningScheme):
         | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
+        per_partition_sort_by: str | Expr | list[str] | list[Expr] | None = None,
+        per_partition_reductions: Expr | list[Expr] | None = None,
+        finish_callback: Callable[[Any], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
 
@@ -357,6 +391,13 @@ class PartitionByKey(PartitioningScheme):
                 file_path_cb=_cast_keyed_file_path_cb(file_path),
                 by=lowered_by,
                 include_key=include_key,
+                per_partition_sort_by=_prepare_per_partition_sort_by(
+                    per_partition_sort_by
+                ),
+                per_partition_reductions=_prepare_per_partition_reductions(
+                    per_partition_reductions
+                ),
+                finish_callback=finish_callback,
             )
         )
 
@@ -421,6 +462,9 @@ class PartitionParted(PartitioningScheme):
         | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
+        per_partition_sort_by: str | Expr | list[str] | list[Expr] | None = None,
+        per_partition_reductions: Expr | list[Expr] | None = None,
+        finish_callback: Callable[[Any], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
 
@@ -431,5 +475,12 @@ class PartitionParted(PartitioningScheme):
                 file_path_cb=_cast_keyed_file_path_cb(file_path),
                 by=lowered_by,
                 include_key=include_key,
+                per_partition_sort_by=_prepare_per_partition_sort_by(
+                    per_partition_sort_by
+                ),
+                per_partition_reductions=_prepare_per_partition_reductions(
+                    per_partition_reductions
+                ),
+                finish_callback=finish_callback,
             )
         )

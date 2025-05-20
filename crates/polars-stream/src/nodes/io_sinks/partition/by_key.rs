@@ -14,7 +14,7 @@ use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions}
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 
-use super::CreateNewSinkFn;
+use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::execute::StreamingExecutionState;
 use crate::morsel::SourceToken;
@@ -41,6 +41,8 @@ pub struct PartitionByKeySinkNode {
     ext: PlSmallStr,
 
     sink_options: SinkOptions,
+
+    per_partition_sort_by: Option<PerPartitionSortBy>,
     finish_callback: Option<SinkFinishCallback>,
 }
 
@@ -55,6 +57,7 @@ impl PartitionByKeySinkNode {
         ext: PlSmallStr,
         sink_options: SinkOptions,
         include_key: bool,
+        per_partition_sort_by: Option<PerPartitionSortBy>,
         finish_callback: Option<SinkFinishCallback>,
     ) -> Self {
         assert!(!key_cols.is_empty());
@@ -91,6 +94,7 @@ impl PartitionByKeySinkNode {
             create_new,
             ext,
             sink_options,
+            per_partition_sort_by,
             finish_callback,
         }
     }
@@ -190,6 +194,7 @@ impl SinkNode for PartitionByKeySinkNode {
         let file_path_cb = self.file_path_cb.clone();
         let create_new_sink = self.create_new.clone();
         let ext = self.ext.clone();
+        let per_partition_sort_by = self.per_partition_sort_by.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
             enum OpenPartition {
                 Sink(
@@ -242,7 +247,7 @@ impl SinkNode for PartitionByKeySinkNode {
                                         ext.as_str(),
                                         verbose,
                                         &state,
-                                        None,
+                                        per_partition_sort_by.as_ref(),
                                     ).await?;
                                     file_idx += 1;
 
@@ -302,7 +307,7 @@ impl SinkNode for PartitionByKeySinkNode {
                             ext.as_str(),
                             verbose,
                             &state,
-                            None,
+                            per_partition_sort_by.as_ref(),
                         ).await?;
                         file_idx += 1;
                         let Some((mut join_handles, mut sender)) = result else {
