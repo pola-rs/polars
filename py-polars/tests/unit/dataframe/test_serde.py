@@ -218,5 +218,5 @@ def test_df_serde_list_of_null_17230() -> None:
 def test_df_serialize_from_multiple_python_threads_22364() -> None:
     df = pl.DataFrame({"A": [1, 2, 3, 4]})
 
-    with ThreadPool(2) as tp:
-        df = tp.map(pickle.dumps, [df] * 1_000)
+    with ThreadPool(4) as tp:
+        tp.map(pickle.dumps, [df] * 1_000)
