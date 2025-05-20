@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import os
 from functools import partial
 from time import perf_counter
@@ -11,10 +12,17 @@ from polars.exceptions import ComputeError
 from polars.io.iceberg._utils import _scan_pyarrow_dataset_impl
 
 if TYPE_CHECKING:
+    import contextlib
+
     import pyarrow as pa
+    from pyiceberg.partitioning import PartitionField
+    from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import Table
 
-    from polars.lazyframe.frame import LazyFrame
+    from polars._typing import IcebergWriteMode
+
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        from polars.polars import PyLazyFrame
 
 
 class IcebergDataset:
@@ -61,7 +69,7 @@ class IcebergDataset:
         *,
         limit: int | None = None,
         projection: list[str] | None = None,
-    ) -> LazyFrame:
+    ) -> pl.LazyFrame:
         """Construct a LazyFrame scan."""
         import polars._utils.logging
 
@@ -208,6 +216,261 @@ class IcebergDataset:
         lf = pl.LazyFrame._scan_python_function(arrow_schema, func, pyarrow=True)
 
         return lf
+
+    def _to_dataset_sink(
+        self,
+        lf: PyLazyFrame,
+        *,
+        mode: IcebergWriteMode,
+    ) -> pl.LazyFrame:
+        return self.to_dataset_sink(pl.LazyFrame._from_pyldf(lf), mode=mode)
+
+    def to_dataset_sink(
+        self, lf: pl.LazyFrame, *, mode: IcebergWriteMode
+    ) -> pl.LazyFrame:
+        """Write a LazyFrame into the Iceberg dataset."""
+        import uuid
+        from pathlib import Path
+
+        import pyarrow as pa
+        import pyiceberg.transforms as ts
+        from pyiceberg.expressions import AlwaysTrue
+        from pyiceberg.manifest import DataFile
+        from pyiceberg.typedef import Record as IcebergRecord
+
+        from polars import Boolean, col, lit
+
+        def _partition_field_to_partition_expr(
+            field: PartitionField, schema: IcebergSchema
+        ) -> pl.Expr:
+            part: pl.Expr = col(schema.find_field(field.source_id).name)
+
+            if isinstance(field.transform, ts.IdentityTransform):
+                pass
+            elif isinstance(field.transform, ts.YearTransform):
+                part = part.dt.truncate("1y").dt.date()
+            elif isinstance(field.transform, ts.MonthTransform):
+                part = part.dt.truncate("1m").dt.date()
+            elif isinstance(field.transform, ts.DayTransform):
+                part = part.dt.truncate("1d").dt.date()
+            elif isinstance(field.transform, ts.HourTransform):
+                part = part.dt.truncate("1h")
+            elif isinstance(field.transform, ts.BucketTransform):
+                msg = "BucketTransform not yet implemented."
+                raise NotImplementedError(msg)
+            elif isinstance(field.transform, ts.TruncateTransform):
+                msg = "TruncateTransform not yet implemented."
+                raise NotImplementedError(msg)
+            else:
+                msg = f"{field.transform} not implemented. Is this is a new transform?"
+                raise NotImplementedError(msg)
+
+            return part
+
+        def _to_partition_representation(value: Any) -> Any:
+            if value is None:
+                return None
+
+            if isinstance(value, datetime.datetime):
+                # Convert to microseconds since epoch
+                return (value - datetime.datetime(1970, 1, 1)) // datetime.timedelta(
+                    microseconds=1
+                )
+            elif isinstance(value, datetime.date):
+                # Convert to days since epoch
+                return (value - datetime.date(1970, 1, 1)) // datetime.timedelta(days=1)
+            elif isinstance(value, datetime.time):
+                # Convert to microseconds since midnight
+                return (
+                    value.hour * 60 * 60 + value.minute * 60 + value.second
+                ) * 1_000_000 + value.microsecond
+            elif isinstance(value, uuid.UUID):
+                return str(value)
+            else:
+                return value
+
+        def make_iceberg_record(
+            partition_values: dict[str, Any] | None,
+        ) -> IcebergRecord:
+            from pyiceberg.typedef import Record as IcebergRecord
+
+            if partition_values:
+                iceberg_part_vals = {
+                    k: _to_partition_representation(v)
+                    for k, v in partition_values.items()
+                }
+                return IcebergRecord(**iceberg_part_vals)
+            else:
+                return IcebergRecord()
+
+        def field_to_parquet_overwrites(field: pa.Field) -> ParquetFieldOverwrites:
+            field_id = field.metadata.pop(b"PARQUET:field_id")
+            field_id = int(field_id)
+
+            unsupported_types = [
+                "MapType",
+                "ExtensionType",
+                "UnionType",
+                "DictionaryType",
+                "SparseUnionType",
+                "DenseUnionType",
+                "Decimal256",
+                "ListViewType",
+                "LargeListViewType",
+                "FixedSizeBinaryType",
+                "BaseExtensionType",
+                "PyExtensionType",
+                "UnknownExtensionType",
+                "JsonType",
+                "Bool8Type",
+                "UuidType",
+                "OpaqueType",
+                "RunEndEncodedType",
+            ]
+            is_unsupported_type = any(
+                hasattr(pa, t) and isinstance(field.type, getattr(pa, t))
+                for t in unsupported_types
+            )
+            if is_unsupported_type:
+                msg = f"arrow `{field.type!r}` is not supported in polars Iceberg sinks"
+                raise NotImplementedError(msg)
+
+            children: (
+                None | ParquetFieldOverwrites | dict[str, ParquetFieldOverwrites]
+            ) = None
+            if isinstance(field.type, pa.StructType):
+                children = {
+                    f.name: field_to_parquet_overwrites(f) for f in field.type.fields
+                }
+            elif isinstance(field.type, (pa.LargeListType, pa.ListType)):
+                children = field_to_parquet_overwrites(field.type.value_field)
+
+            return ParquetFieldOverwrites(
+                name=field.name,
+                field_id=field_id,
+                required=not field.nullable,
+                children=children,
+            )
+
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        table = self.table()
+        location_provider = self.table().location_provider()
+        iceberg_schema = table.schema()
+        pyarrow_schema = schema_to_pyarrow(iceberg_schema)
+
+        if len(table.sort_order().fields) > 0:
+            msg = "Iceberg with sort orders"
+            raise NotImplementedError(msg)
+
+        polars_schema = pl.DataFrame(pyarrow_schema.empty_table()).schema
+
+        spec_id = table.metadata.partition_specs[0].spec_id
+        partition_exprs = [
+            _partition_field_to_partition_expr(p, iceberg_schema).alias(p.name)
+            for p in table.metadata.partition_specs[0].fields
+        ]
+        if len(partition_exprs) == 0:
+            partition_exprs = [
+                lit(False, dtype=Boolean()).alias("__POLARS_DUMMY_PARTITION")
+            ]
+
+        lf = lf.match_to_schema(polars_schema)
+
+        from polars.io import PartitionByKey
+        from polars.io.parquet import ParquetFieldOverwrites
+
+        # Create mapping to map column name to unique integer
+        field_overwrites = [
+            field_to_parquet_overwrites(field) for field in pyarrow_schema
+        ]
+        field_ids = [f.field_id for f in field_overwrites]
+
+        def _file_path_cb(_ctx: Any) -> str:
+            name = f"{uuid.uuid4()}.parquet"
+            path = location_provider.new_data_location(name, None)
+            if path.startswith("file://"):
+                Path(path[len("file://") :]).parent.mkdir(parents=True, exist_ok=True)
+            offset = path[len(location_provider.table_location) :]
+            if offset.startswith("/"):
+                offset = offset[1:]
+            return offset
+
+        def _finish_callback(df: pl.DataFrame) -> None:
+            with table.transaction() as tx:
+                if mode == "overwrite":
+                    if table.current_snapshot is not None:
+                        tx.delete(delete_filter=AlwaysTrue())
+                elif mode == "append":
+                    pass
+                else:
+                    msg = "mode is required to be in {'overwrite', 'append'}"
+                    raise ValueError(msg)
+
+                from pyiceberg.io.pyarrow import DataFileStatistics
+                from pyiceberg.manifest import DataFileContent
+                from pyiceberg.manifest import FileFormat as IcebergFileFormat
+
+                with tx._append_snapshot_producer({}) as append_files:
+                    for row in df.iter_rows():
+                        path = row[0]
+                        num_rows = row[1]
+                        file_size = row[2]
+                        keys = row[3]
+                        column_statistics = row[4:]
+
+                        k = {
+                            k: _to_partition_representation(v) for k, v in keys.items()
+                        }
+
+                        props = {
+                            "content": DataFileContent.DATA,
+                            "file_path": path,
+                            "file_format": IcebergFileFormat.PARQUET,
+                            "partition": IcebergRecord(**k),
+                            "file_size_in_bytes": file_size,
+                            "sort_order_id": None,
+                            "spec_id": spec_id,
+                            "equality_ids": None,
+                            "key_metadata": None,
+                            "record_count": num_rows,
+                        }
+
+                        null_value_counts = {
+                            field_ids[i]: s["null_count"]
+                            for i, s in enumerate(column_statistics)
+                        }
+                        nan_value_counts = {
+                            field_ids[i]: s["nan_count"]
+                            for i, s in enumerate(column_statistics)
+                        }
+
+                        statistics = DataFileStatistics(
+                            record_count=num_rows,
+                            column_sizes={},  # TODO: be part of statistics
+                            value_counts={},  # TODO: be part of statistics
+                            null_value_counts=null_value_counts,
+                            nan_value_counts=nan_value_counts,
+                            column_aggregates={},  # TODO: be part of statistics
+                            split_offsets={},  # TODO: be part of statistics
+                        )
+
+                        data_file = DataFile(
+                            **{**props, **statistics.to_serialized_dict()}
+                        )
+                        append_files.append_data_file(data_file)
+
+        return lf.sink_parquet(
+            PartitionByKey(
+                location_provider.table_location,
+                file_path=_file_path_cb,
+                by=partition_exprs,
+                include_key=False,
+                finish_callback=_finish_callback,
+            ),
+            field_overwrites=field_overwrites,
+            lazy=True,
+        )
 
     #
     # Accessors

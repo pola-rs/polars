@@ -57,6 +57,10 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                     SinkType::Partition(_) => {
                         return ineligible_error("contains partition sink");
                     },
+                    #[cfg(feature = "python")]
+                    SinkType::Dataset(_) => {
+                        return ineligible_error("contains dataset sink");
+                    },
                 }
             },
             DslPlan::SinkMultiple { .. } => {

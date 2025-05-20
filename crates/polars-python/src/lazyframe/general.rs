@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 
 use either::Either;
 use polars::io::{HiveOptions, RowIndex};
+use polars::prelude::python_dataset::PythonDatasetProvider;
 use polars::time::*;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
@@ -423,6 +424,7 @@ impl PyLazyFrame {
             reader_name: dataset_provider_funcs::reader_name,
             schema: dataset_provider_funcs::schema,
             to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
+            to_dataset_sink: dataset_provider_funcs::to_dataset_sink,
         });
 
         let lf =
@@ -974,6 +976,31 @@ impl PyLazyFrame {
                     partition.finish_callback,
                 ),
             }
+        })
+        .map(Into::into)
+        .map_err(Into::into)
+    }
+
+    #[pyo3(signature = (dataset_object, mode))]
+    fn sink_iceberg(
+        &self,
+        py: Python<'_>,
+        dataset_object: PyObject,
+        mode: Wrap<IcebergWriteMode>,
+    ) -> PyResult<Self> {
+        use crate::dataset::dataset_provider_funcs;
+
+        polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
+            reader_name: dataset_provider_funcs::reader_name,
+            schema: dataset_provider_funcs::schema,
+            to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
+            to_dataset_sink: dataset_provider_funcs::to_dataset_sink,
+        });
+
+        let dataset = Arc::new(PythonDatasetProvider::new(PythonObject(dataset_object)));
+        py.enter_polars(|| {
+            let ldf = self.ldf.clone();
+            ldf.sink_iceberg(dataset, None, mode.0)
         })
         .map(Into::into)
         .map_err(Into::into)

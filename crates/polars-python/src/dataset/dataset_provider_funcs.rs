@@ -1,7 +1,7 @@
 //! Note: Currently only used for iceberg.
 use std::sync::Arc;
 
-use polars::prelude::{DslPlan, PlSmallStr, Schema, SchemaRef};
+use polars::prelude::{DslPlan, IcebergWriteMode, LazyFrame, PlSmallStr, Schema, SchemaRef};
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_utils::python_function::PythonObject;
@@ -12,6 +12,7 @@ use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods};
 use pyo3::{PyResult, Python};
 
 use crate::interop::arrow::to_rust::field_to_rust;
+use crate::lazyframe::PyLazyFrame;
 use crate::prelude::{Wrap, get_lf};
 
 pub fn reader_name(dataset_object: &PythonObject) -> PlSmallStr {
@@ -104,6 +105,32 @@ pub fn to_dataset_scan(
         let Ok(lf) = get_lf(scan.bind(py)) else {
             return Err(
                 PyValueError::new_err(format!("cannot extract LazyFrame from {}", &scan)).into(),
+            );
+        };
+
+        Ok(lf.logical_plan)
+    })
+}
+
+pub fn to_dataset_sink(
+    dataset_object: &PythonObject,
+    lf: DslPlan,
+    mode: IcebergWriteMode,
+) -> PolarsResult<DslPlan> {
+    Python::with_gil(|py| {
+        let kwargs = PyDict::new(py);
+
+        let lf = LazyFrame::from(lf);
+        kwargs.set_item("lf", PyLazyFrame::from(lf))?;
+        kwargs.set_item("mode", <&'static str>::from(mode))?;
+
+        let sink = dataset_object
+            .getattr(py, "_to_dataset_sink")?
+            .call(py, (), Some(&kwargs))?;
+
+        let Ok(lf) = get_lf(sink.bind(py)) else {
+            return Err(
+                PyValueError::new_err(format!("cannot extract LazyFrame from {}", &sink)).into(),
             );
         };
 

@@ -1124,6 +1124,20 @@ impl LazyFrame {
         }))
     }
 
+    #[cfg(feature = "python")]
+    pub fn sink_iceberg(
+        self,
+        dataset: Arc<crate::dsl::python_dataset::PythonDatasetProvider>,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+        mode: IcebergWriteMode,
+    ) -> PolarsResult<Self> {
+        self.sink(SinkType::Dataset(DatasetSinkType {
+            dataset,
+            cloud_options,
+            mode,
+        }))
+    }
+
     #[cfg(feature = "new_streaming")]
     pub fn try_new_streaming_if_requested(
         &mut self,

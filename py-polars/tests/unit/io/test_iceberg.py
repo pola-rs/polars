@@ -222,3 +222,151 @@ def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
     expected = df.vstack(df)
     actual = pl.scan_iceberg(table).collect()
     assert_frame_equal(expected, actual, check_dtypes=False)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_sink_iceberg_no_partition(tmp_path: Path) -> None:
+    import datetime
+
+    from pyiceberg.catalog import load_catalog
+    from pyiceberg.io.pyarrow import pyarrow_to_schema
+    from pyiceberg.schema import NestedField
+    from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.table.name_mapping import MappedField, NameMapping
+    from pyiceberg.types import StringType, TimestampType
+
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    warehouse_path = str(tmp_path)
+    catalog = load_catalog(
+        "default",
+        type="sql",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{warehouse_path}",
+    )
+    catalog.create_namespace("default")
+
+    TABLE_NAME = "default.simple"
+
+    df = pl.DataFrame(
+        {
+            "a": [
+                datetime.datetime(2025, 1, 25),
+                datetime.datetime(2025, 1, 27),
+                datetime.datetime(2025, 1, 28),
+            ],
+            "b": ["x", "y", "z"],
+        }
+    )
+    schema = df.to_arrow().schema
+
+    array = []
+    for fieldId, name in enumerate(schema.names):
+        array.append(MappedField(field_id=fieldId + 1, names=[name]))
+
+    name_mapping = NameMapping(array)
+    icebergSchema = pyarrow_to_schema(
+        schema, name_mapping, downcast_ns_timestamp_to_us=True
+    )
+
+    icebergSchema = IcebergSchema(
+        NestedField(field_id=1, name="a", field_type=TimestampType(), required=False),
+        NestedField(field_id=2, name="b", field_type=StringType(), required=False),
+    )
+
+    catalog.create_table(
+        TABLE_NAME,
+        schema=icebergSchema,
+    )
+    table = catalog.load_table(TABLE_NAME)
+
+    assert_frame_equal(pl.scan_iceberg(table).collect(), df.clear())
+    df.lazy().sink_iceberg(table, mode="append")
+    assert_frame_equal(pl.scan_iceberg(table).collect(), df)
+    df.lazy().sink_iceberg(table, mode="append")
+    assert_frame_equal(pl.scan_iceberg(table).collect(), pl.concat([df] * 2))
+    df.lazy().sink_iceberg(table, mode="append")
+    assert_frame_equal(pl.scan_iceberg(table).collect(), pl.concat([df] * 3))
+    df.lazy().sink_iceberg(table, mode="overwrite")
+    assert_frame_equal(pl.scan_iceberg(table).collect(), df)
+    df.lazy().sink_iceberg(table, mode="overwrite")
+    assert_frame_equal(pl.scan_iceberg(table).collect(), df)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+def test_sink_iceberg_partition(tmp_path: Path) -> None:
+    import datetime
+
+    import pyiceberg.transforms as ts
+    from pyiceberg.catalog import load_catalog
+    from pyiceberg.io.pyarrow import pyarrow_to_schema
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.schema import NestedField
+    from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.table.name_mapping import MappedField, NameMapping
+    from pyiceberg.types import StringType, TimestampType
+
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    warehouse_path = str(tmp_path)
+    catalog = load_catalog(
+        "default",
+        type="sql",
+        uri="sqlite:///:memory:",
+        warehouse=f"file://{warehouse_path}",
+    )
+    catalog.create_namespace("default")
+
+    TABLE_NAME = "default.simple"
+
+    df = pl.DataFrame(
+        {
+            "a": [
+                datetime.datetime(2025, 1, 25),
+                datetime.datetime(2025, 1, 27),
+                datetime.datetime(2025, 1, 28),
+            ],
+            "b": ["x", "y", "z"],
+        }
+    )
+    schema = df.to_arrow().schema
+
+    array = []
+    for fieldId, name in enumerate(schema.names):
+        array.append(MappedField(field_id=fieldId + 1, names=[name]))
+
+    name_mapping = NameMapping(array)
+    icebergSchema = pyarrow_to_schema(
+        schema, name_mapping, downcast_ns_timestamp_to_us=True
+    )
+
+    icebergSchema = IcebergSchema(
+        NestedField(field_id=1, name="a", field_type=TimestampType(), required=False),
+        NestedField(field_id=2, name="b", field_type=StringType(), required=False),
+    )
+
+    partition_spec = PartitionSpec(
+        PartitionField(
+            source_id=1, field_id=1000, transform=ts.DayTransform(), name="a_day"
+        )
+    )
+    catalog.create_table(
+        TABLE_NAME,
+        schema=icebergSchema,
+        partition_spec=partition_spec,
+    )
+    table = catalog.load_table(TABLE_NAME)
+
+    assert_frame_equal(pl.scan_iceberg(table).collect(), df.clear())
+    df.lazy().sink_iceberg(table, mode="append")
+    assert_frame_equal(pl.scan_iceberg(table).collect(), df)
+    df.lazy().sink_iceberg(table, mode="append")
+    assert_frame_equal(pl.scan_iceberg(table).collect(), pl.concat([df] * 2))
+    df.lazy().sink_iceberg(table, mode="append")
+    assert_frame_equal(pl.scan_iceberg(table).collect(), pl.concat([df] * 3))
+    df.lazy().sink_iceberg(table, mode="overwrite")
+    assert_frame_equal(pl.scan_iceberg(table).collect(), df)
+    df.lazy().sink_iceberg(table, mode="overwrite")
+    assert_frame_equal(pl.scan_iceberg(table).collect(), df)

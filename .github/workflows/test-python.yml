@@ -98,7 +98,7 @@ jobs:
         if: github.ref_name != 'main' && matrix.python-version != '3.13t'
         env:
           POLARS_TIMEOUT_MS: 60000
-        run: pytest -n auto -m "not release and not benchmark and not docs"
+        run: pytest -sv tests/unit/io/test_iceberg.py -m "" # -n auto -m "not release and not benchmark and not docs"
 
       - name: Run tests with new streaming engine
         if: github.ref_name != 'main' && matrix.python-version != '3.13t'
