@@ -12,6 +12,7 @@ description = "Private crate for schema utilities for the Polars DataFrame libra
 indexmap = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
+schemars = { workspace = true, features = ["indexmap2"], optional = true }
 serde = { workspace = true, optional = true }
 
 [build-dependencies]
@@ -20,3 +21,4 @@ version_check = { workspace = true }
 [features]
 nightly = []
 serde = ["dep:serde", "serde/derive", "polars-utils/serde"]
+dsl-schema = ["dep:schemars", "polars-utils/dsl-schema"]

@@ -8,6 +8,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Schema<D> {
     fields: PlIndexMap<PlSmallStr, D>,
 }

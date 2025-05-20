@@ -25,6 +25,7 @@ num-traits = { workspace = true }
 polars-error = { workspace = true }
 polars-schema = { workspace = true }
 polars-utils = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 simdutf8 = { workspace = true }
 
@@ -113,6 +114,7 @@ compute = [
   "compute_temporal",
 ]
 serde = ["dep:serde", "polars-schema/serde", "polars-utils/serde"]
+dsl-schema = ["dep:schemars", "polars-schema/dsl-schema", "polars-utils/dsl-schema"]
 simd = []
 
 # polars-arrow

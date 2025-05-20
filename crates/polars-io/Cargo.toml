@@ -40,6 +40,7 @@ rayon = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true, features = ["json"] }
 ryu = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }
 simd-json = { workspace = true, optional = true }
@@ -70,6 +71,7 @@ json = [
   "csv",
 ]
 serde = ["dep:serde", "polars-core/serde-lazy", "polars-parquet/serde", "polars-utils/serde"]
+dsl-schema = ["dep:schemars", "polars-core/dsl-schema", "polars-parquet/dsl-schema", "polars-utils/dsl-schema"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrows streaming ipc file parsing

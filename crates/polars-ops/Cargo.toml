@@ -35,6 +35,7 @@ rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 regex-syntax = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
@@ -88,6 +89,13 @@ random = ["rand", "rand_distr"]
 rank = ["rand"]
 find_many = ["aho-corasick"]
 serde = ["dep:serde", "polars-core/serde", "polars-utils/serde", "polars-schema/serde", "polars-compute/serde"]
+dsl-schema = [
+  "dep:schemars",
+  "polars-core/dsl-schema",
+  "polars-utils/dsl-schema",
+  "polars-schema/dsl-schema",
+  "polars-compute/dsl-schema",
+]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]

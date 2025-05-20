@@ -19,6 +19,7 @@ use crate::dsl::{AExpr, Expr, SpecialEq};
 /// Options that apply to all sinks.
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct SinkOptions {
     /// Call sync when closing the file.
     pub sync_on_close: SyncOnCloseType,
@@ -145,7 +146,23 @@ impl<'de> serde::Deserialize<'de> for SinkTarget {
     }
 }
 
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for SinkTarget {
+    fn schema_name() -> String {
+        "SinkTarget".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "SinkTarget"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        PathBuf::json_schema(generator)
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FileSinkType {
     pub target: SinkTarget,
@@ -299,7 +316,23 @@ impl serde::Serialize for PartitionTargetCallback {
     }
 }
 
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for PartitionTargetCallback {
+    fn schema_name() -> String {
+        "PartitionTargetCallback".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PartitionTargetCallback"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkType {
     pub base_path: Arc<PathBuf>,
@@ -322,6 +355,7 @@ pub struct PartitionSinkTypeIR {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq)]
 pub enum SinkType {
     Memory,
@@ -330,6 +364,7 @@ pub enum SinkType {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PartitionVariant {
     MaxSize(IdxSize),

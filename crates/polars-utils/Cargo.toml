@@ -27,6 +27,7 @@ raw-cpuid = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 rmp-serde = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_ignored = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -54,4 +55,5 @@ serde = [
   "dep:serde_json",
   "dep:serde_ignored",
 ]
+dsl-schema = ["dep:schemars"]
 python = ["pyo3", "polars-error/python"]

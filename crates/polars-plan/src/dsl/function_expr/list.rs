@@ -6,6 +6,7 @@ use crate::{map, map_as_slice, wrap};
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ListFunction {
     Concat,
     #[cfg(feature = "is_in")]

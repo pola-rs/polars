@@ -19,6 +19,7 @@ pub struct ParquetMetadataContext<'a> {
 /// Key/value pairs that can be attached to a Parquet file as file-level metadtaa.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum KeyValueMetadata {
     /// Static key value metadata.
     Static(
@@ -29,9 +30,14 @@ pub enum KeyValueMetadata {
                 deserialize_with = "deserialize_vec_key_value"
             )
         )]
+        #[cfg_attr(
+            feature = "dsl-schema",
+            schemars(with = "Vec<(String, Option<String>)>")
+        )]
         Vec<KeyValue>,
     ),
     /// Rust function to dynamically compute key value metadata.
+    #[cfg_attr(feature = "dsl-schema", schemars(skip))]
     DynamicRust(RustKeyValueMetadataFunction),
     /// Python function to dynamically compute key value metadata.
     #[cfg(feature = "python")]
@@ -164,6 +170,7 @@ mod python_impl {
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
     pub struct PythonKeyValueMetadataFunction(
         #[cfg(feature = "python")]
         #[cfg_attr(

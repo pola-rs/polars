@@ -31,6 +31,7 @@ impl DslPlan {
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FileInfo {
     /// Schema of the physical file.
     ///

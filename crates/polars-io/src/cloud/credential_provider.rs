@@ -25,7 +25,7 @@ pub enum PlCredentialProvider {
     /// Prefer using [`PlCredentialProvider::from_func`] instead of constructing this directly
     Function(CredentialProviderFunction),
     #[cfg(feature = "python")]
-    Python(python_impl::PythonCredentialProvider),
+    Python(PythonCredentialProvider),
 }
 
 impl PlCredentialProvider {
@@ -378,6 +378,21 @@ impl serde::Serialize for PlCredentialProvider {
     }
 }
 
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for PlCredentialProvider {
+    fn schema_name() -> String {
+        "PlCredentialProvider".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PlCredentialProvider"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
+    }
+}
+
 /// Avoids calling the credential provider function if we have not yet passed the expiry time.
 #[derive(Debug)]
 struct FetchedCredentialsCache<C>(tokio::sync::Mutex<(C, u64)>);
@@ -490,6 +505,7 @@ mod python_impl {
 
     #[derive(Clone, Debug)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
     pub enum PythonCredentialProvider {
         #[cfg_attr(
             feature = "serde",

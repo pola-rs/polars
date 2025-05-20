@@ -5,6 +5,7 @@ use crate::config;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct TimeZone {
     /// Private inner to ensure canonical / parsed time zone repr at construction.
     inner: PlSmallStr,

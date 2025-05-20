@@ -18,6 +18,7 @@ polars_utils::regex_cache::cached_regex! {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum StringFunction {
     #[cfg(feature = "concat_str")]
