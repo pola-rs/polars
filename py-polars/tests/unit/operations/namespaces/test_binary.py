@@ -269,6 +269,12 @@ def test_reinterpret_list(
         assert_frame_equal(result, expected_df)
 
 
+def test_reinterpret_array_invalid() -> None:
+    series = pl.Series([b"short", b"justrite", None, b"waytoolong"])
+    as_bin = series.bin.reinterpret(dtype=pl.Array(pl.UInt32(), 2), endianness="little")
+    assert as_bin.to_list() == [None, [1953723754, 1702127986], None, None]
+
+
 @pytest.mark.parametrize(
     ("dtype", "type_size"),
     [

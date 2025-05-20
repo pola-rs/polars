@@ -101,8 +101,9 @@ where
 
     from.iter().try_for_each(|x| {
         if let Some(x) = x {
-            if x.len() % element_size != 0 {
-                todo!("Return error here.")
+            if x.len() != element_size * size {
+                result.push_null();
+                return Ok(());
             }
 
             result.try_push(Some(
