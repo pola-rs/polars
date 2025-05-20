@@ -251,13 +251,11 @@ impl ExprPushdownGroup {
                     #[cfg(feature = "python")]
                     // This is python `map_elements`. This is a hack because that function breaks
                     // the Polars model. It should be elementwise. This must be fixed.
-                    AExpr::AnonymousFunction { options, .. } => {
+                    AExpr::AnonymousFunction { options, .. }
                         if options.flags.contains(FunctionFlags::APPLY_LIST)
-                            && options.fmt_str == MAP_LIST_NAME
-                        {
-                            return self;
-                        };
-                        true
+                            && options.fmt_str == MAP_LIST_NAME =>
+                    {
+                        return self;
                     },
 
                     AExpr::Cast {
