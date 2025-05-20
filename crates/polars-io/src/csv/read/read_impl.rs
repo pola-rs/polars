@@ -320,6 +320,10 @@ impl<'a> CoreReader<'a> {
         Ok(df)
     }
 
+    // The code adheres to RFC 4180 in a strict sense, unless explicitly documented otherwise.
+    // Malformed CSV is common, see e.g. the use of lazy_quotes and whitespace.
+    // In case malformed CSV is detected, a warning or an error will be issued.
+    // Not all malformed CSV will be detected, as that would impact performance.
     fn parse_csv(&mut self, bytes: &[u8]) -> PolarsResult<DataFrame> {
         let (bytes, _) = self.find_starting_point(
             bytes,
@@ -394,6 +398,7 @@ impl<'a> CoreReader<'a> {
             && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
         pool.scope(|s| {
+            // Pass 1: identify chunks for parallel processing (line parsing).
             loop {
                 let b = unsafe { bytes.get_unchecked(total_offset..) };
                 if b.is_empty() {
@@ -402,6 +407,9 @@ impl<'a> CoreReader<'a> {
                 debug_assert!(
                     total_offset == 0 || bytes[total_offset - 1] == self.parse_options.eol_char
                 );
+
+                // Count is the number of lines for the next chunk. In case of malformed CSV data
+                // count may not be as expected. We detect some malformed cases in pass 2.
                 let (count, position) = counter.find_next(b, &mut chunk_size);
                 debug_assert!(count == 0 || b[position] == self.parse_options.eol_char);
 
@@ -424,6 +432,7 @@ impl<'a> CoreReader<'a> {
                     (b, count)
                 };
 
+                // Pass 2: process each individual chunk in parallel (field parsing)
                 if !b.is_empty() {
                     let results = results.clone();
                     let projection = projection.as_ref();
@@ -441,7 +450,11 @@ impl<'a> CoreReader<'a> {
                         let result = slf
                             .read_chunk(b, projection, 0, count, Some(0), b.len())
                             .and_then(|mut df| {
-                                debug_assert!(df.height() <= count);
+                                if df.height() > count {
+                                    polars_warn!(
+                                        "CSV data malformed: line count mismatch in chunk"
+                                    );
+                                }
 
                                 if slf.n_rows.is_some() {
                                     total_line_count.fetch_add(df.height(), Ordering::Relaxed);

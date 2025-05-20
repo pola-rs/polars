@@ -44,7 +44,7 @@ mod inner {
             Some((self.v, need_escaping))
         }
 
-        fn eof_oel(&self, current_ch: u8) -> bool {
+        fn eof_eol(&self, current_ch: u8) -> bool {
             current_ch == self.separator || current_ch == self.eol_char
         }
     }
@@ -89,7 +89,7 @@ mod inner {
                         in_field = !in_field;
                     }
 
-                    if !in_field && self.eof_oel(c) {
+                    if !in_field && self.eof_eol(c) {
                         if c == self.eol_char {
                             // SAFETY:
                             // we are in bounds
@@ -109,7 +109,7 @@ mod inner {
 
                 idx as usize
             } else {
-                match self.v.iter().position(|&c| self.eof_oel(c)) {
+                match self.v.iter().position(|&c| self.eof_eol(c)) {
                     None => return self.finish(needs_escaping),
                     Some(idx) => unsafe {
                         // SAFETY:
@@ -139,6 +139,7 @@ mod inner {
 mod inner {
     use std::simd::prelude::*;
 
+    use polars_error::polars_warn;
     use polars_utils::clmul::prefix_xorsum_inclusive;
 
     const SIMD_SIZE: usize = 64;
@@ -202,8 +203,12 @@ mod inner {
             Some((self.v, need_escaping))
         }
 
-        fn eof_oel(&self, current_ch: u8) -> bool {
+        fn eof_eol(&self, current_ch: u8) -> bool {
             current_ch == self.separator || current_ch == self.eol_char
+        }
+
+        fn is_quote(&self, current_ch: u8) -> bool {
+            current_ch == self.quote_char
         }
     }
 
@@ -255,6 +260,7 @@ mod inner {
             // SAFETY:
             // we have checked bounds
             let pos = if self.quoting && unsafe { *self.v.get_unchecked(0) } == self.quote_char {
+                // Start of an enclosed field
                 let mut total_idx = 0;
                 needs_escaping = true;
                 let mut not_in_field_previous_iter = true;
@@ -324,7 +330,7 @@ mod inner {
                                 in_field = !in_field;
                             }
 
-                            if !in_field && self.eof_oel(c) {
+                            if !in_field && self.eof_eol(c) {
                                 if c == self.eol_char {
                                     // SAFETY:
                                     // we are in bounds
@@ -352,6 +358,7 @@ mod inner {
                 }
                 total_idx
             } else {
+                // Start of an unenclosed field
                 let mut total_idx = 0;
 
                 loop {
@@ -369,6 +376,22 @@ mod inner {
                         let has_separator = simd_bytes.simd_eq(self.simd_separator);
                         let has_any_mask = (has_separator | has_eol_char).to_bitmask();
 
+                        // check malformed: quotes are not allowed in unenclosed fields
+                        if self.quoting {
+                            let has_quote_mask =
+                                simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
+                            let malformed = match (has_quote_mask, has_any_mask) {
+                                (q, e) if q > 0 && e > 0 => q.trailing_zeros() < e.trailing_zeros(),
+                                (q, 0) if q > 0 => true,
+                                _ => false,
+                            };
+                            if malformed {
+                                polars_warn!(
+                                    "CSV data malformed: quote character in an unenclosed field"
+                                );
+                            }
+                        }
+
                         if has_any_mask != 0 {
                             total_idx += has_any_mask.trailing_zeros() as usize;
                             break;
@@ -376,7 +399,22 @@ mod inner {
                             total_idx += SIMD_SIZE;
                         }
                     } else {
-                        match bytes.iter().position(|&c| self.eof_oel(c)) {
+                        let eof_eol_idx = bytes.iter().position(|&c| self.eof_eol(c));
+
+                        // check malformed: quotes are not allowed in unenclosed fields
+                        if self.quoting {
+                            let quote_idx = match eof_eol_idx {
+                                Some(e) => bytes[..e].iter().position(|&c| self.is_quote(c)),
+                                None => bytes.iter().position(|&c| self.is_quote(c)),
+                            };
+                            if quote_idx.is_some() {
+                                polars_warn!(
+                                    "CSV data malformed: quote character in an unenclosed field"
+                                );
+                            }
+                        }
+
+                        match eof_eol_idx {
                             None => return self.finish(needs_escaping),
                             Some(idx) => {
                                 total_idx += idx;
