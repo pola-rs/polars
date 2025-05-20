@@ -282,30 +282,35 @@ impl DateLikeNameSpace {
     }
 
     /// Express a Duration in terms of its total number of integer days.
+    #[cfg(feature = "dtype-duration")]
     pub fn total_days(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalDays))
     }
 
     /// Express a Duration in terms of its total number of integer hours.
+    #[cfg(feature = "dtype-duration")]
     pub fn total_hours(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalHours))
     }
 
     /// Express a Duration in terms of its total number of integer minutes.
+    #[cfg(feature = "dtype-duration")]
     pub fn total_minutes(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalMinutes))
     }
 
     /// Express a Duration in terms of its total number of integer seconds.
+    #[cfg(feature = "dtype-duration")]
     pub fn total_seconds(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalSeconds))
     }
 
     /// Express a Duration in terms of its total number of milliseconds.
+    #[cfg(feature = "dtype-duration")]
     pub fn total_milliseconds(self) -> Expr {
         self.0.map_unary(FunctionExpr::TemporalExpr(
             TemporalFunction::TotalMilliseconds,
@@ -313,6 +318,7 @@ impl DateLikeNameSpace {
     }
 
     /// Express a Duration in terms of its total number of microseconds.
+    #[cfg(feature = "dtype-duration")]
     pub fn total_microseconds(self) -> Expr {
         self.0.map_unary(FunctionExpr::TemporalExpr(
             TemporalFunction::TotalMicroseconds,
@@ -320,6 +326,7 @@ impl DateLikeNameSpace {
     }
 
     /// Express a Duration in terms of its total number of nanoseconds.
+    #[cfg(feature = "dtype-duration")]
     pub fn total_nanoseconds(self) -> Expr {
         self.0.map_unary(FunctionExpr::TemporalExpr(
             TemporalFunction::TotalNanoseconds,

@@ -14,6 +14,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Quarter => map!(datetime::quarter),
             Week => map!(datetime::week),
             WeekDay => map!(datetime::weekday),
+            #[cfg(feature = "dtype-duration")]
             Duration(tu) => map_as_slice!(impl_duration, tu),
             Day => map!(datetime::day),
             OrdinalDay => map!(datetime::ordinal_day),
@@ -26,12 +27,19 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Millisecond => map!(datetime::millisecond),
             Microsecond => map!(datetime::microsecond),
             Nanosecond => map!(datetime::nanosecond),
+            #[cfg(feature = "dtype-duration")]
             TotalDays => map!(datetime::total_days),
+            #[cfg(feature = "dtype-duration")]
             TotalHours => map!(datetime::total_hours),
+            #[cfg(feature = "dtype-duration")]
             TotalMinutes => map!(datetime::total_minutes),
+            #[cfg(feature = "dtype-duration")]
             TotalSeconds => map!(datetime::total_seconds),
+            #[cfg(feature = "dtype-duration")]
             TotalMilliseconds => map!(datetime::total_milliseconds),
+            #[cfg(feature = "dtype-duration")]
             TotalMicroseconds => map!(datetime::total_microseconds),
+            #[cfg(feature = "dtype-duration")]
             TotalNanoseconds => map!(datetime::total_nanoseconds),
             ToString(format) => map!(datetime::to_string, &format),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
