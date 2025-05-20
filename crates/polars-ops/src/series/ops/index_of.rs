@@ -1,8 +1,18 @@
 use arrow::array::{BinaryArray, BinaryViewArray, PrimitiveArray};
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
+use polars_core::utils::{Container, first_non_null, last_non_null};
 use polars_utils::total_ord::TotalEq;
 use row_encode::encode_rows_unordered;
+
+pub trait IndexOf {
+    /// Find the index of a given value in the Series.
+    fn index_of(&self, needle: Scalar) -> PolarsResult<Option<usize>>;
+    /// Find the index of the first non-null value in the Series.
+    fn index_of_first_not_null(&self) -> Option<usize>;
+    /// Find the index of the last non-null value in the Series.
+    fn index_of_last_not_null(&self) -> Option<usize>;
+}
 
 /// Find the index of the value, or ``None`` if it can't be found.
 fn index_of_value<'a, DT, AR>(ca: &'a ChunkedArray<DT>, value: AR::ValueT<'a>) -> Option<usize>
@@ -117,103 +127,150 @@ macro_rules! try_index_of_numeric_ca {
     }};
 }
 
-/// Find the index of a given value (the first and only entry in `value_series`)
-/// within the series.
-pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> {
-    polars_ensure!(
-        series.dtype() == needle.dtype(),
-        InvalidOperation: "Cannot perform index_of with mismatching datatypes: {:?} and {:?}",
-        series.dtype(),
-        needle.dtype(),
-    );
+impl IndexOf for Series {
+    /// Find the index of a given value within the Series; if not found, returns None.
+    fn index_of(&self, needle: Scalar) -> PolarsResult<Option<usize>> {
+        let dtype = self.dtype();
+        polars_ensure!(
+            dtype == needle.dtype(),
+            InvalidOperation: "cannot call `index_of` with mismatched datatypes: {:?} and {:?}",
+            self.dtype(),
+            needle.dtype(),
+        );
 
-    if series.is_empty() {
-        return Ok(None);
-    }
-
-    // Series is not null, and the value is null:
-    if needle.is_null() {
-        let null_count = series.null_count();
-        if null_count == 0 {
+        if self.is_empty() {
             return Ok(None);
-        } else if null_count == series.len() {
-            return Ok(Some(0));
         }
 
-        let mut index = 0;
-        for chunk in series.chunks() {
-            let length = chunk.len();
-            if let Some(bitmap) = chunk.validity() {
-                let leading_ones = bitmap.leading_ones();
-                if leading_ones < length {
-                    return Ok(Some(index + leading_ones));
-                }
+        // series is null
+        if self.dtype().is_null() {
+            if needle.is_null() {
+                return Ok((!self.is_empty()).then_some(0));
             } else {
-                index += length;
+                return Ok(None);
             }
         }
-        return Ok(None);
+
+        // value being searched for is null
+        if needle.is_null() {
+            let null_count = self.null_count();
+            if null_count == 0 {
+                return Ok(None);
+            } else if null_count == self.len() {
+                return Ok(Some(0));
+            }
+            let mut index = 0;
+            for chunk in self.chunks() {
+                let length = chunk.len();
+                if let Some(bitmap) = chunk.validity() {
+                    let leading_ones = bitmap.leading_ones();
+                    if leading_ones < length {
+                        return Ok(Some(index + leading_ones));
+                    }
+                } else {
+                    index += length;
+                }
+            }
+            return Ok(None);
+        }
+
+        use DataType as DT;
+        match self.dtype().to_physical() {
+            DT::Null => unreachable!("handled above"),
+            DT::Boolean => Ok(index_of_bool(
+                self.bool()?,
+                needle.value().extract_bool().unwrap(),
+            )),
+            dt if dt.is_primitive_numeric() => {
+                let series = self.to_physical_repr();
+                Ok(downcast_as_macro_arg_physical!(
+                    series,
+                    try_index_of_numeric_ca,
+                    needle
+                ))
+            },
+            DT::String => Ok(index_of_value::<_, BinaryViewArray>(
+                &self.str()?.as_binary(),
+                needle.value().extract_str().unwrap().as_bytes(),
+            )),
+            DT::Binary => Ok(index_of_value::<_, BinaryViewArray>(
+                self.binary()?,
+                needle.value().extract_bytes().unwrap(),
+            )),
+            DT::BinaryOffset => Ok(index_of_value::<_, BinaryArray<i64>>(
+                self.binary_offset()?,
+                needle.value().extract_bytes().unwrap(),
+            )),
+            DT::Array(_, _) | DT::List(_) | DT::Struct(_) => {
+                // For non-numeric dtypes, we convert to row-encoding, which essentially has
+                // us searching the physical representation of the data as a series of
+                // bytes.
+                let value_as_column = Column::new_scalar(PlSmallStr::EMPTY, needle, 1);
+                let value_as_row_encoded_ca = encode_rows_unordered(&[value_as_column])?;
+                let value = value_as_row_encoded_ca
+                    .first()
+                    .expect("shouldn't have null values in a row-encoded result");
+
+                let ca = encode_rows_unordered(&[self.clone().into_column()])?;
+                Ok(index_of_value::<_, BinaryArray<i64>>(&ca, value))
+            },
+
+            DT::UInt8
+            | DT::UInt16
+            | DT::UInt32
+            | DT::UInt64
+            | DT::Int8
+            | DT::Int16
+            | DT::Int32
+            | DT::Int64
+            | DT::Int128
+            | DT::Float32
+            | DT::Float64 => unreachable!("primitive numeric"),
+
+            // to_physical
+            #[cfg(feature = "dtype-decimal")]
+            DT::Decimal(..) => unreachable!(),
+            #[cfg(feature = "dtype-categorical")]
+            DT::Categorical(..) | DT::Enum(..) => unreachable!(),
+            DT::Date | DT::Datetime(..) | DT::Duration(..) | DT::Time => unreachable!(),
+
+            DT::Object(_) | DT::Unknown(_) => polars_bail!(op = "index_of", self.dtype()),
+        }
     }
 
-    use DataType as DT;
-    match series.dtype().to_physical() {
-        DT::Null => unreachable!("handled above"),
-        DT::Boolean => Ok(index_of_bool(
-            series.bool()?,
-            needle.value().extract_bool().unwrap(),
-        )),
-        dt if dt.is_primitive_numeric() => {
-            let series = series.to_physical_repr();
-            Ok(downcast_as_macro_arg_physical!(
-                series,
-                try_index_of_numeric_ca,
-                needle
-            ))
-        },
-        DT::String => Ok(index_of_value::<_, BinaryViewArray>(
-            &series.str()?.as_binary(),
-            needle.value().extract_str().unwrap().as_bytes(),
-        )),
-        DT::Binary => Ok(index_of_value::<_, BinaryViewArray>(
-            series.binary()?,
-            needle.value().extract_bytes().unwrap(),
-        )),
-        DT::BinaryOffset => Ok(index_of_value::<_, BinaryArray<i64>>(
-            series.binary_offset()?,
-            needle.value().extract_bytes().unwrap(),
-        )),
-        DT::Array(_, _) | DT::List(_) | DT::Struct(_) => {
-            // For non-numeric dtypes, we convert to row-encoding, which essentially has
-            // us searching the physical representation of the data as a series of
-            // bytes.
-            let value_as_column = Column::new_scalar(PlSmallStr::EMPTY, needle, 1);
-            let value_as_row_encoded_ca = encode_rows_unordered(&[value_as_column])?;
-            let value = value_as_row_encoded_ca
-                .first()
-                .expect("Shouldn't have nulls in a row-encoded result");
-            let ca = encode_rows_unordered(&[series.clone().into_column()])?;
-            Ok(index_of_value::<_, BinaryArray<i64>>(&ca, value))
-        },
+    /// Find the index of the *first* non-null value in the
+    /// Series; if no such value is found, returns None.
+    fn index_of_first_not_null(&self) -> Option<usize> {
+        // early-exit if empty, all values are null, or no values are null
+        let n_values = self.len();
+        if n_values == 0 {
+            return None;
+        }
+        let null_count = self.null_count();
+        if null_count == 0 {
+            return Some(0);
+        } else if null_count == n_values {
+            return None;
+        }
+        // otherwise examine chunk validity bitmaps
+        first_non_null(self.chunks().iter().map(|arr| arr.validity()))
+    }
 
-        DT::UInt8
-        | DT::UInt16
-        | DT::UInt32
-        | DT::UInt64
-        | DT::Int8
-        | DT::Int16
-        | DT::Int32
-        | DT::Int64
-        | DT::Int128
-        | DT::Float32
-        | DT::Float64 => unreachable!("primitive numeric"),
-
-        // to_physical
-        #[cfg(feature = "dtype-decimal")]
-        DT::Decimal(..) => unreachable!(),
-        #[cfg(feature = "dtype-categorical")]
-        DT::Categorical(..) | DT::Enum(..) => unreachable!(),
-        DT::Date | DT::Datetime(..) | DT::Duration(..) | DT::Time => unreachable!(),
-
-        DT::Object(_) | DT::Unknown(_) => polars_bail!(op = "index_of", series.dtype()),
+    /// Find the index of the *last* non-null value in the
+    /// Series; if no such value is found, returns None.
+    fn index_of_last_not_null(&self) -> Option<usize> {
+        // early-exit if empty, all values are null, or no values are null
+        let n_values = self.len();
+        if n_values == 0 {
+            return None;
+        }
+        let null_count = self.null_count();
+        if null_count == 0 {
+            return Some(n_values - 1);
+        } else if null_count == n_values {
+            return None;
+        }
+        // otherwise examine chunk validity bitmaps
+        last_non_null(self.chunks().iter().map(|arr| arr.validity()), n_values)
     }
 }

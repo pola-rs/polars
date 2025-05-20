@@ -374,6 +374,18 @@ impl Expr {
         self.map_binary(FunctionExpr::IndexOf, element.into())
     }
 
+    #[cfg(feature = "index_of")]
+    /// Find the index of the first non-null value.
+    pub fn index_of_first_not_null(self) -> Expr {
+        self.map_unary(FunctionExpr::IndexOfFirstNotNull)
+    }
+
+    #[cfg(feature = "index_of")]
+    /// Find the index of the last non-null value.
+    pub fn index_of_last_not_null(self) -> Expr {
+        self.map_unary(FunctionExpr::IndexOfLastNotNull)
+    }
+
     #[cfg(feature = "search_sorted")]
     /// Find indices where elements should be inserted to maintain order.
     pub fn search_sorted<E: Into<Expr>>(

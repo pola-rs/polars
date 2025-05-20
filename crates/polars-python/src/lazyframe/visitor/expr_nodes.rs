@@ -1055,6 +1055,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::ArgWhere => ("argwhere",).into_py_any(py),
                 #[cfg(feature = "index_of")]
                 FunctionExpr::IndexOf => ("index_of",).into_py_any(py),
+                #[cfg(feature = "index_of")]
+                FunctionExpr::IndexOfFirstNotNull => ("index_of_first_not_null",).into_py_any(py),
+                #[cfg(feature = "index_of")]
+                FunctionExpr::IndexOfLastNotNull => ("index_of_last_not_null",).into_py_any(py),
                 #[cfg(feature = "search_sorted")]
                 FunctionExpr::SearchSorted { side, descending } => (
                     "search_sorted",

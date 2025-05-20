@@ -327,6 +327,16 @@ impl PyExpr {
         self.inner.clone().index_of(element.inner).into()
     }
 
+    #[cfg(feature = "index_of")]
+    fn index_of_first_not_null(&self) -> Self {
+        self.inner.clone().index_of_first_not_null().into()
+    }
+
+    #[cfg(feature = "index_of")]
+    fn index_of_last_not_null(&self) -> Self {
+        self.inner.clone().index_of_last_not_null().into()
+    }
+
     #[cfg(feature = "search_sorted")]
     #[pyo3(signature = (element, side, descending=false))]
     fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>, descending: bool) -> Self {

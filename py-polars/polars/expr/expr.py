@@ -2376,6 +2376,11 @@ class Expr:
         element
             Value to find.
 
+        See Also
+        --------
+        index_of_first_not_null : Get the index of the first value that is not null.
+        index_of_last_not_null : Get the index of the last value that is not null.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, None, 17]})
@@ -2397,6 +2402,68 @@ class Expr:
         """
         element = parse_into_expression(element, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.index_of(element))
+
+    def index_of_first_not_null(self) -> Expr:
+        """
+        Get the index of the first value that is not null.
+
+        See Also
+        --------
+        index_of : Get the index of the first occurrence of a value.
+        index_of_last_not_null : Get the index of the last value that is not null.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [None, 10.5, 25.0],
+        ...         "b": [None, None, "zz"],
+        ...         "c": [9999, 8888, 7777],
+        ...         "d": [None, None, None],
+        ...     }
+        ... )
+        >>> df.select(pl.all().index_of_first_not_null())
+        shape: (1, 4)
+        ┌─────┬─────┬─────┬──────┐
+        │ a   ┆ b   ┆ c   ┆ d    │
+        │ --- ┆ --- ┆ --- ┆ ---  │
+        │ u32 ┆ u32 ┆ u32 ┆ u32  │
+        ╞═════╪═════╪═════╪══════╡
+        │ 1   ┆ 2   ┆ 0   ┆ null │
+        └─────┴─────┴─────┴──────┘
+        """
+        return self._from_pyexpr(self._pyexpr.index_of_first_not_null())
+
+    def index_of_last_not_null(self) -> Expr:
+        """
+        Get the index of the last value that is not null.
+
+        See Also
+        --------
+        index_of : Get the index of the first occurrence of a value.
+        index_of_first_not_null : Get the index of the first value that is not null.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [-5.0, 10.5, None],
+        ...         "b": ["xx", None, None],
+        ...         "c": [9999, 8888, 7777],
+        ...         "d": [None, None, None],
+        ...     }
+        ... )
+        >>> df.select(pl.all().index_of_last_not_null())
+        shape: (1, 4)
+        ┌─────┬─────┬─────┬──────┐
+        │ a   ┆ b   ┆ c   ┆ d    │
+        │ --- ┆ --- ┆ --- ┆ ---  │
+        │ u32 ┆ u32 ┆ u32 ┆ u32  │
+        ╞═════╪═════╪═════╪══════╡
+        │ 1   ┆ 0   ┆ 2   ┆ null │
+        └─────┴─────┴─────┴──────┘
+        """
+        return self._from_pyexpr(self._pyexpr.index_of_last_not_null())
 
     def search_sorted(
         self,

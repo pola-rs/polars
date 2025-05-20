@@ -88,7 +88,7 @@ pub use fused::*;
 pub use horizontal::*;
 pub use index::*;
 #[cfg(feature = "index_of")]
-pub use index_of::*;
+pub use index_of::IndexOf;
 pub use int_range::*;
 #[cfg(feature = "interpolate")]
 pub use interpolation::interpolate::*;

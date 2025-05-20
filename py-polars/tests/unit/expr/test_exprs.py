@@ -657,3 +657,80 @@ def test_concat_deprecation() -> None:
         pl.Series(["foo"]).str.concat()
     with pytest.deprecated_call(match="`str.concat` is deprecated."):
         pl.DataFrame({"foo": ["bar"]}).select(pl.all().str.concat())
+
+
+def test_index_of_first_last_null_not_null() -> None:
+    # note: single-chunk frame
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, None, 5, None],
+            "b": [None, 3, 4, None, 6],
+            "c": [0, 0, 0, 0, 0],
+            "d": [None, None, None, None, None],
+        }
+    ).cast(pl.UInt8)
+
+    for first_null in (
+        pl.all().index_of(None),
+        [
+            # simulate with `is_null → arg_max` (requires at least one null)
+            pl.when(pl.col(col).null_count() != 0)
+            .then(pl.col(col).is_null().arg_max())
+            .otherwise(None)
+            for col in df.columns
+        ],
+    ):
+        assert df.select(first_null).rows() == [(2, 0, None, 0)]
+
+    for first_not_null in (
+        pl.all().index_of_first_not_null(),
+        [
+            # simulate with `is_not_null → arg_max` (cannot be all null)
+            pl.when(pl.col(col).null_count() != df.height)
+            .then(pl.col(col).is_not_null().arg_max())
+            .otherwise(None)
+            for col in df.columns
+        ],
+    ):
+        assert df.select(first_not_null).rows() == [(0, 1, 0, None)]
+    assert df.select(pl.all().index_of_last_not_null()).rows() == [(3, 4, 4, None)]
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_index_of_first_last_not_null_chunked() -> None:
+    # note: create multi-chunk frame to ensure validation of internal code paths
+    df1 = pl.DataFrame(
+        {
+            "a": [1, 2, None, 5, None],
+            "b": [None, 3, 4, None, 6],
+            "c": [0, 0, 0, 0, 0],
+            "d": [None, None, None, None, None],
+        }
+    ).cast(pl.UInt8)
+
+    df2 = pl.DataFrame(
+        {"a": [None], "b": [None], "c": [None], "d": [None]},
+    ).cast(pl.UInt8)
+
+    df3 = df1.select(
+        a=pl.col("d"),
+        b=pl.col("c"),
+        c=pl.col("a"),
+        d=pl.col("b"),
+    )
+    vdf = df1.vstack(df2).vstack(df3)
+    assert vdf.n_chunks() == 3
+
+    for first_null in (
+        pl.all().index_of(None),
+        pl.all().is_null().arg_max(),
+        pl.all().is_not_null().arg_min(),
+    ):
+        assert vdf.select(first_null).rows() == [(2, 0, 5, 0)]
+
+    for first_not_null in (
+        pl.all().index_of_first_not_null(),
+        pl.all().is_not_null().arg_max(),
+    ):
+        assert vdf.select(first_not_null).rows() == [(0, 1, 0, 7)]
+    assert vdf.select(pl.all().index_of_last_not_null()).rows() == [(3, 10, 9, 10)]

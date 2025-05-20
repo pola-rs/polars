@@ -1959,7 +1959,7 @@ class StringNameSpace:
         Replace many patterns by passing lists of equal length to the `patterns` and
         `replace_with` parameters.
 
-        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> pl.Config.set_fmt_str_lengths(100)  # doctest: +IGNORE_RESULT
         >>> s = pl.Series(
         ...     "lyrics",
         ...     [
@@ -1980,7 +1980,7 @@ class StringNameSpace:
         Broadcast a replacement for many patterns by passing a string or a sequence of
         length 1 to the `replace_with` parameter.
 
-        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> pl.Config.set_fmt_str_lengths(100)  # doctest: +IGNORE_RESULT
         >>> s = pl.Series(
         ...     "lyrics",
         ...     [
@@ -1989,19 +1989,19 @@ class StringNameSpace:
         ...         "Can you feel the love tonight",
         ...     ],
         ... )
-        >>> s.str.replace_many(["me", "you", "they"], "")
+        >>> s.str.replace_many(["me ", "you ", "they "], ["", "", ""])
         shape: (3,)
         Series: 'lyrics' [str]
         [
             "Everybody wants to rule the world"
-            "Tell  what  want, what  really really want"
-            "Can  feel the love tonight"
+            "Tell what want, what really really want"
+            "Can feel the love tonight"
         ]
 
         Passing a mapping with patterns and replacements is also supported as syntactic
         sugar.
 
-        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> pl.Config.set_fmt_str_lengths(100)  # doctest: +IGNORE_RESULT
         >>> s = pl.Series(
         ...     "lyrics",
         ...     [

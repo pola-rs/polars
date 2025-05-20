@@ -4007,7 +4007,7 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s2 = pl.Series("b", [2, 4, None])
-        >>> s2.is_in(s)
+        >>> s2.is_in(s.to_list())
         shape: (3,)
         Series: 'b' [bool]
         [
@@ -4016,7 +4016,7 @@ class Series:
                 null
         ]
         >>> # when nulls_equal=True, None is treated as a distinct value
-        >>> s2.is_in(s, nulls_equal=True)
+        >>> s2.is_in(s.to_list(), nulls_equal=True)
         shape: (3,)
         Series: 'b' [bool]
         [
@@ -5019,6 +5019,11 @@ class Series:
         element
             Value to find.
 
+        See Also
+        --------
+        index_of_first_not_null : Get the index of the first value that is not null.
+        index_of_last_not_null : Get the index of the last value that is not null.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, None, 17])
@@ -5030,6 +5035,52 @@ class Series:
         True
         """
         return F.select(F.lit(self).index_of(element)).item()
+
+    def index_of_first_not_null(self) -> Expr:
+        """
+        Get the index of the first value that is not null.
+
+        See Also
+        --------
+        index_of : Get the index of the first occurrence of a value.
+        index_of_last_not_null : Get the index of the last value that is not null.
+
+        Examples
+        --------
+        >>> s = pl.Series([None, "zz", None, None])
+        >>> s.index_of_first_not_null()
+        1
+        >>> s = pl.Series([9999, 8888, 7777, 6666])
+        >>> s.index_of_first_not_null()
+        0
+        >>> s = pl.Series([None, None, None, None])
+        >>> s.index_of_first_not_null() is None
+        True
+        """
+        return self._s.index_of_first_not_null()
+
+    def index_of_last_not_null(self) -> Expr:
+        """
+        Get the index of the last value that is not null.
+
+        See Also
+        --------
+        index_of : Get the index of the first occurrence of a value.
+        index_of_first_not_null : Get the index of the first value that is not null.
+
+        Examples
+        --------
+        >>> s = pl.Series([None, None, "zz", None])
+        >>> s.index_of_last_not_null()
+        2
+        >>> s = pl.Series([9999, 8888, 7777, 6666])
+        >>> s.index_of_last_not_null()
+        3
+        >>> s = pl.Series([None, None, None, None])
+        >>> s.index_of_last_not_null() is None
+        True
+        """
+        return self._s.index_of_last_not_null()
 
     def clear(self, n: int = 0) -> Series:
         """

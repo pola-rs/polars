@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars._utils.construction import iterable_to_pyseries
@@ -30,6 +31,7 @@ from polars.exceptions import (
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
 from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
@@ -2221,3 +2223,94 @@ def test_repeat_by() -> None:
     calculated = pl.select(a=pl.Series("a", [1, 2]).repeat_by(2))
     expected = pl.select(a=pl.Series("a", [[1, 1], [2, 2]]))
     assert calculated.equals(expected)
+
+
+@pytest.mark.parametrize(
+    ("srs", "first_idx_null", "first_idx_not_null"),
+    [
+        (pl.Series(values=[None, None, None, None, None], dtype=pl.UInt32), 0, None),
+        (pl.Series(values=[1, 2, None, 5, None], dtype=pl.UInt32), 2, 0),
+        (pl.Series(values=[None, 3, 4, None, 6], dtype=pl.UInt32), 0, 1),
+        (pl.Series(values=[0, None, 0, 0, 0], dtype=pl.UInt32), 1, 0),
+        (pl.Series(values=[0, 0, 0, 0, 0], dtype=pl.UInt32), None, 0),
+        (pl.Series(values=[]), None, None),
+    ],
+)
+def test_index_of_first_null_not_null(
+    srs: pl.Series,
+    first_idx_null: int,
+    first_idx_not_null: int,
+) -> None:
+    idx: Any
+
+    # index of first null value
+    for idx in (
+        srs.index_of(None),
+        srs.is_null().arg_max() if srs.null_count() != 0 else None,
+    ):
+        assert idx == first_idx_null, (
+            f"(first_null):: values={srs.to_list()}, expected={first_idx_null} got={idx}"
+        )
+
+    # index of first NOT null value
+    for idx in (
+        srs.index_of_first_not_null(),
+        srs.is_not_null().arg_max() if srs.null_count() != srs.len() else None,
+    ):
+        assert idx == first_idx_not_null, (
+            f"(first_not_null):: values={srs.to_list()}, expected={first_idx_not_null} got={idx}"
+        )
+
+
+@pytest.mark.parametrize(
+    ("srs", "expected_idx_not_null"),
+    [
+        (pl.Series(values=[None, None, None, None, None], dtype=pl.Int8), None),
+        (pl.Series(values=[None, None, None, None, None]), None),
+        (pl.Series(values=[1.0, 2.5, None, 5.0, None]), 3),
+        (pl.Series(values=[None, "xx", "yy", None, "zz"]), 4),
+        (pl.Series(values=[0, None, 0, None, None]), 2),
+        (pl.Series(values=[0, 0, 0, 0, 0]), 4),
+        (pl.Series(values=[]), None),
+    ],
+)
+def test_index_of_last_not_null(srs: pl.Series, expected_idx_not_null: int) -> None:
+    # single chunk
+    assert srs.index_of_last_not_null() == expected_idx_not_null
+
+    # two chunks; adding nulls shouldn't change index of last non-null
+    s = srs.append(pl.Series([None, None]))
+    assert s.index_of_last_not_null() == expected_idx_not_null
+
+    # three chunks; adding non-nulls to the end should change last index to series len
+    values: list[Any] = ["?", "!"] if srs.dtype == pl.String else [8, 8]
+    s = s.append(pl.Series(values=values, dtype=srs.dtype))
+    assert s.index_of_last_not_null() == (
+        None if s.null_count() == len(s) else len(s) - 1
+    )
+
+
+@given(s=series(name="s", allow_chunks=True, max_size=10))
+def test_index_of_first_last_not_null_parametric(s: pl.Series) -> None:
+    idx_first = s.index_of_first_not_null()
+    idx_last = s.index_of_last_not_null()
+    idx_null = s.index_of(None)
+
+    if s.len() == 0:
+        assert idx_first is None
+        assert idx_last is None
+        assert idx_null is None
+
+    elif s.null_count() == 0:
+        assert idx_first == 0
+        assert idx_last == len(s) - 1
+        assert idx_null is None
+
+    elif s.null_count() == len(s):
+        assert idx_first is None
+        assert idx_last is None
+        assert idx_null == 0
+    else:
+        assert idx_first <= idx_last
+        assert all(v is None for v in s[:idx_first])  # type: ignore[misc]
+        assert all(v is None for v in s[idx_last + 1 :])  # type: ignore[misc]
