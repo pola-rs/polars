@@ -1078,11 +1078,21 @@ def test_predicate_does_not_split_barrier_expr() -> None:
 
 def test_predicate_passes_set_sorted_22397() -> None:
     plan = (
-        pl.DataFrame({"a": [1, 2, 3]})
-        .lazy()
+        pl.LazyFrame({"a": [1, 2, 3]})
         .with_columns(MARKER=1, b=pl.lit(1))
         .set_sorted("a")
         .filter(pl.col("a") <= 1)
+        .explain()
+    )
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+
+@pytest.mark.filterwarnings("ignore")
+def test_predicate_pass() -> None:
+    plan = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .with_columns(MARKER=pl.col("a"))
+        .filter(pl.col("a").map_elements(lambda x: x > 2, return_dtype=pl.Boolean))
         .explain()
     )
     assert plan.index("FILTER") > plan.index("MARKER")
