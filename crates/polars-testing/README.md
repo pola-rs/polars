@@ -9,7 +9,7 @@ To use `polars-testing`, add it as a dependency to your Rust project's `Cargo.to
 
 ```toml
 [dependencies]
-polars-testing = "0.47.1"
+polars-testing = "0.48.0"
 ```
 
 You can then import the crate in your Rust code using:
