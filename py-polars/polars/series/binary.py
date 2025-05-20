@@ -233,8 +233,8 @@ class BinaryNameSpace:
         -------
         Series
             Series of data type `dtype`.
-            Note that if binary array is too short value will be null.
-            If binary array is too long, remainder will be ignored.
+            Note that if the binary array is too short or too long, the resulting
+            value will be null.
 
         Examples
         --------
