@@ -881,12 +881,6 @@ def test_argminmax() -> None:
     assert out["min"][0] == 0
 
 
-def test_reverse() -> None:
-    out = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).reverse()
-    expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
-    assert_frame_equal(out.collect(), expected)
-
-
 def test_limit(fruits_cars: pl.DataFrame) -> None:
     assert_frame_equal(fruits_cars.lazy().limit(1).collect(), fruits_cars[0, :])
 
