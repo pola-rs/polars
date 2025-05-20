@@ -943,7 +943,7 @@ impl DataType {
 
     pub fn byte_size(&self) -> Option<usize> {
         match self {
-            DataType::Boolean => Some(1),
+            DataType::Boolean => None,
             DataType::UInt8 => Some(1),
             DataType::UInt16 => Some(2),
             DataType::UInt32 => Some(4),
