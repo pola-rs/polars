@@ -1,4 +1,5 @@
-pub mod chunked_array;
+#[cfg(feature = "chunked-array-serde")]
+mod chunked_array;
 mod df;
 pub mod series;
 

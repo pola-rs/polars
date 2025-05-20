@@ -120,6 +120,7 @@ dtype-struct = []
 bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
 python = ["polars-error/python"]
 
+chunked-array-serde = []
 serde = [
   "dep:serde",
   "bitflags/serde",
