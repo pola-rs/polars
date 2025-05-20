@@ -2,6 +2,7 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
 use super::*;
+use crate::constants::MAP_LIST_NAME;
 
 impl AExpr {
     pub(crate) fn is_leaf(&self) -> bool {
@@ -246,6 +247,17 @@ impl ExprPushdownGroup {
                             Some(AExpr::Literal(_)) | None => false,
                             _ => strptime_options.strict,
                         }
+                    },
+                    #[cfg(feature = "python")]
+                    // This is python `map_elements`. This is a hack because that function breaks
+                    // the Polars model. It should be elementwise. This must be fixed.
+                    AExpr::AnonymousFunction { options, .. } => {
+                        if options.flags.contains(FunctionFlags::APPLY_LIST)
+                            && options.fmt_str == MAP_LIST_NAME
+                        {
+                            return self;
+                        };
+                        true
                     },
 
                     AExpr::Cast {
