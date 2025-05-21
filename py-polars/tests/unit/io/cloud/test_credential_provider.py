@@ -161,6 +161,7 @@ def test_credential_provider_aws_import_error_with_requested_profile(
 
     q = pl.scan_parquet(
         "s3://.../...",
+        credential_provider=pl.CredentialProviderAWS(profile_name="test_profile"),
         storage_options={"aws_profile": "test_profile"},
     )
 
