@@ -4,6 +4,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ColumnNotFoundError
+from polars.testing import assert_frame_equal
 
 
 def test_lazy_rename() -> None:
@@ -35,3 +36,13 @@ def test_rename_mapping_19400() -> None:
     assert pl.LazyFrame({"a": [1], "b": [2]}).rename(mapping).collect().to_dict(
         as_series=False
     ) == {"b": [1], "c": [2]}
+
+
+def test_rename_non_strict_20407() -> None:
+    assert_frame_equal(
+        pl.LazyFrame({"TEST": [1]})
+        .rename({"NOT FOUND": "TEST"}, strict=False)
+        .select("TEST")
+        .collect(),
+        pl.DataFrame({"TEST": [1]}),
+    )

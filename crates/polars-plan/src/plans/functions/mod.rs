@@ -2,7 +2,6 @@ mod count;
 mod dsl;
 #[cfg(feature = "python")]
 mod python_udf;
-mod rename;
 mod schema;
 
 use std::borrow::Cow;
@@ -49,14 +48,6 @@ pub enum FunctionIR {
         columns: Arc<[PlSmallStr]>,
     },
     Rechunk,
-    Rename {
-        existing: Arc<[PlSmallStr]>,
-        new: Arc<[PlSmallStr]>,
-        // A column name gets swapped with an existing column
-        swapping: bool,
-        #[cfg_attr(feature = "ir_serde", serde(skip))]
-        schema: CachedSchema,
-    },
     Explode {
         columns: Arc<[PlSmallStr]>,
         #[cfg_attr(feature = "ir_serde", serde(skip))]
@@ -104,18 +95,6 @@ impl PartialEq for FunctionIR {
                     sources: srcs_r, ..
                 },
             ) => srcs_l == srcs_r,
-            (
-                Rename {
-                    existing: existing_l,
-                    new: new_l,
-                    ..
-                },
-                Rename {
-                    existing: existing_r,
-                    new: new_r,
-                    ..
-                },
-            ) => existing_l == existing_r && new_l == new_r,
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             #[cfg(feature = "pivot")]
             (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
@@ -146,15 +125,6 @@ impl Hash for FunctionIR {
             FunctionIR::Pipeline { .. } => {},
             FunctionIR::Unnest { columns } => columns.hash(state),
             FunctionIR::Rechunk => {},
-            FunctionIR::Rename {
-                existing,
-                new,
-                swapping: _,
-                ..
-            } => {
-                existing.hash(state);
-                new.hash(state);
-            },
             FunctionIR::Explode { columns, schema: _ } => columns.hash(state),
             #[cfg(feature = "pivot")]
             FunctionIR::Unpivot { args, schema: _ } => args.hash(state),
@@ -176,7 +146,7 @@ impl FunctionIR {
         use FunctionIR::*;
         match self {
             Rechunk | Pipeline { .. } => false,
-            FastCount { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
+            FastCount { .. } | Unnest { .. } | Explode { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             Opaque { streamable, .. } => *streamable,
@@ -205,7 +175,7 @@ impl FunctionIR {
             OpaquePython(OpaquePythonUdf { predicate_pd, .. }) => *predicate_pd,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
-            Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } => true,
+            Rechunk | Unnest { .. } | Explode { .. } => true,
             RowIndex { .. } | FastCount { .. } => false,
             Pipeline { .. } => unimplemented!(),
         }
@@ -217,7 +187,7 @@ impl FunctionIR {
             Opaque { projection_pd, .. } => *projection_pd,
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { projection_pd, .. }) => *projection_pd,
-            Rechunk | FastCount { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
+            Rechunk | FastCount { .. } | Unnest { .. } | Explode { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             RowIndex { .. } => true,
@@ -271,7 +241,6 @@ impl FunctionIR {
                     function.lock().unwrap().call_udf(df)
                 }
             },
-            Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
             Explode { columns, .. } => df.explode(columns.iter().cloned()),
             #[cfg(feature = "pivot")]
             Unpivot { args, .. } => {

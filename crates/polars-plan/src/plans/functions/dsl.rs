@@ -122,22 +122,6 @@ impl DslFunction {
                 offset,
                 schema: Default::default(),
             },
-            DslFunction::Rename {
-                existing,
-                new,
-                strict,
-            } => {
-                let swapping = new.iter().any(|name| input_schema.get(name).is_some());
-                if strict {
-                    validate_columns_in_input(existing.as_ref(), input_schema, "rename")?;
-                }
-                FunctionIR::Rename {
-                    existing,
-                    new,
-                    swapping,
-                    schema: Default::default(),
-                }
-            },
             DslFunction::Unnest(selectors) => {
                 let columns = expand_selectors(selectors, input_schema, &[])?;
                 validate_columns_in_input(columns.as_ref(), input_schema, "unnest")?;
@@ -148,6 +132,7 @@ impl DslFunction {
             DslFunction::Stats(_)
             | DslFunction::FillNan(_)
             | DslFunction::Drop(_)
+            | DslFunction::Rename { .. }
             | DslFunction::Explode { .. } => {
                 // We should not reach this.
                 panic!("impl error")
