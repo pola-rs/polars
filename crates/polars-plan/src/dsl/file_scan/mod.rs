@@ -509,7 +509,7 @@ impl CastColumnsPolicy {
                     }
                 },
 
-                (l, r) => panic!("unreachable: ({}, {})", l, r),
+                _ => unreachable!(),
             };
         }
 
