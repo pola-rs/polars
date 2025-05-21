@@ -311,6 +311,8 @@ mod _file_scan_eq_hash {
 }
 
 impl CastColumnsPolicy {
+    /// Checks if casting can be done to a dtype with a configured policy.
+    ///
     /// # Returns
     /// * Ok(true): Cast needed to target dtype
     /// * Ok(false): No casting needed
@@ -321,18 +323,23 @@ impl CastColumnsPolicy {
         target_dtype: &DataType,
         incoming_dtype: &DataType,
     ) -> PolarsResult<bool> {
-        let mismatch_err = |hint: &str| {
-            let hint_spacing = if hint.is_empty() { "" } else { ", " };
+        let mismatch_err = {
+            let incoming_dtype = incoming_dtype;
+            let target_dtype = target_dtype;
 
-            polars_bail!(
-                SchemaMismatch:
-                "data type mismatch for column {}: incoming: {:?} != target: {:?}{}{}",
-                column_name,
-                incoming_dtype,
-                target_dtype,
-                hint_spacing,
-                hint,
-            )
+            move |hint: &str| {
+                let hint_spacing = if hint.is_empty() { "" } else { ", " };
+
+                polars_bail!(
+                    SchemaMismatch:
+                    "data type mismatch for column {}: incoming: {:?} != target: {:?}{}{}",
+                    column_name,
+                    incoming_dtype,
+                    target_dtype,
+                    hint_spacing,
+                    hint,
+                )
+            }
         };
 
         // We intercept the nested types first to prevent an expensive recursive eq - recursion
@@ -444,9 +451,24 @@ impl CastColumnsPolicy {
 
         debug_assert!(!target_dtype.is_nested());
 
+        // Note: Only call this with non-nested types for performance
+        let materialize_unknown = |dtype: &DataType| -> std::borrow::Cow<DataType> {
+            dtype
+                .clone()
+                .materialize_unknown(true)
+                .map(std::borrow::Cow::Owned)
+                .unwrap_or(std::borrow::Cow::Borrowed(incoming_dtype))
+        };
+
+        let incoming_dtype = materialize_unknown(incoming_dtype);
+        let target_dtype = materialize_unknown(target_dtype);
+
         if target_dtype == incoming_dtype {
             return Ok(false);
         }
+
+        let incoming_dtype = incoming_dtype.as_ref();
+        let target_dtype = target_dtype.as_ref();
 
         //
         // After this point the dtypes are mismatching.
@@ -487,7 +509,7 @@ impl CastColumnsPolicy {
                     }
                 },
 
-                _ => unreachable!(),
+                (l, r) => panic!("unreachable: ({}, {})", l, r),
             };
         }
 

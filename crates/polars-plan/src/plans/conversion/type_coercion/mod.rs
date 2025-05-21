@@ -97,7 +97,7 @@ impl OptimizationRule for TypeCoercionRule {
         let out = match *expr {
             ref ae @ AExpr::Cast { .. } => {
                 let AExpr::Cast {
-                    expr,
+                    expr: input_expr,
                     dtype,
                     options,
                 } = ae.clone()
@@ -105,20 +105,12 @@ impl OptimizationRule for TypeCoercionRule {
                     unreachable!()
                 };
 
-                let input = expr_arena.get(expr).clone();
+                let input = expr_arena.get(input_expr).clone();
 
                 if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
-                    let aexpr = expr_arena.get(expr);
-
-                    let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
-
-                    if field.dtype == dtype {
-                        return Ok(Some(aexpr.clone()));
-                    }
-
                     if let CastOptions::Strict = options {
                         let cast_from = expr_arena
-                            .get(expr)
+                            .get(input_expr)
                             .to_field(&schema, Context::Default, expr_arena)?
                             .dtype;
                         let cast_to = &dtype;
@@ -135,30 +127,39 @@ impl OptimizationRule for TypeCoercionRule {
                         }
                         .should_cast_column("", cast_to, &cast_from);
 
-                        if v.is_ok() {
-                            let options = if cast_from.is_primitive_numeric()
-                                && cast_to.is_primitive_numeric()
-                            {
-                                CastOptions::Overflowing
-                            } else {
-                                CastOptions::NonStrict
-                            };
+                        match v {
+                            // No casting needed
+                            // TODO: Enable after release 1.30.0
+                            // Ok(false) => {
+                            //     return Ok(Some(expr_arena.get(input_expr).clone()));
+                            // },
+                            Ok(true | false) => {
+                                let options = if cast_from.is_primitive_numeric()
+                                    && cast_to.is_primitive_numeric()
+                                {
+                                    CastOptions::Overflowing
+                                } else {
+                                    CastOptions::NonStrict
+                                };
 
-                            let dtype = cast_to.clone();
+                                let dtype = cast_to.clone();
 
-                            expr_arena.replace(
-                                expr_node,
-                                AExpr::Cast {
-                                    expr,
-                                    dtype,
-                                    options,
-                                },
-                            );
+                                expr_arena.replace(
+                                    expr_node,
+                                    AExpr::Cast {
+                                        expr: input_expr,
+                                        dtype,
+                                        options,
+                                    },
+                                );
+                            },
+
+                            Err(_) => {},
                         }
                     }
                 }
 
-                inline_or_prune_cast(&input, &dtype, options)?
+                inline_or_prune_cast(&input, &dtype, options, lp_node, lp_arena, expr_arena)?
             },
             AExpr::Ternary {
                 truthy: truthy_node,
@@ -773,6 +774,9 @@ fn inline_or_prune_cast(
     aexpr: &AExpr,
     dtype: &DataType,
     options: CastOptions,
+    lp_node: Node,
+    lp_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     if !dtype.is_known() {
         return Ok(None);
@@ -784,6 +788,16 @@ fn inline_or_prune_cast(
             use Operator::*;
 
             match op {
+                LogicalOr | LogicalAnd => {
+                    if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
+                        let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
+                        if field.dtype == *dtype {
+                            return Ok(Some(aexpr.clone()));
+                        }
+                    }
+
+                    None
+                },
                 Eq | EqValidity | NotEq | NotEqValidity | Lt | LtEq | Gt | GtEq => {
                     if dtype.is_bool() {
                         Some(aexpr.clone())
