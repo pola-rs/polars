@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, time
 import random
 import struct
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -13,7 +13,7 @@ from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import SizeUnit, TransferEncoding, PolarsDataType
+    from polars._typing import PolarsDataType, SizeUnit, TransferEncoding
 
 
 def test_binary_conversions() -> None:
@@ -94,9 +94,7 @@ def test_starts_ends_with() -> None:
         pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
         pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
         pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
-    ).to_dict(
-        as_series=False
-    ) == {
+    ).to_dict(as_series=False) == {
         "end_lit": [False, False, True, None],
         "end_none": [None, None, None, None],
         "end_expr": [True, False, None, None],
@@ -232,7 +230,7 @@ def test_reinterpret(
     ],
 )
 def test_reinterpret_to_array_numeric_types(
-    dtype: PolarsDataType,
+    dtype: pl.Array,
     inner_type_size: int,
     struct_type: str,
 ) -> None:
