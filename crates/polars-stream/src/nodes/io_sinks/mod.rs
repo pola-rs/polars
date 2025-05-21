@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -8,6 +8,7 @@ use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 
+use self::partition::WrittenPartition;
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskScope};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::{Receiver, Sender, connector};
@@ -71,6 +72,7 @@ fn buffer_and_distribute_columns_task(
     mut dist_tx: distributor_channel::Sender<(usize, usize, Column)>,
     chunk_size: usize,
     schema: SchemaRef,
+    metrics: Arc<Mutex<Option<WrittenPartition>>>,
 ) -> JoinHandle<PolarsResult<()>> {
     spawn(TaskPriority::High, async move {
         let mut seq = 0usize;
@@ -80,6 +82,14 @@ fn buffer_and_distribute_columns_task(
             let mut rx = rx.serial();
             while let Ok(morsel) = rx.recv().await {
                 let (df, _, _, consume_token) = morsel.into_inner();
+
+                {
+                    let mut metrics = metrics.lock().unwrap();
+                    if let Some(metrics) = metrics.as_mut() {
+                        metrics.append(&df)?;
+                    }
+                }
+
                 // @NOTE: This also performs schema validation.
                 buffer.vstack_mut(&df)?;
 
@@ -179,8 +189,8 @@ pub trait SinkNode {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
 
-    fn finish(&self) -> PolarsResult<()> {
-        Ok(())
+    fn finish(&self) -> PolarsResult<Option<WrittenPartition>> {
+        Ok(None)
     }
 }
 

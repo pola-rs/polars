@@ -100,6 +100,13 @@ impl SinkTarget {
             )),
         }
     }
+
+    pub fn to_display_string(&self) -> String {
+        match self {
+            Self::Path(p) => p.display().to_string(),
+            Self::Dyn(_) => "dynamic-target".to_string(),
+        }
+    }
 }
 
 impl fmt::Debug for SinkTarget {

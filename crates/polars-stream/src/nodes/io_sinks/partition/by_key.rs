@@ -116,12 +116,12 @@ impl SinkNode for PartitionByKeySinkNode {
         self.sink_options.maintain_order
     }
 
-    fn finish(&self) -> PolarsResult<()> {
+    fn finish(&self) -> PolarsResult<Option<WrittenPartition>> {
         if let Some(finish_callback) = &self.finish_callback {
             let df = self.written_partitions.get().unwrap();
             finish_callback.call(df.clone())?;
         }
-        Ok(())
+        Ok(None)
     }
 
     fn spawn_sink(
@@ -208,13 +208,12 @@ impl SinkNode for PartitionByKeySinkNode {
         let ext = self.ext.clone();
         let per_partition_sort_by = self.per_partition_sort_by.clone();
         let output_written_partitions = self.written_partitions.clone();
-        let needs_written_partitions = self.finish_callback.is_some();
         join_handles.push(spawn(TaskPriority::High, async move {
             enum OpenPartition {
                 Sink(
                     SinkSender,
                     FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
-                    Option<WrittenPartition>,
+                    Box<dyn FnOnce() -> PolarsResult<Option<WrittenPartition>> + Send + Sync>,
                 ),
                 Buffer(Vec<Column>, Vec<DataFrame>),
             }
@@ -266,13 +265,13 @@ impl SinkNode for PartitionByKeySinkNode {
                                     ).await?;
                                     file_idx += 1;
 
-                                    let Some((path, join_handles, sender)) = result else {
+                                    let Some((join_handles, sender, finish)) = result else {
                                         return Ok(());
                                     };
 
                                     let (idx, previous) = open_partitions.insert_full(
                                         row_encoded,
-                                        OpenPartition::Sink(sender, join_handles, needs_written_partitions.then(|| WrittenPartition::new(path, &sink_input_schema))),
+                                        OpenPartition::Sink(sender, join_handles, finish),
                                     );
                                     debug_assert!(previous.is_none());
                                     open_partitions.get_index_mut(idx).unwrap().1
@@ -281,10 +280,7 @@ impl SinkNode for PartitionByKeySinkNode {
                             };
 
                             match open_partition {
-                                OpenPartition::Sink(input, _, written_partition) => {
-                                    if let Some(written_partition) = written_partition {
-                                        written_partition.append(&partition)?;
-                                    }
+                                OpenPartition::Sink(input, _, _) => {
                                     let morsel = Morsel::new(partition, seq, source_token.clone());
                                     if input.send(morsel).await.is_err() {
                                         return Ok(());
@@ -306,13 +302,13 @@ impl SinkNode for PartitionByKeySinkNode {
             // sinks that ended up buffering need to output their data.
             for open_partition in open_partitions.into_values() {
                 match open_partition {
-                    OpenPartition::Sink(sink_sender, mut join_handles, written_partition) => {
+                    OpenPartition::Sink(sink_sender, mut join_handles, finish) => {
                         drop(sink_sender); // Signal to the sink that nothing more is coming.
                         while let Some(res) = join_handles.next().await {
                             res?;
                         }
-                        if let Some(written_partition) = written_partition {
-                            written_partitions.push(written_partition);
+                        if let Some(metrics) = finish()? {
+                            written_partitions.push(metrics);
                         }
                     },
                     OpenPartition::Buffer(keys, buffered) => {
@@ -333,18 +329,13 @@ impl SinkNode for PartitionByKeySinkNode {
                             per_partition_sort_by.as_ref(),
                         ).await?;
                         file_idx += 1;
-                        let Some((path, mut join_handles, mut sender)) = result else {
+                        let Some((mut join_handles, mut sender, finish)) = result else {
                             return Ok(());
                         };
-
-                        let mut written_partition = needs_written_partitions.then(|| WrittenPartition::new(path, &sink_input_schema));
 
                         let source_token = SourceToken::new();
                         let mut seq = MorselSeq::default();
                         for df in buffered {
-                            if let Some(written_partition) = &mut written_partition {
-                                written_partition.append(&df)?;
-                            }
                             let morsel = Morsel::new(df, seq, source_token.clone());
                             if sender.send(morsel).await.is_err() {
                                 return Ok(());
@@ -357,8 +348,8 @@ impl SinkNode for PartitionByKeySinkNode {
                             res?;
                         }
 
-                        if let Some(written_partition) = written_partition {
-                            written_partitions.push(written_partition);
+                        if let Some(metrics) = finish()? {
+                            written_partitions.push(metrics);
                         }
                     },
                 }

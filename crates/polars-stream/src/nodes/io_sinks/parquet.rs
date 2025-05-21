@@ -1,6 +1,7 @@
 use std::cmp::Reverse;
 use std::io::BufWriter;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use polars_core::prelude::{ArrowSchema, CompatLevel};
 use polars_core::schema::SchemaRef;
@@ -18,6 +19,7 @@ use polars_parquet::write::{
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
 
+use super::partition::WrittenPartition;
 use super::{
     DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE, SinkInputPort,
     SinkNode, buffer_and_distribute_columns_task,
@@ -41,6 +43,9 @@ pub struct ParquetSinkNode {
     arrow_schema: ArrowSchema,
     column_options: Vec<ColumnWriteOptions>,
     cloud_options: Option<CloudOptions>,
+
+    file_size: Arc<AtomicU64>,
+    metrics: Arc<Mutex<Option<WrittenPartition>>>,
 }
 
 impl ParquetSinkNode {
@@ -55,6 +60,10 @@ impl ParquetSinkNode {
         let column_options: Vec<ColumnWriteOptions> =
             get_column_write_options(&schema, &write_options.field_overwrites);
         let parquet_schema = to_parquet_schema(&schema, &column_options)?;
+        let metrics = Arc::new(Mutex::new(Some(WrittenPartition::new(
+            target.to_display_string(),
+            &input_schema,
+        ))));
 
         Ok(Self {
             target,
@@ -67,6 +76,9 @@ impl ParquetSinkNode {
             arrow_schema: schema,
             column_options,
             cloud_options,
+
+            file_size: Arc::new(AtomicU64::new(0)),
+            metrics,
         })
     }
 }
@@ -118,6 +130,7 @@ impl SinkNode for ParquetSinkNode {
                 .row_group_size
                 .unwrap_or(DEFAULT_ROW_GROUP_SIZE),
             self.input_schema.clone(),
+            self.metrics.clone(),
         ));
 
         // Encode task.
@@ -241,6 +254,7 @@ impl SinkNode for ParquetSinkNode {
         let arrow_schema = self.arrow_schema.clone();
         let parquet_schema = self.parquet_schema.clone();
         let column_options = self.column_options.clone();
+        let output_file_size = self.file_size.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             let mut file = target
                 .open_into_writeable_async(&sink_options, cloud_options.as_ref())
@@ -276,12 +290,13 @@ impl SinkNode for ParquetSinkNode {
                 writer.write_row_group(&current_row_group)?;
             }
 
-            writer.finish()?;
+            let file_size = writer.finish()?;
             drop(writer);
 
             file.sync_on_close(sink_options.sync_on_close)?;
             file.close()?;
 
+            output_file_size.store(file_size, Ordering::Relaxed);
             PolarsResult::Ok(())
         });
         join_handles.push(spawn(TaskPriority::Low, async move {
@@ -289,5 +304,15 @@ impl SinkNode for ParquetSinkNode {
                 .await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
         }));
+    }
+
+    fn finish(&self) -> PolarsResult<Option<WrittenPartition>> {
+        let file_size = self.file_size.load(Ordering::Relaxed);
+        let written_partition = self.metrics.lock().unwrap().take();
+
+        Ok(written_partition.map(|mut m| {
+            m.file_size = file_size;
+            m
+        }))
     }
 }

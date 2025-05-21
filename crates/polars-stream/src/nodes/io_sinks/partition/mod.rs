@@ -45,7 +45,8 @@ pub struct WrittenPartitionColumn {
 
 pub struct WrittenPartition {
     pub path: String,
-    pub height: u64,
+    pub num_rows: u64,
+    pub file_size: u64,
     pub columns: Vec<WrittenPartitionColumn>,
 }
 
@@ -53,7 +54,8 @@ impl WrittenPartition {
     pub fn new(path: String, schema: &Schema) -> Self {
         Self {
             path,
-            height: 0,
+            file_size: 0,
+            num_rows: 0,
             columns: schema
                 .iter_values()
                 .map(|dtype| {
@@ -75,7 +77,7 @@ impl WrittenPartition {
 
     pub fn append(&mut self, df: &DataFrame) -> PolarsResult<()> {
         assert_eq!(self.columns.len(), df.width());
-        self.height += df.height() as u64;
+        self.num_rows += df.height() as u64;
         for (w, c) in self.columns.iter_mut().zip(df.get_columns()) {
             let null_count = c.null_count();
             w.null_count += c.null_count() as u64;
@@ -100,8 +102,10 @@ pub fn written_partitions_to_df(wp: Vec<WrittenPartition>, input_schema: &Schema
     let num_partitions = wp.len();
 
     let mut path = StringChunkedBuilder::new(PlSmallStr::from_static("path"), wp.len());
-    let mut height =
-        PrimitiveChunkedBuilder::<UInt64Type>::new(PlSmallStr::from_static("height"), wp.len());
+    let mut num_rows =
+        PrimitiveChunkedBuilder::<UInt64Type>::new(PlSmallStr::from_static("num_rows"), wp.len());
+    let mut file_size =
+        PrimitiveChunkedBuilder::<UInt64Type>::new(PlSmallStr::from_static("file_size"), wp.len());
     let mut columns = input_schema
         .iter_values()
         .map(|dtype| {
@@ -124,7 +128,8 @@ pub fn written_partitions_to_df(wp: Vec<WrittenPartition>, input_schema: &Schema
 
     for p in wp {
         path.append_value(p.path);
-        height.append_value(p.height);
+        num_rows.append_value(p.num_rows);
+        file_size.append_value(p.file_size);
 
         for (mut w, c) in p.columns.into_iter().zip(columns.iter_mut()) {
             c.0.append_value(w.null_count);
@@ -134,9 +139,10 @@ pub fn written_partitions_to_df(wp: Vec<WrittenPartition>, input_schema: &Schema
         }
     }
 
-    let mut df_columns = Vec::with_capacity(input_schema.len() + 2);
+    let mut df_columns = Vec::with_capacity(3 + input_schema.len());
     df_columns.push(path.finish().into_column());
-    df_columns.push(height.finish().into_column());
+    df_columns.push(num_rows.finish().into_column());
+    df_columns.push(file_size.finish().into_column());
     for (name, column) in input_schema.iter_names().zip(columns) {
         let struct_ca = StructChunked::from_series(
             format_pl_smallstr!("{name}_stats"),
@@ -292,15 +298,14 @@ async fn open_new_sink(
     per_partition_sort_by: Option<&PerPartitionSortBy>,
 ) -> PolarsResult<
     Option<(
-        String,
         FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
         SinkSender,
+        Box<dyn FnOnce() -> PolarsResult<Option<WrittenPartition>> + Send + Sync>,
     )>,
 > {
     let file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys)?;
     let path = base_path.join(file_path.as_path());
 
-    let mut output_path = path.to_string_lossy().into_owned();
     // If the user provided their own callback, modify the path to that.
     let target = if let Some(file_path_cb) = file_path_cb {
         let keys = keys.map_or(Vec::new(), |keys| {
@@ -322,11 +327,7 @@ async fn open_new_sink(
         })?;
         // Offset the given path by the base_path.
         match target {
-            SinkTarget::Path(p) => {
-                let path = base_path.join(p.as_path());
-                output_path = path.to_string_lossy().into_owned();
-                SinkTarget::Path(Arc::new(path))
-            },
+            SinkTarget::Path(p) => SinkTarget::Path(Arc::new(base_path.join(p.as_path()))),
             target => target,
         }
     } else {
@@ -440,5 +441,9 @@ async fn open_new_sink(
         return Ok(None);
     }
 
-    Ok(Some((output_path, join_handles, sender)))
+    Ok(Some((
+        join_handles,
+        sender,
+        Box::new(move || node.finish()),
+    )))
 }
