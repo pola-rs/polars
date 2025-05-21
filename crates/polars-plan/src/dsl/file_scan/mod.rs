@@ -323,23 +323,18 @@ impl CastColumnsPolicy {
         target_dtype: &DataType,
         incoming_dtype: &DataType,
     ) -> PolarsResult<bool> {
-        let mismatch_err = {
-            let incoming_dtype = incoming_dtype;
-            let target_dtype = target_dtype;
+        let mismatch_err = |hint: &str| {
+            let hint_spacing = if hint.is_empty() { "" } else { ", " };
 
-            move |hint: &str| {
-                let hint_spacing = if hint.is_empty() { "" } else { ", " };
-
-                polars_bail!(
-                    SchemaMismatch:
-                    "data type mismatch for column {}: incoming: {:?} != target: {:?}{}{}",
-                    column_name,
-                    incoming_dtype,
-                    target_dtype,
-                    hint_spacing,
-                    hint,
-                )
-            }
+            polars_bail!(
+                SchemaMismatch:
+                "data type mismatch for column {}: incoming: {:?} != target: {:?}{}{}",
+                column_name,
+                incoming_dtype,
+                target_dtype,
+                hint_spacing,
+                hint,
+            )
         };
 
         // We intercept the nested types first to prevent an expensive recursive eq - recursion
