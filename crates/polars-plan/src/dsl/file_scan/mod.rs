@@ -139,6 +139,8 @@ pub struct CastColumnsPolicy {
     /// Allow datetime[ns] to be casted to any lower precision. Important for
     /// being able to read datasets written by spark.
     pub datetime_nanoseconds_downcast: bool,
+    /// Allow datetime[us] to datetime[ms]
+    pub datetime_microseconds_downcast: bool,
 
     /// Allow casting to change time units.
     pub datetime_convert_timezone: bool,
@@ -154,6 +156,7 @@ impl CastColumnsPolicy {
         float_upcast: false,
         float_downcast: false,
         datetime_nanoseconds_downcast: false,
+        datetime_microseconds_downcast: false,
         datetime_convert_timezone: false,
         missing_struct_fields: MissingColumnsPolicy::Raise,
         extra_struct_fields: ExtraColumnsPolicy::Raise,
@@ -504,17 +507,29 @@ impl CastColumnsPolicy {
 
             // Check unit
             if target_unit != incoming_unit {
-                return if let TimeUnit::Nanoseconds = incoming_unit {
-                    if self.datetime_nanoseconds_downcast {
-                        Ok(true)
-                    } else {
-                        mismatch_err(
-                            "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='nanosecond-downcast')",
-                        )
-                    }
-                } else {
-                    // Currently don't have parameter for controlling arbitrary time unit casting.
-                    mismatch_err("")
+                return match (incoming_unit, target_unit) {
+                    (TimeUnit::Nanoseconds, _) => {
+                        if self.datetime_nanoseconds_downcast {
+                            Ok(true)
+                        } else {
+                            mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='nanosecond-downcast')",
+                            )
+                        }
+                    },
+
+                    (TimeUnit::Microseconds, TimeUnit::Milliseconds) => {
+                        if self.datetime_microseconds_downcast {
+                            Ok(true)
+                        } else {
+                            // TODO
+                            mismatch_err(
+                                "unimplemented: 'microsecond-downcast' in scan cast options",
+                            )
+                        }
+                    },
+
+                    _ => mismatch_err(""),
                 };
             }
 

@@ -95,14 +95,70 @@ impl OptimizationRule for TypeCoercionRule {
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
         let out = match *expr {
-            AExpr::Cast {
-                expr,
-                ref dtype,
-                options,
-            } => {
-                let input = expr_arena.get(expr);
+            ref ae @ AExpr::Cast { .. } => {
+                let AExpr::Cast {
+                    expr,
+                    dtype,
+                    options,
+                } = ae.clone()
+                else {
+                    unreachable!()
+                };
 
-                inline_or_prune_cast(input, dtype, options, lp_node, lp_arena, expr_arena)?
+                let input = expr_arena.get(expr).clone();
+
+                if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
+                    let aexpr = expr_arena.get(expr);
+
+                    let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
+
+                    if field.dtype == dtype {
+                        return Ok(Some(aexpr.clone()));
+                    }
+
+                    if let CastOptions::Strict = options {
+                        let cast_from = expr_arena
+                            .get(expr)
+                            .to_field(&schema, Context::Default, expr_arena)?
+                            .dtype;
+                        let cast_to = &dtype;
+
+                        let v = CastColumnsPolicy {
+                            integer_upcast: true,
+                            float_upcast: true,
+                            float_downcast: true,
+                            datetime_nanoseconds_downcast: true,
+                            datetime_microseconds_downcast: true,
+                            datetime_convert_timezone: true,
+                            missing_struct_fields: MissingColumnsPolicy::Insert,
+                            extra_struct_fields: ExtraColumnsPolicy::Ignore,
+                        }
+                        .should_cast_column("", cast_to, &cast_from);
+
+                        if v.is_ok() {
+                            let options = if cast_from.is_primitive_numeric()
+                                && cast_to.is_primitive_numeric()
+                            {
+                                CastOptions::Overflowing
+                            } else {
+                                CastOptions::NonStrict
+                            };
+
+                            let dtype = cast_to.clone();
+
+                            expr_arena.replace(
+                                expr_node,
+                                AExpr::Cast {
+                                    expr,
+                                    dtype,
+                                    options,
+                                },
+                            );
+                        }
+                    }
+                }
+
+                inline_or_prune_cast(&input, &dtype, options)?
             },
             AExpr::Ternary {
                 truthy: truthy_node,
@@ -717,9 +773,6 @@ fn inline_or_prune_cast(
     aexpr: &AExpr,
     dtype: &DataType,
     options: CastOptions,
-    lp_node: Node,
-    lp_arena: &Arena<IR>,
-    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     if !dtype.is_known() {
         return Ok(None);
@@ -731,16 +784,6 @@ fn inline_or_prune_cast(
             use Operator::*;
 
             match op {
-                LogicalOr | LogicalAnd => {
-                    if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
-                        let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
-                        if field.dtype == *dtype {
-                            return Ok(Some(aexpr.clone()));
-                        }
-                    }
-
-                    None
-                },
                 Eq | EqValidity | NotEq | NotEqValidity | Lt | LtEq | Gt | GtEq => {
                     if dtype.is_bool() {
                         Some(aexpr.clone())
