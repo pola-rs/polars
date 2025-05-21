@@ -40,11 +40,7 @@ pub fn get_engine_affinity() -> String {
 /// Prints a log message if sensitive verbose logging has been enabled.
 pub fn verbose_print_sensitive<F: Fn() -> String>(create_log_message: F) {
     fn do_log(create_log_message: &dyn Fn() -> String) {
-        if std::env::var("POLARS_VERBOSE_SENSITIVE")
-            .as_deref()
-            .unwrap_or("")
-            == "1"
-        {
+        if std::env::var("POLARS_VERBOSE_SENSITIVE").as_deref() == Ok("1") {
             // Force the message to be a single line.
             let msg = create_log_message().replace('\n', "");
             eprintln!("[SENSITIVE]: {}", msg)

@@ -120,7 +120,7 @@ pub(crate) fn try_build_http_header_map_from_items_slice<S: AsRef<str>>(
 
 #[allow(dead_code)]
 /// Parse an untype configuration hashmap to a typed configuration for the given configuration key type.
-fn parsed_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
+fn parse_untyped_config<T, I: IntoIterator<Item = (impl AsRef<str>, impl Into<String>)>>(
     config: I,
 ) -> PolarsResult<Configs<T>>
 where
@@ -285,9 +285,24 @@ impl CloudOptions {
     pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
+        let opt_credential_provider = self.initialized_credential_provider()?;
+
         let mut builder = AmazonS3Builder::from_env()
             .with_client_options(get_client_options())
             .with_url(url);
+
+        if let Some(credential_provider) = &opt_credential_provider {
+            let storage_update_options = parse_untyped_config::<AmazonS3ConfigKey, _>(
+                credential_provider
+                    .storage_update_options()?
+                    .into_iter()
+                    .map(|(k, v)| (k, v.to_string())),
+            )?;
+
+            for (key, value) in storage_update_options {
+                builder = builder.with_config(key, value);
+            }
+        }
 
         read_config(
             &mut builder,
@@ -322,7 +337,7 @@ impl CloudOptions {
             let CloudConfig::Aws(options) = options else {
                 panic!("impl error: cloud type mismatch")
             };
-            for (key, value) in options.iter() {
+            for (key, value) in options {
                 builder = builder.with_config(*key, value);
             }
         }
@@ -380,8 +395,30 @@ impl CloudOptions {
 
         let builder = builder.with_retry(get_retry_config(self.max_retries));
 
-        let builder = if let Some(v) = self.initialized_credential_provider()? {
-            builder.with_credentials(v.into_aws_provider())
+        let opt_credential_provider = match opt_credential_provider {
+            #[cfg(feature = "python")]
+            Some(PlCredentialProvider::Python(object)) => {
+                if pyo3::Python::with_gil(|py| {
+                    let Ok(func_object) = object
+                        .unwrap_as_provider_ref()
+                        .getattr(py, "_can_use_as_provider")
+                    else {
+                        return PolarsResult::Ok(true);
+                    };
+
+                    Ok(func_object.call0(py)?.extract::<bool>(py).unwrap())
+                })? {
+                    Some(PlCredentialProvider::Python(object))
+                } else {
+                    None
+                }
+            },
+
+            v => v,
+        };
+
+        let builder = if let Some(credential_provider) = opt_credential_provider {
+            builder.with_credentials(credential_provider.into_aws_provider())
         } else {
             builder
         };
@@ -524,7 +561,7 @@ impl CloudOptions {
             CloudType::Aws => {
                 #[cfg(feature = "aws")]
                 {
-                    parsed_untyped_config::<AmazonS3ConfigKey, _>(config)
+                    parse_untyped_config::<AmazonS3ConfigKey, _>(config)
                         .map(|aws| Self::default().with_aws(aws))
                 }
                 #[cfg(not(feature = "aws"))]
@@ -535,7 +572,7 @@ impl CloudOptions {
             CloudType::Azure => {
                 #[cfg(feature = "azure")]
                 {
-                    parsed_untyped_config::<AzureConfigKey, _>(config)
+                    parse_untyped_config::<AzureConfigKey, _>(config)
                         .map(|azure| Self::default().with_azure(azure))
                 }
                 #[cfg(not(feature = "azure"))]
@@ -548,7 +585,7 @@ impl CloudOptions {
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {
-                    parsed_untyped_config::<GoogleConfigKey, _>(config)
+                    parse_untyped_config::<GoogleConfigKey, _>(config)
                         .map(|gcp| Self::default().with_gcp(gcp))
                 }
                 #[cfg(not(feature = "gcp"))]
@@ -644,7 +681,7 @@ impl CloudOptions {
 mod tests {
     use hashbrown::HashMap;
 
-    use super::{parse_url, parsed_untyped_config};
+    use super::{parse_untyped_config, parse_url};
 
     #[test]
     fn test_parse_url() {
@@ -730,7 +767,7 @@ mod tests {
         ]
         .into_iter()
         .collect::<HashMap<_, _>>();
-        let aws_keys = parsed_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+        let aws_keys = parse_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
             .expect("Parsing keys shouldn't have thrown an error");
 
         assert_eq!(
@@ -745,7 +782,7 @@ mod tests {
         ]
         .into_iter()
         .collect::<HashMap<_, _>>();
-        let aws_keys = parsed_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
+        let aws_keys = parse_untyped_config::<AmazonS3ConfigKey, _>(aws_config)
             .expect("Parsing keys shouldn't have thrown an error");
 
         assert_eq!(
