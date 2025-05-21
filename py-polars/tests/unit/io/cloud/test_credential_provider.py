@@ -186,7 +186,6 @@ def test_credential_provider_aws_endpoint_url_scan_no_parameters(
     _set_default_credentials(tmp_path, monkeypatch)
     cfg_file_path = tmp_path / "config"
 
-    monkeypatch.setenv("AWS_REGION", "eu-west-1")
     monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -255,7 +254,6 @@ def test_credential_provider_aws_endpoint_url_with_storage_options(
     _set_default_credentials(tmp_path, monkeypatch)
     cfg_file_path = tmp_path / "config"
 
-    monkeypatch.setenv("AWS_REGION", "eu-west-1")
     monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
