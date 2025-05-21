@@ -228,7 +228,7 @@ impl ExprPushdownGroup {
                         ..
                     } => true,
 
-                    #[cfg(feature = "temporal")]
+                    #[cfg(all(feature = "strings", feature = "temporal"))]
                     AExpr::Function {
                         input,
                         function:

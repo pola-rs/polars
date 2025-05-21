@@ -1,11 +1,11 @@
 use polars_parquet_format::ConvertedType;
-#[cfg(feature = "serde_types")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::parquet::error::ParquetError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum PrimitiveConvertedType {
     Utf8,
     /// an enum is converted into a binary field
@@ -87,7 +87,7 @@ pub enum PrimitiveConvertedType {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum GroupConvertedType {
     /// a map is converted as an optional field containing a repeated key/value pair
     Map,

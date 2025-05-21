@@ -1,4 +1,4 @@
-#[cfg(feature = "serde_types")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::parquet::schema::types::{
@@ -14,7 +14,7 @@ use crate::parquet::schema::types::{
 /// See reference in
 /// <https://github.com/apache/parquet-cpp/blob/master/src/parquet/types.h>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub enum SortOrder {
     /// Signed (either value or legacy byte-wise) comparison.
     Signed,

@@ -45,16 +45,23 @@ pub fn predicate_to_pa(
                 let mut list_repr = String::with_capacity(s.len() * 5);
                 list_repr.push('[');
                 for av in s.rechunk().iter() {
-                    if let AnyValue::Boolean(v) = av {
-                        let s = if v { "True" } else { "False" };
-                        write!(list_repr, "{},", s).unwrap();
-                    } else if let AnyValue::Datetime(v, tu, tz) = av {
-                        let dtm = to_py_datetime(v, &tu, tz);
-                        write!(list_repr, "{dtm},").unwrap();
-                    } else if let AnyValue::Date(v) = av {
-                        write!(list_repr, "to_py_date({v}),").unwrap();
-                    } else {
-                        write!(list_repr, "{av},").unwrap();
+                    match av {
+                        AnyValue::Boolean(v) => {
+                            let s = if v { "True" } else { "False" };
+                            write!(list_repr, "{},", s).unwrap();
+                        },
+                        #[cfg(feature = "dtype-datetime")]
+                        AnyValue::Datetime(v, tu, tz) => {
+                            let dtm = to_py_datetime(v, &tu, tz);
+                            write!(list_repr, "{dtm},").unwrap();
+                        },
+                        #[cfg(feature = "dtype-date")]
+                        AnyValue::Date(v) => {
+                            write!(list_repr, "to_py_date({v}),").unwrap();
+                        },
+                        _ => {
+                            write!(list_repr, "{av},").unwrap();
+                        },
                     }
                 }
                 // pop last comma
