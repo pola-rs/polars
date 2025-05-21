@@ -955,6 +955,7 @@ impl DataType {
             DataType::Int128 => Some(16),
             DataType::Float32 => Some(4),
             DataType::Float64 => Some(8),
+            #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(_, _) => Some(16),
             DataType::String => None,
             DataType::Binary => None,
@@ -963,12 +964,17 @@ impl DataType {
             DataType::Datetime(_, _) => Some(8),
             DataType::Duration(_) => Some(8),
             DataType::Time => Some(8),
+            #[cfg(feature = "dtype-array")]
             DataType::Array(data_type, size) => data_type.byte_size().map(|v| v * size),
             DataType::List(_) => None,
+            #[cfg(feature = "object")]
             DataType::Object(_) => None,
             DataType::Null => None,
+            #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => None,
+            #[cfg(feature = "dtype-categorical")]
             DataType::Enum(_, _) => None,
+            #[cfg(feature = "dtype-struct")]
             DataType::Struct(vec) => {
                 let mut total_size = 0usize;
                 for field in vec.iter() {
