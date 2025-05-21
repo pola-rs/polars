@@ -96,7 +96,16 @@ where
         panic!("Bug, non-Array passed in.")
     };
     let size = *size;
-    let mut result = MutableFixedSizeListArray::new(MutablePrimitiveArray::<T>::new(), size);
+    let mut result = MutableFixedSizeListArray::new(
+        MutablePrimitiveArray::<T>::with_capacity(
+            from.len()
+                * from
+                    .get(0)
+                    .map(|bytes| bytes.len() / element_size)
+                    .unwrap_or(0),
+        ),
+        size,
+    );
 
     from.iter().try_for_each(|x| {
         if let Some(x) = x {
