@@ -300,7 +300,7 @@ async fn open_new_sink(
     let file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys)?;
     let path = base_path.join(file_path.as_path());
 
-    let output_path = path.to_string_lossy().into_owned();
+    let mut output_path = path.to_string_lossy().into_owned();
     // If the user provided their own callback, modify the path to that.
     let target = if let Some(file_path_cb) = file_path_cb {
         let keys = keys.map_or(Vec::new(), |keys| {
@@ -322,7 +322,11 @@ async fn open_new_sink(
         })?;
         // Offset the given path by the base_path.
         match target {
-            SinkTarget::Path(p) => SinkTarget::Path(Arc::new(base_path.join(p.as_path()))),
+            SinkTarget::Path(p) => {
+                let path = base_path.join(p.as_path());
+                output_path = path.to_string_lossy().into_owned();
+                SinkTarget::Path(Arc::new(path))
+            },
             target => target,
         }
     } else {
