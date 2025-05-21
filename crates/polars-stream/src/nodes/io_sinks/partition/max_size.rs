@@ -12,12 +12,13 @@ use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions}
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{CreateNewSinkFn, PerPartitionSortBy, WrittenPartition};
+use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::execute::StreamingExecutionState;
-use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink, written_partitions_to_df};
+use crate::nodes::io_sinks::metrics::WriteMetrics;
+use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::io_sinks::{SinkInputPort, SinkNode};
 use crate::nodes::{JoinHandle, Morsel, TaskPriority};
@@ -43,7 +44,7 @@ pub struct MaxSizePartitionSinkNode {
     num_retire_tasks: usize,
 
     per_partition_sort_by: Option<PerPartitionSortBy>,
-    written_partitions: Arc<Mutex<Vec<Vec<WrittenPartition>>>>,
+    partition_metrics: Arc<Mutex<Vec<Vec<WriteMetrics>>>>,
     finish_callback: Option<SinkFinishCallback>,
 }
 
@@ -79,7 +80,7 @@ impl MaxSizePartitionSinkNode {
             sink_options,
             num_retire_tasks,
             per_partition_sort_by,
-            written_partitions: Arc::new(Mutex::new(Vec::with_capacity(num_retire_tasks))),
+            partition_metrics: Arc::new(Mutex::new(Vec::with_capacity(num_retire_tasks))),
             finish_callback,
         }
     }
@@ -136,7 +137,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                 sender: SinkSender,
                 join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
                 num_remaining: IdxSize,
-                finish: Box<dyn FnOnce() -> PolarsResult<Option<WrittenPartition>> + Send + Sync>,
+                node: Box<dyn SinkNode + Send + Sync>,
             }
 
             let verbose = config::verbose();
@@ -172,7 +173,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                 )
                                 .await?;
                                 file_idx += 1;
-                                let Some((join_handles, sender, finish)) = result else {
+                                let Some((join_handles, sender, node)) = result else {
                                     return Ok(());
                                 };
 
@@ -180,7 +181,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                     sender,
                                     num_remaining: max_size,
                                     join_handles,
-                                    finish,
+                                    node,
                                 })
                             },
                         };
@@ -218,7 +219,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         let current_sink = current_sink_opt.take().unwrap();
                         drop(current_sink.sender);
                         if retire_tx
-                            .send((current_sink.join_handles, current_sink.finish))
+                            .send((current_sink.join_handles, current_sink.node))
                             .await
                             .is_err()
                         {
@@ -238,7 +239,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
             if let Some(current_sink) = current_sink_opt.take() {
                 drop(current_sink.sender);
                 if retire_tx
-                    .send((current_sink.join_handles, current_sink.finish))
+                    .send((current_sink.join_handles, current_sink.node))
                     .await
                     .is_err()
                 {
@@ -256,25 +257,28 @@ impl SinkNode for MaxSizePartitionSinkNode {
         // but it can be scaled up using an environment variable.
         let has_error_occurred = &has_error_occurred;
         join_handles.extend(retire_rxs.into_iter().map(|mut retire_rx| {
-            let output_written_partitions = self.written_partitions.clone();
+            let global_partition_metrics = self.partition_metrics.clone();
             let has_error_occurred = has_error_occurred.clone();
             spawn(TaskPriority::High, async move {
-                let mut written_partitions = Vec::new();
+                let mut partition_metrics = Vec::new();
 
-                while let Ok((mut join_handles, finish)) = retire_rx.recv().await {
+                while let Ok((mut join_handles, node)) = retire_rx.recv().await {
                     while let Some(ret) = join_handles.next().await {
                         ret.inspect_err(|_| {
                             has_error_occurred.store(true, Ordering::Relaxed);
                         })?;
                     }
-                    if let Some(metrics) = finish()? {
-                        written_partitions.push(metrics);
+                    if let Some(metrics) = node.get_metrics()? {
+                        partition_metrics.push(metrics);
                     }
+                    node.finish()?;
                 }
 
                 {
-                    let mut output_written_partitions = output_written_partitions.lock().unwrap();
-                    output_written_partitions.push(written_partitions);
+                    global_partition_metrics
+                        .lock()
+                        .unwrap()
+                        .push(partition_metrics);
                 }
 
                 Ok(())
@@ -282,17 +286,17 @@ impl SinkNode for MaxSizePartitionSinkNode {
         }));
     }
 
-    fn finish(&self) -> PolarsResult<Option<WrittenPartition>> {
+    fn finish(&self) -> PolarsResult<()> {
         if let Some(finish_callback) = &self.finish_callback {
-            let mut written_partitions = self.written_partitions.lock().unwrap();
-            let written_partitions =
-                std::mem::take::<Vec<Vec<WrittenPartition>>>(written_partitions.as_mut())
+            let mut partition_metrics = self.partition_metrics.lock().unwrap();
+            let partition_metrics =
+                std::mem::take::<Vec<Vec<WriteMetrics>>>(partition_metrics.as_mut())
                     .into_iter()
                     .flatten()
                     .collect();
-            let df = written_partitions_to_df(written_partitions, &self.input_schema);
+            let df = WriteMetrics::collapse_to_df(partition_metrics, &self.input_schema);
             finish_callback.call(df)?;
         }
-        Ok(None)
+        Ok(())
     }
 }

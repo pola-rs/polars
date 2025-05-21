@@ -1,26 +1,17 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use arrow::array::builder::ShareStrategy;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
-use polars_core::frame::DataFrame;
-use polars_core::prelude::{
-    ChunkedBuilder, Column, DataType, IntoColumn, PrimitiveChunkedBuilder, SortMultipleOptions,
-    StringChunkedBuilder, StructChunked, UInt64Type,
-};
+use polars_core::prelude::{Column, DataType, SortMultipleOptions};
 use polars_core::scalar::Scalar;
-use polars_core::schema::{Schema, SchemaRef};
-use polars_core::series::IntoSeries;
-use polars_core::series::builder::SeriesBuilder;
+use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_expr::reduce::{GroupedReduction, new_max_reduction, new_min_reduction};
 use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::{
     FileType, PartitionTargetCallback, PartitionTargetContext, SinkOptions, SinkTarget,
 };
 use polars_utils::format_pl_smallstr;
-use polars_utils::pl_str::PlSmallStr;
 
 use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -35,132 +26,6 @@ use crate::nodes::{Morsel, TaskPriority};
 pub mod by_key;
 pub mod max_size;
 pub mod parted;
-
-pub struct WrittenPartitionColumn {
-    pub null_count: u64,
-    pub nan_count: u64,
-    pub lower_bound: Box<dyn GroupedReduction>,
-    pub upper_bound: Box<dyn GroupedReduction>,
-}
-
-pub struct WrittenPartition {
-    pub path: String,
-    pub num_rows: u64,
-    pub file_size: u64,
-    pub columns: Vec<WrittenPartitionColumn>,
-}
-
-impl WrittenPartition {
-    pub fn new(path: String, schema: &Schema) -> Self {
-        Self {
-            path,
-            file_size: 0,
-            num_rows: 0,
-            columns: schema
-                .iter_values()
-                .map(|dtype| {
-                    let mut lower_bound = new_min_reduction(dtype.clone(), false);
-                    let mut upper_bound = new_max_reduction(dtype.clone(), false);
-
-                    lower_bound.resize(1);
-                    upper_bound.resize(1);
-                    WrittenPartitionColumn {
-                        null_count: 0,
-                        nan_count: 0,
-                        lower_bound,
-                        upper_bound,
-                    }
-                })
-                .collect(),
-        }
-    }
-
-    pub fn append(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        assert_eq!(self.columns.len(), df.width());
-        self.num_rows += df.height() as u64;
-        for (w, c) in self.columns.iter_mut().zip(df.get_columns()) {
-            let null_count = c.null_count();
-            w.null_count += c.null_count() as u64;
-
-            let mut has_non_null_non_nan_values = df.height() != null_count;
-            if c.dtype().is_float() {
-                let nan_count = c.is_nan()?.sum().unwrap_or_default() as u64;
-                has_non_null_non_nan_values = nan_count as usize + null_count < df.height();
-                w.nan_count += nan_count;
-            }
-
-            if has_non_null_non_nan_values {
-                w.lower_bound.update_group(&c, 0, 0)?;
-                w.upper_bound.update_group(&c, 0, 0)?;
-            }
-        }
-        Ok(())
-    }
-}
-
-pub fn written_partitions_to_df(wp: Vec<WrittenPartition>, input_schema: &Schema) -> DataFrame {
-    let num_partitions = wp.len();
-
-    let mut path = StringChunkedBuilder::new(PlSmallStr::from_static("path"), wp.len());
-    let mut num_rows =
-        PrimitiveChunkedBuilder::<UInt64Type>::new(PlSmallStr::from_static("num_rows"), wp.len());
-    let mut file_size =
-        PrimitiveChunkedBuilder::<UInt64Type>::new(PlSmallStr::from_static("file_size"), wp.len());
-    let mut columns = input_schema
-        .iter_values()
-        .map(|dtype| {
-            let null_count = PrimitiveChunkedBuilder::<UInt64Type>::new(
-                PlSmallStr::from_static("null_count"),
-                wp.len(),
-            );
-            let nan_count = PrimitiveChunkedBuilder::<UInt64Type>::new(
-                PlSmallStr::from_static("nan_count"),
-                wp.len(),
-            );
-            let mut lower_bound = SeriesBuilder::new(dtype.clone());
-            let mut upper_bound = SeriesBuilder::new(dtype.clone());
-            lower_bound.reserve(wp.len());
-            upper_bound.reserve(wp.len());
-
-            (null_count, nan_count, lower_bound, upper_bound)
-        })
-        .collect::<Vec<_>>();
-
-    for p in wp {
-        path.append_value(p.path);
-        num_rows.append_value(p.num_rows);
-        file_size.append_value(p.file_size);
-
-        for (mut w, c) in p.columns.into_iter().zip(columns.iter_mut()) {
-            c.0.append_value(w.null_count);
-            c.1.append_value(w.nan_count);
-            c.2.extend(&w.lower_bound.finalize().unwrap(), ShareStrategy::Always);
-            c.3.extend(&w.upper_bound.finalize().unwrap(), ShareStrategy::Always);
-        }
-    }
-
-    let mut df_columns = Vec::with_capacity(3 + input_schema.len());
-    df_columns.push(path.finish().into_column());
-    df_columns.push(num_rows.finish().into_column());
-    df_columns.push(file_size.finish().into_column());
-    for (name, column) in input_schema.iter_names().zip(columns) {
-        let struct_ca = StructChunked::from_series(
-            format_pl_smallstr!("{name}_stats"),
-            num_partitions,
-            [
-                column.0.finish().into_series(),
-                column.1.finish().into_series(),
-                column.2.freeze(PlSmallStr::from_static("lower_bound")),
-                column.3.freeze(PlSmallStr::from_static("upper_bound")),
-            ]
-            .iter(),
-        )
-        .unwrap();
-        df_columns.push(struct_ca.into_column());
-    }
-
-    DataFrame::new_with_height(num_partitions, df_columns).unwrap()
-}
 
 #[derive(Clone)]
 pub struct PerPartitionSortBy {
@@ -179,6 +44,7 @@ pub fn get_create_new_fn(
     file_type: FileType,
     sink_options: SinkOptions,
     cloud_options: Option<CloudOptions>,
+    collect_metrics: bool,
 ) -> CreateNewSinkFn {
     match file_type {
         #[cfg(feature = "ipc")]
@@ -210,6 +76,7 @@ pub fn get_create_new_fn(
                     sink_options.clone(),
                     &parquet_writer_options,
                     cloud_options.clone(),
+                    collect_metrics,
                 )?) as Box<dyn SinkNode + Send + Sync>;
                 Ok(sink)
             }) as _
@@ -300,7 +167,7 @@ async fn open_new_sink(
     Option<(
         FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
         SinkSender,
-        Box<dyn FnOnce() -> PolarsResult<Option<WrittenPartition>> + Send + Sync>,
+        Box<dyn SinkNode + Send + Sync>,
     )>,
 > {
     let file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys)?;
@@ -441,9 +308,5 @@ async fn open_new_sink(
         return Ok(None);
     }
 
-    Ok(Some((
-        join_handles,
-        sender,
-        Box::new(move || node.finish()),
-    )))
+    Ok(Some((join_handles, sender, node)))
 }

@@ -8,7 +8,7 @@ use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 
-use self::partition::WrittenPartition;
+use self::metrics::WriteMetrics;
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskScope};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::{Receiver, Sender, connector};
@@ -18,6 +18,7 @@ use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::TaskPriority;
 
+mod metrics;
 mod phase;
 use phase::PhaseOutcome;
 
@@ -72,22 +73,20 @@ fn buffer_and_distribute_columns_task(
     mut dist_tx: distributor_channel::Sender<(usize, usize, Column)>,
     chunk_size: usize,
     schema: SchemaRef,
-    metrics: Arc<Mutex<Option<WrittenPartition>>>,
+    metrics: Arc<Mutex<Option<WriteMetrics>>>,
 ) -> JoinHandle<PolarsResult<()>> {
     spawn(TaskPriority::High, async move {
         let mut seq = 0usize;
         let mut buffer = DataFrame::empty_with_schema(schema.as_ref());
 
+        let mut metrics_ = metrics.lock().unwrap().take();
         while let Ok((outcome, rx)) = recv_port_rx.recv().await {
             let mut rx = rx.serial();
             while let Ok(morsel) = rx.recv().await {
                 let (df, _, _, consume_token) = morsel.into_inner();
 
-                {
-                    let mut metrics = metrics.lock().unwrap();
-                    if let Some(metrics) = metrics.as_mut() {
-                        metrics.append(&df)?;
-                    }
+                if let Some(metrics) = metrics_.as_mut() {
+                    metrics.append(&df)?;
                 }
 
                 // @NOTE: This also performs schema validation.
@@ -111,6 +110,9 @@ fn buffer_and_distribute_columns_task(
             }
 
             outcome.stopped();
+        }
+        if let Some(metrics_) = metrics_ {
+            *metrics.lock().unwrap() = Some(metrics_);
         }
 
         // Don't write an empty row group at the end.
@@ -189,7 +191,19 @@ pub trait SinkNode {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
 
-    fn finish(&self) -> PolarsResult<Option<WrittenPartition>> {
+    /// Callback for when the query has finished successfully.
+    ///
+    /// This should only be called when the writing is finished and all the join handles have been
+    /// awaited.
+    fn finish(&self) -> PolarsResult<()> {
+        Ok(())
+    }
+
+    /// Fetch metrics for a specific sink.
+    ///
+    /// This should only be called when the writing is finished and all the join handles have been
+    /// awaited.
+    fn get_metrics(&self) -> PolarsResult<Option<WriteMetrics>> {
         Ok(None)
     }
 }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -161,13 +161,13 @@ def _cast_keyed_file_path_cb(
 
 
 def _prepare_per_partition_sort_by(
-    e: str | Expr | list[str | Expr] | None,
+    e: str | Expr | Iterable[str | Expr] | None,
 ) -> list[PyExpr] | None:
     def prepare_one(v: str | Expr) -> PyExpr:
-        if isinstance(e, str):
-            return [col(e)._pyexpr]
-        elif isinstance(e, Expr):
-            return [e._pyexpr]
+        if isinstance(v, str):
+            return col(v)._pyexpr
+        elif isinstance(v, Expr):
+            return v._pyexpr
         else:
             msg = f"cannot do a per partition sort by for {v!r}"
             raise TypeError(msg)
@@ -178,7 +178,7 @@ def _prepare_per_partition_sort_by(
         return [col(e)._pyexpr]
     elif isinstance(e, Expr):
         return [e._pyexpr]
-    elif isinstance(e, list):
+    elif isinstance(e, Iterable):
         return [prepare_one(v) for v in e]
     else:
         msg = f"cannot do a per partition sort by for {e!r}"
@@ -222,6 +222,15 @@ class PartitionMaxSize(PartitioningScheme):
         If no callback is given, it defaults to `{ctx.file_idx}.{EXT}`.
     max_size : int
         The maximum size in rows of each of the generated files.
+    per_partition_sort_by
+        Columns or expressions to sort over within each partition.
+
+        Note that this might increase the memory consumption needed for each partition.
+    finish_callback
+        A callback that gets called when the query finishes successfully.
+
+        For parquet files, the callback is given a dataframe with metrics about all
+        files written files.
 
     Examples
     --------
@@ -245,7 +254,7 @@ class PartitionMaxSize(PartitioningScheme):
         file_path: Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]]
         | None = None,
         max_size: int,
-        per_partition_sort_by: str | Expr | list[str] | list[Expr] | None = None,
+        per_partition_sort_by: str | Expr | Iterable[str | Expr] | None = None,
         finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
@@ -321,6 +330,15 @@ class PartitionByKey(PartitioningScheme):
         The expressions to partition by.
     include_key : bool
         Whether to include the key columns in the output files.
+    per_partition_sort_by
+        Columns or expressions to sort over within each partition.
+
+        Note that this might increase the memory consumption needed for each partition.
+    finish_callback
+        A callback that gets called when the query finishes successfully.
+
+        For parquet files, the callback is given a dataframe with metrics about all
+        files written files.
 
     Examples
     --------
@@ -364,7 +382,7 @@ class PartitionByKey(PartitioningScheme):
         | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
-        per_partition_sort_by: str | Expr | list[str] | list[Expr] | None = None,
+        per_partition_sort_by: str | Expr | Iterable[str | Expr] | None = None,
         finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
@@ -419,6 +437,15 @@ class PartitionParted(PartitioningScheme):
         The expressions to partition by.
     include_key : bool
         Whether to include the key columns in the output files.
+    per_partition_sort_by
+        Columns or expressions to sort over within each partition.
+
+        Note that this might increase the memory consumption needed for each partition.
+    finish_callback
+        A callback that gets called when the query finishes successfully.
+
+        For parquet files, the callback is given a dataframe with metrics about all
+        files written files.
 
     Examples
     --------
@@ -444,7 +471,7 @@ class PartitionParted(PartitioningScheme):
         | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
-        per_partition_sort_by: str | Expr | list[str] | list[Expr] | None = None,
+        per_partition_sort_by: str | Expr | Iterable[str | Expr] | None = None,
         finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")

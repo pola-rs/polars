@@ -15,7 +15,7 @@ use std::marker::PhantomData;
 use arrow::array::{Array, PrimitiveArray, StaticArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 pub use convert::into_reduction;
-pub use min_max::{new_min_reduction, new_max_reduction};
+pub use min_max::{new_max_reduction, new_min_reduction};
 use polars_core::prelude::*;
 
 use crate::EvictIdx;

@@ -281,6 +281,7 @@ fn to_graph_rec<'a>(
                         sink_options,
                         parquet_writer_options,
                         cloud_options.clone(),
+                        false,
                     )?),
                     [(input_key, input.port)],
                 ),
@@ -328,6 +329,7 @@ fn to_graph_rec<'a>(
                 file_type.clone(),
                 sink_options.clone(),
                 cloud_options.clone(),
+                finish_callback.is_some(),
             );
 
             let per_partition_sort_by = match per_partition_sort_by.as_ref() {

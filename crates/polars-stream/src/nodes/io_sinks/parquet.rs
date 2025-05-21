@@ -19,7 +19,7 @@ use polars_parquet::write::{
 use polars_plan::dsl::{SinkOptions, SinkTarget};
 use polars_utils::priority::Priority;
 
-use super::partition::WrittenPartition;
+use super::metrics::WriteMetrics;
 use super::{
     DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE, SinkInputPort,
     SinkNode, buffer_and_distribute_columns_task,
@@ -45,7 +45,7 @@ pub struct ParquetSinkNode {
     cloud_options: Option<CloudOptions>,
 
     file_size: Arc<AtomicU64>,
-    metrics: Arc<Mutex<Option<WrittenPartition>>>,
+    metrics: Arc<Mutex<Option<WriteMetrics>>>,
 }
 
 impl ParquetSinkNode {
@@ -55,15 +55,16 @@ impl ParquetSinkNode {
         sink_options: SinkOptions,
         write_options: &ParquetWriteOptions,
         cloud_options: Option<CloudOptions>,
+        collect_metrics: bool,
     ) -> PolarsResult<Self> {
         let schema = schema_to_arrow_checked(&input_schema, CompatLevel::newest(), "parquet")?;
         let column_options: Vec<ColumnWriteOptions> =
             get_column_write_options(&schema, &write_options.field_overwrites);
         let parquet_schema = to_parquet_schema(&schema, &column_options)?;
-        let metrics = Arc::new(Mutex::new(Some(WrittenPartition::new(
-            target.to_display_string(),
-            &input_schema,
-        ))));
+        let metrics =
+            Arc::new(Mutex::new(collect_metrics.then(|| {
+                WriteMetrics::new(target.to_display_string(), &input_schema)
+            })));
 
         Ok(Self {
             target,
@@ -306,11 +307,11 @@ impl SinkNode for ParquetSinkNode {
         }));
     }
 
-    fn finish(&self) -> PolarsResult<Option<WrittenPartition>> {
+    fn get_metrics(&self) -> PolarsResult<Option<WriteMetrics>> {
         let file_size = self.file_size.load(Ordering::Relaxed);
-        let written_partition = self.metrics.lock().unwrap().take();
+        let metrics = self.metrics.lock().unwrap().take();
 
-        Ok(written_partition.map(|mut m| {
+        Ok(metrics.map(|mut m| {
             m.file_size = file_size;
             m
         }))
