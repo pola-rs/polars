@@ -3515,6 +3515,7 @@ name = "polars-testing"
 version = "0.48.1"
 dependencies = [
  "polars-core",
+ "polars-lazy",
  "polars-ops",
 ]
 
