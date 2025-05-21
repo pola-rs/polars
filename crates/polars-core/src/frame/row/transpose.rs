@@ -226,7 +226,8 @@ pub(super) fn numeric_transpose<T>(
                     for (col_idx, opt_v) in ca.iter().enumerate() {
                         match opt_v {
                             None => unsafe {
-                                let validity_vec: &mut Vec<Vec<bool>> = &mut *(validity_buf_ptr as *mut Vec<Vec<bool>>);
+                                let validity_vec: &mut Vec<Vec<bool>> =
+                                    &mut *(validity_buf_ptr as *mut Vec<Vec<bool>>);
                                 let column = validity_vec.get_unchecked_mut(col_idx);
                                 let el_ptr = column.as_mut_ptr();
                                 *el_ptr.add(row_idx) = false;
@@ -243,8 +244,10 @@ pub(super) fn numeric_transpose<T>(
                 } else {
                     for (col_idx, v) in ca.into_no_null_iter().enumerate() {
                         unsafe {
-                            let column: &mut Vec<Vec<T::Native>> = &mut *(values_buf_ptr as *mut Vec<Vec<T::Native>>);
-                            *column.get_unchecked_mut(col_idx).get_unchecked_mut(row_idx) = v;
+                            let column: &mut Vec<Vec<T::Native>> =
+                                &mut *(values_buf_ptr as *mut Vec<Vec<T::Native>>);
+                            let el_ptr = column.get_unchecked_mut(col_idx).as_mut_ptr();
+                            *el_ptr.add(row_idx) = v;
                         }
                     }
                 }
