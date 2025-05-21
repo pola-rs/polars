@@ -92,11 +92,10 @@ pub(super) fn try_cast_binview_to_array_primitive<T>(
 where
     T: Cast + NativeType,
 {
-    let size = if let ArrowDataType::FixedSizeList(_, size) = to {
-        *size
-    } else {
-        todo!("Hello")
+    let ArrowDataType::FixedSizeList(_, size) = to else {
+        panic!("Bug, non-Array passed in.")
     };
+    let size = *size;
     let mut result = MutableFixedSizeListArray::new(MutablePrimitiveArray::<T>::new(), size);
 
     from.iter().try_for_each(|x| {
