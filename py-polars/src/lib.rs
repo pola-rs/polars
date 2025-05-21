@@ -84,7 +84,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pymodule]
+#[pymodule(gil_used = false)]
 fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
