@@ -214,7 +214,6 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                         polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed in arrays."),
                     );
                 };
-                // Since we know it's a physical size, we
                 let element_size = leaf_dtype.byte_size().unwrap();
 
                 let result: Vec<ArrayRef> = with_match_primitive_type!(primitive_type, |$T| {
