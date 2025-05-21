@@ -966,7 +966,7 @@ impl DataType {
             DataType::Array(data_type, size) => data_type.byte_size().map(|v| v * size),
             DataType::List(_) => None,
             DataType::Object(_) => None,
-            DataType::Null => Some(0),
+            DataType::Null => None,
             DataType::Categorical(_, _) => None,
             DataType::Enum(_, _) => None,
             DataType::Struct(vec) => {

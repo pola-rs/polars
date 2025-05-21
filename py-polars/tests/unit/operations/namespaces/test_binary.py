@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, time
 import random
 import struct
 from typing import TYPE_CHECKING
@@ -8,10 +9,10 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import SizeUnit, TransferEncoding
+    from polars._typing import SizeUnit, TransferEncoding, PolarsDataType
 
 
 def test_binary_conversions() -> None:
@@ -92,9 +93,7 @@ def test_starts_ends_with() -> None:
         pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
         pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
         pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
-    ).to_dict(
-        as_series=False
-    ) == {
+    ).to_dict(as_series=False) == {
         "end_lit": [False, False, True, None],
         "end_none": [None, None, None, None],
         "end_expr": [True, False, None, None],
@@ -229,8 +228,8 @@ def test_reinterpret(
         (pl.Array(pl.Float64, 3), 8, "d"),
     ],
 )
-def test_reinterpret_to_array(
-    dtype: pl.Array,
+def test_reinterpret_to_array_numeric_types(
+    dtype: PolarsDataType,
     inner_type_size: int,
     struct_type: str,
 ) -> None:
@@ -269,6 +268,45 @@ def test_reinterpret_to_array(
         expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
 
         assert_frame_equal(result, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "binary_value", "expected_values"),
+    [
+        (pl.Array(pl.Date(), 1), b"\x06\x00\x00\x00", [[date(1970, 1, 7)]]),
+        (
+            pl.Array(pl.Datetime(), 1),
+            b"\x40\xb6\xfd\xe3\x7c\x00\x00\x00",
+            [[datetime(1970, 1, 7, 5, 0, 1)]],
+        ),
+        (
+            pl.Array(pl.Duration(), 1),
+            b"\x03\x00\x00\x00\x00\x00\x00\x00",
+            [[timedelta(microseconds=3)]],
+        ),
+        (
+            pl.Array(pl.Time(), 1),
+            b"\x58\x1b\x00\x00\x00\x00\x00\x00",
+            [[time(microsecond=7)]],
+        ),
+        (
+            pl.Array(pl.Array(pl.UInt8(), 2), 2),
+            b"\x01\x02\x03\x04",
+            [[[1, 2], [3, 4]]],
+        ),
+        (
+            pl.Array(pl.Int128(), 1),
+            b"\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            [[6]],
+        ),
+    ],
+)
+def test_reinterpret_to_array_other_types(
+    dtype: PolarsDataType, binary_value: bytes, expected_values: list[object]
+) -> None:
+    series = pl.Series([binary_value])
+    result = series.bin.reinterpret(dtype=dtype, endianness="little")
+    assert_series_equal(result, pl.Series(expected_values, dtype=dtype))
 
 
 def test_reinterpret_to_array_invalid() -> None:
