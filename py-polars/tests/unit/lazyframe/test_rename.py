@@ -15,7 +15,7 @@ def test_lazy_rename() -> None:
 
     # the `strict` param controls whether we fail on columns not found in the frame
     remap_colnames = {"b": "a", "y": "x", "a": "b", "x": "y"}
-    with pytest.raises(ColumnNotFoundError, match="'b' is invalid"):
+    with pytest.raises(ColumnNotFoundError, match='"b" not found'):
         lf.rename(remap_colnames).collect()
 
     result = lf.rename(remap_colnames, strict=False).collect()

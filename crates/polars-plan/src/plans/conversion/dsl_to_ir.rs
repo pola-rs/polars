@@ -1065,21 +1065,26 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let existing_lut =
                         PlIndexSet::from_iter(existing.iter().map(PlSmallStr::as_str));
 
-                    let mut schema = input_schema.as_ref().as_ref().clone();
+                    let mut schema = Schema::with_capacity(input_schema.len());
                     let mut num_replaced = 0;
 
                     // Turn the rename into a select.
                     let expr = input_schema
-                        .iter_names()
-                        .map(|n| match existing_lut.get_index_of(n.as_str()) {
-                            None => Expr::Column(n.clone()),
-                            Some(i) => {
-                                num_replaced += 1;
-                                schema.rename(n.as_str(), new[i].clone());
-                                Expr::Column(n.clone()).alias(new[i].clone())
-                            },
+                        .iter()
+                        .map(|(n, dtype)| {
+                            Ok(match existing_lut.get_index_of(n.as_str()) {
+                                None => {
+                                    schema.try_insert(n.clone(), dtype.clone())?;
+                                    Expr::Column(n.clone())
+                                },
+                                Some(i) => {
+                                    num_replaced += 1;
+                                    schema.try_insert(new[i].clone(), dtype.clone())?;
+                                    Expr::Column(n.clone()).alias(new[i].clone())
+                                },
+                            })
                         })
-                        .collect::<Vec<_>>();
+                        .collect::<PolarsResult<Vec<_>>>()?;
 
                     if strict && num_replaced != existing.len() {
                         let col = existing.iter().find(|c| !input_schema.contains(c)).unwrap();
