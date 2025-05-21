@@ -24,6 +24,8 @@ from polars.exceptions import (
 from tests.unit.conftest import TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
+    from warnings import WarningMessage
+
     from polars._typing import ConcatMethod
 
 
@@ -630,7 +632,7 @@ def test_invalid_is_in_dtypes(
     colname: str,
     values: list[Any],
     expected: list[Any] | None,
-    warnings: list[Warning, str] | None,
+    warnings: list[tuple[WarningMessage, str]] | None,
 ) -> None:
     df = pl.DataFrame(
         {
@@ -658,7 +660,9 @@ def test_invalid_is_in_dtypes(
             assert len(records) == len(warnings)
             for record, expected_warning in zip(records, warnings, strict=True):
                 assert record.category == expected_warning[0]  # warning type
-                assert record.message.args[0] == expected_warning[1]  # warning message
+                assert (
+                    record.message.args[0] == expected_warning[1]  # type: ignore[union-attr]
+                )
 
         else:
             assert (
