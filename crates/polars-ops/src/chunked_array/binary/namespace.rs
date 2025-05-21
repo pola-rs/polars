@@ -216,7 +216,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                     "unsupported data type in from_buffer. Only numerical types are allowed in arrays."
                 );
                 let PhysicalType::Primitive(primitive_type) = leaf_physical_type else {
-                    panic!("Shouldn't ever bre reached.")
+                    panic!("Shouldn't ever be reached.")
                 };
                 let element_size = leaf_dtype.byte_size().unwrap();
 
