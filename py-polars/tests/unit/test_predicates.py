@@ -1096,3 +1096,38 @@ def test_predicate_pass() -> None:
         .explain()
     )
     assert plan.index("FILTER") > plan.index("MARKER")
+
+
+def test_predicate_pushdown_auto_disable_strict() -> None:
+    # Test that type-coercion automatically switches strict cast to
+    # non-strict/overflowing for compatible types, allowing the predicate to be
+    # pushed.
+    lf = pl.LazyFrame(
+        {"column": "2025-01-01", "column_date": datetime(2025, 1, 1), "integer": 1},
+        schema={
+            "column": pl.String,
+            "column_date": pl.Datetime("ns"),
+            "integer": pl.Int64,
+        },
+    )
+
+    q = lf.with_columns(
+        MARKER=1,
+    ).filter(
+        pl.col("column_date").cast(pl.Datetime("us")) == pl.lit(datetime(2025, 1, 1)),
+        pl.col("integer") == 1,
+    )
+
+    plan = q.explain()
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+    q = lf.with_columns(
+        MARKER=1,
+    ).filter(
+        pl.col("column_date").cast(pl.Datetime("us"), strict=False)
+        == pl.lit(datetime(2025, 1, 1)),
+        pl.col("integer").cast(pl.Int128, strict=True) == 1,
+    )
+
+    plan = q.explain()
+    assert plan.index("FILTER") > plan.index("MARKER")

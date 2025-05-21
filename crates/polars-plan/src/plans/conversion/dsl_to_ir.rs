@@ -785,6 +785,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             float_upcast: per_column.float_cast == UpcastOrForbid::Upcast,
                             float_downcast: false,
                             datetime_nanoseconds_downcast: false,
+                            datetime_microseconds_downcast: false,
                             datetime_convert_timezone: false,
                             missing_struct_fields: per_column.missing_struct_fields,
                             extra_struct_fields: per_column.extra_struct_fields,
