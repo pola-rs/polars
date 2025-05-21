@@ -208,10 +208,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                     .to_arrow(CompatLevel::newest())
                     .to_physical_type();
                 polars_ensure!(
-                    dtype.inner_dtype()
-                        .map(|dtype| dtype.byte_size().is_some())
-                        .unwrap_or(true)
-                    && matches!(leaf_physical_type, PhysicalType::Primitive(_)),
+                    dtype.byte_size().is_some() && leaf_physical_type.is_primitive(),
                     InvalidOperation:
                     "unsupported data type in from_buffer. Only numerical types are allowed in arrays."
                 );
