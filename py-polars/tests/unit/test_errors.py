@@ -659,7 +659,7 @@ def test_invalid_is_in_dtypes(
                 )
             assert len(records) == len(warnings)
             for record, expected_warning in zip(records, warnings):
-                assert record.category == expected_warning[0]  # warning type
+                assert record.category == expected_warning[0]  # type: ignore[comparison-overlap]
                 assert (
                     record.message.args[0] == expected_warning[1]  # type: ignore[union-attr]
                 )
