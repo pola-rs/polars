@@ -92,7 +92,9 @@ def test_starts_ends_with() -> None:
         pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
         pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
         pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
-    ).to_dict(as_series=False) == {
+    ).to_dict(
+        as_series=False
+    ) == {
         "end_lit": [False, False, True, None],
         "end_none": [None, None, None, None],
         "end_expr": [True, False, None, None],
@@ -227,7 +229,7 @@ def test_reinterpret(
         (pl.Array(pl.Float64, 3), 8, "d"),
     ],
 )
-def test_reinterpret_list(
+def test_reinterpret_to_array(
     dtype: pl.Array,
     inner_type_size: int,
     struct_type: str,
@@ -269,7 +271,7 @@ def test_reinterpret_list(
         assert_frame_equal(result, expected_df)
 
 
-def test_reinterpret_array_invalid() -> None:
+def test_reinterpret_to_array_invalid() -> None:
     series = pl.Series([b"short", b"justrite", None, b"waytoolong"])
     as_bin = series.bin.reinterpret(dtype=pl.Array(pl.UInt32(), 2), endianness="little")
     assert as_bin.to_list() == [None, [1953723754, 1702127986], None, None]
