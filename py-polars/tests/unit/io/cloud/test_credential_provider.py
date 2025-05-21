@@ -182,6 +182,7 @@ def test_credential_provider_aws_endpoint_url_scan_no_parameters(
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
+    _set_default_credentials(tmp_path, monkeypatch)
     cfg_file_path = tmp_path / "config"
 
     monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
@@ -215,6 +216,7 @@ def test_credential_provider_aws_endpoint_url_serde(
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
+    _set_default_credentials(tmp_path, monkeypatch)
     cfg_file_path = tmp_path / "config"
 
     monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
@@ -248,6 +250,7 @@ def test_credential_provider_aws_endpoint_url_with_storage_options(
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
+    _set_default_credentials(tmp_path, monkeypatch)
     cfg_file_path = tmp_path / "config"
 
     monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
@@ -299,15 +302,23 @@ endpoint_url = http://localhost:333
 def test_credential_provider_aws_endpoint_url_passed_in_storage_options(
     storage_options: dict[str, str],
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
 
+    _set_default_credentials(tmp_path, monkeypatch)
     cfg_file_path = tmp_path / "config"
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(cfg_file_path))
 
     cfg_file_path.write_text("""\
 [default]
 endpoint_url = http://localhost:333
 """)
+
+    q = pl.scan_parquet("s3://.../...")
+
+    with pytest.raises(IOError, match=r"Error performing HEAD http://localhost:333"):
+        q.collect()
 
     # An endpoint_url passed in `storage_options` should take precedence.
     q = pl.scan_parquet(
@@ -317,3 +328,14 @@ endpoint_url = http://localhost:333
 
     with pytest.raises(IOError, match=r"Error performing HEAD http://localhost:777"):
         q.collect()
+
+
+def _set_default_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    creds_file_path = tmp_path / "credentials"
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file_path))
+
+    creds_file_path.write_text("""\
+[default]
+aws_access_key_id=Z
+aws_secret_access_key=Z
+""")
