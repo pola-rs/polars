@@ -173,23 +173,17 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         }
     }
 
+    #[cfg(feature = "binary_encoding")]
     fn _from_buffer_inner(
         &self,
         dtype: &DataType,
         is_little_endian: bool,
     ) -> PolarsResult<Vec<Box<dyn Array>>> {
-        // We do the conversion for Arrays using a linear version of the dtype,
-        // and then later reshape into the correct size.
-        let linear_dtype = if let Some(ref shape) = dtype.get_shape() {
-            &DataType::Array(Box::new(dtype.leaf_dtype().clone()), shape.iter().product())
-        } else {
-            dtype
-        };
-        let arrow_data_type = linear_dtype.to_arrow(CompatLevel::newest());
         let ca = self.as_binary();
 
-        match arrow_data_type.to_physical_type() {
+        match dtype.to_arrow(CompatLevel::newest()).to_physical_type() {
             PhysicalType::Primitive(ty) => {
+                let arrow_data_type = dtype.to_arrow(CompatLevel::newest());
                 with_match_primitive_type!(ty, |$T| {
                     unsafe {
                         ca.chunks().iter().map(|chunk| {
@@ -202,7 +196,17 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                     }
                 })
             },
+            #[cfg(feature = "dtype-array")]
             PhysicalType::FixedSizeList => {
+                // We do the conversion for Arrays using a linear version of the dtype,
+                // and then later reshape into the correct size.
+                let linear_dtype = if let Some(ref shape) = dtype.get_shape() {
+                    &DataType::Array(Box::new(dtype.leaf_dtype().clone()), shape.iter().product())
+                } else {
+                    dtype
+                };
+                let arrow_data_type = linear_dtype.to_arrow(CompatLevel::newest());
+
                 let leaf_dtype = dtype.leaf_dtype();
                 let leaf_physical_type = leaf_dtype
                     .to_arrow(CompatLevel::newest())
