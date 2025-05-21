@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -93,7 +94,9 @@ def test_starts_ends_with() -> None:
         pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
         pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
         pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
-    ).to_dict(as_series=False) == {
+    ).to_dict(
+        as_series=False
+    ) == {
         "end_lit": [False, False, True, None],
         "end_none": [None, None, None, None],
         "end_expr": [True, False, None, None],
@@ -313,6 +316,19 @@ def test_reinterpret_to_array_invalid() -> None:
     series = pl.Series([b"short", b"justrite", None, b"waytoolong"])
     as_bin = series.bin.reinterpret(dtype=pl.Array(pl.UInt32(), 2), endianness="little")
     assert as_bin.to_list() == [None, [1953723754, 1702127986], None, None]
+
+
+def test_reinterpret_unsupported() -> None:
+    series = pl.Series([b"1234"])
+    for dtype in [
+        pl.Array(pl.List(pl.UInt8()), 1),
+        pl.Array(pl.Null(), 1),
+        pl.Array(pl.Boolean(), 1),
+    ]:
+        with pytest.raises(
+            InvalidOperationError, match="unsupported data type in from_buffer"
+        ):
+            series.bin.reinterpret(dtype=dtype)
 
 
 @pytest.mark.parametrize(

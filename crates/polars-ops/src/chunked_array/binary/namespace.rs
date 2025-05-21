@@ -207,12 +207,16 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 let leaf_physical_type = leaf_dtype
                     .to_arrow(CompatLevel::newest())
                     .to_physical_type();
-                let primitive_type = if let PhysicalType::Primitive(x) = leaf_physical_type {
-                    x
-                } else {
-                    return Err(
-                        polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed in arrays."),
-                    );
+                polars_ensure!(
+                    dtype.inner_dtype()
+                        .map(|dtype| dtype.byte_size().is_some())
+                        .unwrap_or(true)
+                    && matches!(leaf_physical_type, PhysicalType::Primitive(_)),
+                    InvalidOperation:
+                    "unsupported data type in from_buffer. Only numerical types are allowed in arrays."
+                );
+                let PhysicalType::Primitive(primitive_type) = leaf_physical_type else {
+                    panic!("Shouldn't ever bre reached.")
                 };
                 let element_size = leaf_dtype.byte_size().unwrap();
 
