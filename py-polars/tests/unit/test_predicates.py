@@ -766,7 +766,7 @@ def test_predicate_pushdown_lazy_rename_22373(
 
     # Ensure filter is pushed past rename
     plan = query.explain()
-    assert plan.index("FILTER") > plan.index("RENAME")
+    assert plan.index("FILTER") > plan.index("SELECT")
 
 
 @pytest.mark.parametrize(

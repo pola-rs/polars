@@ -1,7 +1,6 @@
 mod group_by;
 mod join;
 mod keys;
-mod rename;
 mod utils;
 
 use polars_core::datatypes::PlHashMap;
@@ -15,7 +14,6 @@ use super::*;
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
-use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
 use crate::utils::{check_input_node, has_aexpr};
 
 pub type ExprEval<'a> =
@@ -495,17 +493,6 @@ impl PredicatePushDown<'_> {
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {
                     match function {
-                        FunctionIR::Rename { existing, new, .. } => {
-                            process_rename(&mut acc_predicates, expr_arena, existing, new);
-
-                            self.pushdown_and_continue(
-                                lp,
-                                acc_predicates,
-                                lp_arena,
-                                expr_arena,
-                                false,
-                            )
-                        },
                         FunctionIR::Explode { columns, .. } => {
                             let condition = |name: &PlSmallStr| columns.iter().any(|s| s == name);
 
