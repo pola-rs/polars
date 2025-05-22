@@ -31,7 +31,6 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::sync::GILOnceCell;
 use pyo3::types::{PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;

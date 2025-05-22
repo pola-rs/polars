@@ -179,7 +179,7 @@ pub enum ExtraColumnsPolicy {
 }
 
 /// Scan arguments shared across different scan types.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct UnifiedScanArgs {
     /// User-provided schema of the file. Will be inferred during IR conversion
@@ -199,7 +199,28 @@ pub struct UnifiedScanArgs {
 
     pub cast_columns_policy: CastColumnsPolicy,
     pub missing_columns_policy: MissingColumnsPolicy,
+    pub extra_columns_policy: ExtraColumnsPolicy,
     pub include_file_paths: Option<PlSmallStr>,
+}
+
+impl Default for UnifiedScanArgs {
+    fn default() -> Self {
+        Self {
+            schema: None,
+            cloud_options: None,
+            hive_options: HiveOptions::new_enabled(),
+            rechunk: false,
+            cache: false,
+            glob: true,
+            projection: None,
+            row_index: None,
+            pre_slice: None,
+            cast_columns_policy: CastColumnsPolicy::default(),
+            missing_columns_policy: MissingColumnsPolicy::default(),
+            extra_columns_policy: ExtraColumnsPolicy::default(),
+            include_file_paths: None,
+        }
+    }
 }
 
 /// Manual impls of Eq/Hash, as some fields are `Arc<T>` where T does not have Eq/Hash. For these
@@ -410,7 +431,8 @@ impl CastColumnsPolicy {
                         ExtraColumnsPolicy::Raise => {
                             return mismatch_err(&format!(
                                 "encountered extra struct field: {}, \
-                                hint: pass cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
+                                hint: specify this field in the schema, or pass \
+                                cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
                                 &fld.name,
                             ));
                         },
