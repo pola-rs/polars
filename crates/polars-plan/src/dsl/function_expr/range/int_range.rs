@@ -47,9 +47,9 @@ pub(super) fn int_ranges(s: &[Column]) -> PolarsResult<Column> {
     let end = &s[1];
     let step = &s[2];
 
-    let start = start.cast(&DataType::Int64)?;
-    let end = end.cast(&DataType::Int64)?;
-    let step = step.cast(&DataType::Int64)?;
+    let start = start.strict_cast(&DataType::Int64)?;
+    let end = end.strict_cast(&DataType::Int64)?;
+    let step = step.strict_cast(&DataType::Int64)?;
 
     let start = start.i64()?;
     let end = end.i64()?;
