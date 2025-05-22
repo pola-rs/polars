@@ -291,7 +291,8 @@ binary_encoding = ["polars-plan/binary_encoding"]
 string_encoding = ["polars-plan/string_encoding"]
 
 bigidx = ["polars-plan/bigidx", "polars-utils/bigidx"]
-polars_cloud = ["polars-plan/polars_cloud"]
+polars_cloud_client = ["polars-plan/polars_cloud_client"]
+polars_cloud_server = ["polars-plan/polars_cloud_server"]
 
 test = [
   "polars-plan/debugging",
