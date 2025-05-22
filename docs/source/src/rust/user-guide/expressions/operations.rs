@@ -74,11 +74,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:bitwise]
 
     // --8<-- [start:count]
-    use rand::distributions::{Distribution, Uniform};
-    use rand::thread_rng;
+    use rand::distr::{Distribution, Uniform};
+    use rand::rng;
 
-    let mut rng = thread_rng();
-    let between = Uniform::new_inclusive(0, 100_000);
+    let mut rng = rng();
+    let between = Uniform::new_inclusive(0, 100_000).unwrap();
     let arr: Vec<u32> = between.sample_iter(&mut rng).take(100_100).collect();
 
     let long_df = df!(
