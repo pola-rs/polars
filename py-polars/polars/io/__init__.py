@@ -1,7 +1,6 @@
 """Functions for reading data."""
 
 from polars.io.avro import read_avro
-from polars.io.cast_options import ScanCastOptions
 from polars.io.clipboard import read_clipboard
 from polars.io.csv import read_csv, read_csv_batched, scan_csv
 from polars.io.database import read_database, read_database_uri
@@ -26,6 +25,7 @@ from polars.io.partition import (
 )
 from polars.io.plugins import _defer as defer
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
+from polars.io.scan_options import ScanCastOptions
 from polars.io.spreadsheet import read_excel, read_ods
 
 __all__ = [
@@ -36,7 +36,6 @@ __all__ = [
     "KeyedPartition",
     "BasePartitionContext",
     "KeyedPartitionContext",
-    "ScanCastOptions",
     "read_avro",
     "read_clipboard",
     "read_csv",
@@ -61,4 +60,5 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    "ScanCastOptions",
 ]

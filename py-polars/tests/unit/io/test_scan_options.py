@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime
-from typing import IO
+from typing import IO, Any, Callable
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -142,7 +142,7 @@ def test_scan_cast_options(
     if cast_options is not None:
         q = pl.scan_parquet(files)
 
-        with pytest.raises(pl.exceptions.SchemaError, match=r"hint: pass "):
+        with pytest.raises(pl.exceptions.SchemaError, match=r"hint: .*pass"):
             q.collect()
 
     assert_frame_equal(
@@ -211,10 +211,64 @@ def test_scan_cast_options_extra_struct_fields() -> None:
 
     q = pl.scan_parquet(files)
 
-    with pytest.raises(pl.exceptions.SchemaError, match=r"hint: pass "):
+    with pytest.raises(pl.exceptions.SchemaError, match=r"hint: specify .*or pass"):
         q.collect()
 
     assert_frame_equal(
         pl.scan_parquet(files, cast_options=cast_options).collect(),
         expected.to_frame(),
+    )
+
+
+def test_cast_options_ignore_extra_columns() -> None:
+    files: list[IO[bytes]] = [io.BytesIO(), io.BytesIO()]
+
+    pl.DataFrame({"a": 1}).write_parquet(files[0])
+    pl.DataFrame({"a": 2, "b": 1}).write_parquet(files[1])
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match="extra column in file outside of expected schema: b, hint: specify.* or pass",
+    ):
+        pl.scan_parquet(files, schema={"a": pl.Int64}).collect()
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            files,
+            schema={"a": pl.Int64},
+            extra_columns="ignore",
+        ).collect(),
+        pl.DataFrame({"a": [1, 2]}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("scan_func", "write_func"),
+    [
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        # TODO: Fix for all other formats
+        # (pl.scan_ipc, pl.DataFrame.write_ipc),
+        # (pl.scan_csv, pl.DataFrame.write_csv),
+        # (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+    ],
+)
+def test_scan_extra_columns(
+    scan_func: Callable[[Any], pl.LazyFrame],
+    write_func: Callable[[pl.DataFrame, io.BytesIO], None],
+) -> None:
+    dfs = [pl.DataFrame({"a": 1, "b": 1}), pl.DataFrame({"a": 2, "b": 2, "c": 2})]
+    files = [io.BytesIO(), io.BytesIO()]
+
+    write_func(dfs[0], files[0])
+    write_func(dfs[1], files[1])
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match=r"extra column in file outside of expected schema: c, hint: ",
+    ):
+        scan_func(files).collect()
+
+    assert_frame_equal(
+        scan_func(files, extra_columns="ignore").collect(),  # type: ignore[call-arg]
+        pl.DataFrame({"a": [1, 2], "b": [1, 2]}),
     )
