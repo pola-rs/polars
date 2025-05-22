@@ -7,7 +7,7 @@ if TYPE_CHECKING:
 
 
 class ScanOptions:
-    """Holds options for UnifiedScanArgs"""
+    """Holds options for UnifiedScanArgs."""
 
     def __init__(
         self,
