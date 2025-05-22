@@ -22,7 +22,7 @@ pub fn initialize_missing_columns_policy(
             {
                 polars_bail!(
                     ColumnNotFound:
-                    "did not find column {}, consider enabling `allow_missing_columns`",
+                    "did not find column {}, consider passing `missing_columns='insert'`",
                     col,
                 )
             }

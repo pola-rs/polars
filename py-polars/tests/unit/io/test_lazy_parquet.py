@@ -753,7 +753,7 @@ def test_parquet_schema_arg(
         lf.collect(engine="streaming" if streaming else "in-memory")
 
     lf = pl.scan_parquet(
-        paths, parallel=parallel, schema=schema, allow_missing_columns=True
+        paths, parallel=parallel, schema=schema, missing_columns="insert"
     )
 
     assert_frame_equal(
@@ -764,17 +764,17 @@ def test_parquet_schema_arg(
     # Just one test that `read_parquet` is propagating this argument.
     assert_frame_equal(
         pl.read_parquet(
-            paths, parallel=parallel, schema=schema, allow_missing_columns=True
+            paths, parallel=parallel, schema=schema, missing_columns="insert"
         ),
         pl.DataFrame({"1": None, "a": [1, 2], "b": [1, 2]}, schema=schema),
     )
 
     # Issue #19081: If a schema arg is passed, ensure its fields are propagated
-    # to the IR, otherwise even if `allow_missing_columns=True`, downstream
+    # to the IR, otherwise even if `missing_columns='insert'`, downstream
     # `select()`s etc. will fail with ColumnNotFound if the column is not in
     # the first file.
     lf = pl.scan_parquet(
-        paths, parallel=parallel, schema=schema, allow_missing_columns=True
+        paths, parallel=parallel, schema=schema, missing_columns="insert"
     ).select("1")
 
     s = lf.collect(engine="streaming" if streaming else "in-memory").to_series()
@@ -785,12 +785,12 @@ def test_parquet_schema_arg(
 
     schema: dict[str, type[pl.DataType]] = {"a": pl.Int64}  # type: ignore[no-redef]
 
-    for allow_missing_columns in [True, False]:
+    for missing_columns in ["insert", "raise"]:
         lf = pl.scan_parquet(
             paths,
             parallel=parallel,
             schema=schema,
-            allow_missing_columns=allow_missing_columns,
+            missing_columns=missing_columns,  # type: ignore[arg-type]
         )
 
         with pytest.raises(pl.exceptions.SchemaError):
@@ -851,11 +851,11 @@ def test_scan_parquet_schema_specified_with_empty_files_list(tmp_path: Path) -> 
     )
 
 
-@pytest.mark.parametrize("allow_missing_columns", [True, False])
+@pytest.mark.parametrize("missing_columns", ["insert", "raise"])
 @pytest.mark.write_disk
 def test_scan_parquet_ignores_dtype_mismatch_for_non_projected_columns_19249(
     tmp_path: Path,
-    allow_missing_columns: bool,
+    missing_columns: str,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     paths = [tmp_path / "1", tmp_path / "2"]
@@ -868,7 +868,7 @@ def test_scan_parquet_ignores_dtype_mismatch_for_non_projected_columns_19249(
     ).write_parquet(paths[1])
 
     assert_frame_equal(
-        pl.scan_parquet(paths, allow_missing_columns=allow_missing_columns)
+        pl.scan_parquet(paths, missing_columns=missing_columns)  # type: ignore[arg-type]
         .select("a")
         .collect(engine="in-memory"),
         pl.DataFrame({"a": [1, 1]}, schema={"a": pl.Int32}),

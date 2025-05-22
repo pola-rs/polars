@@ -117,14 +117,14 @@ def test_multiscan_projection(
     ri = "row_index" if row_index else None
 
     args = {
-        "allow_missing_columns": missing_column,
+        "missing_columns": "insert" if missing_column else "raise",
         "include_file_paths": ifp,
         "row_index_name": ri,
         "hive_partitioning": hive,
     }
 
     if not supports_missing_columns:
-        del args["allow_missing_columns"]
+        del args["missing_columns"]
     if not supports_hive_partitioning:
         del args["hive_partitioning"]
 
