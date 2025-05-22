@@ -685,12 +685,12 @@ def test_extra_columns_not_ignored_22218() -> None:
         pl.exceptions.SchemaError,
         match="extra column in file outside of expected schema: c, hint: specify .*or pass",
     ):
-        (pl.scan_parquet(files, allow_missing_columns=True).select(pl.all()).collect())
+        (pl.scan_parquet(files, missing_columns="insert").select(pl.all()).collect())
 
     assert_frame_equal(
         pl.scan_parquet(
             files,
-            allow_missing_columns=True,
+            missing_columns="insert",
             extra_columns="ignore",
         )
         .select(pl.all())

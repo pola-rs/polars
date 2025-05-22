@@ -425,6 +425,9 @@ def scan_parquet(
         * The `row_count_name` parameter was renamed `row_index_name`.
         * The `row_count_offset` parameter was renamed `row_index_offset`.
 
+    .. versionchanged:: 1.30.0
+        * The `allow_missing_columns` is deprecated in favor of `missing_columns`.
+
     Parameters
     ----------
     source
@@ -602,15 +605,6 @@ def scan_parquet(
 
         missing_columns = "insert" if allow_missing_columns else "raise"
 
-    # TODO: Move this to Rust-side after https://github.com/pola-rs/polars/pull/22699
-    if missing_columns == "insert":
-        allow_missing_columns = True
-    elif missing_columns == "raise":
-        allow_missing_columns = False
-    else:
-        msg = f"unknown option for missing_columns: {missing_columns}"
-        raise ValueError(msg)
-
     return _scan_parquet_impl(
         source,  # type: ignore[arg-type]
         n_rows=n_rows,
@@ -630,10 +624,10 @@ def scan_parquet(
         retries=retries,
         glob=glob,
         include_file_paths=include_file_paths,
-        allow_missing_columns=allow_missing_columns,
         scan_options=ScanOptions(
             cast_options=cast_options,
             extra_columns=extra_columns,
+            missing_columns=missing_columns,
         ),
     )
 
@@ -658,7 +652,6 @@ def _scan_parquet_impl(
     try_parse_hive_dates: bool = True,
     retries: int = 2,
     include_file_paths: str | None = None,
-    allow_missing_columns: bool = False,
     scan_options: ScanOptions,
 ) -> LazyFrame:
     if isinstance(source, list):
@@ -692,7 +685,6 @@ def _scan_parquet_impl(
         retries=retries,
         glob=glob,
         include_file_paths=include_file_paths,
-        allow_missing_columns=allow_missing_columns,
         scan_options=scan_options,
     )
 
