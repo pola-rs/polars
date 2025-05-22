@@ -195,7 +195,7 @@ pub(crate) unsafe fn mmap_dictionary_from_batch<T: AsRef<[u8]>>(
 
     let chunk = mmap_record(
         &std::iter::once((field.name.clone(), field)).collect(),
-        &[first_ipc_field.clone()],
+        std::slice::from_ref(first_ipc_field),
         data.clone(),
         batch,
         offset,

@@ -4,7 +4,7 @@ type WarningFunction = fn(&str, PolarsWarning);
 static WARNING_FUNCTION: RwLock<WarningFunction> = RwLock::new(eprintln);
 
 fn eprintln(fmt: &str, warning: PolarsWarning) {
-    eprintln!("{:?}: {}", warning, fmt);
+    eprintln!("{warning:?}: {fmt}");
 }
 
 /// Set the function that will be called by the `polars_warn!` macro.

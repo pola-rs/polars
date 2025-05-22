@@ -20,3 +20,6 @@ arrow = { workspace = true }
 [dev-dependencies]
 arrow = { workspace = true, features = ["proptest"] }
 proptest = { workspace = true }
+
+[lints]
+workspace = true

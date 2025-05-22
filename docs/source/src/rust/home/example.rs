@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df = q.collect()?;
     // --8<-- [end:example]
 
-    println!("{}", df);
+    println!("{df}");
 
     Ok(())
 }

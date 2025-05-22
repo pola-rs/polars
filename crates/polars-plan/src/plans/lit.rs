@@ -553,8 +553,7 @@ impl Literal for Duration {
     fn lit(self) -> Expr {
         assert!(
             self.months() == 0,
-            "Cannot create literal duration that is not of fixed length; found {}",
-            self
+            "Cannot create literal duration that is not of fixed length; found {self}"
         );
         let ns = self.duration_ns();
         Expr::Literal(

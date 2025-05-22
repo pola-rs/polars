@@ -558,7 +558,8 @@ fn lower_exprs_with_ctx(
                 });
                 let explode_expr =
                     ExprIR::new(trans_inner, OutputName::Alias(exploded_name.clone()));
-                let output_schema = schema_for_select(trans_input, &[explode_expr.clone()], ctx)?;
+                let output_schema =
+                    schema_for_select(trans_input, std::slice::from_ref(&explode_expr), ctx)?;
                 let node_kind = PhysNodeKind::Select {
                     input: trans_input,
                     selectors: vec![explode_expr.clone()],
@@ -620,7 +621,7 @@ fn lower_exprs_with_ctx(
                 let group_by_key_expr =
                     ExprIR::new(trans_inner_exprs[0], OutputName::Alias(tmp_name.clone()));
                 let group_by_output_schema =
-                    schema_for_select(trans_input, &[group_by_key_expr.clone()], ctx)?;
+                    schema_for_select(trans_input, std::slice::from_ref(&group_by_key_expr), ctx)?;
                 let group_by_stream = build_group_by_stream(
                     trans_input,
                     &[group_by_key_expr],
@@ -784,7 +785,7 @@ fn lower_exprs_with_ctx(
                 let sorted_name = unique_column_name();
                 let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(sorted_name.clone()));
                 let select_stream =
-                    build_select_stream_with_ctx(input, &[inner_expr_ir.clone()], ctx)?;
+                    build_select_stream_with_ctx(input, std::slice::from_ref(&inner_expr_ir), ctx)?;
                 let col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
                 let kind = PhysNodeKind::Sort {
                     input: select_stream,
@@ -886,7 +887,8 @@ fn lower_exprs_with_ctx(
                     let out_name = unique_column_name();
                     let trans_agg_expr = ctx.expr_arena.add(AExpr::Agg(agg));
                     let expr_ir = ExprIR::new(trans_agg_expr, OutputName::Alias(out_name.clone()));
-                    let output_schema = schema_for_select(trans_input, &[expr_ir.clone()], ctx)?;
+                    let output_schema =
+                        schema_for_select(trans_input, std::slice::from_ref(&expr_ir), ctx)?;
                     let kind = PhysNodeKind::Reduce {
                         input: trans_input,
                         exprs: vec![expr_ir],
@@ -902,8 +904,11 @@ fn lower_exprs_with_ctx(
                         lower_exprs_with_ctx(input, &[inner], ctx)?;
                     let group_by_key_expr =
                         ExprIR::new(trans_inner_exprs[0], OutputName::Alias(tmp_name.clone()));
-                    let group_by_output_schema =
-                        schema_for_select(trans_input, &[group_by_key_expr.clone()], ctx)?;
+                    let group_by_output_schema = schema_for_select(
+                        trans_input,
+                        std::slice::from_ref(&group_by_key_expr),
+                        ctx,
+                    )?;
                     let group_by_stream = build_group_by_stream(
                         trans_input,
                         &[group_by_key_expr],
@@ -920,8 +925,11 @@ fn lower_exprs_with_ctx(
 
                     let len_node = ctx.expr_arena.add(AExpr::Len);
                     let len_expr_ir = ExprIR::new(len_node, OutputName::Alias(tmp_name.clone()));
-                    let output_schema =
-                        schema_for_select(group_by_stream, &[len_expr_ir.clone()], ctx)?;
+                    let output_schema = schema_for_select(
+                        group_by_stream,
+                        std::slice::from_ref(&len_expr_ir),
+                        ctx,
+                    )?;
                     let kind = PhysNodeKind::Reduce {
                         input: group_by_stream,
                         exprs: vec![len_expr_ir],
@@ -943,7 +951,7 @@ fn lower_exprs_with_ctx(
             AExpr::Len => {
                 let out_name = unique_column_name();
                 let expr_ir = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
-                let output_schema = schema_for_select(input, &[expr_ir.clone()], ctx)?;
+                let output_schema = schema_for_select(input, std::slice::from_ref(&expr_ir), ctx)?;
                 let kind = PhysNodeKind::Reduce {
                     input,
                     exprs: vec![expr_ir],

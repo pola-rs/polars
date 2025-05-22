@@ -239,7 +239,7 @@ impl<T: Clone> Debug for LazySerde<T> {
                 name,
                 payload: _,
                 value: _,
-            } => write!(f, "lazy-serde<Named>: {}", name),
+            } => write!(f, "lazy-serde<Named>: {name}"),
         }
     }
 }

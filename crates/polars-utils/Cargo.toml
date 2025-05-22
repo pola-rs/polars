@@ -55,3 +55,6 @@ serde = [
   "dep:serde_ignored",
 ]
 python = ["pyo3", "polars-error/python"]
+
+[lints]
+workspace = true

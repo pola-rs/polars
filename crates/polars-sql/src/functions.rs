@@ -1228,7 +1228,7 @@ impl SQLFunctionVisitor<'_> {
                                     if f.is_empty() {
                                         polars_bail!(SQLSyntax: "invalid/empty 'flags' for REGEXP_LIKE ({})", args[2]);
                                     };
-                                    lit(format!("(?{}){}", f, s))
+                                    lit(format!("(?{f}){s}"))
                                 },
                                 _ => {
                                     polars_bail!(SQLSyntax: "invalid arguments for REGEXP_LIKE ({}, {})", args[1], args[2]);
@@ -1507,9 +1507,9 @@ impl SQLFunctionVisitor<'_> {
                         };
                         let pat = match pat {
                             _ if pat.starts_with('^') && pat.ends_with('$') => pat.to_string(),
-                            _ if pat.starts_with('^') => format!("{}.*$", pat),
-                            _ if pat.ends_with('$') => format!("^.*{}", pat),
-                            _ => format!("^.*{}.*$", pat),
+                            _ if pat.starts_with('^') => format!("{pat}.*$"),
+                            _ if pat.ends_with('$') => format!("^.*{pat}"),
+                            _ => format!("^.*{pat}.*$"),
                         };
                         if let Some(active_schema) = &active_schema {
                             let rx = polars_utils::regex_cache::compile_regex(&pat).unwrap();

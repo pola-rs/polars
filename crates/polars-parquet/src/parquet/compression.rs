@@ -124,8 +124,7 @@ pub fn compress(
             "Compressing uncompressed".to_string(),
         )),
         _ => Err(ParquetError::FeatureNotSupported(format!(
-            "Compression {:?} is not supported",
-            compression,
+            "Compression {compression:?} is not supported",
         ))),
     }
 }
@@ -224,8 +223,7 @@ pub fn decompress(
             "Compressing uncompressed".to_string(),
         )),
         _ => Err(ParquetError::FeatureNotSupported(format!(
-            "Compression {:?} is not supported",
-            compression,
+            "Compression {compression:?} is not supported",
         ))),
     }
 }

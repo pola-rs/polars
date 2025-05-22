@@ -422,7 +422,7 @@ fn timestamp_tz_serializer<'a>(
                 materialize_serializer(f, array.iter(), offset, take)
             },
             _ => {
-                panic!("Timezone {} is invalid or not supported", tz);
+                panic!("Timezone {tz} is invalid or not supported");
             },
         },
         #[cfg(not(feature = "timezones"))]
@@ -514,7 +514,7 @@ pub(crate) fn new_serializer<'a>(
                 TimeUnit::Nanosecond => timestamp_ns_to_datetime,
                 TimeUnit::Microsecond => timestamp_us_to_datetime,
                 TimeUnit::Millisecond => timestamp_ms_to_datetime,
-                tu => panic!("Invalid time unit '{:?}' for Datetime.", tu),
+                tu => panic!("Invalid time unit '{tu:?}' for Datetime."),
             };
             timestamp_serializer(
                 array.as_any().downcast_ref().unwrap(),
@@ -535,7 +535,7 @@ pub(crate) fn new_serializer<'a>(
                 TimeUnit::Nanosecond => duration_ns_to_duration,
                 TimeUnit::Microsecond => duration_us_to_duration,
                 TimeUnit::Millisecond => duration_ms_to_duration,
-                tu => panic!("Invalid time unit '{:?}' for Duration.", tu),
+                tu => panic!("Invalid time unit '{tu:?}' for Duration."),
             };
             duration_serializer(
                 array.as_any().downcast_ref().unwrap(),
@@ -547,7 +547,7 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::Time64(tu) => {
             let convert = match tu {
                 TimeUnit::Nanosecond => time64ns_to_time,
-                tu => panic!("Invalid time unit '{:?}' for Time.", tu),
+                tu => panic!("Invalid time unit '{tu:?}' for Time."),
             };
             time_serializer(
                 array.as_any().downcast_ref().unwrap(),

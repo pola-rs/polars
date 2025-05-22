@@ -340,8 +340,7 @@ impl FileReader for CsvFileReader {
                     if needs_full_row_count {
                         if verbose {
                             eprintln!(
-                                "[CSV LineBatchProcessor {}]: entering row count mode",
-                                worker_idx
+                                "[CSV LineBatchProcessor {worker_idx}]: entering row count mode"
                             );
                         }
 

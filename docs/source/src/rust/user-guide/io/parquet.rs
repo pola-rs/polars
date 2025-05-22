@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let df = ParquetReader::new(&mut file).finish().unwrap();
     // --8<-- [end:read]
-    println!("{}", df);
+    println!("{df}");
 
     // --8<-- [start:scan]
     let args = ScanArgsParquet::default();

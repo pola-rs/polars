@@ -44,7 +44,7 @@ pub(super) fn update_last_accessed(file: &std::fs::File) {
             .set_modified(file_metadata.modified().unwrap())
             .set_accessed(std::time::SystemTime::now()),
     ) {
-        panic!("failed to update file last accessed time: {}", e);
+        panic!("failed to update file last accessed time: {e}");
     }
 }
 

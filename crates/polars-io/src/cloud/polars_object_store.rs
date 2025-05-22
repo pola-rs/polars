@@ -88,7 +88,7 @@ mod inner {
             // If this does not eq, then `inner` was already re-built by another thread.
             if Arc::ptr_eq(&*current_store, from_version) {
                 *current_store = self.inner.builder.clone().build_impl().await.map_err(|e| {
-                    e.wrap_msg(|e| format!("attempt to rebuild object store failed: {}", e))
+                    e.wrap_msg(|e| format!("attempt to rebuild object store failed: {e}"))
                 })?;
             }
 
@@ -119,7 +119,7 @@ mod inner {
             let store = self
                 .rebuild_inner(&store)
                 .await
-                .map_err(|e| e.wrap_msg(|e| format!("{}; original error: {}", e, orig_err)))?;
+                .map_err(|e| e.wrap_msg(|e| format!("{e}; original error: {orig_err}")))?;
 
             func(&store).await.map_err(|e| {
                 if self.inner.builder.is_azure()
@@ -130,10 +130,9 @@ mod inner {
                     // these keys exist only on the Python side.
                     e.wrap_msg(|e| {
                         format!(
-                            "{}; note: if you are using Python, consider setting \
+                            "{e}; note: if you are using Python, consider setting \
 POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY=1 if you would like polars to try to retrieve \
-and use the storage account keys from Azure CLI to authenticate",
-                            e
+and use the storage account keys from Azure CLI to authenticate"
                         )
                     })
                 } else {

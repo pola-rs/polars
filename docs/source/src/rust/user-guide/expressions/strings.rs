@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:df]
 
     // --8<-- [start:existence]
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:existence]
 
     // --8<-- [start:extract]
@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([col("urls").str().extract(lit(r"candidate=(\w+)"), 1)])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:extract]
 
     // --8<-- [start:extract_all]
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .alias("extracted_nrs")])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:extract_all]
 
     // --8<-- [start:replace]
@@ -90,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:replace]
 
     // --8<-- [start:casing]
@@ -114,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", addresses);
+    println!("{addresses}");
     // --8<-- [end:casing]
 
     // --8<-- [start:strip]
@@ -141,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:strip]
 
     // --8<-- [start:slice]
@@ -163,7 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:slice]
 
     Ok(())

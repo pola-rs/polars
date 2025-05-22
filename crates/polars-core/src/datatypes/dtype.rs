@@ -990,7 +990,7 @@ impl Display for DataType {
                 } else {
                     format_tuple!(dims)
                 };
-                return write!(f, "array[{tp}, {}]", shape);
+                return write!(f, "array[{tp}, {shape}]");
             },
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]

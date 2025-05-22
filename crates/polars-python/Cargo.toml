@@ -280,3 +280,6 @@ all = [
 default = [
   "all",
 ]
+
+[lints]
+workspace = true

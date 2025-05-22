@@ -452,3 +452,6 @@ full = ["docs-selection", "performant", "fmt"]
 features = ["docs-selection"]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true

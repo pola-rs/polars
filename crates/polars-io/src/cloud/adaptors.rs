@@ -49,10 +49,7 @@ impl BlockingCloudWriter {
         if let Some(local_path) = uri.strip_prefix("file://") {
             // Local paths must be created first, otherwise object store will not write anything.
             if !matches!(std::fs::exists(local_path), Ok(true)) {
-                panic!(
-                    "[BlockingCloudWriter] Expected local file to be created: {}",
-                    local_path
-                );
+                panic!("[BlockingCloudWriter] Expected local file to be created: {local_path}");
             }
         }
 
@@ -134,7 +131,7 @@ impl Drop for BlockingCloudWriter {
             Ok(()) => {},
             e @ Err(_) => {
                 if std::thread::panicking() {
-                    eprintln!("ERROR: CloudWriter errored on close: {:?}", e)
+                    eprintln!("ERROR: CloudWriter errored on close: {e:?}")
                 } else {
                     e.unwrap()
                 }
@@ -198,7 +195,7 @@ mod tests {
 
         let mut cloud_writer = get_runtime()
             .block_on(BlockingCloudWriter::new(
-                format!("file://{}", path).as_str(),
+                format!("file://{path}").as_str(),
                 None,
             ))
             .unwrap();
