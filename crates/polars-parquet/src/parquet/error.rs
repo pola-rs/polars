@@ -82,14 +82,14 @@ impl From<snap::Error> for ParquetError {
 #[cfg(feature = "lz4_flex")]
 impl From<lz4_flex::block::DecompressError> for ParquetError {
     fn from(e: lz4_flex::block::DecompressError) -> ParquetError {
-        ParquetError::OutOfSpec(format!("underlying lz4_flex error: {}", e))
+        ParquetError::OutOfSpec(format!("underlying lz4_flex error: {e}"))
     }
 }
 
 #[cfg(feature = "lz4_flex")]
 impl From<lz4_flex::block::CompressError> for ParquetError {
     fn from(e: lz4_flex::block::CompressError) -> ParquetError {
-        ParquetError::OutOfSpec(format!("underlying lz4_flex error: {}", e))
+        ParquetError::OutOfSpec(format!("underlying lz4_flex error: {e}"))
     }
 }
 
