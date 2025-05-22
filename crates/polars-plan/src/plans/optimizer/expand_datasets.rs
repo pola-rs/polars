@@ -107,6 +107,7 @@ impl OptimizationRule for ExpandDatasets {
                                 hive_parts: _,
                                 predicate: _,
                                 output_schema: _,
+                                id: _,
                             } = &mut ir
                             else {
                                 unreachable!()

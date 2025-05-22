@@ -881,12 +881,6 @@ def test_argminmax() -> None:
     assert out["min"][0] == 0
 
 
-def test_reverse() -> None:
-    out = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).reverse()
-    expected = pl.DataFrame({"a": [2, 1], "b": [4, 3]})
-    assert_frame_equal(out.collect(), expected)
-
-
 def test_limit(fruits_cars: pl.DataFrame) -> None:
     assert_frame_equal(fruits_cars.lazy().limit(1).collect(), fruits_cars[0, :])
 
@@ -1491,3 +1485,109 @@ def test_unique_length_multiple_columns() -> None:
         }
     )
     assert lf.unique().select(pl.len()).collect().item() == 4
+
+
+def test_asof_cross_join() -> None:
+    left = pl.LazyFrame({"a": [-10, 5, 10], "left_val": ["a", "b", "c"]}).with_columns(
+        pl.col("a").set_sorted()
+    )
+    right = pl.LazyFrame(
+        {"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]}
+    ).with_columns(pl.col("a").set_sorted())
+
+    out = left.join_asof(right, on="a").collect()
+    assert out.shape == (3, 3)
+
+
+def test_join_bad_input_type() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3]})
+    right = pl.LazyFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
+    ):
+        left.join(right.collect(), on="a")  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'LazyFrame'.* not 'Series'",
+    ):
+        left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
+
+
+def test_join_where() -> None:
+    east = pl.LazyFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [120, 140, 160],
+            "rev": [12, 14, 16],
+            "cores": [2, 8, 4],
+        }
+    )
+    west = pl.LazyFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [90, 130, 150, 170],
+            "cost": [9, 13, 15, 16],
+            "cores": [4, 2, 1, 4],
+        }
+    )
+    out = east.join_where(
+        west,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") < pl.col("cost"),
+    ).collect()
+
+    expected = pl.DataFrame(
+        {
+            "id": [100, 100, 100, 101, 101],
+            "dur": [120, 120, 120, 140, 140],
+            "rev": [12, 12, 12, 14, 14],
+            "cores": [2, 2, 2, 8, 8],
+            "t_id": [498, 676, 742, 676, 742],
+            "time": [130, 150, 170, 150, 170],
+            "cost": [13, 15, 16, 15, 16],
+            "cores_right": [2, 1, 4, 1, 4],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_join_where_bad_input_type() -> None:
+    east = pl.LazyFrame(
+        {
+            "id": [100, 101, 102],
+            "dur": [120, 140, 160],
+            "rev": [12, 14, 16],
+            "cores": [2, 8, 4],
+        }
+    )
+    west = pl.LazyFrame(
+        {
+            "t_id": [404, 498, 676, 742],
+            "time": [90, 130, 150, 170],
+            "cost": [9, 13, 15, 16],
+            "cores": [4, 2, 1, 4],
+        }
+    )
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
+    ):
+        east.join_where(
+            west.collect(),  # type: ignore[arg-type]
+            pl.col("dur") < pl.col("time"),
+            pl.col("rev") < pl.col("cost"),
+        )
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'LazyFrame'.* not 'Series'",
+    ):
+        east.join_where(
+            pl.Series(west.collect()),  # type: ignore[arg-type]
+            pl.col("dur") < pl.col("time"),
+            pl.col("rev") < pl.col("cost"),
+        )

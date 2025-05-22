@@ -1647,10 +1647,19 @@ class Expr:
         """
         Round underlying floating point data by `decimals` digits.
 
+        The default rounding mode is "half to even" (also known as "bankers' rounding").
+
         Parameters
         ----------
         decimals
             Number of decimals to round by.
+        mode : {'half_to_even', 'half_away_from_zero'}
+            RoundMode.
+
+            * *half_to_even*
+                round to the nearest even number
+            * *half_away_from_zero*
+                round to the nearest number away from zero
 
         Examples
         --------
@@ -1667,6 +1676,33 @@ class Expr:
         │ 1.0 │
         │ 1.2 │
         └─────┘
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "f64": [-3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5],
+        ...         "d": ["-3.5", "-2.5", "-1.5", "-0.5", "0.5", "1.5", "2.5", "3.5"],
+        ...     },
+        ...     schema_overrides={"d": pl.Decimal(scale=1)},
+        ... )
+        >>> df.with_columns(
+        ...     pl.all().round(mode="half_away_from_zero").name.suffix("_away"),
+        ...     pl.all().round(mode="half_to_even").name.suffix("_to_even"),
+        ... )
+        shape: (8, 6)
+        ┌──────┬──────────────┬──────────┬──────────────┬─────────────┬──────────────┐
+        │ f64  ┆ d            ┆ f64_away ┆ d_away       ┆ f64_to_even ┆ d_to_even    │
+        │ ---  ┆ ---          ┆ ---      ┆ ---          ┆ ---         ┆ ---          │
+        │ f64  ┆ decimal[*,1] ┆ f64      ┆ decimal[*,1] ┆ f64         ┆ decimal[*,1] │
+        ╞══════╪══════════════╪══════════╪══════════════╪═════════════╪══════════════╡
+        │ -3.5 ┆ -3.5         ┆ -4.0     ┆ -4.0         ┆ -4.0        ┆ -4.0         │
+        │ -2.5 ┆ -2.5         ┆ -3.0     ┆ -3.0         ┆ -2.0        ┆ -2.0         │
+        │ -1.5 ┆ -1.5         ┆ -2.0     ┆ -2.0         ┆ -2.0        ┆ -2.0         │
+        │ -0.5 ┆ -0.5         ┆ -1.0     ┆ -1.0         ┆ -0.0        ┆ 0.0          │
+        │ 0.5  ┆ 0.5          ┆ 1.0      ┆ 1.0          ┆ 0.0         ┆ 0.0          │
+        │ 1.5  ┆ 1.5          ┆ 2.0      ┆ 2.0          ┆ 2.0         ┆ 2.0          │
+        │ 2.5  ┆ 2.5          ┆ 3.0      ┆ 3.0          ┆ 2.0         ┆ 2.0          │
+        │ 3.5  ┆ 3.5          ┆ 4.0      ┆ 4.0          ┆ 4.0         ┆ 4.0          │
+        └──────┴──────────────┴──────────┴──────────────┴─────────────┴──────────────┘
         """
         return self._from_pyexpr(self._pyexpr.round(decimals, mode))
 
@@ -2750,6 +2786,11 @@ class Expr:
         fill_nan
         forward_fill
 
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To fill NaN values, use :func:`fill_nan`.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -2841,14 +2882,14 @@ class Expr:
         value
             Value used to fill NaN values.
 
-        Warnings
-        --------
-        Note that floating point NaNs (Not a Number) are not missing values.
-        To replace missing values, use :func:`fill_null`.
-
         See Also
         --------
         fill_null
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To fill null values, use :func:`fill_null`.
 
         Examples
         --------
@@ -3384,7 +3425,7 @@ class Expr:
 
     def over(
         self,
-        partition_by: IntoExpr | Iterable[IntoExpr],
+        partition_by: IntoExpr | Iterable[IntoExpr] | None = None,
         *more_exprs: IntoExpr,
         order_by: IntoExpr | Iterable[IntoExpr] | None = None,
         descending: bool = False,
@@ -3547,7 +3588,8 @@ class Expr:
         │ b        ┆ 2024-09-18 ┆ 8     ┆ 18               │
         └──────────┴────────────┴───────┴──────────────────┘
         """
-        partition_by = parse_into_list_of_expressions(partition_by, *more_exprs)
+        if partition_by is not None:
+            partition_by = parse_into_list_of_expressions(partition_by, *more_exprs)
         if order_by is not None:
             order_by = parse_into_list_of_expressions(order_by)
         return self._from_pyexpr(
@@ -9933,81 +9975,97 @@ class Expr:
         normalize: bool = False,
     ) -> Expr:
         """
-        Count the occurrences of unique values.
+        Count the occurrence of unique values.
 
         Parameters
         ----------
         sort
-            Sort the output by count in descending order.
-            If set to `False` (default), the order of the output is random.
+            Sort the output by count, in descending order.
+            If set to `False` (default), the order is non-deterministic.
         parallel
             Execute the computation in parallel.
 
             .. note::
-                This option should likely not be enabled in a group by context,
-                as the computation is already parallelized per group.
+                This option should likely *not* be enabled in a `group_by` context,
+                as the computation will already be parallelized per group.
         name
-            Give the resulting count column a specific name;
-            if `normalize` is True defaults to "proportion",
-            otherwise defaults to "count".
+            Give the resulting count column a specific name; if `normalize` is
+            True this defaults to "proportion", otherwise defaults to "count".
         normalize
-            If true gives relative frequencies of the unique values
+            If True, the count is returned as the relative frequency of unique
+            values normalized to 1.0.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Struct` with mapping of unique values to
-            their count.
+            Expression of type :class:`Struct`, mapping unique values to their
+            count (or proportion).
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {"color": ["red", "blue", "red", "green", "blue", "blue"]}
         ... )
-        >>> df.select(pl.col("color").value_counts())  # doctest: +IGNORE_RESULT
+        >>> df_count = df.select(pl.col("color").value_counts())
+        >>> df_count  # doctest: +IGNORE_RESULT
         shape: (3, 1)
         ┌─────────────┐
         │ color       │
         │ ---         │
         │ struct[2]   │
         ╞═════════════╡
-        │ {"red",2}   │
         │ {"green",1} │
         │ {"blue",3}  │
-        └─────────────┘
-
-        Sort the output by (descending) count and customize the count field name.
-
-        >>> df = df.select(pl.col("color").value_counts(sort=True, name="n"))
-        >>> df
-        shape: (3, 1)
-        ┌─────────────┐
-        │ color       │
-        │ ---         │
-        │ struct[2]   │
-        ╞═════════════╡
-        │ {"blue",3}  │
         │ {"red",2}   │
-        │ {"green",1} │
         └─────────────┘
 
-        >>> df.unnest("color")
+        >>> df_count.unnest("color")  # doctest: +IGNORE_RESULT
         shape: (3, 2)
-        ┌───────┬─────┐
-        │ color ┆ n   │
-        │ ---   ┆ --- │
-        │ str   ┆ u32 │
-        ╞═══════╪═════╡
-        │ blue  ┆ 3   │
-        │ red   ┆ 2   │
-        │ green ┆ 1   │
-        └───────┴─────┘
+        ┌───────┬───────┐
+        │ color ┆ count │
+        │ ---   ┆ ---   │
+        │ str   ┆ u32   │
+        ╞═══════╪═══════╡
+        │ green ┆ 1     │
+        │ blue  ┆ 3     │
+        │ red   ┆ 2     │
+        └───────┴───────┘
+
+        Sort the output by (descending) count, customize the field name,
+        and normalize the count to its relative proportion (of 1.0).
+
+        >>> df_count = df.select(
+        ...     pl.col("color").value_counts(
+        ...         name="fraction",
+        ...         normalize=True,
+        ...         sort=True,
+        ...     )
+        ... )
+        >>> df_count
+        shape: (3, 1)
+        ┌────────────────────┐
+        │ color              │
+        │ ---                │
+        │ struct[2]          │
+        ╞════════════════════╡
+        │ {"blue",0.5}       │
+        │ {"red",0.333333}   │
+        │ {"green",0.166667} │
+        └────────────────────┘
+
+        >>> df_count.unnest("color")
+        shape: (3, 2)
+        ┌───────┬──────────┐
+        │ color ┆ fraction │
+        │ ---   ┆ ---      │
+        │ str   ┆ f64      │
+        ╞═══════╪══════════╡
+        │ blue  ┆ 0.5      │
+        │ red   ┆ 0.333333 │
+        │ green ┆ 0.166667 │
+        └───────┴──────────┘
         """
-        if name is None:
-            if normalize:
-                name = "proportion"
-            else:
-                name = "count"
+        name = name or ("proportion" if normalize else "count")
         return self._from_pyexpr(
             self._pyexpr.value_counts(sort, parallel, name, normalize)
         )

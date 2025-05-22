@@ -30,7 +30,7 @@ impl PyDataFrame {
     row_index, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, schema)
 )]
     pub fn read_csv(
-        py: Python,
+        py: Python<'_>,
         py_f: Bound<PyAny>,
         infer_schema_length: Option<usize>,
         chunk_size: usize,
@@ -131,7 +131,7 @@ impl PyDataFrame {
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (py_f, columns, projection, n_rows, row_index, low_memory, parallel, use_statistics, rechunk))]
     pub fn read_parquet(
-        py: Python,
+        py: Python<'_>,
         py_f: PyObject,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
@@ -183,7 +183,7 @@ impl PyDataFrame {
     #[cfg(feature = "json")]
     #[pyo3(signature = (py_f, infer_schema_length, schema, schema_overrides))]
     pub fn read_json(
-        py: Python,
+        py: Python<'_>,
         py_f: Bound<PyAny>,
         infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
@@ -213,7 +213,7 @@ impl PyDataFrame {
     #[cfg(feature = "json")]
     #[pyo3(signature = (py_f, ignore_errors, schema, schema_overrides))]
     pub fn read_ndjson(
-        py: Python,
+        py: Python<'_>,
         py_f: Bound<PyAny>,
         ignore_errors: bool,
         schema: Option<Wrap<Schema>>,
@@ -240,7 +240,7 @@ impl PyDataFrame {
     #[cfg(feature = "ipc")]
     #[pyo3(signature = (py_f, columns, projection, n_rows, row_index, memory_map))]
     pub fn read_ipc(
-        py: Python,
+        py: Python<'_>,
         py_f: Bound<PyAny>,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
@@ -270,7 +270,7 @@ impl PyDataFrame {
     #[cfg(feature = "ipc_streaming")]
     #[pyo3(signature = (py_f, columns, projection, n_rows, row_index, rechunk))]
     pub fn read_ipc_stream(
-        py: Python,
+        py: Python<'_>,
         py_f: Bound<PyAny>,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
@@ -298,7 +298,7 @@ impl PyDataFrame {
     #[cfg(feature = "avro")]
     #[pyo3(signature = (py_f, columns, projection, n_rows))]
     pub fn read_avro(
-        py: Python,
+        py: Python<'_>,
         py_f: PyObject,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
@@ -317,7 +317,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "json")]
-    pub fn write_json(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
+    pub fn write_json(&mut self, py: Python<'_>, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
         py.enter_polars(|| {
             // TODO: Cloud support
@@ -331,7 +331,7 @@ impl PyDataFrame {
     #[cfg(feature = "ipc_streaming")]
     pub fn write_ipc_stream(
         &mut self,
-        py: Python,
+        py: Python<'_>,
         py_f: PyObject,
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
@@ -349,7 +349,7 @@ impl PyDataFrame {
     #[pyo3(signature = (py_f, compression, name))]
     pub fn write_avro(
         &mut self,
-        py: Python,
+        py: Python<'_>,
         py_f: PyObject,
         compression: Wrap<Option<AvroCompression>>,
         name: String,

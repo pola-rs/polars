@@ -334,6 +334,11 @@ macro_rules! polars_err {
             $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
         )
     };
+    ($variant:ident: $fmt:literal $(, $arg:expr)*, hint = $hint:literal) => {
+        $crate::__private::must_use(
+            $crate::PolarsError::$variant(format!(concat_str!($fmt, "\n\nHint: ", $hint), $($arg),*).into())
+        )
+    };
     ($variant:ident: $err:expr $(,)?) => {
         $crate::__private::must_use(
             $crate::PolarsError::$variant($err.into())

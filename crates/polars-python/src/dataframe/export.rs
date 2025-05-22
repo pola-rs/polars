@@ -74,7 +74,11 @@ impl PyDataFrame {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_arrow(&mut self, py: Python, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
+    pub fn to_arrow(
+        &mut self,
+        py: Python<'_>,
+        compat_level: PyCompatLevel,
+    ) -> PyResult<Vec<PyObject>> {
         py.enter_polars_ok(|| self.df.align_chunks_par())?;
         let pyarrow = py.import("pyarrow")?;
 
@@ -160,7 +164,7 @@ impl PyDataFrame {
     #[allow(unused_variables)]
     #[pyo3(signature = (requested_schema=None))]
     fn __arrow_c_stream__<'py>(
-        &'py mut self,
+        &mut self,
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {

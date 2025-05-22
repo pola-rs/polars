@@ -920,3 +920,47 @@ def test_nested_strict_casts_succeeds(
         s.cast(to.dtype),
         to,
     )
+
+
+def test_nested_struct_cast_22744() -> None:
+    s = pl.Series(
+        "x",
+        [{"attrs": {"class": "a"}}],
+    )
+
+    expected = pl.select(
+        pl.lit(s).struct.with_fields(
+            pl.field("attrs").struct.with_fields(
+                [pl.field("class"), pl.lit(None, dtype=pl.String()).alias("other")]
+            )
+        )
+    )
+
+    assert_series_equal(
+        s.cast(
+            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
+        ),
+        expected.to_series(),
+    )
+    assert_frame_equal(
+        pl.DataFrame([s]).cast(
+            {
+                "x": pl.Struct(
+                    {"attrs": pl.Struct({"class": pl.String, "other": pl.String})}
+                )
+            }
+        ),
+        expected,
+    )
+
+
+@pytest.mark.xfail(reason="disabled until after release 1.30.0")
+def test_cast_to_self_is_pruned() -> None:
+    q = pl.LazyFrame({"x": 1}, schema={"x": pl.Int64}).with_columns(
+        y=pl.col("x").cast(pl.Int64)
+    )
+
+    plan = q.explain()
+    assert 'col("x").alias("y")' in plan
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "y": 1}))

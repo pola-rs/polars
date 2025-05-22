@@ -333,7 +333,9 @@ fn expand_struct_fields(
     names: &[PlSmallStr],
     exclude: &PlHashSet<PlSmallStr>,
 ) -> PolarsResult<()> {
-    let first_name = names[0].as_ref();
+    let Some(first_name) = names.first() else {
+        return Ok(());
+    };
     if names.len() == 1 && first_name == "*" || is_regex_projection(first_name) {
         let Expr::Function { input, .. } = struct_expr else {
             unreachable!()

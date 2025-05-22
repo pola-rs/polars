@@ -246,6 +246,7 @@ impl<'a> IRDotDisplay<'a> {
                 scan_type,
                 unified_scan_args,
                 output_schema: _,
+                id: _,
             } => {
                 let name: &str = (&**scan_type).into();
                 let path = ScanSourcesDisplay(sources);

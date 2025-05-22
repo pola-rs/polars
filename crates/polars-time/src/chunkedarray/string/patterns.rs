@@ -214,7 +214,7 @@ pub(super) static DATETIME_Y_M_D_Z: &[&str] = &[
     "%+", // ISO 8601; Same as %Y-%m-%dT%H:%M:%S%.f%:z; supports Z or UTC
 ];
 
-pub(super) static TIME_H_M_S: &[&str] = &["%T%.9f", "%T%.6f", "%T%.3f", "%T"];
+pub(super) static TIME_H_M_S: &[&str] = &["%T%.9f", "%T%.6f", "%T%.3f", "%T", "%R"];
 
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
 pub enum Pattern {

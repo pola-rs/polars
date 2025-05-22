@@ -53,6 +53,7 @@ from polars._utils.various import (
     normalize_filepath,
     parse_percentiles,
     qualified_type_name,
+    require_same_type,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import (
@@ -112,7 +113,7 @@ if TYPE_CHECKING:
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyPartitioning
+        from polars.polars import PyExpr, PyPartitioning
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -5281,9 +5282,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ Netherlands ┆ 2019-01-01 ┆ 17.4       ┆ 910  │
         └─────────────┴────────────┴────────────┴──────┘
         """
-        if not isinstance(other, LazyFrame):
-            msg = f"expected `other` join table to be a LazyFrame, not {qualified_type_name(other)!r}"
-            raise TypeError(msg)
+        require_same_type(self, other)
 
         if isinstance(on, (str, pl.Expr)):
             left_on = on
@@ -5551,9 +5550,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 8.0 ┆ c   ┆ z     ┆ d         │
         └─────┴─────┴─────┴───────┴───────────┘
         """
-        if not isinstance(other, LazyFrame):
-            msg = f"expected `other` join table to be a LazyFrame, not {qualified_type_name(other)!r}"
-            raise TypeError(msg)
+        require_same_type(self, other)
 
         if maintain_order is None:
             maintain_order = "none"
@@ -5696,9 +5693,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
         """
-        if not isinstance(other, LazyFrame):
-            msg = f"expected `other` join table to be a LazyFrame, not {qualified_type_name(other)!r}"
-            raise TypeError(msg)
+        require_same_type(self, other)
 
         pyexprs = parse_into_list_of_expressions(*predicates)
 
@@ -6645,6 +6640,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         fill_nan
 
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To fill NaN values, use :func:`fill_nan`.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -6760,16 +6760,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         value
-            Value to fill the NaN values with.
-
-        Warnings
-        --------
-        Note that floating point NaNs (Not a Number) are not missing values.
-        To replace missing values, use :func:`fill_null`.
+            Value used to fill NaN values.
 
         See Also
         --------
         fill_null
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To fill null values, use :func:`fill_null`.
 
         Examples
         --------
@@ -7206,6 +7206,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             (default), use all columns (note that only floating-point columns
             can contain NaNs).
 
+        See Also
+        --------
+        drop_nulls
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To drop null values, use :func:`drop_nulls`.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -7278,11 +7287,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The original order of the remaining rows is preserved.
 
-        Parameters
-        ----------
-        subset
-            Column name(s) for which null values are considered.
-            If set to `None` (default), use all columns.
+        See Also
+        --------
+        drop_nans
+
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To drop NaN values, use :func:`drop_nans`.
+
 
         Examples
         --------
@@ -7678,6 +7691,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The key must be sorted in ascending order.
         """
+        require_same_type(self, other)
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
 
     def set_sorted(
@@ -7854,6 +7868,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 5   ┆ -66  │
         └─────┴──────┘
         """
+        require_same_type(self, other)
         if how in ("outer", "outer_coalesce"):
             how = "full"
             issue_deprecation_warning(
@@ -8081,6 +8096,202 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
+
+    @unstable()
+    def match_to_schema(
+        self,
+        schema: SchemaDict | Schema,
+        *,
+        missing_columns: Literal["insert", "raise"]
+        | Mapping[str, Literal["insert", "raise"] | Expr] = "raise",
+        missing_struct_fields: Literal["insert", "raise"]
+        | Mapping[str, Literal["insert", "raise"]] = "raise",
+        extra_columns: Literal["ignore", "raise"] = "raise",
+        extra_struct_fields: Literal["ignore", "raise"]
+        | Mapping[str, Literal["ignore", "raise"]] = "raise",
+        integer_cast: Literal["upcast", "forbid"]
+        | Mapping[str, Literal["upcast", "forbid"]] = "forbid",
+        float_cast: Literal["upcast", "forbid"]
+        | Mapping[str, Literal["upcast", "forbid"]] = "forbid",
+    ) -> LazyFrame:
+        """
+        Match or evolve the schema of a LazyFrame into a specific schema.
+
+        By default, match_to_schema returns an error if the input schema does not
+        exactly match the target schema. It also allows columns to be freely reordered,
+        with additional coercion rules available through optional parameters.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        schema
+            Target schema to match or evolve to.
+        missing_columns
+            Raise of insert missing columns from the input with respect to the `schema`.
+
+            This can also be an expression per column with what to insert if it is
+            missing.
+        missing_struct_fields
+            Raise of insert missing struct fields from the input with respect to the
+            `schema`.
+        extra_columns
+            Raise of ignore extra columns from the input with respect to the `schema`.
+        extra_struct_fields
+            Raise of ignore extra struct fields from the input with respect to the
+            `schema`.
+        integer_cast
+            Forbid of upcast for integer columns from the input to the respective column
+            in `schema`.
+        float_cast
+            Forbid of upcast for float columns from the input to the respective column
+            in `schema`.
+
+        Examples
+        --------
+        Ensuring the schema matches
+
+        >>> lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["A", "B", "C"]})
+        >>> lf.match_to_schema({"a": pl.Int64, "b": pl.String}).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ A   │
+        │ 2   ┆ B   │
+        │ 3   ┆ C   │
+        └─────┴─────┘
+        >>> (lf.match_to_schema({"a": pl.Int64}).collect())  # doctest: +SKIP
+        polars.exceptions.SchemaError: extra columns in `match_to_schema`: "b"
+
+        Adding missing columns
+
+        >>> (
+        ...     pl.LazyFrame({"a": [1, 2, 3]})
+        ...     .match_to_schema(
+        ...         {"a": pl.Int64, "b": pl.String},
+        ...         missing_columns="insert",
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (3, 2)
+        ┌─────┬──────┐
+        │ a   ┆ b    │
+        │ --- ┆ ---  │
+        │ i64 ┆ str  │
+        ╞═════╪══════╡
+        │ 1   ┆ null │
+        │ 2   ┆ null │
+        │ 3   ┆ null │
+        └─────┴──────┘
+        >>> (
+        ...     pl.LazyFrame({"a": [1, 2, 3]})
+        ...     .match_to_schema(
+        ...         {"a": pl.Int64, "b": pl.String},
+        ...         missing_columns={"b": pl.col.a.cast(pl.String)},
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ 1   │
+        │ 2   ┆ 2   │
+        │ 3   ┆ 3   │
+        └─────┴─────┘
+
+        Removing extra columns
+
+        >>> (
+        ...     pl.LazyFrame({"a": [1, 2, 3], "b": ["A", "B", "C"]})
+        ...     .match_to_schema(
+        ...         {"a": pl.Int64},
+        ...         extra_columns="ignore",
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
+        Upcasting integers and floats
+
+        >>> (
+        ...     pl.LazyFrame(
+        ...         {"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]},
+        ...         schema={"a": pl.Int32, "b": pl.Float32},
+        ...     )
+        ...     .match_to_schema(
+        ...         {"a": pl.Int64, "b": pl.Float64},
+        ...         integer_cast="upcast",
+        ...         float_cast="upcast",
+        ...     )
+        ...     .collect()
+        ... )
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 1.0 │
+        │ 2   ┆ 2.0 │
+        │ 3   ┆ 3.0 │
+        └─────┴─────┘
+        """
+        from polars import Expr
+
+        def prepare_missing_columns(
+            value: Literal["insert", "raise"] | Expr,
+        ) -> Literal["insert", "raise"] | PyExpr:
+            if isinstance(value, Expr):
+                return value._pyexpr
+            return value
+
+        schema_prep: Schema
+        if isinstance(schema, Mapping):
+            schema_prep = Schema(schema)
+        else:
+            schema_prep = schema
+
+        missing_columns_pyexpr: (
+            Literal["insert", "raise"] | dict[str, Literal["insert", "raise"] | PyExpr]
+        )
+        if isinstance(missing_columns, Mapping):
+            missing_columns_pyexpr = {
+                key: prepare_missing_columns(value)
+                for key, value in missing_columns.items()
+            }
+        elif isinstance(missing_columns, Expr):
+            missing_columns_pyexpr = prepare_missing_columns(missing_columns)
+        else:
+            missing_columns_pyexpr = missing_columns
+
+        return LazyFrame._from_pyldf(
+            self._ldf.match_to_schema(
+                schema=schema_prep,
+                missing_columns=missing_columns_pyexpr,
+                missing_struct_fields=missing_struct_fields,
+                extra_columns=extra_columns,
+                extra_struct_fields=extra_struct_fields,
+                integer_cast=integer_cast,
+                float_cast=float_cast,
+            )
+        )
 
     def _to_metadata(
         self,

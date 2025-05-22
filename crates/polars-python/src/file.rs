@@ -268,7 +268,7 @@ pub(crate) enum PythonScanSourceInput {
 }
 
 pub(crate) fn try_get_pyfile(
-    py: Python,
+    py: Python<'_>,
     py_f: Bound<'_, PyAny>,
     write: bool,
 ) -> PyResult<(EitherRustPythonFile, Option<PathBuf>)> {

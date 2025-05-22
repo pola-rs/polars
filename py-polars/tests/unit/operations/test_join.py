@@ -3,8 +3,7 @@ from __future__ import annotations
 import typing
 import warnings
 from datetime import date, datetime
-from time import perf_counter
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -19,7 +18,7 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import with_string_cache_if_auto_streaming
+from tests.unit.conftest import time_func, with_string_cache_if_auto_streaming
 
 if TYPE_CHECKING:
     from polars._typing import JoinStrategy, PolarsDataType
@@ -633,13 +632,13 @@ def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
     ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()
 
-    with pytest.raises(TypeError, match="expected `other`.* LazyFrame"):
+    with pytest.raises(TypeError, match="expected `other`.*LazyFrame"):
         _ = ldf.join(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.* DataFrame"):
+    with pytest.raises(TypeError, match="expected `other`.*DataFrame"):
         _ = df.join(ldf, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.* LazyFrame"):
+    with pytest.raises(TypeError, match="expected `other`.*LazyFrame"):
         _ = ldf.join_asof(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected `other`.* DataFrame"):
+    with pytest.raises(TypeError, match="expected `other`.*DataFrame"):
         _ = df.join_asof(ldf, on="A")  # type: ignore[arg-type]
 
 
@@ -1827,15 +1826,6 @@ def test_empty_join_result_with_array_15474() -> None:
 def test_join_where_eager_perf_21145() -> None:
     left = pl.Series("left", range(3_000)).to_frame()
     right = pl.Series("right", range(1_000)).to_frame()
-
-    def time_func(func: Callable[[], Any]) -> float:
-        times = []
-        for _ in range(3):
-            t = perf_counter()
-            func()
-            times.append(perf_counter() - t)
-
-        return min(times)
 
     p = pl.col("left").is_between(pl.lit(0, dtype=pl.Int64), pl.col("right"))
     runtime_eager = time_func(lambda: left.join_where(right, p))

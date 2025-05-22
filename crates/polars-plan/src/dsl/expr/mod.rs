@@ -1,15 +1,20 @@
+mod expr_dyn_fn;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use bytes::Bytes;
+pub use expr_dyn_fn::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
+pub mod named_serde;
+#[cfg(feature = "serde")]
+mod serde_expr;
 
-pub use super::expr_dyn_fn::*;
 use crate::prelude::*;
 
 #[derive(PartialEq, Clone, Hash)]
@@ -174,15 +179,20 @@ pub enum Expr {
     Selector(super::selector::Selector),
 }
 
-pub type OpaqueColumnUdf = LazySerde<SpecialEq<Arc<dyn ColumnsUdf>>>;
-pub(crate) fn new_column_udf<F: ColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
-    LazySerde::Deserialized(SpecialEq::new(Arc::new(func)))
-}
-
 #[derive(Clone)]
 pub enum LazySerde<T: Clone> {
     Deserialized(T),
     Bytes(Bytes),
+    // Used by cloud
+    Named {
+        // Name and payload are used by the NamedRegistry
+        // To load the function `T` at runtime.
+        name: String,
+        payload: Option<Bytes>,
+        // Sometimes we need the function `T` before sending
+        // to a different machine, so optionally set it as well.
+        value: Option<T>,
+    },
 }
 
 impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
@@ -192,6 +202,28 @@ impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
             (L::Deserialized(a), L::Deserialized(b)) => a == b,
             (L::Bytes(a), L::Bytes(b)) => {
                 std::ptr::eq(a.as_ptr(), b.as_ptr()) && a.len() == b.len()
+            },
+            (
+                L::Named {
+                    name: l,
+                    payload: pl,
+                    value: _,
+                },
+                L::Named {
+                    name: r,
+                    payload: pr,
+                    value: _,
+                },
+            ) => {
+                #[cfg(debug_assertions)]
+                {
+                    if l == r {
+                        assert_eq!(pl, pr, "name should point to unique payload")
+                    }
+                }
+                _ = pl;
+                _ = pr;
+                l == r
             },
             _ => false,
         }
@@ -203,19 +235,11 @@ impl<T: Clone> Debug for LazySerde<T> {
         match self {
             Self::Bytes(_) => write!(f, "lazy-serde<Bytes>"),
             Self::Deserialized(_) => write!(f, "lazy-serde<T>"),
-        }
-    }
-}
-
-impl OpaqueColumnUdf {
-    pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn ColumnsUdf>>> {
-        match self {
-            Self::Deserialized(t) => Ok(t),
-            Self::Bytes(_b) => {
-                feature_gated!("serde";"python", {
-                    crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(_b.as_ref()).map(SpecialEq::new)
-                })
-            },
+            Self::Named {
+                name,
+                payload: _,
+                value: _,
+            } => write!(f, "lazy-serde<Named>: {}", name),
         }
     }
 }

@@ -93,7 +93,11 @@ pub fn array_to_rust(obj: &Bound<PyAny>) -> PyResult<ArrayRef> {
     }
 }
 
-pub fn to_rust_df(py: Python, rb: &[Bound<PyAny>], schema: Bound<PyAny>) -> PyResult<DataFrame> {
+pub fn to_rust_df(
+    py: Python<'_>,
+    rb: &[Bound<PyAny>],
+    schema: Bound<PyAny>,
+) -> PyResult<DataFrame> {
     let ArrowDataType::Struct(fields) = field_to_rust_arrow(schema)?.dtype else {
         return Err(PyPolarsErr::Other("invalid top-level schema".into()).into());
     };

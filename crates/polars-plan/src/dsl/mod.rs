@@ -20,12 +20,12 @@ pub use builder_dsl::*;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
-mod expr_dyn_fn;
 mod format;
 mod from;
 pub mod function_expr;
 pub mod functions;
 mod list;
+mod match_to_schema;
 #[cfg(feature = "meta")]
 mod meta;
 mod name;
@@ -55,6 +55,7 @@ pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
+pub use match_to_schema::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
 pub use name::*;
@@ -67,7 +68,11 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-#[cfg(any(feature = "search_sorted", feature = "is_between"))]
+#[cfg(any(
+    feature = "search_sorted",
+    feature = "is_between",
+    feature = "list_sets"
+))]
 use polars_core::utils::SuperTypeFlags;
 use polars_core::utils::{SuperTypeOptions, try_get_supertype};
 pub use selector::Selector;
@@ -833,20 +838,26 @@ impl Expr {
     /// ╰────────┴────────╯
     /// ```
     pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, partition_by: E) -> Self {
-        self.over_with_options(partition_by, None, Default::default())
+        self.over_with_options(Some(partition_by), None, Default::default())
+            .expect("We explicitly passed `partition_by`")
     }
 
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
-        partition_by: E,
+        partition_by: Option<E>,
         order_by: Option<(E, SortOptions)>,
         options: WindowMapping,
-    ) -> Self {
-        let partition_by = partition_by
-            .as_ref()
-            .iter()
-            .map(|e| e.clone().into())
-            .collect();
+    ) -> PolarsResult<Self> {
+        polars_ensure!(partition_by.is_some() || order_by.is_some(), InvalidOperation: "At least one of `partition_by` and `order_by` must be specified in `over`");
+        let partition_by = if let Some(partition_by) = partition_by {
+            partition_by
+                .as_ref()
+                .iter()
+                .map(|e| e.clone().into())
+                .collect()
+        } else {
+            vec![lit(1)]
+        };
 
         let order_by = order_by.map(|(e, options)| {
             let e = e.as_ref();
@@ -861,12 +872,12 @@ impl Expr {
             (e, options)
         });
 
-        Expr::Window {
+        Ok(Expr::Window {
             function: Arc::new(self),
             partition_by,
             order_by,
             options: options.into(),
-        }
+        })
     }
 
     #[cfg(feature = "dynamic_group_by")]

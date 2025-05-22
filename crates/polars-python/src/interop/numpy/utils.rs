@@ -11,7 +11,7 @@ use pyo3::types::PyTuple;
 
 /// Create a NumPy ndarray view of the data.
 pub(super) unsafe fn create_borrowed_np_array<I>(
-    py: Python,
+    py: Python<'_>,
     dtype: Bound<PyArrayDescr>,
     mut shape: Dim<I>,
     flags: c_int,
@@ -71,7 +71,7 @@ pub(super) fn series_contains_null(s: &Series) -> bool {
 
 /// Reshape the first dimension of a NumPy array to the given height and width.
 pub(super) fn reshape_numpy_array(
-    py: Python,
+    py: Python<'_>,
     arr: PyObject,
     height: usize,
     width: usize,
@@ -95,10 +95,10 @@ pub(super) fn reshape_numpy_array(
 }
 
 /// Get the NumPy temporal data type associated with the given Polars [`DataType`].
-pub(super) fn polars_dtype_to_np_temporal_dtype<'a>(
-    py: Python<'a>,
+pub(super) fn polars_dtype_to_np_temporal_dtype<'py>(
+    py: Python<'py>,
     dtype: &DataType,
-) -> Bound<'a, PyArrayDescr> {
+) -> Bound<'py, PyArrayDescr> {
     use numpy::datetime::{Datetime, Timedelta, units};
     match dtype {
         DataType::Datetime(TimeUnit::Milliseconds, _) => {

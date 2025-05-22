@@ -806,6 +806,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Replace { n, literal } => {
                         (PyStringFunction::Replace, n, literal).into_py_any(py)
                     },
+                    #[cfg(feature = "string_normalize")]
                     StringFunction::Normalize { form } => (
                         PyStringFunction::Normalize,
                         match form {

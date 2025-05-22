@@ -549,3 +549,24 @@ def test_array_shift_self_broadcast_22124() -> None:
             pl.Array(pl.String, 3),
         ),
     )
+
+
+def test_arr_contains() -> None:
+    s = pl.Series([[1, 2, None], [None, None, None], None], dtype=pl.Array(pl.Int64, 3))
+
+    assert_series_equal(
+        s.arr.contains(None, nulls_equal=False),
+        pl.Series([None, None, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.arr.contains(None, nulls_equal=True),
+        pl.Series([True, True, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.arr.contains(1, nulls_equal=False),
+        pl.Series([True, False, None], dtype=pl.Boolean),
+    )
+    assert_series_equal(
+        s.arr.contains(1, nulls_equal=True),
+        pl.Series([True, False, None], dtype=pl.Boolean),
+    )

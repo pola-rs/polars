@@ -131,7 +131,7 @@ pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
     RecordBatchT::try_new(2, Arc::new(schema), columns).unwrap()
 }
 
-pub(super) fn write_avro(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
+pub(super) fn write_avro(codec: Codec) -> Result<Vec<u8>, Box<apache_avro::Error>> {
     let (avro, _) = schema();
     // a writer needs a schema and something to write to
     let mut writer = Writer::with_codec(&avro, Vec::new(), codec);
@@ -197,7 +197,7 @@ pub(super) fn write_avro(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
     );
     record.put("nullable_struct", Value::Union(0, Box::new(Value::Null)));
     writer.append(record)?;
-    writer.into_inner()
+    writer.into_inner().map_err(Box::new)
 }
 
 pub(super) fn read_avro(
@@ -344,7 +344,7 @@ pub(super) fn data_list() -> RecordBatchT<Box<dyn Array>> {
     RecordBatchT::try_new(length, Arc::new(schema), columns).unwrap()
 }
 
-pub(super) fn write_list(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
+pub(super) fn write_list(codec: Codec) -> Result<Vec<u8>, Box<apache_avro::Error>> {
     let (avro, _) = schema_list();
     // a writer needs a schema and something to write to
     let mut writer = Writer::with_codec(&avro, Vec::new(), codec);

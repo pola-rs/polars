@@ -95,14 +95,72 @@ impl OptimizationRule for TypeCoercionRule {
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
         let out = match *expr {
-            AExpr::Cast {
-                expr,
-                ref dtype,
-                options,
-            } => {
-                let input = expr_arena.get(expr);
+            ref ae @ AExpr::Cast { .. } => {
+                let AExpr::Cast {
+                    expr: input_expr,
+                    dtype,
+                    options,
+                } = ae.clone()
+                else {
+                    unreachable!()
+                };
 
-                inline_or_prune_cast(input, dtype, options, lp_node, lp_arena, expr_arena)?
+                let input = expr_arena.get(input_expr).clone();
+
+                if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
+                    if let CastOptions::Strict = options {
+                        let cast_from = expr_arena
+                            .get(input_expr)
+                            .to_field(&schema, Context::Default, expr_arena)?
+                            .dtype;
+                        let cast_to = &dtype;
+
+                        let v = CastColumnsPolicy {
+                            integer_upcast: true,
+                            float_upcast: true,
+                            float_downcast: true,
+                            datetime_nanoseconds_downcast: true,
+                            datetime_microseconds_downcast: true,
+                            datetime_convert_timezone: true,
+                            missing_struct_fields: MissingColumnsPolicy::Insert,
+                            extra_struct_fields: ExtraColumnsPolicy::Ignore,
+                        }
+                        .should_cast_column("", cast_to, &cast_from);
+
+                        #[expect(clippy::single_match)]
+                        match v {
+                            // No casting needed
+                            // TODO: Enable after release 1.30.0
+                            // Ok(false) => {
+                            //     return Ok(Some(expr_arena.get(input_expr).clone()));
+                            // },
+                            Ok(true | false) => {
+                                let options = if cast_from.is_primitive_numeric()
+                                    && cast_to.is_primitive_numeric()
+                                {
+                                    CastOptions::Overflowing
+                                } else {
+                                    CastOptions::NonStrict
+                                };
+
+                                let dtype = cast_to.clone();
+
+                                expr_arena.replace(
+                                    expr_node,
+                                    AExpr::Cast {
+                                        expr: input_expr,
+                                        dtype,
+                                        options,
+                                    },
+                                );
+                            },
+
+                            Err(_) => {},
+                        }
+                    }
+                }
+
+                inline_or_prune_cast(&input, &dtype, options, lp_node, lp_arena, expr_arena)?
             },
             AExpr::Ternary {
                 truthy: truthy_node,
@@ -165,20 +223,25 @@ impl OptimizationRule for TypeCoercionRule {
                 let mut matches = matches!(
                     function,
                     FunctionExpr::Boolean(BooleanFunction::IsIn { .. })
-                        | FunctionExpr::ListExpr(ListFunction::Contains)
+                        | FunctionExpr::ListExpr(ListFunction::Contains { .. })
                 );
                 #[cfg(feature = "dtype-array")]
                 {
-                    matches |= matches!(function, FunctionExpr::ArrayExpr(ArrayFunction::Contains));
+                    matches |= matches!(
+                        function,
+                        FunctionExpr::ArrayExpr(ArrayFunction::Contains { .. })
+                    );
                 }
                 matches
             } =>
             {
                 let (op, flat, nested, is_contains) = match function {
                     FunctionExpr::Boolean(BooleanFunction::IsIn { .. }) => ("is_in", 0, 1, false),
-                    FunctionExpr::ListExpr(ListFunction::Contains) => ("list.contains", 1, 0, true),
+                    FunctionExpr::ListExpr(ListFunction::Contains { .. }) => {
+                        ("list.contains", 1, 0, true)
+                    },
                     #[cfg(feature = "dtype-array")]
-                    FunctionExpr::ArrayExpr(ArrayFunction::Contains) => {
+                    FunctionExpr::ArrayExpr(ArrayFunction::Contains { .. }) => {
                         ("arr.contains", 1, 0, true)
                     },
                     _ => unreachable!(),
@@ -428,7 +491,7 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
-            #[cfg(feature = "temporal")]
+            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             AExpr::Function {
                 function: ref function @ FunctionExpr::TemporalExpr(TemporalFunction::Duration(_)),
                 ref input,

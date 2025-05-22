@@ -30,6 +30,7 @@ pub enum TemporalFunction {
     Time,
     Date,
     Datetime,
+    #[cfg(feature = "dtype-duration")]
     Duration(TimeUnit),
     Hour,
     Minute,
@@ -37,12 +38,19 @@ pub enum TemporalFunction {
     Millisecond,
     Microsecond,
     Nanosecond,
+    #[cfg(feature = "dtype-duration")]
     TotalDays,
+    #[cfg(feature = "dtype-duration")]
     TotalHours,
+    #[cfg(feature = "dtype-duration")]
     TotalMinutes,
+    #[cfg(feature = "dtype-duration")]
     TotalSeconds,
+    #[cfg(feature = "dtype-duration")]
     TotalMilliseconds,
+    #[cfg(feature = "dtype-duration")]
     TotalMicroseconds,
+    #[cfg(feature = "dtype-duration")]
     TotalNanoseconds,
     ToString(String),
     CastTimeUnit(TimeUnit),
@@ -83,6 +91,7 @@ impl TemporalFunction {
                 mapper.with_dtype(DataType::Int8)
             },
             Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
+            #[cfg(feature = "dtype-duration")]
             TotalDays | TotalHours | TotalMinutes | TotalSeconds | TotalMilliseconds
             | TotalMicroseconds | TotalNanoseconds => mapper.with_dtype(DataType::Int64),
             ToString(_) => mapper.with_dtype(DataType::String),
@@ -100,6 +109,7 @@ impl TemporalFunction {
             TimeStamp(_) => mapper.with_dtype(DataType::Int64),
             IsLeapYear => mapper.with_dtype(DataType::Boolean),
             Time => mapper.with_dtype(DataType::Time),
+            #[cfg(feature = "dtype-duration")]
             Duration(tu) => mapper.with_dtype(DataType::Duration(*tu)),
             Date => mapper.with_dtype(DataType::Date),
             Datetime => mapper.try_map_dtype(|dt| match dt {
@@ -161,17 +171,18 @@ impl TemporalFunction {
             | T::Millisecond
             | T::Microsecond
             | T::Nanosecond
-            | T::TotalDays
+            | T::ToString(_)
+            | T::TimeStamp(_)
+            | T::CastTimeUnit(_)
+            | T::WithTimeUnit(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-duration")]
+            T::TotalDays
             | T::TotalHours
             | T::TotalMinutes
             | T::TotalSeconds
             | T::TotalMilliseconds
             | T::TotalMicroseconds
-            | T::TotalNanoseconds
-            | T::ToString(_)
-            | T::TimeStamp(_)
-            | T::CastTimeUnit(_)
-            | T::WithTimeUnit(_) => FunctionOptions::elementwise(),
+            | T::TotalNanoseconds => FunctionOptions::elementwise(),
             #[cfg(feature = "timezones")]
             T::ConvertTimeZone(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "month_start")]
@@ -185,6 +196,7 @@ impl TemporalFunction {
             T::OffsetBy => FunctionOptions::elementwise(),
             T::Round => FunctionOptions::elementwise(),
             T::Replace => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-duration")]
             T::Duration(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "timezones")]
             T::ReplaceTimeZone(_, _) => FunctionOptions::elementwise(),
@@ -214,6 +226,7 @@ impl Display for TemporalFunction {
             Time => "time",
             Date => "date",
             Datetime => "datetime",
+            #[cfg(feature = "dtype-duration")]
             Duration(_) => "duration",
             Hour => "hour",
             Minute => "minute",
@@ -221,12 +234,19 @@ impl Display for TemporalFunction {
             Millisecond => "millisecond",
             Microsecond => "microsecond",
             Nanosecond => "nanosecond",
+            #[cfg(feature = "dtype-duration")]
             TotalDays => "total_days",
+            #[cfg(feature = "dtype-duration")]
             TotalHours => "total_hours",
+            #[cfg(feature = "dtype-duration")]
             TotalMinutes => "total_minutes",
+            #[cfg(feature = "dtype-duration")]
             TotalSeconds => "total_seconds",
+            #[cfg(feature = "dtype-duration")]
             TotalMilliseconds => "total_milliseconds",
+            #[cfg(feature = "dtype-duration")]
             TotalMicroseconds => "total_microseconds",
+            #[cfg(feature = "dtype-duration")]
             TotalNanoseconds => "total_nanoseconds",
             ToString(_) => "to_string",
             #[cfg(feature = "timezones")]

@@ -1074,3 +1074,60 @@ def test_predicate_does_not_split_barrier_expr() -> None:
         q.collect(),
         pl.DataFrame({"a": 3}).with_row_index(offset=2),
     )
+
+
+def test_predicate_passes_set_sorted_22397() -> None:
+    plan = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .with_columns(MARKER=1, b=pl.lit(1))
+        .set_sorted("a")
+        .filter(pl.col("a") <= 1)
+        .explain()
+    )
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+
+@pytest.mark.filterwarnings("ignore")
+def test_predicate_pass() -> None:
+    plan = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .with_columns(MARKER=pl.col("a"))
+        .filter(pl.col("a").map_elements(lambda x: x > 2, return_dtype=pl.Boolean))
+        .explain()
+    )
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+
+def test_predicate_pushdown_auto_disable_strict() -> None:
+    # Test that type-coercion automatically switches strict cast to
+    # non-strict/overflowing for compatible types, allowing the predicate to be
+    # pushed.
+    lf = pl.LazyFrame(
+        {"column": "2025-01-01", "column_date": datetime(2025, 1, 1), "integer": 1},
+        schema={
+            "column": pl.String,
+            "column_date": pl.Datetime("ns"),
+            "integer": pl.Int64,
+        },
+    )
+
+    q = lf.with_columns(
+        MARKER=1,
+    ).filter(
+        pl.col("column_date").cast(pl.Datetime("us")) == pl.lit(datetime(2025, 1, 1)),
+        pl.col("integer") == 1,
+    )
+
+    plan = q.explain()
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+    q = lf.with_columns(
+        MARKER=1,
+    ).filter(
+        pl.col("column_date").cast(pl.Datetime("us"), strict=False)
+        == pl.lit(datetime(2025, 1, 1)),
+        pl.col("integer").cast(pl.Int128, strict=True) == 1,
+    )
+
+    plan = q.explain()
+    assert plan.index("FILTER") > plan.index("MARKER")

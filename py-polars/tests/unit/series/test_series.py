@@ -559,6 +559,12 @@ def test_to_struct() -> None:
     )
 
 
+def test_to_struct_empty() -> None:
+    df = pl.DataFrame({"y": [[], [], []]}, schema={"y": pl.List(pl.Int64)})
+    empty_df = df.select(pl.col("y").list.to_struct(fields=[]).struct.unnest())
+    assert empty_df.shape == (0, 0)
+
+
 def test_sort() -> None:
     a = pl.Series("a", [2, 1, 3])
     assert_series_equal(a.sort(), pl.Series("a", [1, 2, 3]))
@@ -1854,27 +1860,6 @@ def test_cumulative_eval() -> None:
     expr3 = expr1 - expr2
     expected3 = pl.Series("values", [0, -3, -8, -15, -24])
     assert_series_equal(s.cumulative_eval(expr3), expected3)
-
-
-def test_reverse() -> None:
-    s = pl.Series("values", [1, 2, 3, 4, 5])
-    assert s.reverse().to_list() == [5, 4, 3, 2, 1]
-
-    s = pl.Series("values", ["a", "b", None, "y", "x"])
-    assert s.reverse().to_list() == ["x", "y", None, "b", "a"]
-
-
-def test_reverse_binary() -> None:
-    # single chunk
-    s = pl.Series("values", ["a", "b", "c", "d"]).cast(pl.Binary)
-    assert s.reverse().to_list() == [b"d", b"c", b"b", b"a"]
-
-    # multiple chunks
-    chunk1 = pl.Series("values", ["a", "b"])
-    chunk2 = pl.Series("values", ["c", "d"])
-    s = chunk1.extend(chunk2).cast(pl.Binary)
-    assert s.n_chunks() == 2
-    assert s.reverse().to_list() == [b"d", b"c", b"b", b"a"]
 
 
 def test_clip() -> None:

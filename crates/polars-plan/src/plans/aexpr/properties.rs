@@ -2,6 +2,7 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 
 use super::*;
+use crate::constants::MAP_LIST_NAME;
 
 impl AExpr {
     pub(crate) fn is_leaf(&self) -> bool {
@@ -36,7 +37,61 @@ impl AExpr {
             | Window { .. } => false,
         }
     }
+
+    pub(crate) fn does_not_modify_top_level(&self) -> bool {
+        match self {
+            AExpr::Column(_) => true,
+            AExpr::Function { function, .. } => matches!(function, FunctionExpr::SetSortedFlag(_)),
+            _ => false,
+        }
+    }
 }
+
+// Traversal utilities
+fn property_and_traverse<F>(stack: &mut UnitVec<Node>, ae: &AExpr, property: F) -> bool
+where
+    F: Fn(&AExpr) -> bool,
+{
+    if !property(ae) {
+        return false;
+    }
+    ae.inputs_rev(stack);
+    true
+}
+
+fn property_rec<F>(node: Node, expr_arena: &Arena<AExpr>, property: F) -> bool
+where
+    F: Fn(&mut UnitVec<Node>, &AExpr, &Arena<AExpr>) -> bool,
+{
+    let mut stack = unitvec![];
+    let mut ae = expr_arena.get(node);
+
+    loop {
+        if !property(&mut stack, ae, expr_arena) {
+            return false;
+        }
+
+        let Some(node) = stack.pop() else {
+            break;
+        };
+
+        ae = expr_arena.get(node);
+    }
+
+    true
+}
+
+/// Checks if the top-level expression node does not modify. If this is the case, then `stack` will
+/// be extended further with any nested expression nodes.
+fn does_not_modify(stack: &mut UnitVec<Node>, ae: &AExpr, _expr_arena: &Arena<AExpr>) -> bool {
+    property_and_traverse(stack, ae, |ae| ae.does_not_modify_top_level())
+}
+
+pub fn does_not_modify_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    property_rec(node, expr_arena, does_not_modify)
+}
+
+// Properties
 
 /// Checks if the top-level expression node is elementwise. If this is the case, then `stack` will
 /// be extended further with any nested expression nodes.
@@ -85,22 +140,7 @@ where
 
 /// Recursive variant of `is_elementwise`
 pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    let mut stack = unitvec![];
-    let mut ae = expr_arena.get(node);
-
-    loop {
-        if !is_elementwise(&mut stack, ae, expr_arena) {
-            return false;
-        }
-
-        let Some(node) = stack.pop() else {
-            break;
-        };
-
-        ae = expr_arena.get(node);
-    }
-
-    true
+    property_rec(node, expr_arena, is_elementwise)
 }
 
 /// Recursive variant of `is_elementwise` that also forbids casting to categoricals. This function
@@ -188,7 +228,7 @@ impl ExprPushdownGroup {
                         ..
                     } => true,
 
-                    #[cfg(feature = "temporal")]
+                    #[cfg(all(feature = "strings", feature = "temporal"))]
                     AExpr::Function {
                         input,
                         function:
@@ -207,6 +247,15 @@ impl ExprPushdownGroup {
                             Some(AExpr::Literal(_)) | None => false,
                             _ => strptime_options.strict,
                         }
+                    },
+                    #[cfg(feature = "python")]
+                    // This is python `map_elements`. This is a hack because that function breaks
+                    // the Polars model. It should be elementwise. This must be fixed.
+                    AExpr::AnonymousFunction { options, .. }
+                        if options.flags.contains(FunctionFlags::APPLY_LIST)
+                            && options.fmt_str == MAP_LIST_NAME =>
+                    {
+                        return self;
                     },
 
                     AExpr::Cast {

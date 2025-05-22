@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.29.0"
+version = "1.30.0"
 edition = "2021"
 
 [lib]
@@ -64,6 +64,7 @@ timezones = ["polars-python/timezones"]
 cse = ["polars-python/cse"]
 merge_sorted = ["polars-python/merge_sorted"]
 list_gather = ["polars-python/list_gather"]
+list_filter = ["polars-python/list_filter"]
 list_count = ["polars-python/list_count"]
 array_count = ["polars-python/array_count"]
 binary_encoding = ["polars-python/binary_encoding"]

@@ -57,7 +57,7 @@ pub fn _execute_ir_plan_with_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<P
 
 /// Prepare the IR for execution by the Polars GPU engine.
 fn gpu_post_opt(
-    py: Python,
+    py: Python<'_>,
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,

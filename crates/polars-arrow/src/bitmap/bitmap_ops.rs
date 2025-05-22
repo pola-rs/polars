@@ -279,16 +279,6 @@ pub fn num_intersections_with(lhs: &Bitmap, rhs: &Bitmap) -> usize {
     )
 }
 
-pub fn intersects_with(lhs: &Bitmap, rhs: &Bitmap) -> bool {
-    binary_fold(
-        lhs,
-        rhs,
-        |lhs, rhs| lhs & rhs != 0,
-        false,
-        |lhs, rhs| lhs || rhs,
-    )
-}
-
 pub fn intersects_with_mut(lhs: &MutableBitmap, rhs: &MutableBitmap) -> bool {
     binary_fold_mut(
         lhs,
@@ -366,5 +356,49 @@ impl Not for &Bitmap {
 
     fn not(self) -> Bitmap {
         unary(self, |a| !a)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::bitmap::proptest::bitmap;
+
+    fn two_equal_length_bitmaps() -> impl Strategy<Value = (Bitmap, Bitmap)> {
+        (1..=250usize).prop_flat_map(|length| {
+            (
+                bitmap(length..300),
+                bitmap(length..300),
+                0..length,
+                0..length,
+            )
+                .prop_flat_map(move |(lhs, rhs, lhs_offset, rhs_offset)| {
+                    (0..usize::min(length - lhs_offset, length - rhs_offset)).prop_map(
+                        move |slice_length| {
+                            (
+                                lhs.clone().sliced(lhs_offset, slice_length),
+                                rhs.clone().sliced(rhs_offset, slice_length),
+                            )
+                        },
+                    )
+                })
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn test_num_intersections_with(
+            (lhs, rhs) in two_equal_length_bitmaps()
+        ) {
+            let kernel_out = num_intersections_with(&lhs, &rhs);
+            let mut reference_out = 0;
+            for (l, r) in lhs.iter().zip(rhs.iter()) {
+                reference_out += usize::from(l & r);
+            }
+
+            prop_assert_eq!(kernel_out, reference_out);
+        }
     }
 }

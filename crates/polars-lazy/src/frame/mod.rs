@@ -26,7 +26,7 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::POOL;
-#[cfg(feature = "new_streaming")]
+#[cfg(all(feature = "new_streaming", feature = "dtype-categorical"))]
 use polars_core::StringCacheHolder;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
@@ -787,12 +787,14 @@ impl LazyFrame {
 
         match engine {
             Engine::Auto | Engine::Streaming => feature_gated!("new_streaming", {
+                #[cfg(feature = "dtype-categorical")]
                 let string_cache_hold = StringCacheHolder::hold();
                 let result = polars_stream::run_query(
                     alp_plan.lp_top,
                     &mut alp_plan.lp_arena,
                     &mut alp_plan.expr_arena,
                 );
+                #[cfg(feature = "dtype-categorical")]
                 drop(string_cache_hold);
                 result.map(|v| v.unwrap_single())
             }),
@@ -884,12 +886,14 @@ impl LazyFrame {
 
         if engine == Engine::Streaming {
             feature_gated!("new_streaming", {
+                #[cfg(feature = "dtype-categorical")]
                 let string_cache_hold = StringCacheHolder::hold();
                 let result = polars_stream::run_query(
                     alp_plan.lp_top,
                     &mut alp_plan.lp_arena,
                     &mut alp_plan.expr_arena,
                 );
+                #[cfg(feature = "dtype-categorical")]
                 drop(string_cache_hold);
                 return result.map(|v| v.unwrap_multiple());
             });
@@ -1183,6 +1187,7 @@ impl LazyFrame {
                 Err(e) => return Some(Err(e)),
             };
 
+            #[cfg(feature = "dtype-categorical")]
             let _hold = StringCacheHolder::hold();
             let f = || {
                 polars_stream::run_query(
@@ -1785,6 +1790,21 @@ impl LazyFrame {
                 should_broadcast: true,
             },
         )
+    }
+
+    /// Match or evolve to a certain schema.
+    pub fn match_to_schema(
+        self,
+        schema: SchemaRef,
+        per_column: Arc<[MatchToSchemaPerColumn]>,
+        extra_columns: ExtraColumnsPolicy,
+    ) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .match_to_schema(schema, per_column, extra_columns)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     fn with_columns_impl(self, exprs: Vec<Expr>, options: ProjectionOptions) -> LazyFrame {
@@ -2593,6 +2613,7 @@ pub use streaming_dispatch::build_streaming_query_executor;
 mod streaming_dispatch {
     use std::sync::{Arc, Mutex};
 
+    use polars_core::POOL;
     use polars_core::error::PolarsResult;
     use polars_core::frame::DataFrame;
     use polars_expr::state::ExecutionState;
@@ -2637,6 +2658,9 @@ mod streaming_dispatch {
 
     impl Executor for StreamingQueryExecutor {
         fn execute(&mut self, _cache: &mut ExecutionState) -> PolarsResult<DataFrame> {
+            // Must not block rayon thread on pending new-streaming future.
+            assert!(POOL.current_thread_index().is_none());
+
             let mut df = { self.executor.try_lock().unwrap().take() }
                 .expect("unhandled: execute() more than once")
                 .execute()

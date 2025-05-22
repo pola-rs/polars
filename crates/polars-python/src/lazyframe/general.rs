@@ -12,9 +12,10 @@ use polars_plan::dsl::ScanSources;
 use polars_plan::plans::{AExpr, IR};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::python_function::PythonObject;
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::{PyDict, PyDictMethods, PyList};
 
 use super::{PyLazyFrame, PyOptFlags, SinkTarget};
 use crate::error::PyPolarsErr;
@@ -22,7 +23,7 @@ use crate::expr::ToExprs;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
-use crate::utils::EnterPolarsExt;
+use crate::utils::{EnterPolarsExt, to_py_err};
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
 
 fn pyobject_to_first_path_and_scan_sources(
@@ -577,7 +578,7 @@ impl PyLazyFrame {
         py.enter_polars(|| self.ldf.describe_optimized_plan_tree())
     }
 
-    fn to_dot(&self, py: Python, optimized: bool) -> PyResult<String> {
+    fn to_dot(&self, py: Python<'_>, optimized: bool) -> PyResult<String> {
         py.enter_polars(|| self.ldf.to_dot(optimized))
     }
 
@@ -716,7 +717,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (lambda_post_opt=None))]
     fn profile(
         &self,
-        py: Python,
+        py: Python<'_>,
         lambda_post_opt: Option<PyObject>,
     ) -> PyResult<(PyDataFrame, PyDataFrame)> {
         let (df, time_df) = py.enter_polars(|| {
@@ -735,7 +736,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (engine, lambda_post_opt=None))]
     fn collect(
         &self,
-        py: Python,
+        py: Python<'_>,
         engine: Wrap<Engine>,
         lambda_post_opt: Option<PyObject>,
     ) -> PyResult<PyDataFrame> {
@@ -754,7 +755,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (engine, lambda))]
     fn collect_with_callback(
         &self,
-        py: Python,
+        py: Python<'_>,
         engine: Wrap<Engine>,
         lambda: PyObject,
     ) -> PyResult<()> {
@@ -789,7 +790,7 @@ impl PyLazyFrame {
     ))]
     fn sink_parquet(
         &self,
-        py: Python,
+        py: Python<'_>,
         target: SinkTarget,
         compression: &str,
         compression_level: Option<i32>,
@@ -859,7 +860,7 @@ impl PyLazyFrame {
     ))]
     fn sink_ipc(
         &self,
-        py: Python,
+        py: Python<'_>,
         target: SinkTarget,
         compression: Wrap<Option<IpcCompression>>,
         compat_level: PyCompatLevel,
@@ -923,7 +924,7 @@ impl PyLazyFrame {
     ))]
     fn sink_csv(
         &self,
-        py: Python,
+        py: Python<'_>,
         target: SinkTarget,
         include_bom: bool,
         include_header: bool,
@@ -1012,7 +1013,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (target, cloud_options, credential_provider, retries, sink_options))]
     fn sink_json(
         &self,
-        py: Python,
+        py: Python<'_>,
         target: SinkTarget,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
@@ -1058,7 +1059,7 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
-    fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {
+    fn fetch(&self, py: Python<'_>, n_rows: usize) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
         py.enter_polars_df(|| ldf.fetch(n_rows))
     }
@@ -1286,6 +1287,127 @@ impl PyLazyFrame {
     fn with_columns_seq(&mut self, exprs: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_columns_seq(exprs.to_exprs()).into()
+    }
+
+    fn match_to_schema<'py>(
+        &self,
+        schema: Wrap<Schema>,
+        missing_columns: &Bound<'py, PyAny>,
+        missing_struct_fields: &Bound<'py, PyAny>,
+        extra_columns: Wrap<ExtraColumnsPolicy>,
+        extra_struct_fields: &Bound<'py, PyAny>,
+        integer_cast: &Bound<'py, PyAny>,
+        float_cast: &Bound<'py, PyAny>,
+    ) -> PyResult<Self> {
+        fn parse_missing_columns<'py>(
+            schema: &Schema,
+            missing_columns: &Bound<'py, PyAny>,
+        ) -> PyResult<Vec<MissingColumnsPolicyOrExpr>> {
+            let mut out = Vec::with_capacity(schema.len());
+            if let Ok(policy) = missing_columns.extract::<Wrap<MissingColumnsPolicyOrExpr>>() {
+                out.extend(std::iter::repeat_n(policy.0, schema.len()));
+            } else if let Ok(dict) = missing_columns.downcast::<PyDict>() {
+                out.extend(std::iter::repeat_n(
+                    MissingColumnsPolicyOrExpr::Raise,
+                    schema.len(),
+                ));
+                for (key, value) in dict.iter() {
+                    let key = key.extract::<String>()?;
+                    let value = value.extract::<Wrap<MissingColumnsPolicyOrExpr>>()?;
+                    out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
+                }
+            } else {
+                return Err(PyTypeError::new_err("Invalid value for `missing_columns`"));
+            }
+            Ok(out)
+        }
+        fn parse_missing_struct_fields<'py>(
+            schema: &Schema,
+            missing_struct_fields: &Bound<'py, PyAny>,
+        ) -> PyResult<Vec<MissingColumnsPolicy>> {
+            let mut out = Vec::with_capacity(schema.len());
+            if let Ok(policy) = missing_struct_fields.extract::<Wrap<MissingColumnsPolicy>>() {
+                out.extend(std::iter::repeat_n(policy.0, schema.len()));
+            } else if let Ok(dict) = missing_struct_fields.downcast::<PyDict>() {
+                out.extend(std::iter::repeat_n(
+                    MissingColumnsPolicy::Raise,
+                    schema.len(),
+                ));
+                for (key, value) in dict.iter() {
+                    let key = key.extract::<String>()?;
+                    let value = value.extract::<Wrap<MissingColumnsPolicy>>()?;
+                    out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
+                }
+            } else {
+                return Err(PyTypeError::new_err(
+                    "Invalid value for `missing_struct_fields`",
+                ));
+            }
+            Ok(out)
+        }
+        fn parse_extra_struct_fields<'py>(
+            schema: &Schema,
+            extra_struct_fields: &Bound<'py, PyAny>,
+        ) -> PyResult<Vec<ExtraColumnsPolicy>> {
+            let mut out = Vec::with_capacity(schema.len());
+            if let Ok(policy) = extra_struct_fields.extract::<Wrap<ExtraColumnsPolicy>>() {
+                out.extend(std::iter::repeat_n(policy.0, schema.len()));
+            } else if let Ok(dict) = extra_struct_fields.downcast::<PyDict>() {
+                out.extend(std::iter::repeat_n(ExtraColumnsPolicy::Raise, schema.len()));
+                for (key, value) in dict.iter() {
+                    let key = key.extract::<String>()?;
+                    let value = value.extract::<Wrap<ExtraColumnsPolicy>>()?;
+                    out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
+                }
+            } else {
+                return Err(PyTypeError::new_err(
+                    "Invalid value for `extra_struct_fields`",
+                ));
+            }
+            Ok(out)
+        }
+        fn parse_cast<'py>(
+            schema: &Schema,
+            cast: &Bound<'py, PyAny>,
+        ) -> PyResult<Vec<UpcastOrForbid>> {
+            let mut out = Vec::with_capacity(schema.len());
+            if let Ok(policy) = cast.extract::<Wrap<UpcastOrForbid>>() {
+                out.extend(std::iter::repeat_n(policy.0, schema.len()));
+            } else if let Ok(dict) = cast.downcast::<PyDict>() {
+                out.extend(std::iter::repeat_n(UpcastOrForbid::Forbid, schema.len()));
+                for (key, value) in dict.iter() {
+                    let key = key.extract::<String>()?;
+                    let value = value.extract::<Wrap<UpcastOrForbid>>()?;
+                    out[schema.try_index_of(&key).map_err(to_py_err)?] = value.0;
+                }
+            } else {
+                return Err(PyTypeError::new_err(
+                    "Invalid value for `integer_cast` / `float_cast`",
+                ));
+            }
+            Ok(out)
+        }
+
+        let missing_columns = parse_missing_columns(&schema.0, missing_columns)?;
+        let missing_struct_fields = parse_missing_struct_fields(&schema.0, missing_struct_fields)?;
+        let extra_struct_fields = parse_extra_struct_fields(&schema.0, extra_struct_fields)?;
+        let integer_cast = parse_cast(&schema.0, integer_cast)?;
+        let float_cast = parse_cast(&schema.0, float_cast)?;
+
+        let per_column = (0..schema.0.len())
+            .map(|i| MatchToSchemaPerColumn {
+                missing_columns: missing_columns[i].clone(),
+                missing_struct_fields: missing_struct_fields[i],
+                extra_struct_fields: extra_struct_fields[i],
+                integer_cast: integer_cast[i],
+                float_cast: float_cast[i],
+            })
+            .collect();
+
+        let ldf = self.ldf.clone();
+        Ok(ldf
+            .match_to_schema(Arc::new(schema.0), per_column, extra_columns.0)
+            .into())
     }
 
     fn rename(&mut self, existing: Vec<String>, new: Vec<String>, strict: bool) -> Self {

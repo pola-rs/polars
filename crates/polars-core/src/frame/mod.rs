@@ -2863,6 +2863,7 @@ impl DataFrame {
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
     /// as well.
     pub fn iter_chunks_physical(&self) -> PhysRecordBatchIter<'_> {
+        debug_assert!(!self.should_rechunk());
         PhysRecordBatchIter {
             schema: Arc::new(
                 self.get_columns()
@@ -3347,7 +3348,8 @@ impl DataFrame {
         let df = DataFrame::from(rb);
         polars_ensure!(
             self.schema() == df.schema(),
-            SchemaMismatch: "cannot append record batch with different schema",
+            SchemaMismatch: "cannot append record batch with different schema\n\n
+        Got {:?}\nexpected: {:?}", df.schema(), self.schema(),
         );
         self.vstack_mut_owned_unchecked(df);
         Ok(())
