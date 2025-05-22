@@ -2,7 +2,7 @@
   description = "A basic Nix Flake for eachDefaultSystem";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.11";
+    nixpkgs.url = "github:LucioFranco/nixpkgs/lucio/nixos-24.11-patched-f9ebe33";
     utils.url = "github:numtide/flake-utils";
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
@@ -163,14 +163,18 @@
               mmh3
               pydantic
               pyparsing
-              ray
               requests
               rich
               sortedcontainers
               strictyaml
               tenacity
               zstandard
-            ];
+            ]
+            ++ (pkgs.lib.optionals pkgs.stdenv.isLinux [
+                # TODO: ray should work for macos but for somereason
+                # the version on nixpkgs only supports `x86_64-linux`.
+                super.ray
+              ]);
           };
           pytest-codspeed = super.buildPythonPackage rec {
             pname = "pytest-codspeed";
@@ -307,11 +311,14 @@
             version = "0.4.3";
             format = "pyproject";
 
+            # TODO: Upstream patch to use pkg-config for libgssapi-sys
+            # this was needed to allow the crate to find krb5 in newer
+            # versions of macos.
             src = pkgs.fetchFromGitHub {
-              owner = "sfu-db";
+              owner = "LucioFranco";
               repo = "connector-x";
-              rev = "v${version}";
-              hash = "sha256-+2lXwxehqeCqD/R1AkCUrioX/wZDm2QZ35RMptqpqzs=";
+              rev = "cafe3c707c54cf4b626e8d80b343d94e5dacb83c";
+              hash = "sha256-PmVdL5qylVp8FOYjJNQxMXaNQhL/nOXxt+aPZbXHDSU=";
             };
 
             sourceRoot = "${src.name}/connectorx-python";
@@ -319,7 +326,7 @@
             cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
               inherit src sourceRoot;
               name = "${pname}-python-${version}";
-              hash = "sha256-vBFaUmXkKGC6DaB5Ee/cbXDh3tO04NxTx4UPfWJoRvA=";
+              hash = "sha256-F4lXi2ZG2l+R0Aap4OH/M4DZWg2KbGSJWDKqfrg360E=";
             };
 
             env = {
@@ -331,6 +338,7 @@
 
             nativeBuildInputs = [
               pkgs.krb5 # needed for `krb5-config` during libgssapi-sys
+              pkgs.pkg-config
 
               pkgs.rustPlatform.cargoSetupHook
               pkgs.rustPlatform.maturinBuildHook
@@ -840,7 +848,6 @@
 
                 cargo-nextest
 
-                linuxPackages_latest.perf
                 samply
                 hyperfine
 
@@ -851,7 +858,10 @@
               ]
               ++ (mapAttrsToList (
                 name: value: pkgs.writeShellScriptBin "pl-${name}" (aliasToScript value)
-              ) aliases);
+              ) aliases)
+              ++ (pkgs.lib.optionals pkgs.stdenv.isLinux [
+                  pkgs.linuxPackages.perf
+                ]);
 
             shellHook =
               let
@@ -925,6 +935,10 @@
             src = ./.;
             cargoDeps = pkgs.rustPlatform.importCargoLock {
               lockFile = ./Cargo.lock;
+              outputHashes = {
+                  "pyo3-0.24.2" = "sha256-0V4cT3DstG9mZvdIVZXzoQlNyvtBuLOvlMe1XDZp3/0=";
+                  "tikv-jemalloc-sys-0.6.0+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7" = "sha256-nvXKBd5tKSe4hPTtMKriYhlgAML9gdDHZG8nNRzgjXM=";
+              };
             };
           };
       }

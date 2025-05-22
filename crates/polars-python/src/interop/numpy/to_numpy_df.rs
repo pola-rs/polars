@@ -21,7 +21,7 @@ impl PyDataFrame {
     /// Convert this DataFrame to a NumPy ndarray.
     fn to_numpy(
         &self,
-        py: Python,
+        py: Python<'_>,
         order: Wrap<IndexOrder>,
         writable: bool,
         allow_copy: bool,
@@ -31,7 +31,7 @@ impl PyDataFrame {
 }
 
 pub(super) fn df_to_numpy(
-    py: Python,
+    py: Python<'_>,
     df: &DataFrame,
     order: IndexOrder,
     writable: bool,
@@ -67,7 +67,7 @@ pub(super) fn df_to_numpy(
 }
 
 /// Create a NumPy view of the given DataFrame.
-fn try_df_to_numpy_view(py: Python, df: &DataFrame, allow_nulls: bool) -> Option<PyObject> {
+fn try_df_to_numpy_view(py: Python<'_>, df: &DataFrame, allow_nulls: bool) -> Option<PyObject> {
     let first_dtype = check_df_dtypes_support_view(df)?;
 
     // TODO: Check for nested nulls using `series_contains_null` util when we support Array types.
@@ -172,7 +172,7 @@ where
 }
 
 /// Create a NumPy view of a numeric DataFrame.
-fn numeric_df_to_numpy_view<T>(py: Python, df: &DataFrame, owner: PyObject) -> PyObject
+fn numeric_df_to_numpy_view<T>(py: Python<'_>, df: &DataFrame, owner: PyObject) -> PyObject
 where
     T: PolarsNumericType,
     T::Native: Element,
@@ -202,7 +202,7 @@ where
     }
 }
 /// Create a NumPy view of a Datetime or Duration DataFrame.
-fn temporal_df_to_numpy_view(py: Python, df: &DataFrame, owner: PyObject) -> PyObject {
+fn temporal_df_to_numpy_view(py: Python<'_>, df: &DataFrame, owner: PyObject) -> PyObject {
     let s = df.get_columns().first().unwrap();
     let phys = s.to_physical_repr();
     let ca = phys.i64().unwrap();
@@ -225,7 +225,7 @@ fn temporal_df_to_numpy_view(py: Python, df: &DataFrame, owner: PyObject) -> PyO
 }
 
 fn df_to_numpy_with_copy(
-    py: Python,
+    py: Python<'_>,
     df: &DataFrame,
     order: IndexOrder,
     writable: bool,
@@ -237,7 +237,7 @@ fn df_to_numpy_with_copy(
     }
 }
 fn try_df_to_numpy_numeric_supertype(
-    py: Python,
+    py: Python<'_>,
     df: &DataFrame,
     order: IndexOrder,
 ) -> Option<PyObject> {
@@ -253,7 +253,7 @@ fn try_df_to_numpy_numeric_supertype(
 }
 
 fn df_columns_to_numpy(
-    py: Python,
+    py: Python<'_>,
     df: &DataFrame,
     order: IndexOrder,
     writable: bool,

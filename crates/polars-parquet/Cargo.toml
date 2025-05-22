@@ -45,7 +45,7 @@ proptest = { workspace = true, optional = true }
 
 [dev-dependencies]
 # ensure that the proptest feature is enabled when we are testing
-polars-parquet = { workspace = true, features = ["proptest"] }
+polars-parquet = { path = ".", features = ["proptest"] }
 
 rand = "0.8"
 
@@ -66,7 +66,7 @@ lz4_flex = ["dep:lz4_flex"]
 
 async = ["async-stream", "futures", "polars-parquet-format/async"]
 bloom_filter = ["xxhash-rust"]
-serde_types = ["serde"]
+serde = ["dep:serde", "polars-utils/serde"]
 simd = ["polars-compute/simd"]
 
 proptest = ["dep:proptest", "arrow/proptest"]

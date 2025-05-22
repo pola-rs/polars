@@ -39,3 +39,13 @@ def test_over_no_partition_by_no_over() -> None:
     df = pl.DataFrame({"a": [1, 1, 2], "i": [2, 1, 3]})
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.with_columns(b=pl.col("a").cum_sum().over())
+
+
+def test_over_explode_22770() -> None:
+    df = pl.DataFrame({"x": [[1.0], [2.0]], "idx": [1, 2]})
+    e = pl.col("x").list.explode().over("idx", mapping_strategy="join")
+
+    assert_frame_equal(
+        df.select(pl.col("x").list.diff()),
+        df.select(e.list.diff()),
+    )

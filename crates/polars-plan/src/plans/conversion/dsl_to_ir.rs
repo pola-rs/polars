@@ -785,6 +785,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             float_upcast: per_column.float_cast == UpcastOrForbid::Upcast,
                             float_downcast: false,
                             datetime_nanoseconds_downcast: false,
+                            datetime_microseconds_downcast: false,
                             datetime_convert_timezone: false,
                             missing_struct_fields: per_column.missing_struct_fields,
                             extra_struct_fields: per_column.extra_struct_fields,
@@ -1051,6 +1052,65 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         },
                     };
                     return run_conversion(lp, ctxt, "stats");
+                },
+                DslFunction::Rename {
+                    existing,
+                    new,
+                    strict,
+                } => {
+                    assert_eq!(existing.len(), new.len());
+                    if existing.is_empty() {
+                        return Ok(input);
+                    }
+
+                    let existing_lut =
+                        PlIndexSet::from_iter(existing.iter().map(PlSmallStr::as_str));
+
+                    let mut schema = Schema::with_capacity(input_schema.len());
+                    let mut num_replaced = 0;
+
+                    // Turn the rename into a select.
+                    let expr = input_schema
+                        .iter()
+                        .map(|(n, dtype)| {
+                            Ok(match existing_lut.get_index_of(n.as_str()) {
+                                None => {
+                                    schema.try_insert(n.clone(), dtype.clone())?;
+                                    Expr::Column(n.clone())
+                                },
+                                Some(i) => {
+                                    num_replaced += 1;
+                                    schema.try_insert(new[i].clone(), dtype.clone())?;
+                                    Expr::Column(n.clone()).alias(new[i].clone())
+                                },
+                            })
+                        })
+                        .collect::<PolarsResult<Vec<_>>>()?;
+
+                    if strict && num_replaced != existing.len() {
+                        let col = existing.iter().find(|c| !input_schema.contains(c)).unwrap();
+                        polars_bail!(col_not_found = col);
+                    }
+
+                    // Nothing changed, make into a no-op.
+                    if num_replaced == 0 {
+                        return Ok(input);
+                    }
+
+                    let expr = to_expr_irs(expr, ctxt.expr_arena)?;
+                    ctxt.conversion_optimizer
+                        .fill_scratch(&expr, ctxt.expr_arena);
+
+                    IR::Select {
+                        input,
+                        expr,
+                        schema: Arc::new(schema),
+                        options: ProjectionOptions {
+                            run_parallel: false,
+                            duplicate_check: false,
+                            should_broadcast: false,
+                        },
+                    }
                 },
                 _ => {
                     let function = function.into_function_ir(&input_schema)?;

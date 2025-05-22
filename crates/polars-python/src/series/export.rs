@@ -146,7 +146,7 @@ impl PySeries {
 
     /// Return the underlying Arrow array.
     #[allow(clippy::wrong_self_convention)]
-    fn to_arrow(&mut self, py: Python, compat_level: PyCompatLevel) -> PyResult<PyObject> {
+    fn to_arrow(&mut self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<PyObject> {
         self.rechunk(py, true)?;
         let pyarrow = py.import("pyarrow")?;
 
@@ -160,14 +160,14 @@ impl PySeries {
     #[allow(unused_variables)]
     #[pyo3(signature = (requested_schema=None))]
     fn __arrow_c_stream__<'py>(
-        &'py self,
+        &self,
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
         series_to_stream(&self.series, py)
     }
 
-    pub fn _export(&mut self, _py: Python, location: usize) {
+    pub fn _export(&mut self, _py: Python<'_>, location: usize) {
         let export = polars_ffi::version_0::export_series(&self.series);
         unsafe {
             (location as *mut SeriesExport).write(export);

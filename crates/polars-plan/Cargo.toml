@@ -49,7 +49,7 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
-python = ["dep:pyo3", "polars-utils/python", "polars-ffi"]
+python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object"]
 serde = [
   "ir_serde",
   "dep:serde",
@@ -95,6 +95,7 @@ dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
+list_filter = ["polars-ops/list_filter"]
 list_gather = ["polars-ops/list_gather"]
 list_count = ["polars-ops/list_count"]
 array_count = ["polars-ops/array_count", "dtype-array"]
@@ -143,7 +144,7 @@ pct_change = ["polars-ops/pct_change"]
 moment = ["polars-ops/moment"]
 abs = ["polars-ops/abs"]
 random = ["polars-core/random"]
-dynamic_group_by = ["polars-core/dynamic_group_by"]
+dynamic_group_by = ["polars-core/dynamic_group_by", "dtype-date", "dtype-datetime"]
 ewma = ["polars-ops/ewma"]
 ewma_by = ["polars-ops/ewma_by"]
 dot_diagram = []
@@ -225,6 +226,7 @@ features = [
   "list_any_all",
   "pct_change",
   "list_gather",
+  "list_filter",
   "dtype-i16",
   "round_series",
   "cutqcut",

@@ -53,6 +53,7 @@ from polars._utils.various import (
     normalize_filepath,
     parse_percentiles,
     qualified_type_name,
+    require_same_type,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars.datatypes import (
@@ -5281,9 +5282,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ Netherlands ┆ 2019-01-01 ┆ 17.4       ┆ 910  │
         └─────────────┴────────────┴────────────┴──────┘
         """
-        if not isinstance(other, LazyFrame):
-            msg = f"expected `other` join table to be a LazyFrame, not {qualified_type_name(other)!r}"
-            raise TypeError(msg)
+        require_same_type(self, other)
 
         if isinstance(on, (str, pl.Expr)):
             left_on = on
@@ -5551,9 +5550,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 8.0 ┆ c   ┆ z     ┆ d         │
         └─────┴─────┴─────┴───────┴───────────┘
         """
-        if not isinstance(other, LazyFrame):
-            msg = f"expected `other` join table to be a LazyFrame, not {qualified_type_name(other)!r}"
-            raise TypeError(msg)
+        require_same_type(self, other)
 
         if maintain_order is None:
             maintain_order = "none"
@@ -5696,9 +5693,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
         """
-        if not isinstance(other, LazyFrame):
-            msg = f"expected `other` join table to be a LazyFrame, not {qualified_type_name(other)!r}"
-            raise TypeError(msg)
+        require_same_type(self, other)
 
         pyexprs = parse_into_list_of_expressions(*predicates)
 
@@ -7696,6 +7691,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The key must be sorted in ascending order.
         """
+        require_same_type(self, other)
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
 
     def set_sorted(
@@ -7872,6 +7868,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 5   ┆ -66  │
         └─────┴──────┘
         """
+        require_same_type(self, other)
         if how in ("outer", "outer_coalesce"):
             how = "full"
             issue_deprecation_warning(

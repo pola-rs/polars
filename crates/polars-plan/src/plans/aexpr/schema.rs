@@ -126,12 +126,6 @@ impl AExpr {
                 partition_by,
                 order_by,
             } => {
-                if let WindowType::Over(WindowMapping::Join) = options {
-                    // expr.over(..), defaults to agg-list unless explicitly unset
-                    // by the `to_field_impl` of the `expr`
-                    *agg_list = true;
-                }
-
                 if ctx.validate {
                     for node in partition_by {
                         validate_expr(*node, ctx.arena, ctx.schema)?;
@@ -142,7 +136,16 @@ impl AExpr {
                 }
 
                 let e = ctx.arena.get(*function);
-                e.to_field_impl(ctx, agg_list)
+                let mut field = e.to_field_impl(ctx, agg_list)?;
+
+                if let WindowType::Over(WindowMapping::Join) = options {
+                    if !is_scalar_ae(*function, ctx.arena) {
+                        field.dtype = DataType::List(Box::new(field.dtype));
+                    }
+                    *agg_list = false;
+                }
+
+                Ok(field)
             },
             Explode { expr, .. } => {
                 // `Explode` is a "flatten" operation, which is not the same as returning a scalar.
