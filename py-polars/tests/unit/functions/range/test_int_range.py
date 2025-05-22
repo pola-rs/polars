@@ -279,6 +279,7 @@ def test_int_ranges_non_int_dtype() -> None:
     ):
         pl.int_ranges(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
 
+
 # https://github.com/pola-rs/polars/issues/22640
 def test_int_ranges_non_numeric_input_should_error() -> None:
     df = pl.DataFrame(
