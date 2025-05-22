@@ -550,12 +550,15 @@ def test_top_k_by() -> None:
     # expression
     s = pl.Series("a", [3, 8, 1, 5, 2])
 
-    assert_series_equal(s.top_k_by("a", 3), pl.Series("a", [8, 5, 3]), check_order=False)
+    assert_series_equal(
+        s.top_k_by("a", 3), pl.Series("a", [8, 5, 3]), check_order=False
+    )
 
 
 def test_bottom_k_by() -> None:
     # expression
     s = pl.Series("a", [3, 8, 1, 5, 2])
 
-    assert_series_equal(s.bottom_k_by("a", 4), pl.Series("a", [3, 2, 1, 5]), check_order=False)
-
+    assert_series_equal(
+        s.bottom_k_by("a", 4), pl.Series("a", [3, 2, 1, 5]), check_order=False
+    )

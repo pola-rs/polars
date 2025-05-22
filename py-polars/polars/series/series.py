@@ -3407,7 +3407,7 @@ class Series:
         reverse: bool | Sequence[bool] = False,
     ) -> Series:
         r"""
-        Return the elements corresponding to the `k` largest elements of the `by` column.
+        Return the `k` largest elements of the `by` column.
 
         Non-null elements are always preferred over null elements, regardless of
         the value of `reverse`. The output is not guaranteed to be in any
@@ -3424,7 +3424,7 @@ class Series:
         Parameters
         ----------
         by
-            Column(s) used to determine the largest elements.
+            Column used to determine the largest elements.
             Accepts expression input. Strings are parsed as column names.
         k
             Number of elements to return.
@@ -3497,7 +3497,7 @@ class Series:
         reverse: bool | Sequence[bool] = False,
     ) -> Series:
         r"""
-        Return the elements corresponding to the `k` smallest elements of the `by` column.
+        Return the `k` smallest elements of the `by` column.
 
         Non-null elements are always preferred over null elements, regardless of
         the value of `reverse`. The output is not guaranteed to be in any
