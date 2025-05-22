@@ -92,11 +92,11 @@ def test_write_with_storage_options_22873(tmp_path: Path) -> None:
             with pytest.raises(
                 TypeError, match="unexpected keyword argument 'storage_options'"
             ):
-                func(df, path, storage_options={"test": "1"})
+                func(df, path, storage_options={"test": "1"})  # type: ignore[operator]
 
             continue
 
-        func(df, path, storage_options={"test": "1"})
+        func(df, path, storage_options={"test": "1"})  # type: ignore[operator]
 
     lf = df.lazy()
 
@@ -106,4 +106,4 @@ def test_write_with_storage_options_22873(tmp_path: Path) -> None:
         pl.LazyFrame.sink_csv,
         pl.LazyFrame.sink_ndjson,
     ]:
-        func(lf, path, storage_options={"test": "1"})
+        func(lf, path, storage_options={"test": "1"})  # type: ignore[operator]
