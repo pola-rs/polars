@@ -1,5 +1,5 @@
 use std::str::FromStr;
-
+#[cfg(feature = "timezones")]
 use arrow::legacy::kernels::convert_to_naive_local;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
