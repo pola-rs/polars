@@ -1,10 +1,13 @@
 use std::str::FromStr;
+
 #[cfg(feature = "timezones")]
 use arrow::legacy::kernels::convert_to_naive_local;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
+#[cfg(feature = "timezones")]
 use chrono::NaiveDateTime;
+#[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 
 use super::*;
@@ -135,7 +138,7 @@ impl LogicalType for DatetimeChunked {
                 Ok(
                     ChunkedArray::try_from_chunk_iter(self.physical().name().clone(), iter)?
                         .into_datetime(self.time_unit(), Some(TimeZone::UTC))
-                        .into(),
+                        .cast(&DataType::Date)?,
                 )
             },
             #[cfg(feature = "dtype-time")]
