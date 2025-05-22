@@ -958,14 +958,14 @@ fn inline_implode(expr: Node, expr_arena: &mut Arena<AExpr>) -> PolarsResult<Opt
             options,
         } => {
             let dtype = dtype.clone();
-            let options = options.clone();
-            inline_implode(*expr, expr_arena)?.and_then(|expr| {
+            let options = *options;
+            inline_implode(*expr, expr_arena)?.map(|expr| {
                 let expr = expr_arena.add(expr);
-                Some(AExpr::Cast {
+                AExpr::Cast {
                     expr,
                     dtype: DataType::List(Box::new(dtype)),
                     options,
-                })
+                }
             })
         },
         AExpr::Literal(lv) => Some(AExpr::Literal(lv.clone().implode()?)),
