@@ -166,9 +166,9 @@ impl Inner {
                     Ok("1") => Some(false),
                     Ok("0") => Some(true),
                     Err(_) => None,
-                    Ok(v) => panic!(
-                        "invalid value {v} for POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR"
-                    ),
+                    Ok(v) => {
+                        panic!("invalid value {v} for POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR")
+                    },
                 };
                 if config::verbose() {
                     eprintln!("[file_cache]: RAISE_ALLOC_ERROR: {v:?}");

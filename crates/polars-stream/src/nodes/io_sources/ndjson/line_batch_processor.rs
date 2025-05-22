@@ -73,9 +73,7 @@ impl LineBatchProcessor {
 
         if needs_total_row_count {
             if verbose {
-                eprintln!(
-                    "[NDJSON LineBatchProcessor {worker_idx}]: entering row count mode"
-                );
+                eprintln!("[NDJSON LineBatchProcessor {worker_idx}]: entering row count mode");
             }
 
             while let Ok(LineBatch {

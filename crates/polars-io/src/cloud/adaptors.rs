@@ -49,9 +49,7 @@ impl BlockingCloudWriter {
         if let Some(local_path) = uri.strip_prefix("file://") {
             // Local paths must be created first, otherwise object store will not write anything.
             if !matches!(std::fs::exists(local_path), Ok(true)) {
-                panic!(
-                    "[BlockingCloudWriter] Expected local file to be created: {local_path}"
-                );
+                panic!("[BlockingCloudWriter] Expected local file to be created: {local_path}");
             }
         }
 

@@ -409,9 +409,7 @@ impl FileReader for NDJsonFileReader {
                 let total_row_count = total_row_count.unwrap();
 
                 if verbose {
-                    eprintln!(
-                        "[NDJsonFileReader]: send n_rows_in_file: {total_row_count}"
-                    );
+                    eprintln!("[NDJsonFileReader]: send n_rows_in_file: {total_row_count}");
                 }
 
                 let num_rows = total_row_count;

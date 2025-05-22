@@ -102,9 +102,7 @@ fn converted_group_from_str(s: &str) -> ParquetResult<GroupConvertedType> {
         "MAP_KEY_VALUE" => GroupConvertedType::MapKeyValue,
         "LIST" => GroupConvertedType::List,
         other => {
-            return Err(ParquetError::oos(format!(
-                "Invalid converted type {other}"
-            )));
+            return Err(ParquetError::oos(format!("Invalid converted type {other}")));
         },
     })
 }

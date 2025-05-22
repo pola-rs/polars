@@ -282,9 +282,7 @@ impl PySeries {
             Some(s) => {
                 let dtype = s.series.dtype();
                 if !dtype.is_bool() {
-                    let msg = format!(
-                        "validity buffer must have data type Boolean, got {dtype:?}"
-                    );
+                    let msg = format!("validity buffer must have data type Boolean, got {dtype:?}");
                     return Err(PyTypeError::new_err(msg));
                 }
                 Some(series_to_bitmap(s.series).unwrap())

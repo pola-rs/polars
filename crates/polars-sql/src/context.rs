@@ -1476,8 +1476,7 @@ impl SQLContext {
                 .replace('_', ".");
 
             modifiers.ilike = Some(
-                polars_utils::regex_cache::compile_regex(format!("^(?is){rx}$").as_str())
-                    .unwrap(),
+                polars_utils::regex_cache::compile_regex(format!("^(?is){rx}$").as_str()).unwrap(),
             );
         }
 

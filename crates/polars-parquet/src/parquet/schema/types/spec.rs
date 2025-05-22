@@ -35,8 +35,7 @@ fn check_decimal_invariants(
             }
         },
         PhysicalType::FixedLenByteArray(length) => {
-            let oos_error =
-                || ParquetError::oos(format!("Byte Array length {length} out of spec"));
+            let oos_error = || ParquetError::oos(format!("Byte Array length {length} out of spec"));
             let max_precision = (2f64.powi(
                 (*length as i32)
                     .checked_mul(8)
