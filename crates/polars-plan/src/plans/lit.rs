@@ -380,6 +380,24 @@ impl LiteralValue {
     pub const fn untyped_null() -> Self {
         Self::Scalar(Scalar::null(DataType::Null))
     }
+
+    pub fn implode(self) -> PolarsResult<Self> {
+        let series = match self.materialize() {
+            LiteralValue::Dyn(_) => unreachable!(),
+            LiteralValue::Scalar(scalar) => scalar.into_series(PlSmallStr::EMPTY),
+            LiteralValue::Series(series) => series.into_inner(),
+            LiteralValue::Range(range) => {
+                let dtype = range.dtype.clone();
+                range.try_materialize_to_series(&dtype)?
+            },
+        };
+
+        let dtype = DataType::List(Box::new(series.dtype().clone()));
+        Ok(LiteralValue::Scalar(Scalar::new(
+            dtype,
+            AnyValue::List(series),
+        )))
+    }
 }
 
 impl From<Scalar> for LiteralValue {
