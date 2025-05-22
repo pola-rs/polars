@@ -116,30 +116,37 @@ impl LogicalType for DatetimeChunked {
                     TimeUnit::Microseconds => datetime_to_timestamp_us,
                     TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
                 };
-                let iter = self.physical().downcast_iter().map(|arr| {
-                    let element_iter = arr.iter().map(|timestamp_opt| match timestamp_opt {
-                        Some(timestamp) => {
-                            let ambiguous = StringChunked::from_iter(std::iter::once("raise"));
-                            let ndt = timestamp_to_datetime(*timestamp);
+                let ambiguous = StringChunked::from_iter(std::iter::once("raise"));
+                let cast_to_date = |tu_in_day: i64| {
+                    let mut dt = self
+                        .phys
+                        .apply_values(|timestamp| {
+                            let ndt = timestamp_to_datetime(timestamp);
                             let res = convert_to_naive_local(
                                 &from_tz,
                                 &Tz::UTC,
                                 ndt,
-                                Ambiguous::from_str(ambiguous.get(0).unwrap())?,
+                                Ambiguous::from_str(ambiguous.get(0).unwrap()).unwrap(),
                                 NonExistent::Raise,
-                            )?;
-                            Ok::<_, PolarsError>(res.map(datetime_to_timestamp))
-                        },
-                        None => Ok(None),
-                    });
-                    element_iter.try_collect_arr()
-                });
+                            )
+                            .unwrap();
+                            res.map(datetime_to_timestamp)
+                                .unwrap()
+                                .div_euclid(tu_in_day)
+                        })
+                        .cast_with_options(&Int32, cast_options)
+                        .unwrap()
+                        .into_date()
+                        .into_series();
 
-                Ok(
-                    ChunkedArray::try_from_chunk_iter(self.physical().name().clone(), iter)?
-                        .into_datetime(self.time_unit(), Some(TimeZone::UTC))
-                        .cast(&DataType::Date)?,
-                )
+                    dt.set_sorted_flag(self.is_sorted_flag());
+                    Ok(dt)
+                };
+                match self.time_unit() {
+                    Nanoseconds => cast_to_date(NS_IN_DAY),
+                    Microseconds => cast_to_date(US_IN_DAY),
+                    Milliseconds => cast_to_date(MS_IN_DAY),
+                }
             },
             #[cfg(feature = "dtype-time")]
             Time => {
