@@ -180,6 +180,7 @@ mod python_impl {
                 deserialize_with = "PythonObject::deserialize_with_pyversion"
             )
         )]
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<u8>"))]
         pub Arc<polars_utils::python_function::PythonFunction>,
     );
 
