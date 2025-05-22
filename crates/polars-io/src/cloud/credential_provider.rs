@@ -505,7 +505,6 @@ mod python_impl {
 
     #[derive(Clone, Debug)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
     pub enum PythonCredentialProvider {
         #[cfg_attr(
             feature = "serde",
