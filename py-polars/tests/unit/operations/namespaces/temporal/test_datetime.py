@@ -1518,3 +1518,11 @@ def test_literal_from_timedelta(value: time, dtype: pl.Duration | None) -> None:
     out = pl.select(pl.lit(value, dtype=dtype))
     assert out.schema == OrderedDict({"literal": dtype or pl.Duration("us")})
     assert out.item() == value
+
+def test_cast_datetime_to_date_timezone_22864():
+    df = pl.DataFrame({"start": datetime(2021, 1, 1, tzinfo=ZoneInfo("Europe/Berlin"))})
+
+    expected: pl.DataFrame = df.select(pl.col("start").dt.date()).item()
+    actual: pl.DataFrame = df.select(pl.col("start").cast(pl.Date)).item()
+    assert_frame_equal(expected, actual)
+
