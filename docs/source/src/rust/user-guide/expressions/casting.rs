@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "floats"=> [4.0, 5.8, -6.3],
     )?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:dfnum]
 
     // --8<-- [start:castnum]
@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("floats_as_integers"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:castnum]
 
     // --8<-- [start:downcast]
@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([col("big_integers").strict_cast(DataType::Int8)])
         .collect();
     if let Err(e) = result {
-        println!("{}", e)
+        println!("{e}")
     };
     // --8<-- [end:overflow]
 
@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([col("big_integers").cast(DataType::Int8)])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:overflow2]
 
     // --8<-- [start:strings]
@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("floats").cast(DataType::String),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:strings]
 
     // --8<-- [start:strings2]
@@ -88,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([col("floats").strict_cast(DataType::Float64)])
         .collect();
     if let Err(e) = result {
-        println!("{}", e)
+        println!("{e}")
     };
     // --8<-- [end:strings2]
 
@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("bools").cast(DataType::UInt8),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:bool]
 
     // --8<-- [start:dates]
@@ -145,7 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("time").cast(DataType::Int64).alias("ns_since_midnight"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:dates]
 
     // --8<-- [start:dates2]
@@ -173,7 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:dates2]
 
     Ok(())

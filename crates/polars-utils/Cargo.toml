@@ -57,3 +57,6 @@ serde = [
 ]
 dsl-schema = ["dep:schemars"]
 python = ["pyo3", "polars-error/python"]
+
+[lints]
+workspace = true

@@ -403,7 +403,7 @@ impl SQLExprVisitor<'_> {
                     Some(DataType::Datetime(tu, tz)) if is_iso_datetime(s) || is_iso_date(s) => {
                         if s.len() == 10 {
                             // handle upcast from ISO date string (10 chars) to datetime
-                            lit(format!("{}T00:00:00", s))
+                            lit(format!("{s}T00:00:00"))
                         } else {
                             lit(s.replacen(' ', "T", 1))
                         }
@@ -470,14 +470,14 @@ impl SQLExprVisitor<'_> {
                 return Ok(self
                     .visit_expr(left)?
                     .dt()
-                    .offset_by(lit(format!("-{}", duration))));
+                    .offset_by(lit(format!("-{duration}"))));
             },
             (_, SQLBinaryOperator::Plus, SQLExpr::Interval(v)) => {
                 let duration = interval_to_duration(v, false)?;
                 return Ok(self
                     .visit_expr(left)?
                     .dt()
-                    .offset_by(lit(format!("{}", duration))));
+                    .offset_by(lit(format!("{duration}"))));
             },
             (SQLExpr::Interval(v1), _, SQLExpr::Interval(v2)) => {
                 // shortcut interval comparison evaluation (-> bool)
@@ -545,14 +545,14 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::PGRegexIMatch => match rhs {  // "x ~* y"
                 Expr::Literal(ref lv) if lv.extract_str().is_some() => {
                     let pat = lv.extract_str().unwrap();
-                    lhs.str().contains(lit(format!("(?i){}", pat)), true)
+                    lhs.str().contains(lit(format!("(?i){pat}")), true)
                 },
                 _ => polars_bail!(SQLSyntax: "invalid pattern for '~*' operator: {:?}", rhs),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match rhs {  // "x !~* y"
                 Expr::Literal(ref lv) if lv.extract_str().is_some() => {
                     let pat = lv.extract_str().unwrap();
-                    lhs.str().contains(lit(format!("(?i){}", pat)), true).not()
+                    lhs.str().contains(lit(format!("(?i){pat}")), true).not()
                 },
                 _ => {
                     polars_bail!(SQLSyntax: "invalid pattern for '!~*' operator: {:?}", rhs)

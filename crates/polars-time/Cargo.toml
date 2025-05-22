@@ -55,3 +55,6 @@ timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "arrow/time
 test = ["dtype-date", "dtype-datetime", "polars-core/fmt"]
 
 default = []
+
+[lints]
+workspace = true

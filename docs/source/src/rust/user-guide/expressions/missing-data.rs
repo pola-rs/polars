@@ -5,12 +5,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "value" => &[Some(1), None],
     )?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:dataframe]
 
     // --8<-- [start:count]
     let null_count_df = df.null_count();
-    println!("{}", null_count_df);
+    println!("{null_count_df}");
     // --8<-- [end:count]
 
     // --8<-- [start:isnull]
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([col("value").is_null()])
         .collect()?;
-    println!("{}", is_null_series);
+    println!("{is_null_series}");
     // --8<-- [end:isnull]
 
     // --8<-- [start:dataframe2]
@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "col2" => [Some(1), None, Some(3), None, Some(5)],
     )?;
 
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:dataframe2]
 
     // --8<-- [start:fill]
@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_column(col("col2").fill_null(3))
         .collect()?;
 
-    println!("{}", fill_literal_df);
+    println!("{fill_literal_df}");
     // --8<-- [end:fill]
 
     // --8<-- [start:fillstrategy]
@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", fill_literal_df);
+    println!("{fill_literal_df}");
     // --8<-- [end:fillstrategy]
 
     // --8<-- [start:fillexpr]
@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_column(col("col2").fill_null((lit(2) * col("col1")).cast(DataType::Int64)))
         .collect()?;
 
-    println!("{}", fill_expression_df);
+    println!("{fill_expression_df}");
     // --8<-- [end:fillexpr]
 
     // --8<-- [start:fillinterpolate]
@@ -76,14 +76,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_column(col("col2").interpolate(InterpolationMethod::Linear))
         .collect()?;
 
-    println!("{}", fill_interpolation_df);
+    println!("{fill_interpolation_df}");
     // --8<-- [end:fillinterpolate]
 
     // --8<-- [start:nan]
     let nan_df = df!(
         "value" => [1.0, f64::NAN, f64::NAN, 3.0],
     )?;
-    println!("{}", nan_df);
+    println!("{nan_df}");
     // --8<-- [end:nan]
 
     // --8<-- [start:nan-computed]
@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([col("dividend") / col("divisor")])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:nan-computed]
 
     // --8<-- [start:nanfill]
@@ -112,7 +112,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", mean_nan_df);
+    println!("{mean_nan_df}");
     // --8<-- [end:nanfill]
     Ok(())
 }

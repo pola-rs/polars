@@ -50,3 +50,6 @@ dtype-decimal = ["dtype-i128"]
 dtype-array = ["polars-core/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 trigger_ooc = []
+
+[lints]
+workspace = true

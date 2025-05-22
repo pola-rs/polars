@@ -135,3 +135,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [package.metadata.cargo-all-features]
 allowlist = ["compute", "compute_sort", "compute_nullif"]
+
+[lints]
+workspace = true

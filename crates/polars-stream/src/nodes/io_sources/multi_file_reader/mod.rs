@@ -308,7 +308,7 @@ fn calc_n_readers_pre_init(num_pipelines: usize, config: &MultiFileReaderConfig)
         x.parse::<usize>()
             .ok()
             .filter(|x| *x > 0)
-            .unwrap_or_else(|| panic!("invalid value for POLARS_NUM_READERS_PRE_INIT: {}", x))
+            .unwrap_or_else(|| panic!("invalid value for POLARS_NUM_READERS_PRE_INIT: {x}"))
     }) {
         return v;
     }
@@ -332,7 +332,7 @@ fn calc_max_concurrent_scans(num_pipelines: usize, config: &MultiFileReaderConfi
         x.parse::<usize>()
             .ok()
             .filter(|x| *x > 0)
-            .unwrap_or_else(|| panic!("invalid value for POLARS_MAX_CONCURRENT_SCANS: {}", x))
+            .unwrap_or_else(|| panic!("invalid value for POLARS_MAX_CONCURRENT_SCANS: {x}"))
     }) {
         return v;
     }

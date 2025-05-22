@@ -17,8 +17,7 @@ pub async fn read_parquet_metadata_bytes(
 
     if file_size < FOOTER_HEADER_SIZE {
         return Err(ParquetError::OutOfSpec(format!(
-            "file size ({}) is less than minimum size required to store parquet footer ({})",
-            file_size, FOOTER_HEADER_SIZE
+            "file size ({file_size}) is less than minimum size required to store parquet footer ({FOOTER_HEADER_SIZE})"
         ))
         .into());
     }
@@ -50,8 +49,7 @@ pub async fn read_parquet_metadata_bytes(
 
     if footer_size < 0 {
         return Err(ParquetError::OutOfSpec(format!(
-            "expected positive footer size, got {} instead",
-            footer_size
+            "expected positive footer size, got {footer_size} instead"
         ))
         .into());
     }
@@ -60,8 +58,7 @@ pub async fn read_parquet_metadata_bytes(
 
     if file_size < footer_size {
         return Err(ParquetError::OutOfSpec(format!(
-            "file size ({}) is less than the indicated footer size ({})",
-            file_size, footer_size
+            "file size ({file_size}) is less than the indicated footer size ({footer_size})"
         ))
         .into());
     }

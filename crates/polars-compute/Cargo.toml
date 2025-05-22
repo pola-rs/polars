@@ -55,3 +55,6 @@ dtype-array = []
 dtype-decimal = ["arrow/dtype-decimal", "dtype-i128"]
 dtype-i128 = []
 dsl-schema = ["dep:schemars"]
+
+[lints]
+workspace = true

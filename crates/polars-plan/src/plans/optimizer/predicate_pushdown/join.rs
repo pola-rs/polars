@@ -138,7 +138,7 @@ pub(super) fn process_join(
         )
         .unwrap_or_else(|e| {
             if cfg!(debug_assertions) {
-                panic!("{:?}", e)
+                panic!("{e:?}")
             } else {
                 ExprOrigin::None
             }

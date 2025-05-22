@@ -458,8 +458,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             aggs: aggs.iter().map(|e| e.into()).collect(),
             apply: apply.as_ref().map_or(Ok(()), |_| {
                 Err(PyNotImplementedError::new_err(format!(
-                    "apply inside GroupBy {:?}",
-                    plan
+                    "apply inside GroupBy {plan:?}"
                 )))
             })?,
             maintain_order: *maintain_order,

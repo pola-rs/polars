@@ -122,11 +122,8 @@ pub fn to_rust_df(
             .collect();
 
         return Err(PyPolarsErr::Polars(PolarsError::Duplicate(
-            format!(
-                "column appears more than once; names must be unique: {:?}",
-                duplicate_fields
-            )
-            .into(),
+            format!("column appears more than once; names must be unique: {duplicate_fields:?}")
+                .into(),
         ))
         .into());
     }

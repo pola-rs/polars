@@ -22,3 +22,6 @@ version_check = { workspace = true }
 nightly = []
 serde = ["dep:serde", "serde/derive", "polars-utils/serde"]
 dsl-schema = ["dep:schemars", "polars-utils/dsl-schema"]
+
+[lints]
+workspace = true

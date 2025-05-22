@@ -11,3 +11,6 @@ description = "Testing suite for the Polars DataFrame library"
 [dependencies]
 polars-core = { workspace = true, features = ["dtype-array", "dtype-categorical", "dtype-struct"] }
 polars-ops = { workspace = true, features = ["abs"] }
+
+[lints]
+workspace = true

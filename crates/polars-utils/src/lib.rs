@@ -3,7 +3,6 @@
     feature(stdarch_aarch64_prefetch)
 )]
 #![cfg_attr(feature = "nightly", feature(core_intrinsics))] // For algebraic ops.
-#![cfg_attr(feature = "nightly", feature(select_unpredictable))] // For branchless programming.
 #![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 pub mod abs_diff;

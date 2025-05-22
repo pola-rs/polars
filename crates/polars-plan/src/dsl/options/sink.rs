@@ -312,7 +312,7 @@ impl serde::Serialize for PartitionTargetCallback {
             return v.serialize(_serializer);
         }
 
-        Err(S::Error::custom(format!("cannot serialize {:?}", self)))
+        Err(S::Error::custom(format!("cannot serialize {self:?}")))
     }
 }
 

@@ -137,7 +137,7 @@ impl Serialize for RustKeyValueMetadataFunction {
         S: serde::Serializer,
     {
         use serde::ser::Error;
-        Err(S::Error::custom(format!("cannot serialize {:?}", self)))
+        Err(S::Error::custom(format!("cannot serialize {self:?}")))
     }
 }
 

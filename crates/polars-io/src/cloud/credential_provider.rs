@@ -374,7 +374,7 @@ impl serde::Serialize for PlCredentialProvider {
             return v.serialize(_serializer);
         }
 
-        Err(S::Error::custom(format!("cannot serialize {:?}", self)))
+        Err(S::Error::custom(format!("cannot serialize {self:?}")))
     }
 }
 
@@ -697,8 +697,7 @@ mod python_impl {
                                 },
                                 v => {
                                     return pyo3::PyResult::Err(PyValueError::new_err(format!(
-                                        "unknown configuration key for azure: {}, {}",
-                                        v, VALID_KEYS_MSG
+                                        "unknown configuration key for azure: {v}, {VALID_KEYS_MSG}"
                                     )));
                                 },
                             }
@@ -710,8 +709,7 @@ mod python_impl {
                     let Some(credentials) = credentials else {
                         return Err(PolarsError::ComputeError(
                             format!(
-                                "did not find a valid configuration key for azure, {}",
-                                VALID_KEYS_MSG
+                                "did not find a valid configuration key for azure, {VALID_KEYS_MSG}"
                             )
                             .into(),
                         ));

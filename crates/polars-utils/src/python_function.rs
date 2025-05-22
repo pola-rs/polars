@@ -269,8 +269,7 @@ mod serde_wrap {
                     if config::verbose() {
                         eprintln!(
                             "serialize_pyobject_with_cloudpickle_fallback(): \
-                            retrying with cloudpickle due to error: {:?}",
-                            e
+                            retrying with cloudpickle due to error: {e:?}"
                         );
                     }
 

@@ -17,8 +17,7 @@ fn validate_pycapsule_name(capsule: &Bound<PyCapsule>, expected_name: &str) -> P
         let capsule_name = capsule_name.to_str()?;
         if capsule_name != expected_name {
             return Err(PyValueError::new_err(format!(
-                "Expected name '{}' in PyCapsule, instead got '{}'",
-                expected_name, capsule_name
+                "Expected name '{expected_name}' in PyCapsule, instead got '{capsule_name}'"
             )));
         }
     } else {

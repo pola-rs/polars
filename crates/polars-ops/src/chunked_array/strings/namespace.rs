@@ -109,7 +109,7 @@ pub trait StringNameSpaceImpl: AsString {
                         .and_then(|s| <i64 as Num>::from_str_radix(s, base).err())
                         .map_or_else(
                             || unreachable!("failed to extract ParseIntError"),
-                            |e| format!("{}", e),
+                            |e| format!("{e}"),
                         )
                 },
                 _ => {
@@ -120,7 +120,7 @@ pub trait StringNameSpaceImpl: AsString {
                         .and_then(|(s, base)| <i64 as Num>::from_str_radix(s, base).err())
                         .map_or_else(
                             || unreachable!("failed to extract ParseIntError"),
-                            |e| format!("{}", e),
+                            |e| format!("{e}"),
                         )
                 },
             };
@@ -316,7 +316,7 @@ pub trait StringNameSpaceImpl: AsString {
             })),
             Err(_) if !strict => Ok(UInt32Chunked::full_null(ca.name().clone(), ca.len())),
             Err(e) => Err(PolarsError::ComputeError(
-                format!("Invalid regular expression: {}", e).into(),
+                format!("Invalid regular expression: {e}").into(),
             )),
         }
     }

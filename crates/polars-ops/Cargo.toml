@@ -154,3 +154,6 @@ abs = []
 cov = []
 gather = []
 replace = ["is_in"]
+
+[lints]
+workspace = true

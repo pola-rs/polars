@@ -152,7 +152,7 @@ impl Display for StructFunction {
         match self {
             FieldByIndex(index) => write!(f, "struct.field_by_index({index})"),
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
-            RenameFields(names) => write!(f, "struct.rename_fields({:?})", names),
+            RenameFields(names) => write!(f, "struct.rename_fields({names:?})"),
             PrefixFields(_) => write!(f, "name.prefix_fields"),
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]

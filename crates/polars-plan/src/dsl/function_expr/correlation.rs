@@ -22,7 +22,7 @@ impl Display for CorrelationMethod {
             SpearmanRank(_) => "spearman_rank",
             Covariance(_) => return write!(f, "covariance"),
         };
-        write!(f, "{}_correlation", s)
+        write!(f, "{s}_correlation")
     }
 }
 

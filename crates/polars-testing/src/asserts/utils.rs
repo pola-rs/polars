@@ -435,8 +435,8 @@ pub fn assert_series_nested_values_equal(
                     s2
                 ));
             } else {
-                let s1_series = Series::new("".into(), &[s1.clone()]);
-                let s2_series = Series::new("".into(), &[s2.clone()]);
+                let s1_series = Series::new("".into(), std::slice::from_ref(&s1));
+                let s2_series = Series::new("".into(), std::slice::from_ref(&s2));
 
                 match assert_series_values_equal(
                     &s1_series.explode(false)?,
