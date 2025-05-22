@@ -40,7 +40,7 @@ impl CastColumns {
     ) -> PolarsResult<Option<Self>> {
         let get_target_dtype = |name: &str| {
             target_schema.get(name).unwrap_or_else(|| {
-                panic!("impl error: column '{}' should exist in casting map", name)
+                panic!("impl error: column '{name}' should exist in casting map")
             })
         };
 

@@ -54,7 +54,7 @@ fn filter_true_lit() -> PolarsResult<()> {
 
 fn create_n_filters(col_name: &str, num_filters: usize) -> Vec<Expr> {
     (0..num_filters)
-        .map(|i| col(col_name).eq(lit(format!("{}", i))))
+        .map(|i| col(col_name).eq(lit(format!("{i}"))))
         .collect()
 }
 

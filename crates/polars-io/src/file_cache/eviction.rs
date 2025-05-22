@@ -197,7 +197,7 @@ impl EvictionManager {
                     },
                     Err(err) => {
                         if verbose {
-                            eprintln!("[EvictionManager] error updating file list: {}", err);
+                            eprintln!("[EvictionManager] error updating file list: {err}");
                         }
                     },
                 }
@@ -237,7 +237,7 @@ impl EvictionManager {
         let data_files_iter = match std::fs::read_dir(self.data_dir.as_ref()) {
             Ok(v) => v,
             Err(e) => {
-                let msg = format!("failed to read data directory: {}", e);
+                let msg = format!("failed to read data directory: {e}");
 
                 return Err(PolarsError::IO {
                     error: e.into(),
@@ -249,7 +249,7 @@ impl EvictionManager {
         let metadata_files_iter = match std::fs::read_dir(self.metadata_dir.as_ref()) {
             Ok(v) => v,
             Err(e) => {
-                let msg = format!("failed to read metadata directory: {}", e);
+                let msg = format!("failed to read metadata directory: {e}");
 
                 return Err(PolarsError::IO {
                     error: e.into(),

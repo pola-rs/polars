@@ -66,8 +66,7 @@ impl Executor for CachePrefiller {
 
             if state.verbose() {
                 eprintln!(
-                    "CachePrefiller: concurrent streaming scan exec limit: {}",
-                    parallel_scan_exec_limit
+                    "CachePrefiller: concurrent streaming scan exec limit: {parallel_scan_exec_limit}"
                 )
             }
 

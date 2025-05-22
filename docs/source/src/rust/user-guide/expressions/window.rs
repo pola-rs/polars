@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:rank]
 
     // --8<-- [start:rank-multiple]
@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:pokemon-mean]
 
     // --8<-- [start:group_by]
@@ -103,7 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:group_by]
 
     // --8<-- [start:operations]
@@ -114,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([col("Name"), col("Type 1"), col("Speed")])
         .collect()?;
 
-    println!("{}", filtered);
+    println!("{filtered}");
     // --8<-- [end:operations]
 
     // --8<-- [start:sort]
@@ -127,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .over(["Type 1"])])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:sort]
 
     // --8<-- [start:examples]
@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("sorted_by_alphabet"),
         ])
         .collect()?;
-    println!("{:?}", result);
+    println!("{result:?}");
     // --8<-- [end:examples]
 
     Ok(())

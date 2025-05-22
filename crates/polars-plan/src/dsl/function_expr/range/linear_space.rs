@@ -25,8 +25,7 @@ pub(super) fn linear_space(s: &[Column], closed: ClosedInterval) -> PolarsResult
         .extract::<u64>()
         .ok_or(PolarsError::ComputeError(
             format!(
-                "'num_samples' must be non-negative integer, got {}",
-                num_samples
+                "'num_samples' must be non-negative integer, got {num_samples}"
             )
             .into(),
         ))?;
@@ -56,8 +55,7 @@ pub(super) fn linear_space(s: &[Column], closed: ClosedInterval) -> PolarsResult
         (dt1, dt2) if !dt1.is_primitive_numeric() || !dt2.is_primitive_numeric() => {
             Err(PolarsError::ComputeError(
                 format!(
-                    "'start' and 'end' have incompatible dtypes, got {:?} and {:?}",
-                    dt1, dt2
+                    "'start' and 'end' have incompatible dtypes, got {dt1:?} and {dt2:?}"
                 )
                 .into(),
             ))
@@ -171,8 +169,7 @@ pub(super) fn linear_spaces(
         (dt1, dt2) if !dt1.is_primitive_numeric() || !dt2.is_primitive_numeric() => {
             Err(PolarsError::ComputeError(
                 format!(
-                    "'start' and 'end' have incompatible dtypes, got {:?} and {:?}",
-                    dt1, dt2
+                    "'start' and 'end' have incompatible dtypes, got {dt1:?} and {dt2:?}"
                 )
                 .into(),
             ))

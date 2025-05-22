@@ -103,7 +103,7 @@ impl DataFrame {
 
             if let Err(e) = &flags {
                 if verbose {
-                    eprintln!("DataFrame::read_ipc: Error parsing metadata flags: {}", e);
+                    eprintln!("DataFrame::read_ipc: Error parsing metadata flags: {e}");
                 }
             }
 

@@ -144,8 +144,7 @@ impl FileReader for NDJsonFileReader {
 
                     if verbose {
                         eprintln!(
-                            "[NDJsonFileReader]: n_lines_estimate: {}, line_length_estimate: {}",
-                            n_lines_estimate, line_length_estimate
+                            "[NDJsonFileReader]: n_lines_estimate: {n_lines_estimate}, line_length_estimate: {line_length_estimate}"
                         );
                     }
 
@@ -400,8 +399,7 @@ impl FileReader for NDJsonFileReader {
                 if verbose {
                     eprintln!(
                         "[NDJsonFileReader]: \
-                        send total row count: {}",
-                        total_row_count
+                        send total row count: {total_row_count}"
                     )
                 }
                 _ = tx.send(total_row_count);
@@ -412,8 +410,7 @@ impl FileReader for NDJsonFileReader {
 
                 if verbose {
                     eprintln!(
-                        "[NDJsonFileReader]: send n_rows_in_file: {}",
-                        total_row_count
+                        "[NDJsonFileReader]: send n_rows_in_file: {total_row_count}"
                     );
                 }
 

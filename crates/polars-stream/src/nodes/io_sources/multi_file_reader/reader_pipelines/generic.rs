@@ -166,7 +166,7 @@ impl MultiScanTaskInitializer {
                     AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
                         let (scan_source, reader, n_rows_in_file) = async {
                             if verbose {
-                                eprintln!("[MultiScan]: Initialize source {}", scan_source_idx);
+                                eprintln!("[MultiScan]: Initialize source {scan_source_idx}");
                             }
 
                             let scan_source = scan_source?;
@@ -346,7 +346,7 @@ impl ReaderStarter {
             };
 
             if verbose {
-                eprintln!("[ReaderStarter]: scan_source_idx: {}", scan_source_idx)
+                eprintln!("[ReaderStarter]: scan_source_idx: {scan_source_idx}")
             }
 
             if skip_files_mask
@@ -355,8 +355,7 @@ impl ReaderStarter {
             {
                 if verbose {
                     eprintln!(
-                        "[ReaderStarter]: Skip read of file index {} (skip_files_mask)",
-                        scan_source_idx
+                        "[ReaderStarter]: Skip read of file index {scan_source_idx} (skip_files_mask)"
                     )
                 }
 
@@ -738,8 +737,7 @@ impl AttachReaderToBridge {
 
             if verbose {
                 eprintln!(
-                    "[AttachReaderToBridge]: got reader, n_readers_received: {}",
-                    n_readers_received
+                    "[AttachReaderToBridge]: got reader, n_readers_received: {n_readers_received}"
                 );
             }
 

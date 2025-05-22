@@ -1095,7 +1095,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Sign => ("sign",).into_py_any(py),
                 FunctionExpr::FillNull => ("fill_null",).into_py_any(py),
                 FunctionExpr::RollingExpr(rolling) => {
-                    return Err(PyNotImplementedError::new_err(format!("{}", rolling)));
+                    return Err(PyNotImplementedError::new_err(format!("{rolling}")));
                 },
                 FunctionExpr::RollingExprBy(rolling) => match rolling {
                     RollingFunctionBy::MinBy(_) => {

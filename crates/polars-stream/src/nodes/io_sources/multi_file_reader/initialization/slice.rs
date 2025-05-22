@@ -106,8 +106,7 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
 
                 if verbose {
                     eprintln!(
-                        "resolve_negative_slice(): init scan source {}",
-                        scan_source_idx
+                        "resolve_negative_slice(): init scan source {scan_source_idx}"
                     );
                 }
 

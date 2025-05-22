@@ -181,8 +181,7 @@ impl ParquetReadImpl {
 
         if verbose {
             eprintln!(
-                "[ParquetFileReader]: ideal_morsel_size: {}",
-                ideal_morsel_size
+                "[ParquetFileReader]: ideal_morsel_size: {ideal_morsel_size}"
             );
         }
 

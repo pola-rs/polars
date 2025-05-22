@@ -278,7 +278,7 @@ impl StructChunked {
                     for iter in &mut iters {
                         let av = unsafe { iter.next().unwrap_unchecked() };
                         row_has_nulls |= matches!(&av, AnyValue::Null);
-                        write!(scratch, "{},", av).unwrap();
+                        write!(scratch, "{av},").unwrap();
                     }
 
                     // replace latest comma with '|'

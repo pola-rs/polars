@@ -283,8 +283,7 @@ impl PySeries {
                 let dtype = s.series.dtype();
                 if !dtype.is_bool() {
                     let msg = format!(
-                        "validity buffer must have data type Boolean, got {:?}",
-                        dtype
+                        "validity buffer must have data type Boolean, got {dtype:?}"
                     );
                     return Err(PyTypeError::new_err(msg));
                 }
@@ -314,8 +313,7 @@ impl PySeries {
                         let dtype = s.dtype();
                         if !matches!(dtype, DataType::Int64) {
                             return Err(PyTypeError::new_err(format!(
-                                "offsets buffer must have data type Int64, got {:?}",
-                                dtype
+                                "offsets buffer must have data type Int64, got {dtype:?}"
                             )));
                         }
                         series_to_offsets(s)

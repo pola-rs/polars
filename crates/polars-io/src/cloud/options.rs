@@ -650,7 +650,7 @@ impl CloudOptions {
 
                     if let Some(v) = token {
                         this.config = Some(CloudConfig::Http {
-                            headers: vec![("Authorization".into(), format!("Bearer {}", v))],
+                            headers: vec![("Authorization".into(), format!("Bearer {v}"))],
                         })
                     }
 

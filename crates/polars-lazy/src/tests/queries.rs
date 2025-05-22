@@ -1125,8 +1125,8 @@ fn test_filter_and_alias() -> PolarsResult<()> {
         "a" => [2, 2],
         "a_squared" => [4.0, 4.0]
     ]?;
-    println!("{:?}", out);
-    println!("{:?}", expected);
+    println!("{out:?}");
+    println!("{expected:?}");
     assert!(out.equals(&expected));
     Ok(())
 }
@@ -1947,7 +1947,7 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
         )
         .slice(0, 3)
         .collect()?;
-    println!("{:?}", res);
+    println!("{res:?}");
     assert!(res.equals(&df![
         "A" => [1, 1, 1],
         "B" => ["A", "B", "C"],
