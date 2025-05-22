@@ -1,4 +1,11 @@
-use chrono::Datelike;
+use std::str::FromStr;
+
+use arrow::legacy::kernels::convert_to_naive_local;
+use arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
+use chrono::NaiveDateTime;
+use chrono_tz::Tz;
 
 use super::*;
 use crate::datatypes::time_unit::TimeUnit;
@@ -70,33 +77,66 @@ impl LogicalType for DatetimeChunked {
                     },
                 }
             },
-            #[cfg(feature = "dtype-date")]
+            #[cfg(all(feature = "dtype-date", not(feature = "timezones")))]
             Date => {
-                let mut dt = self
-                    .phys
-                    .apply_values(|v| {
-                        let chrono_ts = match self.time_unit() {
-                            Nanoseconds => Some(chrono::DateTime::from_timestamp_nanos(v)),
-                            Microseconds => chrono::DateTime::from_timestamp_micros(v),
-                            Milliseconds => chrono::DateTime::from_timestamp_millis(v),
-                        }
-                        .unwrap();
-                        let days_from_ce = self.time_zone().as_ref().map_or(
-                            chrono_ts.num_days_from_ce() as i64,
-                            |tz| {
-                                let tz = tz.to_chrono().unwrap();
-                                let ts = chrono_ts.with_timezone(&tz);
-                                ts.num_days_from_ce() as i64
-                            },
-                        );
-                        days_from_ce - UNIX_EPOCH_DAYS
-                    })
-                    .cast_with_options(&Int32, cast_options)
-                    .unwrap()
-                    .into_date()
-                    .into_series();
-                dt.set_sorted_flag(self.is_sorted_flag());
-                Ok(dt)
+                let cast_to_date = |tu_in_day: i64| {
+                    let mut dt = self
+                        .phys
+                        .apply_values(|v| v.div_euclid(tu_in_day))
+                        .cast_with_options(&Int32, cast_options)
+                        .unwrap()
+                        .into_date()
+                        .into_series();
+                    dt.set_sorted_flag(self.is_sorted_flag());
+                    Ok(dt)
+                };
+                match self.time_unit() {
+                    Nanoseconds => cast_to_date(NS_IN_DAY),
+                    Microseconds => cast_to_date(US_IN_DAY),
+                    Milliseconds => cast_to_date(MS_IN_DAY),
+                }
+            },
+            #[cfg(all(feature = "dtype-date", feature = "timezones"))]
+            Date => {
+                let from_tz = self
+                    .time_zone()
+                    .as_ref()
+                    .unwrap_or(&TimeZone::UTC)
+                    .to_chrono()?;
+                let timestamp_to_datetime: fn(i64) -> NaiveDateTime = match self.time_unit() {
+                    TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+                    TimeUnit::Microseconds => timestamp_us_to_datetime,
+                    TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+                };
+                let datetime_to_timestamp: fn(NaiveDateTime) -> i64 = match self.time_unit() {
+                    TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+                    TimeUnit::Microseconds => datetime_to_timestamp_us,
+                    TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+                };
+                let iter = self.physical().downcast_iter().map(|arr| {
+                    let element_iter = arr.iter().map(|timestamp_opt| match timestamp_opt {
+                        Some(timestamp) => {
+                            let ambiguous = StringChunked::from_iter(std::iter::once("raise"));
+                            let ndt = timestamp_to_datetime(*timestamp);
+                            let res = convert_to_naive_local(
+                                &from_tz,
+                                &Tz::UTC,
+                                ndt,
+                                Ambiguous::from_str(ambiguous.get(0).unwrap())?,
+                                NonExistent::Raise,
+                            )?;
+                            Ok::<_, PolarsError>(res.map(datetime_to_timestamp))
+                        },
+                        None => Ok(None),
+                    });
+                    element_iter.try_collect_arr()
+                });
+
+                Ok(
+                    ChunkedArray::try_from_chunk_iter(self.physical().name().clone(), iter)?
+                        .into_datetime(self.time_unit(), Some(TimeZone::UTC))
+                        .into(),
+                )
             },
             #[cfg(feature = "dtype-time")]
             Time => {
