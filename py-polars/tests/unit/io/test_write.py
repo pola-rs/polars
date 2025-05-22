@@ -87,6 +87,7 @@ def test_write_with_storage_options_22873(tmp_path: Path) -> None:
         pl.DataFrame.write_csv,
         pl.DataFrame.write_ndjson,
     ]:
+        # TODO: write_ndjson cloud support
         if func is pl.DataFrame.write_ndjson:
             with pytest.raises(
                 TypeError, match="unexpected keyword argument 'storage_options'"
