@@ -185,8 +185,8 @@ mod _serde {
         /// A binary true or false.
         Boolean(bool),
         /// A UTF8 encoded string type.
-        String(&'a str),
-        Binary(&'a [u8]),
+        String(Cow<'a, str>),
+        Binary(Cow<'a, [u8]>),
 
         /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
         /// in days (32 bits).
@@ -233,10 +233,10 @@ mod _serde {
                 AnyValue::Float64(v) => Self::Float64(*v),
                 AnyValue::List(series) => Self::List(Cow::Borrowed(series)),
                 AnyValue::Boolean(v) => Self::Boolean(*v),
-                AnyValue::String(v) => Self::String(v),
-                AnyValue::StringOwned(v) => Self::String(v.as_str()),
-                AnyValue::Binary(v) => Self::Binary(v),
-                AnyValue::BinaryOwned(v) => Self::Binary(v),
+                AnyValue::String(v) => Self::String(Cow::Borrowed(v)),
+                AnyValue::StringOwned(v) => Self::String(Cow::Borrowed(v.as_str())),
+                AnyValue::Binary(v) => Self::Binary(Cow::Borrowed(v)),
+                AnyValue::BinaryOwned(v) => Self::Binary(Cow::Borrowed(v)),
 
                 #[cfg(feature = "dtype-date")]
                 AnyValue::Date(v) => Self::Date(*v),
@@ -303,8 +303,11 @@ mod _serde {
                 S::Float64(v) => Self::Float64(v),
                 S::List(v) => Self::List(v.into_owned()),
                 S::Boolean(v) => Self::Boolean(v),
-                S::String(v) => Self::StringOwned(PlSmallStr::from_str(v)),
-                S::Binary(v) => Self::BinaryOwned(v.to_vec()),
+                S::String(v) => Self::StringOwned(match v {
+                    Cow::Borrowed(v) => PlSmallStr::from(v),
+                    Cow::Owned(v) => PlSmallStr::from(v),
+                }),
+                S::Binary(v) => Self::BinaryOwned(v.into_owned()),
                 #[cfg(feature = "dtype-date")]
                 S::Date(v) => Self::Date(v),
                 #[cfg(feature = "dtype-datetime")]
