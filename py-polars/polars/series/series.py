@@ -3532,7 +3532,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [2, 5, 1, 4, 3])
-        >>> s.bottom_k("a", 3)
+        >>> s.bottom_k_by("a", 3)
         shape: (3,)
         Series: 'a' [i64]
         [
