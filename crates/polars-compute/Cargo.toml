@@ -53,3 +53,6 @@ approx_unique = []
 dtype-array = []
 dtype-decimal = ["arrow/dtype-decimal", "dtype-i128"]
 dtype-i128 = []
+
+[lints]
+workspace = true

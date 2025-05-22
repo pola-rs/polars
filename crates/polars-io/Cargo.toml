@@ -138,3 +138,6 @@ python = ["pyo3", "polars-error/python", "polars-utils/python"]
 all-features = true
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true

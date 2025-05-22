@@ -43,3 +43,6 @@ parquet = ["polars-lazy/parquet"]
 semi_anti_join = ["polars-lazy/semi_anti_join"]
 serde = ["polars-utils/serde"]
 timezones = ["polars-lazy/timezones"]
+
+[lints]
+workspace = true

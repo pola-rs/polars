@@ -70,3 +70,6 @@ serde = ["dep:serde", "polars-utils/serde"]
 simd = ["polars-compute/simd"]
 
 proptest = ["dep:proptest", "arrow/proptest"]
+
+[lints]
+workspace = true

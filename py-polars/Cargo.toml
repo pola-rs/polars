@@ -112,3 +112,6 @@ all = [
 ]
 
 default = ["all", "nightly"]
+
+[lints]
+workspace = true
