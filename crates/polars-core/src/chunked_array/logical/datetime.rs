@@ -1,3 +1,5 @@
+use chrono::Datelike;
+
 use super::*;
 use crate::datatypes::time_unit::TimeUnit;
 use crate::prelude::*;
@@ -70,22 +72,31 @@ impl LogicalType for DatetimeChunked {
             },
             #[cfg(feature = "dtype-date")]
             Date => {
-                let cast_to_date = |tu_in_day: i64| {
-                    let mut dt = self
-                        .phys
-                        .apply_values(|v| v.div_euclid(tu_in_day))
-                        .cast_with_options(&Int32, cast_options)
-                        .unwrap()
-                        .into_date()
-                        .into_series();
-                    dt.set_sorted_flag(self.is_sorted_flag());
-                    Ok(dt)
-                };
-                match self.time_unit() {
-                    Nanoseconds => cast_to_date(NS_IN_DAY),
-                    Microseconds => cast_to_date(US_IN_DAY),
-                    Milliseconds => cast_to_date(MS_IN_DAY),
-                }
+                let mut dt = self
+                    .phys
+                    .apply_values(|v| {
+                        let chrono_ts = match self.time_unit() {
+                            Nanoseconds => Some(chrono::DateTime::from_timestamp_nanos(v)),
+                            Microseconds => chrono::DateTime::from_timestamp_micros(v),
+                            Milliseconds => chrono::DateTime::from_timestamp_millis(v),
+                        }
+                        .unwrap();
+                        let days_from_ce = self.time_zone().as_ref().map_or(
+                            chrono_ts.num_days_from_ce() as i64,
+                            |tz| {
+                                let tz = tz.to_chrono().unwrap();
+                                let ts = chrono_ts.with_timezone(&tz);
+                                ts.num_days_from_ce() as i64
+                            },
+                        );
+                        days_from_ce - UNIX_EPOCH_DAYS
+                    })
+                    .cast_with_options(&Int32, cast_options)
+                    .unwrap()
+                    .into_date()
+                    .into_series();
+                dt.set_sorted_flag(self.is_sorted_flag());
+                Ok(dt)
             },
             #[cfg(feature = "dtype-time")]
             Time => {

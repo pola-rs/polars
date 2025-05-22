@@ -7,6 +7,7 @@ pub(crate) const NS_IN_DAY: i64 = 86_400_000_000_000;
 pub(crate) const US_IN_DAY: i64 = 86_400_000_000;
 pub(crate) const MS_IN_DAY: i64 = 86_400_000;
 pub(crate) const SECONDS_IN_DAY: i64 = 86_400;
+pub(crate) const UNIX_EPOCH_DAYS: i64 = 719_163;
 
 impl From<&AnyValue<'_>> for NaiveDateTime {
     fn from(v: &AnyValue) -> Self {
