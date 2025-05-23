@@ -376,8 +376,16 @@ impl Expr {
 
     #[cfg(feature = "search_sorted")]
     /// Find indices where elements should be inserted to maintain order.
-    pub fn search_sorted<E: Into<Expr>>(self, element: E, side: SearchSortedSide) -> Expr {
-        self.map_binary(FunctionExpr::SearchSorted(side), element.into())
+    pub fn search_sorted<E: Into<Expr>>(
+        self,
+        element: E,
+        side: SearchSortedSide,
+        descending: bool,
+    ) -> Expr {
+        self.map_binary(
+            FunctionExpr::SearchSorted { side, descending },
+            element.into(),
+        )
     }
 
     /// Cast expression to another data type.

@@ -3516,7 +3516,11 @@ class Series:
 
     @overload
     def search_sorted(
-        self, element: NonNestedLiteral | None, side: SearchSortedSide = ...
+        self,
+        element: NonNestedLiteral | None,
+        side: SearchSortedSide = ...,
+        *,
+        descending: bool = ...,
     ) -> int: ...
 
     @overload
@@ -3524,12 +3528,16 @@ class Series:
         self,
         element: list[NonNestedLiteral | None] | np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
+        *,
+        descending: bool = ...,
     ) -> Series: ...
 
     def search_sorted(
         self,
         element: IntoExpr | np.ndarray[Any, Any] | None,
         side: SearchSortedSide = "any",
+        *,
+        descending: bool = False,
     ) -> int | Series:
         """
         Find indices where elements should be inserted to maintain order.
@@ -3544,6 +3552,9 @@ class Series:
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
             If 'right', return the rightmost suitable location found is given.
+        descending
+            Boolean indicating whether the values are descending or not (they
+            are required to be sorted either way).
 
         Examples
         --------
@@ -3579,7 +3590,7 @@ class Series:
                 6
         ]
         """
-        df = F.select(F.lit(self).search_sorted(element, side))
+        df = F.select(F.lit(self).search_sorted(element, side, descending=descending))
         if isinstance(element, (list, Series, pl.Expr)):
             return df.to_series()
         elif _check_for_numpy(element) and isinstance(element, np.ndarray):

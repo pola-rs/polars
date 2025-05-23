@@ -328,10 +328,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "search_sorted")]
-    fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>) -> Self {
+    #[pyo3(signature = (element, side, descending=false))]
+    fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>, descending: bool) -> Self {
         self.inner
             .clone()
-            .search_sorted(element.inner, side.0)
+            .search_sorted(element.inner, side.0, descending)
             .into()
     }
 
