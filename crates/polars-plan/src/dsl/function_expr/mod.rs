@@ -159,6 +159,10 @@ pub enum FunctionExpr {
     ArgWhere,
     #[cfg(feature = "index_of")]
     IndexOf,
+    #[cfg(feature = "index_of")]
+    IndexOfFirstNotNull,
+    #[cfg(feature = "index_of")]
+    IndexOfLastNotNull,
     #[cfg(feature = "search_sorted")]
     SearchSorted {
         side: SearchSortedSide,
@@ -401,6 +405,10 @@ impl Hash for FunctionExpr {
             Pow(f) => f.hash(state),
             #[cfg(feature = "index_of")]
             IndexOf => {},
+            #[cfg(feature = "index_of")]
+            IndexOfFirstNotNull => {},
+            #[cfg(feature = "index_of")]
+            IndexOfLastNotNull => {},
             #[cfg(feature = "search_sorted")]
             SearchSorted { side, descending } => {
                 side.hash(state);
@@ -654,6 +662,10 @@ impl Display for FunctionExpr {
             ArgWhere => "arg_where",
             #[cfg(feature = "index_of")]
             IndexOf => "index_of",
+            #[cfg(feature = "index_of")]
+            IndexOfFirstNotNull => "index_of_first_not_null",
+            #[cfg(feature = "index_of")]
+            IndexOfLastNotNull => "index_of_last_not_null",
             #[cfg(feature = "search_sorted")]
             SearchSorted { .. } => "search_sorted",
             #[cfg(feature = "range")]
@@ -944,6 +956,14 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "index_of")]
             IndexOf => {
                 map_as_slice!(index_of::index_of)
+            },
+            #[cfg(feature = "index_of")]
+            IndexOfFirstNotNull => {
+                map_as_slice!(index_of::index_of_first_not_null)
+            },
+            #[cfg(feature = "index_of")]
+            IndexOfLastNotNull => {
+                map_as_slice!(index_of::index_of_last_not_null)
             },
             #[cfg(feature = "search_sorted")]
             SearchSorted { side, descending } => {
@@ -1264,6 +1284,10 @@ impl FunctionExpr {
             F::IndexOf => {
                 FunctionOptions::aggregation().with_casting_rules(CastingRules::FirstArgLossless)
             },
+            #[cfg(feature = "index_of")]
+            F::IndexOfFirstNotNull => FunctionOptions::aggregation(),
+            #[cfg(feature = "index_of")]
+            F::IndexOfLastNotNull => FunctionOptions::aggregation(),
             #[cfg(feature = "search_sorted")]
             F::SearchSorted { .. } => FunctionOptions::groupwise().with_supertyping(
                 (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),

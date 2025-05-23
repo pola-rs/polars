@@ -48,6 +48,10 @@ impl FunctionExpr {
             ArgWhere => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "index_of")]
             IndexOf => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "index_of")]
+            IndexOfFirstNotNull => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "index_of")]
+            IndexOfLastNotNull => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "search_sorted")]
             SearchSorted { .. } => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "range")]

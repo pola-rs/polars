@@ -7,6 +7,7 @@ Computation
    :toctree: api/
 
     Series.abs
+    Series.approx_n_unique
     Series.arccos
     Series.arccosh
     Series.arcsin
@@ -15,7 +16,6 @@ Computation
     Series.arctanh
     Series.arg_true
     Series.arg_unique
-    Series.approx_n_unique
     Series.bitwise_count_ones
     Series.bitwise_count_zeros
     Series.bitwise_leading_ones
@@ -47,6 +47,8 @@ Computation
     Series.hash
     Series.hist
     Series.index_of
+    Series.index_of_first_not_null
+    Series.index_of_last_not_null
     Series.is_between
     Series.kurtosis
     Series.last

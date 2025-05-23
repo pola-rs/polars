@@ -2556,8 +2556,9 @@ class ExprStringNameSpace:
         Replace many patterns by passing sequences of equal length to the `patterns` and
         `replace_with` parameters.
 
-        >>> _ = pl.Config.set_fmt_str_lengths(100)
-        >>> _ = pl.Config.set_tbl_width_chars(110)
+        >>> pl.Config(
+        ...     fmt_str_lengths=100, tbl_width_chars=110
+        ... )  # doctest: +IGNORE_RESULT
         >>> df = pl.DataFrame(
         ...     {
         ...         "lyrics": [
@@ -2589,7 +2590,7 @@ class ExprStringNameSpace:
         Broadcast a replacement for many patterns by passing a string or a sequence of
         length 1 to the `replace_with` parameter.
 
-        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> pl.Config.set_fmt_str_lengths(100)  # doctest: +IGNORE_RESULT
         >>> df = pl.DataFrame(
         ...     {
         ...         "lyrics": [
@@ -2602,27 +2603,28 @@ class ExprStringNameSpace:
         >>> df.with_columns(
         ...     pl.col("lyrics")
         ...     .str.replace_many(
-        ...         ["me", "you", "they"],
-        ...         "",
+        ...         ["me ", "you ", "they "],
+        ...         ["", "", ""],
         ...     )
         ...     .alias("removes_pronouns")
         ... )
         shape: (3, 2)
-        ┌────────────────────────────────────────────────────┬────────────────────────────────────────────┐
-        │ lyrics                                             ┆ removes_pronouns                           │
-        │ ---                                                ┆ ---                                        │
-        │ str                                                ┆ str                                        │
-        ╞════════════════════════════════════════════════════╪════════════════════════════════════════════╡
-        │ Everybody wants to rule the world                  ┆ Everybody wants to rule the world          │
-        │ Tell me what you want, what you really really want ┆ Tell  what  want, what  really really want │
-        │ Can you feel the love tonight                      ┆ Can  feel the love tonight                 │
-        └────────────────────────────────────────────────────┴────────────────────────────────────────────┘
+        ┌────────────────────────────────────────────────────┬─────────────────────────────────────────┐
+        │ lyrics                                             ┆ removes_pronouns                        │
+        │ ---                                                ┆ ---                                     │
+        │ str                                                ┆ str                                     │
+        ╞════════════════════════════════════════════════════╪═════════════════════════════════════════╡
+        │ Everybody wants to rule the world                  ┆ Everybody wants to rule the world       │
+        │ Tell me what you want, what you really really want ┆ Tell what want, what really really want │
+        │ Can you feel the love tonight                      ┆ Can feel the love tonight               │
+        └────────────────────────────────────────────────────┴─────────────────────────────────────────┘
 
         Passing a mapping with patterns and replacements is also supported as syntactic
         sugar.
 
-        >>> _ = pl.Config.set_fmt_str_lengths(100)
-        >>> _ = pl.Config.set_tbl_width_chars(110)
+        >>> pl.Config(
+        ...     fmt_str_lengths=100, tbl_width_chars=110
+        ... )  # doctest: +IGNORE_RESULT
         >>> df = pl.DataFrame(
         ...     {
         ...         "lyrics": [

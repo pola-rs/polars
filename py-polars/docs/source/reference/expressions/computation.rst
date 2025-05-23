@@ -43,6 +43,8 @@ Computation
     Expr.hash
     Expr.hist
     Expr.index_of
+    Expr.index_of_first_not_null
+    Expr.index_of_last_not_null
     Expr.kurtosis
     Expr.log
     Expr.log10

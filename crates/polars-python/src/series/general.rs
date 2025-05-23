@@ -152,6 +152,16 @@ impl PySeries {
         self.get_index(py, index)
     }
 
+    #[cfg(feature = "index_of")]
+    fn index_of_first_not_null(&self) -> Option<usize> {
+        self.series.index_of_first_not_null()
+    }
+
+    #[cfg(feature = "index_of")]
+    fn index_of_last_not_null(&self) -> Option<usize> {
+        self.series.index_of_last_not_null()
+    }
+
     fn bitand(&self, py: Python<'_>, other: &PySeries) -> PyResult<Self> {
         py.enter_polars_series(|| &self.series & &other.series)
     }

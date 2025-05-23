@@ -1,4 +1,4 @@
-use polars_ops::series::index_of as index_of_op;
+use polars_ops::series::IndexOf;
 
 use super::*;
 
@@ -49,13 +49,38 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
                 }
             })
         },
-        _ => index_of_op(series, needle)?,
+        _ => <Series as IndexOf>::index_of(series, needle)?,
     };
 
     let av = match result {
-        None => AnyValue::Null,
         Some(idx) => AnyValue::from(idx as IdxSize),
+        None => AnyValue::Null,
     };
     let scalar = Scalar::new(IDX_DTYPE, av);
     Ok(Column::new_scalar(series.name().clone(), scalar, 1))
+}
+
+fn index_to_column<F>(s: &mut [Column], func: F) -> PolarsResult<Column>
+where
+    F: FnOnce(&Series) -> Option<usize>,
+{
+    let series = if let Column::Scalar(ref sc) = s[0] {
+        &sc.as_single_value_series()
+    } else {
+        s[0].as_materialized_series()
+    };
+    let av = match func(series) {
+        Some(idx) => AnyValue::from(idx as IdxSize),
+        None => AnyValue::Null,
+    };
+    let scalar = Scalar::new(IDX_DTYPE, av);
+    Ok(Column::new_scalar(series.name().clone(), scalar, 1))
+}
+
+pub(super) fn index_of_first_not_null(s: &mut [Column]) -> PolarsResult<Column> {
+    index_to_column(s, <Series as IndexOf>::index_of_first_not_null)
+}
+
+pub(super) fn index_of_last_not_null(s: &mut [Column]) -> PolarsResult<Column> {
+    index_to_column(s, <Series as IndexOf>::index_of_last_not_null)
 }
