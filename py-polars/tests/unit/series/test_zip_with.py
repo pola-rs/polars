@@ -63,7 +63,7 @@ def test_zip_with_length_mismatch() -> None:
 def test_zip_with_bad_input_type() -> None:
     s1 = pl.Series([1, 2, 3])
     s2 = pl.Series([4, 5, 6])
-    mask = pl.Series([True, True, True])
+    mask = pl.Series([True, False, True])
 
     with pytest.raises(
         TypeError,
@@ -76,3 +76,12 @@ def test_zip_with_bad_input_type() -> None:
         match="expected `other` .*to be a 'Series'.* not 'LazyFrame'",
     ):
         s1.zip_with(mask, pl.DataFrame(s2).lazy())  # type: ignore[arg-type]
+
+    class DummySeriesSubclass(pl.Series):
+        pass
+
+    s1 = DummySeriesSubclass(s1)
+    s2 = DummySeriesSubclass(s2)
+    mask = DummySeriesSubclass(mask)
+
+    s1.zip_with(mask, s2)

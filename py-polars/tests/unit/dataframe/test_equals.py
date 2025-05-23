@@ -64,3 +64,10 @@ def test_equals_bad_input_type() -> None:
         match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         df1.equals(pl.Series([1, 2, 3]))  # type: ignore[arg-type]
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    df2 = DummyDataFrameSubclass(df2)
+
+    assert df1.equals(df2) is True

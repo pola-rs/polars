@@ -112,3 +112,10 @@ def test_extend_bad_input_type() -> None:
         match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         a.extend(b.lazy())  # type: ignore[arg-type]
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    b = DummyDataFrameSubclass({"x": [4, 5, 6]})
+
+    a.extend(b)

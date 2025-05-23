@@ -1515,6 +1515,14 @@ def test_join_bad_input_type() -> None:
     ):
         left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
 
+    class DummyLazyFrameSubclass(pl.LazyFrame):
+        pass
+
+    a = DummyLazyFrameSubclass(left.collect())
+    b = DummyLazyFrameSubclass(right.collect())
+
+    a.join(b, on="a").collect()
+
 
 def test_join_where() -> None:
     east = pl.LazyFrame(
@@ -1591,3 +1599,15 @@ def test_join_where_bad_input_type() -> None:
             pl.col("dur") < pl.col("time"),
             pl.col("rev") < pl.col("cost"),
         )
+
+    class DummyLazyFrameSubclass(pl.LazyFrame):
+        pass
+
+    a = DummyLazyFrameSubclass(east.collect())
+    b = DummyLazyFrameSubclass(west.collect())
+
+    a.join_where(
+        b,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") < pl.col("cost"),
+    ).collect()
