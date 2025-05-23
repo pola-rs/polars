@@ -1203,17 +1203,17 @@ pub fn first_non_null<'a, I>(iter: I) -> Option<usize>
 where
     I: Iterator<Item = Option<&'a Bitmap>>,
 {
-    let mut index = 0;
+    let mut offset = 0;
     for validity in iter {
         if let Some(mask) = validity {
             let len_mask = mask.len();
             let n = mask.leading_zeros();
             if n < len_mask {
-                return Some(index + n);
+                return Some(offset + n);
             }
-            index += len_mask
+            offset += len_mask
         } else {
-            return Some(index);
+            return Some(offset);
         }
     }
     None
@@ -1226,17 +1226,17 @@ where
     if len == 0 {
         return None;
     }
-    let mut index = 0;
+    let mut offset = 0;
     for validity in iter.rev() {
         if let Some(mask) = validity {
             let len_mask = mask.len();
             let n = mask.trailing_zeros();
             if n < len_mask {
-                return Some(len - index - n - 1);
+                return Some(len - offset - n - 1);
             }
-            index += len_mask;
+            offset += len_mask;
         } else {
-            return Some(len - index - 1);
+            return Some(len - offset - 1);
         }
     }
     None
