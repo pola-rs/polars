@@ -1324,3 +1324,22 @@ def test_group_by_empty_dtype_22716() -> None:
     df = pl.DataFrame(schema={"a": pl.String, "b": pl.Int64})
     out = df.group_by("a").agg(x=(pl.col("b") == pl.int_range(pl.len())).all())
     assert_frame_equal(out, pl.DataFrame(schema={"a": pl.String, "x": pl.Boolean}))
+
+
+def test_group_by_implode_22870() -> None:
+    out = (
+        pl.DataFrame({"x": ["a", "b"]})
+        .group_by(pl.col.x)
+        .agg(
+            y=pl.col.x.replace_strict(
+                pl.lit(pl.Series(["a", "b"])).implode(),
+                pl.lit(pl.Series([1, 2])).implode(),
+                default=-1,
+            )
+        )
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"x": ["a", "b"], "y": [[1], [2]]}),
+        check_row_order=False,
+    )
