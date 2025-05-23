@@ -560,90 +560,90 @@ pub fn assert_series_equal(
 /// Controls the behavior of DataFrame equality comparisons by specifying
 /// which aspects to check and the tolerance for floating point comparisons.
 pub struct DataFrameEqualOptions {
-   /// Whether to check that rows appear in the same order.
-   pub check_row_order: bool,
-   /// Whether to check that columns appear in the same order.
-   pub check_column_order: bool,
-   /// Whether to check that the data types match for corresponding columns.
-   pub check_dtypes: bool,
-   /// Whether to check for exact equality (true) or approximate equality (false) for floating point values.
-   pub check_exact: bool,
-   /// Relative tolerance for approximate equality of floating point values.
-   pub rtol: f64,
-   /// Absolute tolerance for approximate equality of floating point values.
-   pub atol: f64,
-   /// Whether to compare categorical values as strings.
-   pub categorical_as_str: bool,
+    /// Whether to check that rows appear in the same order.
+    pub check_row_order: bool,
+    /// Whether to check that columns appear in the same order.
+    pub check_column_order: bool,
+    /// Whether to check that the data types match for corresponding columns.
+    pub check_dtypes: bool,
+    /// Whether to check for exact equality (true) or approximate equality (false) for floating point values.
+    pub check_exact: bool,
+    /// Relative tolerance for approximate equality of floating point values.
+    pub rtol: f64,
+    /// Absolute tolerance for approximate equality of floating point values.
+    pub atol: f64,
+    /// Whether to compare categorical values as strings.
+    pub categorical_as_str: bool,
 }
 
 impl Default for DataFrameEqualOptions {
-   /// Creates a new `DataFrameEqualOptions` with default settings.
-   ///
-   /// Default configuration:
-   /// - Checks row order, column order, and data types
-   /// - Uses approximate equality comparisons for floating point values
-   /// - Sets relative tolerance to 1e-5 and absolute tolerance to 1e-8 for floating point comparisons
-   /// - Does not convert categorical values to strings for comparison
-   fn default() -> Self {
-       Self {
-           check_row_order: true,
-           check_column_order: true,
-           check_dtypes: true,
-           check_exact: false,
-           rtol: 1e-5,
-           atol: 1e-8,
-           categorical_as_str: false,
-       }
-   }
+    /// Creates a new `DataFrameEqualOptions` with default settings.
+    ///
+    /// Default configuration:
+    /// - Checks row order, column order, and data types
+    /// - Uses approximate equality comparisons for floating point values
+    /// - Sets relative tolerance to 1e-5 and absolute tolerance to 1e-8 for floating point comparisons
+    /// - Does not convert categorical values to strings for comparison
+    fn default() -> Self {
+        Self {
+            check_row_order: true,
+            check_column_order: true,
+            check_dtypes: true,
+            check_exact: false,
+            rtol: 1e-5,
+            atol: 1e-8,
+            categorical_as_str: false,
+        }
+    }
 }
 
 impl DataFrameEqualOptions {
-   /// Creates a new `DataFrameEqualOptions` with default settings.
-   pub fn new() -> Self {
-       Self::default()
-   }
+    /// Creates a new `DataFrameEqualOptions` with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-   /// Sets whether to check that rows appear in the same order.
-   pub fn with_check_row_order(mut self, value: bool) -> Self {
-       self.check_row_order = value;
-       self
-   }
+    /// Sets whether to check that rows appear in the same order.
+    pub fn with_check_row_order(mut self, value: bool) -> Self {
+        self.check_row_order = value;
+        self
+    }
 
-   /// Sets whether to check that columns appear in the same order.
-   pub fn with_check_column_order(mut self, value: bool) -> Self {
-       self.check_column_order = value;
-       self
-   }
+    /// Sets whether to check that columns appear in the same order.
+    pub fn with_check_column_order(mut self, value: bool) -> Self {
+        self.check_column_order = value;
+        self
+    }
 
-   /// Sets whether to check that data types match for corresponding columns.
-   pub fn with_check_dtypes(mut self, value: bool) -> Self {
-       self.check_dtypes = value;
-       self
-   }
+    /// Sets whether to check that data types match for corresponding columns.
+    pub fn with_check_dtypes(mut self, value: bool) -> Self {
+        self.check_dtypes = value;
+        self
+    }
 
-   /// Sets whether to check for exact equality (true) or approximate equality (false) for floating point values.
-   pub fn with_check_exact(mut self, value: bool) -> Self {
-       self.check_exact = value;
-       self
-   }
+    /// Sets whether to check for exact equality (true) or approximate equality (false) for floating point values.
+    pub fn with_check_exact(mut self, value: bool) -> Self {
+        self.check_exact = value;
+        self
+    }
 
-   /// Sets the relative tolerance for approximate equality of floating point values.
-   pub fn with_rtol(mut self, value: f64) -> Self {
-       self.rtol = value;
-       self
-   }
+    /// Sets the relative tolerance for approximate equality of floating point values.
+    pub fn with_rtol(mut self, value: f64) -> Self {
+        self.rtol = value;
+        self
+    }
 
-   /// Sets the absolute tolerance for approximate equality of floating point values.
-   pub fn with_atol(mut self, value: f64) -> Self {
-       self.atol = value;
-       self
-   }
+    /// Sets the absolute tolerance for approximate equality of floating point values.
+    pub fn with_atol(mut self, value: f64) -> Self {
+        self.atol = value;
+        self
+    }
 
-   /// Sets whether to compare categorical values as strings.
-   pub fn with_categorical_as_str(mut self, value: bool) -> Self {
-       self.categorical_as_str = value;
-       self
-   }
+    /// Sets whether to compare categorical values as strings.
+    pub fn with_categorical_as_str(mut self, value: bool) -> Self {
+        self.categorical_as_str = value;
+        self
+    }
 }
 
 /// Compares DataFrame schemas for equality based on specified criteria.
@@ -683,7 +683,6 @@ pub fn assert_dataframe_schema_equal(
     check_dtypes: bool,
     check_column_order: bool,
 ) -> PolarsResult<()> {
-
     let left_schema = left.schema();
     let right_schema = right.schema();
 
