@@ -1,11 +1,9 @@
 use argminmax::ArgMinMax;
 use arrow::array::Array;
-use arrow::legacy::bit_util::first_unset_bit;
 use polars_core::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
 use polars_core::series::IsSorted;
-use polars_core::utils::first_non_null;
 
 use super::*;
 
@@ -166,29 +164,8 @@ where
     }
 }
 
-pub(crate) fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
-    let null_count = ca.null_count();
-    if null_count == ca.len() {
-        None
-    } else if null_count == 0 {
-        // if no null values we only have True/False, which can be downcast to
-        // operate on as bitmap 1/0, allowing for a fast-path; if `first_non_null`
-        // returns None this implies all values are zero (eg: False), so we return 0
-        first_non_null(ca.downcast_iter().map(|arr| Some(arr.values()))).or(Some(0))
-    } else {
-        let mut first_false_idx: Option<usize> = None;
-        ca.iter()
-            .enumerate()
-            .find_map(|(idx, val)| match val {
-                Some(true) => Some(idx),
-                Some(false) if first_false_idx.is_none() => {
-                    first_false_idx = Some(idx);
-                    None
-                },
-                _ => None,
-            })
-            .or(first_false_idx)
-    }
+fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
+    ca.first_true_idx().or_else(|| ca.first_false_idx())
 }
 
 /// # Safety
@@ -206,26 +183,7 @@ where
 }
 
 fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
-    if ca.null_count() == ca.len() {
-        None
-    } else if ca.null_count() == 0 && ca.chunks().len() == 1 {
-        let arr = ca.downcast_iter().next().unwrap();
-        let mask = arr.values();
-        Some(first_unset_bit(mask))
-    } else {
-        let mut first_true_idx: Option<usize> = None;
-        ca.iter()
-            .enumerate()
-            .find_map(|(idx, val)| match val {
-                Some(false) => Some(idx),
-                Some(true) if first_true_idx.is_none() => {
-                    first_true_idx = Some(idx);
-                    None
-                },
-                _ => None,
-            })
-            .or(first_true_idx)
-    }
+    ca.first_false_idx().or_else(|| ca.first_true_idx())
 }
 
 fn arg_min_str(ca: &StringChunked) -> Option<usize> {
