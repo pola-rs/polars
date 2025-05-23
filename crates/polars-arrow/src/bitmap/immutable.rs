@@ -542,7 +542,7 @@ impl Bitmap {
         utils::trailing_zeros(&self.storage, self.offset, self.length)
     }
     /// Returns the number of one bits from the back before a zero bit is seen
-    pub fn trailing_ones(&mut self) -> usize {
+    pub fn trailing_ones(&self) -> usize {
         utils::trailing_ones(&self.storage, self.offset, self.length)
     }
 
