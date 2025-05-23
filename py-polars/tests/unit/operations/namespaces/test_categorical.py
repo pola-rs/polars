@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars import col
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -301,3 +303,69 @@ def test_cat_slice() -> None:
         "",
         None,
     ]
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_cat_str_eval() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["Café", None, "Café", "345", "東京"],
+            "b": ["hamburger_with_tomatoes", "nuts", "nuts", "lollypop", None],
+            "c": ["foobar", "barfoo", "foobar", "x", None],
+        }
+    ).cast(pl.Categorical)
+
+    result = df.select(
+        col("a").cat.str_eval(pl.element().str.len_bytes()).alias("len_bytes"),
+        col("a").cat.str_eval(pl.element().str.len_chars()).alias("len_chars"),
+        col("b").cat.str_eval(pl.element().str.ends_with("pop")).alias("ends_pop"),
+        col("b").cat.str_eval(pl.element().str.starts_with("ham")).alias("starts_ham"),
+        col("c").cat.str_eval(pl.element().str.slice(-3)).alias("slice1"),
+        col("c").cat.str_eval(pl.element().str.slice(2, 4)).alias("slice2"),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "len_bytes": pl.Series([5, None, 5, 3, 6], dtype=pl.UInt32),
+            "len_chars": pl.Series([4, None, 4, 3, 2], dtype=pl.UInt32),
+            "ends_pop": [False, False, False, True, None],
+            "starts_ham": [True, False, False, False, None],
+            "slice1": ["bar", "foo", "bar", "x", None],
+            "slice2": ["obar", "rfoo", "obar", "", None],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    # test GroupBy
+    key = pl.Series("key", [1] * 5 + [2] * 5)
+    df = pl.concat((df, df)).with_columns(key)
+    result = (
+        df.group_by("key", maintain_order=True)
+        .agg(
+            col("a").cat.str_eval(pl.element().str.len_bytes()).alias("len_bytes"),
+            col("a").cat.str_eval(pl.element().str.len_chars()).alias("len_chars"),
+            col("b").cat.str_eval(pl.element().str.ends_with("pop")).alias("ends_pop"),
+            col("b")
+            .cat.str_eval(pl.element().str.starts_with("ham"))
+            .alias("starts_ham"),
+            col("c").cat.str_eval(pl.element().str.slice(-3)).alias("slice1"),
+            col("c").cat.str_eval(pl.element().str.slice(2, 4)).alias("slice2"),
+        )
+        .explode("len_bytes", "len_chars", "ends_pop", "starts_ham", "slice1", "slice2")
+    )
+    expected = pl.concat((expected, expected)).insert_column(0, key)
+    assert_frame_equal(result, expected)
+
+
+def test_categorical_eval_no_named_column() -> None:
+    df = pl.DataFrame({"a": pl.Series(["a", "b", "c"], dtype=pl.Categorical)})
+    with pytest.raises(
+        InvalidOperationError,
+        match=(
+            r"named columns are not allowed in 'cat.eval'; "
+            r"consider using 'element' or 'col\("
+            r'""'
+            r"\)'"
+        ),
+    ):
+        df.select(col("a").cat.str_eval(pl.element() + col("a")))
