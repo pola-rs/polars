@@ -131,7 +131,6 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         MultiIndexSelector,
-        NonNestedLiteral,
         NullBehavior,
         NumericLiteral,
         PolarsDataType,

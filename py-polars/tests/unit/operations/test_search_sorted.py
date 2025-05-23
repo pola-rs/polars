@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pytest
@@ -70,7 +70,12 @@ def test_search_sorted_multivalue() -> None:
         )
 
     # Empty lists:
-    assert_series_equal(a.search_sorted([]), pl.Series([], dtype=pl.UInt32()))
+    with pytest.deprecated_call():
+        assert_series_equal(
+            # This is the deprecated edge case so the return type is wrong:
+            cast(pl.Series, a.search_sorted([])),
+            pl.Series([], dtype=pl.UInt32()),
+        )
 
 
 @pytest.mark.parametrize("descending", [False, True])
