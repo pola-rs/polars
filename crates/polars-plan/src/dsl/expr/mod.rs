@@ -167,6 +167,7 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
+    ListEval { expr: Arc<Expr>, evaluation: Arc<Expr> },
     SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
     /// e.g.
@@ -363,6 +364,10 @@ impl Hash for Expr {
             } => {
                 input.hash(state);
                 options.hash(state);
+            },
+            Expr::ListEval { expr: input, evaluation } => {
+                input.hash(state);
+                evaluation.hash(state);
             },
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]

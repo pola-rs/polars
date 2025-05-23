@@ -5,8 +5,6 @@ use polars_core::prelude::{
     DataType, PolarsResult, QuantileMethod, Schema, TimeUnit, polars_bail, polars_err,
 };
 use polars_lazy::dsl::Expr;
-#[cfg(feature = "list_eval")]
-use polars_lazy::dsl::ListNameSpaceExtension;
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
@@ -1808,7 +1806,7 @@ impl SQLFunctionVisitor<'_> {
                     } else {
                         e.cast(DataType::List(Box::from(DataType::String)))
                             .list()
-                            .eval(col("").fill_null(lit(lv.extract_str().unwrap())), false)
+                            .eval(col("").fill_null(lit(lv.extract_str().unwrap())))
                             .list()
                             .join(sep, false)
                     })

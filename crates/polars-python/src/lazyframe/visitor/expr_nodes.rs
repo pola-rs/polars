@@ -1316,5 +1316,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
         }
         .into_py_any(py),
         AExpr::Len => Len {}.into_py_any(py),
+        AExpr::ListEval { .. } => return Err(PyNotImplementedError::new_err("list.eval")),
     }
 }

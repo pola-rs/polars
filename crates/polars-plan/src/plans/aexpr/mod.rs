@@ -189,6 +189,13 @@ pub enum AExpr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
+    ListEval {
+        expr: Node,
+
+        /// An expression that is guaranteed to not contain any column reference beyond
+        /// `pl.element()` which refers to `pl.col("")`.
+        evaluation: Node,
+    },
     Function {
         /// Function arguments
         /// Some functions rely on aliases,

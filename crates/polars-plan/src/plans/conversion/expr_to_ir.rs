@@ -318,6 +318,10 @@ pub(super) fn to_aexpr_impl(
             offset: to_aexpr_impl_materialized_lit(owned(offset), arena, state)?,
             length: to_aexpr_impl_materialized_lit(owned(length), arena, state)?,
         },
+        Expr::ListEval { expr, evaluation } => AExpr::ListEval {
+            expr: to_aexpr_impl(owned(expr), arena, state)?,
+            evaluation: to_aexpr_impl(owned(evaluation), arena, state)?,
+        },
         Expr::Len => {
             if state.output_name.is_none() {
                 state.output_name = OutputName::LiteralLhs(get_len_name())
