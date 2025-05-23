@@ -889,6 +889,8 @@ fn to_graph_rec<'a>(
                                 },
                             };
 
+                            dbg!(pl_predicate.is_some(), could_serialize_predicate);
+
                             let args = (
                                 python_scan_function,
                                 with_columns,
