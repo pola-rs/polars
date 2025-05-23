@@ -257,3 +257,7 @@ def test_search_sorted_structs_with_nulls(
 ) -> None:
     """For all nulls_last options, values can be found in arbitrary structs."""
     assert_can_find_values(values, pl.Struct)
+
+
+def test_search_sorted_enum() -> None:
+    assert_can_find_values(["a", None, "b", "c"], pl.Enum(["a", "b", "c"]))
