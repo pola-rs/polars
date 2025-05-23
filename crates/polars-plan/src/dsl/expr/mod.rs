@@ -488,8 +488,9 @@ impl Expr {
             | Expr::Len
             | Expr::Nth(_)
             | Expr::Selector(_)
-            | Expr::Field(_)
             | Expr::SubPlan(_, _) => {},
+            #[cfg(feature = "dtype-struct")]
+            Expr::Field(_) => {},
             Expr::BinaryExpr { left, op: _, right } => {
                 inputs.extend([right.as_ref(), left.as_ref()])
             },
