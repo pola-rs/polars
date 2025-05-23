@@ -193,3 +193,14 @@ def test_grouped_generalized_ufunc() -> None:
     result = df.group_by("id").agg(pl.col("values").map_batches(gufunc_mean)).sort("id")
     expected = pl.DataFrame({"id": ["a", "b"], "values": [[1.5, 2.5], [3.5, 4.5]]})
     assert_frame_equal(result, expected)
+
+
+def test_ufunc_chain() -> None:
+    df = pl.DataFrame(
+        data={"A": [2, 10, 11, 12, 3, 10, 11, 12], "counter": [1, 2, 3, 4, 5, 6, 7, 8]}
+    )
+    result = df.rolling(index_column="counter", period="2i").agg(
+        (np.log(pl.col("A"))).mean().alias("mean_numpy"),
+        (pl.col("A")).log().mean().alias("mean_polars"),
+    )
+    assert_series_equal(result["mean_numpy"], result["mean_polars"].alias("mean_numpy"))
