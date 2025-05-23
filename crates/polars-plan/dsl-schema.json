@@ -409,6 +409,7 @@
         "Slice": {
           "type": "object",
           "required": [
+            "input",
             "len",
             "offset"
           ],
