@@ -3,7 +3,7 @@ use crate::bitmap::Bitmap;
 ///
 /// Note that the bound checks are optimized away.
 ///
-use crate::bitmap::utils::BitChunks;
+use crate::bitmap::utils::{BitChunkIterExact, BitChunks};
 
 pub fn find_first_true_false_null(
     mut bit_chunks: BitChunks<u64>,
