@@ -24,6 +24,7 @@ use crate::map_as_slice;
 use crate::prelude::{ColumnsUdf, FunctionFlags};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum RangeFunction {
     IntRange {

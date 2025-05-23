@@ -7,10 +7,13 @@ use super::*;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ListToStructArgs {
     FixedWidth(Arc<[PlSmallStr]>),
     InferWidth {
         infer_field_strategy: ListToStructWidthStrategy,
+        // Can serialize only when None (null), so we override to `()` which serializes to null.
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "()"))]
         get_index_name: Option<NameGenerator>,
         /// If this is None, it means unbounded.
         max_fields: Option<usize>,
@@ -19,6 +22,7 @@ pub enum ListToStructArgs {
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ListToStructWidthStrategy {
     FirstNonNull,
     MaxWidth,

@@ -39,6 +39,7 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
+schemars = { workspace = true, features = ["either"], optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
@@ -107,6 +108,18 @@ string_encoding = ["polars-ops/string_encoding"]
 true_div = []
 nightly = ["polars-utils/nightly", "polars-ops/nightly"]
 extract_jsonpath = ["polars-ops/extract_jsonpath"]
+dsl-schema = [
+  "dep:schemars",
+  "dep:serde_json",
+  "serde",
+  "arrow/dsl-schema",
+  "polars-core/dsl-schema",
+  "polars-time/dsl-schema",
+  "polars-io/dsl-schema",
+  "polars-ops/dsl-schema",
+  "polars-utils/dsl-schema",
+  "polars-compute/dsl-schema",
+]
 
 # operations
 bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]

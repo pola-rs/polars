@@ -5,6 +5,7 @@ use crate::prelude::ArrowTimeUnit;
     any(feature = "serde-lazy", feature = "serde"),
     derive(serde::Serialize, serde::Deserialize)
 )]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum TimeUnit {
     Nanoseconds,
     Microseconds,

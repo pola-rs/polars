@@ -14,6 +14,7 @@ use crate::prelude::*;
 
 #[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DynLiteralValue {
     Str(PlSmallStr),
     Int(i128),
@@ -22,6 +23,7 @@ pub enum DynLiteralValue {
 }
 #[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DynListLiteralValue {
     Str(Box<[Option<PlSmallStr>]>),
     Int(Box<[Option<i128>]>),
@@ -57,6 +59,7 @@ impl Hash for DynListLiteralValue {
 
 #[derive(Clone, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RangeLiteralValue {
     pub low: i128,
     pub high: i128,
@@ -64,6 +67,7 @@ pub struct RangeLiteralValue {
 }
 #[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum LiteralValue {
     /// A dynamically inferred literal value. This needs to be materialized into a specific type.
     Dyn(DynLiteralValue),

@@ -32,6 +32,7 @@ rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -131,6 +132,13 @@ serde = [
   "serde_json",
 ]
 serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "chrono/serde"]
+dsl-schema = [
+  "serde",
+  "dep:schemars",
+  "polars-schema/dsl-schema",
+  "polars-utils/dsl-schema",
+  "polars-compute/dsl-schema",
+]
 
 docs-selection = [
   "ndarray",

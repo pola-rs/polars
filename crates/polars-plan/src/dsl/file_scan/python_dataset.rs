@@ -34,6 +34,7 @@ pub fn dataset_provider_vtable() -> Result<&'static PythonDatasetProviderVTable,
 /// Currently intended only for Iceberg support
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct PythonDatasetProvider {
     dataset_object: PythonObject,
 }

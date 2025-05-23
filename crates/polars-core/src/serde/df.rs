@@ -172,3 +172,18 @@ impl<'de> Deserialize<'de> for DataFrame {
         .map_err(D::Error::custom)
     }
 }
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for DataFrame {
+    fn schema_name() -> String {
+        "DataFrame".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "DataFrame"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
+    }
+}

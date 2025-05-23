@@ -36,6 +36,7 @@ use crate::dsl::Selector;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RollingCovOptions {
     pub window_size: IdxSize,
     pub min_periods: IdxSize,
@@ -44,6 +45,7 @@ pub struct RollingCovOptions {
 
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct StrptimeOptions {
     /// Formatting string
     pub format: Option<PlSmallStr>,
@@ -69,11 +71,18 @@ impl Default for StrptimeOptions {
 
 #[derive(Clone, PartialEq, Eq, IntoStaticStr, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 pub enum JoinTypeOptionsIR {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
-    #[cfg_attr(all(feature = "serde", not(feature = "ir_serde")), serde(skip))]
+    #[cfg_attr(
+        all(
+            any(feature = "serde", feature = "dsl-schema"),
+            not(feature = "ir_serde")
+        ),
+        serde(skip)
+    )]
     // Fused cross join and filter (only in in-memory engine)
     Cross { predicate: ExprIR },
 }
@@ -109,6 +118,7 @@ impl JoinTypeOptionsIR {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct JoinOptions {
     pub allow_parallel: bool,
     pub force_parallel: bool,
@@ -136,6 +146,7 @@ impl Default for JoinOptions {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum WindowType {
     /// Explode the aggregated list and just do a hstack instead of a join
     /// this requires the groups to be sorted to make any sense
@@ -158,6 +169,7 @@ impl Default for WindowType {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 pub enum WindowMapping {
     /// Map the group values to the position
@@ -181,6 +193,7 @@ pub enum NestedType {
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct UnpivotArgsDSL {
     pub on: Vec<Selector>,
     pub index: Vec<Selector>,
@@ -243,12 +256,14 @@ pub struct UnionOptions {
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct HConcatOptions {
     pub parallel: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct GroupbyOptions {
     #[cfg(feature = "dynamic_group_by")]
     pub dynamic: Option<DynamicGroupOptions>,
@@ -284,6 +299,7 @@ impl GroupbyOptions {
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct DistinctOptionsDSL {
     /// Subset of columns that will be taken into account.
     pub subset: Option<Vec<Selector>>,
@@ -314,6 +330,7 @@ pub struct AnonymousScanOptions {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FileType {
     #[cfg(feature = "parquet")]
@@ -347,6 +364,7 @@ impl FileType {
 //
 // Arguments given to `concat`. Differs from `UnionOptions` as the latter is IR state.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct UnionArgs {
     pub parallel: bool,
@@ -387,6 +405,7 @@ impl From<UnionArgs> for UnionOptions {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[cfg(feature = "json")]
 pub struct NDJsonReadOptions {
     pub n_threads: Option<usize>,

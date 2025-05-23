@@ -15,6 +15,7 @@ use crate::prelude::{Column, Series};
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Scalar {
     dtype: DataType,
     value: AnyValue<'static>,
