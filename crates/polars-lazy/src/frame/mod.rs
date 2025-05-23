@@ -1081,6 +1081,7 @@ impl LazyFrame {
     /// final result doesn't fit into memory. This methods will return an error if the query cannot
     /// be completely done in a streaming fashion.
     #[cfg(feature = "parquet")]
+    #[allow(clippy::too_many_arguments)]
     pub fn sink_parquet_partitioned(
         self,
         base_path: Arc<PathBuf>,
@@ -1108,6 +1109,7 @@ impl LazyFrame {
     /// final result doesn't fit into memory. This methods will return an error if the query cannot
     /// be completely done in a streaming fashion.
     #[cfg(feature = "ipc")]
+    #[allow(clippy::too_many_arguments)]
     pub fn sink_ipc_partitioned(
         self,
         base_path: Arc<PathBuf>,
@@ -1135,6 +1137,7 @@ impl LazyFrame {
     /// result doesn't fit into memory. This methods will return an error if the query cannot be
     /// completely done in a streaming fashion.
     #[cfg(feature = "csv")]
+    #[allow(clippy::too_many_arguments)]
     pub fn sink_csv_partitioned(
         self,
         base_path: Arc<PathBuf>,
@@ -1162,6 +1165,7 @@ impl LazyFrame {
     /// result doesn't fit into memory. This methods will return an error if the query cannot be
     /// completely done in a streaming fashion.
     #[cfg(feature = "json")]
+    #[allow(clippy::too_many_arguments)]
     pub fn sink_json_partitioned(
         self,
         base_path: Arc<PathBuf>,

@@ -339,7 +339,7 @@ impl serde::Serialize for SinkFinishCallback {
             return v.serialize(_serializer);
         }
 
-        Err(S::Error::custom(format!("cannot serialize {:?}", self)))
+        Err(S::Error::custom(format!("cannot serialize {self:?}")))
     }
 }
 
@@ -362,6 +362,21 @@ impl<'de> serde::Deserialize<'de> for SinkFinishCallback {
                 "cannot deserialize PartitionOutputCallback",
             ))
         }
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for SinkFinishCallback {
+    fn schema_name() -> String {
+        "PartitionTargetCallback".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "SinkFinishCallback"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }
 
@@ -437,6 +452,7 @@ pub struct SortColumnIR {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkType {
     pub base_path: Arc<PathBuf>,
