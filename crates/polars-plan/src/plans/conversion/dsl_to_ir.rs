@@ -1186,6 +1186,25 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         },
                     },
                     cloud_options: f.cloud_options,
+                    per_partition_sort_by: match f.per_partition_sort_by {
+                        None => None,
+                        Some(sort_by) => Some(
+                            sort_by
+                                .into_iter()
+                                .map(|s| {
+                                    let expr = to_expr_ir(s.expr, ctxt.expr_arena)?;
+                                    ctxt.conversion_optimizer
+                                        .push_scratch(expr.node(), ctxt.expr_arena);
+                                    Ok(SortColumnIR {
+                                        expr,
+                                        descending: s.descending,
+                                        nulls_last: s.nulls_last,
+                                    })
+                                })
+                                .collect::<PolarsResult<Vec<_>>>()?,
+                        ),
+                    },
+                    finish_callback: f.finish_callback,
                 }),
             };
 

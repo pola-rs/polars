@@ -137,6 +137,11 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                     })
                 }),
             },
+            to_py: polars_utils::python_convert_registry::ToPythonConvertRegistry {
+                df: Arc::new(|df| {
+                    Python::with_gil(|py| PyDataFrame::new(*df.downcast().unwrap()).into_py_any(py))
+                }),
+            },
         });
 
         let object_size = size_of::<ObjectValue>();
