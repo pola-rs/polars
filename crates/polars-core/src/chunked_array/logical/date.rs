@@ -44,7 +44,9 @@ impl LogicalType for DateChunked {
                     TimeUnit::Microseconds => US_IN_DAY,
                     TimeUnit::Milliseconds => MS_IN_DAY,
                 };
-                Ok((casted.deref() * conversion)
+                Ok(casted
+                    .deref()
+                    .checked_mul_scalar(conversion)
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             },

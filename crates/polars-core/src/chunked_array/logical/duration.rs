@@ -38,20 +38,20 @@ impl LogicalType for DurationChunked {
         match dtype {
             Duration(tu) => {
                 let to_unit = *tu;
-                let out = match (self.time_unit(), to_unit) {
-                    (Milliseconds, Microseconds) => self.phys.as_ref() * 1_000i64,
-                    (Milliseconds, Nanoseconds) => self.phys.as_ref() * 1_000_000i64,
-                    (Microseconds, Milliseconds) => {
-                        self.phys.as_ref().wrapping_trunc_div_scalar(1_000i64)
-                    },
-                    (Microseconds, Nanoseconds) => self.phys.as_ref() * 1_000i64,
-                    (Nanoseconds, Milliseconds) => {
-                        self.phys.as_ref().wrapping_trunc_div_scalar(1_000_000i64)
-                    },
-                    (Nanoseconds, Microseconds) => {
-                        self.phys.as_ref().wrapping_trunc_div_scalar(1_000i64)
-                    },
+                let (divisor, multiplier) = match (self.time_unit(), to_unit) {
+                    (Milliseconds, Microseconds) => (None, Some(1_000i64)),
+                    (Milliseconds, Nanoseconds) => (None, Some(1_000_000i64)),
+                    (Microseconds, Milliseconds) => (Some(1_000i64), None),
+                    (Microseconds, Nanoseconds) => (None, Some(1_000i64)),
+                    (Nanoseconds, Milliseconds) => (Some(1_000_000i64), None),
+                    (Nanoseconds, Microseconds) => (Some(1_000i64), None),
                     _ => return Ok(self.clone().into_series()),
+                };
+
+                let out = match (divisor, multiplier) {
+                    (None, None) | (Some(_), Some(_)) => unreachable!(),
+                    (_, Some(multiplier)) => self.phys.as_ref().checked_mul_scalar(multiplier),
+                    (Some(divisor), _) => self.phys.as_ref().wrapping_trunc_div_scalar(divisor),
                 };
                 Ok(out.into_duration(to_unit).into_series())
             },
