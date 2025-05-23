@@ -678,8 +678,22 @@ impl ChunkReader {
 
         let height = df.height();
         let n_lines_is_correct = df.height() == n_lines;
-        if df.height() > n_lines {
-            polars_warn!("CSV data malformed: line count mismatch in chunk");
+
+        // Check malformed
+        if df.height() != n_lines {
+            // Note: in case data is malformed, df.height() is more likely to be correct than n_lines.
+            let msg = format!(
+                "CSV malformed: expected {} rows vs actual {} rows in chunk starting at row_offset {}, length {}",
+                n_lines,
+                df.height(),
+                chunk_row_offset,
+                chunk.len()
+            );
+            if self.ignore_errors {
+                polars_warn!(msg);
+            } else {
+                polars_bail!(ComputeError: msg);
+            }
         }
 
         if slice != NO_SLICE {

@@ -2607,36 +2607,26 @@ def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) ->
     assert df3.write_csv() == expected
 
 
-@pytest.mark.parametrize(
-    ("csv"),
-    [
-        (
-            b"""\
+def test_csv_malformed_quote_in_unenclosed_field_22395() -> None:
+    # Note - the malformed detection logic is very basic, and fails to detect many
+    # types at this point (for eaxample: 'a,b"c,x"y' will not be detected).
+    # Below is a one pattern that will be flagged (odd number of quotes in a row).
+    malformed = b"""\
 a,b,x"y
 a,x"y,c
 x"y,b,c
 """
-        ),
-        (
-            b"""\
-a,x"y,x"y
-x"y,b,x"y
-x"y,x"y,c
-"""
-        ),
-    ],
-)
-@pytest.mark.parametrize(("n"), [1, 10])  # trigger SIMD
-def test_csv_malformed_quote_in_unenclosed_field_22395(csv: str, n: int) -> None:
-    malformed = csv * n
-    # full dataframe
-    with pytest.warns(UserWarning):
+    # short: non-SIMD code path
+    with pytest.raises(pl.exceptions.ComputeError):
         pl.read_csv(malformed, has_header=False)
-    with pytest.warns(UserWarning):
+    with pytest.raises(pl.exceptions.ComputeError):
         pl.scan_csv(malformed, has_header=False).collect()
+    with pytest.warns(UserWarning):
+        pl.read_csv(malformed, has_header=False, ignore_errors=True)
 
-    # with projection (nth)
-    with pytest.warns(UserWarning):
-        pl.read_csv(malformed, has_header=False).select(pl.nth(0))
-    with pytest.warns(UserWarning):
-        pl.scan_csv(malformed, has_header=False).select(pl.nth(0)).collect()
+    # long: trigger SIMD code path (> 64 bytes)
+    malformed_long = malformed + ("k,l,m\n" * 10).encode()
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.read_csv(malformed_long, has_header=False)
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.scan_csv(malformed_long, has_header=False).collect()

@@ -394,6 +394,7 @@ impl<'a> CoreReader<'a> {
 
         let counter = CountLines::new(self.parse_options.quote_char, self.parse_options.eol_char);
         let mut total_offset = 0;
+        let mut previous_total_offset = 0;
         let check_utf8 = matches!(self.parse_options.encoding, CsvEncoding::Utf8)
             && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
@@ -408,8 +409,8 @@ impl<'a> CoreReader<'a> {
                     total_offset == 0 || bytes[total_offset - 1] == self.parse_options.eol_char
                 );
 
-                // Count is the number of lines for the next chunk. In case of malformed CSV data
-                // count may not be as expected. We detect some malformed cases in pass 2.
+                // Count is the number of rows for the next chunk. In case of malformed CSV data,
+                // count may not be as expected.
                 let (count, position) = counter.find_next(b, &mut chunk_size);
                 debug_assert!(count == 0 || b[position] == self.parse_options.eol_char);
 
@@ -428,6 +429,7 @@ impl<'a> CoreReader<'a> {
                     let end = total_offset + position + 1;
                     let b = unsafe { bytes.get_unchecked(total_offset..end) };
 
+                    previous_total_offset = total_offset;
                     total_offset = end;
                     (b, count)
                 };
@@ -450,10 +452,16 @@ impl<'a> CoreReader<'a> {
                         let result = slf
                             .read_chunk(b, projection, 0, count, Some(0), b.len())
                             .and_then(|mut df| {
-                                if df.height() > count {
-                                    polars_warn!(
-                                        "CSV data malformed: line count mismatch in chunk"
-                                    );
+                                // Check malformed
+                                if df.height() != count {
+                                    // Note: in case data is malformed, df.height() is more likely to be correct than count.
+                                    let msg = format!("CSV malformed: expected {} rows vs actual {} rows in chunk starting at byte offset {}, length {}",
+                                        count, df.height(), previous_total_offset, b.len());
+                                    if slf.ignore_errors {
+                                        polars_warn!(msg);
+                                    } else {
+                                        polars_bail!(ComputeError: msg);
+                                    }
                                 }
 
                                 if slf.n_rows.is_some() {
