@@ -155,9 +155,10 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
         return Ok(None);
     }
 
+    use DataType as DT;
     match series.dtype().to_physical() {
-        DataType::Null => unreachable!("handled above"),
-        DataType::Boolean => Ok(index_of_bool(
+        DT::Null => unreachable!("handled above"),
+        DT::Boolean => Ok(index_of_bool(
             series.bool()?,
             needle.value().extract_bool().unwrap(),
         )),
@@ -169,19 +170,19 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
                 needle
             ))
         },
-        DataType::String => Ok(index_of_value::<_, BinaryViewArray>(
+        DT::String => Ok(index_of_value::<_, BinaryViewArray>(
             &series.str()?.as_binary(),
             needle.value().extract_str().unwrap().as_bytes(),
         )),
-        DataType::Binary => Ok(index_of_value::<_, BinaryViewArray>(
+        DT::Binary => Ok(index_of_value::<_, BinaryViewArray>(
             series.binary()?,
             needle.value().extract_bytes().unwrap(),
         )),
-        DataType::BinaryOffset => Ok(index_of_value::<_, BinaryArray<i64>>(
+        DT::BinaryOffset => Ok(index_of_value::<_, BinaryArray<i64>>(
             series.binary_offset()?,
             needle.value().extract_bytes().unwrap(),
         )),
-        DataType::Array(_, _) | DataType::List(_) | DataType::Struct(_) => {
+        DT::Array(_, _) | DT::List(_) | DT::Struct(_) => {
             // For non-numeric dtypes, we convert to row-encoding, which essentially has
             // us searching the physical representation of the data as a series of
             // bytes.
@@ -194,26 +195,25 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
             Ok(index_of_value::<_, BinaryArray<i64>>(&ca, value))
         },
 
-        DataType::UInt8
-        | DataType::UInt16
-        | DataType::UInt32
-        | DataType::UInt64
-        | DataType::Int8
-        | DataType::Int16
-        | DataType::Int32
-        | DataType::Int64
-        | DataType::Int128
-        | DataType::Float32
-        | DataType::Float64 => unreachable!("primitive numeric"),
+        DT::UInt8
+        | DT::UInt16
+        | DT::UInt32
+        | DT::UInt64
+        | DT::Int8
+        | DT::Int16
+        | DT::Int32
+        | DT::Int64
+        | DT::Int128
+        | DT::Float32
+        | DT::Float64 => unreachable!("primitive numeric"),
 
-        DataType::Decimal(..)
-        | DataType::Date
-        | DataType::Datetime(..)
-        | DataType::Duration(..)
-        | DataType::Time
-        | DataType::Categorical(..)
-        | DataType::Enum(..) => unreachable!("to_physical"),
+        // to_physical
+        #[cfg(feature = "dtype-decimal")]
+        DT::Decimal(..) => unreachable!(),
+        #[cfg(feature = "dtype-categorical")]
+        DT::Categorical(..) | DT::Enum(..) => unreachable!(),
+        DT::Date | DT::Datetime(..) | DT::Duration(..) | DT::Time => unreachable!(),
 
-        DataType::Object(_) | DataType::Unknown(_) => polars_bail!(op = "index_of", series.dtype()),
+        DT::Object(_) | DT::Unknown(_) => polars_bail!(op = "index_of", series.dtype()),
     }
 }

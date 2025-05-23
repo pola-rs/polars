@@ -777,20 +777,31 @@ impl<'a> AnyValue<'a> {
             | Self::Int128(_)
             | Self::Float32(_)
             | Self::Float64(_) => self,
+            #[cfg(feature = "dtype-date")]
             Self::Date(v) => Self::Int32(v),
-            Self::Datetime(v, _, _)
-            | Self::DatetimeOwned(v, _, _)
-            | Self::Duration(v, _)
-            | Self::Time(v) => Self::Int64(v),
+            #[cfg(feature = "dtype-datetime")]
+            Self::Datetime(v, _, _) | Self::DatetimeOwned(v, _, _) => Self::Int64(v),
+
+            #[cfg(feature = "dtype-duration")]
+            Self::Duration(v, _) => Self::Int64(v),
+            #[cfg(feature = "dtype-time")]
+            Self::Time(v) => Self::Int64(v),
+
+            #[cfg(feature = "dtype-categorical")]
             Self::Categorical(v, _, _)
             | Self::CategoricalOwned(v, _, _)
             | Self::Enum(v, _, _)
             | Self::EnumOwned(v, _, _) => Self::UInt32(v),
             Self::List(series) => Self::List(series.to_physical_repr().into_owned()),
+
+            #[cfg(feature = "dtype-array")]
             Self::Array(series, width) => {
                 Self::Array(series.to_physical_repr().into_owned(), width)
             },
+
+            #[cfg(feature = "dtype-struct")]
             Self::Struct(_, _, _) => todo!(),
+            #[cfg(feature = "dtype-struct")]
             Self::StructOwned(values) => Self::StructOwned(Box::new((
                 values.0.into_iter().map(|v| v.to_physical()).collect(),
                 values
@@ -802,6 +813,8 @@ impl<'a> AnyValue<'a> {
                     })
                     .collect(),
             ))),
+
+            #[cfg(feature = "dtype-decimal")]
             Self::Decimal(v, _) => Self::Int128(v),
         }
     }
