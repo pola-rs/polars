@@ -763,7 +763,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 ));
                 let (_, type_step) = unpack!(get_aexpr_and_type(
                     expr_arena,
-                    input[1].node(),
+                    input[2].node(),
                     &input_schema
                 ));
 
