@@ -2256,7 +2256,7 @@ class Series:
         return self._s.quantile(quantile, interpolation)
 
     def to_dummies(
-        self, *, separator: str = "_", drop_first: bool = False
+        self, *, separator: str = "_", drop_first: bool = False, output_type: PolarsDataType | None = None
     ) -> DataFrame:
         """
         Get dummy/indicator variables.
@@ -2267,6 +2267,8 @@ class Series:
             Separator/delimiter used when generating column names.
         drop_first
             Remove the first category from the variable being encoded.
+        output_type
+            Data type of the dummy columns. By default, the data type is u8
 
         Examples
         --------
@@ -2295,7 +2297,7 @@ class Series:
         │ 0   ┆ 1   │
         └─────┴─────┘
         """
-        return wrap_df(self._s.to_dummies(separator, drop_first))
+        return wrap_df(self._s.to_dummies(separator, drop_first, output_type))
 
     @unstable()
     def cut(

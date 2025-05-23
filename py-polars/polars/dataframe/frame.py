@@ -10449,6 +10449,7 @@ class DataFrame:
         *,
         separator: str = "_",
         drop_first: bool = False,
+        output_type: PolarsDataType | None = None,
     ) -> DataFrame:
         """
         Convert categorical variables into dummy/indicator variables.
@@ -10462,6 +10463,8 @@ class DataFrame:
             Separator/delimiter used when generating column names.
         drop_first
             Remove the first category from the variables being encoded.
+        output_type
+            Data type of the dummy variables. By default, the type is `u8`.
 
         Examples
         --------
@@ -10519,7 +10522,7 @@ class DataFrame:
         """
         if columns is not None:
             columns = _expand_selectors(self, columns)
-        return self._from_pydf(self._df.to_dummies(columns, separator, drop_first))
+        return self._from_pydf(self._df.to_dummies(columns, separator, drop_first, output_type))
 
     def unique(
         self,

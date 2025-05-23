@@ -13,14 +13,22 @@ type DummyType = i32;
 type DummyCa = Int32Chunked;
 
 pub trait ToDummies {
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame>;
+    fn to_dummies(&self, separator: Option<&str>, drop_first: bool, output_type: &Option<DataType>) -> PolarsResult<DataFrame>;
 }
 
 impl ToDummies for Series {
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool) -> PolarsResult<DataFrame> {
+    fn to_dummies(&self, separator: Option<&str>, drop_first: bool, output_type: &Option<DataType>) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
         let groups = self.group_tuples(true, drop_first)?;
+
+        if let Some(output_type) = output_type {
+            if !output_type.is_primitive_numeric() && !output_type.is_bool() {
+                polars_bail!(InvalidOperation: 
+                    "output_type must be numeric or boolean for to_dummies"
+                );
+            }
+        }
 
         // SAFETY: groups are in bounds
         let columns = unsafe { self.agg_first(&groups) };
@@ -42,7 +50,10 @@ impl ToDummies for Series {
                         dummies_helper_slice(offset, len, self.len(), name)
                     },
                 };
-                ca.into_column()
+                match output_type {
+                    Some(dt) => ca.cast(&dt).unwrap().into_column(),
+                    None => ca.into_column()
+                }
             })
             .collect::<Vec<_>>();
 

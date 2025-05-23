@@ -449,21 +449,24 @@ impl PyDataFrame {
         self.df.clone().lazy().into()
     }
 
-    #[pyo3(signature = (columns, separator, drop_first=false))]
+    #[pyo3(signature = (columns, separator, drop_first=false, output_type=None))]
     pub fn to_dummies(
         &self,
         py: Python<'_>,
         columns: Option<Vec<String>>,
         separator: Option<&str>,
         drop_first: bool,
+        output_type: Option<Wrap<DataType>>,
     ) -> PyResult<Self> {
+        let output_type = output_type.map(|dt| dt.0);
         py.enter_polars_df(|| match columns {
             Some(cols) => self.df.columns_to_dummies(
                 cols.iter().map(|x| x as &str).collect(),
                 separator,
                 drop_first,
+                &output_type,
             ),
-            None => self.df.to_dummies(separator, drop_first),
+            None => self.df.to_dummies(separator, drop_first, &output_type),
         })
     }
 
