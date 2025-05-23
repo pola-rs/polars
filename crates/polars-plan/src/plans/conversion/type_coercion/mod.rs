@@ -720,7 +720,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
                 if [&type_start, &type_end]
                     .into_iter()
-                    .all(|arg_dtype| arg_dtype != dtype)
+                    .all(|arg_dtype| arg_dtype == dtype)
                 {
                     return Ok(None);
                 }
@@ -769,7 +769,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
                 if [&type_start, &type_end, &type_step]
                     .into_iter()
-                    .all(|dtype| dtype != &DataType::Int64)
+                    .all(|dtype| dtype == &DataType::Int64)
                 {
                     return Ok(None);
                 }
