@@ -3621,9 +3621,7 @@ class Series:
     @overload
     def search_sorted(
         self,
-        element: (
-            NonNestedLiteral | None | dict[str, Any] | list[Any] | np.ndarray[Any, Any]
-        ),
+        element: PythonLiteral | None | np.ndarray[Any, Any],
         side: SearchSortedSide = ...,
         *,
         descending: bool = ...,
@@ -3640,7 +3638,7 @@ class Series:
 
     def search_sorted(
         self,
-        element: IntoExpr | np.ndarray[Any, Any] | dict[str, Any],
+        element: IntoExpr | np.ndarray[Any, Any],
         side: SearchSortedSide = "any",
         *,
         descending: bool = False,
