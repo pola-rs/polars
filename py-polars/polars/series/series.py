@@ -3718,6 +3718,8 @@ class Series:
         ) and not isinstance(self.dtype, (List, Array)):
             return df.to_series()
         else:
+            # This will be going away in Polars 2.0 probably.
+            # @TAG: 2.0
             assert len(df) == 1
             return df.item()
 
