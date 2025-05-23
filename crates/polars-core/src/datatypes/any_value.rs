@@ -755,6 +755,82 @@ impl<'a> AnyValue<'a> {
             av => Cow::Owned(av.to_string()),
         }
     }
+
+    pub fn to_physical(self) -> Self {
+        match self {
+            Self::Null
+            | Self::Boolean(_)
+            | Self::String(_)
+            | Self::StringOwned(_)
+            | Self::Binary(_)
+            | Self::BinaryOwned(_)
+            | Self::Object(_)
+            | Self::ObjectOwned(_)
+            | Self::UInt8(_)
+            | Self::UInt16(_)
+            | Self::UInt32(_)
+            | Self::UInt64(_)
+            | Self::Int8(_)
+            | Self::Int16(_)
+            | Self::Int32(_)
+            | Self::Int64(_)
+            | Self::Int128(_)
+            | Self::Float32(_)
+            | Self::Float64(_) => self,
+            Self::Date(v) => Self::Int32(v),
+            Self::Datetime(v, _, _)
+            | Self::DatetimeOwned(v, _, _)
+            | Self::Duration(v, _)
+            | Self::Time(v) => Self::Int64(v),
+            Self::Categorical(v, _, _)
+            | Self::CategoricalOwned(v, _, _)
+            | Self::Enum(v, _, _)
+            | Self::EnumOwned(v, _, _) => Self::UInt32(v),
+            Self::List(series) => Self::List(series.to_physical_repr().into_owned()),
+            Self::Array(series, width) => {
+                Self::Array(series.to_physical_repr().into_owned(), width)
+            },
+            Self::Struct(_, _, _) => todo!(),
+            Self::StructOwned(values) => Self::StructOwned(Box::new((
+                values.0.into_iter().map(|v| v.to_physical()).collect(),
+                values
+                    .1
+                    .into_iter()
+                    .map(|mut f| {
+                        f.dtype = f.dtype.to_physical();
+                        f
+                    })
+                    .collect(),
+            ))),
+            Self::Decimal(v, _) => Self::Int128(v),
+        }
+    }
+
+    #[inline]
+    pub fn extract_bool(&self) -> Option<bool> {
+        match self {
+            AnyValue::Boolean(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn extract_str(&self) -> Option<&str> {
+        match self {
+            AnyValue::String(v) => Some(v),
+            AnyValue::StringOwned(v) => Some(v.as_str()),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn extract_bytes(&self) -> Option<&[u8]> {
+        match self {
+            AnyValue::Binary(v) => Some(v),
+            AnyValue::BinaryOwned(v) => Some(v.as_slice()),
+            _ => None,
+        }
+    }
 }
 
 impl From<AnyValue<'_>> for DataType {
