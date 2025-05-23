@@ -76,6 +76,8 @@ pub trait ArithmeticChunked {
     fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self::Out;
     fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out;
 
+    fn checked_mul_scalar(self, rhs: Self::Scalar) -> Self::Out;
+
     fn true_div(self, rhs: Self) -> Self::TrueDivOut;
     fn true_div_scalar(self, rhs: Self::Scalar) -> Self::TrueDivOut;
     fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::TrueDivOut;
@@ -206,6 +208,10 @@ impl<T: PolarsNumericType> ArithmeticChunked for ChunkedArray<T> {
 
     fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
         unary_kernel_owned(rhs, |a| ArithmeticKernel::wrapping_mod_scalar_lhs(lhs, a))
+    }
+
+    fn checked_mul_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel_owned(self, |a| ArithmeticKernel::checked_mul_scalar(a, rhs))
     }
 
     fn true_div(self, rhs: Self) -> Self::TrueDivOut {
@@ -375,6 +381,12 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::Out {
         unary_kernel(rhs, |a| {
             ArithmeticKernel::wrapping_mod_scalar_lhs(lhs, a.clone())
+        })
+    }
+
+    fn checked_mul_scalar(self, rhs: Self::Scalar) -> Self::Out {
+        unary_kernel(self, |a| {
+            ArithmeticKernel::checked_mul_scalar(a.clone(), rhs)
         })
     }
 

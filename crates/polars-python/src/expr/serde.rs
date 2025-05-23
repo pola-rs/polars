@@ -20,7 +20,7 @@ impl PyExpr {
         let mut writer: Vec<u8> = vec![];
         pl_serialize::SerializeOptions::default()
             .serialize_into_writer::<_, _, false>(&mut writer, &self.inner)
-            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
 
         Ok(PyBytes::new(py, &writer))
     }
@@ -30,7 +30,7 @@ impl PyExpr {
         let bytes = state.extract::<PyBackedBytes>()?;
         self.inner = pl_serialize::SerializeOptions::default()
             .deserialize_from_reader::<_, _, false>(&*bytes)
-            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
         Ok(())
     }
 

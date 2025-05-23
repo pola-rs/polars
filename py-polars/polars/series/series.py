@@ -3381,12 +3381,64 @@ class Series:
 
         See Also
         --------
+        top_k_by
         bottom_k
+        bottom_k_by
 
         Examples
         --------
         >>> s = pl.Series("a", [2, 5, 1, 4, 3])
         >>> s.top_k(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            5
+            4
+            3
+        ]
+        """
+
+    def top_k_by(
+        self,
+        by: IntoExpr | Iterable[IntoExpr],
+        k: int = 5,
+        *,
+        reverse: bool | Sequence[bool] = False,
+    ) -> Series:
+        r"""
+        Return the `k` largest elements of the `by` column.
+
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `reverse`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
+
+        This has time complexity:
+
+        .. math:: O(n \log{n})
+
+        Parameters
+        ----------
+        by
+            Column used to determine the largest elements.
+            Accepts expression input. Strings are parsed as column names.
+        k
+            Number of elements to return.
+        reverse
+            Consider the `k` smallest elements of the `by` column (instead of the `k`
+            largest). This can be specified per column by passing a sequence of
+            booleans.
+
+        See Also
+        --------
+        top_k
+        bottom_k
+        bottom_k_by
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [2, 5, 1, 4, 3])
+        >>> s.top_k_by("a", 3)
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -3416,11 +3468,63 @@ class Series:
         See Also
         --------
         top_k
+        top_k_by
+        bottom_k_by
 
         Examples
         --------
         >>> s = pl.Series("a", [2, 5, 1, 4, 3])
         >>> s.bottom_k(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+        ]
+        """
+
+    def bottom_k_by(
+        self,
+        by: IntoExpr | Iterable[IntoExpr],
+        k: int = 5,
+        *,
+        reverse: bool | Sequence[bool] = False,
+    ) -> Series:
+        r"""
+        Return the `k` smallest elements of the `by` column.
+
+        Non-null elements are always preferred over null elements, regardless of
+        the value of `reverse`. The output is not guaranteed to be in any
+        particular order, call :func:`sort` after this function if you wish the
+        output to be sorted.
+
+        This has time complexity:
+
+        .. math:: O(n \log{n})
+
+        Parameters
+        ----------
+        by
+            Column used to determine the smallest elements.
+            Accepts expression input. Strings are parsed as column names.
+        k
+            Number of elements to return.
+        reverse
+            Consider the `k` largest elements of the `by` column( (instead of the `k`
+            smallest). This can be specified per column by passing a sequence of
+            booleans.
+
+        See Also
+        --------
+        top_k
+        top_k_by
+        bottom_k
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [2, 5, 1, 4, 3])
+        >>> s.bottom_k_by("a", 3)
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -3516,7 +3620,11 @@ class Series:
 
     @overload
     def search_sorted(
-        self, element: NonNestedLiteral | None, side: SearchSortedSide = ...
+        self,
+        element: NonNestedLiteral | None,
+        side: SearchSortedSide = ...,
+        *,
+        descending: bool = ...,
     ) -> int: ...
 
     @overload
@@ -3524,12 +3632,16 @@ class Series:
         self,
         element: list[NonNestedLiteral | None] | np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
+        *,
+        descending: bool = ...,
     ) -> Series: ...
 
     def search_sorted(
         self,
         element: IntoExpr | np.ndarray[Any, Any] | None,
         side: SearchSortedSide = "any",
+        *,
+        descending: bool = False,
     ) -> int | Series:
         """
         Find indices where elements should be inserted to maintain order.
@@ -3544,6 +3656,9 @@ class Series:
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
             If 'right', return the rightmost suitable location found is given.
+        descending
+            Boolean indicating whether the values are descending or not (they
+            are required to be sorted either way).
 
         Examples
         --------
@@ -3579,7 +3694,7 @@ class Series:
                 6
         ]
         """
-        df = F.select(F.lit(self).search_sorted(element, side))
+        df = F.select(F.lit(self).search_sorted(element, side, descending=descending))
         if isinstance(element, (list, Series, pl.Expr)):
             return df.to_series()
         elif _check_for_numpy(element) and isinstance(element, np.ndarray):

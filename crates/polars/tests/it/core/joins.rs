@@ -57,7 +57,7 @@ fn test_inner_join() {
     let (temp, rain) = create_frames();
 
     for i in 1..8 {
-        unsafe { std::env::set_var("POLARS_MAX_THREADS", format!("{}", i)) };
+        unsafe { std::env::set_var("POLARS_MAX_THREADS", format!("{i}")) };
         let joined = temp.inner_join(&rain, ["days"], ["days"]).unwrap();
 
         let join_col_days = Column::new("days".into(), &[1, 2, 1]);
@@ -81,7 +81,7 @@ fn test_inner_join() {
 #[cfg_attr(miri, ignore)]
 fn test_left_join() {
     for i in 1..8 {
-        unsafe { std::env::set_var("POLARS_MAX_THREADS", format!("{}", i)) };
+        unsafe { std::env::set_var("POLARS_MAX_THREADS", format!("{i}")) };
         let s0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
         let s1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
         let temp = DataFrame::new(vec![s0, s1]).unwrap();

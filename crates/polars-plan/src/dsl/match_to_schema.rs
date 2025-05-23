@@ -2,6 +2,7 @@ use super::{Expr, ExtraColumnsPolicy, MissingColumnsPolicy};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum MissingColumnsPolicyOrExpr {
     Insert,
     Raise,
@@ -10,6 +11,7 @@ pub enum MissingColumnsPolicyOrExpr {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum UpcastOrForbid {
     Upcast,
     Forbid,
@@ -17,6 +19,7 @@ pub enum UpcastOrForbid {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct MatchToSchemaPerColumn {
     pub missing_columns: MissingColumnsPolicyOrExpr,
     pub missing_struct_fields: MissingColumnsPolicy,

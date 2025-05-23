@@ -113,7 +113,7 @@ pub fn write_partitioned_dataset(
 
     fn get_path_for_index(i: usize) -> String {
         // Use a fixed-width file name so that it sorts properly.
-        format!("{:08x}.parquet", i)
+        format!("{i:08x}.parquet")
     }
 
     let get_n_files_and_rows_per_file = |part_df: &DataFrame| {

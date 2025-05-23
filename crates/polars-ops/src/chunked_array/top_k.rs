@@ -216,7 +216,7 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
         },
         _ => {
             // Fallback to more generic impl.
-            top_k_by_impl(k, src, &[src.clone()], vec![descending])
+            top_k_by_impl(k, src, std::slice::from_ref(src), vec![descending])
         },
     }
 }

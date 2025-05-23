@@ -5,7 +5,6 @@ mod hconcat;
 mod hstack;
 mod joins;
 mod projection;
-mod rename;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
 
@@ -22,7 +21,6 @@ use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
-use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::aexpr_to_leaf_names;
 

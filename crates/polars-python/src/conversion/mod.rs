@@ -1267,8 +1267,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             "forbid" => false,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown option for integer_cast: {}",
-                    v
+                    "unknown option for integer_cast: {v}"
                 )));
             },
         };
@@ -1283,8 +1282,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
                 "downcast" => float_downcast = true,
                 v => {
                     return Err(PyValueError::new_err(format!(
-                        "unknown option for float_cast: {}",
-                        v
+                        "unknown option for float_cast: {v}"
                     )));
                 },
             }
@@ -1310,8 +1308,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
                 "convert-timezone" => datetime_convert_timezone = true,
                 v => {
                     return Err(PyValueError::new_err(format!(
-                        "unknown option for datetime_cast: {}",
-                        v
+                        "unknown option for datetime_cast: {v}"
                     )));
                 },
             };
@@ -1335,8 +1332,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             "raise" => MissingColumnsPolicy::Raise,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown option for missing_struct_fields: {}",
-                    v
+                    "unknown option for missing_struct_fields: {v}"
                 )));
             },
         };
@@ -1349,8 +1345,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             "raise" => ExtraColumnsPolicy::Raise,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown option for extra_struct_fields: {}",
-                    v
+                    "unknown option for extra_struct_fields: {v}"
                 )));
             },
         };
@@ -1379,8 +1374,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
                 }
             } else {
                 return Err(PyValueError::new_err(format!(
-                    "unknown type for {}: {}",
-                    parameter_name, py_object
+                    "unknown type for {parameter_name}: {py_object}"
                 )));
             }
 

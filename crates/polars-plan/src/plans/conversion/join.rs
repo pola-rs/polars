@@ -562,8 +562,7 @@ fn build_upcast_node_list(
                                 get_numeric_upcast_supertype_lossless(&dtype_left, &dtype_right)
                                     .ok_or(PolarsError::SchemaMismatch(
                                         format!(
-                                            "'join_where' cannot compare {:?} with {:?}",
-                                            dtype_left, dtype_right
+                                            "'join_where' cannot compare {dtype_left:?} with {dtype_right:?}"
                                         )
                                         .into(),
                                     ))

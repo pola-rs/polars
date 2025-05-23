@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "height" => [1.56, 1.77, 1.65, 1.75],  // (m)
     )
     .unwrap();
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:df]
 
     // --8<-- [start:csv]
@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_parse_options(CsvParseOptions::default().with_try_parse_dates(true))
         .try_into_reader_with_file_path(Some("docs/assets/data/output.csv".into()))?
         .finish()?;
-    println!("{}", df_csv);
+    println!("{df_csv}");
     // --8<-- [end:csv]
 
     // --8<-- [start:select]
@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (col("weight") / col("height").pow(2)).alias("bmi"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:select]
 
     // --8<-- [start:expression-expansion]
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .suffix("-5%"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:expression-expansion]
 
     // --8<-- [start:with_columns]
@@ -71,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (col("weight") / col("height").pow(2)).alias("bmi"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:with_columns]
 
     // --8<-- [start:filter]
@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .filter(col("birthdate").dt().year().lt(lit(1990)))
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:filter]
 
     // --8<-- [start:filter-multiple]
@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .and(col("height").gt(lit(1.7))),
         )
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:filter-multiple]
 
     // --8<-- [start:group_by]
@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by([(col("birthdate").dt().year() / lit(10) * lit(10)).alias("decade")])
         .agg([len()])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:group_by]
 
     // --8<-- [start:group_by-agg]
@@ -125,7 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("height").max().alias("tallest"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:group_by-agg]
 
     // --8<-- [start:complex]
@@ -147,7 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .prefix("avg_"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:complex]
 
     // --8<-- [start:join]
@@ -169,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .collect()?;
 
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:join]
 
     // --8<-- [start:concat]
@@ -191,7 +191,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         UnionArgs::default(),
     )?
     .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:concat]
 
     Ok(())

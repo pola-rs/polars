@@ -2399,7 +2399,11 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.index_of(element))
 
     def search_sorted(
-        self, element: IntoExpr | np.ndarray[Any, Any], side: SearchSortedSide = "any"
+        self,
+        element: IntoExpr | np.ndarray[Any, Any],
+        side: SearchSortedSide = "any",
+        *,
+        descending: bool = False,
     ) -> Expr:
         """
         Find indices where elements should be inserted to maintain order.
@@ -2414,6 +2418,9 @@ class Expr:
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
             If 'right', return the rightmost suitable location found is given.
+        descending
+            Boolean indicating whether the values are descending or not (they
+            are required to be sorted either way).
 
         Examples
         --------
@@ -2439,7 +2446,7 @@ class Expr:
         └──────┴───────┴─────┘
         """
         element = parse_into_expression(element, str_as_lit=True, list_as_series=True)  # type: ignore[arg-type]
-        return self._from_pyexpr(self._pyexpr.search_sorted(element, side))
+        return self._from_pyexpr(self._pyexpr.search_sorted(element, side, descending))
 
     def sort_by(
         self,

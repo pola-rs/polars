@@ -32,15 +32,15 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                 expr: _,
                 skip_empty: true,
             } => "explode(skip_empty)",
-            AExpr::Alias(_, name) => return write!(f, "alias({})", name),
-            AExpr::Column(name) => return write!(f, "col({})", name),
+            AExpr::Alias(_, name) => return write!(f, "alias({name})"),
+            AExpr::Column(name) => return write!(f, "col({name})"),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
-            AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {}", op),
+            AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {op}"),
             AExpr::Cast { dtype, options, .. } => {
                 return if options.is_strict() {
-                    write!(f, "strict cast({})", dtype)
+                    write!(f, "strict cast({dtype})")
                 } else {
-                    write!(f, "cast({})", dtype)
+                    write!(f, "cast({dtype})")
                 };
             },
             AExpr::Sort { options, .. } => {

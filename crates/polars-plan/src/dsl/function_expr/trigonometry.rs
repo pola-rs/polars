@@ -4,6 +4,7 @@ use polars_core::chunked_array::ops::arity::broadcast_binary_elementwise;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
 pub enum TrigonometricFunction {
     Cos,

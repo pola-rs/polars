@@ -11,10 +11,11 @@ from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
+from polars.testing import assert_frame_equal
+from polars.testing.parametric import series
 
 if TYPE_CHECKING:
     from polars._typing import IntoExpr
-from polars.testing import assert_frame_equal
 
 
 def isnan(value: object) -> bool:
@@ -351,3 +352,14 @@ def test_categorical(convert_to_literal: bool) -> None:
     ]:
         for value in expected_values:
             assert_index_of(s, value, convert_to_literal=convert_to_literal)
+
+
+@given(s=series(name="s", allow_chunks=True, max_size=10))
+def test_index_of_null_parametric(s: pl.Series) -> None:
+    idx_null = s.index_of(None)
+    if s.len() == 0:
+        assert idx_null is None
+    elif s.null_count() == 0:
+        assert idx_null is None
+    elif s.null_count() == len(s):
+        assert idx_null == 0

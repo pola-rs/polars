@@ -10,7 +10,6 @@ mod schema;
 
 pub use any_value::*;
 use arrow::bitmap::Bitmap;
-use arrow::bitmap::bitmask::BitMask;
 pub use arrow::legacy::utils::*;
 pub use arrow::trusted_len::TrustMyLength;
 use flatten::*;
@@ -1200,18 +1199,19 @@ pub(crate) fn index_to_chunked_index_rev<
     )
 }
 
-pub(crate) fn first_non_null<'a, I>(iter: I) -> Option<usize>
+pub fn first_non_null<'a, I>(iter: I) -> Option<usize>
 where
     I: Iterator<Item = Option<&'a Bitmap>>,
 {
     let mut offset = 0;
     for validity in iter {
-        if let Some(validity) = validity {
-            let mask = BitMask::from_bitmap(validity);
-            if let Some(n) = mask.nth_set_bit_idx(0, 0) {
+        if let Some(mask) = validity {
+            let len_mask = mask.len();
+            let n = mask.leading_zeros();
+            if n < len_mask {
                 return Some(offset + n);
             }
-            offset += validity.len()
+            offset += len_mask
         } else {
             return Some(offset);
         }
@@ -1219,7 +1219,7 @@ where
     None
 }
 
-pub(crate) fn last_non_null<'a, I>(iter: I, len: usize) -> Option<usize>
+pub fn last_non_null<'a, I>(iter: I, len: usize) -> Option<usize>
 where
     I: DoubleEndedIterator<Item = Option<&'a Bitmap>>,
 {
@@ -1228,15 +1228,15 @@ where
     }
     let mut offset = 0;
     for validity in iter.rev() {
-        if let Some(validity) = validity {
-            let mask = BitMask::from_bitmap(validity);
-            if let Some(n) = mask.nth_set_bit_idx_rev(0, mask.len()) {
-                let mask_start = len - offset - mask.len();
-                return Some(mask_start + n);
+        if let Some(mask) = validity {
+            let len_mask = mask.len();
+            let n = mask.trailing_zeros();
+            if n < len_mask {
+                return Some(len - offset - n - 1);
             }
-            offset += validity.len()
+            offset += len_mask;
         } else {
-            return Some(len - 1 - offset);
+            return Some(len - offset - 1);
         }
     }
     None

@@ -898,7 +898,7 @@ pub(crate) mod test {
     fn limit() {
         let a = get_chunked_array();
         let b = a.limit(2);
-        println!("{:?}", b);
+        println!("{b:?}");
         assert_eq!(b.len(), 2)
     }
 

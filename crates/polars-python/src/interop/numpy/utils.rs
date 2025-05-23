@@ -117,6 +117,6 @@ pub(super) fn polars_dtype_to_np_temporal_dtype<'py>(
             Timedelta::<units::Microseconds>::get_dtype(py)
         },
         DataType::Duration(TimeUnit::Nanoseconds) => Timedelta::<units::Nanoseconds>::get_dtype(py),
-        _ => panic!("only Datetime/Duration inputs supported, got {}", dtype),
+        _ => panic!("only Datetime/Duration inputs supported, got {dtype}"),
     }
 }

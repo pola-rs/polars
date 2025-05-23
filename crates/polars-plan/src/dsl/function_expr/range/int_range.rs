@@ -7,22 +7,16 @@ use super::utils::{ensure_range_bounds_contain_exactly_one_value, numeric_ranges
 const CAPACITY_FACTOR: usize = 5;
 
 pub(super) fn int_range(s: &[Column], step: i64, dtype: DataType) -> PolarsResult<Column> {
-    let mut start = &s[0];
-    let mut end = &s[1];
+    let start = &s[0];
+    let end = &s[1];
     let name = start.name();
 
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
-    polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype);
 
-    let (start_storage, end_storage);
-    if *start.dtype() != dtype {
-        start_storage = start.strict_cast(&dtype)?;
-        start = &start_storage;
-    }
-    if *end.dtype() != dtype {
-        end_storage = end.strict_cast(&dtype)?;
-        end = &end_storage;
-    }
+    // Done by type coercion
+    assert!(dtype.is_integer());
+    assert_eq!(start.dtype(), &dtype);
+    assert_eq!(end.dtype(), &dtype);
 
     with_match_physical_integer_polars_type!(dtype, |$T| {
         let start_v = get_first_series_value::<$T>(start)?;
@@ -46,10 +40,6 @@ pub(super) fn int_ranges(s: &[Column]) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
     let step = &s[2];
-
-    let start = start.cast(&DataType::Int64)?;
-    let end = end.cast(&DataType::Int64)?;
-    let step = step.cast(&DataType::Int64)?;
 
     let start = start.i64()?;
     let end = end.i64()?;

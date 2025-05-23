@@ -132,8 +132,7 @@ impl TryFrom<(ConvertedType, Option<(i32, i32)>)> for PrimitiveConvertedType {
             ConvertedType::INTERVAL => Interval,
             _ => {
                 return Err(ParquetError::oos(format!(
-                    "Converted type \"{:?}\" cannot be applied to a primitive type",
-                    ty
+                    "Converted type \"{ty:?}\" cannot be applied to a primitive type"
                 )));
             },
         })

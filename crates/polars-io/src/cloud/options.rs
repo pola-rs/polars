@@ -54,19 +54,30 @@ type Configs<T> = Vec<(T, String)>;
 
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub(crate) enum CloudConfig {
     #[cfg(feature = "aws")]
-    Aws(Configs<AmazonS3ConfigKey>),
+    Aws(
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<(String, String)>"))]
+        Configs<AmazonS3ConfigKey>,
+    ),
     #[cfg(feature = "azure")]
-    Azure(Configs<AzureConfigKey>),
+    Azure(
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<(String, String)>"))]
+        Configs<AzureConfigKey>,
+    ),
     #[cfg(feature = "gcp")]
-    Gcp(Configs<GoogleConfigKey>),
+    Gcp(
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<(String, String)>"))]
+        Configs<GoogleConfigKey>,
+    ),
     #[cfg(feature = "http")]
     Http { headers: Vec<(String, String)> },
 }
 
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
     pub max_retries: usize,
@@ -650,7 +661,7 @@ impl CloudOptions {
 
                     if let Some(v) = token {
                         this.config = Some(CloudConfig::Http {
-                            headers: vec![("Authorization".into(), format!("Bearer {}", v))],
+                            headers: vec![("Authorization".into(), format!("Bearer {v}"))],
                         })
                     }
 

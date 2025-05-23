@@ -113,12 +113,12 @@ impl ScanPredicate {
         let constant_columns = constant_columns.into_iter();
 
         let mut live_columns = self.live_columns.as_ref().clone();
-        let mut skip_batch_predicate_constants = Vec::with_capacity(
-            self.skip_batch_predicate
-                .is_some()
-                .then_some(1 + constant_columns.size_hint().0 * 3)
-                .unwrap_or_default(),
-        );
+        let mut skip_batch_predicate_constants =
+            Vec::with_capacity(if self.skip_batch_predicate.is_some() {
+                1 + constant_columns.size_hint().0 * 3
+            } else {
+                Default::default()
+            });
 
         let predicate_constants = constant_columns
             .filter_map(|(name, scalar): (PlSmallStr, Scalar)| {

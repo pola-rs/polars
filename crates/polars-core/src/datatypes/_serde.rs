@@ -29,6 +29,21 @@ impl Serialize for DataType {
     }
 }
 
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for DataType {
+    fn schema_name() -> String {
+        SerializableDataType::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        SerializableDataType::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        SerializableDataType::json_schema(generator)
+    }
+}
+
 #[cfg(feature = "dtype-categorical")]
 struct Wrap<T>(T);
 
@@ -75,6 +90,8 @@ impl<'de> serde::Deserialize<'de> for Wrap<Utf8ViewArray> {
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[serde(rename = "DataType")]
 enum SerializableDataType {
     Boolean,
     UInt8,

@@ -162,6 +162,7 @@ impl OptimizationRule for TypeCoercionRule {
 
                 inline_or_prune_cast(&input, &dtype, options, lp_node, lp_arena, expr_arena)?
             },
+            AExpr::Agg(IRAggExpr::Implode(expr)) => inline_implode(expr, expr_arena)?,
             AExpr::Ternary {
                 truthy: truthy_node,
                 falsy: falsy_node,
@@ -755,6 +756,101 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
                 None
             },
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                function:
+                    ref function @ FunctionExpr::Range(RangeFunction::IntRange { step: _, ref dtype }),
+                ref input,
+                options,
+            } => {
+                polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype);
+
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, type_start) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
+                let (_, type_end) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[1].node(),
+                    &input_schema
+                ));
+
+                if [&type_start, &type_end]
+                    .into_iter()
+                    .all(|arg_dtype| arg_dtype == dtype)
+                {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let dtype = dtype.clone();
+                let mut input = input.clone();
+                for (i, arg_dtype) in [type_start, type_end].into_iter().enumerate() {
+                    cast_expr_ir(
+                        &mut input[i],
+                        &arg_dtype,
+                        &dtype,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+                }
+
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                function: ref function @ FunctionExpr::Range(RangeFunction::IntRanges),
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, type_start) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
+                let (_, type_end) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[1].node(),
+                    &input_schema
+                ));
+                let (_, type_step) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[2].node(),
+                    &input_schema
+                ));
+
+                if [&type_start, &type_end, &type_step]
+                    .into_iter()
+                    .all(|dtype| dtype == &DataType::Int64)
+                {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let mut input = input.clone();
+                for (i, dtype) in [type_start, type_end, type_step].into_iter().enumerate() {
+                    cast_expr_ir(
+                        &mut input[i],
+                        &dtype,
+                        &DataType::Int64,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+                }
+
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
             AExpr::Slice { offset, length, .. } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (_, offset_dtype) =
@@ -946,6 +1042,32 @@ fn raise_supertype(
         polars_bail!(InvalidOperation: "could not determine supertype of: {} in expression '{}'\
                         \n\nIt might also be the case that the type combination isn't allowed in this specific operation.", format_list!(&dtypes), function);
     }
+}
+
+fn inline_implode(expr: Node, expr_arena: &mut Arena<AExpr>) -> PolarsResult<Option<AExpr>> {
+    let out = match expr_arena.get(expr) {
+        // INLINE
+        AExpr::Cast {
+            expr,
+            dtype,
+            options,
+        } => {
+            let dtype = dtype.clone();
+            let options = *options;
+            inline_implode(*expr, expr_arena)?.map(|expr| {
+                let expr = expr_arena.add(expr);
+                AExpr::Cast {
+                    expr,
+                    dtype: DataType::List(Box::new(dtype)),
+                    options,
+                }
+            })
+        },
+        AExpr::Literal(lv) => Some(AExpr::Literal(lv.clone().implode()?)),
+        _ => None,
+    };
+
+    Ok(out)
 }
 
 #[cfg(test)]

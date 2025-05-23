@@ -10,6 +10,7 @@ pub static EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
     any(feature = "serde", feature = "serde-lazy"),
     derive(Serialize, Deserialize)
 )]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Field {
     pub name: PlSmallStr,
     pub dtype: DataType,
