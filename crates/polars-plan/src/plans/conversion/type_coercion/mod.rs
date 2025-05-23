@@ -755,6 +755,101 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
                 None
             },
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                function:
+                    ref function @ FunctionExpr::Range(RangeFunction::IntRange { step: _, ref dtype }),
+                ref input,
+                options,
+            } => {
+                polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype);
+
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, type_start) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
+                let (_, type_end) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[1].node(),
+                    &input_schema
+                ));
+
+                if [&type_start, &type_end]
+                    .into_iter()
+                    .all(|arg_dtype| arg_dtype == dtype)
+                {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let dtype = dtype.clone();
+                let mut input = input.clone();
+                for (i, arg_dtype) in [type_start, type_end].into_iter().enumerate() {
+                    cast_expr_ir(
+                        &mut input[i],
+                        &arg_dtype,
+                        &dtype,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+                }
+
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
+            #[cfg(feature = "range")]
+            AExpr::Function {
+                function: ref function @ FunctionExpr::Range(RangeFunction::IntRanges),
+                ref input,
+                options,
+            } => {
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, type_start) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[0].node(),
+                    &input_schema
+                ));
+                let (_, type_end) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[1].node(),
+                    &input_schema
+                ));
+                let (_, type_step) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    input[2].node(),
+                    &input_schema
+                ));
+
+                if [&type_start, &type_end, &type_step]
+                    .into_iter()
+                    .all(|dtype| dtype == &DataType::Int64)
+                {
+                    return Ok(None);
+                }
+
+                let function = function.clone();
+                let mut input = input.clone();
+                for (i, dtype) in [type_start, type_end, type_step].into_iter().enumerate() {
+                    cast_expr_ir(
+                        &mut input[i],
+                        &dtype,
+                        &DataType::Int64,
+                        expr_arena,
+                        CastOptions::Strict,
+                    )?;
+                }
+
+                Some(AExpr::Function {
+                    function,
+                    input,
+                    options,
+                })
+            },
             AExpr::Slice { offset, length, .. } => {
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (_, offset_dtype) =

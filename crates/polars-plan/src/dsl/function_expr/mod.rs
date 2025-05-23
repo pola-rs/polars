@@ -105,7 +105,7 @@ pub use self::cat::CategoricalFunction;
 pub use self::datetime::TemporalFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
-pub(super) use self::range::RangeFunction;
+pub use self::range::RangeFunction;
 #[cfg(feature = "rolling_window")]
 pub(super) use self::rolling::RollingFunction;
 #[cfg(feature = "rolling_window_by")]
