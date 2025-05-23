@@ -148,9 +148,8 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
                 if leading_ones < length {
                     return Ok(Some(index + leading_ones));
                 }
-            } else {
-                index += length;
             }
+            index += length;
         }
         return Ok(None);
     }
