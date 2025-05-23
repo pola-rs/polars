@@ -2,7 +2,6 @@ use std::ops::Not;
 
 use polars_core::datatypes::unpack_dtypes;
 use polars_core::prelude::*;
-use polars_lazy::prelude::*;
 use polars_ops::series::abs;
 
 /// Configuration options for comparing Series equality.
@@ -556,105 +555,137 @@ pub fn assert_series_equal(
     )
 }
 
-// ----- DataFrame portion
-
+/// Configuration options for comparing DataFrame equality.
+///
+/// Controls the behavior of DataFrame equality comparisons by specifying
+/// which aspects to check and the tolerance for floating point comparisons.
 pub struct DataFrameEqualOptions {
-    pub check_row_order: bool,
-    pub check_column_order: bool,
-    pub check_dtypes: bool,
-    pub check_exact: bool,
-    pub rtol: f64,
-    pub atol: f64,
-    pub categorical_as_str: bool,
+   /// Whether to check that rows appear in the same order.
+   pub check_row_order: bool,
+   /// Whether to check that columns appear in the same order.
+   pub check_column_order: bool,
+   /// Whether to check that the data types match for corresponding columns.
+   pub check_dtypes: bool,
+   /// Whether to check for exact equality (true) or approximate equality (false) for floating point values.
+   pub check_exact: bool,
+   /// Relative tolerance for approximate equality of floating point values.
+   pub rtol: f64,
+   /// Absolute tolerance for approximate equality of floating point values.
+   pub atol: f64,
+   /// Whether to compare categorical values as strings.
+   pub categorical_as_str: bool,
 }
 
 impl Default for DataFrameEqualOptions {
-    fn default() -> Self {
-        Self {
-            check_row_order: true,
-            check_column_order: true,
-            check_dtypes: true,
-            check_exact: false,
-            rtol: 1e-5,
-            atol: 1e-8,
-            categorical_as_str: false,
-        }
-    }
+   /// Creates a new `DataFrameEqualOptions` with default settings.
+   ///
+   /// Default configuration:
+   /// - Checks row order, column order, and data types
+   /// - Uses approximate equality comparisons for floating point values
+   /// - Sets relative tolerance to 1e-5 and absolute tolerance to 1e-8 for floating point comparisons
+   /// - Does not convert categorical values to strings for comparison
+   fn default() -> Self {
+       Self {
+           check_row_order: true,
+           check_column_order: true,
+           check_dtypes: true,
+           check_exact: false,
+           rtol: 1e-5,
+           atol: 1e-8,
+           categorical_as_str: false,
+       }
+   }
 }
 
 impl DataFrameEqualOptions {
-    pub fn new() -> Self {
-        Self::default()
-    }
+   /// Creates a new `DataFrameEqualOptions` with default settings.
+   pub fn new() -> Self {
+       Self::default()
+   }
 
-    pub fn with_check_row_order(mut self, value: bool) -> Self {
-        self.check_row_order = value;
-        self
-    }
+   /// Sets whether to check that rows appear in the same order.
+   pub fn with_check_row_order(mut self, value: bool) -> Self {
+       self.check_row_order = value;
+       self
+   }
 
-    pub fn with_check_column_order(mut self, value: bool) -> Self {
-        self.check_column_order = value;
-        self
-    }
+   /// Sets whether to check that columns appear in the same order.
+   pub fn with_check_column_order(mut self, value: bool) -> Self {
+       self.check_column_order = value;
+       self
+   }
 
-    pub fn with_check_dtypes(mut self, value: bool) -> Self {
-        self.check_dtypes = value;
-        self
-    }
+   /// Sets whether to check that data types match for corresponding columns.
+   pub fn with_check_dtypes(mut self, value: bool) -> Self {
+       self.check_dtypes = value;
+       self
+   }
 
-    pub fn with_check_exact(mut self, value: bool) -> Self {
-        self.check_exact = value;
-        self
-    }
+   /// Sets whether to check for exact equality (true) or approximate equality (false) for floating point values.
+   pub fn with_check_exact(mut self, value: bool) -> Self {
+       self.check_exact = value;
+       self
+   }
 
-    pub fn with_rtol(mut self, value: f64) -> Self {
-        self.rtol = value;
-        self
-    }
+   /// Sets the relative tolerance for approximate equality of floating point values.
+   pub fn with_rtol(mut self, value: f64) -> Self {
+       self.rtol = value;
+       self
+   }
 
-    pub fn with_atol(mut self, value: f64) -> Self {
-        self.atol = value;
-        self
-    }
+   /// Sets the absolute tolerance for approximate equality of floating point values.
+   pub fn with_atol(mut self, value: f64) -> Self {
+       self.atol = value;
+       self
+   }
 
-    pub fn with_categorical_as_str(mut self, value: bool) -> Self {
-        self.categorical_as_str = value;
-        self
-    }
+   /// Sets whether to compare categorical values as strings.
+   pub fn with_categorical_as_str(mut self, value: bool) -> Self {
+       self.categorical_as_str = value;
+       self
+   }
 }
 
-// **Change:** Original Python code has a function titled
-// `_assert_correct_input_type` which will return `False` for
-// a DataFrame and `True` for a LazyFrame. This is because the input
-// for the `assert_frame_equal()` function is `DataFrame | LazyFrame`,
-// but this is not possible to do in Rust due to the strong static typing
-// system. For now, will build the function around DataFrames, but other approaches
-// such as generic trait bounds or enum types can be used if we want
-// the macro to take either a DataFrame or LazyFrame. Need some guidance on this
-// from Polars team. As a note, it seems like the Python function performs
-// the comparisons on DataFrames because, if the input frame is a LazyFrame,
-// it calls `.collect()` before doing any comparisons. Additionally, LazyFrames
-// can simply just be made into DataFrames with `.collect()`. That is why I chose to
-// make it rely on a DataFrame rather than LazyFrame.
-
-// **Change**: `_assert_frame_schema_equal` in the Python code
-// has the input as `left: DataFrame | LazyFrame,` and
-// `right: DataFrame | LazyFrame,`. As mentioned in the logic of
-// the previous comment, will only stick to using DataFrames unless
-// otherwise specified later.
+/// Compares DataFrame schemas for equality based on specified criteria.
+///
+/// This function validates that two DataFrames have compatible schemas by checking
+/// column names, their order, and optionally their data types according to the
+/// provided configuration parameters.
+///
+/// # Arguments
+///
+/// * `left` - The first DataFrame to compare
+/// * `right` - The second DataFrame to compare
+/// * `check_dtypes` - If true, requires data types to match for corresponding columns
+/// * `check_column_order` - If true, requires columns to appear in the same order
+///
+/// # Returns
+///
+/// * `Ok(())` if DataFrame schemas match according to specified criteria
+/// * `Err` with details about schema mismatches if DataFrames differ
+///
+/// # Behavior
+///
+/// The function performs schema validation in the following order:
+///
+/// 1. **Fast path**: Returns immediately if schemas are identical
+/// 2. **Column name validation**: Ensures both DataFrames have the same set of column names
+///    - Reports columns present in left but missing in right
+///    - Reports columns present in right but missing in left
+/// 3. **Column order validation**: If `check_column_order` is true, verifies columns appear in the same sequence
+/// 4. **Data type validation**: If `check_dtypes` is true, ensures corresponding columns have matching data types
+///    - When `check_column_order` is false, compares data type sets for equality
+///    - When `check_column_order` is true, performs more precise type checking
+///
 pub fn assert_dataframe_schema_equal(
     left: &DataFrame,
     right: &DataFrame,
     check_dtypes: bool,
     check_column_order: bool,
 ) -> PolarsResult<()> {
-    // **Change:** Since I am using the input as a DataFrame, it first needs to be
-    // converted to a LazyFrame to use `.collect_schema()`. This will be used for the fast
-    // path comparison for equal frames since `.schema_equal()` can result in
-    // premature errors and breaks if there is a differing number of columns or
-    // another difference, resulting in the following error logic not running.
-    let left_schema = left.clone().lazy().collect_schema()?;
-    let right_schema = right.clone().lazy().collect_schema()?;
+
+    let left_schema = left.schema();
+    let right_schema = right.schema();
 
     let ordered_left_cols = left.get_column_names();
     let ordered_right_cols = right.get_column_names();
@@ -665,6 +696,7 @@ pub fn assert_dataframe_schema_equal(
     let left_dtypes: PlHashSet<DataType> = left.dtypes().into_iter().collect();
     let right_dtypes: PlHashSet<DataType> = right.dtypes().into_iter().collect();
 
+    // Fast path for equal DataFrames
     if left_schema == right_schema {
         return Ok(());
     }
@@ -724,17 +756,50 @@ pub fn assert_dataframe_schema_equal(
     Ok(())
 }
 
+/// Verifies that two DataFrames are equal according to a set of configurable criteria.
+///
+/// This function serves as the main entry point for comparing DataFrames, first validating
+/// schema compatibility and then comparing the actual data values column by column.
+///
+/// # Arguments
+///
+/// * `left` - The first DataFrame to compare
+/// * `right` - The second DataFrame to compare
+/// * `options` - A `DataFrameEqualOptions` struct containing configuration parameters:
+///   * `check_row_order` - If true, rows must be in the same order
+///   * `check_column_order` - If true, columns must be in the same order
+///   * `check_dtypes` - If true, verifies data types match for corresponding columns
+///   * `check_exact` - If true, requires exact equality for float values
+///   * `rtol` - Relative tolerance for float comparison
+///   * `atol` - Absolute tolerance for float comparison
+///   * `categorical_as_str` - If true, converts categorical values to strings before comparison
+///
+/// # Returns
+///
+/// * `Ok(())` if DataFrames match according to all specified criteria
+/// * `Err` with details about the first mismatch encountered:
+///   * Schema mismatches (column names, order, or data types)
+///   * Height (row count) mismatch
+///   * Value mismatches in specific columns
+///
+/// # Order of Checks
+///
+/// 1. Schema validation (column names, order, and data types via `assert_dataframe_schema_equal`)
+/// 2. DataFrame height (row count)
+/// 3. Row ordering (sorts both DataFrames if `check_row_order` is false)
+/// 4. Column-by-column value comparison (delegated to `assert_series_values_equal`)
+///
+/// # Behavior
+///
+/// When `check_row_order` is false, both DataFrames are sorted using all columns to ensure
+/// consistent ordering before value comparison. This allows for row-order-independent equality
+/// checking while maintaining deterministic results.
+///
 pub fn assert_dataframe_equal(
     left: &DataFrame,
     right: &DataFrame,
     options: DataFrameEqualOptions,
 ) -> PolarsResult<()> {
-    // **Change:** In the Python code, there are lines of code that
-    // deal with determining if the input frames (`left`, `right`)
-    // are DataFrames or LazyFrames. That part has been omitted here
-    // since we are assuming the inputs are DataFrames due to Rust's strict
-    // static typing system.
-
     assert_dataframe_schema_equal(
         left,
         right,
@@ -753,20 +818,12 @@ pub fn assert_dataframe_equal(
 
     let left_cols = left.get_column_names_owned();
 
-    // **Change:** The Python code has a `_sort_dataframes()` custom function
-    // but these seemed unnecessary. Same as with the Series code,
-    // I did not make a separate function and just implemented it here.
     let (left, right) = if !options.check_row_order {
         (
             left.sort(left_cols.clone(), SortMultipleOptions::default())?,
             right.sort(left_cols.clone(), SortMultipleOptions::default())?,
         )
     } else {
-        // **Note:** This is a bit concerning for really large dataframes, since
-        // cloning can be computationally expensive. Another option is to use
-        // `sort_in_place()` method, but that would require mutable references to the
-        // input DataFrames. Is there another way to execute the `else` condition without
-        // having to explicitly clone or use mutable references?
         (left.clone(), right.clone())
     };
 

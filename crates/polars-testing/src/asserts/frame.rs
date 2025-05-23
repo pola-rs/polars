@@ -1,3 +1,41 @@
+/// Asserts that two DataFrames are equal according to the specified options.
+///
+/// This macro compares two Polars DataFrame objects and panics with a detailed error message if they are not equal.
+/// It provides two forms:
+/// - With custom comparison options
+/// - With default comparison options
+///
+/// # Example
+///
+/// ```
+/// use polars_core::prelude::*;
+/// use polars_testing::assert_dataframe_equal;
+/// use polars_testing::asserts::DataFrameEqualOptions;
+///
+/// // Create two DataFrames to compare
+/// let df1 = df! {
+///     "a" => [1, 2, 3],
+///     "b" => [4.0, 5.0, 6.0],
+/// }.unwrap();
+/// let df2 = df! {
+///     "a" => [1, 2, 3],
+///     "b" => [4.0, 5.0, 6.0],
+/// }.unwrap();
+///
+/// // Assert with default options
+/// assert_dataframe_equal!(&df1, &df2);
+///
+/// // Assert with custom options
+/// let options = DataFrameEqualOptions::default()
+///     .with_check_exact(true)
+///     .with_check_row_order(false);
+/// assert_dataframe_equal!(&df1, &df2, options);
+/// ```
+///
+/// # Panics
+///
+/// Panics when the DataFrames are not equal according to the specified comparison criteria.
+///
 #[macro_export]
 macro_rules! assert_dataframe_equal {
     ($left:expr, $right:expr $(, $options:expr)?) => {
