@@ -2272,7 +2272,7 @@ class Series:
         drop_first
             Remove the first category from the variable being encoded.
         output_type
-            Data type of the dummy columns. By default, the data type is u8
+            Data type of the dummy variables. By default, the output type is `u8`.
 
         Examples
         --------
