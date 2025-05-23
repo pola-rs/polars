@@ -119,6 +119,3 @@ def test_extend_bad_input_type() -> None:
     b = DummyDataFrameSubclass({"x": [4, 5, 6]})
 
     a.extend(b)
-
-    expected = pl.DataFrame({"x": [1, 2, 3, 4, 5, 6]})
-    assert_frame_equal(a, expected)

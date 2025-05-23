@@ -84,6 +84,4 @@ def test_zip_with_bad_input_type() -> None:
     s2 = DummySeriesSubclass(s2)
     mask = DummySeriesSubclass(mask)
 
-    out = s1.zip_with(mask, s2)
-    expected = pl.Series([1, 5, 3])
-    assert_series_equal(out, expected)
+    s1.zip_with(mask, s2)

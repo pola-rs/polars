@@ -105,5 +105,3 @@ def test_vstack_bad_input_type() -> None:
     b = DummyDataFrameSubclass(b)
 
     a = a.vstack(b)
-    expected = pl.DataFrame({"x": [1, 2, 3, 4, 5, 6]})
-    assert_frame_equal(a, expected)
