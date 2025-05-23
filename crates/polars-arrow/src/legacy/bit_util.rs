@@ -1,4 +1,3 @@
-use crate::bitmap::Bitmap;
 /// Forked from Arrow until their API stabilizes.
 ///
 /// Note that the bound checks are optimized away.
