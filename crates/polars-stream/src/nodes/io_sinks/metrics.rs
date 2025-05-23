@@ -63,14 +63,14 @@ impl WriteMetrics {
 
             let mut has_non_null_non_nan_values = df.height() != null_count;
             if c.dtype().is_float() {
-                let nan_count = c.is_nan()?.sum().unwrap_or_default() as u64;
+                let nan_count = c.is_nan()?.sum().unwrap_or_default();
                 has_non_null_non_nan_values = nan_count as usize + null_count < df.height();
                 w.nan_count += nan_count;
             }
 
             if has_non_null_non_nan_values {
-                w.lower_bound.update_group(&c, 0, 0)?;
-                w.upper_bound.update_group(&c, 0, 0)?;
+                w.lower_bound.update_group(c, 0, 0)?;
+                w.upper_bound.update_group(c, 0, 0)?;
             }
         }
         Ok(())

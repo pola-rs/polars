@@ -500,6 +500,7 @@ pub enum PartitionVariantIR {
     },
 }
 
+#[cfg(feature = "cse")]
 impl SinkTypeIR {
     pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
         std::mem::discriminant(self).hash(state);

@@ -336,7 +336,7 @@ fn to_graph_rec<'a>(
                 None => None,
                 Some(c) => {
                     let (selectors, descending, nulls_last) = c
-                        .into_iter()
+                        .iter()
                         .map(|c| {
                             Ok((
                                 create_stream_expr(&c.expr, ctx, &input_schema)?,

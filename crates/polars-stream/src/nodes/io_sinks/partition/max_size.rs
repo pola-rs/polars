@@ -50,6 +50,7 @@ pub struct MaxSizePartitionSinkNode {
 
 const DEFAULT_RETIRE_TASKS: usize = 1;
 impl MaxSizePartitionSinkNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         input_schema: SchemaRef,
         max_size: IdxSize,
