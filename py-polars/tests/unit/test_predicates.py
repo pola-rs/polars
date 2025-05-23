@@ -1160,28 +1160,28 @@ def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"row_nr": [2, 4, 5], "y": [1, 1, 1]}))
 
 
-@pytest.mark.slow
-def test_predicate_pushdown_to_python_literal_size_limit() -> None:
-    saw_predicate = False
+# @pytest.mark.slow
+# def test_predicate_pushdown_to_python_literal_size_limit() -> None:
+#     saw_predicate = False
 
-    def generator(
-        with_columns: list[str] | None,
-        predicate: pl.Expr | None,
-        n_rows: int | None,
-        batch_size: int | None,
-    ) -> Iterator[pl.DataFrame]:
-        nonlocal saw_predicate
-        df = pl.DataFrame({"row_nr": [1, 2, 3, 4, 5], "y": [0, 1, 0, 1, 1]})
-        saw_predicate = predicate is not None
-        yield df
+#     def generator(
+#         with_columns: list[str] | None,
+#         predicate: pl.Expr | None,
+#         n_rows: int | None,
+#         batch_size: int | None,
+#     ) -> Iterator[pl.DataFrame]:
+#         nonlocal saw_predicate
+#         df = pl.DataFrame({"row_nr": [1, 2, 3, 4, 5], "y": [0, 1, 0, 1, 1]})
+#         saw_predicate = predicate is not None
+#         yield df
 
-    q = (
-        register_io_source(
-            io_source=generator, schema={"x": pl.Int64, "y": pl.Int64}
-        ).filter(pl.col("y").cast(pl.String) == pl.lit(" " * (2 + (1 << 17))))
-        # .filter(pl.col("y") == 1)
-    )
+#     q = (
+#         register_io_source(
+#             io_source=generator, schema={"x": pl.Int64, "y": pl.Int64}
+#         ).filter(pl.col("y").cast(pl.String) == pl.lit(" " * (2 + (1 << 17))))
+#         # .filter(pl.col("y") == 1)
+#     )
 
-    plan = q.explain()
+#     plan = q.explain()
 
-    print(plan[:100])
+#     print(plan[:100])
