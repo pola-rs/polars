@@ -3398,7 +3398,6 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def top_k_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
@@ -3417,9 +3416,6 @@ class Series:
         This has time complexity:
 
         .. math:: O(n \log{n})
-
-        .. versionchanged:: 1.0.0
-            The `descending` parameter was renamed to `reverse`.
 
         Parameters
         ----------
@@ -3488,7 +3484,6 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def bottom_k_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
@@ -3507,9 +3502,6 @@ class Series:
         This has time complexity:
 
         .. math:: O(n \log{n})
-
-        .. versionchanged:: 1.0.0
-            The `descending` parameter was renamed `reverse`.
 
         Parameters
         ----------
