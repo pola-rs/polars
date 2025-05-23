@@ -1,4 +1,5 @@
 use std::fmt;
+use std::ops::Deref;
 
 use polars_core::error::*;
 use polars_utils::{format_list_container_truncated, format_list_truncated};
@@ -18,6 +19,7 @@ pub struct TreeFmtNode<'a> {
 }
 
 pub struct TreeFmtAExpr<'a>(&'a AExpr);
+pub struct TreeFmtExpr<'a>(&'a Expr);
 
 /// Hack UpperExpr trait to get a kind of formatting that doesn't traverse the nodes.
 /// So we can format with {foo:E}
@@ -75,6 +77,107 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::Window { .. } => "window",
             AExpr::Slice { .. } => "slice",
             AExpr::Len => constants::LEN,
+        };
+
+        write!(f, "{s}")
+    }
+}
+
+impl fmt::Display for TreeFmtExpr<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self.0 {
+            Expr::Explode {
+                input: _,
+                skip_empty: false,
+            } => "explode",
+            Expr::Explode {
+                input: _,
+                skip_empty: true,
+            } => "explode(skip_empty)",
+            Expr::Alias(_, name) => return write!(f, "alias({name})"),
+            Expr::Column(name) => return write!(f, "col({name})"),
+            Expr::Literal(lv) => return write!(f, "lit({lv:?})"),
+            Expr::BinaryExpr { op, .. } => return write!(f, "binary: {op}"),
+            Expr::Cast { dtype, options, .. } => {
+                return if options.is_strict() {
+                    write!(f, "strict cast({dtype})")
+                } else {
+                    write!(f, "cast({dtype})")
+                };
+            },
+            Expr::Sort { options, .. } => {
+                return write!(
+                    f,
+                    "sort: {}{}{}",
+                    options.descending as u8, options.nulls_last as u8, options.multithreaded as u8
+                );
+            },
+            Expr::Gather { .. } => "gather",
+            Expr::SortBy { sort_options, .. } => {
+                write!(f, "sort_by:")?;
+                for i in &sort_options.descending {
+                    write!(f, "{}", *i as u8)?;
+                }
+                for i in &sort_options.nulls_last {
+                    write!(f, "{}", *i as u8)?;
+                }
+                write!(f, "{}", sort_options.multithreaded as u8)?;
+                return Ok(());
+            },
+            Expr::Filter { .. } => "filter",
+            Expr::Agg(a) => match a {
+                AggExpr::Min {
+                    input: _,
+                    propagate_nans: false,
+                } => "min",
+                AggExpr::Min {
+                    input: _,
+                    propagate_nans: true,
+                } => "nan_min",
+                AggExpr::Max {
+                    input: _,
+                    propagate_nans: false,
+                } => "max",
+                AggExpr::Max {
+                    input: _,
+                    propagate_nans: true,
+                } => "nan_max",
+                AggExpr::Median(_) => "median",
+                AggExpr::NUnique(_) => "n_unique",
+                AggExpr::First(_) => "first",
+                AggExpr::Last(_) => "last",
+                AggExpr::Mean(_) => "mean",
+                AggExpr::Implode(_) => "implode",
+                AggExpr::Count(_, _) => "count",
+                AggExpr::Quantile {
+                    expr: _,
+                    quantile: _,
+                    method: _,
+                } => "quantile",
+                AggExpr::Sum(_) => "sum",
+                AggExpr::AggGroups(_) => "agg_groups",
+                AggExpr::Std(_, _) => "std",
+                AggExpr::Var(_, _) => "var",
+            },
+            Expr::Ternary { .. } => "ternary",
+            Expr::AnonymousFunction { options, .. } => {
+                return write!(f, "anonymous_function: {}", options.fmt_str);
+            },
+            Expr::Function { function, .. } => return write!(f, "function: {function}"),
+            Expr::Window { .. } => "window",
+            Expr::Slice { .. } => "slice",
+            Expr::Len => constants::LEN,
+            Expr::Columns(cols) => return write!(f, "cols{:?}", cols.deref()),
+            Expr::DtypeColumn(dtypes) => return write!(f, "col_dtypes{:?}", dtypes.deref()),
+            Expr::IndexColumn(i) => return write!(f, "index_col{:?}", i.deref()),
+            Expr::Wildcard => "all()",
+            Expr::Exclude(_, _) => "exclude",
+            Expr::KeepName(_) => "keep_name",
+            Expr::Nth(n) => return write!(f, "nth({n})"),
+            Expr::RenameAlias { .. } => "rename_alias",
+            Expr::Field(_) => "field",
+            Expr::SubPlan(_, _) => "subplan",
+            Expr::Selector(_) => "selector",
         };
 
         write!(f, "{s}")
@@ -430,6 +533,11 @@ pub(crate) struct TreeFmtVisitor {
     pub(crate) display: TreeFmtVisitorDisplay,
 }
 
+#[derive(Default)]
+pub(crate) struct ExprTreeFmtVisitor {
+    pub(crate) visitor: TreeFmtVisitor,
+}
+
 impl Visitor for TreeFmtVisitor {
     type Node = AexprNode;
     type Arena = Arena<AExpr>;
@@ -476,6 +584,61 @@ impl Visitor for TreeFmtVisitor {
         // the width is increased once after one or more depth-first branches
         // this way we avoid empty columns in the resulting tree representation
         self.width += if self.prev_depth == self.depth { 1 } else { 0 };
+
+        Ok(VisitRecursion::Continue)
+    }
+}
+
+impl Visitor for ExprTreeFmtVisitor {
+    type Node = Expr;
+    type Arena = ();
+
+    /// Invoked before any children of `node` are visited.
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        _arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        let repr = TreeFmtExpr(node);
+        let repr = repr.to_string();
+
+        if self.visitor.levels.len() <= self.visitor.depth {
+            self.visitor.levels.push(vec![])
+        }
+
+        // the post-visit ensures the width of this node is known
+        let row = self.visitor.levels.get_mut(self.visitor.depth).unwrap();
+
+        // set default values to ensure we format at the right width
+        row.resize(self.visitor.width + 1, "".to_string());
+        row[self.visitor.width] = repr;
+
+        // before entering a depth-first branch we preserve the depth to control the width increase
+        // in the post-visit
+        self.visitor.prev_depth = self.visitor.depth;
+
+        // we will enter depth first, we enter child so depth increases
+        self.visitor.depth += 1;
+
+        Ok(VisitRecursion::Continue)
+    }
+
+    fn post_visit(
+        &mut self,
+        _node: &Self::Node,
+        _arena: &Self::Arena,
+    ) -> PolarsResult<VisitRecursion> {
+        // we finished this branch so we decrease in depth, back the caller node
+        self.visitor.depth -= 1;
+
+        // because we traverse depth first
+        // the width is increased once after one or more depth-first branches
+        // this way we avoid empty columns in the resulting tree representation
+        self.visitor.width += if self.visitor.prev_depth == self.visitor.depth {
+            1
+        } else {
+            0
+        };
 
         Ok(VisitRecursion::Continue)
     }
@@ -957,6 +1120,12 @@ fn tree_fmt(tree: &TreeFmtVisitor, f: &mut fmt::Formatter<'_>) -> std::fmt::Resu
 impl fmt::Display for TreeFmtVisitor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         tree_fmt(self, f)
+    }
+}
+
+impl fmt::Display for ExprTreeFmtVisitor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        tree_fmt(&self.visitor, f)
     }
 }
 
