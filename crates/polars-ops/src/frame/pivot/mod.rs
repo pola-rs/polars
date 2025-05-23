@@ -321,7 +321,10 @@ fn pivot_impl_single_column(
                             let name = expr.root_name()?.clone();
                             let mut value_col = value_col.clone();
                             value_col.rename(name);
-                            let tmp_df = value_col.into_frame();
+                            let tmp_df = value_col
+                                .into_frame()
+                                .hstack(pivot_df.get_columns())
+                                .unwrap();
                             let mut aggregated = Column::from(expr.evaluate(&tmp_df, &groups)?);
                             aggregated.rename(value_col_name.clone());
                             aggregated
