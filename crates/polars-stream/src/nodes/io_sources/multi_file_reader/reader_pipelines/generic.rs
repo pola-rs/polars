@@ -715,8 +715,7 @@ async fn start_reader_impl(
         ApplyExtraOps::Initialized { .. } => {
             if verbose {
                 eprintln!(
-                    "start_reader_impl: scan_source_idx: {}, ApplyExtraOps::Initialized",
-                    scan_source_idx
+                    "start_reader_impl: scan_source_idx: {scan_source_idx}, ApplyExtraOps::Initialized",
                 );
             }
 
@@ -733,8 +732,7 @@ async fn start_reader_impl(
         ApplyExtraOps::Noop => {
             if verbose {
                 eprintln!(
-                    "start_reader_impl: scan_source_idx: {}, ApplyExtraOps::Noop",
-                    scan_source_idx
+                    "start_reader_impl: scan_source_idx: {scan_source_idx}, ApplyExtraOps::Noop",
                 );
             }
 
