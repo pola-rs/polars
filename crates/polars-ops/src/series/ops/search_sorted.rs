@@ -3,6 +3,21 @@ use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
+/// Check if we'll hit https://github.com/pola-rs/polars/issues/20171
+pub fn is_recursively_categorical(dtype: &DataType) -> bool {
+    if dtype.leaf_dtype().is_categorical() {
+        return true;
+    }
+    if let DataType::Struct(fields) = dtype {
+        for field in fields {
+            if is_recursively_categorical(&field.dtype) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 pub fn search_sorted(
     s: &Series,
     search_values: &Series,
@@ -11,7 +26,7 @@ pub fn search_sorted(
 ) -> PolarsResult<IdxCa> {
     let original_dtype = s.dtype();
 
-    if s.dtype().is_categorical() {
+    if is_recursively_categorical(original_dtype) {
         // See https://github.com/pola-rs/polars/issues/20171
         polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
     }

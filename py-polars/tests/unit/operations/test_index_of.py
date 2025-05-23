@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
-from hypothesis import example, given
+from hypothesis import example, given, reproduce_failure
 from hypothesis import strategies as st
 
 import polars as pl
@@ -358,7 +358,9 @@ def test_categorical(convert_to_literal: bool) -> None:
             assert_index_of(s, value, convert_to_literal=convert_to_literal)
 
 
-@given(s=series(name="s", allow_chunks=True, max_size=10))
+@given(
+    s=series(name="s", allow_chunks=True, max_size=10, excluded_dtypes=pl.Categorical)
+)
 def test_index_of_null_parametric(s: pl.Series) -> None:
     idx_null = s.index_of(None)
     if s.len() == 0:

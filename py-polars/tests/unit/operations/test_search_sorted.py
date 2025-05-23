@@ -261,3 +261,10 @@ def test_search_sorted_structs_with_nulls(
 
 def test_search_sorted_enum() -> None:
     assert_can_find_values(["a", None, "b", "c"], pl.Enum(["a", "b", "c"]))
+
+
+def test_index_of_null() -> None:
+    series = pl.Series("s", [None], dtype=pl.Struct({"a": pl.UInt16()}))
+    for descending in [False, True]:
+        idx_null = series.search_sorted(None, descending=descending)
+        assert idx_null == 0
