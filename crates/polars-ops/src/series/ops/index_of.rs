@@ -80,6 +80,12 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
 
     // Series is not null, and the value is null:
     if needle.is_null() {
+        let null_count = series.null_count();
+        if null_count == 0 {
+            return Ok(None);
+        } else if null_count == series.len() {
+            return Ok(Some(0));
+        }
         let mut index = 0;
         for chunk in series.chunks() {
             let length = chunk.len();
