@@ -65,7 +65,7 @@ impl WriteMetrics {
             if c.dtype().is_float() {
                 let nan_count = c.is_nan()?.sum().unwrap_or_default();
                 has_non_null_non_nan_values = nan_count as usize + null_count < df.height();
-                w.nan_count += nan_count;
+                w.nan_count += nan_count as u64;
             }
 
             if has_non_null_non_nan_values {
