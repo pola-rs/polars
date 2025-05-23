@@ -9,7 +9,7 @@ use polars_core::series::IntoSeries;
 use polars_core::series::builder::SeriesBuilder;
 use polars_error::PolarsResult;
 use polars_expr::reduce::{GroupedReduction, new_max_reduction, new_min_reduction};
-use polars_utils::{format_pl_smallstr, IdxSize};
+use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
 /// Metrics that relate to a written file.
@@ -65,7 +65,10 @@ impl WriteMetrics {
             if c.dtype().is_float() {
                 let nan_count = c.is_nan()?.sum().unwrap_or_default();
                 has_non_null_non_nan_values = nan_count as usize + null_count < df.height();
-                w.nan_count += nan_count as IdxSize;
+                #[allow(clippy::useless_conversion)]
+                {
+                    w.nan_count += u64::from(nan_count);
+                }
             }
 
             if has_non_null_non_nan_values {
