@@ -1523,6 +1523,7 @@ def test_join_bad_input_type() -> None:
 
     a.join(b, on="a").collect()
 
+
 def test_join_where() -> None:
     east = pl.LazyFrame(
         {
@@ -1610,4 +1611,3 @@ def test_join_where_bad_input_type() -> None:
         pl.col("dur") < pl.col("time"),
         pl.col("rev") < pl.col("cost"),
     ).collect()
-
