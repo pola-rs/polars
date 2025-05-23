@@ -428,9 +428,12 @@ impl OptimizationRule for TypeCoercionRule {
                     // Backwards compatibility with wrong way to search for
                     // multiple values (specifically, non-nested ones):
                     if left_nl == 0 && right_nl == 1 {
+                        // @TAG: 2.0
                         polars_warn!(
                             Deprecation,
-                            "passing a list to search_sorted() for multiple values is deprecated and will be removed in Polars 2. Pass in a `Series` instead."
+                            "`search_sorted([...])` as a way to search for multiple values is deprecated.
+
+Run `search_sorted(pl.Series([...]))` instead to get the previous behavior."
                         );
                         let other_input = expr_arena.add(AExpr::Explode {
                             expr: input[1].node(),
