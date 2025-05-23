@@ -70,7 +70,12 @@ pub trait DataFrameOps: IntoDf {
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
     /// ```
     #[cfg(feature = "to_dummies")]
-    fn to_dummies(&self, separator: Option<&str>, drop_first: bool, output_type: &Option<DataType>) -> PolarsResult<DataFrame> {
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        drop_first: bool,
+        output_type: &Option<DataType>,
+    ) -> PolarsResult<DataFrame> {
         self._to_dummies(None, separator, drop_first, output_type)
     }
 
@@ -105,7 +110,7 @@ pub trait DataFrameOps: IntoDf {
 
         if let Some(output_type) = output_type {
             if !output_type.is_primitive_numeric() && !output_type.is_bool() {
-                polars_bail!(InvalidOperation: 
+                polars_bail!(InvalidOperation:
                     "output_type must be numeric or boolean for to_dummies"
                 );
             }
@@ -115,7 +120,10 @@ pub trait DataFrameOps: IntoDf {
             df.get_columns()
                 .par_iter()
                 .map(|s| match (set.contains(s.name().as_str()), output_type) {
-                    (true, _) => s.as_materialized_series().to_dummies(separator, drop_first, output_type),
+                    (true, _) => {
+                        s.as_materialized_series()
+                            .to_dummies(separator, drop_first, output_type)
+                    },
                     (false, Some(dt)) => Ok(s.cast(dt)?.into_frame()),
                     (false, None) => Ok(s.clone().into_frame()),
                 })

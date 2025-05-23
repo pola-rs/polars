@@ -10522,7 +10522,9 @@ class DataFrame:
         """
         if columns is not None:
             columns = _expand_selectors(self, columns)
-        return self._from_pydf(self._df.to_dummies(columns, separator, drop_first, output_type))
+        return self._from_pydf(
+            self._df.to_dummies(columns, separator, drop_first, output_type)
+        )
 
     def unique(
         self,

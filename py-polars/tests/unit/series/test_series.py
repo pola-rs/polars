@@ -1359,10 +1359,23 @@ def test_to_dummies() -> None:
     )
     assert_frame_equal(result, expected)
 
-@pytest.mark.parametrize("dtype", [pl.Boolean,
-    pl.Int8, pl.Int16, pl.Int32, pl.Int64,
-    pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64,
-    pl.Float32, pl.Float64])
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Boolean,
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Float32,
+        pl.Float64,
+    ],
+)
 def test_series_to_dummies_respects_output_type(dtype: pl.DataType) -> None:
     s = pl.Series("letter", ["a", "b", "a", "c"])
     df = s.to_dummies(output_type=dtype)
