@@ -135,7 +135,7 @@ impl Display for PolarsError {
             StructFieldNotFound(msg) => write!(f, "field not found: {msg}"),
             Context { error, msg } => write!(f, "{error}: {msg}"),
             #[cfg(feature = "python")]
-            Python { error } => write!(f, "python: {}", error),
+            Python { error } => write!(f, "python: {error}"),
         }
     }
 }
@@ -161,11 +161,11 @@ impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {
         if let object_store::Error::Generic { store, source } = &err {
             if let Some(polars_err) = source.as_ref().downcast_ref::<PolarsError>() {
-                return polars_err.wrap_msg(|s| format!("{} (store: {})", s, store));
+                return polars_err.wrap_msg(|s| format!("{s} (store: {store})"));
             }
         }
 
-        std::io::Error::other(format!("object-store error: {}", err)).into()
+        std::io::Error::other(format!("object-store error: {err}")).into()
     }
 }
 
@@ -226,7 +226,7 @@ impl PolarsError {
                 let mut count = 0;
                 while let Some(msg) = messages.pop() {
                     count += 1;
-                    writeln!(&mut bt, "\t[{count}] {}", msg).unwrap();
+                    writeln!(&mut bt, "\t[{count}] {msg}").unwrap();
                 }
                 material_error.wrap_msg(move |msg| {
                     format!("{msg}\n\nThis error occurred with the following context stack:\n{bt}")
@@ -247,7 +247,7 @@ impl PolarsError {
             IO { error, msg } => {
                 let msg = match msg {
                     Some(msg) => func(msg),
-                    None => func(&format!("{}", error)),
+                    None => func(&format!("{error}")),
                 };
                 IO {
                     error: error.clone(),

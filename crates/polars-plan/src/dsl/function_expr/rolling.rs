@@ -10,6 +10,7 @@ use crate::dsl::pow::pow;
 
 #[derive(Clone, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum RollingFunction {
     Min(RollingOptionsFixedWindow),
     Max(RollingOptionsFixedWindow),

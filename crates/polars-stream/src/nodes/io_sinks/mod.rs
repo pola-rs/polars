@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -8,6 +8,7 @@ use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 
+use self::metrics::WriteMetrics;
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskScope};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::connector::{Receiver, Sender, connector};
@@ -17,6 +18,7 @@ use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::nodes::TaskPriority;
 
+mod metrics;
 mod phase;
 use phase::PhaseOutcome;
 
@@ -71,15 +73,22 @@ fn buffer_and_distribute_columns_task(
     mut dist_tx: distributor_channel::Sender<(usize, usize, Column)>,
     chunk_size: usize,
     schema: SchemaRef,
+    metrics: Arc<Mutex<Option<WriteMetrics>>>,
 ) -> JoinHandle<PolarsResult<()>> {
     spawn(TaskPriority::High, async move {
         let mut seq = 0usize;
         let mut buffer = DataFrame::empty_with_schema(schema.as_ref());
 
+        let mut metrics_ = metrics.lock().unwrap().take();
         while let Ok((outcome, rx)) = recv_port_rx.recv().await {
             let mut rx = rx.serial();
             while let Ok(morsel) = rx.recv().await {
                 let (df, _, _, consume_token) = morsel.into_inner();
+
+                if let Some(metrics) = metrics_.as_mut() {
+                    metrics.append(&df)?;
+                }
+
                 // @NOTE: This also performs schema validation.
                 buffer.vstack_mut(&df)?;
 
@@ -101,6 +110,9 @@ fn buffer_and_distribute_columns_task(
             }
 
             outcome.stopped();
+        }
+        if let Some(metrics_) = metrics_ {
+            *metrics.lock().unwrap() = Some(metrics_);
         }
 
         // Don't write an empty row group at the end.
@@ -178,6 +190,22 @@ pub trait SinkNode {
         state: &StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
+
+    /// Callback for when the query has finished successfully.
+    ///
+    /// This should only be called when the writing is finished and all the join handles have been
+    /// awaited.
+    fn finish(&self) -> PolarsResult<()> {
+        Ok(())
+    }
+
+    /// Fetch metrics for a specific sink.
+    ///
+    /// This should only be called when the writing is finished and all the join handles have been
+    /// awaited.
+    fn get_metrics(&self) -> PolarsResult<Option<WriteMetrics>> {
+        Ok(None)
+    }
 }
 
 /// The state needed to manage a spawned [`SinkNode`].
@@ -294,5 +322,10 @@ impl ComputeNode for SinkComputeNode {
 
             Ok(())
         }));
+    }
+
+    fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
+        self.sink.finish()?;
+        Ok(None)
     }
 }

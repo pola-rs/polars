@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from polars import col
+from polars import DataFrame, col
 from polars._typing import PartitioningScheme
 from polars._utils.unstable import issue_unstable_warning
 from polars.expr import Expr
 
 if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars.polars import PyExpr
+        from polars.polars import PyDataFrame, PyExpr
 
     from typing import IO, Any, Callable
 
@@ -160,6 +160,44 @@ def _cast_keyed_file_path_cb(
     )
 
 
+def _prepare_per_partition_sort_by(
+    e: str | Expr | Iterable[str | Expr] | None,
+) -> list[PyExpr] | None:
+    def prepare_one(v: str | Expr) -> PyExpr:
+        if isinstance(v, str):
+            return col(v)._pyexpr
+        elif isinstance(v, Expr):
+            return v._pyexpr
+        else:
+            msg = f"cannot do a per partition sort by for {v!r}"
+            raise TypeError(msg)
+
+    if e is None:
+        return None
+    elif isinstance(e, str):
+        return [col(e)._pyexpr]
+    elif isinstance(e, Expr):
+        return [e._pyexpr]
+    elif isinstance(e, Iterable):
+        return [prepare_one(v) for v in e]
+    else:
+        msg = f"cannot do a per partition sort by for {e!r}"
+        raise TypeError(msg)
+
+
+def _prepare_finish_callback(
+    f: Callable[[DataFrame], None] | None,
+) -> Callable[[PyDataFrame], None] | None:
+    if f is None:
+        return None
+
+    def cb(pydf: PyDataFrame) -> None:
+        nonlocal f
+        f(DataFrame._from_pydf(pydf))
+
+    return cb
+
+
 class PartitionMaxSize(PartitioningScheme):
     """
     Partitioning scheme to write files with a maximum size.
@@ -184,6 +222,15 @@ class PartitionMaxSize(PartitioningScheme):
         If no callback is given, it defaults to `{ctx.file_idx}.{EXT}`.
     max_size : int
         The maximum size in rows of each of the generated files.
+    per_partition_sort_by
+        Columns or expressions to sort over within each partition.
+
+        Note that this might increase the memory consumption needed for each partition.
+    finish_callback
+        A callback that gets called when the query finishes successfully.
+
+        For parquet files, the callback is given a dataframe with metrics about all
+        files written files.
 
     Examples
     --------
@@ -207,6 +254,8 @@ class PartitionMaxSize(PartitioningScheme):
         file_path: Callable[[BasePartitionContext], Path | str | IO[bytes] | IO[str]]
         | None = None,
         max_size: int,
+        per_partition_sort_by: str | Expr | Iterable[str | Expr] | None = None,
+        finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
         super().__init__(
@@ -214,6 +263,10 @@ class PartitionMaxSize(PartitioningScheme):
                 base_path=base_path,
                 file_path_cb=_cast_base_file_path_cb(file_path),
                 max_size=max_size,
+                per_partition_sort_by=_prepare_per_partition_sort_by(
+                    per_partition_sort_by
+                ),
+                finish_callback=_prepare_finish_callback(finish_callback),
             )
         )
 
@@ -277,6 +330,15 @@ class PartitionByKey(PartitioningScheme):
         The expressions to partition by.
     include_key : bool
         Whether to include the key columns in the output files.
+    per_partition_sort_by
+        Columns or expressions to sort over within each partition.
+
+        Note that this might increase the memory consumption needed for each partition.
+    finish_callback
+        A callback that gets called when the query finishes successfully.
+
+        For parquet files, the callback is given a dataframe with metrics about all
+        files written files.
 
     Examples
     --------
@@ -320,6 +382,8 @@ class PartitionByKey(PartitioningScheme):
         | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
+        per_partition_sort_by: str | Expr | Iterable[str | Expr] | None = None,
+        finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
 
@@ -330,6 +394,10 @@ class PartitionByKey(PartitioningScheme):
                 file_path_cb=_cast_keyed_file_path_cb(file_path),
                 by=lowered_by,
                 include_key=include_key,
+                per_partition_sort_by=_prepare_per_partition_sort_by(
+                    per_partition_sort_by
+                ),
+                finish_callback=_prepare_finish_callback(finish_callback),
             )
         )
 
@@ -369,6 +437,15 @@ class PartitionParted(PartitioningScheme):
         The expressions to partition by.
     include_key : bool
         Whether to include the key columns in the output files.
+    per_partition_sort_by
+        Columns or expressions to sort over within each partition.
+
+        Note that this might increase the memory consumption needed for each partition.
+    finish_callback
+        A callback that gets called when the query finishes successfully.
+
+        For parquet files, the callback is given a dataframe with metrics about all
+        files written files.
 
     Examples
     --------
@@ -394,6 +471,8 @@ class PartitionParted(PartitioningScheme):
         | None = None,
         by: str | Expr | Sequence[str | Expr] | Mapping[str, Expr],
         include_key: bool = True,
+        per_partition_sort_by: str | Expr | Iterable[str | Expr] | None = None,
+        finish_callback: Callable[[DataFrame], None] | None = None,
     ) -> None:
         issue_unstable_warning("partitioning strategies are considered unstable.")
 
@@ -404,5 +483,9 @@ class PartitionParted(PartitioningScheme):
                 file_path_cb=_cast_keyed_file_path_cb(file_path),
                 by=lowered_by,
                 include_key=include_key,
+                per_partition_sort_by=_prepare_per_partition_sort_by(
+                    per_partition_sort_by
+                ),
+                finish_callback=_prepare_finish_callback(finish_callback),
             )
         )

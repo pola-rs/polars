@@ -268,7 +268,7 @@ pub static UNMAP_POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
     let thread_name = std::env::var("POLARS_THREAD_NAME").unwrap_or_else(|_| "polars".to_string());
     ThreadPoolBuilder::new()
         .num_threads(1)
-        .thread_name(move |i| format!("{}-unmap-{}", thread_name, i))
+        .thread_name(move |i| format!("{thread_name}-unmap-{i}"))
         .build()
         .expect("could not spawn threads")
 });

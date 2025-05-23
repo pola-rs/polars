@@ -14,6 +14,7 @@ pub use object_store::azure::AzureCredential;
 pub use object_store::gcp::GcpCredential;
 use polars_core::config;
 use polars_error::{PolarsResult, polars_bail};
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "python")]
 use polars_utils::python_function::PythonObject;
 #[cfg(feature = "python")]
@@ -24,7 +25,7 @@ pub enum PlCredentialProvider {
     /// Prefer using [`PlCredentialProvider::from_func`] instead of constructing this directly
     Function(CredentialProviderFunction),
     #[cfg(feature = "python")]
-    Python(python_impl::PythonCredentialProvider),
+    Python(PythonCredentialProvider),
 }
 
 impl PlCredentialProvider {
@@ -148,6 +149,10 @@ pub trait IntoCredentialProvider: Sized {
     fn into_gcp_provider(self) -> object_store::gcp::GcpCredentialProvider {
         unimplemented!()
     }
+
+    /// Note, technically shouldn't be under the `IntoCredentialProvider` trait, but it's here
+    /// for convenience.
+    fn storage_update_options(&self) -> PolarsResult<Vec<(PlSmallStr, PlSmallStr)>>;
 }
 
 impl IntoCredentialProvider for PlCredentialProvider {
@@ -175,6 +180,14 @@ impl IntoCredentialProvider for PlCredentialProvider {
             Self::Function(v) => v.into_gcp_provider(),
             #[cfg(feature = "python")]
             Self::Python(v) => v.into_gcp_provider(),
+        }
+    }
+
+    fn storage_update_options(&self) -> PolarsResult<Vec<(PlSmallStr, PlSmallStr)>> {
+        match self {
+            Self::Function(v) => v.storage_update_options(),
+            #[cfg(feature = "python")]
+            Self::Python(v) => v.storage_update_options(),
         }
     }
 }
@@ -298,6 +311,10 @@ impl IntoCredentialProvider for CredentialProviderFunction {
             })),
         ))
     }
+
+    fn storage_update_options(&self) -> PolarsResult<Vec<(PlSmallStr, PlSmallStr)>> {
+        Ok(vec![])
+    }
 }
 
 impl Debug for CredentialProviderFunction {
@@ -357,7 +374,22 @@ impl serde::Serialize for PlCredentialProvider {
             return v.serialize(_serializer);
         }
 
-        Err(S::Error::custom(format!("cannot serialize {:?}", self)))
+        Err(S::Error::custom(format!("cannot serialize {self:?}")))
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for PlCredentialProvider {
+    fn schema_name() -> String {
+        "PlCredentialProvider".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PlCredentialProvider"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }
 
@@ -462,6 +494,7 @@ mod python_impl {
     use std::sync::Arc;
 
     use polars_error::{PolarsError, PolarsResult};
+    use polars_utils::pl_str::PlSmallStr;
     use polars_utils::python_function::PythonObject;
     use pyo3::Python;
     use pyo3::exceptions::PyValueError;
@@ -524,6 +557,13 @@ mod python_impl {
         }
 
         fn unwrap_as_provider(self) -> Arc<PythonObject> {
+            match self {
+                Self::Builder(_) => panic!(),
+                Self::Provider(v) => v,
+            }
+        }
+
+        pub(crate) fn unwrap_as_provider_ref(&self) -> &Arc<PythonObject> {
             match self {
                 Self::Builder(_) => panic!(),
                 Self::Provider(v) => v,
@@ -657,8 +697,7 @@ mod python_impl {
                                 },
                                 v => {
                                     return pyo3::PyResult::Err(PyValueError::new_err(format!(
-                                        "unknown configuration key for azure: {}, {}",
-                                        v, VALID_KEYS_MSG
+                                        "unknown configuration key for azure: {v}, {VALID_KEYS_MSG}"
                                     )));
                                 },
                             }
@@ -670,8 +709,7 @@ mod python_impl {
                     let Some(credentials) = credentials else {
                         return Err(PolarsError::ComputeError(
                             format!(
-                                "did not find a valid configuration key for azure, {}",
-                                VALID_KEYS_MSG
+                                "did not find a valid configuration key for azure, {VALID_KEYS_MSG}"
                             )
                             .into(),
                         ));
@@ -734,6 +772,31 @@ mod python_impl {
                 })
             }))
             .into_gcp_provider()
+        }
+
+        /// # Panics
+        /// Panics if `self` is not an initialized provider.
+        fn storage_update_options(&self) -> PolarsResult<Vec<(PlSmallStr, PlSmallStr)>> {
+            let py_object = self.unwrap_as_provider_ref();
+
+            Python::with_gil(|py| {
+                py_object
+                    .getattr(py, "_storage_update_options")
+                    .map_or(Ok(vec![]), |f| {
+                        let v = f.call0(py)?.extract::<pyo3::Bound<'_, PyDict>>(py)?;
+
+                        let mut out = Vec::with_capacity(v.len());
+
+                        for dict_item in v.call_method0("items")?.try_iter()? {
+                            let (key, value) =
+                                dict_item?.extract::<(PyBackedStr, PyBackedStr)>()?;
+
+                            out.push(((&*key).into(), (&*value).into()))
+                        }
+
+                        Ok(out)
+                    })
+            })
         }
     }
 

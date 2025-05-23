@@ -111,259 +111,219 @@ pub enum AnyValue<'a> {
 }
 
 #[cfg(feature = "serde")]
-impl Serialize for AnyValue<'_> {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let name = "AnyValue";
-        match self {
-            AnyValue::Null => serializer.serialize_unit_variant(name, 0, "Null"),
+mod _serde {
+    use serde::{Deserialize, Serialize};
 
-            AnyValue::Int8(v) => serializer.serialize_newtype_variant(name, 1, "Int8", v),
-            AnyValue::Int16(v) => serializer.serialize_newtype_variant(name, 2, "Int16", v),
-            AnyValue::Int32(v) => serializer.serialize_newtype_variant(name, 3, "Int32", v),
-            AnyValue::Int64(v) => serializer.serialize_newtype_variant(name, 4, "Int64", v),
-            AnyValue::Int128(v) => serializer.serialize_newtype_variant(name, 5, "Int128", v),
-            AnyValue::UInt8(v) => serializer.serialize_newtype_variant(name, 6, "UInt8", v),
-            AnyValue::UInt16(v) => serializer.serialize_newtype_variant(name, 7, "UInt16", v),
-            AnyValue::UInt32(v) => serializer.serialize_newtype_variant(name, 8, "UInt32", v),
-            AnyValue::UInt64(v) => serializer.serialize_newtype_variant(name, 9, "UInt64", v),
-            AnyValue::Float32(v) => serializer.serialize_newtype_variant(name, 10, "Float32", v),
-            AnyValue::Float64(v) => serializer.serialize_newtype_variant(name, 11, "Float64", v),
-            AnyValue::List(v) => serializer.serialize_newtype_variant(name, 12, "List", v),
-            AnyValue::Boolean(v) => serializer.serialize_newtype_variant(name, 13, "Bool", v),
+    use super::*;
 
-            // both variants same number
-            AnyValue::String(v) => serializer.serialize_newtype_variant(name, 14, "StringOwned", v),
-            AnyValue::StringOwned(v) => {
-                serializer.serialize_newtype_variant(name, 14, "StringOwned", v.as_str())
-            },
-
-            // both variants same number
-            AnyValue::Binary(v) => serializer.serialize_newtype_variant(name, 15, "BinaryOwned", v),
-            AnyValue::BinaryOwned(v) => {
-                serializer.serialize_newtype_variant(name, 15, "BinaryOwned", v)
-            },
-
-            #[cfg(feature = "dtype-date")]
-            AnyValue::Date(v) => serializer.serialize_newtype_variant(name, 16, "Date", v),
-            // both variants same number
-            #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v, tu, tz) => serializer.serialize_newtype_variant(
-                name,
-                17,
-                "DatetimeOwned",
-                &(*v, *tu, tz.map(|v| v.as_str())),
-            ),
-            #[cfg(feature = "dtype-datetime")]
-            AnyValue::DatetimeOwned(v, tu, tz) => serializer.serialize_newtype_variant(
-                name,
-                17,
-                "DatetimeOwned",
-                &(*v, *tu, tz.as_deref().map(|v| v.as_str())),
-            ),
-            #[cfg(feature = "dtype-duration")]
-            AnyValue::Duration(v, tu) => {
-                serializer.serialize_newtype_variant(name, 18, "Duration", &(*v, *tu))
-            },
-            #[cfg(feature = "dtype-time")]
-            AnyValue::Time(v) => serializer.serialize_newtype_variant(name, 19, "Time", v),
-
-            // Not 100% sure how to deal with these.
-            #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(..) | AnyValue::CategoricalOwned(..) => Err(
-                serde::ser::Error::custom("Cannot serialize categorical value."),
-            ),
-            #[cfg(feature = "dtype-categorical")]
-            AnyValue::Enum(..) | AnyValue::EnumOwned(..) => {
-                Err(serde::ser::Error::custom("Cannot serialize enum value."))
-            },
-
-            #[cfg(feature = "dtype-array")]
-            AnyValue::Array(v, width) => {
-                serializer.serialize_newtype_variant(name, 22, "Array", &(v, *width))
-            },
-            #[cfg(feature = "object")]
-            AnyValue::Object(_) | AnyValue::ObjectOwned(_) => {
-                Err(serde::ser::Error::custom("Cannot serialize object value."))
-            },
-            #[cfg(feature = "dtype-struct")]
-            AnyValue::Struct(_, _, _) | AnyValue::StructOwned(_) => {
-                Err(serde::ser::Error::custom("Cannot serialize struct value."))
-            },
-            #[cfg(feature = "dtype-decimal")]
-            AnyValue::Decimal(v, scale) => {
-                serializer.serialize_newtype_variant(name, 25, "Decimal", &(*v, *scale))
-            },
+    impl Serialize for AnyValue<'_> {
+        fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            SerializableAnyValue::try_from(self)
+                .map_err(serde::ser::Error::custom)?
+                .serialize(serializer)
         }
     }
-}
 
-#[cfg(feature = "serde")]
-impl<'a> Deserialize<'a> for AnyValue<'static> {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        macro_rules! define_av_field {
-            ($($variant:ident,)+) => {
-                #[derive(Deserialize, Serialize)]
-                enum AvField {
-                    $($variant,)+
-                }
-                const VARIANTS: &'static [&'static str] = &[
-                    $(stringify!($variant),)+
-                ];
+    impl<'a> Deserialize<'a> for AnyValue<'static> {
+        fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+        where
+            D: Deserializer<'a>,
+        {
+            SerializableAnyValue::deserialize(deserializer).map(Self::from)
+        }
+    }
+
+    #[cfg(feature = "dsl-schema")]
+    impl schemars::JsonSchema for AnyValue<'_> {
+        fn schema_name() -> String {
+            SerializableAnyValue::schema_name()
+        }
+
+        fn schema_id() -> std::borrow::Cow<'static, str> {
+            SerializableAnyValue::schema_id()
+        }
+
+        fn json_schema(
+            generator: &mut schemars::r#gen::SchemaGenerator,
+        ) -> schemars::schema::Schema {
+            SerializableAnyValue::json_schema(generator)
+        }
+    }
+
+    #[derive(Serialize, Deserialize)]
+    #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+    #[serde(rename = "AnyValue")]
+    pub enum SerializableAnyValue<'a> {
+        Null,
+        /// An 8-bit integer number.
+        Int8(i8),
+        /// A 16-bit integer number.
+        Int16(i16),
+        /// A 32-bit integer number.
+        Int32(i32),
+        /// A 64-bit integer number.
+        Int64(i64),
+        /// A 128-bit integer number.
+        Int128(i128),
+        /// An unsigned 8-bit integer number.
+        UInt8(u8),
+        /// An unsigned 16-bit integer number.
+        UInt16(u16),
+        /// An unsigned 32-bit integer number.
+        UInt32(u32),
+        /// An unsigned 64-bit integer number.
+        UInt64(u64),
+        /// A 32-bit floating point number.
+        Float32(f32),
+        /// A 64-bit floating point number.
+        Float64(f64),
+        /// Nested type, contains arrays that are filled with one of the datatypes.
+        List(Cow<'a, Series>),
+        /// A binary true or false.
+        Boolean(bool),
+        /// A UTF8 encoded string type.
+        String(Cow<'a, str>),
+        Binary(Cow<'a, [u8]>),
+
+        /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
+        /// in days (32 bits).
+        #[cfg(feature = "dtype-date")]
+        Date(i32),
+
+        /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
+        /// in nanoseconds (64 bits).
+        #[cfg(feature = "dtype-datetime")]
+        Datetime(i64, TimeUnit, Option<Cow<'a, TimeZone>>),
+
+        /// A 64-bit integer representing difference between date-times in [`TimeUnit`]
+        #[cfg(feature = "dtype-duration")]
+        Duration(i64, TimeUnit),
+
+        /// A 64-bit time representing the elapsed time since midnight in nanoseconds
+        #[cfg(feature = "dtype-time")]
+        Time(i64),
+
+        #[cfg(feature = "dtype-array")]
+        Array(Cow<'a, Series>, usize),
+
+        /// A 128-bit fixed point decimal number with a scale.
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(i128, usize),
+    }
+
+    impl<'a, 'data: 'a> TryFrom<&'a AnyValue<'data>> for SerializableAnyValue<'a> {
+        type Error = &'static str;
+
+        fn try_from(value: &'a AnyValue<'data>) -> Result<Self, Self::Error> {
+            let out = match value {
+                AnyValue::Null => Self::Null,
+                AnyValue::Int8(v) => Self::Int8(*v),
+                AnyValue::Int16(v) => Self::Int16(*v),
+                AnyValue::Int32(v) => Self::Int32(*v),
+                AnyValue::Int64(v) => Self::Int64(*v),
+                AnyValue::Int128(v) => Self::Int128(*v),
+                AnyValue::UInt8(v) => Self::UInt8(*v),
+                AnyValue::UInt16(v) => Self::UInt16(*v),
+                AnyValue::UInt32(v) => Self::UInt32(*v),
+                AnyValue::UInt64(v) => Self::UInt64(*v),
+                AnyValue::Float32(v) => Self::Float32(*v),
+                AnyValue::Float64(v) => Self::Float64(*v),
+                AnyValue::List(series) => Self::List(Cow::Borrowed(series)),
+                AnyValue::Boolean(v) => Self::Boolean(*v),
+                AnyValue::String(v) => Self::String(Cow::Borrowed(v)),
+                AnyValue::StringOwned(v) => Self::String(Cow::Borrowed(v.as_str())),
+                AnyValue::Binary(v) => Self::Binary(Cow::Borrowed(v)),
+                AnyValue::BinaryOwned(v) => Self::Binary(Cow::Borrowed(v)),
+
+                #[cfg(feature = "dtype-date")]
+                AnyValue::Date(v) => Self::Date(*v),
+
+                #[cfg(feature = "dtype-datetime")]
+                AnyValue::Datetime(v, tu, tz) => Self::Datetime(*v, *tu, tz.map(Cow::Borrowed)),
+                #[cfg(feature = "dtype-datetime")]
+                AnyValue::DatetimeOwned(v, time_unit, time_zone) => Self::Datetime(
+                    *v,
+                    *time_unit,
+                    time_zone.as_ref().map(|t| Cow::Borrowed(t.as_ref())),
+                ),
+
+                #[cfg(feature = "dtype-duration")]
+                AnyValue::Duration(v, time_unit) => Self::Duration(*v, *time_unit),
+
+                #[cfg(feature = "dtype-time")]
+                AnyValue::Time(v) => Self::Time(*v),
+
+                #[cfg(feature = "dtype-categorical")]
+                AnyValue::Categorical(..) | AnyValue::CategoricalOwned(..) => {
+                    return Err("Cannot serialize categorical value.");
+                },
+                #[cfg(feature = "dtype-categorical")]
+                AnyValue::Enum(..) | AnyValue::EnumOwned(..) => {
+                    return Err("Cannot serialize enum value.");
+                },
+
+                #[cfg(feature = "dtype-array")]
+                AnyValue::Array(v, width) => Self::Array(Cow::Borrowed(v), *width),
+
+                #[cfg(feature = "object")]
+                AnyValue::Object(..) | AnyValue::ObjectOwned(..) => {
+                    return Err("Cannot serialize object value.");
+                },
+
+                #[cfg(feature = "dtype-struct")]
+                AnyValue::Struct(..) | AnyValue::StructOwned(..) => {
+                    return Err("Cannot serialize struct value.");
+                },
+
+                #[cfg(feature = "dtype-decimal")]
+                AnyValue::Decimal(v, scale) => Self::Decimal(*v, *scale),
             };
+            Ok(out)
         }
-        define_av_field! {
-            Null,
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-            Int128,
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            Float32,
-            Float64,
-            List,
-            Bool,
-            StringOwned,
-            BinaryOwned,
-            Date,
-            DatetimeOwned,
-            Duration,
-            Time,
-            CategoricalOwned,
-            EnumOwned,
-            Array,
-            Object,
-            Struct,
-            Decimal,
-        };
+    }
 
-        struct OuterVisitor;
-
-        impl<'b> Visitor<'b> for OuterVisitor {
-            type Value = AnyValue<'static>;
-
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                write!(formatter, "enum AnyValue")
-            }
-
-            fn visit_enum<A>(self, data: A) -> std::result::Result<Self::Value, A::Error>
-            where
-                A: EnumAccess<'b>,
-            {
-                let out = match data.variant()? {
-                    (AvField::Null, _variant) => AnyValue::Null,
-                    (AvField::Int8, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::Int8(value)
-                    },
-                    (AvField::Int16, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::Int16(value)
-                    },
-                    (AvField::Int32, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::Int32(value)
-                    },
-                    (AvField::Int64, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::Int64(value)
-                    },
-                    (AvField::Int128, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::Int128(value)
-                    },
-                    (AvField::UInt8, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::UInt8(value)
-                    },
-                    (AvField::UInt16, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::UInt16(value)
-                    },
-                    (AvField::UInt32, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::UInt32(value)
-                    },
-                    (AvField::UInt64, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::UInt64(value)
-                    },
-                    (AvField::Float32, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::Float32(value)
-                    },
-                    (AvField::Float64, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::Float64(value)
-                    },
-                    (AvField::Bool, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::Boolean(value)
-                    },
-                    (AvField::List, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::List(value)
-                    },
-                    (AvField::StringOwned, variant) => {
-                        let value: PlSmallStr = variant.newtype_variant()?;
-                        AnyValue::StringOwned(value)
-                    },
-                    (AvField::BinaryOwned, variant) => {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::BinaryOwned(value)
-                    },
-                    (AvField::Date, variant) => feature_gated!("dtype-date", {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::Date(value)
-                    }),
-                    (AvField::DatetimeOwned, variant) => feature_gated!("dtype-datetime", {
-                        let (value, time_unit, time_zone) = variant.newtype_variant()?;
-                        AnyValue::DatetimeOwned(value, time_unit, time_zone)
-                    }),
-                    (AvField::Duration, variant) => feature_gated!("dtype-duration", {
-                        let (value, time_unit) = variant.newtype_variant()?;
-                        AnyValue::Duration(value, time_unit)
-                    }),
-                    (AvField::Time, variant) => feature_gated!("dtype-time", {
-                        let value = variant.newtype_variant()?;
-                        AnyValue::Time(value)
-                    }),
-                    (AvField::CategoricalOwned, _) => feature_gated!("dtype-categorical", {
-                        return Err(serde::de::Error::custom(
-                            "unable to deserialize categorical",
-                        ));
-                    }),
-                    (AvField::EnumOwned, _) => feature_gated!("dtype-categorical", {
-                        return Err(serde::de::Error::custom("unable to deserialize enum"));
-                    }),
-                    (AvField::Array, variant) => feature_gated!("dtype-array", {
-                        let (s, width) = variant.newtype_variant()?;
-                        AnyValue::Array(s, width)
-                    }),
-                    (AvField::Object, _) => feature_gated!("object", {
-                        return Err(serde::de::Error::custom("unable to deserialize object"));
-                    }),
-                    (AvField::Struct, _) => feature_gated!("dtype-struct", {
-                        return Err(serde::de::Error::custom("unable to deserialize struct"));
-                    }),
-                    (AvField::Decimal, variant) => feature_gated!("dtype-decimal", {
-                        let (v, scale) = variant.newtype_variant()?;
-                        AnyValue::Decimal(v, scale)
-                    }),
-                };
-                Ok(out)
+    impl<'a> From<SerializableAnyValue<'a>> for AnyValue<'static> {
+        fn from(value: SerializableAnyValue<'a>) -> Self {
+            type S<'b> = SerializableAnyValue<'b>;
+            match value {
+                S::Null => Self::Null,
+                S::Int8(v) => Self::Int8(v),
+                S::Int16(v) => Self::Int16(v),
+                S::Int32(v) => Self::Int32(v),
+                S::Int64(v) => Self::Int64(v),
+                S::Int128(v) => Self::Int128(v),
+                S::UInt8(v) => Self::UInt8(v),
+                S::UInt16(v) => Self::UInt16(v),
+                S::UInt32(v) => Self::UInt32(v),
+                S::UInt64(v) => Self::UInt64(v),
+                S::Float32(v) => Self::Float32(v),
+                S::Float64(v) => Self::Float64(v),
+                S::List(v) => Self::List(v.into_owned()),
+                S::Boolean(v) => Self::Boolean(v),
+                S::String(v) => Self::StringOwned(match v {
+                    Cow::Borrowed(v) => PlSmallStr::from(v),
+                    Cow::Owned(v) => PlSmallStr::from(v),
+                }),
+                S::Binary(v) => Self::BinaryOwned(v.into_owned()),
+                #[cfg(feature = "dtype-date")]
+                S::Date(v) => Self::Date(v),
+                #[cfg(feature = "dtype-datetime")]
+                S::Datetime(v, time_unit, time_zone) => {
+                    Self::DatetimeOwned(v, time_unit, time_zone.map(Cow::into_owned).map(Arc::new))
+                },
+                #[cfg(feature = "dtype-duration")]
+                S::Duration(v, time_unit) => Self::Duration(v, time_unit),
+                #[cfg(feature = "dtype-time")]
+                S::Time(v) => Self::Time(v),
+                #[cfg(feature = "dtype-array")]
+                S::Array(v, width) => Self::Array(v.into_owned(), width),
+                #[cfg(feature = "dtype-decimal")]
+                S::Decimal(v, scale) => Self::Decimal(v, scale),
             }
         }
-        deserializer.deserialize_enum("AnyValue", VARIANTS, OuterVisitor)
     }
 }
 
@@ -793,6 +753,97 @@ impl<'a> AnyValue<'a> {
                 }
             },
             av => Cow::Owned(av.to_string()),
+        }
+    }
+
+    pub fn to_physical(self) -> Self {
+        match self {
+            Self::Null
+            | Self::Boolean(_)
+            | Self::String(_)
+            | Self::StringOwned(_)
+            | Self::Binary(_)
+            | Self::BinaryOwned(_)
+            | Self::UInt8(_)
+            | Self::UInt16(_)
+            | Self::UInt32(_)
+            | Self::UInt64(_)
+            | Self::Int8(_)
+            | Self::Int16(_)
+            | Self::Int32(_)
+            | Self::Int64(_)
+            | Self::Int128(_)
+            | Self::Float32(_)
+            | Self::Float64(_) => self,
+
+            #[cfg(feature = "object")]
+            Self::Object(_) | Self::ObjectOwned(_) => self,
+
+            #[cfg(feature = "dtype-date")]
+            Self::Date(v) => Self::Int32(v),
+            #[cfg(feature = "dtype-datetime")]
+            Self::Datetime(v, _, _) | Self::DatetimeOwned(v, _, _) => Self::Int64(v),
+
+            #[cfg(feature = "dtype-duration")]
+            Self::Duration(v, _) => Self::Int64(v),
+            #[cfg(feature = "dtype-time")]
+            Self::Time(v) => Self::Int64(v),
+
+            #[cfg(feature = "dtype-categorical")]
+            Self::Categorical(v, _, _)
+            | Self::CategoricalOwned(v, _, _)
+            | Self::Enum(v, _, _)
+            | Self::EnumOwned(v, _, _) => Self::UInt32(v),
+            Self::List(series) => Self::List(series.to_physical_repr().into_owned()),
+
+            #[cfg(feature = "dtype-array")]
+            Self::Array(series, width) => {
+                Self::Array(series.to_physical_repr().into_owned(), width)
+            },
+
+            #[cfg(feature = "dtype-struct")]
+            Self::Struct(_, _, _) => todo!(),
+            #[cfg(feature = "dtype-struct")]
+            Self::StructOwned(values) => Self::StructOwned(Box::new((
+                values.0.into_iter().map(|v| v.to_physical()).collect(),
+                values
+                    .1
+                    .into_iter()
+                    .map(|mut f| {
+                        f.dtype = f.dtype.to_physical();
+                        f
+                    })
+                    .collect(),
+            ))),
+
+            #[cfg(feature = "dtype-decimal")]
+            Self::Decimal(v, _) => Self::Int128(v),
+        }
+    }
+
+    #[inline]
+    pub fn extract_bool(&self) -> Option<bool> {
+        match self {
+            AnyValue::Boolean(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn extract_str(&self) -> Option<&str> {
+        match self {
+            AnyValue::String(v) => Some(v),
+            AnyValue::StringOwned(v) => Some(v.as_str()),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn extract_bytes(&self) -> Option<&[u8]> {
+        match self {
+            AnyValue::Binary(v) => Some(v),
+            AnyValue::BinaryOwned(v) => Some(v.as_slice()),
+            _ => None,
         }
     }
 }

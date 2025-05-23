@@ -58,7 +58,7 @@ pub static POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
                         .get()
                 }),
         )
-        .thread_name(move |i| format!("{}-{}", thread_name, i))
+        .thread_name(move |i| format!("{thread_name}-{i}"))
         .build()
         .expect("could not spawn threads")
 });

@@ -328,10 +328,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "search_sorted")]
-    fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>) -> Self {
+    #[pyo3(signature = (element, side, descending=false))]
+    fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>, descending: bool) -> Self {
         self.inner
             .clone()
-            .search_sorted(element.inner, side.0)
+            .search_sorted(element.inner, side.0, descending)
             .into()
     }
 
@@ -946,7 +947,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (schema))]
-    fn skip_batch_predicate(&self, py: Python, schema: Wrap<Schema>) -> PyResult<Option<Self>> {
+    fn skip_batch_predicate(&self, py: Python<'_>, schema: Wrap<Schema>) -> PyResult<Option<Self>> {
         let mut aexpr_arena = Arena::new();
         py.enter_polars(|| {
             let node = to_aexpr(self.inner.clone(), &mut aexpr_arena)?;

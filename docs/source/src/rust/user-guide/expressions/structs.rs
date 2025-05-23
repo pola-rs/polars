@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([col("Theatre").value_counts(true, true, "count", false)])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:state_value_counts]
 
     // --8<-- [start:struct_unnest]
@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([col("Theatre").value_counts(true, true, "count", false)])
         .unnest(["Theatre"])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:struct_unnest]
 
     // --8<-- [start:series_struct]
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:series_struct_extract]
     let result = rating_series.struct_()?.field_by_name("Movie")?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:series_struct_extract]
 
     // --8<-- [start:series_struct_rename]
@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // https://github.com/pola-rs/polars/issues/3803
         .filter(len().over([col("Movie"), col("Theatre")]).gt(lit(1)))
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:struct_ranking]
 
     // --8<-- [start:multi_column_apply]
@@ -131,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("solution_expr"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:multi_column_apply]
 
     // --8<-- [start:ack]

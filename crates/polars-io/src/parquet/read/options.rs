@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ParquetOptions {
     pub schema: Option<SchemaRef>,
     pub parallel: ParallelStrategy,
@@ -13,6 +14,7 @@ pub struct ParquetOptions {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ParallelStrategy {
     /// Don't parallelize
     None,

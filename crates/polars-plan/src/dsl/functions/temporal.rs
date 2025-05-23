@@ -410,6 +410,7 @@ impl DurationArgs {
 }
 
 /// Construct a column of [`Duration`] from the provided [`DurationArgs`]
+#[cfg(feature = "dtype-duration")]
 pub fn duration(args: DurationArgs) -> Expr {
     if let Some(e) = args.as_literal() {
         return e;

@@ -68,7 +68,11 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-#[cfg(any(feature = "search_sorted", feature = "is_between"))]
+#[cfg(any(
+    feature = "search_sorted",
+    feature = "is_between",
+    feature = "list_sets"
+))]
 use polars_core::utils::SuperTypeFlags;
 use polars_core::utils::{SuperTypeOptions, try_get_supertype};
 pub use selector::Selector;
@@ -372,8 +376,16 @@ impl Expr {
 
     #[cfg(feature = "search_sorted")]
     /// Find indices where elements should be inserted to maintain order.
-    pub fn search_sorted<E: Into<Expr>>(self, element: E, side: SearchSortedSide) -> Expr {
-        self.map_binary(FunctionExpr::SearchSorted(side), element.into())
+    pub fn search_sorted<E: Into<Expr>>(
+        self,
+        element: E,
+        side: SearchSortedSide,
+        descending: bool,
+    ) -> Expr {
+        self.map_binary(
+            FunctionExpr::SearchSorted { side, descending },
+            element.into(),
+        )
     }
 
     /// Cast expression to another data type.

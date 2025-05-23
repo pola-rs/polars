@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
-use polars_core::prelude::{Column, DataType};
+use polars_core::prelude::{Column, DataType, SortMultipleOptions};
 use polars_core::scalar::Scalar;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
@@ -11,18 +11,30 @@ use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::{
     FileType, PartitionTargetCallback, PartitionTargetContext, SinkOptions, SinkTarget,
 };
+use polars_utils::format_pl_smallstr;
 
 use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
 use crate::async_executor::{AbortOnDropHandle, spawn};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::async_primitives::{connector, distributor_channel};
 use crate::execute::StreamingExecutionState;
+use crate::expression::StreamExpr;
+use crate::morsel::{MorselSeq, SourceToken};
 use crate::nodes::io_sinks::phase::PhaseOutcome;
 use crate::nodes::{Morsel, TaskPriority};
 
 pub mod by_key;
 pub mod max_size;
 pub mod parted;
+
+#[derive(Clone)]
+pub struct PerPartitionSortBy {
+    // Invariant: all vecs have the same length.
+    pub selectors: Vec<StreamExpr>,
+    pub descending: Vec<bool>,
+    pub nulls_last: Vec<bool>,
+    pub maintain_order: bool,
+}
 
 pub type CreateNewSinkFn = Arc<
     dyn Send + Sync + Fn(SchemaRef, SinkTarget) -> PolarsResult<Box<dyn SinkNode + Send + Sync>>,
@@ -32,6 +44,7 @@ pub fn get_create_new_fn(
     file_type: FileType,
     sink_options: SinkOptions,
     cloud_options: Option<CloudOptions>,
+    collect_metrics: bool,
 ) -> CreateNewSinkFn {
     match file_type {
         #[cfg(feature = "ipc")]
@@ -63,6 +76,7 @@ pub fn get_create_new_fn(
                     sink_options.clone(),
                     &parquet_writer_options,
                     cloud_options.clone(),
+                    collect_metrics,
                 )?) as Box<dyn SinkNode + Send + Sync>;
                 Ok(sink)
             }) as _
@@ -148,10 +162,12 @@ async fn open_new_sink(
     ext: &str,
     verbose: bool,
     state: &StreamingExecutionState,
+    per_partition_sort_by: Option<&PerPartitionSortBy>,
 ) -> PolarsResult<
     Option<(
         FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
         SinkSender,
+        Box<dyn SinkNode + Send + Sync>,
     )>,
 > {
     let file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys)?;
@@ -197,7 +213,7 @@ async fn open_new_sink(
 
     let mut node = (create_new_sink)(sink_input_schema.clone(), target)?;
     let mut join_handles = Vec::new();
-    let (sink_input, sender) = if node.is_sink_input_parallel() {
+    let (sink_input, mut sender) = if node.is_sink_input_parallel() {
         let (tx, dist_rxs) = distributor_channel::distributor_channel(
             state.num_pipelines,
             *DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
@@ -222,6 +238,60 @@ async fn open_new_sink(
         (SinkInputPort::Serial(rx), SinkSender::Connector(tx))
     };
 
+    // Handle sorting per partition.
+    if let Some(per_partition_sort_by) = per_partition_sort_by {
+        let num_selectors = per_partition_sort_by.selectors.len();
+        let (tx, mut rx) = connector::connector();
+
+        let state = state.in_memory_exec_state.split();
+        let selectors = per_partition_sort_by.selectors.clone();
+        let descending = per_partition_sort_by.descending.clone();
+        let nulls_last = per_partition_sort_by.nulls_last.clone();
+        let maintain_order = per_partition_sort_by.maintain_order;
+
+        // Tell the partitioning sink to send stuff here instead.
+        let mut old_sender = std::mem::replace(&mut sender, SinkSender::Connector(tx));
+
+        // This all happens in a single thread per partition. Acceptable for now as the main
+        // usecase here is writing many partitions, not the best idea for the future.
+        join_handles.push(spawn(TaskPriority::High, async move {
+            // Gather all morsels for this partition. We expect at least one morsel per partition.
+            let Ok(morsel) = rx.recv().await else {
+                return Ok(());
+            };
+            let mut df = morsel.into_df();
+            while let Ok(next_morsel) = rx.recv().await {
+                df.vstack_mut_owned(next_morsel.into_df())?;
+            }
+
+            let mut names = Vec::with_capacity(num_selectors);
+            for (i, s) in selectors.into_iter().enumerate() {
+                // @NOTE: This evaluation cannot be done as chunks come in since it might contain
+                // non-elementwise expressions.
+                let c = s.evaluate(&df, &state).await?;
+                let name = format_pl_smallstr!("__POLARS_PART_SORT_COL{i}");
+                names.push(name.clone());
+                df.with_column(c.with_name(name))?;
+            }
+            df.sort_in_place(
+                names,
+                SortMultipleOptions {
+                    descending,
+                    nulls_last,
+                    multithreaded: false,
+                    maintain_order,
+                    limit: None,
+                },
+            )?;
+            df = df.select_by_range(0..df.width() - num_selectors)?;
+
+            _ = old_sender
+                .send(Morsel::new(df, MorselSeq::default(), SourceToken::new()))
+                .await;
+            Ok(())
+        }));
+    }
+
     let (mut sink_input_tx, sink_input_rx) = connector::connector();
     node.spawn_sink(sink_input_rx, state, &mut join_handles);
     let mut join_handles =
@@ -238,5 +308,5 @@ async fn open_new_sink(
         return Ok(None);
     }
 
-    Ok(Some((join_handles, sender)))
+    Ok(Some((join_handles, sender, node)))
 }

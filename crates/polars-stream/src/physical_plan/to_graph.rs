@@ -30,6 +30,7 @@ use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
 use crate::nodes::io_sinks::SinkComputeNode;
+use crate::nodes::io_sinks::partition::PerPartitionSortBy;
 use crate::nodes::io_sources::multi_file_reader::MultiFileReaderConfig;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
@@ -280,6 +281,7 @@ fn to_graph_rec<'a>(
                         sink_options,
                         parquet_writer_options,
                         cloud_options.clone(),
+                        false,
                     )?),
                     [(input_key, input.port)],
                 ),
@@ -307,13 +309,15 @@ fn to_graph_rec<'a>(
         },
 
         PartitionSink {
+            input,
             base_path,
             file_path_cb,
             sink_options,
             variant,
             file_type,
-            input,
             cloud_options,
+            per_partition_sort_by,
+            finish_callback,
         } => {
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -325,60 +329,84 @@ fn to_graph_rec<'a>(
                 file_type.clone(),
                 sink_options.clone(),
                 cloud_options.clone(),
+                finish_callback.is_some(),
             );
 
-            match variant {
-                PartitionVariantIR::MaxSize(max_size) => ctx.graph.add_node(
-                    SinkComputeNode::from(
-                        nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
-                            input_schema,
-                            *max_size,
-                            base_path,
-                            file_path_cb,
-                            create_new,
-                            ext,
-                            sink_options.clone(),
-                        ),
+            let per_partition_sort_by = match per_partition_sort_by.as_ref() {
+                None => None,
+                Some(c) => {
+                    let (selectors, descending, nulls_last) = c
+                        .iter()
+                        .map(|c| {
+                            Ok((
+                                create_stream_expr(&c.expr, ctx, &input_schema)?,
+                                c.descending,
+                                c.nulls_last,
+                            ))
+                        })
+                        .collect::<PolarsResult<(Vec<_>, Vec<_>, Vec<_>)>>()?;
+
+                    Some(PerPartitionSortBy {
+                        selectors,
+                        descending,
+                        nulls_last,
+                        maintain_order: true,
+                    })
+                },
+            };
+
+            let sink_compute_node = match variant {
+                PartitionVariantIR::MaxSize(max_size) => SinkComputeNode::from(
+                    nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
+                        input_schema,
+                        *max_size,
+                        base_path,
+                        file_path_cb,
+                        create_new,
+                        ext,
+                        sink_options.clone(),
+                        per_partition_sort_by,
+                        finish_callback.clone(),
                     ),
-                    [(input_key, input.port)],
                 ),
                 PartitionVariantIR::Parted {
                     key_exprs,
                     include_key,
-                } => ctx.graph.add_node(
-                    SinkComputeNode::from(
-                        nodes::io_sinks::partition::parted::PartedPartitionSinkNode::new(
-                            input_schema,
-                            key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                            base_path,
-                            file_path_cb,
-                            create_new,
-                            ext,
-                            sink_options.clone(),
-                            *include_key,
-                        ),
+                } => SinkComputeNode::from(
+                    nodes::io_sinks::partition::parted::PartedPartitionSinkNode::new(
+                        input_schema,
+                        key_exprs.iter().map(|e| e.output_name().clone()).collect(),
+                        base_path,
+                        file_path_cb,
+                        create_new,
+                        ext,
+                        sink_options.clone(),
+                        *include_key,
+                        per_partition_sort_by,
+                        finish_callback.clone(),
                     ),
-                    [(input_key, input.port)],
                 ),
                 PartitionVariantIR::ByKey {
                     key_exprs,
                     include_key,
-                } => ctx.graph.add_node(
-                    SinkComputeNode::from(
-                        nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
-                            input_schema,
-                            key_exprs.iter().map(|e| e.output_name().clone()).collect(),
-                            base_path,
-                            file_path_cb,
-                            create_new,
-                            ext,
-                            sink_options.clone(),
-                            *include_key,
-                        ),
+                } => SinkComputeNode::from(
+                    nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
+                        input_schema,
+                        key_exprs.iter().map(|e| e.output_name().clone()).collect(),
+                        base_path,
+                        file_path_cb,
+                        create_new,
+                        ext,
+                        sink_options.clone(),
+                        *include_key,
+                        per_partition_sort_by,
+                        finish_callback.clone(),
                     ),
-                    [(input_key, input.port)],
                 ),
-            }
+            };
+
+            ctx.graph
+                .add_node(sink_compute_node, [(input_key, input.port)])
         },
 
         InMemoryMap {

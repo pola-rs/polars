@@ -78,6 +78,8 @@ class CredentialProviderAWS(CredentialProvider):
         profile_name: str | None = None,
         region_name: str | None = None,
         assume_role: AWSAssumeRoleKWArgs | None = None,
+        _auto_init_unhandled_key: str | None = None,
+        _storage_options_has_endpoint_url: bool = False,
     ) -> None:
         """
         Initialize a credential provider for AWS.
@@ -97,16 +99,14 @@ class CredentialProviderAWS(CredentialProvider):
         self.profile_name = profile_name
         self.region_name = region_name
         self.assume_role = assume_role
+        self._auto_init_unhandled_key = _auto_init_unhandled_key
+        self._storage_options_has_endpoint_url = _storage_options_has_endpoint_url
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials for the configured profile name."""
-        import boto3
+        assert not self._auto_init_unhandled_key
 
-        # Note: boto3 automatically sources the AWS_PROFILE env var
-        session = boto3.Session(
-            profile_name=self.profile_name,
-            region_name=self.region_name,
-        )
+        session = self._session()
 
         if self.assume_role is not None:
             return self._finish_assume_role(session)
@@ -140,6 +140,65 @@ class CredentialProviderAWS(CredentialProvider):
             "aws_secret_access_key": creds["SecretAccessKey"],
             "aws_session_token": creds["SessionToken"],
         }, int(expiry.timestamp())
+
+    # Called from Rust, mainly for AWS endpoint_url
+    def _storage_update_options(self) -> dict[str, str]:
+        if self._storage_options_has_endpoint_url:
+            return {}
+
+        try:
+            config = self._session()._session.get_scoped_config()
+        except ImportError:
+            return {}
+
+        if endpoint_url := config.get("endpoint_url"):
+            if verbose():
+                eprint(f"[CredentialProviderAWS]: Loaded endpoint_url: {endpoint_url}")
+
+            return {"endpoint_url": endpoint_url}
+
+        return {}
+
+    # Called from Rust
+    def _can_use_as_provider(self) -> bool:
+        if self._auto_init_unhandled_key:
+            if verbose():
+                eprint(
+                    "[CredentialProviderAWS]: Will not be used as a provider: "
+                    f"unhandled key in storage_options: '{self._auto_init_unhandled_key}'"
+                )
+
+            return False
+
+        try:
+            self()
+
+        except ImportError as e:
+            if self.profile_name:
+                msg = (
+                    "cannot load requested aws_profile "
+                    f"'{self.profile_name}': {type(e).__name__}: {e}"
+                )
+                raise polars.exceptions.ComputeError(msg) from e
+
+            return False
+
+        except self.EmptyCredentialError:
+            if verbose():
+                eprint("[CredentialProviderAWS]: Did not find any credentials")
+
+            return False
+
+        return True
+
+    def _session(self) -> Any:
+        # Note: boto3 automatically sources the AWS_PROFILE env var
+        import boto3
+
+        return boto3.Session(
+            profile_name=self.profile_name,
+            region_name=self.region_name,
+        )
 
     @classmethod
     def _ensure_module_availability(cls) -> None:
@@ -382,7 +441,6 @@ class CredentialProviderGCP(CredentialProvider):
         self._ensure_module_availability()
 
         import google.auth
-        import google.auth.credentials
 
         # CI runs with both `mypy` and `mypy --allow-untyped-calls` depending on
         # Python version. If we add a `type: ignore[no-untyped-call]`, then the

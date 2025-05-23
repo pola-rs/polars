@@ -21,15 +21,13 @@ pub(crate) fn is_data_page(page: &PageWriteSpec) -> bool {
 fn maybe_bytes(uncompressed: usize, compressed: usize) -> ParquetResult<(i32, i32)> {
     let uncompressed_page_size: i32 = uncompressed.try_into().map_err(|_| {
         ParquetError::oos(format!(
-            "A page can only contain i32::MAX uncompressed bytes. This one contains {}",
-            uncompressed
+            "A page can only contain i32::MAX uncompressed bytes. This one contains {uncompressed}"
         ))
     })?;
 
     let compressed_page_size: i32 = compressed.try_into().map_err(|_| {
         ParquetError::oos(format!(
-            "A page can only contain i32::MAX compressed bytes. This one contains {}",
-            compressed
+            "A page can only contain i32::MAX compressed bytes. This one contains {compressed}"
         ))
     })?;
 

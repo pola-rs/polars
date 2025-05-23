@@ -1404,7 +1404,7 @@ mod test {
     fn list_broadcasting_lists() {
         let s_el = Series::new(PlSmallStr::EMPTY, &[1, 2, 3]);
         let s_lhs = Series::new(PlSmallStr::EMPTY, &[s_el.clone(), s_el.clone()]);
-        let s_rhs = Series::new(PlSmallStr::EMPTY, &[s_el.clone()]);
+        let s_rhs = Series::new(PlSmallStr::EMPTY, std::slice::from_ref(&s_el));
 
         let result = s_lhs.list().unwrap().equal(s_rhs.list().unwrap());
         assert_eq!(result.len(), 2);

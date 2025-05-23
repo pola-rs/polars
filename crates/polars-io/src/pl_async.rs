@@ -21,7 +21,7 @@ static DOWNLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
         .unwrap_or(64 * 1024 * 1024);
 
     if config::verbose() {
-        eprintln!("async download_chunk_size: {}", v)
+        eprintln!("async download_chunk_size: {v}")
     }
 
     v
@@ -38,7 +38,7 @@ static UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
         .unwrap_or(64 * 1024 * 1024);
 
     if config::verbose() {
-        eprintln!("async upload_chunk_size: {}", v)
+        eprintln!("async upload_chunk_size: {v}")
     }
 
     v
@@ -282,7 +282,7 @@ impl RuntimeManager {
             .unwrap_or(POOL.current_num_threads().clamp(1, 4));
 
         if polars_core::config::verbose() {
-            eprintln!("async thread count: {}", n_threads);
+            eprintln!("async thread count: {n_threads}");
         }
 
         let rt = Builder::new_multi_thread()

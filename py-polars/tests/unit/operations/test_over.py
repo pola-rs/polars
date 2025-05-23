@@ -39,3 +39,63 @@ def test_over_no_partition_by_no_over() -> None:
     df = pl.DataFrame({"a": [1, 1, 2], "i": [2, 1, 3]})
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.with_columns(b=pl.col("a").cum_sum().over())
+
+
+def test_over_explode_22770() -> None:
+    df = pl.DataFrame({"x": [[1.0], [2.0]], "idx": [1, 2]})
+    e = pl.col("x").list.explode().over("idx", mapping_strategy="join")
+
+    assert_frame_equal(
+        df.select(pl.col("x").list.diff()),
+        df.select(e.list.diff()),
+    )
+
+
+def test_over_replace_strict_22870() -> None:
+    lookup = pl.DataFrame(
+        {
+            "cat": ["a", "b", "c"],
+            "val": [102, 100, 101],
+        }
+    )
+
+    df = pl.DataFrame(
+        {
+            "cat": ["a", "b", "a", "a", "b"],
+            "data": [2, 3, 4, 5, 6],
+            "a": ["a", "b", "c", "d", "e"],
+            "b": [102, 100, 101, 109, 110],
+        }
+    )
+
+    out = (
+        df.lazy()
+        .select(
+            pl.col("cat")
+            .replace_strict(lookup["cat"], lookup["val"], default=-1)
+            .alias("val"),
+            pl.col("cat")
+            .replace_strict(lookup["cat"], lookup["val"], default=-1)
+            .over("cat")
+            .alias("val_over"),
+        )
+        .collect()
+    )
+    assert_series_equal(
+        out.get_column("val"), out.get_column("val_over"), check_names=False
+    )
+
+    out = (
+        df.lazy()
+        .select(
+            pl.col("cat").replace_strict(pl.col.a, pl.col.b, default=-1).alias("val"),
+            pl.col("cat")
+            .replace_strict(pl.col.a, pl.col.b, default=-1)
+            .over("cat")
+            .alias("val_over"),
+        )
+        .collect()
+    )
+    assert_series_equal(
+        out.get_column("val"), out.get_column("val_over"), check_names=False
+    )

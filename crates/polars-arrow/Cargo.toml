@@ -25,6 +25,7 @@ num-traits = { workspace = true }
 polars-error = { workspace = true }
 polars-schema = { workspace = true }
 polars-utils = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 simdutf8 = { workspace = true }
 
@@ -56,7 +57,7 @@ strum_macros = { workspace = true }
 
 [dev-dependencies]
 # used to run formal property testing
-arrow = { workspace = true, features = ["proptest"] }
+polars-arrow = { path = ".", features = ["proptest"] }
 proptest = { workspace = true }
 
 # use for flaky testing
@@ -113,6 +114,7 @@ compute = [
   "compute_temporal",
 ]
 serde = ["dep:serde", "polars-schema/serde", "polars-utils/serde"]
+dsl-schema = ["dep:schemars", "polars-schema/dsl-schema", "polars-utils/dsl-schema"]
 simd = []
 
 # polars-arrow
@@ -133,3 +135,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [package.metadata.cargo-all-features]
 allowlist = ["compute", "compute_sort", "compute_nullif"]
+
+[lints]
+workspace = true

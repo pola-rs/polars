@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (col("nrs") % lit(3)).alias("nrs % 3"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:arithmetic]
 
     // --8<-- [start:comparison]
@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("nrs").eq(1).alias("nrs == 1"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:comparison]
 
     // --8<-- [start:boolean]
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("random < 0.5 or group B"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:boolean]
 
     // --8<-- [start:bitwise]
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("nrs").xor(lit(6)).alias("nrs ^ 6"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:bitwise]
 
     // --8<-- [start:count]
@@ -93,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("numbers").approx_n_unique().alias("approx_n_unique"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:count]
 
     // --8<-- [start:value_counts]
@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .value_counts(false, false, "count", false)
             .alias("value_counts")])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:value_counts]
 
     // --8<-- [start:unique_counts]
@@ -116,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("names").unique_counts().alias("unique_counts"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:unique_counts]
 
     // --8<-- [start:collatz]
@@ -131,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("Collatz"),
         ])
         .collect()?;
-    println!("{}", result);
+    println!("{result}");
     // --8<-- [end:collatz]
 
     Ok(())

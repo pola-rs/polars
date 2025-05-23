@@ -21,6 +21,7 @@ use strum_macros::IntoStaticStr;
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct JoinArgs {
     pub how: JoinType,
     pub validation: JoinValidation,
@@ -39,6 +40,7 @@ impl JoinArgs {
 
 #[derive(Clone, PartialEq, Eq, Hash, Default, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum JoinType {
     #[default]
     Inner,
@@ -60,6 +62,7 @@ pub enum JoinType {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum JoinCoalesce {
     #[default]
     JoinSpecific,
@@ -91,6 +94,7 @@ impl JoinCoalesce {
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 pub enum MaintainOrderJoin {
     #[default]
@@ -300,6 +304,7 @@ impl JoinType {
 
 #[derive(Copy, Clone, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum JoinValidation {
     /// No unique checks
     #[default]

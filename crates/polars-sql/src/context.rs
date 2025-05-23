@@ -688,7 +688,7 @@ impl SQLContext {
                         .iter_names()
                         .filter_map(|name| {
                             // col exists in both tables and is aliased in the joined result
-                            let aliased_name = format!("{}:{}", name, r_name);
+                            let aliased_name = format!("{name}:{r_name}");
                             if left_schema.contains(name)
                                 && joined_schema.contains(aliased_name.as_str())
                             {
@@ -1476,8 +1476,7 @@ impl SQLContext {
                 .replace('_', ".");
 
             modifiers.ilike = Some(
-                polars_utils::regex_cache::compile_regex(format!("^(?is){}$", rx).as_str())
-                    .unwrap(),
+                polars_utils::regex_cache::compile_regex(format!("^(?is){rx}$").as_str()).unwrap(),
             );
         }
 

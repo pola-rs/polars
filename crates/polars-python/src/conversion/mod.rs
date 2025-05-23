@@ -112,21 +112,21 @@ pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
     Ok(s.extract::<PySeries>()?.series)
 }
 
-pub(crate) fn to_series(py: Python, s: PySeries) -> PyResult<Bound<PyAny>> {
+pub(crate) fn to_series(py: Python<'_>, s: PySeries) -> PyResult<Bound<PyAny>> {
     let series = pl_series(py).bind(py);
     let constructor = series.getattr(intern!(py, "_from_pyseries"))?;
     constructor.call1((s,))
 }
 
-impl<'a> FromPyObject<'a> for Wrap<PlSmallStr> {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<PlSmallStr> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         Ok(Wrap((&*ob.extract::<PyBackedStr>()?).into()))
     }
 }
 
 #[cfg(feature = "csv")]
-impl<'a> FromPyObject<'a> for Wrap<NullValues> {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<NullValues> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<PyBackedStr>() {
             Ok(Wrap(NullValues::AllColumnsSingle((&*s).into())))
         } else if let Ok(s) = ob.extract::<Vec<PyBackedStr>>() {
@@ -148,7 +148,7 @@ impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     }
 }
 
-fn struct_dict<'py, 'a>(
+fn struct_dict<'a, 'py>(
     py: Python<'py>,
     vals: impl Iterator<Item = AnyValue<'a>>,
     flds: &[Field],
@@ -495,8 +495,8 @@ impl<'py> IntoPyObject<'py> for Wrap<TimeUnit> {
 }
 
 #[cfg(feature = "parquet")]
-impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for Wrap<StatisticsOptions> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let mut statistics = StatisticsOptions::empty();
 
         let dict = ob.downcast::<PyDict>()?;
@@ -521,9 +521,9 @@ impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
     }
 }
 
-impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
-    fn extract_bound(ob: &Bound<'s, PyAny>) -> PyResult<Self> {
-        let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
+impl<'py> FromPyObject<'py> for Wrap<Row<'static>> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let vals = ob.extract::<Vec<Wrap<AnyValue<'static>>>>()?;
         let vals = reinterpret_vec(vals);
         Ok(Wrap(Row(vals)))
     }
@@ -694,8 +694,8 @@ impl From<PyObject> for ObjectValue {
     }
 }
 
-impl<'a> FromPyObject<'a> for ObjectValue {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for ObjectValue {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         Ok(ObjectValue {
             inner: ob.to_owned().unbind(),
         })
@@ -728,8 +728,8 @@ impl Default for ObjectValue {
     }
 }
 
-impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
-    fn extract_bound(obj: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py, T: NativeType + FromPyObject<'py>> FromPyObject<'py> for Wrap<Vec<T>> {
+    fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
         let seq = obj.downcast::<PySequence>()?;
         let mut v = Vec::with_capacity(seq.len().unwrap_or(0));
         for item in seq.try_iter()? {
@@ -1267,8 +1267,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             "forbid" => false,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown option for integer_cast: {}",
-                    v
+                    "unknown option for integer_cast: {v}"
                 )));
             },
         };
@@ -1283,8 +1282,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
                 "downcast" => float_downcast = true,
                 v => {
                     return Err(PyValueError::new_err(format!(
-                        "unknown option for float_cast: {}",
-                        v
+                        "unknown option for float_cast: {v}"
                     )));
                 },
             }
@@ -1310,8 +1308,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
                 "convert-timezone" => datetime_convert_timezone = true,
                 v => {
                     return Err(PyValueError::new_err(format!(
-                        "unknown option for datetime_cast: {}",
-                        v
+                        "unknown option for datetime_cast: {v}"
                     )));
                 },
             };
@@ -1335,8 +1332,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             "raise" => MissingColumnsPolicy::Raise,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown option for missing_struct_fields: {}",
-                    v
+                    "unknown option for missing_struct_fields: {v}"
                 )));
             },
         };
@@ -1349,8 +1345,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             "raise" => ExtraColumnsPolicy::Raise,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown option for extra_struct_fields: {}",
-                    v
+                    "unknown option for extra_struct_fields: {v}"
                 )));
             },
         };
@@ -1360,6 +1355,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             float_upcast,
             float_downcast,
             datetime_nanoseconds_downcast,
+            datetime_microseconds_downcast: false,
             datetime_convert_timezone,
             missing_struct_fields,
             extra_struct_fields,
@@ -1378,8 +1374,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
                 }
             } else {
                 return Err(PyValueError::new_err(format!(
-                    "unknown type for {}: {}",
-                    parameter_name, py_object
+                    "unknown type for {parameter_name}: {py_object}"
                 )));
             }
 
@@ -1465,8 +1460,8 @@ where
 #[derive(Debug, Copy, Clone)]
 pub struct PyCompatLevel(pub CompatLevel);
 
-impl<'a> FromPyObject<'a> for PyCompatLevel {
-    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
+impl<'py> FromPyObject<'py> for PyCompatLevel {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         Ok(PyCompatLevel(if let Ok(level) = ob.extract::<u16>() {
             if let Ok(compat_level) = CompatLevel::with_level(level) {
                 compat_level

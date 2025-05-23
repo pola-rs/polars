@@ -22,6 +22,7 @@ polars-error = { workspace = true }
 polars-utils = { workspace = true }
 rand = { workspace = true }
 ryu = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 skiplist = { workspace = true }
 strength_reduce = { workspace = true }
@@ -53,3 +54,7 @@ approx_unique = []
 dtype-array = []
 dtype-decimal = ["arrow/dtype-decimal", "dtype-i128"]
 dtype-i128 = []
+dsl-schema = ["dep:schemars"]
+
+[lints]
+workspace = true

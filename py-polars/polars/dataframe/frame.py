@@ -2973,12 +2973,6 @@ class DataFrame:
         else:
             target = file
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         engine: EngineType = "in-memory"
 
         from polars.lazyframe.opt_flags import QueryOptFlags

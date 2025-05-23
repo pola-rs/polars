@@ -99,6 +99,10 @@ impl<T> SpecialEq<T> {
     pub fn new(val: T) -> Self {
         SpecialEq(val)
     }
+
+    pub fn into_inner(self) -> T {
+        self.0
+    }
 }
 
 impl<T: ?Sized> PartialEq for SpecialEq<Arc<T>> {

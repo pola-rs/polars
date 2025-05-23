@@ -111,7 +111,7 @@ impl MorselStreamReverser {
             };
 
             if verbose {
-                eprintln!("MorselStreamReverser: got total row count: {}", total_count);
+                eprintln!("MorselStreamReverser: got total row count: {total_count}");
             }
 
             // Convert to position from beginning

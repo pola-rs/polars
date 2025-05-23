@@ -70,6 +70,19 @@ def test_search_sorted_multivalue() -> None:
         )
 
 
+@pytest.mark.parametrize("descending", [False, True])
+def test_search_sorted_descending_order(descending: bool) -> None:
+    values = sorted([2, 3, 4, 5], reverse=descending)
+    series = pl.Series(values)
+    df = pl.DataFrame({"series": series}).lazy()
+    for value in values:
+        expected_index = values.index(value)
+        assert series.search_sorted(value, descending=descending) == expected_index
+        assert df.select(
+            pl.col("series").search_sorted(value, descending=descending)
+        ).collect().get_column("series").to_list() == [expected_index]
+
+
 def test_search_sorted_multichunk() -> None:
     for seed in [1, 2, 3]:
         np.random.seed(seed)
@@ -182,7 +195,7 @@ def assert_can_find_values(values: list[Any], dtype: PolarsDataType) -> None:
             sorted_series = series.sort(descending=descending, nulls_last=nulls_last)
             as_list = sorted_series.to_list()
             for value in values:
-                idx = sorted_series.search_sorted(value, "left")
+                idx = sorted_series.search_sorted(value, "left", descending=descending)
                 assert as_list.index(value) == idx
                 lookup = sorted_series[idx]
                 if isinstance(lookup, pl.Series):

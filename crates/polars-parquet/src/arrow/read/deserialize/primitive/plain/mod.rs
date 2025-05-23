@@ -39,10 +39,11 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
 
             // @TODO: Do something smarter with the validity
             let mut unfiltered_target = Vec::with_capacity(num_values);
-            let mut unfiltered_validity = page_validity
-                .is_some()
-                .then(|| BitmapBuilder::with_capacity(num_values))
-                .unwrap_or_default();
+            let mut unfiltered_validity = if page_validity.is_some() {
+                BitmapBuilder::with_capacity(num_values)
+            } else {
+                Default::default()
+            };
 
             decode_no_incompact_predicates(
                 values,

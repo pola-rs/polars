@@ -159,7 +159,7 @@ pub mod prefetch {
                 }
             },
             Some("force_populate_read") => force_populate_read,
-            Some(v) => panic!("invalid value for POLARS_MEMORY_PREFETCH: {}", v),
+            Some(v) => panic!("invalid value for POLARS_MEMORY_PREFETCH: {v}"),
         };
 
         if verbose {
@@ -173,7 +173,7 @@ pub mod prefetch {
                 _ => unreachable!(),
             };
 
-            eprintln!("memory prefetch function: {}", func_name);
+            eprintln!("memory prefetch function: {func_name}");
         }
 
         memory_prefetch_func

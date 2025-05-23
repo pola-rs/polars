@@ -11,6 +11,7 @@ use super::KeyValueMetadata;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ParquetWriteOptions {
     /// Data page compression
     pub compression: ParquetCompression,
@@ -29,6 +30,7 @@ pub struct ParquetWriteOptions {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ChildFieldOverwrites {
     /// Flat datatypes
     None,
@@ -39,6 +41,7 @@ pub enum ChildFieldOverwrites {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct MetadataKeyValue {
     pub key: PlSmallStr,
     pub value: Option<PlSmallStr>,
@@ -46,6 +49,7 @@ pub struct MetadataKeyValue {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ParquetFieldOverwrites {
     pub name: Option<PlSmallStr>,
     pub children: ChildFieldOverwrites,
@@ -56,6 +60,7 @@ pub struct ParquetFieldOverwrites {
 /// The compression strategy to use for writing Parquet files.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ParquetCompression {
     Uncompressed,
     Snappy,
@@ -75,6 +80,7 @@ impl Default for ParquetCompression {
 /// A valid Gzip compression level.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct GzipLevel(u8);
 
 impl GzipLevel {
@@ -87,6 +93,7 @@ impl GzipLevel {
 /// A valid Brotli compression level.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct BrotliLevel(u32);
 
 impl BrotliLevel {
@@ -99,6 +106,7 @@ impl BrotliLevel {
 /// A valid Zstandard compression level.
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ZstdLevel(i32);
 
 impl ZstdLevel {

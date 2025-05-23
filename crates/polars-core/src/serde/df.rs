@@ -103,7 +103,7 @@ impl DataFrame {
 
             if let Err(e) = &flags {
                 if verbose {
-                    eprintln!("DataFrame::read_ipc: Error parsing metadata flags: {}", e);
+                    eprintln!("DataFrame::read_ipc: Error parsing metadata flags: {e}");
                 }
             }
 
@@ -170,5 +170,20 @@ impl<'de> Deserialize<'de> for DataFrame {
             Self::deserialize_from_reader(v)
         })?
         .map_err(D::Error::custom)
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for DataFrame {
+    fn schema_name() -> String {
+        "DataFrame".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "DataFrame"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }

@@ -806,6 +806,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Replace { n, literal } => {
                         (PyStringFunction::Replace, n, literal).into_py_any(py)
                     },
+                    #[cfg(feature = "string_normalize")]
                     StringFunction::Normalize { form } => (
                         PyStringFunction::Normalize,
                         match form {
@@ -1055,13 +1056,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 #[cfg(feature = "index_of")]
                 FunctionExpr::IndexOf => ("index_of",).into_py_any(py),
                 #[cfg(feature = "search_sorted")]
-                FunctionExpr::SearchSorted(side) => (
+                FunctionExpr::SearchSorted { side, descending } => (
                     "search_sorted",
                     match side {
                         SearchSortedSide::Any => "any",
                         SearchSortedSide::Left => "left",
                         SearchSortedSide::Right => "right",
                     },
+                    descending,
                 )
                     .into_py_any(py),
                 FunctionExpr::Range(_) => return Err(PyNotImplementedError::new_err("range")),
@@ -1094,7 +1096,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                 FunctionExpr::Sign => ("sign",).into_py_any(py),
                 FunctionExpr::FillNull => ("fill_null",).into_py_any(py),
                 FunctionExpr::RollingExpr(rolling) => {
-                    return Err(PyNotImplementedError::new_err(format!("{}", rolling)));
+                    return Err(PyNotImplementedError::new_err(format!("{rolling}")));
                 },
                 FunctionExpr::RollingExprBy(rolling) => match rolling {
                     RollingFunctionBy::MinBy(_) => {

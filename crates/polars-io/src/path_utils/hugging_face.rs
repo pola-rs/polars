@@ -384,7 +384,7 @@ mod tests {
             if out.is_err() {
                 continue;
             }
-            panic!("expected err result for uri {} instead of {:?}", uri, out);
+            panic!("expected err result for uri {uri} instead of {out:?}");
         }
     }
 

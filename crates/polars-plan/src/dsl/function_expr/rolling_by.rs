@@ -4,6 +4,7 @@ use super::*;
 
 #[derive(Clone, PartialEq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum RollingFunctionBy {
     MinBy(RollingOptionsDynamicWindow),
     MaxBy(RollingOptionsDynamicWindow),

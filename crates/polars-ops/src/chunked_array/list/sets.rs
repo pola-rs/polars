@@ -110,6 +110,7 @@ fn copied_wrapper_opt<T: Copy + TotalEq + TotalHash>(
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum SetOperation {
     Intersection,
     Union,

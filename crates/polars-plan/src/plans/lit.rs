@@ -14,6 +14,7 @@ use crate::prelude::*;
 
 #[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DynLiteralValue {
     Str(PlSmallStr),
     Int(i128),
@@ -22,6 +23,7 @@ pub enum DynLiteralValue {
 }
 #[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DynListLiteralValue {
     Str(Box<[Option<PlSmallStr>]>),
     Int(Box<[Option<i128>]>),
@@ -57,6 +59,7 @@ impl Hash for DynListLiteralValue {
 
 #[derive(Clone, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RangeLiteralValue {
     pub low: i128,
     pub high: i128,
@@ -64,6 +67,7 @@ pub struct RangeLiteralValue {
 }
 #[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum LiteralValue {
     /// A dynamically inferred literal value. This needs to be materialized into a specific type.
     Dyn(DynLiteralValue),
@@ -380,6 +384,24 @@ impl LiteralValue {
     pub const fn untyped_null() -> Self {
         Self::Scalar(Scalar::null(DataType::Null))
     }
+
+    pub fn implode(self) -> PolarsResult<Self> {
+        let series = match self.materialize() {
+            LiteralValue::Dyn(_) => unreachable!(),
+            LiteralValue::Scalar(scalar) => scalar.into_series(PlSmallStr::EMPTY),
+            LiteralValue::Series(series) => series.into_inner(),
+            LiteralValue::Range(range) => {
+                let dtype = range.dtype.clone();
+                range.try_materialize_to_series(&dtype)?
+            },
+        };
+
+        let dtype = DataType::List(Box::new(series.dtype().clone()));
+        Ok(LiteralValue::Scalar(Scalar::new(
+            dtype,
+            AnyValue::List(series),
+        )))
+    }
 }
 
 impl From<Scalar> for LiteralValue {
@@ -553,8 +575,7 @@ impl Literal for Duration {
     fn lit(self) -> Expr {
         assert!(
             self.months() == 0,
-            "Cannot create literal duration that is not of fixed length; found {}",
-            self
+            "Cannot create literal duration that is not of fixed length; found {self}"
         );
         let ns = self.duration_ns();
         Expr::Literal(

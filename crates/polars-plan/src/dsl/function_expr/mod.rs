@@ -105,7 +105,7 @@ pub use self::cat::CategoricalFunction;
 pub use self::datetime::TemporalFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
-pub(super) use self::range::RangeFunction;
+pub use self::range::RangeFunction;
 #[cfg(feature = "rolling_window")]
 pub(super) use self::rolling::RollingFunction;
 #[cfg(feature = "rolling_window_by")]
@@ -119,6 +119,7 @@ pub use self::trigonometry::TrigonometricFunction;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug)]
 pub enum FunctionExpr {
     // Namespaces
@@ -159,7 +160,10 @@ pub enum FunctionExpr {
     #[cfg(feature = "index_of")]
     IndexOf,
     #[cfg(feature = "search_sorted")]
-    SearchSorted(SearchSortedSide),
+    SearchSorted {
+        side: SearchSortedSide,
+        descending: bool,
+    },
     #[cfg(feature = "range")]
     Range(RangeFunction),
     #[cfg(feature = "trigonometry")]
@@ -398,7 +402,10 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "index_of")]
             IndexOf => {},
             #[cfg(feature = "search_sorted")]
-            SearchSorted(f) => f.hash(state),
+            SearchSorted { side, descending } => {
+                side.hash(state);
+                descending.hash(state);
+            },
             #[cfg(feature = "random")]
             Random { method, .. } => method.hash(state),
             #[cfg(feature = "cov")]
@@ -648,7 +655,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "index_of")]
             IndexOf => "index_of",
             #[cfg(feature = "search_sorted")]
-            SearchSorted(_) => "search_sorted",
+            SearchSorted { .. } => "search_sorted",
             #[cfg(feature = "range")]
             Range(func) => return write!(f, "{func}"),
             #[cfg(feature = "trigonometry")]
@@ -939,8 +946,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 map_as_slice!(index_of::index_of)
             },
             #[cfg(feature = "search_sorted")]
-            SearchSorted(side) => {
-                map_as_slice!(search_sorted::search_sorted_impl, side)
+            SearchSorted { side, descending } => {
+                map_as_slice!(search_sorted::search_sorted_impl, side, descending)
             },
             #[cfg(feature = "range")]
             Range(func) => func.into(),
@@ -1258,7 +1265,7 @@ impl FunctionExpr {
                 FunctionOptions::aggregation().with_casting_rules(CastingRules::FirstArgLossless)
             },
             #[cfg(feature = "search_sorted")]
-            F::SearchSorted(_) => {
+            F::SearchSorted { .. } => {
                 FunctionOptions::groupwise().with_casting_rules(CastingRules::FirstArgLossless)
             },
             #[cfg(feature = "trigonometry")]

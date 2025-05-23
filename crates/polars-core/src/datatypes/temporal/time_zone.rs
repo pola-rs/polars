@@ -5,6 +5,7 @@ use crate::config;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct TimeZone {
     /// Private inner to ensure canonical / parsed time zone repr at construction.
     inner: PlSmallStr,
@@ -64,15 +65,14 @@ impl TimeZone {
                         if std::env::var("POLARS_IGNORE_TIMEZONE_PARSE_ERROR").as_deref() == Ok("1")
                         {
                             if config::verbose() {
-                                eprintln!("WARN: {}", err)
+                                eprintln!("WARN: {err}")
                             }
                         } else {
                             return Err(err.wrap_msg(|s| {
                                 format!(
-                                    "{}. If you would like to forcibly disable \
+                                    "{s}. If you would like to forcibly disable \
                                     timezone validation, set \
-                                    POLARS_IGNORE_TIMEZONE_PARSE_ERROR=1.",
-                                    s
+                                    POLARS_IGNORE_TIMEZONE_PARSE_ERROR=1."
                                 )
                             }));
                         }
