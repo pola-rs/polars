@@ -2,7 +2,7 @@
     all(target_arch = "aarch64", feature = "nightly"),
     feature(stdarch_aarch64_prefetch)
 )]
-#![cfg_attr(feature = "nightly", feature(core_intrinsics))] // For algebraic ops, select_unpredicable.
+#![cfg_attr(feature = "nightly", feature(core_intrinsics))] // For algebraic ops, select_unpredictable.
 #![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 pub mod abs_diff;
