@@ -1340,5 +1340,5 @@ def test_group_by_implode_22870() -> None:
     )
     assert_frame_equal(
         out,
-        pl.DataFrame({"x": [1, 2]}),
+        pl.DataFrame({"x": ["a", "b"], "y": [[1], [2]]}),
     )

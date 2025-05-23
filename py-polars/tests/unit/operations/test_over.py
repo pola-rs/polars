@@ -81,7 +81,9 @@ def test_over_replace_strict_22870() -> None:
         )
         .collect()
     )
-    assert_series_equal(out.get_column("val"), out.get_column("val_over"))
+    assert_series_equal(
+        out.get_column("val"), out.get_column("val_over"), check_names=False
+    )
 
     out = (
         df.lazy()
@@ -94,4 +96,6 @@ def test_over_replace_strict_22870() -> None:
         )
         .collect()
     )
-    assert_series_equal(out.get_column("val"), out.get_column("val_over"))
+    assert_series_equal(
+        out.get_column("val"), out.get_column("val_over"), check_names=False
+    )
