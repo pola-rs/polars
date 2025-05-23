@@ -3654,13 +3654,14 @@ class Series:
             If this value matches the dtype of values in self, the return result is an
             integer.
             If self's dtype is ``pl.List``/``pl.Array``, we assume an element that is
-            ``list`` or NumPy array is a single value, and return an integer. (For other
-            dtypes, a ``list``/NumPy array element is assumed to be searching for
-            multiple values, and the return result is a ``Series``; this is deprecated,
-            you should switch to using a ``Series`` if you want to search for multiple
-            values.)
+            ``list`` or NumPy array is a single value, and return an integer.
             If this is a ``Series`` or ``Expr``, the return result is a ``Series``.
 
+            .. note::
+               For dtypes other than ``pl.List``/``pl.Array``, a ``list``/NumPy array
+               element is assumed to be searching for multiple values, and the return
+               result is a ``Series``. This behavior is deprecated, and you should
+               switch to using a ``Series`` if you want to search for multiple values.
         side : {'any', 'left', 'right'}
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
