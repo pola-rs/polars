@@ -69,6 +69,9 @@ def test_search_sorted_multivalue() -> None:
             pl.DataFrame({"a": pl.Series([3, 1], dtype=pl.UInt32())}),
         )
 
+    # Empty lists:
+    assert_series_equal(a.search_sorted([]), pl.Series([], dtype=pl.UInt32()))
+
 
 @pytest.mark.parametrize("descending", [False, True])
 def test_search_sorted_descending_order(descending: bool) -> None:

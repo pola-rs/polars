@@ -434,7 +434,7 @@ impl OptimizationRule for TypeCoercionRule {
                         );
                         let other_input = expr_arena.add(AExpr::Explode {
                             expr: input[1].node(),
-                            skip_empty: false,
+                            skip_empty: true,
                         });
                         input[1].set_node(other_input);
                         return Ok(Some(AExpr::Function {
