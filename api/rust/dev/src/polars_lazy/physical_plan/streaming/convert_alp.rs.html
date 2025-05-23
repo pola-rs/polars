@@ -1,0 +1,446 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-lazy/src/physical_plan/streaming/convert_alp.rs`."><title>convert_alp.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-0ce1a80b.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="polars_lazy" data-themes="" data-resource-suffix="" data-rustdoc-version="1.89.0-nightly (bc8215286 2025-05-20)" data-channel="nightly" data-search-js="search-f7877310.js" data-settings-js="settings-5514c975.js" ><script src="../../../../static.files/storage-4e99c027.js"></script><script defer src="../../../../static.files/src-script-63605ae7.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-7ef8a74a.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">polars_lazy/physical_plan/streaming/</div>convert_alp.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>polars_core::prelude::<span class="kw-2">*</span>;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>polars_pipe::pipeline::swap_join_order;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>polars_plan::prelude::<span class="kw-2">*</span>;
+<a href=#4 id=4 data-nosnippet>4</a>
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><span class="kw">super</span>::checks::<span class="kw-2">*</span>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><span class="kw">crate</span>::physical_plan::streaming::tree::<span class="kw-2">*</span>;
+<a href=#7 id=7 data-nosnippet>7</a>
+<a href=#8 id=8 data-nosnippet>8</a><span class="comment">// The index of the pipeline tree we are building at this moment
+<a href=#9 id=9 data-nosnippet>9</a>// if we have a node we cannot do streaming, we have finished that pipeline tree
+<a href=#10 id=10 data-nosnippet>10</a>// and start a new one.
+<a href=#11 id=11 data-nosnippet>11</a></span><span class="kw">type </span>CurrentIdx = usize;
+<a href=#12 id=12 data-nosnippet>12</a>
+<a href=#13 id=13 data-nosnippet>13</a><span class="comment">// Frame in the stack of logical plans to process while inserting streaming nodes
+<a href=#14 id=14 data-nosnippet>14</a></span><span class="kw">struct </span>StackFrame {
+<a href=#15 id=15 data-nosnippet>15</a>    node: Node, <span class="comment">// LogicalPlan node
+<a href=#16 id=16 data-nosnippet>16</a>    </span>state: Branch,
+<a href=#17 id=17 data-nosnippet>17</a>    current_idx: CurrentIdx,
+<a href=#18 id=18 data-nosnippet>18</a>    insert_sink: bool,
+<a href=#19 id=19 data-nosnippet>19</a>}
+<a href=#20 id=20 data-nosnippet>20</a>
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">impl </span>StackFrame {
+<a href=#22 id=22 data-nosnippet>22</a>    <span class="kw">fn </span>root(node: Node) -&gt; StackFrame {
+<a href=#23 id=23 data-nosnippet>23</a>        StackFrame {
+<a href=#24 id=24 data-nosnippet>24</a>            node,
+<a href=#25 id=25 data-nosnippet>25</a>            state: Branch::default(),
+<a href=#26 id=26 data-nosnippet>26</a>            current_idx: <span class="number">0</span>,
+<a href=#27 id=27 data-nosnippet>27</a>            insert_sink: <span class="bool-val">false</span>,
+<a href=#28 id=28 data-nosnippet>28</a>        }
+<a href=#29 id=29 data-nosnippet>29</a>    }
+<a href=#30 id=30 data-nosnippet>30</a>
+<a href=#31 id=31 data-nosnippet>31</a>    <span class="kw">fn </span>new(node: Node, state: Branch, current_idx: CurrentIdx) -&gt; StackFrame {
+<a href=#32 id=32 data-nosnippet>32</a>        StackFrame {
+<a href=#33 id=33 data-nosnippet>33</a>            node,
+<a href=#34 id=34 data-nosnippet>34</a>            state,
+<a href=#35 id=35 data-nosnippet>35</a>            current_idx,
+<a href=#36 id=36 data-nosnippet>36</a>            insert_sink: <span class="bool-val">false</span>,
+<a href=#37 id=37 data-nosnippet>37</a>        }
+<a href=#38 id=38 data-nosnippet>38</a>    }
+<a href=#39 id=39 data-nosnippet>39</a>
+<a href=#40 id=40 data-nosnippet>40</a>    <span class="comment">// Create a new streaming subtree below a non-streaming node
+<a href=#41 id=41 data-nosnippet>41</a>    </span><span class="kw">fn </span>new_subtree(node: Node, current_idx: CurrentIdx) -&gt; StackFrame {
+<a href=#42 id=42 data-nosnippet>42</a>        StackFrame {
+<a href=#43 id=43 data-nosnippet>43</a>            node,
+<a href=#44 id=44 data-nosnippet>44</a>            state: Branch::default(),
+<a href=#45 id=45 data-nosnippet>45</a>            current_idx,
+<a href=#46 id=46 data-nosnippet>46</a>            insert_sink: <span class="bool-val">true</span>,
+<a href=#47 id=47 data-nosnippet>47</a>        }
+<a href=#48 id=48 data-nosnippet>48</a>    }
+<a href=#49 id=49 data-nosnippet>49</a>}
+<a href=#50 id=50 data-nosnippet>50</a>
+<a href=#51 id=51 data-nosnippet>51</a><span class="kw">fn </span>process_non_streamable_node(
+<a href=#52 id=52 data-nosnippet>52</a>    current_idx: <span class="kw-2">&amp;mut </span>CurrentIdx,
+<a href=#53 id=53 data-nosnippet>53</a>    state: <span class="kw-2">&amp;mut </span>Branch,
+<a href=#54 id=54 data-nosnippet>54</a>    stack: <span class="kw-2">&amp;mut </span>Vec&lt;StackFrame&gt;,
+<a href=#55 id=55 data-nosnippet>55</a>    scratch: <span class="kw-2">&amp;mut </span>Vec&lt;Node&gt;,
+<a href=#56 id=56 data-nosnippet>56</a>    pipeline_trees: <span class="kw-2">&amp;mut </span>Vec&lt;Vec&lt;Branch&gt;&gt;,
+<a href=#57 id=57 data-nosnippet>57</a>    lp: <span class="kw-2">&amp;</span>IR,
+<a href=#58 id=58 data-nosnippet>58</a>) {
+<a href=#59 id=59 data-nosnippet>59</a>    lp.copy_inputs(scratch);
+<a href=#60 id=60 data-nosnippet>60</a>    <span class="kw">while let </span><span class="prelude-val">Some</span>(input) = scratch.pop() {
+<a href=#61 id=61 data-nosnippet>61</a>        <span class="kw">if </span>state.streamable {
+<a href=#62 id=62 data-nosnippet>62</a>            <span class="kw-2">*</span>current_idx += <span class="number">1</span>;
+<a href=#63 id=63 data-nosnippet>63</a>            <span class="comment">// create a completely new streaming pipeline
+<a href=#64 id=64 data-nosnippet>64</a>            // maybe we can stream a subsection of the plan
+<a href=#65 id=65 data-nosnippet>65</a>            </span>pipeline_trees.push(<span class="macro">vec!</span>[]);
+<a href=#66 id=66 data-nosnippet>66</a>        }
+<a href=#67 id=67 data-nosnippet>67</a>        stack.push(StackFrame::new_subtree(input, <span class="kw-2">*</span>current_idx));
+<a href=#68 id=68 data-nosnippet>68</a>    }
+<a href=#69 id=69 data-nosnippet>69</a>    state.streamable = <span class="bool-val">false</span>;
+<a href=#70 id=70 data-nosnippet>70</a>}
+<a href=#71 id=71 data-nosnippet>71</a>
+<a href=#72 id=72 data-nosnippet>72</a><span class="kw">fn </span>insert_file_sink(<span class="kw-2">mut </span>root: Node, lp_arena: <span class="kw-2">&amp;mut </span>Arena&lt;IR&gt;) -&gt; Node {
+<a href=#73 id=73 data-nosnippet>73</a>    <span class="comment">// The pipelines need a final sink, we insert that here.
+<a href=#74 id=74 data-nosnippet>74</a>    // this allows us to split at joins/unions and share a sink
+<a href=#75 id=75 data-nosnippet>75</a>    </span><span class="kw">if </span>!<span class="macro">matches!</span>(lp_arena.get(root), IR::Sink { .. }) {
+<a href=#76 id=76 data-nosnippet>76</a>        root = lp_arena.add(IR::Sink {
+<a href=#77 id=77 data-nosnippet>77</a>            input: root,
+<a href=#78 id=78 data-nosnippet>78</a>            payload: SinkTypeIR::Memory,
+<a href=#79 id=79 data-nosnippet>79</a>        })
+<a href=#80 id=80 data-nosnippet>80</a>    }
+<a href=#81 id=81 data-nosnippet>81</a>    root
+<a href=#82 id=82 data-nosnippet>82</a>}
+<a href=#83 id=83 data-nosnippet>83</a>
+<a href=#84 id=84 data-nosnippet>84</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>insert_streaming_nodes(
+<a href=#85 id=85 data-nosnippet>85</a>    root: Node,
+<a href=#86 id=86 data-nosnippet>86</a>    lp_arena: <span class="kw-2">&amp;mut </span>Arena&lt;IR&gt;,
+<a href=#87 id=87 data-nosnippet>87</a>    expr_arena: <span class="kw-2">&amp;mut </span>Arena&lt;AExpr&gt;,
+<a href=#88 id=88 data-nosnippet>88</a>    scratch: <span class="kw-2">&amp;mut </span>Vec&lt;Node&gt;,
+<a href=#89 id=89 data-nosnippet>89</a>    fmt: bool,
+<a href=#90 id=90 data-nosnippet>90</a>    <span class="comment">// whether the full plan needs to be translated
+<a href=#91 id=91 data-nosnippet>91</a>    // to streaming
+<a href=#92 id=92 data-nosnippet>92</a>    </span>allow_partial: bool,
+<a href=#93 id=93 data-nosnippet>93</a>    row_estimate: bool,
+<a href=#94 id=94 data-nosnippet>94</a>) -&gt; PolarsResult&lt;bool&gt; {
+<a href=#95 id=95 data-nosnippet>95</a>    scratch.clear();
+<a href=#96 id=96 data-nosnippet>96</a>
+<a href=#97 id=97 data-nosnippet>97</a>    <span class="comment">// This is needed to determine which side of the joins should be
+<a href=#98 id=98 data-nosnippet>98</a>    // traversed first. As we want to keep the smallest table in the build phase as that keeps most
+<a href=#99 id=99 data-nosnippet>99</a>    // data in memory.
+<a href=#100 id=100 data-nosnippet>100</a>    </span><span class="kw">if </span>row_estimate {
+<a href=#101 id=101 data-nosnippet>101</a>        set_estimated_row_counts(root, lp_arena, expr_arena, <span class="number">0</span>, scratch);
+<a href=#102 id=102 data-nosnippet>102</a>    }
+<a href=#103 id=103 data-nosnippet>103</a>
+<a href=#104 id=104 data-nosnippet>104</a>    scratch.clear();
+<a href=#105 id=105 data-nosnippet>105</a>
+<a href=#106 id=106 data-nosnippet>106</a>    <span class="comment">// The pipelines always need to end in a SINK, we insert that here.
+<a href=#107 id=107 data-nosnippet>107</a>    // this allows us to split at joins/unions and share a sink
+<a href=#108 id=108 data-nosnippet>108</a>    </span><span class="kw">let </span>root = insert_file_sink(root, lp_arena);
+<a href=#109 id=109 data-nosnippet>109</a>
+<a href=#110 id=110 data-nosnippet>110</a>    <span class="comment">// We use a bool flag in the stack to communicate when we need to insert a file sink.
+<a href=#111 id=111 data-nosnippet>111</a>    // This happens for instance when we
+<a href=#112 id=112 data-nosnippet>112</a>    //
+<a href=#113 id=113 data-nosnippet>113</a>    //     ________*non-streamable part of query
+<a href=#114 id=114 data-nosnippet>114</a>    //   /\
+<a href=#115 id=115 data-nosnippet>115</a>    //     ________*streamable below this line so we must insert
+<a href=#116 id=116 data-nosnippet>116</a>    //    /\        a file sink here so the pipeline can be built
+<a href=#117 id=117 data-nosnippet>117</a>    //     /\
+<a href=#118 id=118 data-nosnippet>118</a>
+<a href=#119 id=119 data-nosnippet>119</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>stack = Vec::with_capacity(<span class="number">16</span>);
+<a href=#120 id=120 data-nosnippet>120</a>
+<a href=#121 id=121 data-nosnippet>121</a>    stack.push(StackFrame::root(root));
+<a href=#122 id=122 data-nosnippet>122</a>
+<a href=#123 id=123 data-nosnippet>123</a>    <span class="comment">// A state holds a full pipeline until the breaker
+<a href=#124 id=124 data-nosnippet>124</a>    //  1/\
+<a href=#125 id=125 data-nosnippet>125</a>    //   2/\
+<a href=#126 id=126 data-nosnippet>126</a>    //     3\
+<a href=#127 id=127 data-nosnippet>127</a>    //
+<a href=#128 id=128 data-nosnippet>128</a>    // so 1 and 2 are short pipelines and 3 goes all the way to the root.
+<a href=#129 id=129 data-nosnippet>129</a>    // but 3 can only run if 1 and 2 have finished and set the join as operator in 3
+<a href=#130 id=130 data-nosnippet>130</a>    // and state are filled with pipeline 1, 2, 3 in that order
+<a href=#131 id=131 data-nosnippet>131</a>    //
+<a href=#132 id=132 data-nosnippet>132</a>    //     / \
+<a href=#133 id=133 data-nosnippet>133</a>    //  /\  3/\
+<a href=#134 id=134 data-nosnippet>134</a>    //  1 2    4\
+<a href=#135 id=135 data-nosnippet>135</a>    // or in this case 1, 2, 3, 4
+<a href=#136 id=136 data-nosnippet>136</a>    // every inner vec contains a branch/pipeline of a complete pipeline tree
+<a href=#137 id=137 data-nosnippet>137</a>    // the outer vec contains whole pipeline trees
+<a href=#138 id=138 data-nosnippet>138</a>    //
+<a href=#139 id=139 data-nosnippet>139</a>    // # Execution order
+<a href=#140 id=140 data-nosnippet>140</a>    // Trees can have arbitrary splits via joins and unions
+<a href=#141 id=141 data-nosnippet>141</a>    // the branches we have accumulated are flattened into a single Vec&lt;Branch&gt;
+<a href=#142 id=142 data-nosnippet>142</a>    // this therefore has lost the information of the tree. To know in which
+<a href=#143 id=143 data-nosnippet>143</a>    // order the branches need to be executed. For this reason we keep track of
+<a href=#144 id=144 data-nosnippet>144</a>    // an `execution_id` which will be incremented on every stack operation.
+<a href=#145 id=145 data-nosnippet>145</a>    // This way we know in which order the stack/tree was traversed and can
+<a href=#146 id=146 data-nosnippet>146</a>    // use that info to determine the execution order of the single branch/pipelines
+<a href=#147 id=147 data-nosnippet>147</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>pipeline_trees: Vec&lt;Tree&gt; = <span class="macro">vec!</span>[<span class="macro">vec!</span>[]];
+<a href=#148 id=148 data-nosnippet>148</a>    <span class="comment">// keep the counter global so that the order will match traversal order
+<a href=#149 id=149 data-nosnippet>149</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>execution_id = <span class="number">0</span>;
+<a href=#150 id=150 data-nosnippet>150</a>
+<a href=#151 id=151 data-nosnippet>151</a>    <span class="kw">use </span>IR::<span class="kw-2">*</span>;
+<a href=#152 id=152 data-nosnippet>152</a>    <span class="kw">while let </span><span class="prelude-val">Some</span>(StackFrame {
+<a href=#153 id=153 data-nosnippet>153</a>        node: <span class="kw-2">mut </span>root,
+<a href=#154 id=154 data-nosnippet>154</a>        <span class="kw-2">mut </span>state,
+<a href=#155 id=155 data-nosnippet>155</a>        <span class="kw-2">mut </span>current_idx,
+<a href=#156 id=156 data-nosnippet>156</a>        insert_sink,
+<a href=#157 id=157 data-nosnippet>157</a>    }) = stack.pop()
+<a href=#158 id=158 data-nosnippet>158</a>    {
+<a href=#159 id=159 data-nosnippet>159</a>        <span class="kw">if </span>insert_sink {
+<a href=#160 id=160 data-nosnippet>160</a>            root = insert_file_sink(root, lp_arena);
+<a href=#161 id=161 data-nosnippet>161</a>        }
+<a href=#162 id=162 data-nosnippet>162</a>        state.execution_id = execution_id;
+<a href=#163 id=163 data-nosnippet>163</a>        execution_id += <span class="number">1</span>;
+<a href=#164 id=164 data-nosnippet>164</a>        <span class="kw">match </span>lp_arena.get(root) {
+<a href=#165 id=165 data-nosnippet>165</a>            Filter { input, predicate } <span class="kw">if </span>is_elementwise_rec(predicate.node(), expr_arena) =&gt; {
+<a href=#166 id=166 data-nosnippet>166</a>                state.streamable = <span class="bool-val">true</span>;
+<a href=#167 id=167 data-nosnippet>167</a>                state.operators_sinks.push(PipelineNode::Operator(root));
+<a href=#168 id=168 data-nosnippet>168</a>                stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx))
+<a href=#169 id=169 data-nosnippet>169</a>            },
+<a href=#170 id=170 data-nosnippet>170</a>            HStack { input, exprs, .. } <span class="kw">if </span>all_elementwise(exprs, expr_arena) =&gt; {
+<a href=#171 id=171 data-nosnippet>171</a>                state.streamable = <span class="bool-val">true</span>;
+<a href=#172 id=172 data-nosnippet>172</a>                state.operators_sinks.push(PipelineNode::Operator(root));
+<a href=#173 id=173 data-nosnippet>173</a>                stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx))
+<a href=#174 id=174 data-nosnippet>174</a>            },
+<a href=#175 id=175 data-nosnippet>175</a>            Slice { input, offset, .. } <span class="kw">if </span><span class="kw-2">*</span>offset &gt;= <span class="number">0 </span>=&gt; {
+<a href=#176 id=176 data-nosnippet>176</a>                state.streamable = <span class="bool-val">true</span>;
+<a href=#177 id=177 data-nosnippet>177</a>                state.operators_sinks.push(PipelineNode::Sink(root));
+<a href=#178 id=178 data-nosnippet>178</a>                stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx))
+<a href=#179 id=179 data-nosnippet>179</a>            },
+<a href=#180 id=180 data-nosnippet>180</a>            Sink { input, .. } =&gt; {
+<a href=#181 id=181 data-nosnippet>181</a>                state.streamable = <span class="bool-val">true</span>;
+<a href=#182 id=182 data-nosnippet>182</a>                state.operators_sinks.push(PipelineNode::Sink(root));
+<a href=#183 id=183 data-nosnippet>183</a>                stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx))
+<a href=#184 id=184 data-nosnippet>184</a>            },
+<a href=#185 id=185 data-nosnippet>185</a>            Sort {
+<a href=#186 id=186 data-nosnippet>186</a>                input,
+<a href=#187 id=187 data-nosnippet>187</a>                by_column,
+<a href=#188 id=188 data-nosnippet>188</a>                slice,
+<a href=#189 id=189 data-nosnippet>189</a>                sort_options,
+<a href=#190 id=190 data-nosnippet>190</a>            } <span class="kw">if </span>is_streamable_sort(slice, sort_options) &amp;&amp; all_column(by_column, expr_arena) =&gt; {
+<a href=#191 id=191 data-nosnippet>191</a>                state.streamable = <span class="bool-val">true</span>;
+<a href=#192 id=192 data-nosnippet>192</a>                state.operators_sinks.push(PipelineNode::Sink(root));
+<a href=#193 id=193 data-nosnippet>193</a>                stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx))
+<a href=#194 id=194 data-nosnippet>194</a>            },
+<a href=#195 id=195 data-nosnippet>195</a>            Select { input, expr, .. } <span class="kw">if </span>all_elementwise(expr, expr_arena) =&gt; {
+<a href=#196 id=196 data-nosnippet>196</a>                state.streamable = <span class="bool-val">true</span>;
+<a href=#197 id=197 data-nosnippet>197</a>                state.operators_sinks.push(PipelineNode::Operator(root));
+<a href=#198 id=198 data-nosnippet>198</a>                stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx))
+<a href=#199 id=199 data-nosnippet>199</a>            },
+<a href=#200 id=200 data-nosnippet>200</a>            SimpleProjection { input, .. } =&gt; {
+<a href=#201 id=201 data-nosnippet>201</a>                state.streamable = <span class="bool-val">true</span>;
+<a href=#202 id=202 data-nosnippet>202</a>                state.operators_sinks.push(PipelineNode::Operator(root));
+<a href=#203 id=203 data-nosnippet>203</a>                stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx))
+<a href=#204 id=204 data-nosnippet>204</a>            },
+<a href=#205 id=205 data-nosnippet>205</a>            <span class="comment">// Rechunks are ignored
+<a href=#206 id=206 data-nosnippet>206</a>            </span>MapFunction {
+<a href=#207 id=207 data-nosnippet>207</a>                input,
+<a href=#208 id=208 data-nosnippet>208</a>                function: FunctionIR::Rechunk,
+<a href=#209 id=209 data-nosnippet>209</a>            } =&gt; {
+<a href=#210 id=210 data-nosnippet>210</a>                state.streamable = <span class="bool-val">true</span>;
+<a href=#211 id=211 data-nosnippet>211</a>                stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx))
+<a href=#212 id=212 data-nosnippet>212</a>            },
+<a href=#213 id=213 data-nosnippet>213</a>            <span class="comment">// Streamable functions will be converted
+<a href=#214 id=214 data-nosnippet>214</a>            </span>lp @ MapFunction { input, function } =&gt; {
+<a href=#215 id=215 data-nosnippet>215</a>                <span class="kw">if </span>function.is_streamable() {
+<a href=#216 id=216 data-nosnippet>216</a>                    state.streamable = <span class="bool-val">true</span>;
+<a href=#217 id=217 data-nosnippet>217</a>                    state.operators_sinks.push(PipelineNode::Operator(root));
+<a href=#218 id=218 data-nosnippet>218</a>                    stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx))
+<a href=#219 id=219 data-nosnippet>219</a>                } <span class="kw">else </span>{
+<a href=#220 id=220 data-nosnippet>220</a>                    process_non_streamable_node(
+<a href=#221 id=221 data-nosnippet>221</a>                        <span class="kw-2">&amp;mut </span>current_idx,
+<a href=#222 id=222 data-nosnippet>222</a>                        <span class="kw-2">&amp;mut </span>state,
+<a href=#223 id=223 data-nosnippet>223</a>                        <span class="kw-2">&amp;mut </span>stack,
+<a href=#224 id=224 data-nosnippet>224</a>                        scratch,
+<a href=#225 id=225 data-nosnippet>225</a>                        <span class="kw-2">&amp;mut </span>pipeline_trees,
+<a href=#226 id=226 data-nosnippet>226</a>                        lp,
+<a href=#227 id=227 data-nosnippet>227</a>                    )
+<a href=#228 id=228 data-nosnippet>228</a>                }
+<a href=#229 id=229 data-nosnippet>229</a>            },
+<a href=#230 id=230 data-nosnippet>230</a>            Scan {
+<a href=#231 id=231 data-nosnippet>231</a>                scan_type,
+<a href=#232 id=232 data-nosnippet>232</a>                unified_scan_args,
+<a href=#233 id=233 data-nosnippet>233</a>                ..
+<a href=#234 id=234 data-nosnippet>234</a>            } <span class="kw">if </span>scan_type.streamable()
+<a href=#235 id=235 data-nosnippet>235</a>                &amp;&amp; <span class="macro">matches!</span>(
+<a href=#236 id=236 data-nosnippet>236</a>                    <span class="kw-2">&amp;</span>unified_scan_args.pre_slice,
+<a href=#237 id=237 data-nosnippet>237</a>                    <span class="prelude-val">None </span>| <span class="prelude-val">Some</span>(polars_utils::slice_enum::Slice::Positive { .. })
+<a href=#238 id=238 data-nosnippet>238</a>                ) =&gt;
+<a href=#239 id=239 data-nosnippet>239</a>            {
+<a href=#240 id=240 data-nosnippet>240</a>                <span class="kw">if </span>state.streamable {
+<a href=#241 id=241 data-nosnippet>241</a>                    state.sources.push(root);
+<a href=#242 id=242 data-nosnippet>242</a>                    pipeline_trees[current_idx].push(state)
+<a href=#243 id=243 data-nosnippet>243</a>                }
+<a href=#244 id=244 data-nosnippet>244</a>            },
+<a href=#245 id=245 data-nosnippet>245</a>            DataFrameScan { .. } =&gt; {
+<a href=#246 id=246 data-nosnippet>246</a>                <span class="kw">if </span>state.streamable {
+<a href=#247 id=247 data-nosnippet>247</a>                    state.sources.push(root);
+<a href=#248 id=248 data-nosnippet>248</a>                    pipeline_trees[current_idx].push(state)
+<a href=#249 id=249 data-nosnippet>249</a>                }
+<a href=#250 id=250 data-nosnippet>250</a>            },
+<a href=#251 id=251 data-nosnippet>251</a>            Join {
+<a href=#252 id=252 data-nosnippet>252</a>                input_left,
+<a href=#253 id=253 data-nosnippet>253</a>                input_right,
+<a href=#254 id=254 data-nosnippet>254</a>                options,
+<a href=#255 id=255 data-nosnippet>255</a>                ..
+<a href=#256 id=256 data-nosnippet>256</a>            } <span class="kw">if </span>streamable_join(<span class="kw-2">&amp;</span>options.args) =&gt; {
+<a href=#257 id=257 data-nosnippet>257</a>                <span class="kw">let </span>input_left = <span class="kw-2">*</span>input_left;
+<a href=#258 id=258 data-nosnippet>258</a>                <span class="kw">let </span>input_right = <span class="kw-2">*</span>input_right;
+<a href=#259 id=259 data-nosnippet>259</a>                state.streamable = <span class="bool-val">true</span>;
+<a href=#260 id=260 data-nosnippet>260</a>                state.join_count += <span class="number">1</span>;
+<a href=#261 id=261 data-nosnippet>261</a>
+<a href=#262 id=262 data-nosnippet>262</a>                <span class="comment">// We swap so that the build phase contains the smallest table
+<a href=#263 id=263 data-nosnippet>263</a>                // and then we stream the larger table
+<a href=#264 id=264 data-nosnippet>264</a>                // *except* for a left join. In a left join we use the right
+<a href=#265 id=265 data-nosnippet>265</a>                // table as build table and we stream the left table. This way
+<a href=#266 id=266 data-nosnippet>266</a>                // we maintain order in the left join.
+<a href=#267 id=267 data-nosnippet>267</a>                </span><span class="kw">let </span>(input_left, input_right) = <span class="kw">if </span>swap_join_order(options) {
+<a href=#268 id=268 data-nosnippet>268</a>                    (input_right, input_left)
+<a href=#269 id=269 data-nosnippet>269</a>                } <span class="kw">else </span>{
+<a href=#270 id=270 data-nosnippet>270</a>                    (input_left, input_right)
+<a href=#271 id=271 data-nosnippet>271</a>                };
+<a href=#272 id=272 data-nosnippet>272</a>                <span class="kw">let </span><span class="kw-2">mut </span>state_left = state.split();
+<a href=#273 id=273 data-nosnippet>273</a>
+<a href=#274 id=274 data-nosnippet>274</a>                <span class="comment">// Rhs is second, so that is first on the stack.
+<a href=#275 id=275 data-nosnippet>275</a>                </span><span class="kw">let </span><span class="kw-2">mut </span>state_right = state;
+<a href=#276 id=276 data-nosnippet>276</a>                state_right.join_count = <span class="number">0</span>;
+<a href=#277 id=277 data-nosnippet>277</a>                state_right
+<a href=#278 id=278 data-nosnippet>278</a>                    .operators_sinks
+<a href=#279 id=279 data-nosnippet>279</a>                    .push(PipelineNode::RhsJoin(root));
+<a href=#280 id=280 data-nosnippet>280</a>
+<a href=#281 id=281 data-nosnippet>281</a>                <span class="comment">// We want to traverse lhs last, so push it first on the stack
+<a href=#282 id=282 data-nosnippet>282</a>                // rhs is a new pipeline.
+<a href=#283 id=283 data-nosnippet>283</a>                </span>state_left.operators_sinks.push(PipelineNode::Sink(root));
+<a href=#284 id=284 data-nosnippet>284</a>                stack.push(StackFrame::new(input_left, state_left, current_idx));
+<a href=#285 id=285 data-nosnippet>285</a>                stack.push(StackFrame::new(input_right, state_right, current_idx));
+<a href=#286 id=286 data-nosnippet>286</a>            },
+<a href=#287 id=287 data-nosnippet>287</a>            <span class="comment">// add globbing patterns
+<a href=#288 id=288 data-nosnippet>288</a>            </span><span class="attr">#[cfg(any(feature = <span class="string">"csv"</span>, feature = <span class="string">"parquet"</span>))]
+<a href=#289 id=289 data-nosnippet>289</a>            </span>Union { inputs, options }
+<a href=#290 id=290 data-nosnippet>290</a>                <span class="kw">if </span>options.slice.is_none()
+<a href=#291 id=291 data-nosnippet>291</a>                    &amp;&amp; inputs.iter().all(|node| <span class="kw">match </span>lp_arena.get(<span class="kw-2">*</span>node) {
+<a href=#292 id=292 data-nosnippet>292</a>                        Scan { .. } =&gt; <span class="bool-val">true</span>,
+<a href=#293 id=293 data-nosnippet>293</a>                        MapFunction {
+<a href=#294 id=294 data-nosnippet>294</a>                            input,
+<a href=#295 id=295 data-nosnippet>295</a>                            function: FunctionIR::Rechunk,
+<a href=#296 id=296 data-nosnippet>296</a>                        } =&gt; <span class="macro">matches!</span>(lp_arena.get(<span class="kw-2">*</span>input), Scan { .. }),
+<a href=#297 id=297 data-nosnippet>297</a>                        <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
+<a href=#298 id=298 data-nosnippet>298</a>                    }) =&gt;
+<a href=#299 id=299 data-nosnippet>299</a>            {
+<a href=#300 id=300 data-nosnippet>300</a>                state.sources.push(root);
+<a href=#301 id=301 data-nosnippet>301</a>                pipeline_trees[current_idx].push(state);
+<a href=#302 id=302 data-nosnippet>302</a>            },
+<a href=#303 id=303 data-nosnippet>303</a>            Union { inputs, .. } =&gt; {
+<a href=#304 id=304 data-nosnippet>304</a>                {
+<a href=#305 id=305 data-nosnippet>305</a>                    state.streamable = <span class="bool-val">true</span>;
+<a href=#306 id=306 data-nosnippet>306</a>                    <span class="kw">for </span>(i, input) <span class="kw">in </span>inputs.iter().enumerate() {
+<a href=#307 id=307 data-nosnippet>307</a>                        <span class="kw">let </span><span class="kw-2">mut </span>state = <span class="kw">if </span>i == <span class="number">0 </span>{
+<a href=#308 id=308 data-nosnippet>308</a>                            <span class="comment">// note the clone!
+<a href=#309 id=309 data-nosnippet>309</a>                            </span><span class="kw">let </span><span class="kw-2">mut </span>state = state.clone();
+<a href=#310 id=310 data-nosnippet>310</a>                            state.join_count += inputs.len() <span class="kw">as </span>u32 - <span class="number">1</span>;
+<a href=#311 id=311 data-nosnippet>311</a>                            state
+<a href=#312 id=312 data-nosnippet>312</a>                        } <span class="kw">else </span>{
+<a href=#313 id=313 data-nosnippet>313</a>                            <span class="kw">let </span><span class="kw-2">mut </span>state = state.split_from_sink();
+<a href=#314 id=314 data-nosnippet>314</a>                            state.join_count = <span class="number">0</span>;
+<a href=#315 id=315 data-nosnippet>315</a>                            state
+<a href=#316 id=316 data-nosnippet>316</a>                        };
+<a href=#317 id=317 data-nosnippet>317</a>                        state.operators_sinks.push(PipelineNode::Union(root));
+<a href=#318 id=318 data-nosnippet>318</a>                        stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx));
+<a href=#319 id=319 data-nosnippet>319</a>                    }
+<a href=#320 id=320 data-nosnippet>320</a>                }
+<a href=#321 id=321 data-nosnippet>321</a>            },
+<a href=#322 id=322 data-nosnippet>322</a>            Distinct { input, options }
+<a href=#323 id=323 data-nosnippet>323</a>                <span class="kw">if </span>!options.maintain_order
+<a href=#324 id=324 data-nosnippet>324</a>                    &amp;&amp; !<span class="macro">matches!</span>(options.keep_strategy, UniqueKeepStrategy::None) =&gt;
+<a href=#325 id=325 data-nosnippet>325</a>            {
+<a href=#326 id=326 data-nosnippet>326</a>                state.streamable = <span class="bool-val">true</span>;
+<a href=#327 id=327 data-nosnippet>327</a>                state.operators_sinks.push(PipelineNode::Sink(root));
+<a href=#328 id=328 data-nosnippet>328</a>                stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx))
+<a href=#329 id=329 data-nosnippet>329</a>            },
+<a href=#330 id=330 data-nosnippet>330</a>            <span class="attr">#[allow(unused_variables)]
+<a href=#331 id=331 data-nosnippet>331</a>            </span>lp @ GroupBy {
+<a href=#332 id=332 data-nosnippet>332</a>                input,
+<a href=#333 id=333 data-nosnippet>333</a>                keys,
+<a href=#334 id=334 data-nosnippet>334</a>                aggs,
+<a href=#335 id=335 data-nosnippet>335</a>                maintain_order: <span class="bool-val">false</span>,
+<a href=#336 id=336 data-nosnippet>336</a>                apply: <span class="prelude-val">None</span>,
+<a href=#337 id=337 data-nosnippet>337</a>                schema: output_schema,
+<a href=#338 id=338 data-nosnippet>338</a>                options,
+<a href=#339 id=339 data-nosnippet>339</a>                ..
+<a href=#340 id=340 data-nosnippet>340</a>            } =&gt; {
+<a href=#341 id=341 data-nosnippet>341</a>                <span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#342 id=342 data-nosnippet>342</a>                </span><span class="kw">let </span>string_cache = polars_core::using_string_cache();
+<a href=#343 id=343 data-nosnippet>343</a>                <span class="attr">#[cfg(not(feature = <span class="string">"dtype-categorical"</span>))]
+<a href=#344 id=344 data-nosnippet>344</a>                </span><span class="kw">let </span>string_cache = <span class="bool-val">true</span>;
+<a href=#345 id=345 data-nosnippet>345</a>
+<a href=#346 id=346 data-nosnippet>346</a>                <span class="attr">#[allow(unused_variables)]
+<a href=#347 id=347 data-nosnippet>347</a>                </span><span class="kw">fn </span>allowed_dtype(dt: <span class="kw-2">&amp;</span>DataType, string_cache: bool) -&gt; bool {
+<a href=#348 id=348 data-nosnippet>348</a>                    <span class="kw">match </span>dt {
+<a href=#349 id=349 data-nosnippet>349</a>                        <span class="attr">#[cfg(feature = <span class="string">"object"</span>)]
+<a href=#350 id=350 data-nosnippet>350</a>                        </span>DataType::Object(<span class="kw">_</span>) =&gt; <span class="bool-val">false</span>,
+<a href=#351 id=351 data-nosnippet>351</a>                        <span class="attr">#[cfg(feature = <span class="string">"dtype-categorical"</span>)]
+<a href=#352 id=352 data-nosnippet>352</a>                        </span>DataType::Categorical(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; string_cache,
+<a href=#353 id=353 data-nosnippet>353</a>                        DataType::List(inner) =&gt; allowed_dtype(inner, string_cache),
+<a href=#354 id=354 data-nosnippet>354</a>                        <span class="attr">#[cfg(feature = <span class="string">"dtype-struct"</span>)]
+<a href=#355 id=355 data-nosnippet>355</a>                        </span>DataType::Struct(fields) =&gt; fields
+<a href=#356 id=356 data-nosnippet>356</a>                            .iter()
+<a href=#357 id=357 data-nosnippet>357</a>                            .all(|fld| allowed_dtype(fld.dtype(), string_cache)),
+<a href=#358 id=358 data-nosnippet>358</a>                        <span class="comment">// We need to be able to sink to disk or produce the aggregate return dtype.
+<a href=#359 id=359 data-nosnippet>359</a>                        </span>DataType::Unknown(<span class="kw">_</span>) =&gt; <span class="bool-val">false</span>,
+<a href=#360 id=360 data-nosnippet>360</a>                        <span class="attr">#[cfg(feature = <span class="string">"dtype-decimal"</span>)]
+<a href=#361 id=361 data-nosnippet>361</a>                        </span>DataType::Decimal(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; <span class="bool-val">false</span>,
+<a href=#362 id=362 data-nosnippet>362</a>                        DataType::Int128 =&gt; <span class="bool-val">false</span>,
+<a href=#363 id=363 data-nosnippet>363</a>                        <span class="kw">_ </span>=&gt; <span class="bool-val">true</span>,
+<a href=#364 id=364 data-nosnippet>364</a>                    }
+<a href=#365 id=365 data-nosnippet>365</a>                }
+<a href=#366 id=366 data-nosnippet>366</a>                <span class="kw">let </span>input_schema = lp_arena.get(<span class="kw-2">*</span>input).schema(lp_arena);
+<a href=#367 id=367 data-nosnippet>367</a>                <span class="attr">#[allow(unused_mut)]
+<a href=#368 id=368 data-nosnippet>368</a>                </span><span class="kw">let </span><span class="kw-2">mut </span>can_stream = <span class="bool-val">true</span>;
+<a href=#369 id=369 data-nosnippet>369</a>
+<a href=#370 id=370 data-nosnippet>370</a>                <span class="attr">#[cfg(feature = <span class="string">"dynamic_group_by"</span>)]
+<a href=#371 id=371 data-nosnippet>371</a>                </span>{
+<a href=#372 id=372 data-nosnippet>372</a>                    <span class="kw">if </span>options.rolling.is_some() || options.dynamic.is_some() {
+<a href=#373 id=373 data-nosnippet>373</a>                        can_stream = <span class="bool-val">false
+<a href=#374 id=374 data-nosnippet>374</a>                    </span>}
+<a href=#375 id=375 data-nosnippet>375</a>                }
+<a href=#376 id=376 data-nosnippet>376</a>
+<a href=#377 id=377 data-nosnippet>377</a>                <span class="kw">let </span>valid_agg = || {
+<a href=#378 id=378 data-nosnippet>378</a>                    aggs.iter().all(|e| {
+<a href=#379 id=379 data-nosnippet>379</a>                        polars_pipe::pipeline::can_convert_to_hash_agg(
+<a href=#380 id=380 data-nosnippet>380</a>                            e.node(),
+<a href=#381 id=381 data-nosnippet>381</a>                            expr_arena,
+<a href=#382 id=382 data-nosnippet>382</a>                            <span class="kw-2">&amp;</span>input_schema,
+<a href=#383 id=383 data-nosnippet>383</a>                        )
+<a href=#384 id=384 data-nosnippet>384</a>                    })
+<a href=#385 id=385 data-nosnippet>385</a>                };
+<a href=#386 id=386 data-nosnippet>386</a>
+<a href=#387 id=387 data-nosnippet>387</a>                <span class="kw">let </span>valid_key = || {
+<a href=#388 id=388 data-nosnippet>388</a>                    keys.iter().all(|e| {
+<a href=#389 id=389 data-nosnippet>389</a>                        output_schema
+<a href=#390 id=390 data-nosnippet>390</a>                            .get(e.output_name())
+<a href=#391 id=391 data-nosnippet>391</a>                            .map(|dt| !<span class="macro">matches!</span>(dt, DataType::List(<span class="kw">_</span>)))
+<a href=#392 id=392 data-nosnippet>392</a>                            .unwrap_or(<span class="bool-val">false</span>)
+<a href=#393 id=393 data-nosnippet>393</a>                    })
+<a href=#394 id=394 data-nosnippet>394</a>                };
+<a href=#395 id=395 data-nosnippet>395</a>
+<a href=#396 id=396 data-nosnippet>396</a>                <span class="kw">let </span>valid_types = || {
+<a href=#397 id=397 data-nosnippet>397</a>                    output_schema
+<a href=#398 id=398 data-nosnippet>398</a>                        .iter_values()
+<a href=#399 id=399 data-nosnippet>399</a>                        .all(|dt| allowed_dtype(dt, string_cache))
+<a href=#400 id=400 data-nosnippet>400</a>                };
+<a href=#401 id=401 data-nosnippet>401</a>
+<a href=#402 id=402 data-nosnippet>402</a>                <span class="kw">if </span>can_stream &amp;&amp; valid_agg() &amp;&amp; valid_key() &amp;&amp; valid_types() {
+<a href=#403 id=403 data-nosnippet>403</a>                    state.streamable = <span class="bool-val">true</span>;
+<a href=#404 id=404 data-nosnippet>404</a>                    state.operators_sinks.push(PipelineNode::Sink(root));
+<a href=#405 id=405 data-nosnippet>405</a>                    stack.push(StackFrame::new(<span class="kw-2">*</span>input, state, current_idx))
+<a href=#406 id=406 data-nosnippet>406</a>                } <span class="kw">else if </span>allow_partial {
+<a href=#407 id=407 data-nosnippet>407</a>                    process_non_streamable_node(
+<a href=#408 id=408 data-nosnippet>408</a>                        <span class="kw-2">&amp;mut </span>current_idx,
+<a href=#409 id=409 data-nosnippet>409</a>                        <span class="kw-2">&amp;mut </span>state,
+<a href=#410 id=410 data-nosnippet>410</a>                        <span class="kw-2">&amp;mut </span>stack,
+<a href=#411 id=411 data-nosnippet>411</a>                        scratch,
+<a href=#412 id=412 data-nosnippet>412</a>                        <span class="kw-2">&amp;mut </span>pipeline_trees,
+<a href=#413 id=413 data-nosnippet>413</a>                        lp,
+<a href=#414 id=414 data-nosnippet>414</a>                    )
+<a href=#415 id=415 data-nosnippet>415</a>                } <span class="kw">else </span>{
+<a href=#416 id=416 data-nosnippet>416</a>                    <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="bool-val">false</span>);
+<a href=#417 id=417 data-nosnippet>417</a>                }
+<a href=#418 id=418 data-nosnippet>418</a>            },
+<a href=#419 id=419 data-nosnippet>419</a>            lp =&gt; {
+<a href=#420 id=420 data-nosnippet>420</a>                <span class="kw">if </span>allow_partial {
+<a href=#421 id=421 data-nosnippet>421</a>                    process_non_streamable_node(
+<a href=#422 id=422 data-nosnippet>422</a>                        <span class="kw-2">&amp;mut </span>current_idx,
+<a href=#423 id=423 data-nosnippet>423</a>                        <span class="kw-2">&amp;mut </span>state,
+<a href=#424 id=424 data-nosnippet>424</a>                        <span class="kw-2">&amp;mut </span>stack,
+<a href=#425 id=425 data-nosnippet>425</a>                        scratch,
+<a href=#426 id=426 data-nosnippet>426</a>                        <span class="kw-2">&amp;mut </span>pipeline_trees,
+<a href=#427 id=427 data-nosnippet>427</a>                        lp,
+<a href=#428 id=428 data-nosnippet>428</a>                    )
+<a href=#429 id=429 data-nosnippet>429</a>                } <span class="kw">else </span>{
+<a href=#430 id=430 data-nosnippet>430</a>                    <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="bool-val">false</span>);
+<a href=#431 id=431 data-nosnippet>431</a>                }
+<a href=#432 id=432 data-nosnippet>432</a>            },
+<a href=#433 id=433 data-nosnippet>433</a>        }
+<a href=#434 id=434 data-nosnippet>434</a>    }
+<a href=#435 id=435 data-nosnippet>435</a>
+<a href=#436 id=436 data-nosnippet>436</a>    <span class="kw">let </span><span class="kw-2">mut </span>inserted = <span class="bool-val">false</span>;
+<a href=#437 id=437 data-nosnippet>437</a>    <span class="kw">for </span>tree <span class="kw">in </span>pipeline_trees {
+<a href=#438 id=438 data-nosnippet>438</a>        <span class="kw">if </span>is_valid_tree(<span class="kw-2">&amp;</span>tree)
+<a href=#439 id=439 data-nosnippet>439</a>            &amp;&amp; <span class="kw">super</span>::construct_pipeline::construct(tree, lp_arena, expr_arena, fmt)<span class="question-mark">?</span>.is_some()
+<a href=#440 id=440 data-nosnippet>440</a>        {
+<a href=#441 id=441 data-nosnippet>441</a>            inserted = <span class="bool-val">true</span>;
+<a href=#442 id=442 data-nosnippet>442</a>        }
+<a href=#443 id=443 data-nosnippet>443</a>    }
+<a href=#444 id=444 data-nosnippet>444</a>
+<a href=#445 id=445 data-nosnippet>445</a>    <span class="prelude-val">Ok</span>(inserted)
+<a href=#446 id=446 data-nosnippet>446</a>}</code></pre></div></section></main></body></html>

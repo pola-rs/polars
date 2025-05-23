@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.millisecond
+==========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.millisecond
