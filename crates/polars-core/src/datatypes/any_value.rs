@@ -764,8 +764,6 @@ impl<'a> AnyValue<'a> {
             | Self::StringOwned(_)
             | Self::Binary(_)
             | Self::BinaryOwned(_)
-            | Self::Object(_)
-            | Self::ObjectOwned(_)
             | Self::UInt8(_)
             | Self::UInt16(_)
             | Self::UInt32(_)
@@ -777,6 +775,10 @@ impl<'a> AnyValue<'a> {
             | Self::Int128(_)
             | Self::Float32(_)
             | Self::Float64(_) => self,
+
+            #[cfg(feature = "object")]
+            Self::Object(_) | Self::ObjectOwned(_) => self,
+
             #[cfg(feature = "dtype-date")]
             Self::Date(v) => Self::Int32(v),
             #[cfg(feature = "dtype-datetime")]
