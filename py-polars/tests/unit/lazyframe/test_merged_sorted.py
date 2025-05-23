@@ -46,3 +46,9 @@ def test_merge_sorted_bad_input_type() -> None:
         match="expected `other` .*to be a 'LazyFrame'.* not 'DataFrame'",
     ):
         a.merge_sorted(b.collect(), key="x")  # type: ignore[arg-type]
+
+    class DummyLazyFrameSubclass(pl.LazyFrame):
+        pass
+
+    b = DummyLazyFrameSubclass(b.collect())
+    a.merge_sorted(b, key="x")

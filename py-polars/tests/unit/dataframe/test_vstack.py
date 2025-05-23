@@ -98,3 +98,12 @@ def test_vstack_bad_input_type() -> None:
         match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         a.vstack(b.lazy())  # type: ignore[arg-type]
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    b = DummyDataFrameSubclass(b)
+
+    a = a.vstack(b)
+    expected = pl.DataFrame({"x": [1, 2, 3, 4, 5, 6]})
+    assert_frame_equal(a, expected)

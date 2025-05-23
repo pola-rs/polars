@@ -1587,6 +1587,15 @@ def test_join_bad_input_type() -> None:
     ):
         left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
 
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    a = DummyDataFrameSubclass(left)
+    b = DummyDataFrameSubclass(right)
+
+    expected = pl.DataFrame({"a": [1, 2, 3]})
+    assert_frame_equal(a.join(b, on="a"), expected)
+
 
 def test_join_where() -> None:
     east = pl.DataFrame(
@@ -1663,6 +1672,33 @@ def test_join_where_bad_input_type() -> None:
             pl.col("dur") < pl.col("time"),
             pl.col("rev") < pl.col("cost"),
         )
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    a = DummyDataFrameSubclass(east)
+    b = DummyDataFrameSubclass(west)
+
+    out = a.join_where(
+        b,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") < pl.col("cost"),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "id": [100, 100, 100, 101, 101],
+            "dur": [120, 120, 120, 140, 140],
+            "rev": [12, 12, 12, 14, 14],
+            "cores": [2, 2, 2, 8, 8],
+            "t_id": [498, 676, 742, 676, 742],
+            "time": [130, 150, 170, 150, 170],
+            "cost": [13, 15, 16, 15, 16],
+            "cores_right": [2, 1, 4, 1, 4],
+        }
+    )
+
+    assert_frame_equal(out, expected)
 
 
 def test_str_concat() -> None:
@@ -2420,6 +2456,13 @@ def test_asof_bad_input_type() -> None:
         match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         lhs.join_asof(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    rhs = DummyDataFrameSubclass(rhs)
+
+    lhs.join_asof(rhs, on="a")
 
 
 def test_list_of_list_of_struct() -> None:
