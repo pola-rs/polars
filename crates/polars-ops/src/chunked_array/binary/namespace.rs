@@ -1,6 +1,11 @@
 #[cfg(feature = "binary_encoding")]
 use std::borrow::Cow;
 
+#[cfg(feature = "binary_encoding")]
+use arrow::array::Array;
+use arrow::array::FixedSizeListArray;
+#[cfg(feature = "binary_encoding")]
+use arrow::datatypes::PhysicalType;
 use arrow::with_match_primitive_type;
 #[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
@@ -10,7 +15,9 @@ use memchr::memmem::find;
 use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
 
-use super::cast_binary_to_numerical::cast_binview_to_primitive_dyn;
+use super::cast_binary_to_numerical::{
+    cast_binview_to_array_primitive_dyn, cast_binview_to_primitive_dyn,
+};
 use super::*;
 
 pub trait BinaryNameSpaceImpl: AsBinary {
@@ -157,26 +164,96 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     #[cfg(feature = "binary_encoding")]
     #[allow(clippy::wrong_self_convention)]
     fn from_buffer(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Series> {
-        let ca = self.as_binary();
-        let arrow_type = dtype.to_arrow(CompatLevel::newest());
+        unsafe {
+            Ok(Series::from_chunks_and_dtype_unchecked(
+                self.as_binary().name().clone(),
+                self._from_buffer_inner(dtype, is_little_endian)?,
+                dtype,
+            ))
+        }
+    }
 
-        match arrow_type.to_physical_type() {
-            arrow::datatypes::PhysicalType::Primitive(ty) => {
+    #[cfg(feature = "binary_encoding")]
+    fn _from_buffer_inner(
+        &self,
+        dtype: &DataType,
+        is_little_endian: bool,
+    ) -> PolarsResult<Vec<Box<dyn Array>>> {
+        let ca = self.as_binary();
+
+        match dtype.to_arrow(CompatLevel::newest()).to_physical_type() {
+            PhysicalType::Primitive(ty) => {
+                let arrow_data_type = dtype.to_arrow(CompatLevel::newest());
                 with_match_primitive_type!(ty, |$T| {
                     unsafe {
-                        Ok(Series::from_chunks_and_dtype_unchecked(
-                            ca.name().clone(),
-                            ca.chunks().iter().map(|chunk| {
-                                cast_binview_to_primitive_dyn::<$T>(
-                                    &**chunk,
-                                    &arrow_type,
-                                    is_little_endian,
-                                )
-                            }).collect::<PolarsResult<Vec<_>>>()?,
-                            dtype
-                        ))
+                        ca.chunks().iter().map(|chunk| {
+                            cast_binview_to_primitive_dyn::<$T>(
+                                &**chunk,
+                                &arrow_data_type,
+                                is_little_endian,
+                            )
+                        }).collect()
                     }
                 })
+            },
+            #[cfg(feature = "dtype-array")]
+            PhysicalType::FixedSizeList => {
+                // We do the conversion for Arrays using a linear version of the dtype,
+                // and then later reshape into the correct size.
+                let linear_dtype = if let Some(ref shape) = dtype.get_shape() {
+                    &DataType::Array(Box::new(dtype.leaf_dtype().clone()), shape.iter().product())
+                } else {
+                    dtype
+                };
+                let arrow_data_type = linear_dtype.to_arrow(CompatLevel::newest());
+
+                let leaf_dtype = dtype.leaf_dtype();
+                let leaf_physical_type = leaf_dtype
+                    .to_arrow(CompatLevel::newest())
+                    .to_physical_type();
+                polars_ensure!(
+                    dtype.byte_size().is_some() && leaf_physical_type.is_primitive(),
+                    InvalidOperation:
+                    "unsupported data type in from_buffer. Only numerical types are allowed in arrays."
+                );
+                let PhysicalType::Primitive(primitive_type) = leaf_physical_type else {
+                    panic!("Shouldn't ever be reached.")
+                };
+                let element_size = leaf_dtype.byte_size().unwrap();
+
+                let result: Vec<ArrayRef> = with_match_primitive_type!(primitive_type, |$T| {
+                    unsafe {
+                        ca.chunks().iter().map(|chunk| {
+                            cast_binview_to_array_primitive_dyn::<$T>(
+                                &**chunk,
+                                &arrow_data_type,
+                                is_little_endian,
+                                element_size
+                            )
+                        }).collect::<Result<Vec<ArrayRef>, _>>()
+                    }
+                })?;
+                if let Some(shape) = dtype.get_shape() {
+                    let mut dimensions: Vec<ReshapeDimension> = shape
+                        .iter()
+                        .map(|&v| ReshapeDimension::new(v as i64))
+                        .collect();
+                    dimensions.insert(0, ReshapeDimension::Infer);
+                    result
+                        .into_iter()
+                        .map(|arr| {
+                            let fixed_arr = arr
+                                .as_ref()
+                                .as_any()
+                                .downcast_ref::<FixedSizeListArray>()
+                                .unwrap();
+                            FixedSizeListArray::from_shape(fixed_arr.values().clone(), &dimensions)
+                                .map(|arr| arr.with_validity(fixed_arr.validity().cloned()))
+                        })
+                        .collect::<Result<Vec<ArrayRef>, _>>()
+                } else {
+                    Ok(result)
+                }
             },
             _ => Err(
                 polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed."),
