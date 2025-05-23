@@ -47,8 +47,8 @@ impl PyExpr {
         Ok(self.inner.clone().list().diff(n, null_behavior.0).into())
     }
 
-    fn list_eval(&self, expr: PyExpr, parallel: bool) -> Self {
-        self.inner.clone().list().eval(expr.inner, parallel).into()
+    fn list_eval(&self, expr: PyExpr, _parallel: bool) -> Self {
+        self.inner.clone().list().eval(expr.inner).into()
     }
 
     #[cfg(feature = "list_filter")]
@@ -56,10 +56,7 @@ impl PyExpr {
         self.inner
             .clone()
             .list()
-            .eval(
-                Expr::Column(PlSmallStr::EMPTY).filter(predicate.inner),
-                false,
-            )
+            .eval(Expr::Column(PlSmallStr::EMPTY).filter(predicate.inner))
             .into()
     }
 

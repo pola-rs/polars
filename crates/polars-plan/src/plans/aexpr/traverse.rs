@@ -55,6 +55,9 @@ impl AExpr {
                 container.extend(partition_by.iter().rev().cloned());
                 container.extend([*function]);
             },
+            ListEval { expr, evaluation } => {
+                container.extend([*evaluation, *expr]);
+            },
             Slice {
                 input,
                 offset,
@@ -121,6 +124,11 @@ impl AExpr {
                 for (e, node) in input.iter_mut().zip(inputs.iter()) {
                     e.set_node(*node);
                 }
+                return self;
+            },
+            ListEval { expr, evaluation } => {
+                *expr = inputs[0];
+                *evaluation = inputs[1];
                 return self;
             },
             Slice {

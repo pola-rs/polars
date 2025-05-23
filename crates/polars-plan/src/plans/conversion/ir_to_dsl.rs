@@ -190,6 +190,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             output_type,
             options,
         },
+        AExpr::ListEval { expr, evaluation } => Expr::ListEval {
+            expr: Arc::new(node_to_expr(expr, expr_arena)),
+            evaluation: Arc::new(node_to_expr(evaluation, expr_arena)),
+        },
         AExpr::Function {
             input,
             function,
