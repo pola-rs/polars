@@ -5851,6 +5851,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 ┆ {1,3.0}     │
         └─────┴──────┴─────────────┘
         """
+        # Ensures that Dictionaries (as an iterable) cannot be passed in
+        for expr in exprs:
+            if isinstance(expr, dict):
+                raise TypeError(
+                    "Cannot pass a Dictionary as an argument to `with_columns`.\n"
+                    "To utilise key-value information from a dictionary, use either:\n"
+                    "  - `with_columns(**your_dict)`\n"
+                    "  - `with_columns(expr.alias(name) for name, expr in your_dict.items())`"
+                )
+
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
         pyexprs = parse_into_list_of_expressions(
