@@ -51,10 +51,13 @@ if TYPE_CHECKING:
 
 
 def from_dict(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[
+        str, Sequence[object] | Mapping[str, Sequence[object]] | Series | object
+    ],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
+    indexed: bool | str = False,
     strict: bool = True,
 ) -> DataFrame:
     """
@@ -65,8 +68,8 @@ def from_dict(
     Parameters
     ----------
     data : dict of sequences
-        Two-dimensional data represented as a dictionary. dict must contain
-        Sequences.
+        Two-dimensional data represented as a dictionary; the dictionary is expected
+        to contain Sequences of values.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -80,6 +83,11 @@ def from_dict(
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the columns param will be overridden.
+    indexed : {bool, str}, default False
+        If True (or a string name), the `data` dictionary key is expected to represent
+        an index column, with values being dictionary records associated with that key.
+        If a string is passed then that will be the index column name, otherwise the
+        default value "index" is used.
     strict : bool, default True
         Throw an error if any `data` value does not exactly match the given or inferred
         data type for that column. If set to `False`, values that do not match the data
@@ -92,6 +100,8 @@ def from_dict(
 
     Examples
     --------
+    Construct a DataFrame from a dictionary of sequences:
+
     >>> df = pl.from_dict({"a": [1, 2], "b": [3, 4]})
     >>> df
     shape: (2, 2)
@@ -103,22 +113,60 @@ def from_dict(
     │ 1   ┆ 3   │
     │ 2   ┆ 4   │
     └─────┴─────┘
+
+    Construct a DataFrame from an indexed dictionary of such data:
+
+    >>> df = pl.from_dict(
+    ...     data={
+    ...         "a": {"x": [1, 2], "y": [0.5, 2.5]},
+    ...         "b": {"x": [5, 6], "y": [5.0, 1.0]},
+    ...     },
+    ...     indexed=True,
+    ... )
+    >>> df
+    shape: (4, 3)
+    ┌───────┬─────┬─────┐
+    │ index ┆ x   ┆ y   │
+    │ ---   ┆ --- ┆ --- │
+    │ str   ┆ i64 ┆ f64 │
+    ╞═══════╪═════╪═════╡
+    │ a     ┆ 1   ┆ 0.5 │
+    │ a     ┆ 2   ┆ 2.5 │
+    │ b     ┆ 5   ┆ 5.0 │
+    │ b     ┆ 6   ┆ 1.0 │
+    └───────┴─────┴─────┘
     """
-    return wrap_df(
-        dict_to_pydf(
-            data,
+    if indexed:
+        label = indexed if isinstance(indexed, str) else "index"
+        records = [
+            {label: idx, **dict(zip(values.keys(), v) if values else {})}  # type: ignore[attr-defined,arg-type]
+            for idx, values in data.items()
+            for v in (zip(*values.values()) if values else (None,))  # type: ignore[attr-defined]
+        ]
+        return from_records(
+            records,
             schema=schema,
             schema_overrides=schema_overrides,
             strict=strict,
+            orient="row",
         )
-    )
+    else:
+        return wrap_df(
+            dict_to_pydf(
+                data,  # type: ignore[arg-type]
+                schema=schema,
+                schema_overrides=schema_overrides,
+                strict=strict,
+            )
+        )
 
 
 def from_dicts(
-    data: Iterable[dict[str, Any]],
+    data: Iterable[Mapping[str, Any]] | Mapping[Any, Iterable[Mapping[str, Any]]],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
+    indexed: bool | str = False,
     strict: bool = True,
     infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
@@ -147,6 +195,11 @@ def from_dicts(
         adding them to the schema.
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
+    indexed : {bool, str}, default False
+        If True (or a string name), the `data` dictionary key is expected to represent
+        an index column, with values being a list of dictionary records associated
+        with that key. If a string is passed then that will be the index column name,
+        otherwise the default value "idx" is used.
     strict : bool, default True
         Throw an error if any `data` value does not exactly match the given or inferred
         data type for that column. If set to `False`, values that do not match the data
@@ -209,7 +262,44 @@ def from_dicts(
     │ 2   ┆ 5   ┆ null ┆ null │
     │ 3   ┆ 6   ┆ null ┆ null │
     └─────┴─────┴──────┴──────┘
+
+    Indexed records can also be loaded straightforwardly:
+
+    >>> data = {
+    ...     "a": [
+    ...         {"w": None, "x": 1, "y": 2.5, "z": None},
+    ...         {"x": 8, "y": 5.0, "w": None, "z": None},
+    ...     ],
+    ...     "b": [
+    ...         {"x": None, "y": 2.0, "w": 0, "z": 8},
+    ...         {"x": None, "y": 3.0, "w": 0, "z": 7},
+    ...     ],
+    ...     "c": [
+    ...         {"y": None, "w": None, "z": None, "x": 0},
+    ...     ],
+    ... }
+    >>> pl.from_dicts(data, indexed=True)
+    shape: (5, 5)
+    ┌───────┬──────┬──────┬──────┬──────┐
+    │ index ┆ w    ┆ x    ┆ y    ┆ z    │
+    │ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---  │
+    │ str   ┆ i64  ┆ i64  ┆ f64  ┆ i64  │
+    ╞═══════╪══════╪══════╪══════╪══════╡
+    │ a     ┆ null ┆ 1    ┆ 2.5  ┆ null │
+    │ a     ┆ null ┆ 8    ┆ 5.0  ┆ null │
+    │ b     ┆ 0    ┆ null ┆ 2.0  ┆ 8    │
+    │ b     ┆ 0    ┆ null ┆ 3.0  ┆ 7    │
+    │ c     ┆ null ┆ 0    ┆ null ┆ null │
+    └───────┴──────┴──────┴──────┴──────┘
     """
+    if indexed:
+        label = indexed if isinstance(indexed, str) else "index"
+        data = [
+            {label: key, **record}
+            for key, records in data.items()  # type: ignore[union-attr]
+            for record in records
+        ]
+
     if not data and not (schema or schema_overrides):
         msg = "no data, cannot infer schema"
         raise NoDataError(msg)
