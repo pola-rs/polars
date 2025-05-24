@@ -32,6 +32,7 @@ pub fn is_scalar_ae(node: Node, expr_arena: &Arena<AExpr>) -> bool {
         },
         AExpr::Agg(_) | AExpr::Len => true,
         AExpr::Cast { expr, .. } | AExpr::Alias(expr, _) => is_scalar_ae(*expr, expr_arena),
+        AExpr::ListEval { expr, .. } => is_scalar_ae(*expr, expr_arena),
         _ => false,
     }
 }

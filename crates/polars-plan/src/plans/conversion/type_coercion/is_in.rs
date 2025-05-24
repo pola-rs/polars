@@ -11,23 +11,21 @@ pub(super) enum IsInTypeCoercionResult {
 pub(super) fn resolve_is_in(
     input: &[ExprIR],
     expr_arena: &Arena<AExpr>,
-    lp_arena: &Arena<IR>,
-    lp_node: Node,
+    input_schema: &Schema,
     is_contains: bool,
     op: &'static str,
     flat_idx: usize,
     nested_idx: usize,
 ) -> PolarsResult<Option<IsInTypeCoercionResult>> {
-    let input_schema = get_schema(lp_arena, lp_node);
     let (_, type_left) = unpack!(get_aexpr_and_type(
         expr_arena,
         input[flat_idx].node(),
-        &input_schema
+        input_schema
     ));
     let (_, type_other) = unpack!(get_aexpr_and_type(
         expr_arena,
         input[nested_idx].node(),
-        &input_schema
+        input_schema
     ));
 
     let left_nl = type_left.nesting_level();

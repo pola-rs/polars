@@ -71,6 +71,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::AnonymousFunction { options, .. } => {
                 return write!(f, "anonymous_function: {}", options.fmt_str);
             },
+            AExpr::ListEval { .. } => "list.eval",
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             AExpr::Window { .. } => "window",
             AExpr::Slice { .. } => "slice",
