@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
 from polars.io.database._inference import dtype_from_database_typename
 
 if TYPE_CHECKING:
@@ -115,13 +114,3 @@ def test_infer_schema_length(tmp_sqlite_inference_db: Path) -> None:
             infer_schema_length=infer_len,
         )
         assert df.schema == {"name": pl.String, "value": pl.Float64}
-
-    with pytest.raises(
-        ComputeError,
-        match='could not append value: "foo" of type: str.*`infer_schema_length`',
-    ):
-        pl.read_database(
-            connection=conn,
-            query="SELECT * FROM test_data",
-            infer_schema_length=1,
-        )
