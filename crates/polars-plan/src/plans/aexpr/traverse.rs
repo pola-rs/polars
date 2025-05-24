@@ -56,7 +56,9 @@ impl AExpr {
                 container.extend([*function]);
             },
             ListEval { expr, evaluation } => {
-                container.extend([*evaluation, *expr]);
+                // We don't use the evaluation here because it does not contain inputs.
+                _ = evaluation;
+                container.extend([*expr]);
             },
             Slice {
                 input,
@@ -128,7 +130,7 @@ impl AExpr {
             },
             ListEval { expr, evaluation } => {
                 *expr = inputs[0];
-                *evaluation = inputs[1];
+                _ = evaluation; // Intentional.
                 return self;
             },
             Slice {

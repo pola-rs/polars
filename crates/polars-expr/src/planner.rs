@@ -472,6 +472,9 @@ fn create_physical_expr_inner(
         ListEval { expr, evaluation } => {
             let is_user_apply = expr_arena.iter(*expr).any(|(_, e)| matches!(e, AExpr::AnonymousFunction { options, .. } if options.fmt_str == MAP_LIST_NAME));
             let is_scalar = is_scalar_ae(expression, expr_arena);
+            let evaluation_is_scalar = is_scalar_ae(*evaluation, &expr_arena);
+            let mut pd_group = ExprPushdownGroup::Pushable;
+            pd_group.update_with_expr_rec(expr_arena.get(*evaluation), &expr_arena, None);
             let output_field = expr_arena
                 .get(expression)
                 .to_field(schema, ctxt, expr_arena)?;
@@ -482,6 +485,7 @@ fn create_physical_expr_inner(
             };
 
             let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, dtype.as_ref().clone())]);
+            dbg!(&eval_schema);
             let evaluation = create_physical_expr_inner(
                 *evaluation,
                 Context::Default,
@@ -489,6 +493,7 @@ fn create_physical_expr_inner(
                 &Arc::new(eval_schema),
                 state,
             )?;
+
 
             Ok(Arc::new(EvalExpr::new(
                 input,
@@ -498,6 +503,8 @@ fn create_physical_expr_inner(
                 state.allow_threading,
                 output_field,
                 is_scalar,
+                pd_group,
+                evaluation_is_scalar,
                 is_user_apply,
             )))
         },
@@ -516,11 +523,11 @@ fn create_physical_expr_inner(
             Ok(Arc::new(ApplyExpr::new(
                 input,
                 function.clone().into(),
-                node_to_expr(expression, expr_arena),
+                dbg!(node_to_expr(expression, expr_arena)),
                 *options,
                 state.allow_threading,
                 schema.clone(),
-                output_field,
+                dbg!(output_field),
                 is_scalar,
             )))
         },
