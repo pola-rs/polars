@@ -20,4 +20,4 @@ def test_implode_agg_lit() -> None:
                 pl.lit(pl.Series([1])).implode()
             )
         )
-    ).to_dict(as_series=False) == {"literal": [1], "x": [[[3, 1]]]}
+    ).to_dict(as_series=False) == {"literal": [1], "x": [[3, 1]]}

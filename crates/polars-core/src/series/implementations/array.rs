@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use self::compare_inner::{TotalEqInner, TotalOrdInner};
 use self::sort::arg_sort_row_fmt;
-use super::{StatisticsFlags, private};
+use super::{IsSorted, StatisticsFlags, private};
 use crate::chunked_array::AsSinglePtr;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
@@ -112,7 +112,13 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         let idxs = self.arg_sort(options);
-        Ok(unsafe { self.take_unchecked(&idxs) })
+        let mut result = unsafe { self.take_unchecked(&idxs) };
+        result.set_sorted_flag(if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        });
+        Ok(result)
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {

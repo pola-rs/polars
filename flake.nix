@@ -355,6 +355,55 @@
             pythonImportsCheck = [ "connectorx" ];
 
           };
+          ruff = super.buildPythonPackage rec {
+            pname = "ruff";
+            version = "0.9.4";
+            pyproject = true;
+
+            outputs = [
+              "bin"
+              "out"
+            ];
+
+            src = pkgs.fetchFromGitHub {
+              owner = "astral-sh";
+              repo = pname;
+              rev = version;
+              hash = "sha256-HUCquxp8U6ZoHNSuUSu56EyiaSRRA8qUMYu6nNibt6w=";
+            };
+
+            nativeBuildInputs =
+              [ pkgs.installShellFiles ]
+              ++ (with pkgs.rustPlatform; [
+                cargoSetupHook
+                maturinBuildHook
+                cargoCheckHook
+              ]);
+
+            buildInputs = with pkgs; [
+              rust-jemalloc-sys
+            ];
+
+            cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+              inherit src;
+              hash = "sha256-EiIN97I72Iam7STjZhHnvVktJXJocnVomjVp8a8t+fM=";
+            };
+
+            postInstall =
+            ''
+              mkdir -p $bin/bin
+              mv $out/bin/ruff $bin/bin/
+              rmdir $out/bin
+            ''
+            + pkgs.lib.optionalString (pkgs.stdenv.buildPlatform.canExecute pkgs.stdenv.hostPlatform) ''
+              installShellCompletion --cmd ruff \
+                --bash <($bin/bin/ruff generate-shell-completion bash) \
+                --fish <($bin/bin/ruff generate-shell-completion fish) \
+                --zsh <($bin/bin/ruff generate-shell-completion zsh)
+            '';
+
+            doCheck = false;
+          };
           kuzu = super.buildPythonPackage rec {
             pname = "kuzu";
             version = "0.4.1";
@@ -615,6 +664,7 @@
 
                   # Used for polars-benchmark
                   pydantic-settings
+                  ruff
 
                   # # Used for Altair SVG / PNG conversions
                   # (localPyPkg ./python-packages/vl-convert-python)

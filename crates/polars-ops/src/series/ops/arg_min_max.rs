@@ -1,11 +1,11 @@
 use argminmax::ArgMinMax;
 use arrow::array::Array;
-use arrow::legacy::bit_util::*;
+use arrow::legacy::bit_util::first_unset_bit;
 use polars_core::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
 use polars_core::series::IsSorted;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::utils::first_non_null;
 
 use super::*;
 
@@ -167,14 +167,14 @@ where
 }
 
 pub(crate) fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
-    if ca.null_count() == ca.len() {
+    let null_count = ca.null_count();
+    if null_count == ca.len() {
         None
-    }
-    // don't check for any, that on itself is already an argmax search
-    else if ca.null_count() == 0 && ca.chunks().len() == 1 {
-        let arr = ca.downcast_iter().next().unwrap();
-        let mask = arr.values();
-        Some(first_set_bit(mask))
+    } else if null_count == 0 {
+        // if no null values we only have True/False, which can be downcast to
+        // operate on as bitmap 1/0, allowing for a fast-path; if `first_non_null`
+        // returns None this implies all values are zero (eg: False), so we return 0
+        first_non_null(ca.downcast_iter().map(|arr| Some(arr.values()))).or(Some(0))
     } else {
         let mut first_false_idx: Option<usize> = None;
         ca.iter()
@@ -202,7 +202,6 @@ where
         IsSorted::Descending => float_arg_max_sorted_descending(ca),
         _ => unreachable!(),
     };
-
     Some(out)
 }
 

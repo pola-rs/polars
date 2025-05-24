@@ -17,7 +17,6 @@ use polars_utils::slice_enum::Slice;
 use crate::async_executor::{self, AbortOnDropHandle, JoinHandle, TaskPriority};
 use crate::async_primitives::connector;
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
-use crate::morsel::Morsel;
 use crate::nodes::io_sources::multi_file_reader::bridge::BridgeRecvPort;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::apply::ApplyExtraOps;
 use crate::nodes::io_sources::multi_file_reader::extra_ops::missing_columns::initialize_missing_columns_policy;
@@ -28,9 +27,8 @@ use crate::nodes::io_sources::multi_file_reader::initialization::MultiScanTaskIn
 use crate::nodes::io_sources::multi_file_reader::initialization::slice::{
     ResolvedSliceInfo, resolve_to_positive_slice,
 };
-use crate::nodes::io_sources::multi_file_reader::post_apply_pipeline::PostApplyPool;
+use crate::nodes::io_sources::multi_file_reader::post_apply_pipeline::spawn_post_apply_pipeline;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
-use crate::nodes::io_sources::multi_file_reader::reader_interface::output::FileReaderOutputRecv;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks,
 };
@@ -133,32 +131,55 @@ impl MultiScanTaskInitializer {
         let readers_init_iter = {
             let skip_files_mask = skip_files_mask.clone();
 
-            // If a negative slice was initialized, the length of the initialized readers will be the exact
-            // stopping position.
-            let end = if initialized_readers.is_empty() {
-                self.config.sources.len()
-            } else {
-                scan_source_idx + initialized_readers.len()
+            let mut range = {
+                // If a negative slice was initialized, the length of the initialized readers will be the exact
+                // stopping position.
+                let end = if initialized_readers.is_empty() {
+                    self.config.sources.len()
+                } else {
+                    scan_source_idx + initialized_readers.len()
+                };
+
+                scan_source_idx..end
             };
 
-            let range = scan_source_idx..end;
-
             if verbose {
+                let n_filtered = skip_files_mask
+                    .clone()
+                    .map_or(0, |x| x.sliced(range.start, range.len()).set_bits());
+                let n_readers_init = range.len() - n_filtered;
+
                 eprintln!(
                     "\
-                    [MultiScanTaskInitializer]: Readers init range: {:?} ({} / {} files)",
-                    &range,
-                    range.len(),
+                    [MultiScanTaskInitializer]: Readers init: {} / ({} total) \
+                    (range: {:?}, filtered out: {})",
+                    n_readers_init,
                     self.config.sources.len(),
+                    &range,
+                    n_filtered,
                 )
             }
+
+            if let Some(skip_files_mask) = &skip_files_mask {
+                range.end = range
+                    .end
+                    .min(skip_files_mask.len() - skip_files_mask.trailing_ones());
+            }
+
+            let range = range.filter(move |scan_source_idx| {
+                let can_skip = !has_row_index_or_slice
+                    && skip_files_mask
+                        .as_ref()
+                        .is_some_and(|x| x.get_bit(*scan_source_idx));
+
+                !can_skip
+            });
 
             futures::stream::iter(range)
                 .map(move |scan_source_idx| {
                     let cloud_options = config.cloud_options.clone();
                     let file_reader_builder = config.file_reader_builder.clone();
                     let sources = config.sources.clone();
-                    let skip_files_mask = skip_files_mask.clone();
 
                     let maybe_initialized = initialized_readers.pop_front();
                     let scan_source = sources.get(scan_source_idx).unwrap().into_owned();
@@ -184,15 +205,6 @@ impl MultiScanTaskInitializer {
                                 cloud_options,
                                 scan_source_idx,
                             );
-
-                            // Skip initialization if this file is filtered, this can save some cloud calls / metadata deserialization.
-                            // Downstream must also check against `skip_files_mask` and avoid calling any functions on this reader
-                            // if it is filtered out.
-                            if !has_row_index_or_slice
-                                && skip_files_mask.is_some_and(|x| x.get_bit(scan_source_idx))
-                            {
-                                return Ok((scan_source, reader, None));
-                            }
 
                             reader.initialize().await?;
                             PolarsResult::Ok((scan_source, reader, None))
@@ -239,6 +251,7 @@ impl MultiScanTaskInitializer {
                     missing_columns_policy: self.config.missing_columns_policy,
                     full_file_schema,
                     extra_columns_policy: self.config.extra_columns_policy,
+                    verbose,
                 },
                 num_pipelines,
                 verbose,
@@ -251,7 +264,6 @@ impl MultiScanTaskInitializer {
             AttachReaderToBridge {
                 started_reader_rx,
                 bridge_recv_port_tx,
-                num_pipelines,
                 verbose,
             }
             .run(),
@@ -353,6 +365,9 @@ impl ReaderStarter {
                 .as_ref()
                 .is_some_and(|x| x.get_bit(scan_source_idx))
             {
+                // If this is not the case then the reader does not need to be sent here.
+                debug_assert!(extra_ops.has_row_index_or_slice());
+
                 if verbose {
                     eprintln!(
                         "[ReaderStarter]: Skip read of file index {scan_source_idx} (skip_files_mask)"
@@ -528,6 +543,7 @@ struct StartReaderArgsConstant {
     missing_columns_policy: MissingColumnsPolicy,
     full_file_schema: SchemaRef,
     extra_columns_policy: ExtraColumnsPolicy,
+    verbose: bool,
 }
 
 struct StartReaderArgsPerFile {
@@ -549,6 +565,7 @@ async fn start_reader_impl(
         missing_columns_policy,
         full_file_schema,
         extra_columns_policy,
+        verbose,
     } = constant_args;
 
     let StartReaderArgsPerFile {
@@ -559,6 +576,7 @@ async fn start_reader_impl(
         extra_ops_post,
     } = args_this_file;
 
+    let num_pipelines = begin_read_args.num_pipelines;
     let pre_slice_to_reader = begin_read_args.pre_slice.clone();
 
     let file_schema_rx = if !matches!(extra_columns_policy, ExtraColumnsPolicy::Ignore) {
@@ -660,7 +678,7 @@ async fn start_reader_impl(
 
     let first_morsel = reader_output_port.recv().await.ok();
 
-    let ops_applier = if let Some(morsel) = first_morsel.as_ref() {
+    let ops_applier = if let Some(first_morsel) = &first_morsel {
         let final_output_schema = final_output_schema.clone();
         let projected_file_schema = projected_file_schema.clone();
         let mut extra_ops = extra_ops_post;
@@ -686,15 +704,53 @@ async fn start_reader_impl(
             scan_source_idx,
             hive_parts,
         }
-        .initialize(morsel.df().schema())?
+        .initialize(first_morsel.df().schema())?
     } else {
         ApplyExtraOps::Noop
     };
 
-    let state = StartedReaderState {
-        reader_output_port,
-        first_morsel,
-        ops_applier,
+    // Note: We assume that if we have an Initialized ops_applier, then the first_morsel is Some(_).
+
+    let (bridge_recv_port, post_apply_pipeline_handle) = match ops_applier {
+        ApplyExtraOps::Initialized { .. } => {
+            if verbose {
+                eprintln!(
+                    "start_reader_impl: scan_source_idx: {scan_source_idx}, ApplyExtraOps::Initialized",
+                );
+            }
+
+            let (rx, handle) = spawn_post_apply_pipeline(
+                reader_output_port,
+                Arc::new(ops_applier),
+                first_morsel.unwrap(),
+                num_pipelines,
+            );
+
+            (BridgeRecvPort::Linearized { rx }, Some(handle))
+        },
+
+        ApplyExtraOps::Noop => {
+            if verbose {
+                eprintln!(
+                    "start_reader_impl: scan_source_idx: {scan_source_idx}, ApplyExtraOps::Noop",
+                );
+            }
+
+            (
+                BridgeRecvPort::Direct {
+                    rx: reader_output_port,
+                    first_morsel,
+                },
+                None,
+            )
+        },
+
+        ApplyExtraOps::Uninitialized { .. } => unreachable!(),
+    };
+
+    let state: StartedReaderState = StartedReaderState {
+        bridge_recv_port,
+        post_apply_pipeline_handle,
         reader_handle,
     };
 
@@ -703,9 +759,8 @@ async fn start_reader_impl(
 
 /// State for a reader that has been started.
 struct StartedReaderState {
-    reader_output_port: FileReaderOutputRecv,
-    first_morsel: Option<Morsel>,
-    ops_applier: ApplyExtraOps,
+    bridge_recv_port: BridgeRecvPort,
+    post_apply_pipeline_handle: Option<AbortOnDropHandle<PolarsResult<()>>>,
     reader_handle: AbortOnDropHandle<PolarsResult<()>>,
 }
 
@@ -715,7 +770,6 @@ struct AttachReaderToBridge {
         WaitToken,
     )>,
     bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
-    num_pipelines: usize,
     verbose: bool,
 }
 
@@ -724,83 +778,36 @@ impl AttachReaderToBridge {
         let AttachReaderToBridge {
             mut started_reader_rx,
             mut bridge_recv_port_tx,
-            num_pipelines,
             verbose,
         } = self;
 
         let mut n_readers_received: usize = 0;
-
-        let mut post_apply_pool: Option<PostApplyPool> = None;
 
         while let Some((init_task_handle, wait_token)) = started_reader_rx.recv().await {
             n_readers_received = n_readers_received.saturating_add(1);
 
             if verbose {
                 eprintln!(
-                    "[AttachReaderToBridge]: got reader, n_readers_received: {n_readers_received}"
+                    "[AttachReaderToBridge]: received reader (n_readers_received: {n_readers_received})",
                 );
             }
 
             let StartedReaderState {
-                reader_output_port,
-                first_morsel,
-                ops_applier,
+                bridge_recv_port,
+                post_apply_pipeline_handle,
                 reader_handle,
             } = init_task_handle.await?;
 
-            if let Some(first_morsel) = first_morsel {
-                match ops_applier {
-                    ApplyExtraOps::Noop => {
-                        if verbose {
-                            eprintln!("[AttachReaderToBridge]: ApplyExtraOps::Noop");
-                        }
-
-                        if bridge_recv_port_tx
-                            .send(BridgeRecvPort::Direct {
-                                rx: reader_output_port,
-                                first_morsel: Some(first_morsel),
-                            })
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    },
-
-                    ApplyExtraOps::Initialized { .. } => {
-                        if verbose {
-                            eprintln!("[AttachReaderToBridge]: ApplyExtraOps::Initialized");
-                        }
-
-                        let post_apply_pool = post_apply_pool
-                            .get_or_insert_with(|| PostApplyPool::new(num_pipelines));
-
-                        let bridge_recv_port = post_apply_pool
-                            .run_with_reader(
-                                reader_output_port,
-                                Arc::new(ops_applier),
-                                first_morsel,
-                            )
-                            .await?;
-
-                        if bridge_recv_port_tx.send(bridge_recv_port).await.is_err() {
-                            break;
-                        }
-
-                        post_apply_pool.wait_current_reader().await?;
-                    },
-
-                    ApplyExtraOps::Uninitialized { .. } => unreachable!(),
-                }
+            if bridge_recv_port_tx.send(bridge_recv_port).await.is_err() {
+                break;
             }
 
             drop(wait_token);
             reader_handle.await?;
-        }
 
-        // Catch errors
-        if let Some(post_apply_pool) = post_apply_pool {
-            post_apply_pool.shutdown().await?;
+            if let Some(handle) = post_apply_pipeline_handle {
+                handle.await?;
+            }
         }
 
         Ok(())

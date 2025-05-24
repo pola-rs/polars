@@ -351,7 +351,7 @@ def test_max_size_partition_collect_files(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(("io_type"), io_types)
-def test_partition_to_memory(tmp_path: Path, io_type: IOType) -> None:
+def test_partition_to_memory(io_type: IOType) -> None:
     df = pl.DataFrame(
         {
             "a": [5, 10, 1996],
@@ -394,3 +394,103 @@ def test_partition_key_order_22645() -> None:
         ("b=2", "c=44"),
         ("b=3", "c=45"),
     ]
+
+
+@pytest.mark.parametrize(("io_type"), io_types)
+@pytest.mark.parametrize(
+    ("df", "sorts"),
+    [
+        (pl.DataFrame({"a": [2, 1, 0, 4, 3, 5, 7, 8, 9]}), "a"),
+        (
+            pl.DataFrame(
+                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
+            ),
+            "a",
+        ),
+        (
+            pl.DataFrame(
+                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
+            ),
+            ["a", "b"],
+        ),
+        (
+            pl.DataFrame(
+                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
+            ),
+            "b",
+        ),
+        (
+            pl.DataFrame(
+                {"a": [2, 1, 0, 4, 3, 5, 7, 8, 9], "b": [f"s{i}" for i in range(9)]}
+            ),
+            pl.col.a - pl.col.b.str.slice(1).cast(pl.Int64),
+        ),
+    ],
+)
+def test_partition_to_memory_sort_by(
+    io_type: IOType, df: pl.DataFrame, sorts: str | pl.Expr | list[str | pl.Expr]
+) -> None:
+    output_files = {}
+
+    def file_path_cb(ctx: BasePartitionContext) -> io.BytesIO:
+        f = io.BytesIO()
+        output_files[ctx.file_path] = f
+        return f
+
+    io_type["sink"](
+        df.lazy(),
+        PartitionMaxSize(
+            "", file_path=file_path_cb, max_size=3, per_partition_sort_by=sorts
+        ),
+    )
+
+    assert len(output_files) == df.height / 3
+    for i, (_, value) in enumerate(output_files.items()):
+        value.seek(0)
+        assert_frame_equal(
+            io_type["scan"](value).collect(), df.slice(i * 3, 3).sort(sorts)
+        )
+
+
+@pytest.mark.parametrize(("io_type"), io_types)
+def test_partition_to_memory_finish_callback(io_type: IOType) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [5, 10, 1996],
+        }
+    )
+
+    output_files = {}
+
+    def file_path_cb(ctx: BasePartitionContext) -> io.BytesIO:
+        f = io.BytesIO()
+        output_files[ctx.file_path] = f
+        return f
+
+    num_calls = 0
+
+    def finish_callback(df: pl.DataFrame) -> None:
+        nonlocal num_calls
+        num_calls += 1
+
+        if io_type["ext"] == "parquet":
+            assert df.height == 3
+
+    io_type["sink"](
+        df.lazy(),
+        PartitionMaxSize(
+            "", file_path=file_path_cb, max_size=1, finish_callback=finish_callback
+        ),
+    )
+    assert num_calls == 1
+
+    with pytest.raises(FileNotFoundError):
+        io_type["sink"](
+            df.lazy(),
+            PartitionMaxSize(
+                "/path/to/non-existent-paths",
+                max_size=1,
+                finish_callback=finish_callback,
+            ),
+        )
+    assert num_calls == 1  # Should not get called here

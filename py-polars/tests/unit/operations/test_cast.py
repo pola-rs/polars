@@ -964,3 +964,46 @@ def test_cast_to_self_is_pruned() -> None:
     assert 'col("x").alias("y")' in plan
 
     assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "y": 1}))
+
+
+@pytest.mark.parametrize(
+    ("s", "to", "should_fail"),
+    [
+        (
+            pl.Series([datetime(2025, 1, 1)]),
+            pl.Datetime("ns"),
+            False,
+        ),
+        (
+            pl.Series([datetime(9999, 1, 1)]),
+            pl.Datetime("ns"),
+            True,
+        ),
+        (
+            pl.Series([datetime(2025, 1, 1), datetime(9999, 1, 1)]),
+            pl.Datetime("ns"),
+            True,
+        ),
+        (
+            pl.Series([[datetime(2025, 1, 1)], [datetime(9999, 1, 1)]]),
+            pl.List(pl.Datetime("ns")),
+            True,
+        ),
+        # lower date limit for nanosecond
+        (pl.Series([date(1677, 9, 22)]), pl.Datetime("ns"), False),
+        (pl.Series([date(1677, 9, 21)]), pl.Datetime("ns"), True),
+        # upper date limit for nanosecond
+        (pl.Series([date(2262, 4, 11)]), pl.Datetime("ns"), False),
+        (pl.Series([date(2262, 4, 12)]), pl.Datetime("ns"), True),
+    ],
+)
+def test_cast_temporals_overflow_16039(
+    s: pl.Series, to: pl.DataType, should_fail: bool
+) -> None:
+    if should_fail:
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match="conversion from"
+        ):
+            s.cast(to)
+    else:
+        s.cast(to)
