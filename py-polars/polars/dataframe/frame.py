@@ -2768,7 +2768,7 @@ class DataFrame:
         should_return_buffer = False
         target: str | Path | IO[bytes] | IO[str]
         if file is None:
-            target = cast(IO[bytes], BytesIO())
+            target = cast("IO[bytes]", BytesIO())
             should_return_buffer = True
         elif isinstance(file, (str, os.PathLike)):
             target = normalize_filepath(file)
@@ -2966,7 +2966,7 @@ class DataFrame:
         should_return_buffer = False
         target: str | Path | IO[bytes] | IO[str]
         if file is None:
-            target = cast(IO[bytes], BytesIO())
+            target = cast("IO[bytes]", BytesIO())
             should_return_buffer = True
         elif isinstance(file, (str, os.PathLike)):
             target = normalize_filepath(file)
@@ -4531,17 +4531,11 @@ class DataFrame:
         _check_if_delta_available()
 
         from deltalake import DeltaTable, write_deltalake
-        from deltalake import __version__ as delta_version
 
         _check_for_unsupported_types(self.dtypes)
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
-
-        if parse_version(delta_version) >= (0, 23, 0):
-            data = self.to_arrow(compat_level=CompatLevel.newest())
-        else:
-            data = self.to_arrow()
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
@@ -4588,7 +4582,7 @@ class DataFrame:
             else:
                 dt = target
 
-            return dt.merge(data, **delta_merge_options)
+            return dt.merge(self, **delta_merge_options)
 
         else:
             if delta_write_options is None:
@@ -4597,11 +4591,9 @@ class DataFrame:
             if overwrite_schema:
                 delta_write_options["schema_mode"] = "overwrite"
 
-            schema = delta_write_options.pop("schema", None)
             write_deltalake(
                 table_or_uri=target,
-                data=data,
-                schema=schema,
+                data=self,
                 mode=mode,
                 storage_options=storage_options,
                 **delta_write_options,
