@@ -14,6 +14,7 @@ use polars_core::schema::{Schema, SchemaRef};
 use polars_core::series::Series;
 use polars_core::utils::CustomIterTools;
 use polars_plan::dsl::Expr;
+use polars_plan::plans::ExprPushdownGroup;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -30,6 +31,8 @@ pub struct EvalExpr {
     allow_threading: bool,
     output_field: Field,
     is_scalar: bool,
+    pd_group: ExprPushdownGroup,
+    evaluation_is_scalar: bool,
     is_user_apply: bool,
 }
 
@@ -58,7 +61,6 @@ fn offsets_to_groups(offsets: &[i64]) -> Option<GroupPositions> {
     )
 }
 
-
 impl EvalExpr {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -69,8 +71,11 @@ impl EvalExpr {
         allow_threading: bool,
         output_field: Field,
         is_scalar: bool,
+        pd_group: ExprPushdownGroup,
+        evaluation_is_scalar: bool,
         is_user_apply: bool,
     ) -> Self {
+        dbg!(&output_field.name);
         Self {
             input,
             evaluation,
@@ -79,6 +84,8 @@ impl EvalExpr {
             allow_threading,
             output_field,
             is_scalar,
+            pd_group,
+            evaluation_is_scalar,
             is_user_apply,
         }
     }
@@ -251,7 +258,12 @@ impl EvalExpr {
         // this fails as the list builder expects `List<Int64>`, so let's skip that for now.
         let is_user_apply = self.is_user_apply;
 
-        if !self.is_scalar && !lst.has_nulls() {
+        if match self.pd_group {
+            ExprPushdownGroup::Pushable => true,
+            ExprPushdownGroup::Fallible => !lst.has_nulls(),
+            ExprPushdownGroup::Barrier => false,
+        } && !self.evaluation_is_scalar
+        {
             self.run_elementwise_on_values(lst, state)
         } else if fits_idx_size && lst.null_count() == 0 && !is_user_apply {
             self.run_on_group_by_engine(lst, state)
@@ -268,8 +280,8 @@ impl PhysicalExpr for EvalExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
-        let lst = input.list()?;
-        self.evaluate_on_list_chunked(lst, state)
+        let lst = dbg!(input.list()?);
+        dbg!(self.evaluate_on_list_chunked(lst, state))
     }
 
     fn evaluate_on_groups<'a>(

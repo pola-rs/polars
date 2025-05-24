@@ -1,10 +1,12 @@
+use std::borrow::Cow;
 use std::ops::Deref;
 use std::sync::Mutex;
 
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use polars_core::prelude::*;
-use polars_utils::format_pl_smallstr;
+use polars_utils::idx_vec::UnitVec;
+use polars_utils::{format_pl_smallstr, unitvec};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -456,5 +458,29 @@ impl Clone for CachedSchema {
 impl CachedSchema {
     pub fn get(&self) -> Option<SchemaRef> {
         self.0.lock().unwrap().clone()
+    }
+}
+
+pub fn get_input(lp_arena: &Arena<IR>, lp_node: Node) -> UnitVec<Node> {
+    let plan = lp_arena.get(lp_node);
+    let mut inputs: UnitVec<Node> = unitvec!();
+
+    // Used to get the schema of the input.
+    if is_scan(plan) {
+        inputs.push(lp_node);
+    } else {
+        plan.copy_inputs(&mut inputs);
+    };
+    inputs
+}
+
+pub fn get_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
+    let inputs = get_input(lp_arena, lp_node);
+    if inputs.is_empty() {
+        // Files don't have an input, so we must take their schema.
+        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
+    } else {
+        let input = inputs[0];
+        lp_arena.get(input).schema(lp_arena)
     }
 }

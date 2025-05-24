@@ -136,11 +136,11 @@ impl OptimizationRule for SimplifyBooleanRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<IR>,
-        lp_node: Node,
+        _schema: &Schema,
+        ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
-        let in_filter = matches!(lp_arena.get(lp_node), IR::Filter { .. });
+        let in_filter = ctx.in_filter;
 
         let out = match expr {
             // true AND x => x
@@ -315,22 +315,18 @@ where
 
 #[cfg(all(feature = "strings", feature = "concat_str"))]
 fn string_addition_to_linear_concat(
-    lp_arena: &Arena<IR>,
-    lp_node: Node,
     expr_arena: &Arena<AExpr>,
     left_node: Node,
     right_node: Node,
     left_aexpr: &AExpr,
     right_aexpr: &AExpr,
+    input_schema: &Schema,
 ) -> Option<AExpr> {
     {
-        let lp = lp_arena.get(lp_node);
-        let input = lp.get_input()?;
-        let schema = lp_arena.get(input).schema(lp_arena);
         let left_e = ExprIR::from_node(left_node, expr_arena);
         let right_e = ExprIR::from_node(right_node, expr_arena);
 
-        let get_type = |ae: &AExpr| ae.get_type(&schema, Context::Default, expr_arena).ok();
+        let get_type = |ae: &AExpr| ae.get_type(input_schema, Context::Default, expr_arena).ok();
         let type_a = get_type(left_aexpr).or_else(|| get_type(right_aexpr))?;
         let type_b = get_type(right_aexpr).or_else(|| get_type(right_aexpr))?;
 
@@ -452,8 +448,8 @@ impl OptimizationRule for SimplifyExprRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<IR>,
-        lp_node: Node,
+        schema: &Schema,
+        _ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node).clone();
 
@@ -545,13 +541,12 @@ impl OptimizationRule for SimplifyExprRule {
                                 #[cfg(all(feature = "strings", feature = "concat_str"))]
                                 {
                                     string_addition_to_linear_concat(
-                                        lp_arena,
-                                        lp_node,
                                         expr_arena,
                                         *left,
                                         *right,
                                         left_aexpr,
                                         right_aexpr,
+                                        schema,
                                     )
                                 }
                                 #[cfg(not(all(feature = "strings", feature = "concat_str")))]

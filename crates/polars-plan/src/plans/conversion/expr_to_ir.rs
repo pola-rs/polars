@@ -318,9 +318,17 @@ pub(super) fn to_aexpr_impl(
             offset: to_aexpr_impl_materialized_lit(owned(offset), arena, state)?,
             length: to_aexpr_impl_materialized_lit(owned(length), arena, state)?,
         },
-        Expr::ListEval { expr, evaluation } => AExpr::ListEval {
-            expr: to_aexpr_impl(owned(expr), arena, state)?,
-            evaluation: to_aexpr_impl(owned(evaluation), arena, state)?,
+        Expr::ListEval { expr, evaluation } => {
+            let mut evaluation_state = ConversionContext {
+                output_name: OutputName::None,
+                prune_alias: true,
+                ignore_alias: true,
+            };
+
+            AExpr::ListEval {
+                expr: to_aexpr_impl(owned(expr), arena, state)?,
+                evaluation: to_aexpr_impl(owned(evaluation), arena, &mut evaluation_state)?,
+            }
         },
         Expr::Len => {
             if state.output_name.is_none() {
