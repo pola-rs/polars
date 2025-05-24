@@ -5854,12 +5854,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # Ensures that Dictionaries (as an iterable) cannot be passed in
         for expr in exprs:
             if isinstance(expr, dict):
-                raise TypeError(
+                msg = (
                     "Cannot pass a Dictionary as an argument to `with_columns`.\n"
-                    "To utilise key-value information from a dictionary, use either:\n"
+                    "To utilize key-value information from a dictionary, use either:\n"
                     "  - `with_columns(**your_dict)`\n"
                     "  - `with_columns(expr.alias(name) for name, expr in your_dict.items())`"
                 )
+                raise TypeError(msg)
 
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 

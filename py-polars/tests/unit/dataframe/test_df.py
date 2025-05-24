@@ -3228,21 +3228,24 @@ def test_nan_to_null() -> None:
 
 # Below 3 tests for https://github.com/pola-rs/polars/issues/17879
 
-def test_with_columns_dict_direct_typeerror():
+
+def test_with_columns_dict_direct_typeerror() -> None:
     data = {"a": pl.col("a") * 2}
     df = pl.select(a=1)
-    with pytest.raises(TypeError, match="Cannot pass a Dictionary as an argument to `with_columns`"):
+    with pytest.raises(
+        TypeError, match="Cannot pass a Dictionary as an argument to `with_columns`"
+    ):
         df.with_columns(data)
 
 
-def test_with_columns_dict_unpacking():
+def test_with_columns_dict_unpacking() -> None:
     data = {"a": pl.col("a") * 2}
     df = pl.select(a=1).with_columns(**data)
     expected = pl.DataFrame({"a": [2]})
     assert df.equals(expected)
 
 
-def test_with_columns_generator_alias():
+def test_with_columns_generator_alias() -> None:
     data = {"a": pl.col("a") * 2}
     df = pl.select(a=1).with_columns(expr.alias(name) for name, expr in data.items())
     expected = pl.DataFrame({"a": [2]})
