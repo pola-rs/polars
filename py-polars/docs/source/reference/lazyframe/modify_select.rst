@@ -6,6 +6,7 @@ Manipulation/selection
 .. autosummary::
    :toctree: api/
 
+    LazyFrame.__getitem__
     LazyFrame.approx_n_unique
     LazyFrame.bottom_k
     LazyFrame.cast
