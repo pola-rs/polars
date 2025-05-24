@@ -1,15 +1,17 @@
 //! A tool for working with DSL schema.
 //!
-//! This tool can
-//! - update the schema stored in the schema file,
-//! - check that the schema in the file matches the code.
+//! Usage:
+//! `dsl-check [generate|update-hash|check-hash] [PATH]`
+//! - `generate` the DSL schema as a JSON file in the current directory
+//! - `update-hash` the schema hash stored in the schema hash file,
+//! - `check-hash` that the schema hash in the file matches the code.
 //!
 //! The generated schema is affected by active features. To use a complete schema, first build
 //! the whole workspace with all features:
 //! ```sh
 //! cargo build --all-features
-//! ./target/debug/dsl-check update
-//! ./target/debug/dsl-check check
+//! ./target/debug/dsl-check update-hash
+//! ./target/debug/dsl-check check-hash
 //! ```
 
 fn main() {
@@ -25,32 +27,36 @@ fn main() {
 #[cfg(feature = "dsl-schema")]
 mod impls {
     use std::fs::File;
-    use std::io::Write as _;
+    use std::io::Write;
     use std::path::Path;
 
     use polars_plan::dsl::DslPlan;
-    use schemars::schema::RootSchema;
+    use sha2::Digest;
 
-    const DEFAULT_PATH: &str = "crates/polars-plan/dsl-schema.json";
+    const DEFAULT_HASH_PATH: &str = "crates/polars-plan/dsl-schema.sha256";
 
     pub fn run() {
         let mut args = std::env::args();
 
         let _ = args.next();
-        let cmd = args.next().expect("missing command [update, check]");
-        let path_arg = args.next().unwrap_or(DEFAULT_PATH.to_owned());
+        let cmd = args
+            .next()
+            .expect("missing command [generate, update-hash, check-hash]");
+        let path = args.next();
 
         if let Some(unknown) = args.next() {
             panic!("unknown argument: `{unknown}`");
         }
 
-        let path = Path::new(&path_arg);
         match cmd.as_str() {
-            "update" => {
-                update(path);
+            "generate" => {
+                generate(path.unwrap_or("./dsl-schema.json".to_owned()));
             },
-            "check" => {
-                check(path);
+            "update-hash" => {
+                update_hash(path.unwrap_or(DEFAULT_HASH_PATH.to_owned()));
+            },
+            "check-hash" => {
+                check_hash(path.unwrap_or(DEFAULT_HASH_PATH.to_owned()));
             },
             unknown => {
                 panic!("unknown command: `{unknown}`");
@@ -58,42 +64,47 @@ mod impls {
         }
     }
 
-    /// Generates serializes the current DSL schema into a file at the given path.
+    /// Serializes the current DSL schema into a file at the given path.
     ///
     /// Any existing file at the path is overwritten.
-    fn update(path: &Path) {
+    fn generate(path: impl AsRef<Path>) {
         let schema = DslPlan::dsl_schema();
 
-        let mut file = File::create(path).expect("failed to create a writable schema file");
+        let mut file = File::create(path).expect("failed to open the schema file for writing");
         serde_json::to_writer_pretty(&mut file, &schema).expect("failed to serialize the schema");
         writeln!(&mut file).expect("failed to write the last newline");
         file.flush().expect("failed to flush the schema file");
-
-        eprintln!("the DSL schema file was updated");
     }
 
-    /// Checks that the current schema matches the schema in the file.
-    fn check(path: &Path) {
-        let schema: RootSchema = {
-            // Do a serialization round trip, because `schemars` has a quirk where serializing some
-            // fields with a value of `Some(Default::default())` gets deserialized as `None`. Both
-            // values mean the same thing, but `PartialEq` treats them as not equal.
-            // The serialization round trip normalizes all these fields to `None`, so that
-            // `PartialEq` works as expected.
-            let json = serde_json::to_string(&DslPlan::dsl_schema())
-                .expect("failed to serialize the current schema");
-            serde_json::from_str(&json).expect("failed to deserialize the current schema")
-        };
+    /// Outputs the current DSL schema hash into a file at the given path.
+    ///
+    /// Any existing file at the path is overwritten.
+    fn update_hash(path: impl AsRef<Path>) {
+        std::fs::write(path, current_hash()).expect("failed to write the hash into the file");
+        eprintln!("the DSL schema hash file was updated");
+    }
 
-        let mut file = File::open(path).expect("failed to open the schema file");
-        let schema_file: RootSchema =
-            serde_json::from_reader(&mut file).expect("failed to deserialize the schema");
-
-        if schema != schema_file {
-            eprintln!("the schema is not up to date, please run `make update-dsl-schema`");
+    /// Checks that the current schema hash matches the schema in the file.
+    fn check_hash(path: impl AsRef<Path>) {
+        let file_hash =
+            std::fs::read_to_string(path).expect("faled to read the hash from the file");
+        if file_hash != current_hash() {
+            eprintln!(
+                "the schema hash is not up to date, please run `make update-dsl-schema-hash`"
+            );
             std::process::exit(1);
         }
-
         eprintln!("the DSL schema is up to date");
+    }
+
+    fn current_hash() -> String {
+        let schema = DslPlan::dsl_schema();
+
+        let mut digest = sha2::Sha256::new();
+        serde_json::to_writer(&mut digest, &schema).expect("failed to serialize the schema");
+
+        let hash = digest.finalize();
+
+        format!("{hash:064x}")
     }
 }

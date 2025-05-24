@@ -369,17 +369,9 @@ impl DslPlan {
             }
         }
 
-        let mut schema = SchemaSettings::default()
+        SchemaSettings::default()
             .with_visitor(MyVisitor)
             .into_generator()
-            .into_root_schema_for::<DslPlan>();
-
-        // Add DSL version as a top level field
-        schema.schema.extensions.insert(
-            "version".into(),
-            format!("{}.{}", DSL_VERSION.0, DSL_VERSION.1).into(),
-        );
-
-        schema
+            .into_root_schema_for::<DslPlan>()
     }
 }

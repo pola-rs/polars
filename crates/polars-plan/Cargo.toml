@@ -3,7 +3,7 @@ name = "polars-plan"
 version = { workspace = true }
 authors = { workspace = true }
 edition = { workspace = true }
-exclude = ["dsl-schema.json"]
+exclude = ["dsl-schema.sha256"]
 homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
@@ -43,6 +43,7 @@ regex = { workspace = true, optional = true }
 schemars = { workspace = true, features = ["either"], optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 
 [build-dependencies]
@@ -111,6 +112,7 @@ nightly = ["polars-utils/nightly", "polars-ops/nightly"]
 extract_jsonpath = ["polars-ops/extract_jsonpath"]
 dsl-schema = [
   "dep:schemars",
+  "dep:sha2",
   "dep:serde_json",
   "serde_json/preserve_order",
   "serde",
