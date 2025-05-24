@@ -715,7 +715,43 @@ class LazyFrame:
     def __deepcopy__(self, memo: None = None) -> LazyFrame:
         return self.clone()
 
-    def __getitem__(self, item: int | range | slice) -> LazyFrame:
+    def __getitem__(self, item: slice) -> LazyFrame:
+        """
+        Support slice syntax, returning a new LazyFrame.
+
+        All other forms of subscripting are currently unsupported here; use `select`,
+        `filter`, or other standard methods instead.
+
+        Notes
+        -----
+        LazyFrame is designed primarily for efficient computation and does not know
+        its own length so, unlike DataFrame, certain slice patterns (such as those
+        requiring negative stop/step) may not be supported.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+        >>> lf[:2].collect()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 2   ┆ 5   │
+        └─────┴─────┘
+        >>> lf[::2].collect()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 3   ┆ 6   │
+        └─────┴─────┘
+        """
         if not isinstance(item, slice):
             msg = (
                 "LazyFrame is not subscriptable (aside from slicing)"
