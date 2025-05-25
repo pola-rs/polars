@@ -1400,7 +1400,7 @@ class DataFrame:
         value: Any,
     ) -> None:  # pragma: no cover
         """
-        Modify parts of the DataFrame in place using assignment syntax.
+        Modify DataFrame elements in place, using assignment syntax.
 
         Parameters
         ----------
