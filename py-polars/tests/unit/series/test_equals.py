@@ -42,6 +42,13 @@ def test_equals() -> None:
     ):
         s1.equals(pl.DataFrame(s2).lazy(), check_names=False)  # type: ignore[arg-type]
 
+    s5 = pl.Series("a", [1, 2, 3])
+
+    class DummySeriesSubclass(pl.Series):
+        pass
+
+    assert s5.equals(DummySeriesSubclass(s5)) is True
+
 
 def test_series_equals_check_names() -> None:
     s1 = pl.Series("foo", [1, 2, 3])
