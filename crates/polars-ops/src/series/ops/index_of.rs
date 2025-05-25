@@ -44,65 +44,6 @@ where
     index_of_value::<_, PrimitiveArray<T::Native>>(ca, value)
 }
 
-fn index_of_bool(ca: &BooleanChunked, value: bool) -> Option<usize> {
-    let mut index = 0;
-    for chunk in ca.downcast_iter() {
-        let num_possible_trues = chunk.values().set_bits();
-
-        // All values are !value.
-        if (value && num_possible_trues == 0) || (!value && num_possible_trues == chunk.len()) {
-            index += chunk.len();
-            continue;
-        }
-
-        match chunk.validity() {
-            None => {
-                // A lack of a validity bitmap means there are no nulls, so we
-                // can simplify our logic and use a faster code path:
-                let n = if value {
-                    chunk.values().leading_zeros()
-                } else {
-                    chunk.values().leading_ones()
-                };
-
-                if n != chunk.len() {
-                    return Some(index + n);
-                }
-                index += n;
-            },
-            Some(validity) => {
-                // All values are none.
-                if validity.set_bits() == 0 {
-                    index += chunk.len();
-                    continue;
-                }
-
-                let mask = if value { 0 } else { u64::MAX };
-                let mut validity = validity.fast_iter_u56();
-                let mut values = chunk.values().fast_iter_u56();
-                for (is_null, value) in validity.by_ref().zip(values.by_ref()) {
-                    let eq_mask = is_null & (value ^ mask);
-                    if eq_mask != 0 {
-                        return Some(index + eq_mask.trailing_zeros() as usize);
-                    }
-                    index += 56;
-                }
-
-                let (is_null, l1) = validity.remainder();
-                let (value, l2) = values.remainder();
-                assert_eq!(l1, l2);
-
-                let eq_mask = is_null & (value ^ mask);
-                if eq_mask != 0 {
-                    return Some(index + eq_mask.trailing_zeros() as usize);
-                }
-                index += l1;
-            },
-        }
-    }
-    None
-}
-
 /// Try casting the value to the correct type, then call
 /// index_of_numeric_value().
 macro_rules! try_index_of_numeric_ca {
@@ -140,17 +81,16 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
             return Ok(Some(0));
         }
 
-        let mut index = 0;
+        let mut offset = 0;
         for chunk in series.chunks() {
             let length = chunk.len();
             if let Some(bitmap) = chunk.validity() {
                 let leading_ones = bitmap.leading_ones();
                 if leading_ones < length {
-                    return Ok(Some(index + leading_ones));
+                    return Ok(Some(offset + leading_ones));
                 }
-            } else {
-                index += length;
             }
+            offset += length;
         }
         return Ok(None);
     }
@@ -158,10 +98,11 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
     use DataType as DT;
     match series.dtype().to_physical() {
         DT::Null => unreachable!("handled above"),
-        DT::Boolean => Ok(index_of_bool(
-            series.bool()?,
-            needle.value().extract_bool().unwrap(),
-        )),
+        DT::Boolean => Ok(if needle.value().extract_bool().unwrap() {
+            series.bool().unwrap().first_true_idx()
+        } else {
+            series.bool().unwrap().first_false_idx()
+        }),
         dt if dt.is_primitive_numeric() => {
             let series = series.to_physical_repr();
             Ok(downcast_as_macro_arg_physical!(
