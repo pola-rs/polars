@@ -1447,7 +1447,6 @@ class DataFrame:
         --------
         Sequence[str] :  `df[["a", "b"]] = value`:
 
-        >>> import polars as pl
         >>> import numpy as np
         >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
         >>> df[["a", "b"]] = np.array([[10, 40], [20, 50], [30, 60]])
