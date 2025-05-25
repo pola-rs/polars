@@ -45,7 +45,11 @@ from polars._utils.various import (
 from polars.datatypes import Int64, is_polars_dtype, parse_into_dtype
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.exceptions import CustomUFuncWarning, PolarsInefficientMapWarning
+from polars.exceptions import (
+    CustomUFuncWarning,
+    OutOfBoundsError,
+    PolarsInefficientMapWarning,
+)
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -296,6 +300,26 @@ class Expr:
             raise NotImplementedError(msg)
         # Numpy/Scipy ufuncs have signature None but numba signatures always exists.
         is_custom_ufunc = getattr(ufunc, "signature") is not None  # noqa: B009
+        if is_custom_ufunc is True:
+            msg = (
+                "Native numpy ufuncs are dispatched using `map_batches(ufunc, is_elementwise=True)` which "
+                "is safe for native Numpy and Scipy ufuncs but custom ufuncs in a group_by "
+                "context won't be properly grouped. Custom ufuncs are dispatched with is_elementwise=False. "
+                f"If {ufunc.__name__} needs elementwise then please use map_batches directly."
+            )
+            warnings.warn(
+                msg,
+                CustomUFuncWarning,
+                stacklevel=find_stacklevel(),
+            )
+        if len(inputs) == 1 and len(kwargs) == 0:
+            # if there is only 1 input then it must be an Expr for this func to
+            # have been called. If there are no kwargs then call map_batches
+            # directly on the ufunc
+            if not isinstance(inputs[0], Expr):
+                msg = "Input must be expression."
+                raise OutOfBoundsError(msg)
+            return inputs[0].map_batches(ufunc, is_elementwise=not is_custom_ufunc)
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         exprs = [
             (inp, True, i) if isinstance(inp, Expr) else (inp, False, i)
@@ -330,20 +354,7 @@ class Expr:
                     args.append(expr[0])
             return ufunc(*args, **kwargs)
 
-        if is_custom_ufunc is True:
-            msg = (
-                "Native numpy ufuncs are dispatched using `map_batches(ufunc, is_elementwise=True)` which "
-                "is safe for native Numpy and Scipy ufuncs but custom ufuncs in a group_by "
-                "context won't be properly grouped. Custom ufuncs are dispatched with is_elementwise=False. "
-                f"If {ufunc.__name__} needs elementwise then please use map_batches directly."
-            )
-            warnings.warn(
-                msg,
-                CustomUFuncWarning,
-                stacklevel=find_stacklevel(),
-            )
-            return root_expr.map_batches(function, is_elementwise=False)
-        return root_expr.map_batches(function, is_elementwise=True)
+        return root_expr.map_batches(function, is_elementwise=not is_custom_ufunc)
 
     @classmethod
     def deserialize(
