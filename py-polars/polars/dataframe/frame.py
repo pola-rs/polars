@@ -1434,6 +1434,8 @@ class DataFrame:
             - For single element assignment (`df[row_idx, "a"] = value`), `value` should
               be a scalar.
 
+        Raises
+        ------
         TypeError
             If an unsupported assignment is attempted, such as assigning a Series
             directly to a column using `df["a"] = series`.
