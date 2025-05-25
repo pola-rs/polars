@@ -1,2 +1,1 @@
-[toolchain]
-channel = "nightly-2025-05-21"
+../rust-toolchain.toml
