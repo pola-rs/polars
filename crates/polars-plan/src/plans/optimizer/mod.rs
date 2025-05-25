@@ -25,6 +25,8 @@ mod simplify_expr;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod stack_opt;
+mod flatten_struct;
+use self::flatten_struct::FlattenStructRule;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
 #[cfg(feature = "cse")]
@@ -96,6 +98,7 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     // Gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
+    rules.push(Box::new(FlattenStructRule::new()));
 
     // Unset CSE
     // This can be turned on again during ir-conversion.
@@ -123,7 +126,7 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     #[cfg(debug_assertions)]
     let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();
 
-    let mut _opt_members = &mut None;
+    let _opt_members = &mut None;
 
     macro_rules! get_or_init_members {
         () => {

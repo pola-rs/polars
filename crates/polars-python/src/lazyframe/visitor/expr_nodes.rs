@@ -890,6 +890,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     #[cfg(feature = "regex")]
                     StringFunction::EscapeRegex => (PyStringFunction::EscapeRegex,).into_py_any(py),
                 },
+                FunctionExpr::FieldAccess | FunctionExpr::Get => {
+                    todo!("Implement FieldAccess / Get function_data translation")
+                }
                 FunctionExpr::StructExpr(_) => {
                     return Err(PyNotImplementedError::new_err("struct expr"));
                 },

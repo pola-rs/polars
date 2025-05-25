@@ -371,6 +371,10 @@ pub enum FunctionExpr {
     #[cfg(feature = "reinterpret")]
     Reinterpret(bool),
     ExtendConstant,
+    /// Access a field in a struct by name
+    FieldAccess,
+    /// Access an element from a list by index
+    Get,
 }
 
 impl Hash for FunctionExpr {
@@ -393,6 +397,7 @@ impl Hash for FunctionExpr {
             TemporalExpr(f) => f.hash(state),
             #[cfg(feature = "bitwise")]
             Bitwise(f) => f.hash(state),
+            FunctionExpr::FieldAccess | FunctionExpr::Get => {}
 
             // Other expressions
             Boolean(f) => f.hash(state),
@@ -638,6 +643,8 @@ impl Display for FunctionExpr {
             TemporalExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "bitwise")]
             Bitwise(func) => return write!(f, "bitwise_{func}"),
+            FunctionExpr::FieldAccess => "field_access",
+            FunctionExpr::Get => "get",
 
             // Other expressions
             Boolean(func) => return write!(f, "{func}"),
@@ -910,6 +917,12 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             TemporalExpr(func) => func.into(),
             #[cfg(feature = "bitwise")]
             Bitwise(func) => func.into(),
+            FieldAccess | Get => {
+                let f = |_s: &mut [Column]| -> PolarsResult<Option<Column>> {
+                    todo!("Implement FieldAccess / Get eval")
+                };
+                wrap!(f)
+            }
 
             // Other expressions
             Boolean(func) => func.into(),
@@ -1244,6 +1257,9 @@ impl FunctionExpr {
             F::TemporalExpr(e) => e.function_options(),
             #[cfg(feature = "bitwise")]
             F::Bitwise(e) => e.function_options(),
+            &FunctionExpr::FieldAccess | &FunctionExpr::Get => {
+                todo!("Implement match arm for FieldAccess / Get")
+            }
             F::Boolean(e) => e.function_options(),
             #[cfg(feature = "business")]
             F::Business(e) => e.function_options(),

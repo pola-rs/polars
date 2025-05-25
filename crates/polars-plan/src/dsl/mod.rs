@@ -19,7 +19,7 @@ mod builder_dsl;
 pub use builder_dsl::*;
 #[cfg(feature = "temporal")]
 pub mod dt;
-mod expr;
+pub mod expr;
 mod format;
 mod from;
 pub mod function_expr;
@@ -40,7 +40,10 @@ mod statistics;
 #[cfg(feature = "strings")]
 pub mod string;
 #[cfg(feature = "dtype-struct")]
-mod struct_;
+pub mod struct_;
+
+#[cfg(feature = "dtype-struct")]
+pub use struct_::StructNameSpace;
 pub mod udf;
 
 use std::fmt::Debug;
@@ -54,7 +57,6 @@ pub use expr::*;
 pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
-pub use list::*;
 pub use match_to_schema::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
@@ -77,7 +79,7 @@ use polars_core::utils::SuperTypeFlags;
 use polars_core::utils::{SuperTypeOptions, try_get_supertype};
 pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
-pub use struct_::*;
+pub use self::list::ListNameSpace;
 pub use udf::UserDefinedFunction;
 mod file_scan;
 pub use file_scan::*;
@@ -1696,10 +1698,36 @@ impl Expr {
         cat::CategoricalNameSpace(self)
     }
 
+    /// Flatten nested Struct(WithFields) expressions recursively
+    fn flatten_struct_fields(exprs: Vec<Expr>) -> Vec<Expr> {
+        let mut flat = Vec::new();
+        let mut stack = exprs;
+
+        while let Some(e) = stack.pop() {
+            match e {
+                Expr::Function {
+                    function: FunctionExpr::StructExpr(StructFunction::WithFields),
+                    input,
+                    ..
+                } => {
+                    stack.extend(input);
+                },
+                other => flat.push(other),
+            }
+        }
+
+        flat.reverse();
+        flat
+    }
+
     /// Get the [`struct_::StructNameSpace`].
     #[cfg(feature = "dtype-struct")]
-    pub fn struct_(self) -> struct_::StructNameSpace {
-        struct_::StructNameSpace(self)
+    pub fn struct_(inputs: Vec<Expr>) -> Expr {
+        Expr::Function {
+            function: FunctionExpr::StructExpr(StructFunction::WithFields),
+            input: Expr::flatten_struct_fields(inputs),
+            options: FunctionOptions::default(),
+        }
     }
 
     /// Get the [`meta::MetaNameSpace`]

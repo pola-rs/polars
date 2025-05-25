@@ -316,3 +316,57 @@ impl GetOutput {
         }
     }
 }
+
+/// Enables `expr.struct_().field_by_name(...)`
+pub trait StructNameSpace {
+    fn struct_(self) -> StructExpr;
+}
+
+impl StructNameSpace for Expr {
+    fn struct_(self) -> StructExpr {
+        StructExpr { expr: self }
+    }
+}
+
+pub struct StructExpr {
+    pub expr: Expr,
+}
+
+impl StructExpr {
+    pub fn field_by_name(self, name: &str) -> Expr {
+        Expr::Function {
+            input: vec![self.expr, lit(name)],
+            function: FunctionExpr::FieldAccess,
+            options: FunctionOptions::default().with_fmt_str("field_access"),
+        }
+    }
+}
+
+
+/// Enables `expr.list().get(...)`
+pub trait ListNameSpace {
+    fn list(self) -> ListExpr;
+}
+
+impl ListNameSpace for Expr {
+    fn list(self) -> ListExpr {
+        ListExpr { expr: self }
+    }
+}
+
+pub struct ListExpr {
+    pub expr: Expr,
+}
+
+impl ListExpr {
+    pub fn get(self, index: Expr, _strict: bool) -> Expr {
+        Expr::Function {
+            input: vec![self.expr, index],
+            function: FunctionExpr::Get,
+            options: FunctionOptions::default()
+                .with_casting_rules(CastingRules::cast_to_supertypes())
+                .with_fmt_str("get"),
+        }
+    }
+}
+

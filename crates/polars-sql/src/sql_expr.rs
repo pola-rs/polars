@@ -4,13 +4,14 @@
 //!
 //! This module defines:
 //! - all Polars SQL keywords [`all_keywords`]
-//! - all of polars SQL functions [`all_functions`]
+//! - all Polars SQL functions [`all_functions`]
 
 use std::fmt::Display;
 use std::ops::Div;
 
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
+use polars_plan::dsl::expr::expr_dyn_fn::StructNameSpace;
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::typed_lit;
 use polars_time::Duration;

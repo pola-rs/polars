@@ -28,6 +28,7 @@ impl FunctionExpr {
             TemporalExpr(fun) => fun.get_field(mapper),
             #[cfg(feature = "bitwise")]
             Bitwise(fun) => fun.get_field(mapper),
+            FieldAccess | Get => todo!(),
 
             // Other expressions
             Boolean(func) => func.get_field(mapper),

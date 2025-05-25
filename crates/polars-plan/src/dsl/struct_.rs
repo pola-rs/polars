@@ -2,7 +2,7 @@ use super::*;
 use crate::plans::conversion::is_regex_projection;
 
 /// Specialized expressions for Struct dtypes.
-pub struct StructNameSpace(pub(crate) Expr);
+pub struct StructNameSpace(pub Expr);
 
 impl StructNameSpace {
     pub fn field_by_index(self, index: i64) -> Expr {
@@ -64,27 +64,87 @@ impl StructNameSpace {
     }
 
     pub fn with_fields(self, fields: Vec<Expr>) -> PolarsResult<Expr> {
-        fn materialize_field(this: &Expr, field: Expr) -> PolarsResult<Expr> {
-            field.try_map_expr(|e| match e {
-                Expr::Field(names) => {
-                    let this = this.clone().struct_();
-                    Ok(if names.len() == 1 {
-                        this.field_by_name(names[0].as_ref())
-                    } else {
-                        this.field_by_names_impl(names)
-                    })
-                },
+        fn materialize_field(base: Expr, field: Expr) -> PolarsResult<Expr> {
+            match &field {
+                Expr::Alias(_, _) | Expr::Literal(_) | Expr::Column(_) | Expr::Field(_) => Ok(field),
                 Expr::Exclude(_, _) => {
                     polars_bail!(InvalidOperation: "'exclude' not allowed in 'field'")
                 },
-                _ => Ok(e),
-            })
+                _ => field.try_map_expr(|e| match e {
+                    Expr::Field(names) => {
+                        let ns = StructNameSpace(base.clone());
+                        Ok(if names.len() == 1 {
+                            ns.field_by_name(names[0].as_ref())
+                        } else {
+                            ns.field_by_names_impl(names)
+                        })
+                    },
+                    Expr::Exclude(_, _) => {
+                        polars_bail!(InvalidOperation: "'exclude' not allowed in 'field'")
+                    },
+                    _ => Ok(e),
+                }),
+            }
         }
 
-        let s = self.0.clone();
-        self.0.try_map_n_ary(
+        fn flatten_structs(exprs: Vec<Expr>) -> Vec<Expr> {
+            let mut flat = Vec::with_capacity(exprs.len());
+            let mut stack = exprs;
+
+            while let Some(e) = stack.pop() {
+                match e {
+                    Expr::Function {
+                        function:
+                        FunctionExpr::AsStruct
+                        | FunctionExpr::StructExpr(StructFunction::WithFields),
+                        input,
+                        ..
+                    } => {
+                        stack.extend(input.into_iter().rev());
+                    }
+                    other => flat.push(other),
+                }
+            }
+            flat
+        }
+
+        let base = self.0;
+        let flattened_fields = flatten_structs(fields);
+        debug_assert!(
+            {
+                Self::assert_no_struct_wrappers(&flattened_fields);
+                true
+            },
+            "Struct flattening failed"
+        );
+        let base_clone = base.clone();
+
+        base.try_map_n_ary(
             FunctionExpr::StructExpr(StructFunction::WithFields),
-            fields.into_iter().map(|e| materialize_field(&s, e)),
+            flattened_fields.into_iter().map(move |e| materialize_field(base_clone.clone(), e)),
         )
     }
+
+    fn assert_no_struct_wrappers(exprs: &[Expr]) {
+        for e in exprs {
+            match e {
+                Expr::Function {
+                    function:
+                    FunctionExpr::AsStruct
+                    | FunctionExpr::StructExpr(StructFunction::WithFields),
+                    ..
+                } => panic!("Unexpected nested struct expression: {:?}", e),
+                Expr::Function { input, .. } => Self::assert_no_struct_wrappers(input),
+                Expr::Ternary { truthy, falsy, predicate } => {
+                    Self::assert_no_struct_wrappers(&[
+                        truthy.as_ref().clone(),
+                        falsy.as_ref().clone(),
+                        predicate.as_ref().clone(),
+                    ]);
+                }
+                _ => {}
+            }
+        }
+    }
+    
 }
