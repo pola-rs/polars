@@ -1462,7 +1462,7 @@ class DataFrame:
         │ 30  ┆ 60  │
         └─────┴─────┘
 
-        Tuple[Any, str | int] : `df[row_idx, "a"] = value`:
+        tuple[Any, str | int] : `df[row_idx, "a"] = value`:
 
         >>> df[1, "a"] = 100
         >>> df
