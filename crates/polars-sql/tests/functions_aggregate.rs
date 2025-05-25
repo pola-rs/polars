@@ -136,14 +136,20 @@ fn test_corr() {
 
     let expr_corr = pearson_corr(col("a"), col("b")).alias("corr");
     let expr_cov = cov(col("a"), col("b"), 1).alias("cov");
-    let expected = df.clone().select(&[expr_corr, expr_cov]).collect().unwrap();
+    let expr_cov_pop = cov(col("a"), col("b"), 0).alias("cov_pop");
+    let expected = df
+        .clone()
+        .select(&[expr_corr, expr_cov, expr_cov_pop])
+        .collect()
+        .unwrap();
 
     let mut ctx = SQLContext::new();
     ctx.register("df", df);
     let sql = r#"
     SELECT
         CORR(a, b) as corr,
-        COVAR(a, b) as covar
+        COVAR(a, b) as covar,
+        COVAR_POP(a, b) as covar_pop
     FROM df"#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 

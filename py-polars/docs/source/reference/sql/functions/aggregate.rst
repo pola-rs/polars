@@ -122,6 +122,10 @@ COVAR
 ---
 Returns the covariance between two columns.
 
+.. admonition:: Aliases
+    
+   `COVAR`, `COVAR_SAMP`
+
 **Example:**
 
 .. code-block:: python
