@@ -10,6 +10,7 @@ use polars::prelude::*;
 use polars_core::POOL;
 use polars_core::utils::CustomIterTools;
 use polars_utils::pl_str::PlSmallStr;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
@@ -33,6 +34,16 @@ impl PyPolarsNumericType for Int64Type {}
 impl PyPolarsNumericType for Int128Type {}
 impl PyPolarsNumericType for Float32Type {}
 impl PyPolarsNumericType for Float64Type {}
+
+pub(super) fn check_nested_object(dt: &DataType) -> PyResult<()> {
+    if dt.contains_objects() {
+        Err(PyValueError::new_err(
+            "nested objects are not allowed\n\nSet `return_dtype=polars.Object` to use Python's native nesting.",
+        ))
+    } else {
+        Ok(())
+    }
+}
 
 fn iterator_to_struct<'py>(
     py: Python<'py>,
