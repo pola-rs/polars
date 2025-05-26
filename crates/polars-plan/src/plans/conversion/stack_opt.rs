@@ -116,7 +116,7 @@ impl ConversionOptimizer {
 
             // Evaluation expressions still need to do rules on the evaluation expression but the
             // schema is not the same and it is not concluded in the inputs. Therefore, we handl
-            if let AExpr::Eval { expr, evaluation } = expr {
+            if let AExpr::Eval { expr, evaluation, variant: _ } = expr {
                 let schema = if schema_idx == 0 {
                     &schema
                 } else {

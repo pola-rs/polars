@@ -174,6 +174,7 @@ pub enum Expr {
     Eval {
         expr: Arc<Expr>,
         evaluation: Arc<Expr>,
+        variant: EvalVariant,
     },
     SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
@@ -377,9 +378,11 @@ impl Hash for Expr {
             Expr::Eval {
                 expr: input,
                 evaluation,
+                variant,
             } => {
                 input.hash(state);
                 evaluation.hash(state);
+                variant.hash(state);
             },
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -493,6 +496,17 @@ impl Expr {
             options,
         }
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum EvalVariant {
+    /// `list.eval`
+    List,
+
+    /// `cumulative_eval`
+    Cumulative { min_samples: usize },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
