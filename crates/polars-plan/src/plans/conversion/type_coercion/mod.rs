@@ -697,17 +697,10 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             } => {
                 polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype);
 
-                let input_schema = get_schema(lp_arena, lp_node);
-                let (_, type_start) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[0].node(),
-                    &input_schema
-                ));
-                let (_, type_end) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[1].node(),
-                    &input_schema
-                ));
+                let (_, type_start) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_end) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
 
                 if [&type_start, &type_end]
                     .into_iter()
@@ -741,22 +734,12 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-                let (_, type_start) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[0].node(),
-                    &input_schema
-                ));
-                let (_, type_end) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[1].node(),
-                    &input_schema
-                ));
-                let (_, type_step) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[2].node(),
-                    &input_schema
-                ));
+                let (_, type_start) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_end) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                let (_, type_step) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
 
                 if [&type_start, &type_end, &type_step]
                     .into_iter()
