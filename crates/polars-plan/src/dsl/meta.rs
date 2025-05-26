@@ -3,8 +3,8 @@ use std::ops::BitAnd;
 
 use super::*;
 use crate::plans::conversion::is_regex_projection;
-use crate::plans::tree_format::ExprTreeFmtVisitor;
-use crate::plans::visitor::TreeWalker;
+use crate::plans::tree_format::TreeFmtVisitor;
+use crate::plans::visitor::{AexprNode, TreeWalker};
 use crate::prelude::tree_format::TreeFmtVisitorDisplay;
 
 /// Specialized expressions for Categorical dtypes.
@@ -12,10 +12,16 @@ pub struct MetaNameSpace(pub(crate) Expr);
 
 impl MetaNameSpace {
     /// Pop latest expression and return the input(s) of the popped expression.
-    pub fn pop(self) -> PolarsResult<Vec<Expr>> {
+    pub fn pop(self, _schema: Option<&Schema>) -> PolarsResult<Vec<Expr>> {
+        let mut arena = Arena::with_capacity(8);
+        let node = to_aexpr(self.0, &mut arena)?;
+        let ae = arena.get(node);
         let mut inputs = Vec::with_capacity(2);
-        self.0.inputs_rev(&mut inputs);
-        Ok(inputs.into_iter().cloned().collect())
+        ae.inputs_rev(&mut inputs);
+        Ok(inputs
+            .iter()
+            .map(|node| node_to_expr(*node, &arena))
+            .collect())
     }
 
     /// Get the root column names.
@@ -24,8 +30,11 @@ impl MetaNameSpace {
     }
 
     /// A projection that only takes a column or a column + alias.
-    pub fn is_simple_projection(&self) -> bool {
-        self.0.is_simple_projection()
+    pub fn is_simple_projection(&self, _schema: Option<&Schema>) -> bool {
+        let mut arena = Arena::with_capacity(8);
+        to_aexpr(self.0.clone(), &mut arena)
+            .map(|node| aexpr_is_simple_projection(node, &arena))
+            .unwrap_or(false)
     }
 
     /// Get the output name of this expression.
@@ -163,12 +172,18 @@ impl MetaNameSpace {
 
     /// Get a hold to an implementor of the `Display` trait that will format as
     /// the expression as a tree
-    pub fn into_tree_formatter(self, display_as_dot: bool) -> PolarsResult<impl Display> {
-        let mut visitor = ExprTreeFmtVisitor::default();
+    pub fn into_tree_formatter(
+        self,
+        display_as_dot: bool,
+        _schema: Option<&Schema>,
+    ) -> PolarsResult<impl Display> {
+        let mut arena = Default::default();
+        let node = to_aexpr(self.0, &mut arena)?;
+        let mut visitor = TreeFmtVisitor::default();
         if display_as_dot {
-            visitor.visitor.display = TreeFmtVisitorDisplay::DisplayDot;
+            visitor.display = TreeFmtVisitorDisplay::DisplayDot;
         }
-        self.0.visit(&mut visitor, &())?;
+        AexprNode::new(node).visit(&mut visitor, &arena)?;
         Ok(visitor)
     }
 }

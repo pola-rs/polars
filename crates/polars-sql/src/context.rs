@@ -1313,7 +1313,7 @@ impl SQLContext {
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             if let Expr::Alias(expr, alias) = e {
-                if e.clone().meta().is_simple_projection() {
+                if e.clone().meta().is_simple_projection(Some(&schema_before)) {
                     group_key_aliases.insert(alias.as_ref());
                     e = expr
                 } else if let Expr::Function {
