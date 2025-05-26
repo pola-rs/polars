@@ -67,57 +67,6 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
 
             let state = ExecutionState::new();
 
-            let finish = |out: Column| {
-                polars_ensure!(
-                    out.len() <= 1,
-                    ComputeError:
-                    "expected single value, got a result with length {}, {:?}",
-                    out.len(), out,
-                );
-                Ok(out.get(0).unwrap().into_static())
-            };
-
-            let avs = if parallel {
-                POOL.install(|| {
-                    (1..c.len() + 1)
-                        .into_par_iter()
-                        .map(|len| {
-                            let c = c.slice(0, len);
-                            if (len - c.null_count()) >= min_periods {
-                                let df = c.clone().into_frame();
-                                let out = phys_expr.evaluate(&df, &state)?.into_column();
-                                finish(out)
-                            } else {
-                                Ok(AnyValue::Null)
-                            }
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()
-                })?
-            } else {
-                let mut df_container = DataFrame::empty();
-                (1..c.len() + 1)
-                    .map(|len| {
-                        let c = c.slice(0, len);
-                        if (len - c.null_count()) >= min_periods {
-                            unsafe {
-                                df_container.with_column_unchecked(c.into_column());
-                                let out = phys_expr.evaluate(&df_container, &state)?.into_column();
-                                df_container.clear_columns();
-                                finish(out)
-                            }
-                        } else {
-                            Ok(AnyValue::Null)
-                        }
-                    })
-                    .collect::<PolarsResult<Vec<_>>>()?
-            };
-            let c = Column::new(name, avs);
-
-            if c.dtype() != output_field.dtype() {
-                c.cast(output_field.dtype()).map(Some)
-            } else {
-                Ok(Some(c))
-            }
         };
 
         this.apply(

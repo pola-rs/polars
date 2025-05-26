@@ -318,7 +318,11 @@ pub(super) fn to_aexpr_impl(
             offset: to_aexpr_impl_materialized_lit(owned(offset), arena, state)?,
             length: to_aexpr_impl_materialized_lit(owned(length), arena, state)?,
         },
-        Expr::Eval { expr, evaluation } => {
+        Expr::Eval {
+            expr,
+            evaluation,
+            variant,
+        } => {
             let mut evaluation_state = ConversionContext {
                 output_name: OutputName::None,
                 prune_alias: true,
@@ -328,29 +332,38 @@ pub(super) fn to_aexpr_impl(
             let expr = to_aexpr_impl(owned(expr), arena, state)?;
             let evaluation = to_aexpr_impl(owned(evaluation), arena, &mut evaluation_state)?;
 
-            for (_, e) in ArenaExprIter::iter(&&*arena, evaluation) {
-                match e {
-                    #[cfg(feature = "dtype-categorical")]
-                    AExpr::Cast {
-                        dtype: DataType::Categorical(_, _) | DataType::Enum(_, _),
-                        ..
-                    } => {
-                        polars_bail!(
-                            ComputeError: "casting to categorical not allowed in `list.eval`"
-                        )
-                    },
-                    AExpr::Column(name) => {
-                        polars_ensure!(
-                            name.is_empty(),
-                            ComputeError:
-                            "named columns are not allowed in `list.eval`; consider using `element` or `col(\"\")`"
-                        );
-                    },
-                    _ => {},
-                }
+            match variant {
+                EvalVariant::List => {
+                    for (_, e) in ArenaExprIter::iter(&&*arena, evaluation) {
+                        match e {
+                            #[cfg(feature = "dtype-categorical")]
+                            AExpr::Cast {
+                                dtype: DataType::Categorical(_, _) | DataType::Enum(_, _),
+                                ..
+                            } => {
+                                polars_bail!(
+                                    ComputeError: "casting to categorical not allowed in `list.eval`"
+                                )
+                            },
+                            AExpr::Column(name) => {
+                                polars_ensure!(
+                                    name.is_empty(),
+                                    ComputeError:
+                                    "named columns are not allowed in `list.eval`; consider using `element` or `col(\"\")`"
+                                );
+                            },
+                            _ => {},
+                        }
+                    }
+                },
+                EvalVariant::Cumulative { .. } => {},
             }
 
-            AExpr::Eval { expr, evaluation }
+            AExpr::Eval {
+                expr,
+                evaluation,
+                variant,
+            }
         },
         Expr::Len => {
             if state.output_name.is_none() {

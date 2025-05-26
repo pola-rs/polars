@@ -170,7 +170,14 @@ impl fmt::Debug for Expr {
             Eval {
                 expr: input,
                 evaluation,
-            } => write!(f, "{input:?}.list.eval({evaluation:?})"),
+                variant,
+            } => match variant {
+                EvalVariant::List => write!(f, "{input:?}.list.eval({evaluation:?})"),
+                EvalVariant::Cumulative { min_samples } => write!(
+                    f,
+                    "{input:?}.Cumulative_eval({evaluation:?}, min_samples={min_samples}"
+                ),
+            },
             Slice {
                 input,
                 offset,

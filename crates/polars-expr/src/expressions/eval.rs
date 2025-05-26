@@ -4,16 +4,16 @@ use std::sync::{Arc, Mutex};
 use arrow::array::{Array, ListArray};
 use polars_core::POOL;
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
-use polars_core::error::PolarsResult;
+use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    ChunkCast, ChunkNestingUtils, Column, CompatLevel, Field, GroupPositions, GroupsType,
+    AnyValue, ChunkCast, ChunkNestingUtils, Column, CompatLevel, Field, GroupPositions, GroupsType,
     IntoColumn, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_core::utils::CustomIterTools;
-use polars_plan::dsl::Expr;
+use polars_plan::dsl::{EvalVariant, Expr};
 use polars_plan::plans::ExprPushdownGroup;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -26,6 +26,7 @@ use crate::state::ExecutionState;
 pub struct EvalExpr {
     input: Arc<dyn PhysicalExpr>,
     evaluation: Arc<dyn PhysicalExpr>,
+    variant: EvalVariant,
     expr: Expr,
     allow_threading: bool,
     output_field: Field,
@@ -65,6 +66,7 @@ impl EvalExpr {
     pub(crate) fn new(
         input: Arc<dyn PhysicalExpr>,
         evaluation: Arc<dyn PhysicalExpr>,
+        variant: EvalVariant,
         expr: Expr,
         allow_threading: bool,
         output_field: Field,
@@ -76,6 +78,7 @@ impl EvalExpr {
         Self {
             input,
             evaluation,
+            variant,
             expr,
             allow_threading,
             output_field,
@@ -271,6 +274,68 @@ impl EvalExpr {
             self.run_per_sublist(lst, state)
         }
     }
+
+    fn evaluate_cumulative_eval(
+        &self,
+        input: &Column,
+        min_samples: usize,
+        state: &ExecutionState,
+    ) -> PolarsResult<Column> {
+        let finish = |out: Column| {
+            polars_ensure!(
+                out.len() <= 1,
+                ComputeError:
+                "expected single value, got a result with length {}, {:?}",
+                out.len(), out,
+            );
+            Ok(out.get(0).unwrap().into_static())
+        };
+
+        let avs = if self.allow_threading {
+            POOL.install(|| {
+                (1..input.len() + 1)
+                    .into_par_iter()
+                    .map(|len| {
+                        let c = input.slice(0, len);
+                        if (len - c.null_count()) >= min_samples {
+                            let df = c.clone().into_frame();
+                            let out = self.evaluation.evaluate(&df, state)?.into_column();
+                            finish(out)
+                        } else {
+                            Ok(AnyValue::Null)
+                        }
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()
+            })?
+        } else {
+            let mut df_container = DataFrame::empty();
+            (1..input.len() + 1)
+                .map(|len| {
+                    let c = input.slice(0, len);
+                    if (len - c.null_count()) >= min_samples {
+                        unsafe {
+                            df_container.with_column_unchecked(c.into_column());
+                            let out = self
+                                .evaluation
+                                .evaluate(&df_container, state)?
+                                .into_column();
+                            df_container.clear_columns();
+                            finish(out)
+                        }
+                    } else {
+                        Ok(AnyValue::Null)
+                    }
+                })
+                .collect::<PolarsResult<Vec<_>>>()?
+        };
+        let c = Column::new(self.output_field.name().clone(), avs);
+
+        if c.dtype() != self.output_field.dtype() {
+            c.cast(self.output_field.dtype())
+        } else {
+            Ok(c)
+        }
+    }
 }
 
 impl PhysicalExpr for EvalExpr {
@@ -280,8 +345,15 @@ impl PhysicalExpr for EvalExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
-        let lst = input.list()?;
-        self.evaluate_on_list_chunked(lst, state)
+        match self.variant {
+            EvalVariant::List => {
+                let lst = input.list()?;
+                self.evaluate_on_list_chunked(lst, state)
+            },
+            EvalVariant::Cumulative { min_samples } => {
+                self.evaluate_cumulative_eval(&input, min_samples, state)
+            },
+        }
     }
 
     fn evaluate_on_groups<'a>(
@@ -291,8 +363,13 @@ impl PhysicalExpr for EvalExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut input = self.input.evaluate_on_groups(df, groups, state)?;
-        let out = self.evaluate_on_list_chunked(input.get_values().list()?, state)?;
-        input.with_values(out, false, Some(&self.expr))?;
+        match variant {
+            EvalVariant::List => {
+                let out = self.evaluate_on_list_chunked(input.get_values().list()?, state)?;
+                input.with_values(out, false, Some(&self.expr))?;
+            },
+            EvalVariant::Cumulative { min_samples } => {},
+        }
         Ok(input)
     }
 
