@@ -49,6 +49,7 @@ use super::*;
 // - changing a default value of a field or a default enum variant
 // - restricting the range of allowed values a field can have
 pub static DSL_VERSION: (u16, u16) = (7, 0);
+>>>>>>> d5a769ef74 (dsl version)
 static DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
