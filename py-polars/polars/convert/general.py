@@ -476,6 +476,10 @@ def from_arrow(
     This operation will be zero copy for the most part. Types that are not
     supported by Polars may be cast to the closest supported type.
 
+    Note, it is generally recommended to directly use `pl.DataFrame()` or
+    `pl.Series()` instead of `from_arrow()` if the type of the output is
+    known.
+
     Parameters
     ----------
     data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
