@@ -303,7 +303,7 @@ impl Series {
             ArrowDataType::Decimal32(precision, scale) => {
                 feature_gated!("dtype-decimal", {
                     polars_ensure!(*scale <= *precision, InvalidOperation: "invalid decimal precision and scale (prec={precision}, scale={scale})");
-                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals about 38 precision");
+                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals above 38 precision");
 
                     let mut chunks = chunks;
                     for chunk in chunks.iter_mut() {
@@ -332,7 +332,7 @@ impl Series {
             ArrowDataType::Decimal64(precision, scale) => {
                 feature_gated!("dtype-decimal", {
                     polars_ensure!(*scale <= *precision, InvalidOperation: "invalid decimal precision and scale (prec={precision}, scale={scale})");
-                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals about 38 precision");
+                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals above 38 precision");
 
                     let mut chunks = chunks;
                     for chunk in chunks.iter_mut() {
@@ -362,7 +362,7 @@ impl Series {
             | ArrowDataType::Decimal256(precision, scale) => {
                 feature_gated!("dtype-decimal", {
                     polars_ensure!(*scale <= *precision, InvalidOperation: "invalid decimal precision and scale (prec={precision}, scale={scale})");
-                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals about 38 precision");
+                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals above 38 precision");
 
                     // Q? I don't think this is correct for Decimal256?
                     let mut chunks = chunks;
