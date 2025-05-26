@@ -33,8 +33,6 @@ def _change_test_dir() -> Iterator[None]:
     yield
     os.chdir(current_path)
 
-print(snippet_paths[33:36])
-
 @pytest.mark.docs
 @pytest.mark.parametrize("path", snippet_paths)
 @pytest.mark.usefixtures("_change_test_dir")
