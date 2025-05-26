@@ -534,7 +534,7 @@ impl Display for ExprIRDisplay<'_> {
                     write!(f, ".{}()", options.fmt_str)
                 }
             },
-            ListEval { expr, evaluation } => {
+            Eval { expr, evaluation } => {
                 let expr = self.with_root(expr);
                 let evaluation = self.with_root(evaluation);
                 write!(f, "{expr}.list.eval({evaluation})")

@@ -79,7 +79,7 @@ def test_empty_eval_dtype_5546() -> None:
     assert (
         df.limit(0).with_columns(
             pl.col("a")
-            .list.eval(pl.element().filter(pl.first().struct.field("name") == 1))
+            .list.eval(pl.element().filter(pl.element().struct.field("name") == 1))
             .alias("a_filtered")
         )
     ).dtypes == [dtype, dtype]

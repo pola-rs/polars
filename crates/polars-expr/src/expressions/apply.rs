@@ -170,7 +170,6 @@ impl ApplyExpr {
                 // })?
                 let out: ListChunked = POOL.install(|| iter.collect::<PolarsResult<_>>())?;
 
-                dbg!(&self.expr);
                 if self.flags.returns_scalar() {
                     debug_assert_eq!(&DataType::List(Box::new(dtype)), out.dtype());
                 } else {

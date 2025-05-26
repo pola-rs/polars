@@ -318,17 +318,39 @@ pub(super) fn to_aexpr_impl(
             offset: to_aexpr_impl_materialized_lit(owned(offset), arena, state)?,
             length: to_aexpr_impl_materialized_lit(owned(length), arena, state)?,
         },
-        Expr::ListEval { expr, evaluation } => {
+        Expr::Eval { expr, evaluation } => {
             let mut evaluation_state = ConversionContext {
                 output_name: OutputName::None,
                 prune_alias: true,
                 ignore_alias: true,
             };
 
-            AExpr::ListEval {
-                expr: to_aexpr_impl(owned(expr), arena, state)?,
-                evaluation: to_aexpr_impl(owned(evaluation), arena, &mut evaluation_state)?,
+            let expr = to_aexpr_impl(owned(expr), arena, state)?;
+            let evaluation = to_aexpr_impl(owned(evaluation), arena, &mut evaluation_state)?;
+
+            for (_, e) in ArenaExprIter::iter(&&*arena, evaluation) {
+                match e {
+                    #[cfg(feature = "dtype-categorical")]
+                    AExpr::Cast {
+                        dtype: DataType::Categorical(_, _) | DataType::Enum(_, _),
+                        ..
+                    } => {
+                        polars_bail!(
+                            ComputeError: "casting to categorical not allowed in `list.eval`"
+                        )
+                    },
+                    AExpr::Column(name) => {
+                        polars_ensure!(
+                            name.is_empty(),
+                            ComputeError:
+                            "named columns are not allowed in `list.eval`; consider using `element` or `col(\"\")`"
+                        );
+                    },
+                    _ => {},
+                }
             }
+
+            AExpr::Eval { expr, evaluation }
         },
         Expr::Len => {
             if state.output_name.is_none() {

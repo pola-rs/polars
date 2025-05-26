@@ -10,7 +10,7 @@ use polars_core::prelude::{
     ChunkCast, ChunkNestingUtils, Column, CompatLevel, Field, GroupPositions, GroupsType,
     IntoColumn, ListChunked,
 };
-use polars_core::schema::{Schema, SchemaRef};
+use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_core::utils::CustomIterTools;
 use polars_plan::dsl::Expr;
@@ -27,7 +27,6 @@ pub struct EvalExpr {
     input: Arc<dyn PhysicalExpr>,
     evaluation: Arc<dyn PhysicalExpr>,
     expr: Expr,
-    input_schema: SchemaRef,
     allow_threading: bool,
     output_field: Field,
     is_scalar: bool,
@@ -67,7 +66,6 @@ impl EvalExpr {
         input: Arc<dyn PhysicalExpr>,
         evaluation: Arc<dyn PhysicalExpr>,
         expr: Expr,
-        input_schema: SchemaRef,
         allow_threading: bool,
         output_field: Field,
         is_scalar: bool,
@@ -75,12 +73,10 @@ impl EvalExpr {
         evaluation_is_scalar: bool,
         is_user_apply: bool,
     ) -> Self {
-        dbg!(&output_field.name);
         Self {
             input,
             evaluation,
             expr,
-            input_schema,
             allow_threading,
             output_field,
             is_scalar,
@@ -126,7 +122,7 @@ impl EvalExpr {
 
             let df = values.into_frame();
 
-            self.evaluation.evaluate(&df, &state).map(|values| {
+            self.evaluation.evaluate(&df, state).map(|values| {
                 let values = values.take_materialized_series().rechunk().chunks()[0].clone();
 
                 ListArray::<i64>::new(
@@ -170,7 +166,7 @@ impl EvalExpr {
                     .map(|opt_s| {
                         opt_s.and_then(|s| {
                             let df = s.into_frame();
-                            let out = self.evaluation.evaluate(&df, &state);
+                            let out = self.evaluation.evaluate(&df, state);
                             match out {
                                 Ok(s) => Some(s.take_materialized_series()),
                                 Err(e) => {
@@ -191,7 +187,7 @@ impl EvalExpr {
                 .map(|s| {
                     s.and_then(|s| unsafe {
                         df_container.with_column_unchecked(s.into_column());
-                        let out = self.evaluation.evaluate(&df_container, &state);
+                        let out = self.evaluation.evaluate(&df_container, state);
                         df_container.clear_columns();
                         match out {
                             Ok(s) => Some(s.take_materialized_series()),
@@ -265,7 +261,11 @@ impl EvalExpr {
         } && !self.evaluation_is_scalar
         {
             self.run_elementwise_on_values(lst, state)
-        } else if fits_idx_size && lst.null_count() == 0 && !is_user_apply {
+        } else if fits_idx_size
+            && lst.null_count() == 0
+            && !is_user_apply
+            && self.evaluation_is_scalar
+        {
             self.run_on_group_by_engine(lst, state)
         } else {
             self.run_per_sublist(lst, state)
@@ -280,8 +280,8 @@ impl PhysicalExpr for EvalExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
-        let lst = dbg!(input.list()?);
-        dbg!(self.evaluate_on_list_chunked(lst, state))
+        let lst = input.list()?;
+        self.evaluate_on_list_chunked(lst, state)
     }
 
     fn evaluate_on_groups<'a>(

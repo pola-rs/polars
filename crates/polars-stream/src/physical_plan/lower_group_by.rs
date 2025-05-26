@@ -136,10 +136,10 @@ fn try_lower_elementwise_scalar_agg_expr(
             Some(expr_arena.add(AExpr::BinaryExpr { left, op, right }))
         },
 
-        AExpr::ListEval { expr, evaluation } => {
+        AExpr::Eval { expr, evaluation } => {
             let (expr, evaluation) = (*expr, *evaluation);
             let expr = lower_rec!(expr)?;
-            Some(expr_arena.add(AExpr::ListEval { expr, evaluation }))
+            Some(expr_arena.add(AExpr::Eval { expr, evaluation }))
         },
 
         AExpr::Ternary {

@@ -24,7 +24,7 @@ impl AExpr {
 
             Literal(v) => v.is_scalar(),
 
-            ListEval { .. }
+            Eval { .. }
             | Alias(_, _)
             | BinaryExpr { .. }
             | Column(_)

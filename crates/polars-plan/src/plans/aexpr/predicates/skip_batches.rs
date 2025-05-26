@@ -369,7 +369,7 @@ fn aexpr_to_skip_batch_predicate_rec(
             AExpr::Agg(..) => None,
             AExpr::Ternary { .. } => None,
             AExpr::AnonymousFunction { .. } => None,
-            AExpr::ListEval { .. } => None,
+            AExpr::Eval { .. } => None,
             AExpr::Function {
                 input, function, ..
             } => match function {

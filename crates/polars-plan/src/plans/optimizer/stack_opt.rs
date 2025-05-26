@@ -3,8 +3,8 @@ use polars_core::schema::Schema;
 
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::plans::aexpr::AExpr;
-use crate::plans::{get_input, get_schema};
 use crate::plans::ir::IR;
+use crate::plans::{get_input, get_schema};
 use crate::prelude::{Arena, Node};
 
 /// Optimizer that uses a stack and memory arenas in favor of recursion

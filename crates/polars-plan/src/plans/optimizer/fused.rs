@@ -30,10 +30,10 @@ fn check_eligible(
 ) -> PolarsResult<(Option<bool>, Option<Field>)> {
     let field_left = expr_arena
         .get(*left)
-        .to_field(&schema, Context::Default, expr_arena)?;
+        .to_field(schema, Context::Default, expr_arena)?;
     let type_right = expr_arena
         .get(*right)
-        .get_type(&schema, Context::Default, expr_arena)?;
+        .get_type(schema, Context::Default, expr_arena)?;
     let type_left = &field_left.dtype;
     // Exclude literals for now as these will not benefit from fused operations downstream #9857
     // This optimization would also interfere with the `col -> lit` type-coercion rules

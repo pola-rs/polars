@@ -189,7 +189,10 @@ pub enum AExpr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
-    ListEval {
+    /// Evaluates the `evaluation` expression on the output of the `expr`.
+    ///
+    /// Consequently, `expr` is an input and `evaluation` is not and needs a different schema.
+    Eval {
         expr: Node,
 
         /// An expression that is guaranteed to not contain any column reference beyond

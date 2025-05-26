@@ -20,10 +20,14 @@ pub struct ConversionOptimizer {
     pub(super) used_arenas: PlHashSet<u32>,
 }
 
-struct ExtendVec<'a>(&'a mut Vec<(Node, usize)>);
+struct ExtendVec<'a> {
+    out: &'a mut Vec<(Node, usize)>,
+    schema_idx: usize,
+}
 impl Extend<Node> for ExtendVec<'_> {
     fn extend<T: IntoIterator<Item = Node>>(&mut self, iter: T) {
-        self.0.extend(iter.into_iter().map(|n| (n, 0)))
+        self.out
+            .extend(iter.into_iter().map(|n| (n, self.schema_idx)))
     }
 }
 
@@ -61,7 +65,10 @@ impl ConversionOptimizer {
         self.scratch.push((expr, 0));
         // traverse all subexpressions and add to the stack
         let expr = unsafe { expr_arena.get_unchecked(expr) };
-        expr.inputs_rev(&mut ExtendVec(&mut self.scratch));
+        expr.inputs_rev(&mut ExtendVec {
+            out: &mut self.scratch,
+            schema_idx: 0,
+        });
     }
 
     pub fn fill_scratch<N: Borrow<Node>>(&mut self, exprs: &[N], expr_arena: &Arena<AExpr>) {
@@ -107,42 +114,48 @@ impl ConversionOptimizer {
 
             // Evaluation expressions still need to do rules on the evaluation expression but the
             // schema is not the same and it is not concluded in the inputs. Therefore, we handl
-            if let AExpr::ListEval { expr, evaluation } = expr {
+            if let AExpr::Eval { expr, evaluation } = expr {
                 let schema = if schema_idx == 0 {
                     &schema
                 } else {
-                    &self.schemas[schema_idx]
+                    &self.schemas[schema_idx - 1]
                 };
                 let expr = expr_arena
                     .get(*expr)
-                    .get_type(&schema, Context::Default, expr_arena)?;
+                    .get_type(schema, Context::Default, expr_arena)?;
                 let schema =
                     Schema::from_iter([(PlSmallStr::EMPTY, expr.inner_dtype().unwrap().clone())]);
-                let schema_idx = self.schemas.len();
                 self.schemas.push(schema);
-                self.scratch.push((*evaluation, schema_idx));
+                self.scratch.push((*evaluation, self.schemas.len()));
             }
 
             let schema = if schema_idx == 0 {
                 &schema
             } else {
-                &self.schemas[schema_idx]
+                &self.schemas[schema_idx - 1]
             };
 
             if let Some(rule) = &mut self.simplify {
-                while let Some(x) = rule.optimize_expr(expr_arena, current_expr_node, &schema, ctx)? {
+                while let Some(x) =
+                    rule.optimize_expr(expr_arena, current_expr_node, schema, ctx)?
+                {
                     expr_arena.replace(current_expr_node, x);
                 }
             }
             if let Some(rule) = &mut self.coerce {
-                while let Some(x) = rule.optimize_expr(expr_arena, current_expr_node, &schema, ctx)? {
+                while let Some(x) =
+                    rule.optimize_expr(expr_arena, current_expr_node, schema, ctx)?
+                {
                     expr_arena.replace(current_expr_node, x);
                 }
             }
 
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
             // traverse subexpressions and add to the stack
-            expr.inputs_rev(&mut ExtendVec(&mut self.scratch));
+            expr.inputs_rev(&mut ExtendVec {
+                out: &mut self.scratch,
+                schema_idx,
+            });
         }
 
         Ok(())

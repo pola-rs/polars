@@ -106,7 +106,7 @@ impl OptimizationRule for TypeCoercionRule {
                 };
 
                 let input = expr_arena.get(input_expr).clone();
-                if !ctx.has_inputs {
+                if ctx.has_inputs {
                     if let CastOptions::Strict = options {
                         let cast_from = expr_arena
                             .get(input_expr)
@@ -479,7 +479,7 @@ impl OptimizationRule for TypeCoercionRule {
                         )?;
                         for expr in &mut input[i + 1..] {
                             let (_, dtype) =
-                                unpack!(get_aexpr_and_type(expr_arena, expr.node(), &schema));
+                                unpack!(get_aexpr_and_type(expr_arena, expr.node(), schema));
                             cast_expr_ir(
                                 expr,
                                 &dtype,

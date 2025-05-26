@@ -55,7 +55,7 @@ impl AExpr {
                 container.extend(partition_by.iter().rev().cloned());
                 container.extend([*function]);
             },
-            ListEval { expr, evaluation } => {
+            Eval { expr, evaluation } => {
                 // We don't use the evaluation here because it does not contain inputs.
                 _ = evaluation;
                 container.extend([*expr]);
@@ -128,7 +128,7 @@ impl AExpr {
                 }
                 return self;
             },
-            ListEval { expr, evaluation } => {
+            Eval { expr, evaluation } => {
                 *expr = inputs[0];
                 _ = evaluation; // Intentional.
                 return self;

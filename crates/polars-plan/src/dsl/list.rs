@@ -299,7 +299,7 @@ impl ListNameSpace {
     }
 
     pub fn eval<E: Into<Expr>>(self, other: E) -> Expr {
-        Expr::ListEval {
+        Expr::Eval {
             expr: Arc::new(self.0),
             evaluation: Arc::new(other.into()),
         }

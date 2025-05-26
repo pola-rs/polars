@@ -364,7 +364,7 @@ impl AExpr {
 
                 Ok(out)
             },
-            ListEval { expr, evaluation } => {
+            Eval { expr, evaluation } => {
                 let field = ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?;
 
                 let DataType::List(dtype) = field.dtype else {
