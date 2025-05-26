@@ -632,11 +632,11 @@ where
                     let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<SumWindow<_>, _, _>(
-                            values,
-                            offset_iter,
-                            None,
-                        ),
+                        None => _rolling_apply_agg_window_no_nulls::<
+                            SumWindow<T::Native, T::Native>,
+                            _,
+                            _,
+                        >(values, offset_iter, None),
                         Some(validity) => _rolling_apply_agg_window_nulls::<
                             rolling::nulls::SumWindow<_>,
                             _,

@@ -32,25 +32,29 @@ fn sum_kahan<
     }
 }
 
-pub struct SumWindow<'a, T> {
+pub struct SumWindow<'a, T, S> {
     slice: &'a [T],
-    sum: T,
-    err: T,
+    sum: S,
+    err: S,
     last_start: usize,
     last_end: usize,
 }
 
-impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Output = T>>
-    SumWindow<'_, T>
+impl<T, S> SumWindow<'_, T, S>
+where
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast,
+    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     // Kahan summation
     fn add(&mut self, val: T) {
         if T::is_float() && val.is_finite() {
+            let val: S = NumCast::from(val).unwrap();
             let y = val - self.err;
             let new_sum = self.sum + y;
             self.err = (new_sum - self.sum) - y;
             self.sum = new_sum;
         } else {
+            let val: S = NumCast::from(val).unwrap();
             self.sum += val;
         }
     }
@@ -59,21 +63,23 @@ impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Out
         if T::is_float() {
             self.add(T::zeroed() - val)
         } else {
+            let val: S = NumCast::from(val).unwrap();
             self.sum -= val;
         }
     }
 }
 
-impl<
-    'a,
+impl<'a, T, S> RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T, S>
+where
     T: NativeType
         + IsFloat
+        + Sub<Output = T>
         + std::iter::Sum
         + AddAssign
         + SubAssign
-        + Sub<Output = T>
-        + Add<Output = T>,
-> RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T>
+        + Add<Output = T>
+        + NumCast,
+    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     fn new(
         slice: &'a [T],
@@ -85,8 +91,8 @@ impl<
         let (sum, err) = sum_kahan(&slice[start..end]);
         Self {
             slice,
-            sum,
-            err,
+            sum: NumCast::from(sum).unwrap(),
+            err: NumCast::from(err).unwrap(),
             last_start: start,
             last_end: end,
         }
@@ -120,8 +126,8 @@ impl<
         if recompute_sum {
             let vals = self.slice.get_unchecked(start..end);
             let (sum, err) = sum_kahan(vals);
-            self.sum = sum;
-            self.err = err;
+            self.sum = NumCast::from(sum).unwrap();
+            self.err = NumCast::from(err).unwrap();
         }
         // add entering values.
         else {
@@ -130,7 +136,7 @@ impl<
             }
         }
         self.last_end = end;
-        Some(self.sum)
+        NumCast::from(self.sum)
     }
 }
 
@@ -153,14 +159,14 @@ where
         + Num,
 {
     match (center, weights) {
-        (true, None) => rolling_apply_agg_window::<SumWindow<_>, _, _>(
+        (true, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
             values,
             window_size,
             min_periods,
             det_offsets_center,
             None,
         ),
-        (false, None) => rolling_apply_agg_window::<SumWindow<_>, _, _>(
+        (false, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
             values,
             window_size,
             min_periods,
