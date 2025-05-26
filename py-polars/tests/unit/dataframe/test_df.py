@@ -3249,3 +3249,29 @@ def test_nan_to_null() -> None:
     )
 
     assert_frame_equal(df1, df2)
+
+
+# Below 3 tests for https://github.com/pola-rs/polars/issues/17879
+
+
+def test_with_columns_dict_direct_typeerror() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1)
+    with pytest.raises(
+        TypeError, match="Cannot pass a dictionary as a single positional argument"
+    ):
+        df.with_columns(data)
+
+
+def test_with_columns_dict_unpacking() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1).with_columns(**data)
+    expected = pl.DataFrame({"a": [2]})
+    assert df.equals(expected)
+
+
+def test_with_columns_generator_alias() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1).with_columns(expr.alias(name) for name, expr in data.items())
+    expected = pl.DataFrame({"a": [2]})
+    assert df.equals(expected)

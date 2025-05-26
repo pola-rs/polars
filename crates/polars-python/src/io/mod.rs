@@ -28,8 +28,7 @@ impl PyScanOptions<'_> {
                 "raise" => ExtraColumnsPolicy::Raise,
                 v => {
                     return Err(PyValueError::new_err(format!(
-                        "unknown option for extra_columns: {}",
-                        v
+                        "unknown option for extra_columns: {v}"
                     )));
                 },
             },
@@ -78,8 +77,7 @@ fn extract_cast_options_impl(ob: Bound<'_, PyAny>) -> PyResult<CastColumnsPolicy
         "forbid" => false,
         v => {
             return Err(PyValueError::new_err(format!(
-                "unknown option for integer_cast: {}",
-                v
+                "unknown option for integer_cast: {v}"
             )));
         },
     };
@@ -96,8 +94,7 @@ fn extract_cast_options_impl(ob: Bound<'_, PyAny>) -> PyResult<CastColumnsPolicy
             "downcast" => float_downcast = true,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown option for float_cast: {}",
-                    v
+                    "unknown option for float_cast: {v}"
                 )));
             },
         }
@@ -117,8 +114,7 @@ fn extract_cast_options_impl(ob: Bound<'_, PyAny>) -> PyResult<CastColumnsPolicy
             "convert-timezone" => datetime_convert_timezone = true,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown option for datetime_cast: {}",
-                    v
+                    "unknown option for datetime_cast: {v}"
                 )));
             },
         };
@@ -134,8 +130,7 @@ fn extract_cast_options_impl(ob: Bound<'_, PyAny>) -> PyResult<CastColumnsPolicy
         "raise" => MissingColumnsPolicy::Raise,
         v => {
             return Err(PyValueError::new_err(format!(
-                "unknown option for missing_struct_fields: {}",
-                v
+                "unknown option for missing_struct_fields: {v}"
             )));
         },
     };
@@ -148,8 +143,7 @@ fn extract_cast_options_impl(ob: Bound<'_, PyAny>) -> PyResult<CastColumnsPolicy
         "raise" => ExtraColumnsPolicy::Raise,
         v => {
             return Err(PyValueError::new_err(format!(
-                "unknown option for extra_struct_fields: {}",
-                v
+                "unknown option for extra_struct_fields: {v}"
             )));
         },
     };
@@ -179,8 +173,7 @@ fn parse_multiple_options(
         }
     } else {
         return Err(PyValueError::new_err(format!(
-            "unknown type for {}: {}",
-            parameter_name, py_object
+            "unknown type for {parameter_name}: {py_object}"
         )));
     }
 

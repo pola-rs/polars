@@ -10,7 +10,7 @@ use allocator::create_allocator_capsule;
 use polars_python::batched_csv::PyBatchedCsv;
 #[cfg(feature = "catalog")]
 use polars_python::catalog::unity::PyCatalogClient;
-#[cfg(feature = "polars_cloud")]
+#[cfg(any(feature = "polars_cloud_client", feature = "polars_cloud_server"))]
 use polars_python::cloud;
 use polars_python::dataframe::PyDataFrame;
 use polars_python::expr::PyExpr;
@@ -396,10 +396,10 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     .unwrap();
 
     // Cloud
-    #[cfg(feature = "polars_cloud")]
+    #[cfg(feature = "polars_cloud_client")]
     m.add_wrapped(wrap_pyfunction!(cloud::prepare_cloud_plan))
         .unwrap();
-    #[cfg(feature = "polars_cloud")]
+    #[cfg(any(feature = "polars_cloud_client", feature = "polars_cloud_server"))]
     m.add_wrapped(wrap_pyfunction!(cloud::_execute_ir_plan_with_gpu))
         .unwrap();
 

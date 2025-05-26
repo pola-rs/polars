@@ -356,7 +356,7 @@ def test_projection_join_names_9955() -> None:
         how="inner",
     )
 
-    q = q.select(batting.collect_schema())
+    q = q.select(*batting.collect_schema().keys())
 
     assert q.collect().schema == {
         "playerID": pl.String,
