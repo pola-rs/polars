@@ -157,6 +157,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
+name = "arrow-format"
+version = "0.8.1"
+source = "git+https://github.com/pola-rs/arrow-format.git?rev=refs%2Fpull%2F2%2Fhead#0041f52ab1b3f8a3fad4a09229424378d8d7fa94"
+dependencies = [
+ "planus",
+ "prost",
+ "prost-derive",
+ "serde",
+]
+
+[[package]]
 name = "async-channel"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2931,11 +2942,12 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
 name = "planus"
-version = "0.3.1"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc1691dd09e82f428ce8d6310bd6d5da2557c82ff17694d2a32cad7242aea89f"
+checksum = "3daf8e3d4b712abe1d690838f6e29fb76b76ea19589c4afa39ec30e12f62af71"
 dependencies = [
  "array-init-cursor",
+ "hashbrown 0.15.3",
 ]
 
 [[package]]
@@ -2971,6 +2983,7 @@ dependencies = [
 name = "polars-arrow"
 version = "0.48.1"
 dependencies = [
+ "arrow-format",
  "async-stream",
  "atoi_simd",
  "avro-schema",
@@ -2988,7 +3001,6 @@ dependencies = [
  "lz4",
  "num-traits",
  "polars-arrow",
- "polars-arrow-format",
  "polars-error",
  "polars-schema",
  "polars-utils",
@@ -3002,18 +3014,6 @@ dependencies = [
  "tokio",
  "version_check",
  "zstd",
-]
-
-[[package]]
-name = "polars-arrow-format"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19b0ef2474af9396b19025b189d96e992311e6a47f90c53cd998b36c4c64b84c"
-dependencies = [
- "planus",
- "prost",
- "prost-derive",
- "serde",
 ]
 
 [[package]]
@@ -3109,10 +3109,10 @@ dependencies = [
 name = "polars-error"
 version = "0.48.1"
 dependencies = [
+ "arrow-format",
  "avro-schema",
  "object_store",
  "parking_lot",
- "polars-arrow-format",
  "pyo3",
  "regex",
  "signal-hook",
