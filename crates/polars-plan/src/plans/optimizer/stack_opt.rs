@@ -62,7 +62,7 @@ impl StackOptimizer {
                     ctx.in_io_plugin = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::IOPlugin);
                 };
                 ctx.in_filter = matches!(plan, IR::Filter { .. });
-                ctx.has_inputs = !get_input(ir_arena, current_ir_node).is_empty();
+                ctx.has_inputs = !get_input(lp_arena, current_node).is_empty();
 
                 // process the expressions on the stack and apply optimizations.
                 while let Some(current_expr_node) = exprs.pop() {
