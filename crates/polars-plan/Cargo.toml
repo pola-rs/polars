@@ -208,7 +208,8 @@ month_end = ["polars-time/month_end"]
 offset_by = ["polars-time/offset_by"]
 
 bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
-polars_cloud = ["serde"]
+polars_cloud_client = ["serde"]
+polars_cloud_server = ["serde", "polars-utils/polars_cloud_server"]
 ir_serde = ["serde", "polars-utils/ir_serde"]
 
 [package.metadata.docs.rs]
