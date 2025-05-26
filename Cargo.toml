@@ -94,7 +94,7 @@ tokio-util = "0.7.8"
 unicode-normalization = "0.1.24"
 unicode-reverse = "1.0.8"
 url = "2.4"
-uuid = { version = "1.15.1", features = ["v4", "rng-getrandom"] }
+uuid = { version = "1.15.1", features = ["v4", "js"] }
 version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 zstd = "0.13"
