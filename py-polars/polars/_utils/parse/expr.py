@@ -126,7 +126,7 @@ def _parse_inputs_as_iterable(
             "Cannot pass a dictionary as a single positional argument.\n"
             "If you merely want the *keys*, use:\n"
             "  • df.method(*your_dict.keys())\n"
-            "If you need the key–value pairs, use one of:\n"
+            "If you need the key value pairs, use one of:\n"
             "  • unpack as keywords:    df.method(**your_dict)\n"
             "  • build expressions:     df.method(expr.alias(k) for k, expr in your_dict.items())"
         )
