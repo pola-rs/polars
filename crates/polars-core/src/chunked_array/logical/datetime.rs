@@ -1,13 +1,10 @@
 use std::str::FromStr;
 
-#[cfg(feature = "timezones")]
 use arrow::legacy::kernels::convert_to_naive_local;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
-#[cfg(feature = "timezones")]
 use chrono::NaiveDateTime;
-#[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 
 use super::*;
@@ -80,32 +77,9 @@ impl LogicalType for DatetimeChunked {
                     },
                 }
             },
-            #[cfg(all(feature = "dtype-date", not(feature = "timezones")))]
+            #[cfg(feature = "dtype-date")]
             Date => {
-                let cast_to_date = |tu_in_day: i64| {
-                    let mut dt = self
-                        .phys
-                        .apply_values(|v| v.div_euclid(tu_in_day))
-                        .cast_with_options(&Int32, cast_options)
-                        .unwrap()
-                        .into_date()
-                        .into_series();
-                    dt.set_sorted_flag(self.is_sorted_flag());
-                    Ok(dt)
-                };
-                match self.time_unit() {
-                    Nanoseconds => cast_to_date(NS_IN_DAY),
-                    Microseconds => cast_to_date(US_IN_DAY),
-                    Milliseconds => cast_to_date(MS_IN_DAY),
-                }
-            },
-            #[cfg(all(feature = "dtype-date", feature = "timezones"))]
-            Date => {
-                let from_tz = self
-                    .time_zone()
-                    .as_ref()
-                    .unwrap_or(&TimeZone::UTC)
-                    .to_chrono()?;
+                let has_timezone = self.time_zone().is_some();
                 let timestamp_to_datetime: fn(i64) -> NaiveDateTime = match self.time_unit() {
                     TimeUnit::Milliseconds => timestamp_ms_to_datetime,
                     TimeUnit::Microseconds => timestamp_us_to_datetime,
@@ -118,9 +92,13 @@ impl LogicalType for DatetimeChunked {
                 };
                 let ambiguous = StringChunked::from_iter(std::iter::once("raise"));
                 let cast_to_date = |tu_in_day: i64| {
-                    let mut dt = self
-                        .phys
-                        .apply_values(|timestamp| {
+                    let mut dt = if has_timezone {
+                        let from_tz = self
+                            .time_zone()
+                            .as_ref()
+                            .unwrap_or(&TimeZone::UTC)
+                            .to_chrono()?;
+                        self.phys.apply_values(|timestamp| {
                             let ndt = timestamp_to_datetime(timestamp);
                             let res = convert_to_naive_local(
                                 &from_tz,
@@ -134,10 +112,13 @@ impl LogicalType for DatetimeChunked {
                                 .unwrap()
                                 .div_euclid(tu_in_day)
                         })
-                        .cast_with_options(&Int32, cast_options)
-                        .unwrap()
-                        .into_date()
-                        .into_series();
+                    } else {
+                        self.phys.apply_values(|v| v.div_euclid(tu_in_day))
+                    }
+                    .cast_with_options(&Int32, cast_options)
+                    .unwrap()
+                    .into_date()
+                    .into_series();
 
                     dt.set_sorted_flag(self.is_sorted_flag());
                     Ok(dt)

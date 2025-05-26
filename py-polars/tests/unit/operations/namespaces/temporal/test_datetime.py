@@ -1522,7 +1522,7 @@ def test_literal_from_timedelta(value: time, dtype: pl.Duration | None) -> None:
 
 def test_cast_datetime_to_date_timezone_22864() -> None:
     df = pl.DataFrame({"start": datetime(2021, 1, 1, tzinfo=ZoneInfo("Europe/Berlin"))})
+    expected = pl.DataFrame({"start": [date(2021, 1, 1)]})
 
-    expected: pl.DataFrame = df.select(pl.col("start").dt.date())
     actual: pl.DataFrame = df.select(pl.col("start").cast(pl.Date))
     assert_frame_equal(expected, actual)
