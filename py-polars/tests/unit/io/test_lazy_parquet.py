@@ -649,7 +649,7 @@ def test_parquet_unaligned_schema_read(tmp_path: Path) -> None:
     for df, path in zip(dfs, paths):
         df.write_parquet(path)
 
-    lf = pl.scan_parquet(paths)
+    lf = pl.scan_parquet(paths, extra_columns="ignore")
 
     assert_frame_equal(
         lf.select("a").collect(engine="in-memory"),
@@ -670,6 +670,8 @@ def test_parquet_unaligned_schema_read(tmp_path: Path) -> None:
         pl.scan_parquet(paths[:2]).collect(engine="in-memory"),
         pl.DataFrame({"a": [1, 2], "b": [10, 11]}),
     )
+
+    lf = pl.scan_parquet(paths, extra_columns="raise")
 
     with pytest.raises(pl.exceptions.SchemaError):
         lf.collect(engine="in-memory")
@@ -794,7 +796,12 @@ def test_parquet_schema_arg(
         with pytest.raises(pl.exceptions.SchemaError):
             lf.collect(engine="streaming" if streaming else "in-memory")
 
-    lf = pl.scan_parquet(paths, parallel=parallel, schema=schema).select("a")
+    lf = pl.scan_parquet(
+        paths,
+        parallel=parallel,
+        schema=schema,
+        extra_columns="ignore",
+    ).select("a")
 
     assert_frame_equal(
         lf.collect(engine="in-memory"),
