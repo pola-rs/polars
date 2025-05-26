@@ -637,13 +637,13 @@ where
                             _,
                             _,
                         >(values, offset_iter, None),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::SumWindow<_>,
-                            _,
-                            _,
-                        >(
-                            values, validity, offset_iter, None
-                        ),
+                        Some(validity) => {
+                            _rolling_apply_agg_window_nulls::<
+                                rolling::nulls::SumWindow<T::Native, T::Native>,
+                                _,
+                                _,
+                            >(values, validity, offset_iter, None)
+                        },
                     };
                     Self::from(arr).into_series()
                 } else {
