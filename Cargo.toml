@@ -121,10 +121,8 @@ polars-time = { version = "0.48.1", path = "crates/polars-time", default-feature
 polars-utils = { version = "0.48.1", path = "crates/polars-utils", default-features = false }
 
 [workspace.dependencies.arrow-format]
-# package = "polars-arrow-format"
-# version = "0.1.0"
-git = "https://github.com/pola-rs/arrow-format.git"
-rev = "refs/pull/2/head"
+package = "polars-arrow-format"
+version = "0.2.0"
 
 [workspace.dependencies.arrow]
 package = "polars-arrow"

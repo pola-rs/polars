@@ -157,17 +157,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
-name = "arrow-format"
-version = "0.8.1"
-source = "git+https://github.com/pola-rs/arrow-format.git?rev=refs%2Fpull%2F2%2Fhead#0041f52ab1b3f8a3fad4a09229424378d8d7fa94"
-dependencies = [
- "planus",
- "prost",
- "prost-derive",
- "serde",
-]
-
-[[package]]
 name = "async-channel"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2983,7 +2972,6 @@ dependencies = [
 name = "polars-arrow"
 version = "0.48.1"
 dependencies = [
- "arrow-format",
  "async-stream",
  "atoi_simd",
  "avro-schema",
@@ -3001,6 +2989,7 @@ dependencies = [
  "lz4",
  "num-traits",
  "polars-arrow",
+ "polars-arrow-format",
  "polars-error",
  "polars-schema",
  "polars-utils",
@@ -3014,6 +3003,18 @@ dependencies = [
  "tokio",
  "version_check",
  "zstd",
+]
+
+[[package]]
+name = "polars-arrow-format"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "863c04c514be005eced7db7053e20d49f7e7a58048a282fa52dfea1fd5434e78"
+dependencies = [
+ "planus",
+ "prost",
+ "prost-derive",
+ "serde",
 ]
 
 [[package]]
@@ -3109,10 +3110,10 @@ dependencies = [
 name = "polars-error"
 version = "0.48.1"
 dependencies = [
- "arrow-format",
  "avro-schema",
  "object_store",
  "parking_lot",
+ "polars-arrow-format",
  "pyo3",
  "regex",
  "signal-hook",
