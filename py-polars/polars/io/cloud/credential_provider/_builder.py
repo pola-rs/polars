@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import abc
-from functools import partial
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import polars._utils.logging
 from polars._utils.logging import eprint, verbose
@@ -178,43 +177,6 @@ class AutoInit(CredentialProviderBuilderImpl):
         return self.cls.__name__
 
 
-# AWS auto-init needs its own class for a bit of extra logic.
-class AutoInitAWS(CredentialProviderBuilderImpl):
-    def __init__(
-        self,
-        initializer: Callable[[], CredentialProviderAWS],
-    ) -> None:
-        self.initializer = initializer
-        self.profile_name = initializer.keywords["profile_name"]  # type: ignore[attr-defined]
-
-    def __call__(self) -> CredentialProviderAWS | None:
-        try:
-            provider = self.initializer()
-            provider()  # call it to potentially catch EmptyCredentialError
-
-        except (ImportError, CredentialProviderAWS.EmptyCredentialError) as e:
-            # Check it is ImportError, EmptyCredentialError could be because the
-            # profile was loaded but did not contain any credentials.
-            if isinstance(e, ImportError) and self.profile_name:
-                # Hard error as we are unable to load the requested profile
-                # without CredentialProviderAWS (the rust-side does not load
-                # aws_profile).
-                msg = f"cannot load requested aws_profile '{self.profile_name}': {e!r}"
-                raise polars.exceptions.ComputeError(msg) from e
-
-            if verbose():
-                eprint(f"failed to auto-initialize {self.provider_repr}: {e!r}")
-
-        else:
-            return provider
-
-        return None
-
-    @property
-    def provider_repr(self) -> str:
-        return "CredentialProviderAWS"
-
-
 class UserProvidedGCPToken(CredentialProvider):
     """User-provided GCP token in storage_options."""
 
@@ -257,7 +219,7 @@ def _init_credential_provider_builder(
             return credential_provider
 
         if credential_provider != "auto":
-            msg = f"The `credential_provider` parameter of `{caller_name}` is considered unstable."
+            msg = f"the `credential_provider` parameter of `{caller_name}` is considered unstable."
             issue_unstable_warning(msg)
 
             return CredentialProviderBuilder.from_initialized_provider(
@@ -318,6 +280,7 @@ def _init_credential_provider_builder(
             profile = None
             default_region = None
             unhandled_key = None
+            has_endpoint_url = False
 
             if storage_options is not None:
                 for k, v in storage_options.items():
@@ -330,11 +293,17 @@ def _init_credential_provider_builder(
                         default_region = v
                     elif k in {"aws_profile", "profile"}:
                         profile = v
+                    elif k in {
+                        "aws_endpoint",
+                        "aws_endpoint_url",
+                        "endpoint",
+                        "endpoint_url",
+                    }:
+                        has_endpoint_url = True
                     elif k in OBJECT_STORE_CLIENT_OPTIONS:
                         continue
                     else:
-                        # We assume some sort of access key was given, so we
-                        # just dispatch to the rust side.
+                        # We assume this is some sort of access key
                         unhandled_key = k
 
             if unhandled_key is not None:
@@ -345,15 +314,13 @@ def _init_credential_provider_builder(
                     )
                     raise ValueError(msg)
 
-                return None
-
             return CredentialProviderBuilder(
-                AutoInitAWS(
-                    partial(
-                        CredentialProviderAWS,
-                        profile_name=profile,
-                        region_name=region or default_region,
-                    )
+                AutoInit(
+                    CredentialProviderAWS,
+                    profile_name=profile,
+                    region_name=region or default_region,
+                    _auto_init_unhandled_key=unhandled_key,
+                    _storage_options_has_endpoint_url=has_endpoint_url,
                 )
             )
 

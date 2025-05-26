@@ -166,7 +166,7 @@ impl PhysicalExpr for AggregationExpr {
         let keep_name = ac.get_values().name().clone();
 
         // Literals cannot be aggregated except for implode.
-        polars_ensure!((!matches!(ac.agg_state(), AggState::Literal(_)) || matches!(self.agg_type.groupby, GroupByMethod::Implode)), ComputeError: "cannot aggregate a literal");
+        polars_ensure!(!matches!(ac.agg_state(), AggState::Literal(_)), ComputeError: "cannot aggregate a literal");
 
         if let AggregatedScalar(_) = ac.agg_state() {
             match self.agg_type.groupby {
@@ -604,7 +604,7 @@ impl PartitionedAggregation for AggregationExpr {
                 offsets.push(length_so_far);
 
                 let mut process_group = |ca: ListChunked| -> PolarsResult<()> {
-                    let s = ca.explode()?;
+                    let s = ca.explode(false)?;
                     length_so_far += s.len() as i64;
                     offsets.push(length_so_far);
                     values.push(s.chunks()[0].clone());

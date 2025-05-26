@@ -88,6 +88,12 @@ def read_csv(
     r"""
     Read a CSV file into a DataFrame.
 
+    .. versionchanged:: 0.20.31
+        The `dtypes` parameter was renamed `schema_overrides`.
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
     Parameters
     ----------
     source
@@ -206,7 +212,7 @@ def read_csv(
         allocation needed.
 
         .. deprecated:: 1.10.0
-            Is a no-op.
+            This parameter is now a no-op.
     eol_char
         Single byte end of line character (default: `\n`). When encountering a file
         with windows line endings (`\r\n`), one can go with the default `\n`. The extra
@@ -763,6 +769,12 @@ def read_csv_batched(
     determine the file chunks. After that, work will only be done if `next_batches`
     is called, which will return a list of `n` frames of the given batch size.
 
+    .. versionchanged:: 0.20.31
+        The `dtypes` parameter was renamed `schema_overrides`.
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
+
     Parameters
     ----------
     source
@@ -1031,16 +1043,18 @@ def read_csv_batched(
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_csv(
-    source: str
-    | Path
-    | IO[str]
-    | IO[bytes]
-    | bytes
-    | list[str]
-    | list[Path]
-    | list[IO[str]]
-    | list[IO[bytes]]
-    | list[bytes],
+    source: (
+        str
+        | Path
+        | IO[str]
+        | IO[bytes]
+        | bytes
+        | list[str]
+        | list[Path]
+        | list[IO[str]]
+        | list[IO[bytes]]
+        | list[bytes]
+    ),
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -1083,6 +1097,12 @@ def scan_csv(
     This allows the query optimizer to push down predicates and
     projections to the scan level, thereby potentially reducing
     memory overhead.
+
+    .. versionchanged:: 0.20.31
+        The `dtypes` parameter was renamed `schema_overrides`.
+    .. versionchanged:: 0.20.4
+        * The `row_count_name` parameter was renamed `row_index_name`.
+        * The `row_count_offset` parameter was renamed `row_index_offset`.
 
     Parameters
     ----------

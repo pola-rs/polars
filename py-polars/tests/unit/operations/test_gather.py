@@ -225,7 +225,7 @@ def test_gather_agg_group_update_scalar() -> None:
         .lazy()
         .group_by("gid", maintain_order=True)
         .agg(x_at_gid=pl.col("x").gather(pl.col("gid").last()).first())
-        .collect(no_optimization=True, simplify_expression=False)
+        .collect(optimizations=pl.QueryOptFlags.none())
     )
     expected = pl.DataFrame({"gid": [0, 1], "x_at_gid": ["0:0", "1:1"]})
     assert_frame_equal(df, expected)
@@ -241,7 +241,7 @@ def test_gather_agg_group_update_literal() -> None:
         .lazy()
         .group_by("gid", maintain_order=True)
         .agg(x_at_0=pl.col("x").gather(0).first())
-        .collect(no_optimization=True, simplify_expression=False)
+        .collect(optimizations=pl.QueryOptFlags.none())
     )
     expected = pl.DataFrame({"gid": [0, 1], "x_at_0": ["0:0", "1:0"]})
     assert_frame_equal(df, expected)
@@ -257,7 +257,7 @@ def test_gather_agg_group_update_negative() -> None:
         .lazy()
         .group_by("gid", maintain_order=True)
         .agg(x_last=pl.col("x").gather(-1).first())
-        .collect(no_optimization=True, simplify_expression=False)
+        .collect(optimizations=pl.QueryOptFlags.none())
     )
     expected = pl.DataFrame({"gid": [0, 1], "x_last": ["0:1", "1:0"]})
     assert_frame_equal(df, expected)
@@ -278,7 +278,59 @@ def test_gather_agg_group_update_multiple() -> None:
         .lazy()
         .group_by("gid", maintain_order=True)
         .agg(x_at_0=pl.col("x").gather([0, 1]).first())
-        .collect(no_optimization=True, simplify_expression=False)
+        .collect(optimizations=pl.QueryOptFlags.none())
     )
     expected = pl.DataFrame({"gid": [0, 1], "x_at_0": ["0:0", "1:0"]})
     assert_frame_equal(df, expected)
+
+
+def test_get_agg_group_update_literal_21610() -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "group": [100, 100, 100, 200, 200, 200],
+                "value": [1, 2, 3, 2, 3, 4],
+            }
+        )
+        .group_by("group", maintain_order=True)
+        .agg(pl.col("value") - pl.col("value").get(0))
+    )
+
+    expected = pl.DataFrame({"group": [100, 200], "value": [[0, 1, 2], [0, 1, 2]]})
+    assert_frame_equal(df, expected)
+
+
+def test_get_agg_group_update_scalar_21610() -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "group": [100, 100, 100, 200, 200, 200],
+                "value": [1, 2, 3, 2, 3, 4],
+            }
+        )
+        .group_by("group", maintain_order=True)
+        .agg(pl.col("value") - pl.col("value").get(pl.col("value").first()))
+    )
+
+    expected = pl.DataFrame({"group": [100, 200], "value": [[-1, 0, 1], [-2, -1, 0]]})
+    assert_frame_equal(df, expected)
+
+
+def test_get_dt_truncate_21533() -> None:
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.datetime_range(
+                pl.datetime(2016, 1, 1),
+                pl.datetime(2017, 12, 31),
+                interval="1d",
+                eager=True,
+            ),
+        }
+    ).with_columns(
+        month=pl.col.timestamp.dt.month(),
+    )
+
+    report = df.group_by("month", maintain_order=True).agg(
+        trunc_ts=pl.col.timestamp.get(0).dt.truncate("1m")
+    )
+    assert report.shape == (12, 2)

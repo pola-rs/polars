@@ -23,7 +23,7 @@ impl InMemorySinkNode {
 
 impl ComputeNode for InMemorySinkNode {
     fn name(&self) -> &str {
-        "in_memory_sink"
+        "in-memory-sink"
     }
 
     fn update_state(

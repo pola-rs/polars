@@ -26,14 +26,14 @@ impl DatetimeChunked {
     }
 
     pub fn time_unit(&self) -> TimeUnit {
-        match self.2.as_ref().unwrap() {
+        match self.dtype.as_ref().unwrap() {
             DataType::Datetime(tu, _) => *tu,
             _ => unreachable!(),
         }
     }
 
     pub fn time_zone(&self) -> &Option<TimeZone> {
-        match self.2.as_ref().unwrap() {
+        match self.dtype.as_ref().unwrap() {
             DataType::Datetime(_, tz) => tz,
             _ => unreachable!(),
         }
@@ -120,36 +120,36 @@ impl DatetimeChunked {
         let mut out = self.clone();
         out.set_time_unit(tu);
 
-        use TimeUnit::*;
+        use crate::datatypes::time_unit::TimeUnit::*;
         match (current_unit, tu) {
             (Nanoseconds, Microseconds) => {
-                let ca = (&self.0).wrapping_floor_div_scalar(1_000);
-                out.0 = ca;
+                let ca = (&self.phys).wrapping_floor_div_scalar(1_000);
+                out.phys = ca;
                 out
             },
             (Nanoseconds, Milliseconds) => {
-                let ca = (&self.0).wrapping_floor_div_scalar(1_000_000);
-                out.0 = ca;
+                let ca = (&self.phys).wrapping_floor_div_scalar(1_000_000);
+                out.phys = ca;
                 out
             },
             (Microseconds, Nanoseconds) => {
-                let ca = &self.0 * 1_000;
-                out.0 = ca;
+                let ca = &self.phys * 1_000;
+                out.phys = ca;
                 out
             },
             (Microseconds, Milliseconds) => {
-                let ca = (&self.0).wrapping_floor_div_scalar(1_000);
-                out.0 = ca;
+                let ca = (&self.phys).wrapping_floor_div_scalar(1_000);
+                out.phys = ca;
                 out
             },
             (Milliseconds, Nanoseconds) => {
-                let ca = &self.0 * 1_000_000;
-                out.0 = ca;
+                let ca = &self.phys * 1_000_000;
+                out.phys = ca;
                 out
             },
             (Milliseconds, Microseconds) => {
-                let ca = &self.0 * 1_000;
-                out.0 = ca;
+                let ca = &self.phys * 1_000;
+                out.phys = ca;
                 out
             },
             (Nanoseconds, Nanoseconds)
@@ -160,7 +160,7 @@ impl DatetimeChunked {
 
     /// Change the underlying [`TimeUnit`]. This does not modify the data.
     pub fn set_time_unit(&mut self, time_unit: TimeUnit) {
-        self.2 = Some(Datetime(time_unit, self.time_zone().clone()))
+        self.dtype = Some(Datetime(time_unit, self.time_zone().clone()))
     }
 
     /// Change the underlying [`TimeZone`]. This does not modify the data.
@@ -168,7 +168,7 @@ impl DatetimeChunked {
     /// already been validated.
     #[cfg(feature = "timezones")]
     pub fn set_time_zone(&mut self, time_zone: TimeZone) -> PolarsResult<()> {
-        self.2 = Some(Datetime(self.time_unit(), Some(time_zone)));
+        self.dtype = Some(Datetime(self.time_unit(), Some(time_zone)));
         Ok(())
     }
 
@@ -181,7 +181,7 @@ impl DatetimeChunked {
         time_unit: TimeUnit,
         time_zone: TimeZone,
     ) -> PolarsResult<()> {
-        self.2 = Some(Datetime(time_unit, Some(time_zone)));
+        self.dtype = Some(Datetime(time_unit, Some(time_zone)));
         Ok(())
     }
 }

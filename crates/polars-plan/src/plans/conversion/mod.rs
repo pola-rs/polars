@@ -70,6 +70,7 @@ impl IR {
                     scan_type,
                     output_schema: _,
                     unified_scan_args,
+                    id: _,
                 } = ir.clone()
                 else {
                     unreachable!()
@@ -301,6 +302,17 @@ impl IR {
                             },
                         },
                         cloud_options: f.cloud_options,
+                        per_partition_sort_by: f.per_partition_sort_by.map(|sort_by| {
+                            sort_by
+                                .into_iter()
+                                .map(|s| SortColumn {
+                                    expr: s.expr.to_expr(expr_arena),
+                                    descending: s.descending,
+                                    nulls_last: s.descending,
+                                })
+                                .collect()
+                        }),
+                        finish_callback: f.finish_callback,
                     }),
                 };
                 DslPlan::Sink { input, payload }

@@ -105,17 +105,14 @@ async fn resolve_negative_slice(config: &MultiFileReaderConfig) -> PolarsResult<
                         })?;
 
                 if verbose {
-                    eprintln!(
-                        "resolve_negative_slice(): init scan source {}",
-                        scan_source_idx
-                    );
+                    eprintln!("resolve_negative_slice(): init scan source {scan_source_idx}");
                 }
 
                 reader.initialize().await?;
                 PolarsResult::Ok(reader)
             }))
         })
-        .buffered(config.n_readers_pre_init.min(config.sources.len()));
+        .buffered(config.n_readers_pre_init());
 
     let n_rows_needed = IdxSize::try_from(offset_from_end).unwrap();
     let slice_len_idxsize = IdxSize::try_from(slice_len).unwrap_or(IdxSize::MAX);

@@ -21,9 +21,9 @@ pub static mut CALL_DF_UDF_PYTHON: Option<
     fn(s: DataFrame, lambda: &PyObject) -> PolarsResult<DataFrame>,
 > = None;
 
-pub use polars_utils::python_function::{
-    PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON3_VERSION, PythonFunction,
-};
+pub use polars_utils::python_function::PythonFunction;
+#[cfg(feature = "serde")]
+pub use polars_utils::python_function::{PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON3_VERSION};
 
 pub struct PythonUdfExpression {
     python_function: PyObject,
@@ -84,7 +84,7 @@ impl PythonUdfExpression {
                 .getattr("loads")
                 .unwrap();
             let arg = (PyBytes::new(py, remainder),);
-            let python_function = pickle.call1(arg).map_err(from_pyerr)?;
+            let python_function = pickle.call1(arg)?;
             Ok(Arc::new(Self::new(
                 python_function.into(),
                 output_type,
@@ -93,10 +93,6 @@ impl PythonUdfExpression {
             )) as Arc<dyn ColumnsUdf>)
         })
     }
-}
-
-fn from_pyerr(e: PyErr) -> PolarsError {
-    PolarsError::ComputeError(format!("error raised in python: {e}").into())
 }
 
 impl DataFrameUdf for polars_utils::python_function::PythonFunction {
@@ -147,13 +143,10 @@ impl ColumnsUdf for PythonUdfExpression {
             let (dumped, use_cloudpickle) = match pickle_result {
                 Ok(dumped) => (dumped, false),
                 Err(_) => {
-                    let cloudpickle = PyModule::import(py, "cloudpickle")
-                        .map_err(from_pyerr)?
+                    let cloudpickle = PyModule::import(py, "cloudpickle")?
                         .getattr("dumps")
                         .unwrap();
-                    let dumped = cloudpickle
-                        .call1((self.python_function.clone_ref(py),))
-                        .map_err(from_pyerr)?;
+                    let dumped = cloudpickle.call1((self.python_function.clone_ref(py),))?;
                     (dumped, true)
                 },
             };
@@ -233,21 +226,27 @@ impl FunctionOutputField for PythonGetOutput {
 
 impl Expr {
     pub fn map_python(self, func: PythonUdfExpression, agg_list: bool) -> Expr {
-        let (collect_groups, name) = if agg_list {
-            (ApplyOptions::ApplyList, MAP_LIST_NAME)
-        } else if func.is_elementwise {
-            (ApplyOptions::ElementWise, "python_udf")
+        let name = if agg_list {
+            MAP_LIST_NAME
         } else {
-            (ApplyOptions::GroupWise, "python_udf")
+            "python_udf"
         };
 
         let returns_scalar = func.returns_scalar;
         let return_dtype = func.output_type.clone();
 
         let output_field = PythonGetOutput::new(return_dtype);
-        let output_type = SpecialEq::new(Arc::new(output_field) as Arc<dyn FunctionOutputField>);
+        let output_type = LazySerde::Deserialized(SpecialEq::new(
+            Arc::new(output_field) as Arc<dyn FunctionOutputField>
+        ));
 
         let mut flags = FunctionFlags::default() | FunctionFlags::OPTIONAL_RE_ENTRANT;
+        if agg_list {
+            flags |= FunctionFlags::APPLY_LIST;
+        }
+        if func.is_elementwise {
+            flags.set_elementwise();
+        }
         if returns_scalar {
             flags |= FunctionFlags::RETURNS_SCALAR;
         }
@@ -257,7 +256,6 @@ impl Expr {
             function: new_column_udf(func),
             output_type,
             options: FunctionOptions {
-                collect_groups,
                 fmt_str: name,
                 flags,
                 ..Default::default()

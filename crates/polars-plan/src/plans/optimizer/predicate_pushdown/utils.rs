@@ -161,6 +161,7 @@ fn get_maybe_aliased_projection_to_input_name_map(
     }
 }
 
+#[derive(Debug)]
 pub enum PushdownEligibility {
     Full,
     // Partial can happen when there are window exprs.
@@ -171,10 +172,14 @@ pub enum PushdownEligibility {
 #[allow(clippy::type_complexity)]
 pub fn pushdown_eligibility(
     projection_nodes: &[ExprIR],
-    new_predicates: &[ExprIR],
+    // Predicates that need to be checked (key, expr_ir)
+    new_predicates: &[(&PlSmallStr, ExprIR)],
+    // Note: These predicates have already passed checks.
     acc_predicates: &PlHashMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
+    maintain_errors: bool,
+    input_ir: &IR,
 ) -> PolarsResult<(PushdownEligibility, PlHashMap<PlSmallStr, PlSmallStr>)> {
     scratch.clear();
     let ae_nodes_stack = scratch;
@@ -191,77 +196,80 @@ pub fn pushdown_eligibility(
     // Important: Names inserted into any data structure by this function are
     // all non-aliased.
     // This function returns false if pushdown cannot be performed.
-    let process_projection_or_predicate =
-        |ae_nodes_stack: &mut UnitVec<Node>,
-         has_window: &mut bool,
-         common_window_inputs: &mut PlHashSet<PlSmallStr>| {
-            debug_assert_eq!(ae_nodes_stack.len(), 1);
+    let process_projection_or_predicate = |ae_nodes_stack: &mut UnitVec<Node>,
+                                           has_window: &mut bool,
+                                           common_window_inputs: &mut PlHashSet<PlSmallStr>|
+     -> ExprPushdownGroup {
+        debug_assert_eq!(ae_nodes_stack.len(), 1);
 
-            let mut partition_by_names = PlHashSet::<PlSmallStr>::new();
+        let mut partition_by_names = PlHashSet::<PlSmallStr>::new();
+        let mut expr_pushdown_eligibility = ExprPushdownGroup::Pushable;
 
-            while let Some(node) = ae_nodes_stack.pop() {
-                let ae = expr_arena.get(node);
+        while let Some(node) = ae_nodes_stack.pop() {
+            let ae = expr_arena.get(node);
 
-                match ae {
-                    AExpr::Window {
-                        partition_by,
-                        #[cfg(feature = "dynamic_group_by")]
-                        options,
-                        // The function is not checked for groups-sensitivity because
-                        // it is applied over the windows.
-                        ..
-                    } => {
-                        #[cfg(feature = "dynamic_group_by")]
-                        if matches!(options, WindowType::Rolling(..)) {
-                            return false;
-                        };
+            match ae {
+                AExpr::Window {
+                    partition_by,
+                    #[cfg(feature = "dynamic_group_by")]
+                    options,
+                    // The function is not checked for groups-sensitivity because
+                    // it is applied over the windows.
+                    ..
+                } => {
+                    #[cfg(feature = "dynamic_group_by")]
+                    if matches!(options, WindowType::Rolling(..)) {
+                        return ExprPushdownGroup::Barrier;
+                    };
 
-                        partition_by_names.clear();
-                        partition_by_names.reserve(partition_by.len());
+                    partition_by_names.clear();
+                    partition_by_names.reserve(partition_by.len());
 
-                        for node in partition_by.iter() {
-                            // Only accept col()
-                            if let AExpr::Column(name) = expr_arena.get(*node) {
-                                partition_by_names.insert(name.clone());
-                            } else {
-                                // Nested windows can also qualify for push down.
-                                // e.g.:
-                                // * expr1 = min().over(A)
-                                // * expr2 = sum().over(A, expr1)
-                                // Both exprs window over A, so predicates referring
-                                // to A can still be pushed.
-                                ae_nodes_stack.push(*node);
-                            }
-                        }
-
-                        if !*has_window {
-                            for name in partition_by_names.drain() {
-                                common_window_inputs.insert(name);
-                            }
-
-                            *has_window = true;
+                    for node in partition_by.iter() {
+                        // Only accept col()
+                        if let AExpr::Column(name) = expr_arena.get(*node) {
+                            partition_by_names.insert(name.clone());
                         } else {
-                            common_window_inputs.retain(|k| partition_by_names.contains(k))
+                            // Nested windows can also qualify for push down.
+                            // e.g.:
+                            // * expr1 = min().over(A)
+                            // * expr2 = sum().over(A, expr1)
+                            // Both exprs window over A, so predicates referring
+                            // to A can still be pushed.
+                            ae_nodes_stack.push(*node);
+                        }
+                    }
+
+                    if !*has_window {
+                        for name in partition_by_names.drain() {
+                            common_window_inputs.insert(name);
                         }
 
-                        // Cannot push into disjoint windows:
-                        // e.g.:
-                        // * sum().over(A)
-                        // * sum().over(B)
-                        if common_window_inputs.is_empty() {
-                            return false;
-                        }
-                    },
-                    _ => {
-                        if !permits_filter_pushdown(ae_nodes_stack, ae, expr_arena) {
-                            return false;
-                        }
-                    },
-                }
+                        *has_window = true;
+                    } else {
+                        common_window_inputs.retain(|k| partition_by_names.contains(k))
+                    }
+
+                    // Cannot push into disjoint windows:
+                    // e.g.:
+                    // * sum().over(A)
+                    // * sum().over(B)
+                    if common_window_inputs.is_empty() {
+                        return ExprPushdownGroup::Barrier;
+                    }
+                },
+                _ => {
+                    if let ExprPushdownGroup::Barrier =
+                        expr_pushdown_eligibility.update_with_expr(ae_nodes_stack, ae, expr_arena)
+                    {
+                        return ExprPushdownGroup::Barrier;
+                    }
+                },
             }
+        }
 
-            true
-        };
+        expr_pushdown_eligibility
+    };
 
     for e in projection_nodes.iter() {
         if let Some((alias, column_name)) =
@@ -274,16 +282,20 @@ pub fn pushdown_eligibility(
             continue;
         }
 
-        modified_projection_columns.insert(e.output_name().clone());
+        if !does_not_modify_rec(e.node(), expr_arena) {
+            modified_projection_columns.insert(e.output_name().clone());
+        }
 
         debug_assert!(ae_nodes_stack.is_empty());
         ae_nodes_stack.push(e.node());
 
-        if !process_projection_or_predicate(
+        if process_projection_or_predicate(
             ae_nodes_stack,
             &mut has_window,
             &mut common_window_inputs,
-        ) {
+        )
+        .blocks_pushdown(maintain_errors)
+        {
             return Ok((PushdownEligibility::NoPushdown, alias_to_col_map));
         }
     }
@@ -312,25 +324,23 @@ pub fn pushdown_eligibility(
         common_window_inputs = new;
     }
 
-    for e in new_predicates.iter() {
+    for (_, e) in new_predicates.iter() {
         debug_assert!(ae_nodes_stack.is_empty());
         ae_nodes_stack.push(e.node());
 
-        if !process_projection_or_predicate(
+        let pd_group = process_projection_or_predicate(
             ae_nodes_stack,
             &mut has_window,
             &mut common_window_inputs,
-        ) {
+        );
+
+        if pd_group.blocks_pushdown(maintain_errors) {
             return Ok((PushdownEligibility::NoPushdown, alias_to_col_map));
         }
     }
 
     // Should have returned early.
     debug_assert!(!common_window_inputs.is_empty() || !has_window);
-
-    if !has_window && projection_nodes.is_empty() {
-        return Ok((PushdownEligibility::Full, alias_to_col_map));
-    }
 
     // Note: has_window is constant.
     let can_use_column = |col: &str| {
@@ -341,33 +351,69 @@ pub fn pushdown_eligibility(
         }
     };
 
-    let to_local = acc_predicates
-        .iter()
+    // For an allocation-free dyn iterator
+    let mut check_predicates_all: Option<_> = None;
+    let mut check_predicates_only_new: Option<_> = None;
+
+    // We only need to check the new predicates if no columns were renamed and there are no window
+    // aggregations.
+    if !has_window
+        && modified_projection_columns.is_empty()
+        && !(
+            // If there is only a single predicate, it may be fallible
+            acc_predicates.len() == 1 && ir_removes_rows(input_ir)
+        )
+    {
+        check_predicates_only_new = Some(new_predicates.iter().map(|(key, expr)| (*key, expr)))
+    } else {
+        check_predicates_all = Some(acc_predicates.iter())
+    }
+
+    let to_check_iter: &mut dyn Iterator<Item = (&PlSmallStr, &ExprIR)> = check_predicates_all
+        .as_mut()
+        .map(|x| x as _)
+        .unwrap_or_else(|| check_predicates_only_new.as_mut().map(|x| x as _).unwrap());
+
+    let mut allow_single_fallible = !ir_removes_rows(input_ir);
+    ae_nodes_stack.clear();
+
+    let to_local = to_check_iter
         .filter_map(|(key, e)| {
             debug_assert!(ae_nodes_stack.is_empty());
 
             ae_nodes_stack.push(e.node());
 
-            let mut can_pushdown = true;
+            let mut uses_blocked_name = false;
+            let mut pd_group = ExprPushdownGroup::Pushable;
 
             while let Some(node) = ae_nodes_stack.pop() {
                 let ae = expr_arena.get(node);
 
-                can_pushdown &= if let AExpr::Column(name) = ae {
-                    can_use_column(name)
+                if let AExpr::Column(name) = ae {
+                    uses_blocked_name |= !can_use_column(name);
                 } else {
-                    // May still contain window expressions that need to be blocked.
-                    permits_filter_pushdown(ae_nodes_stack, ae, expr_arena)
+                    pd_group.update_with_expr(ae_nodes_stack, ae, expr_arena);
                 };
 
-                if !can_pushdown {
+                if uses_blocked_name {
                     break;
                 };
             }
 
             ae_nodes_stack.clear();
 
-            if !can_pushdown {
+            if uses_blocked_name || matches!(pd_group, ExprPushdownGroup::Barrier) {
+                allow_single_fallible = false;
+            }
+
+            if uses_blocked_name
+                || matches!(
+                    // Note: We do not use `blocks_pushdown()`, this fallible indicates that the
+                    // predicate we are checking to push is fallible.
+                    pd_group,
+                    ExprPushdownGroup::Fallible | ExprPushdownGroup::Barrier
+                )
+            {
                 Some(key.clone())
             } else {
                 None
@@ -375,12 +421,52 @@ pub fn pushdown_eligibility(
         })
         .collect::<Vec<_>>();
 
-    match to_local.len() {
-        0 => Ok((PushdownEligibility::Full, alias_to_col_map)),
+    Ok(match to_local.len() {
+        0 => (PushdownEligibility::Full, alias_to_col_map),
         len if len == acc_predicates.len() => {
-            Ok((PushdownEligibility::NoPushdown, alias_to_col_map))
+            if len == 1 && allow_single_fallible {
+                (PushdownEligibility::Full, alias_to_col_map)
+            } else {
+                (PushdownEligibility::NoPushdown, alias_to_col_map)
+            }
         },
-        _ => Ok((PushdownEligibility::Partial { to_local }, alias_to_col_map)),
+        _ => (PushdownEligibility::Partial { to_local }, alias_to_col_map),
+    })
+}
+
+/// Note: This may give false positives as it is a conservative function.
+pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
+    use IR::*;
+
+    // NOTE
+    // At time of writing predicate pushdown runs before slice pushdown, so
+    // some of the below checks for slice may never be hit.
+
+    match ir {
+        DataFrameScan { .. }
+        | SimpleProjection { .. }
+        | Select { .. }
+        | Cache { .. }
+        | HStack { .. }
+        | HConcat { .. } => false,
+
+        GroupBy { options, .. } => options.slice.is_some(),
+
+        Sort { slice, .. } => slice.is_some(),
+
+        #[cfg(feature = "merge_sorted")]
+        MergeSorted { .. } => false,
+
+        #[cfg(feature = "python")]
+        PythonScan { options } => options.n_rows.is_some(),
+
+        // Scan currently may evaluate the predicate on the statistics of the
+        // entire files list.
+        Scan {
+            unified_scan_args, ..
+        } => unified_scan_args.pre_slice.is_some(),
+
+        _ => true,
     }
 }
 

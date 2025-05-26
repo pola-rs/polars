@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
+from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
 from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
@@ -14,6 +14,7 @@ from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Iterable
 
     from polars import Expr
@@ -26,6 +27,11 @@ if TYPE_CHECKING:
         Roll,
         TimeUnit,
     )
+
+    if sys.version_info >= (3, 13):
+        from warnings import deprecated
+    else:
+        from typing_extensions import deprecated  # noqa: TC004
 
 
 class ExprDateTimeNameSpace:
@@ -51,6 +57,9 @@ class ExprDateTimeNameSpace:
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+
+        .. versionchanged:: 1.12.0
+            Parameters after `n` should now be passed as keyword arguments.
 
         Parameters
         ----------
@@ -166,16 +175,20 @@ class ExprDateTimeNameSpace:
         Divide the date/datetime range into buckets.
 
         Each date/datetime is mapped to the start of its bucket using the corresponding
-        local datetime. Note that weekly buckets start on Monday.
-        Ambiguous results are localised using the DST offset of the original timestamp -
-        for example, truncating `'2022-11-06 01:30:00 CST'` by `'1h'` results in
-        `'2022-11-06 01:00:00 CST'`, whereas truncating `'2022-11-06 01:30:00 CDT'` by
-        `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
+        local datetime. Note that:
+
+        - Weekly buckets start on Monday.
+        - All other buckets start on the Unix epoch (1970-01-01).
+        - Ambiguous results are localised using the DST offset of the original
+          timestamp - for example, truncating `'2022-11-06 01:30:00 CST'` by
+          `'1h'` results in `'2022-11-06 01:00:00 CST'`, whereas truncating
+          `'2022-11-06 01:30:00 CDT'` by `'1h'` results in
+          `'2022-11-06 01:00:00 CDT'`.
 
         Parameters
         ----------
         every
-            Every interval start and period length
+            The size of each bucket.
 
         Notes
         -----
@@ -197,7 +210,6 @@ class ExprDateTimeNameSpace:
         These strings can be combined:
 
         - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
-
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -1376,13 +1388,15 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_date())
 
-    @deprecate_function("Use `dt.replace_time_zone(None)` instead.", version="0.20.4")
+    @deprecated(
+        "`dt.datetime` is deprecated; use `dt.replace_time_zone(None)` instead."
+    )
     def datetime(self) -> Expr:
         """
         Return datetime.
 
         .. deprecated:: 0.20.4
-            Use `dt.replace_time_zone(None)` instead.
+            Use the `dt.replace_time_zone(None)` method instead.
 
         Applies to Datetime columns.
 
@@ -1780,9 +1794,9 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_timestamp(time_unit))
 
-    @deprecate_function(
-        "Instead, first cast to `Int64` and then cast to the desired data type.",
-        version="0.20.5",
+    @deprecated(
+        "`dt.with_time_unit` is deprecated; instead, first cast "
+        "to `Int64` and then cast to the desired data type."
     )
     def with_time_unit(self, time_unit: TimeUnit) -> Expr:
         """

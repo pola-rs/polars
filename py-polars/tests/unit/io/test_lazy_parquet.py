@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from collections import OrderedDict
 from pathlib import Path
 from threading import Thread
@@ -587,7 +589,9 @@ def test_predicate_slice_pushdown_row_index_20485(tmp_path: Path) -> None:
     ldf = pl.scan_parquet(file_path)
     sliced_df = ldf.with_row_index().slice(slice_start, slice_len).collect()
     sliced_df_no_pushdown = (
-        ldf.with_row_index().slice(slice_start, slice_len).collect(slice_pushdown=False)
+        ldf.with_row_index()
+        .slice(slice_start, slice_len)
+        .collect(optimizations=pl.QueryOptFlags(slice_pushdown=False))
     )
 
     expected_index = list(range(slice_start, slice_start + slice_len))
@@ -645,7 +649,7 @@ def test_parquet_unaligned_schema_read(tmp_path: Path) -> None:
     for df, path in zip(dfs, paths):
         df.write_parquet(path)
 
-    lf = pl.scan_parquet(paths)
+    lf = pl.scan_parquet(paths, extra_columns="ignore")
 
     assert_frame_equal(
         lf.select("a").collect(engine="in-memory"),
@@ -666,6 +670,8 @@ def test_parquet_unaligned_schema_read(tmp_path: Path) -> None:
         pl.scan_parquet(paths[:2]).collect(engine="in-memory"),
         pl.DataFrame({"a": [1, 2], "b": [10, 11]}),
     )
+
+    lf = pl.scan_parquet(paths, extra_columns="raise")
 
     with pytest.raises(pl.exceptions.SchemaError):
         lf.collect(engine="in-memory")
@@ -790,7 +796,12 @@ def test_parquet_schema_arg(
         with pytest.raises(pl.exceptions.SchemaError):
             lf.collect(engine="streaming" if streaming else "in-memory")
 
-    lf = pl.scan_parquet(paths, parallel=parallel, schema=schema).select("a")
+    lf = pl.scan_parquet(
+        paths,
+        parallel=parallel,
+        schema=schema,
+        extra_columns="ignore",
+    ).select("a")
 
     assert_frame_equal(
         lf.collect(engine="in-memory"),
@@ -803,7 +814,7 @@ def test_parquet_schema_arg(
 
     with pytest.raises(
         pl.exceptions.SchemaError,
-        match="data type mismatch for column b: expected: i8, found: i64",
+        match="data type mismatch for column b: incoming: Int64 != target: Int8",
     ):
         lf.collect(engine="streaming" if streaming else "in-memory")
 
@@ -885,3 +896,133 @@ def test_scan_parquet_streaming_row_index_19606(
             {"index": [0, 1], "x": [0, 1]}, schema={"index": pl.UInt32, "x": pl.Int64}
         ),
     )
+
+
+def test_scan_parquet_prefilter_panic_22452() -> None:
+    # This is, the easiest way to control the threadpool size so that it is stable.
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import os
+
+os.environ["POLARS_MAX_THREADS"] = "2"
+
+import io
+
+import polars as pl
+from polars.testing import assert_frame_equal
+
+assert pl.thread_pool_size() == 2
+
+f = io.BytesIO()
+
+df = pl.DataFrame({x: 1 for x in ["a", "b", "c", "d", "e"]})
+df.write_parquet(f)
+f.seek(0)
+
+assert_frame_equal(
+    pl.scan_parquet(f, parallel="prefiltered")
+    .filter(pl.col(c) == 1 for c in ["a", "b", "c"])
+    .collect(),
+    df,
+)
+
+print("OK", end="")
+""",
+        ],
+    )
+
+    assert out == b"OK"
+
+
+def test_scan_parquet_in_mem_to_streaming_dispatch_deadlock_22641() -> None:
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import os
+
+os.environ["POLARS_MAX_THREADS"] = "1"
+os.environ["POLARS_VERBOSE"] = "1"
+
+import io
+import sys
+from threading import Thread
+
+import polars as pl
+
+assert pl.thread_pool_size() == 1
+
+f = io.BytesIO()
+pl.DataFrame({"x": 1}).write_parquet(f)
+
+q = (
+    pl.scan_parquet(f)
+    .filter(pl.sum_horizontal(pl.col("x"), pl.col("x"), pl.col("x")) >= 0)
+    .join(pl.scan_parquet(f), on="x", how="left")
+)
+
+results = [pl.DataFrame(), pl.DataFrame(), pl.DataFrame(), pl.DataFrame()]
+
+
+def run():
+    # Also test just a single scan
+    pl.scan_parquet(f).collect()
+
+    print("QUERY-FENCE", file=sys.stderr)
+
+    results[0] = q.collect()
+
+    print("QUERY-FENCE", file=sys.stderr)
+
+    results[1] = pl.concat([q, q, q]).collect().head(1)
+
+    print("QUERY-FENCE", file=sys.stderr)
+
+    results[2] = pl.collect_all([q, q, q])[0]
+
+    print("QUERY-FENCE", file=sys.stderr)
+
+    results[3] = pl.collect_all(3 * [pl.concat(3 * [q])])[0].head(1)
+
+
+t = Thread(target=run, daemon=True)
+t.start()
+t.join(5)
+
+assert [x.equals(pl.DataFrame({"x": 1})) for x in results] == [True, True, True, True]
+
+print("OK", end="", file=sys.stderr)
+""",
+        ],
+        stderr=subprocess.STDOUT,
+    )
+
+    assert out.endswith(b"OK")
+
+    def ensure_caches_dropped(verbose_log: str) -> None:
+        cache_hit_prefix = "CACHE HIT: cache id: "
+
+        ids_hit = {
+            x[len(cache_hit_prefix) :]
+            for x in verbose_log.splitlines()
+            if x.startswith(cache_hit_prefix)
+        }
+
+        cache_drop_prefix = "CACHE DROP: cache id: "
+
+        ids_dropped = {
+            x[len(cache_drop_prefix) :]
+            for x in verbose_log.splitlines()
+            if x.startswith(cache_drop_prefix)
+        }
+
+        assert ids_hit == ids_dropped
+
+    out_str = out.decode()
+
+    for logs in out_str.split("QUERY-FENCE"):
+        ensure_caches_dropped(logs)

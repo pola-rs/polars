@@ -236,7 +236,7 @@ def json_normalize(
     max_level += 1
 
     if isinstance(data, Sequence) and len(data) == 0:
-        return DataFrame()
+        return DataFrame(schema=schema)
     elif isinstance(data, Mapping):
         data = [data]
     elif isinstance(data, Iterable) and not isinstance(data, str):  # type: ignore[redundant-expr]

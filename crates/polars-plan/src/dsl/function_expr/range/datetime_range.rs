@@ -1,5 +1,5 @@
 #[cfg(feature = "timezones")]
-use polars_core::chunked_array::temporal::parse_time_zone;
+use polars_core::prelude::time_zone::parse_time_zone;
 use polars_core::prelude::*;
 use polars_time::{ClosedWindow, Duration, datetime_range_impl};
 
@@ -227,7 +227,7 @@ impl FieldsMapper<'_> {
     pub(super) fn map_to_datetime_range_dtype(
         &self,
         time_unit: Option<&TimeUnit>,
-        time_zone: Option<&PlSmallStr>,
+        time_zone: Option<&TimeZone>,
     ) -> PolarsResult<DataType> {
         let data_dtype = self.map_to_supertype()?.dtype;
 
@@ -241,6 +241,7 @@ impl FieldsMapper<'_> {
             Some(tu) => *tu,
             None => data_tu,
         };
+
         let tz = time_zone.cloned().or(data_tz);
 
         Ok(DataType::Datetime(tu, tz))

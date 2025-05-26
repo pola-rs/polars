@@ -13,12 +13,8 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str, ignore_nulls: bool) -
             ignore_nulls,
         }
         .into(),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
-            ..Default::default()
-        },
+        options: FunctionOptions::elementwise()
+            .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
     }
 }
 
@@ -61,11 +57,8 @@ pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult
     Ok(Expr::Function {
         input: s,
         function: FunctionExpr::ListExpr(ListFunction::Concat),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
-            ..Default::default()
-        },
+        options: FunctionOptions::elementwise()
+            .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
     })
 }
 
@@ -77,11 +70,8 @@ pub fn concat_arr(input: Vec<Expr>) -> PolarsResult<Expr> {
         Ok(Expr::Function {
             input,
             function: FunctionExpr::ArrayExpr(ArrayFunction::Concat),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
-                ..Default::default()
-            },
+            options: FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
         })
     })
 }

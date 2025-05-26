@@ -218,12 +218,9 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
                 time_unit,
                 time_zone,
             }),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
-                fmt_str: "datetime",
-                ..Default::default()
-            },
+            options: FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+                .with_fmt_str("datetime"),
         }),
         // TODO: follow left-hand rule in Polars 2.0.
         PlSmallStr::from_static("datetime"),
@@ -413,6 +410,7 @@ impl DurationArgs {
 }
 
 /// Construct a column of [`Duration`] from the provided [`DurationArgs`]
+#[cfg(feature = "dtype-duration")]
 pub fn duration(args: DurationArgs) -> Expr {
     if let Some(e) = args.as_literal() {
         return e;
@@ -429,10 +427,6 @@ pub fn duration(args: DurationArgs) -> Expr {
             args.nanoseconds,
         ],
         function: FunctionExpr::TemporalExpr(TemporalFunction::Duration(args.time_unit)),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default(),
-            ..Default::default()
-        },
+        options: FunctionOptions::elementwise(),
     }
 }

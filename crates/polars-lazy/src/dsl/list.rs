@@ -1,7 +1,9 @@
+use std::borrow::Cow;
 use std::sync::Mutex;
 
-use arrow::array::ValueSize;
+use arrow::array::{Array, ListArray, ValueSize};
 use arrow::legacy::utils::CustomIterTools;
+use polars_core::POOL;
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::prelude::*;
 use polars_plan::constants::MAP_LIST_NAME;
@@ -65,22 +67,23 @@ fn run_per_sublist(
     let mut err = None;
     let mut ca: ListChunked = if parallel {
         let m_err = Mutex::new(None);
-        let ca: ListChunked = lst
-            .par_iter()
-            .map(|opt_s| {
-                opt_s.and_then(|s| {
-                    let df = s.into_frame();
-                    let out = phys_expr.evaluate(&df, &state);
-                    match out {
-                        Ok(s) => Some(s.take_materialized_series()),
-                        Err(e) => {
-                            *m_err.lock().unwrap() = Some(e);
-                            None
-                        },
-                    }
+        let ca: ListChunked = POOL.install(|| {
+            lst.par_iter()
+                .map(|opt_s| {
+                    opt_s.and_then(|s| {
+                        let df = s.into_frame();
+                        let out = phys_expr.evaluate(&df, &state);
+                        match out {
+                            Ok(s) => Some(s.take_materialized_series()),
+                            Err(e) => {
+                                *m_err.lock().unwrap() = Some(e);
+                                None
+                            },
+                        }
+                    })
                 })
-            })
-            .collect_ca_with_dtype(PlSmallStr::EMPTY, output_field.dtype.clone());
+                .collect_ca_with_dtype(PlSmallStr::EMPTY, output_field.dtype.clone())
+        });
         err = m_err.into_inner().unwrap();
         ca
     } else {
@@ -148,9 +151,95 @@ fn run_on_group_by_engine(
     Ok(Some(out.with_name(name).into_column()))
 }
 
+fn run_elementwise_on_values(
+    lst: &ListChunked,
+    expr: &Expr,
+    parallel: bool,
+    output_field: Field,
+) -> PolarsResult<Column> {
+    if lst.chunks().is_empty() {
+        return Ok(Column::new_empty(output_field.name, &output_field.dtype));
+    }
+
+    let phys_expr = prepare_expression_for_context(
+        PlSmallStr::EMPTY,
+        expr,
+        lst.inner_dtype(),
+        Context::Default,
+    )?;
+
+    let lst = lst
+        .trim_lists_to_normalized_offsets()
+        .map_or(Cow::Borrowed(lst), Cow::Owned);
+
+    let output_arrow_dtype = output_field.dtype().clone().to_arrow(CompatLevel::newest());
+    let output_arrow_dtype_physical = output_arrow_dtype.underlying_physical_type();
+
+    let state = ExecutionState::new();
+
+    let apply_to_chunk = |arr: &dyn Array| {
+        let arr: &ListArray<i64> = arr.as_any().downcast_ref().unwrap();
+
+        let values = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr.values().clone()],
+                lst.inner_dtype(),
+            )
+        };
+
+        let df = values.into_frame();
+
+        phys_expr.evaluate(&df, &state).map(|values| {
+            let values = values.take_materialized_series().rechunk().chunks()[0].clone();
+
+            ListArray::<i64>::new(
+                output_arrow_dtype_physical.clone(),
+                arr.offsets().clone(),
+                values,
+                arr.validity().cloned(),
+            )
+            .boxed()
+        })
+    };
+
+    let chunks = if parallel && lst.chunks().len() > 1 {
+        POOL.install(|| {
+            lst.chunks()
+                .into_par_iter()
+                .map(|x| apply_to_chunk(&**x))
+                .collect::<PolarsResult<Vec<Box<dyn Array>>>>()
+        })?
+    } else {
+        lst.chunks()
+            .iter()
+            .map(|x| apply_to_chunk(&**x))
+            .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?
+    };
+
+    Ok(unsafe {
+        ListChunked::from_chunks(output_field.name.clone(), chunks)
+            .cast_unchecked(output_field.dtype())
+            .unwrap()
+    }
+    .into_column())
+}
+
 pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
     /// Run any [`Expr`] on these lists elements
     fn eval(self, expr: Expr, parallel: bool) -> Expr {
+        let mut expr_arena = Arena::with_capacity(4);
+
+        let (pd_group, returns_scalar) = to_aexpr(expr.clone(), &mut expr_arena).map_or(
+            (ExprPushdownGroup::Barrier, true),
+            |node| {
+                let mut pd_group = ExprPushdownGroup::Pushable;
+                pd_group.update_with_expr_rec(expr_arena.get(node), &expr_arena, None);
+
+                (pd_group, is_scalar_ae(node, &expr_arena))
+            },
+        );
+
         let this = self.into_list_name_space();
 
         let expr2 = expr.clone();
@@ -176,6 +265,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                     _ => {},
                 }
             }
+
             let lst = c.list()?.clone();
 
             // # fast returns
@@ -198,7 +288,14 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                 expr.into_iter().any(|e| matches!(e, Expr::AnonymousFunction { options, .. } if options.fmt_str == MAP_LIST_NAME))
             };
 
-            if fits_idx_size && c.null_count() == 0 && !is_user_apply() {
+            if match pd_group {
+                ExprPushdownGroup::Pushable => true,
+                ExprPushdownGroup::Fallible => !lst.has_nulls(),
+                ExprPushdownGroup::Barrier => false,
+            } && !returns_scalar
+            {
+                run_elementwise_on_values(&lst, &expr, parallel, output_field).map(Some)
+            } else if fits_idx_size && c.null_count() == 0 && !is_user_apply() {
                 run_on_group_by_engine(c.name().clone(), &lst, &expr)
             } else {
                 run_per_sublist(c, &lst, &expr, parallel, output_field)

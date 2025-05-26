@@ -6,6 +6,7 @@ use crate::{map, map_as_slice};
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum StructFunction {
     FieldByIndex(i64),
     FieldByName(PlSmallStr),
@@ -128,17 +129,19 @@ impl StructFunction {
         use StructFunction as S;
         match self {
             S::FieldByIndex(_) | S::FieldByName(_) => {
-                FunctionOptions::elementwise().with_allow_rename(true)
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
             S::RenameFields(_) | S::PrefixFields(_) | S::SuffixFields(_) => {
                 FunctionOptions::elementwise()
             },
             #[cfg(feature = "json")]
             S::JsonEncode => FunctionOptions::elementwise(),
-            S::WithFields => FunctionOptions::elementwise()
-                .with_pass_name_to_apply(true)
-                .with_input_wildcard_expansion(true),
-            S::MultipleFields(_) => FunctionOptions::elementwise().with_allow_rename(true),
+            S::WithFields => FunctionOptions::elementwise().with_flags(|f| {
+                f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::PASS_NAME_TO_APPLY
+            }),
+            S::MultipleFields(_) => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
         }
     }
 }
@@ -149,7 +152,7 @@ impl Display for StructFunction {
         match self {
             FieldByIndex(index) => write!(f, "struct.field_by_index({index})"),
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
-            RenameFields(names) => write!(f, "struct.rename_fields({:?})", names),
+            RenameFields(names) => write!(f, "struct.rename_fields({names:?})"),
             PrefixFields(_) => write!(f, "name.prefix_fields"),
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]

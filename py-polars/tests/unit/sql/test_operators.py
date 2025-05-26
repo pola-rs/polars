@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,43 @@ def test_equal_not_equal() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "in_clause",
+    [
+        "values NOT IN ([0], [3,4], [7,8], [6,6,6])",
+        "values IN ([0], [5,6], [1,2], [8,8,8,8])",
+        "dt NOT IN ('1950-12-24', '1997-07-05')",
+        "dt IN ('2020-10-10', '2077-03-18')",
+        "rowid NOT IN (1, 3)",
+        "rowid IN (4, 2)",
+    ],
+)
+def test_in_not_in(in_clause: str) -> None:
+    df = pl.DataFrame(
+        {
+            "rowid": [4, 3, 2, 1],
+            "values": [[1, 2], [3, 4], [5, 6], [7, 8]],
+            "dt": [
+                date(2020, 10, 10),
+                date(1997, 7, 5),
+                date(2077, 3, 18),
+                date(1950, 12, 24),
+            ],
+        }
+    )
+    res = df.sql(
+        f"""
+        SELECT "values"
+        FROM self
+        WHERE {in_clause}
+        ORDER BY "rowid" DESC
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "values": [[1, 2], [5, 6]],
+    }
+
+
 def test_is_between(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
@@ -88,7 +126,7 @@ def test_is_between(foods_ipc_path: Path) -> None:
         FROM foods1
         WHERE foods1.calories BETWEEN 22 AND 30
         ORDER BY "calories" DESC, "sugars_g" DESC
-    """
+        """
     )
     assert out.rows() == [
         ("fruit", 30, 0.0, 5),

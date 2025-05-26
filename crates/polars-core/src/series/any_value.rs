@@ -160,6 +160,7 @@ impl Series {
             DataType::Boolean => any_values_to_bool(values, strict)?.into_series(),
             DataType::String => any_values_to_string(values, strict)?.into_series(),
             DataType::Binary => any_values_to_binary(values, strict)?.into_series(),
+            DataType::BinaryOffset => any_values_to_binary_offset(values, strict)?.into_series(),
             #[cfg(feature = "dtype-date")]
             DataType::Date => any_values_to_date(values, strict)?.into_series(),
             #[cfg(feature = "dtype-time")]
@@ -221,12 +222,12 @@ fn any_values_to_integer<T: PolarsIntegerType>(
                     let opt_val = av.extract::<T::Native>();
                     let val = match opt_val {
                         Some(v) => v,
-                        None => return Err(invalid_value_error(&T::get_dtype(), av)),
+                        None => return Err(invalid_value_error(&T::get_static_dtype(), av)),
                     };
                     builder.append_value(val)
                 },
                 AnyValue::Null => builder.append_null(),
-                av => return Err(invalid_value_error(&T::get_dtype(), av)),
+                av => return Err(invalid_value_error(&T::get_static_dtype(), av)),
             }
         }
         Ok(builder.finish())
@@ -367,6 +368,31 @@ fn any_values_to_binary(values: &[AnyValue], strict: bool) -> PolarsResult<Binar
     } else {
         Ok(any_values_to_binary_nonstrict(values))
     }
+}
+
+fn any_values_to_binary_offset(
+    values: &[AnyValue],
+    strict: bool,
+) -> PolarsResult<BinaryOffsetChunked> {
+    let mut builder = MutableBinaryArray::<i64>::new();
+    for av in values {
+        match av {
+            AnyValue::Binary(s) => builder.push(Some(*s)),
+            AnyValue::BinaryOwned(s) => builder.push(Some(&**s)),
+            AnyValue::Null => builder.push_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&DataType::Binary, av));
+                } else {
+                    builder.push_null();
+                };
+            },
+        }
+    }
+    Ok(BinaryOffsetChunked::with_chunk(
+        Default::default(),
+        builder.into(),
+    ))
 }
 
 #[cfg(feature = "dtype-date")]

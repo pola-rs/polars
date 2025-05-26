@@ -1,5 +1,6 @@
 use std::cmp::Reverse;
 use std::io::BufWriter;
+use std::sync::{Arc, Mutex};
 
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_core::utils::arrow;
@@ -57,7 +58,7 @@ impl IpcSinkNode {
 
 impl SinkNode for IpcSinkNode {
     fn name(&self) -> &str {
-        "ipc_sink"
+        "ipc-sink"
     }
 
     fn is_sink_input_parallel(&self) -> bool {
@@ -101,6 +102,7 @@ impl SinkNode for IpcSinkNode {
             dist_tx,
             chunk_size as usize,
             self.input_schema.clone(),
+            Arc::new(Mutex::new(None)),
         ));
 
         // Encoding tasks.

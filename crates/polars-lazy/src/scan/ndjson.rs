@@ -5,7 +5,9 @@ use std::sync::Arc;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::{HiveOptions, RowIndex};
-use polars_plan::dsl::{CastColumnsPolicy, DslPlan, FileScan, MissingColumnsPolicy, ScanSources};
+use polars_plan::dsl::{
+    CastColumnsPolicy, DslPlan, ExtraColumnsPolicy, FileScan, MissingColumnsPolicy, ScanSources,
+};
 use polars_plan::prelude::{NDJsonReadOptions, UnifiedScanArgs};
 use polars_utils::slice_enum::Slice;
 
@@ -133,8 +135,9 @@ impl LazyFileListReader for LazyJsonLineReader {
             projection: None,
             row_index: self.row_index,
             pre_slice: self.n_rows.map(|len| Slice::Positive { offset: 0, len }),
-            cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
+            cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
             missing_columns_policy: MissingColumnsPolicy::Raise,
+            extra_columns_policy: ExtraColumnsPolicy::Raise,
             include_file_paths: self.include_file_paths,
         };
 

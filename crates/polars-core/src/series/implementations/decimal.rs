@@ -247,7 +247,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
                 .as_any_mut()
                 .downcast_mut::<DecimalChunked>()
                 .unwrap()
-                .0,
+                .phys,
         ))
     }
 
@@ -446,6 +446,10 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0
             .quantile_reduce(quantile, method)
             .map(|v| self.apply_scale(v))
+    }
+
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.find_validity_mismatch(other, idxs)
     }
 
     fn as_any(&self) -> &dyn Any {

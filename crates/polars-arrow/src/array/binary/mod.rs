@@ -22,6 +22,8 @@ pub use mutable_values::*;
 mod mutable;
 pub use mutable::*;
 use polars_error::{PolarsResult, polars_bail};
+#[cfg(feature = "proptest")]
+pub mod proptest;
 
 /// A [`BinaryArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<Vec<u8>>>`.
 /// It implements [`Array`].

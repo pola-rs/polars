@@ -5,7 +5,6 @@ mod hconcat;
 mod hstack;
 mod joins;
 mod projection;
-mod rename;
 #[cfg(feature = "semi_anti_join")]
 mod semi_anti_join;
 
@@ -22,7 +21,6 @@ use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
-use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::aexpr_to_leaf_names;
 
@@ -435,6 +433,7 @@ impl ProjectionPushDown {
                 predicate,
                 mut unified_scan_args,
                 mut output_schema,
+                id: _,
             } => {
                 let do_optimization = match &*scan_type {
                     FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
@@ -446,6 +445,9 @@ impl ProjectionPushDown {
                     FileScan::Csv { .. } => true,
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => true,
+                    // MultiScan will handle it if the PythonDataset cannot do projections.
+                    #[cfg(feature = "python")]
+                    FileScan::PythonDataset { .. } => true,
                 };
 
                 #[expect(clippy::never_loop)]
@@ -558,6 +560,7 @@ impl ProjectionPushDown {
                     scan_type,
                     predicate,
                     unified_scan_args,
+                    id: Default::default(),
                 };
 
                 Ok(lp)

@@ -8,6 +8,7 @@ use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
 use polars_ops::chunked_array::UnicodeForm;
+use polars_ops::series::RoundMode;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
 use polars_plan::prelude::{StrptimeOptions, col, cols, lit};
@@ -523,6 +524,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT AVG(column_1) FROM df;
     /// ```
     Avg,
+    /// SQL 'corr' function.
+    /// Returns the Pearson correlation coefficient between two columns.
+    /// ```sql
+    /// SELECT CORR(column_1, column_2) FROM df;
+    /// ```
+    Corr,
     /// SQL 'count' function.
     /// Returns the amount of elements in the grouping.
     /// ```sql
@@ -532,6 +539,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT COUNT(DISTINCT *) FROM df;
     /// ```
     Count,
+    /// SQL 'covar_pop' function.
+    /// Returns the population covariance between two columns.
+    /// ```sql
+    /// SELECT COVAR_POP(column_1, column_2) FROM df;
+    /// ```
+    CovarPop,
+    /// SQL 'covar_samp' function.
+    /// Returns the sample covariance between two columns.
+    /// ```sql
+    /// SELECT COVAR_SAMP(column_1, column_2) FROM df;
+    /// ```
+    CovarSamp,
     /// SQL 'first' function.
     /// Returns the first element of the grouping.
     /// ```sql
@@ -594,7 +613,6 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT VARIANCE(column_1) FROM df;
     /// ```
     Variance,
-
     // ----
     // Array functions
     // ----
@@ -720,11 +738,15 @@ impl PolarsSQLFunctions {
             "columns",
             "concat",
             "concat_ws",
+            "corr",
             "cos",
             "cosd",
             "cot",
             "cotd",
             "count",
+            "covar",
+            "covar_pop",
+            "covar_samp",
             "date",
             "date_part",
             "degrees",
@@ -898,7 +920,10 @@ impl PolarsSQLFunctions {
             // Aggregate functions
             // ----
             "avg" => Self::Avg,
+            "corr" => Self::Corr,
             "count" => Self::Count,
+            "covar_pop" => Self::CovarPop,
+            "covar" | "covar_samp" => Self::CovarSamp,
             "first" => Self::First,
             "last" => Self::Last,
             "max" => Self::Max,
@@ -989,7 +1014,7 @@ impl SQLFunctionVisitor<'_> {
             Round => {
                 let args = extract_args(function)?;
                 match args.len() {
-                    1 => self.visit_unary(|e| e.round(0)),
+                    1 => self.visit_unary(|e| e.round(0, RoundMode::default())),
                     2 => self.try_visit_binary(|e, decimals| {
                         Ok(e.round(match decimals {
                             Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => {
@@ -998,7 +1023,7 @@ impl SQLFunctionVisitor<'_> {
                                 }
                             },
                             _ => polars_bail!(SQLSyntax: "invalid value for ROUND decimals ({})", args[1]),
-                        }))
+                        }, RoundMode::default()))
                     }),
                     _ => polars_bail!(SQLSyntax: "ROUND expects 1-2 arguments (found {})", args.len()),
                 }
@@ -1227,7 +1252,7 @@ impl SQLFunctionVisitor<'_> {
                                     if f.is_empty() {
                                         polars_bail!(SQLSyntax: "invalid/empty 'flags' for REGEXP_LIKE ({})", args[2]);
                                     };
-                                    lit(format!("(?{}){}", f, s))
+                                    lit(format!("(?{f}){s}"))
                                 },
                                 _ => {
                                     polars_bail!(SQLSyntax: "invalid arguments for REGEXP_LIKE ({}, {})", args[1], args[2]);
@@ -1406,7 +1431,10 @@ impl SQLFunctionVisitor<'_> {
             // Aggregate functions
             // ----
             Avg => self.visit_unary(Expr::mean),
+            Corr => self.visit_binary(polars_lazy::dsl::pearson_corr),
             Count => self.visit_count(),
+            CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
+            CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
@@ -1472,7 +1500,7 @@ impl SQLFunctionVisitor<'_> {
             // Array functions
             // ----
             ArrayAgg => self.visit_arr_agg(),
-            ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s)),
+            ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s, true)),
             ArrayGet => {
                 // note: SQL is 1-indexed, not 0-indexed
                 self.visit_binary(|e, idx: Expr| {
@@ -1506,9 +1534,9 @@ impl SQLFunctionVisitor<'_> {
                         };
                         let pat = match pat {
                             _ if pat.starts_with('^') && pat.ends_with('$') => pat.to_string(),
-                            _ if pat.starts_with('^') => format!("{}.*$", pat),
-                            _ if pat.ends_with('$') => format!("^.*{}", pat),
-                            _ => format!("^.*{}.*$", pat),
+                            _ if pat.starts_with('^') => format!("{pat}.*$"),
+                            _ if pat.ends_with('$') => format!("^.*{pat}"),
+                            _ => format!("^.*{pat}.*$"),
                         };
                         if let Some(active_schema) = &active_schema {
                             let rx = polars_utils::regex_cache::compile_regex(&pat).unwrap();
@@ -1797,23 +1825,22 @@ impl SQLFunctionVisitor<'_> {
 
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
-        match (is_distinct, args.as_slice()) {
+        let count_expr = match (is_distinct, args.as_slice()) {
             // count(*), count()
-            (false, [FunctionArgExpr::Wildcard] | []) => Ok(len()),
+            (false, [FunctionArgExpr::Wildcard] | []) => len(),
             // count(column_name)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                let expr = self.apply_window_spec(expr, &self.func.over)?;
-                Ok(expr.count())
+                expr.count()
             },
             // count(distinct column_name)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
                 let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                let expr = self.apply_window_spec(expr, &self.func.over)?;
-                Ok(expr.clone().n_unique().sub(expr.null_count().gt(lit(0))))
+                expr.clone().n_unique().sub(expr.null_count().gt(lit(0)))
             },
-            _ => self.not_supported_error(),
-        }
+            _ => self.not_supported_error()?,
+        };
+        self.apply_window_spec(count_expr, &self.func.over)
     }
 
     fn apply_order_by(&mut self, expr: Expr, order_by: &[OrderByExpr]) -> PolarsResult<Expr> {

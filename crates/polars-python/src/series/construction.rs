@@ -52,7 +52,7 @@ fn mmap_numpy_array<T: Element + NativeType>(name: &str, array: &Bound<PyArray1<
 impl PySeries {
     #[staticmethod]
     fn new_bool(
-        py: Python,
+        py: Python<'_>,
         name: &str,
         array: &Bound<PyArray1<bool>>,
         _strict: bool,
@@ -64,7 +64,7 @@ impl PySeries {
 
     #[staticmethod]
     fn new_f32(
-        py: Python,
+        py: Python<'_>,
         name: &str,
         array: &Bound<PyArray1<f32>>,
         nan_is_null: bool,
@@ -86,7 +86,7 @@ impl PySeries {
 
     #[staticmethod]
     fn new_f64(
-        py: Python,
+        py: Python<'_>,
         name: &str,
         array: &Bound<PyArray1<f64>>,
         nan_is_null: bool,
@@ -130,11 +130,15 @@ impl PySeries {
     }
 }
 
-fn new_primitive<'a, T>(name: &str, values: &'a Bound<PyAny>, _strict: bool) -> PyResult<PySeries>
+fn new_primitive<'py, T>(
+    name: &str,
+    values: &Bound<'py, PyAny>,
+    _strict: bool,
+) -> PyResult<PySeries>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
-    T::Native: FromPyObject<'a>,
+    T::Native: FromPyObject<'py>,
 {
     let len = values.len()?;
     let mut builder = PrimitiveChunkedBuilder::<T>::new(name.into(), len);
@@ -179,11 +183,11 @@ init_method_opt!(new_opt_i128, Int128Type, i64);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
 
-fn convert_to_avs<'a>(
-    values: &'a Bound<'a, PyAny>,
+fn convert_to_avs(
+    values: &Bound<'_, PyAny>,
     strict: bool,
     allow_object: bool,
-) -> PyResult<Vec<AnyValue<'a>>> {
+) -> PyResult<Vec<AnyValue<'static>>> {
     values
         .try_iter()?
         .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object))
@@ -198,6 +202,7 @@ impl PySeries {
             .try_iter()?
             .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, true))
             .collect::<PyResult<Vec<AnyValue>>>();
+
         let result = any_values_result.and_then(|avs| {
             let s = Series::from_any_values(name.into(), avs.as_slice(), strict).map_err(|e| {
                 PyTypeError::new_err(format!(
@@ -308,7 +313,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn new_object(py: Python, name: &str, values: Vec<ObjectValue>, _strict: bool) -> Self {
+    pub fn new_object(py: Python<'_>, name: &str, values: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
             let mut validity = BitmapBuilder::with_capacity(values.len());

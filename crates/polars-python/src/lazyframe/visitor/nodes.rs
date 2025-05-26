@@ -16,7 +16,7 @@ use crate::PyDataFrame;
 use crate::lazyframe::visit::PyExprIR;
 
 fn scan_type_to_pyobject(
-    py: Python,
+    py: Python<'_>,
     scan_type: &FileScan,
     cloud_options: &Option<CloudOptions>,
 ) -> PyResult<PyObject> {
@@ -44,6 +44,9 @@ fn scan_type_to_pyobject(
             let options = serde_json::to_string(options)
                 .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
             Ok(("ndjson", options).into_py_any(py)?)
+        },
+        FileScan::PythonDataset { .. } => {
+            Err(PyNotImplementedError::new_err("python dataset scan"))
         },
         FileScan::Anonymous { .. } => Err(PyNotImplementedError::new_err("anonymous scan")),
     }
@@ -368,6 +371,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             output_schema: _,
             scan_type,
             unified_scan_args,
+            id: _,
         } => Scan {
             paths: sources
                 .into_paths()
@@ -454,8 +458,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             aggs: aggs.iter().map(|e| e.into()).collect(),
             apply: apply.as_ref().map_or(Ok(()), |_| {
                 Err(PyNotImplementedError::new_err(format!(
-                    "apply inside GroupBy {:?}",
-                    plan
+                    "apply inside GroupBy {plan:?}"
                 )))
             })?,
             maintain_order: *maintain_order,
@@ -571,18 +574,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 )
                     .into_py_any(py)?,
                 FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,
-                FunctionIR::Rename {
-                    existing,
-                    new,
-                    swapping,
-                    schema: _,
-                } => (
-                    "rename",
-                    existing.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                    new.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                    *swapping,
-                )
-                    .into_py_any(py)?,
                 FunctionIR::Explode { columns, schema: _ } => (
                     "explode",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),

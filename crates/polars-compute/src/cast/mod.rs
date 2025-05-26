@@ -8,6 +8,7 @@ mod dictionary_to;
 mod primitive_to;
 mod utf8_to;
 
+use arrow::bitmap::MutableBitmap;
 pub use binary_to::*;
 #[cfg(feature = "dtype-decimal")]
 pub use binview_to::binview_to_decimal;
@@ -167,7 +168,7 @@ fn cast_fixed_size_list_to_list<O: Offset>(
     ))
 }
 
-fn cast_list_to_fixed_size_list<O: Offset>(
+pub(super) fn cast_list_to_fixed_size_list<O: Offset>(
     list: &ListArray<O>,
     inner: &Field,
     size: usize,
@@ -237,6 +238,127 @@ fn cast_list_to_fixed_size_list<O: Offset>(
     .map_err(|_| polars_err!(ComputeError: "not all elements have the specified width {size}"))
 }
 
+fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<BinaryViewArray> {
+    let mut views = Vec::with_capacity(list.len());
+    let mut result_validity = MutableBitmap::from_len_set(list.len());
+
+    let u8array: &PrimitiveArray<u8> = list.values().as_any().downcast_ref().unwrap();
+    let slice = u8array.values().as_slice();
+    let mut cloned_buffers = vec![u8array.values().clone()];
+    let mut buf_index = 0;
+    let mut previous_buf_lengths = 0;
+    let validity = list.validity();
+    let internal_validity = list.values().validity();
+    let offsets = list.offsets();
+
+    let mut all_views_inline = true;
+
+    // In a View for BinaryViewArray, both length and offset are u32.
+    #[cfg(not(test))]
+    const MAX_BUF_SIZE: usize = u32::MAX as usize;
+
+    // This allows us to test some invariants without using 4GB of RAM; see mod
+    // tests below.
+    #[cfg(test)]
+    const MAX_BUF_SIZE: usize = 15;
+
+    for index in 0..list.len() {
+        // Check if there's a null instead of a list:
+        if let Some(validity) = validity {
+            // SAFETY: We are generating indexes limited to < list.len().
+            debug_assert!(index < validity.len());
+            if unsafe { !validity.get_bit_unchecked(index) } {
+                debug_assert!(index < result_validity.len());
+                unsafe {
+                    result_validity.set_unchecked(index, false);
+                }
+                views.push(View::default());
+                continue;
+            }
+        }
+
+        // SAFETY: We are generating indexes limited to < list.len().
+        debug_assert!(index < offsets.len());
+        let (start, end) = unsafe { offsets.start_end_unchecked(index) };
+        let length = end - start;
+        polars_ensure!(
+            length <= MAX_BUF_SIZE,
+            InvalidOperation: format!("when casting to BinaryView, list lengths must be <= {MAX_BUF_SIZE}")
+        );
+
+        // Check if the list contains nulls:
+        if let Some(internal_validity) = internal_validity {
+            if internal_validity.null_count_range(start, length) > 0 {
+                debug_assert!(index < result_validity.len());
+                unsafe {
+                    result_validity.set_unchecked(index, false);
+                }
+                views.push(View::default());
+                continue;
+            }
+        }
+
+        if end - previous_buf_lengths > MAX_BUF_SIZE {
+            // View offsets must fit in u32 (or smaller value when running Rust
+            // tests), and we've determined the end of the next view will be
+            // past that.
+            buf_index += 1;
+            let (previous, next) = cloned_buffers
+                .last()
+                .unwrap()
+                .split_at(start - previous_buf_lengths);
+            debug_assert!(previous.len() <= MAX_BUF_SIZE);
+            previous_buf_lengths += previous.len();
+            *(cloned_buffers.last_mut().unwrap()) = previous;
+            cloned_buffers.push(next);
+        }
+        let view = View::new_from_bytes(
+            &slice[start..end],
+            buf_index,
+            (start - previous_buf_lengths) as u32,
+        );
+        if !view.is_inline() {
+            all_views_inline = false;
+        }
+        debug_assert_eq!(
+            unsafe { view.get_slice_unchecked(&cloned_buffers) },
+            &slice[start..end]
+        );
+        views.push(view);
+    }
+
+    // Optimization: don't actually need buffers if Views are all inline.
+    if all_views_inline {
+        cloned_buffers.clear();
+    }
+
+    let result_buffers = cloned_buffers.into_boxed_slice().into();
+    let result = if cfg!(debug_assertions) {
+        // A safer wrapper around new_unchecked_unknown_md; it shouldn't ever
+        // fail in practice.
+        BinaryViewArrayGeneric::try_new(
+            ArrowDataType::BinaryView,
+            views.into(),
+            result_buffers,
+            result_validity.into(),
+        )?
+    } else {
+        unsafe {
+            BinaryViewArrayGeneric::new_unchecked_unknown_md(
+                ArrowDataType::BinaryView,
+                views.into(),
+                result_buffers,
+                result_validity.into(),
+                // We could compute this ourselves, but we want to make this code
+                // match debug_assertions path as much as possible.
+                None,
+            )
+        }
+    };
+
+    Ok(result)
+}
+
 pub fn cast_default(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResult<Box<dyn Array>> {
     cast(array, to_type, Default::default())
 }
@@ -258,6 +380,7 @@ pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResul
 /// * Fixed Size List to List: the underlying data type is cast
 /// * List to Fixed Size List: the offsets are checked for valid order, then the
 ///   underlying type is cast.
+/// * List of UInt8 to Binary: the list of integers becomes binary data, nulls in the list means it becomes a null
 /// * Struct to Struct: the underlying fields are cast.
 /// * PrimitiveArray to List: a list array with 1 value per slot is created
 /// * Date32 and Date64: precision lost when going to higher interval
@@ -267,7 +390,7 @@ pub fn cast_unchecked(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResul
 ///
 /// Unsupported Casts
 /// * non-`StructArray` to `StructArray` or `StructArray` to non-`StructArray`
-/// * List to primitive
+/// * List to primitive (other than UInt8)
 /// * Utf8 to boolean
 /// * Interval and duration
 pub fn cast(
@@ -326,6 +449,14 @@ pub fn cast(
             options,
         )
         .map(|x| x.boxed()),
+        (List(field), BinaryView) if matches!(field.dtype(), UInt8) => {
+            cast_list_uint8_to_binary::<i32>(array.as_any().downcast_ref().unwrap())
+                .map(|arr| arr.boxed())
+        },
+        (LargeList(field), BinaryView) if matches!(field.dtype(), UInt8) => {
+            cast_list_uint8_to_binary::<i64>(array.as_any().downcast_ref().unwrap())
+                .map(|arr| arr.boxed())
+        },
         (BinaryView, _) => match to_type {
             Utf8View => array
                 .as_any()
@@ -852,4 +983,115 @@ fn from_to_binview(
         ),
     };
     Ok(binview)
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::offset::OffsetsBuffer;
+    use polars_error::PolarsError;
+
+    use super::*;
+
+    /// When cfg(test), offsets for ``View``s generated by
+    /// cast_list_uint8_to_binary() are limited to max value of 3, so buffers
+    /// need to be split aggressively.
+    #[test]
+    fn cast_list_uint8_to_binary_across_buffer_max_size() {
+        let dtype =
+            ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
+        let values = PrimitiveArray::from_slice((0u8..20).collect::<Vec<_>>()).boxed();
+        let list_u8 = ListArray::try_new(
+            dtype,
+            unsafe { OffsetsBuffer::new_unchecked(vec![0, 13, 18, 20].into()) },
+            values,
+            None,
+        )
+        .unwrap();
+
+        let binary = cast(
+            &list_u8,
+            &ArrowDataType::BinaryView,
+            CastOptionsImpl::default(),
+        )
+        .unwrap();
+        let binary_array: &BinaryViewArray = binary.as_ref().as_any().downcast_ref().unwrap();
+        assert_eq!(
+            binary_array
+                .values_iter()
+                .map(|s| s.to_vec())
+                .collect::<Vec<Vec<u8>>>(),
+            vec![
+                vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                vec![13, 14, 15, 16, 17],
+                vec![18, 19]
+            ]
+        );
+        // max offset of 15 so we need to split:
+        assert_eq!(
+            binary_array
+                .data_buffers()
+                .iter()
+                .map(|buf| buf.len())
+                .collect::<Vec<_>>(),
+            vec![13, 7]
+        );
+    }
+
+    /// Arrow spec requires views to fit in a single buffer. When cfg(test),
+    /// buffers generated by cast_list_uint8_to_binary are of size 15 or
+    /// smaller, so a list of size 16 should cause an error.
+    #[test]
+    fn cast_list_uint8_to_binary_errors_too_large_list() {
+        let values = PrimitiveArray::from_slice(vec![0u8; 16]);
+        let dtype =
+            ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
+        let list_u8 = ListArray::new(
+            dtype,
+            OffsetsBuffer::one_with_length(16),
+            values.boxed(),
+            None,
+        );
+
+        let err = cast(
+            &list_u8,
+            &ArrowDataType::BinaryView,
+            CastOptionsImpl::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            PolarsError::InvalidOperation(msg)
+                if msg.as_ref() == "when casting to BinaryView, list lengths must be <= 15"
+        ));
+    }
+
+    /// When all views are <=12, cast_list_uint8_to_binary drops buffers in the
+    /// result because all views are inline.
+    #[test]
+    fn cast_list_uint8_to_binary_drops_small_buffers() {
+        let values = PrimitiveArray::from_slice(vec![10u8; 12]);
+        let dtype =
+            ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
+        let list_u8 = ListArray::new(
+            dtype,
+            OffsetsBuffer::one_with_length(12),
+            values.boxed(),
+            None,
+        );
+        let binary = cast(
+            &list_u8,
+            &ArrowDataType::BinaryView,
+            CastOptionsImpl::default(),
+        )
+        .unwrap();
+        let binary_array: &BinaryViewArray = binary.as_ref().as_any().downcast_ref().unwrap();
+        assert!(binary_array.data_buffers().is_empty());
+        assert_eq!(
+            binary_array
+                .values_iter()
+                .map(|s| s.to_vec())
+                .collect::<Vec<Vec<u8>>>(),
+            vec![vec![10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10],]
+        );
+    }
 }

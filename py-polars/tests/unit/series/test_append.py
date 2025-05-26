@@ -1,3 +1,5 @@
+import io
+
 import pytest
 
 import polars as pl
@@ -31,8 +33,17 @@ def test_append_bad_input() -> None:
     a = pl.Series("a", [1, 2])
     b = a.to_frame()
 
-    with pytest.raises(AttributeError):
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'Series'.* not 'DataFrame'",
+    ):
         a.append(b)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        TypeError,
+        match="expected `other` .*to be a 'Series'.* not 'LazyFrame'",
+    ):
+        a.append(b.lazy())  # type: ignore[arg-type]
 
 
 def test_struct_schema_on_append_extend_3452() -> None:
@@ -87,3 +98,17 @@ def test_append_null_series() -> None:
     assert_series_equal(a, expected)
     assert_series_equal(result, expected)
     assert a.n_chunks() == 2
+
+
+def test_append_enum_with_stringcache_22764() -> None:
+    f = io.BytesIO()
+    g = io.BytesIO()
+    with pl.StringCache():
+        pl.DataFrame({"someletter": ["A", "B"]}).write_csv(f)
+
+        schema = pl.Schema(
+            {
+                "someletter": pl.Enum(["A", "B"]),
+            }
+        )
+        pl.scan_csv(f, schema=schema).sink_parquet(g)

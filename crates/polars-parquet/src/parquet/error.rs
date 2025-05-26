@@ -51,20 +51,19 @@ impl std::fmt::Display for ParquetError {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             ParquetError::OutOfSpec(message) => {
-                write!(fmt, "File out of specification: {}", message)
+                write!(fmt, "File out of specification: {message}")
             },
             ParquetError::FeatureNotActive(feature, reason) => {
                 write!(
                     fmt,
-                    "The feature \"{:?}\" needs to be active to {}",
-                    feature, reason
+                    "The feature \"{feature:?}\" needs to be active to {reason}"
                 )
             },
             ParquetError::FeatureNotSupported(reason) => {
-                write!(fmt, "Not yet supported: {}", reason)
+                write!(fmt, "Not yet supported: {reason}")
             },
             ParquetError::InvalidParameter(message) => {
-                write!(fmt, "Invalid parameter: {}", message)
+                write!(fmt, "Invalid parameter: {message}")
             },
             ParquetError::WouldOverAllocate => {
                 write!(fmt, "Operation would exceed memory use threshold")
@@ -76,51 +75,51 @@ impl std::fmt::Display for ParquetError {
 #[cfg(feature = "snappy")]
 impl From<snap::Error> for ParquetError {
     fn from(e: snap::Error) -> ParquetError {
-        ParquetError::OutOfSpec(format!("underlying snap error: {}", e))
+        ParquetError::OutOfSpec(format!("underlying snap error: {e}"))
     }
 }
 
 #[cfg(feature = "lz4_flex")]
 impl From<lz4_flex::block::DecompressError> for ParquetError {
     fn from(e: lz4_flex::block::DecompressError) -> ParquetError {
-        ParquetError::OutOfSpec(format!("underlying lz4_flex error: {}", e))
+        ParquetError::OutOfSpec(format!("underlying lz4_flex error: {e}"))
     }
 }
 
 #[cfg(feature = "lz4_flex")]
 impl From<lz4_flex::block::CompressError> for ParquetError {
     fn from(e: lz4_flex::block::CompressError) -> ParquetError {
-        ParquetError::OutOfSpec(format!("underlying lz4_flex error: {}", e))
+        ParquetError::OutOfSpec(format!("underlying lz4_flex error: {e}"))
     }
 }
 
 impl From<polars_parquet_format::thrift::Error> for ParquetError {
     fn from(e: polars_parquet_format::thrift::Error) -> ParquetError {
-        ParquetError::OutOfSpec(format!("Invalid thrift: {}", e))
+        ParquetError::OutOfSpec(format!("Invalid thrift: {e}"))
     }
 }
 
 impl From<std::io::Error> for ParquetError {
     fn from(e: std::io::Error) -> ParquetError {
-        ParquetError::OutOfSpec(format!("underlying IO error: {}", e))
+        ParquetError::OutOfSpec(format!("underlying IO error: {e}"))
     }
 }
 
 impl From<std::collections::TryReserveError> for ParquetError {
     fn from(e: std::collections::TryReserveError) -> ParquetError {
-        ParquetError::OutOfSpec(format!("OOM: {}", e))
+        ParquetError::OutOfSpec(format!("OOM: {e}"))
     }
 }
 
 impl From<std::num::TryFromIntError> for ParquetError {
     fn from(e: std::num::TryFromIntError) -> ParquetError {
-        ParquetError::OutOfSpec(format!("Number must be zero or positive: {}", e))
+        ParquetError::OutOfSpec(format!("Number must be zero or positive: {e}"))
     }
 }
 
 impl From<std::array::TryFromSliceError> for ParquetError {
     fn from(e: std::array::TryFromSliceError) -> ParquetError {
-        ParquetError::OutOfSpec(format!("Can't deserialize to parquet native type: {}", e))
+        ParquetError::OutOfSpec(format!("Can't deserialize to parquet native type: {e}"))
     }
 }
 
@@ -129,12 +128,12 @@ pub type ParquetResult<T> = std::result::Result<T, ParquetError>;
 
 impl From<ParquetError> for polars_error::PolarsError {
     fn from(e: ParquetError) -> polars_error::PolarsError {
-        polars_error::PolarsError::ComputeError(format!("parquet: {}", e).into())
+        polars_error::PolarsError::ComputeError(format!("parquet: {e}").into())
     }
 }
 
 impl From<polars_error::PolarsError> for ParquetError {
     fn from(e: polars_error::PolarsError) -> ParquetError {
-        ParquetError::OutOfSpec(format!("OOM: {}", e))
+        ParquetError::OutOfSpec(format!("OOM: {e}"))
     }
 }

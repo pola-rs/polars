@@ -174,7 +174,8 @@ unsafe fn add_value<T: NumericNative>(
     row_idx: usize,
     value: T,
 ) {
-    let column = (*(values_buf_ptr as *mut Vec<Vec<T>>)).get_unchecked_mut(col_idx);
+    let vec_ref: &mut Vec<Vec<T>> = &mut *(values_buf_ptr as *mut Vec<Vec<T>>);
+    let column = vec_ref.get_unchecked_mut(col_idx);
     let el_ptr = column.as_mut_ptr();
     *el_ptr.add(row_idx) = value;
 }
@@ -214,7 +215,7 @@ pub(super) fn numeric_transpose<T>(
             .map(Column::as_materialized_series)
             .enumerate()
             .for_each(|(row_idx, s)| {
-                let s = s.cast(&T::get_dtype()).unwrap();
+                let s = s.cast(&T::get_static_dtype()).unwrap();
                 let ca = s.unpack::<T>().unwrap();
 
                 // SAFETY:
@@ -225,8 +226,9 @@ pub(super) fn numeric_transpose<T>(
                     for (col_idx, opt_v) in ca.iter().enumerate() {
                         match opt_v {
                             None => unsafe {
-                                let column = (*(validity_buf_ptr as *mut Vec<Vec<bool>>))
-                                    .get_unchecked_mut(col_idx);
+                                let validity_vec: &mut Vec<Vec<bool>> =
+                                    &mut *(validity_buf_ptr as *mut Vec<Vec<bool>>);
+                                let column = validity_vec.get_unchecked_mut(col_idx);
                                 let el_ptr = column.as_mut_ptr();
                                 *el_ptr.add(row_idx) = false;
                                 // we must initialize this memory otherwise downstream code
@@ -242,9 +244,9 @@ pub(super) fn numeric_transpose<T>(
                 } else {
                     for (col_idx, v) in ca.into_no_null_iter().enumerate() {
                         unsafe {
-                            let column = (*(values_buf_ptr as *mut Vec<Vec<T::Native>>))
-                                .get_unchecked_mut(col_idx);
-                            let el_ptr = column.as_mut_ptr();
+                            let column: &mut Vec<Vec<T::Native>> =
+                                &mut *(values_buf_ptr as *mut Vec<Vec<T::Native>>);
+                            let el_ptr = column.get_unchecked_mut(col_idx).as_mut_ptr();
                             *el_ptr.add(row_idx) = v;
                         }
                     }
@@ -275,7 +277,7 @@ pub(super) fn numeric_transpose<T>(
             };
 
             let arr = PrimitiveArray::<T::Native>::new(
-                T::get_dtype().to_arrow(CompatLevel::newest()),
+                T::get_static_dtype().to_arrow(CompatLevel::newest()),
                 values.into(),
                 validity,
             );

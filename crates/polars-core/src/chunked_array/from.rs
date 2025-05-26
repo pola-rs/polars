@@ -161,7 +161,7 @@ where
         <I as IntoIterator>::Item: Array,
     {
         assert_eq!(
-            std::mem::discriminant(&T::get_dtype()),
+            std::mem::discriminant(&T::get_static_dtype()),
             std::mem::discriminant(&field.dtype)
         );
 
@@ -184,7 +184,7 @@ where
     /// # Safety
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
     pub unsafe fn from_chunks(name: PlSmallStr, mut chunks: Vec<ArrayRef>) -> Self {
-        let dtype = match T::get_dtype() {
+        let dtype = match T::get_static_dtype() {
             dtype @ DataType::List(_) => from_chunks_list_dtype(&mut chunks, dtype),
             #[cfg(feature = "dtype-array")]
             dtype @ DataType::Array(_, _) => from_chunks_list_dtype(&mut chunks, dtype),
@@ -262,7 +262,10 @@ where
         buffer: Option<Bitmap>,
     ) -> Self {
         let arr = to_array::<T>(values, buffer);
-        ChunkedArray::new_with_compute_len(Arc::new(Field::new(name, T::get_dtype())), vec![arr])
+        ChunkedArray::new_with_compute_len(
+            Arc::new(Field::new(name, T::get_static_dtype())),
+            vec![arr],
+        )
     }
 
     /// Create a temporary [`ChunkedArray`] from a slice.

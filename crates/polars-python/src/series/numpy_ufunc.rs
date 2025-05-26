@@ -98,7 +98,7 @@ macro_rules! impl_ufuncs {
 
                     debug_assert_eq!(get_refcnt(&out_array), 1);
                     // inserting it in a tuple increase the reference count by 1.
-                    let args = PyTuple::new(py, &[out_array.clone()])?;
+                    let args = PyTuple::new(py, std::slice::from_ref(&out_array))?;
                     debug_assert_eq!(get_refcnt(&out_array), 2);
 
                     // whatever the result, we must take the leaked memory ownership back

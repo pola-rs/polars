@@ -16,7 +16,7 @@ pub(super) static GLOBAL_FILE_CACHE_LOCK: LazyLock<GlobalLock> = LazyLock::new(|
         .truncate(false)
         .open(path)
         .map_err(|err| {
-            panic!("failed to open/create global file cache lockfile: {}", err);
+            panic!("failed to open/create global file cache lockfile: {err}");
         })
         .unwrap();
 

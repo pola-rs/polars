@@ -49,7 +49,7 @@ impl FunctionExpr {
             #[cfg(feature = "index_of")]
             IndexOf => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "search_sorted")]
-            SearchSorted(_) => mapper.with_dtype(IDX_DTYPE),
+            SearchSorted { .. } => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "range")]
             Range(func) => func.get_field(mapper),
             #[cfg(feature = "trigonometry")]
@@ -625,9 +625,13 @@ impl<'a> FieldsMapper<'a> {
             None => {
                 let new = &self.fields[2];
                 let default = self.fields.get(3);
+
+                // @HACK: Related to implicit implode see #22149.
+                let inner_dtype = new.dtype().inner_dtype().unwrap_or(new.dtype());
+
                 match default {
-                    Some(default) => try_get_supertype(default.dtype(), new.dtype())?,
-                    None => new.dtype().clone(),
+                    Some(default) => try_get_supertype(default.dtype(), inner_dtype)?,
+                    None => inner_dtype.clone(),
                 }
             },
         };

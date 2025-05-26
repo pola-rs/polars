@@ -56,6 +56,8 @@ pub fn count_rows(
             ),
             #[cfg(feature = "json")]
             FileScan::NDJson { options } => count_rows_ndjson(sources, cloud_options),
+            #[cfg(feature = "python")]
+            FileScan::PythonDataset { .. } => unreachable!(),
             FileScan::Anonymous { .. } => {
                 unreachable!()
             },

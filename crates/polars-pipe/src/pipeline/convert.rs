@@ -71,6 +71,7 @@ where
             predicate,
             output_schema,
             scan_type,
+            id: _,
         } => {
             let paths = sources.into_paths();
             let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
@@ -148,7 +149,7 @@ where
                         #[cfg(feature = "parquet")]
                         FileType::Parquet(options) => Box::new(ParquetSink::new(
                             path,
-                            *options,
+                            options.clone(),
                             input_schema.as_ref(),
                             cloud_options.as_ref(),
                         )?)

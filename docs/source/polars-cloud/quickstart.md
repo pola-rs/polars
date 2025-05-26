@@ -15,7 +15,7 @@ $ pip install polars polars-cloud
 Create an account and login by running the command below.
 
 ```bash
-$ pc login
+$ pc authenticate
 ```
 
 ## Connect your cloud
@@ -25,45 +25,16 @@ Polars Cloud currently exclusively supports AWS as a cloud provider.
 Polars Cloud needs permission to manage hardware in your environment. This is done by deploying our
 cloudformation template. See our [infrastructure](providers/aws/infra.md) section for more details.
 
-To connect your cloud run:
+To set up your Polars Cloud environment and connect your cloud run you can either
 
-```bash
-$ pc setup workspace -n <YOUR_WORKSPACE_NAME>
-```
-
-This redirects you to the browser where you can connect Polars Cloud to your AWS environment.
-Alternatively, you can follow the steps in the browser and create the workspace there.
+- Run `pc setup` to guide you through creation and connecting via CLI.
+- Or create an organization and workspace
+  [via the browser](https://cloud.pola.rs/portal/5f9c09/dbe6d9/dashboard).
 
 ## Run your queries
 
-Now that we are done with the setup, we can start running queries. The general principle here is
-writing Polars like you're always used to and calling `.remote()` on your `LazyFrame`. The following
-example shows how to create a compute cluster and run a simple Polars query.
+Now that we are done with the setup, we can start running queries. You can write Polars like you're
+used and to only need to call `.remote()` on your `LazyFrame`. In the following example we create a
+compute cluster and run a simple Polars query.
 
 {{code_block('polars-cloud/quickstart','general',['ComputeContext','LazyFrameExt'])}}
-
-Let us go through the code line by line. First we need to define the hardware the cluster will run
-on. This can be provided in terms of cpu & memory or by specifying the the exact instance type in
-AWS.
-
-```python
-ctx = pc.ComputeContext(memory=8, cpus=2 , cluster_size=1)
-```
-
-Then we write a regular lazy Polars query. In this simple example we compute the maximum of column
-`a` over column `b`.
-
-```python
-df = pl.LazyFrame({
-    "a": [1, 2, 3],
-    "b": [4, 4, 5]
-})
-lf = df.with_columns(
-    c = pl.col("a").max().over("b")
-)
-```
-
-Finally we are going to run our query on the compute cluster. We use `.remote()` to signify that we
-want to run the query remotely. This gives back a special version of the `LazyFrame` with extension
-methods. Up until this point nothing has executed yet, calling `.write_parquet()` sends the query to
-g

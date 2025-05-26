@@ -17,10 +17,11 @@ import polars._utils.construction as plc
 from polars import functions as F
 from polars._utils.construction.utils import (
     contains_nested,
+    get_first_non_none,
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
-    is_sqlalchemy,
+    is_sqlalchemy_row,
     nt_unpack,
     try_get_type_hints,
 )
@@ -458,7 +459,7 @@ def sequence_to_pydf(
         return dict_to_pydf({}, schema=schema, schema_overrides=schema_overrides)
 
     return _sequence_to_pydf_dispatcher(
-        data[0],
+        get_first_non_none(data),
         data=data,
         schema=schema,
         schema_overrides=schema_overrides,
@@ -483,7 +484,7 @@ def _sequence_to_pydf_dispatcher(
 ) -> PyDataFrame:
     # note: ONLY python-native data should participate in singledispatch registration
     # via top-level decorators, otherwise we have to import the associated module.
-    # third-party libraries (such as numpy/pandas) should instead be identified inline
+    # third-party libraries (such as numpy/pandas) should be identified inline (below)
     # and THEN registered for dispatch (here) so as not to break lazy-loading behaviour.
 
     common_params = {
@@ -521,7 +522,7 @@ def _sequence_to_pydf_dispatcher(
     elif is_pydantic_model(first_element):
         to_pydf = _sequence_of_pydantic_models_to_pydf
 
-    elif is_sqlalchemy(first_element):
+    elif is_sqlalchemy_row(first_element):
         to_pydf = _sequence_of_tuple_to_pydf
 
     elif isinstance(first_element, Sequence) and not isinstance(first_element, str):
@@ -663,7 +664,7 @@ def _sequence_of_tuple_to_pydf(
     nan_to_null: bool = False,
 ) -> PyDataFrame:
     # infer additional meta information if namedtuple
-    if is_namedtuple(first_element.__class__) or is_sqlalchemy(first_element):
+    if is_namedtuple(first_element.__class__) or is_sqlalchemy_row(first_element):
         if schema is None:
             schema = first_element._fields  # type: ignore[attr-defined]
             annotations = getattr(first_element, "__annotations__", None)
@@ -688,6 +689,7 @@ def _sequence_of_tuple_to_pydf(
     )
 
 
+@_sequence_to_pydf_dispatcher.register(Mapping)
 @_sequence_to_pydf_dispatcher.register(dict)
 def _sequence_of_dict_to_pydf(
     first_element: dict[str, Any],
@@ -1163,7 +1165,7 @@ def arrow_to_pydf(
     try:
         if column_names != data.schema.names:
             data = data.rename_columns(column_names)
-    except pa.lib.ArrowInvalid as e:
+    except pa.ArrowInvalid as e:
         msg = "dimensions of columns arg must match data dimensions"
         raise ValueError(msg) from e
 

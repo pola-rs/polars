@@ -755,3 +755,24 @@ def test_when_then_to_decimal_18375() -> None:
         schema={"a": pl.String, "b": pl.Decimal, "c": pl.Decimal},
     )
     assert_frame_equal(result, expected)
+
+
+def test_when_then_chunked_fill_null_22794() -> None:
+    df = pl.DataFrame(
+        {
+            "node": [{"x": "a", "y": "a"}, {"x": "b", "y": "b"}, {"x": "c", "y": "c"}],
+            "level": [0, 1, 2],
+        }
+    )
+
+    out = pl.concat([df.slice(0, 1), df.slice(1, 1), df.slice(2, 1)]).with_columns(
+        pl.when(level=1).then("node").forward_fill()
+    )
+    expected = pl.DataFrame(
+        {
+            "node": [None, {"x": "b", "y": "b"}, {"x": "b", "y": "b"}],
+            "level": [0, 1, 2],
+        }
+    )
+
+    assert_frame_equal(out, expected)

@@ -135,7 +135,7 @@ impl Default for BeginReadArgs {
             pre_slice: None,
             predicate: None,
             // TODO: Use less restrictive default
-            cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
+            cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
             num_pipelines: 1,
             callbacks: FileReaderCallbacks::default(),
         }

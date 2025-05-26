@@ -79,16 +79,18 @@ fn compute_payload_selector(
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
     let should_coalesce = args.should_coalesce();
 
+    let mut coalesce_idx = 0;
     this.iter_names()
-        .enumerate()
-        .map(|(i, c)| {
+        .map(|c| {
             let selector = if should_coalesce && this_key_schema.contains(c) {
                 if is_left != (args.how == JoinType::Right) {
                     Some(c.clone())
                 } else if args.how == JoinType::Full {
                     // We must keep the right-hand side keycols around for
                     // coalescing.
-                    Some(format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{i}"))
+                    let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{coalesce_idx}");
+                    coalesce_idx += 1;
+                    Some(name)
                 } else {
                     None
                 }
@@ -113,15 +115,17 @@ fn compute_payload_selector(
 fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
     if params.args.how == JoinType::Full && params.args.should_coalesce() {
         // TODO: don't do string-based column lookups for each dataframe, pre-compute coalesce indices.
-        let mut key_idx = 0;
+        let mut coalesce_idx = 0;
         df.get_columns()
             .iter()
             .filter_map(|c| {
                 if params.left_key_schema.contains(c.name()) {
                     let other = df
-                        .column(&format_pl_smallstr!("__POLARS_COALESCE_KEYCOL{key_idx}"))
+                        .column(&format_pl_smallstr!(
+                            "__POLARS_COALESCE_KEYCOL{coalesce_idx}"
+                        ))
                         .unwrap();
-                    key_idx += 1;
+                    coalesce_idx += 1;
                     return Some(coalesce_columns(&[c.clone(), other.clone()]).unwrap());
                 }
 
@@ -1225,7 +1229,7 @@ impl EquiJoinNode {
 
 impl ComputeNode for EquiJoinNode {
     fn name(&self) -> &str {
-        "equi_join"
+        "equi-join"
     }
 
     fn update_state(

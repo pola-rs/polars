@@ -52,8 +52,9 @@ impl LazyFrame {
                 projection: None,
                 row_index: None,
                 pre_slice: args.n_rows.map(|len| Slice::Positive { offset: 0, len }),
-                cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
+                cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                 missing_columns_policy: MissingColumnsPolicy::Raise,
+                extra_columns_policy: ExtraColumnsPolicy::Raise,
                 include_file_paths: None,
             },
         )?

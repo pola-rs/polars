@@ -82,6 +82,45 @@ impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &ListArray<O>,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    ) {
+        let other_offsets = other.offsets();
+        let other_values = &**other.values();
+
+        let start_offset = other.offsets()[start].to_usize();
+        let stop_offset = other.offsets()[start + length].to_usize();
+        self.offsets.reserve(length * repeats);
+        self.inner_builder
+            .reserve((stop_offset - start_offset) * repeats);
+        for offset_idx in start..start + length {
+            let sublist_start = other_offsets[offset_idx].to_usize();
+            let sublist_stop = other_offsets[offset_idx + 1].to_usize();
+            for _ in 0..repeats {
+                self.offsets.try_push(sublist_stop - sublist_start).unwrap();
+            }
+            self.inner_builder.subslice_extend_repeated(
+                other_values,
+                sublist_start,
+                sublist_stop - sublist_start,
+                repeats,
+                share,
+            );
+        }
+        self.validity
+            .subslice_extend_each_repeated_from_opt_validity(
+                other.validity(),
+                start,
+                length,
+                repeats,
+            );
+    }
+
     unsafe fn gather_extend(
         &mut self,
         other: &ListArray<O>,

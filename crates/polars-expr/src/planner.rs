@@ -266,6 +266,10 @@ fn create_physical_expr_inner(
             )))
         },
         BinaryExpr { left, op, right } => {
+            let output_field =
+                expr_arena
+                    .get(expression)
+                    .to_field(schema, Context::Default, expr_arena)?;
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let lhs = create_physical_expr_inner(*left, ctxt, expr_arena, schema, state)?;
             let rhs = create_physical_expr_inner(*right, ctxt, expr_arena, schema, state)?;
@@ -277,6 +281,7 @@ fn create_physical_expr_inner(
                 state.local.has_lit,
                 state.allow_threading,
                 is_scalar,
+                output_field,
             )))
         },
         Column(column) => Ok(Arc::new(ColumnExpr::new(
@@ -502,10 +507,13 @@ fn create_physical_expr_inner(
                 expr: node_to_expr(expression, expr_arena),
             }))
         },
-        Explode(expr) => {
+        Explode { expr, skip_empty } => {
             let input = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
+            let skip_empty = *skip_empty;
             let function = SpecialEq::new(Arc::new(
-                move |c: &mut [polars_core::frame::column::Column]| c[0].explode().map(Some),
+                move |c: &mut [polars_core::frame::column::Column]| {
+                    c[0].explode(skip_empty).map(Some)
+                },
             ) as Arc<dyn ColumnsUdf>);
 
             let field = expr_arena
@@ -516,10 +524,7 @@ fn create_physical_expr_inner(
                 vec![input],
                 function,
                 node_to_expr(expression, expr_arena),
-                FunctionOptions {
-                    collect_groups: ApplyOptions::GroupWise,
-                    ..Default::default()
-                },
+                FunctionOptions::groupwise(),
                 state.allow_threading,
                 schema.clone(),
                 field,

@@ -45,8 +45,7 @@ fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
     if !dir.exists() {
         fs::create_dir_all(&dir).map_err(|err| {
             PolarsError::ComputeError(ErrString::from(format!(
-                "Failed to create spill directory: {}",
-                err
+                "Failed to create spill directory: {err}"
             )))
         })?;
     } else if !dir.is_dir() {
@@ -82,7 +81,7 @@ fn gc_thread(operation_name: &'static str, rx: Receiver<PathBuf>) {
         // if the directory does not exist, there is nothing to clean
         let rd = match std::fs::read_dir(&dir) {
             Ok(rd) => rd,
-            _ => panic!("cannot find {:?}", dir),
+            _ => panic!("cannot find {dir:?}"),
         };
 
         for entry in rd {

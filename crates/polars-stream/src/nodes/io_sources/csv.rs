@@ -183,7 +183,10 @@ impl FileReader for CsvFileReader {
         )?;
 
         if let Some(schema) = &self.options.schema {
-            if schema.len() != inferred_schema.len()
+            // Note: User can provide schema with more columns, they will simply
+            // be projected as NULL.
+            // TODO: Should maybe expose a missing_columns parameter to the API for this.
+            if schema.len() < inferred_schema.len()
                 && !self.options.parse_options.truncate_ragged_lines
             {
                 polars_bail!(
@@ -337,8 +340,7 @@ impl FileReader for CsvFileReader {
                     if needs_full_row_count {
                         if verbose {
                             eprintln!(
-                                "[CSV LineBatchProcessor {}]: entering row count mode",
-                                worker_idx
+                                "[CSV LineBatchProcessor {worker_idx}]: entering row count mode"
                             );
                         }
 

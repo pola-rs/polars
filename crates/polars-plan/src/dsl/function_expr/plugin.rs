@@ -92,7 +92,7 @@ pub(super) unsafe fn call_plugin(
                 *const CallerContext,
             ),
         > = lib
-            .get(format!("_polars_plugin_{}", symbol).as_bytes())
+            .get(format!("_polars_plugin_{symbol}").as_bytes())
             .unwrap();
 
         // @scalar-correctness?
@@ -169,7 +169,7 @@ pub(super) unsafe fn plugin_field(
                 let symbol: libloading::Symbol<
                     unsafe extern "C" fn(*const ArrowSchema, usize, *mut ArrowSchema),
                 > = lib
-                    .get((format!("_polars_plugin_field_{}", symbol)).as_bytes())
+                    .get((format!("_polars_plugin_field_{symbol}")).as_bytes())
                     .unwrap();
                 symbol(slice_ptr, n_args, return_value_ptr);
             },
@@ -188,7 +188,7 @@ pub(super) unsafe fn plugin_field(
                         usize,
                     ),
                 > = lib
-                    .get((format!("_polars_plugin_field_{}", symbol)).as_bytes())
+                    .get((format!("_polars_plugin_field_{symbol}")).as_bytes())
                     .unwrap();
 
                 let kwargs_ptr = kwargs.as_ptr();

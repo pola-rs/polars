@@ -1,5 +1,4 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
-#![cfg_attr(feature = "simd", feature(avx512_target_feature))]
 #![cfg_attr(
     all(feature = "simd", target_arch = "x86_64"),
     feature(stdarch_x86_avx512)
@@ -17,6 +16,8 @@ pub mod cardinality;
 pub mod cast;
 pub mod comparisons;
 pub mod filter;
+#[cfg(feature = "cast")]
+pub mod find_validity_mismatch;
 pub mod float_sum;
 #[cfg(feature = "gather")]
 pub mod gather;
@@ -27,9 +28,11 @@ pub mod if_then_else;
 pub mod min_max;
 pub mod moment;
 pub mod propagate_dictionary;
+pub mod propagate_nulls;
 pub mod rolling;
 pub mod size;
 pub mod sum;
+pub mod trim_lists_to_normalized_offsets;
 pub mod unique;
 
 // Trait to enable the scalar blanket implementation.

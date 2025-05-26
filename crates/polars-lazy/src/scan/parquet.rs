@@ -86,12 +86,13 @@ impl LazyFileListReader for LazyParquetReader {
                 .args
                 .n_rows
                 .map(|len| Slice::Positive { offset: 0, len }),
-            cast_columns_policy: CastColumnsPolicy::ErrorOnMismatch,
+            cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
             missing_columns_policy: if self.args.allow_missing_columns {
                 MissingColumnsPolicy::Insert
             } else {
                 MissingColumnsPolicy::Raise
             },
+            extra_columns_policy: ExtraColumnsPolicy::Raise,
             include_file_paths: self.args.include_file_paths,
         };
 

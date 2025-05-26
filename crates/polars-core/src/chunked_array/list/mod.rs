@@ -180,14 +180,4 @@ impl ListChunked {
             )
         })
     }
-
-    pub fn rechunk_and_trim_to_normalized_offsets(&self) -> Self {
-        Self::with_chunk(
-            self.name().clone(),
-            self.rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .trim_to_normalized_offsets_recursive(),
-        )
-    }
 }

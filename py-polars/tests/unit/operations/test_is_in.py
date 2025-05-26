@@ -455,18 +455,9 @@ def test_cat_is_in_series_non_existent(nulls_equal: bool) -> None:
     assert_series_equal(s.is_in(s2_str, nulls_equal=nulls_equal), expected)
 
 
-@StringCache()
 @pytest.mark.parametrize(
     "nulls_equal",
-    [
-        False,
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                reason="Bug. See https://github.com/pola-rs/polars/issues/22260"
-            ),
-        ),
-    ],
+    [False, True],
 )
 def test_enum_is_in_series_non_existent(nulls_equal: bool) -> None:
     dtype = pl.Enum(["a", "b", "c"])
@@ -474,7 +465,14 @@ def test_enum_is_in_series_non_existent(nulls_equal: bool) -> None:
     s = pl.Series(["a", "b", "c", None], dtype=dtype)
     s2_str = pl.Series(["a", "d", "e"])
     expected = pl.Series([True, False, False, missing_value])
-    assert_series_equal(s.is_in(s2_str, nulls_equal=nulls_equal), expected)
+
+    with pytest.raises(InvalidOperationError):
+        s.is_in(s2_str, nulls_equal=nulls_equal)
+    with pytest.raises(InvalidOperationError):
+        s.is_in(["a", "d", "e"], nulls_equal=nulls_equal)
+
+    out = s.is_in(["a"], nulls_equal=nulls_equal)
+    assert_series_equal(out, expected)
 
 
 @StringCache()
@@ -490,24 +488,9 @@ def test_cat_is_in_with_lit_str(dtype: pl.DataType, nulls_equal: bool) -> None:
 
 
 @StringCache()
-@pytest.mark.parametrize(
-    ("nulls_equal", "dtype"),
-    [
-        (False, pl.Categorical),
-        (False, pl.Enum(["a", "b", "c"])),
-        (True, pl.Categorical),
-        pytest.param(
-            True,
-            pl.Enum(["a", "b", "c"]),
-            marks=pytest.mark.xfail(
-                reason="Bug. See https://github.com/pola-rs/polars/issues/22260"
-            ),
-        ),
-    ],
-)
-def test_cat_is_in_with_lit_str_non_existent(
-    dtype: pl.DataType, nulls_equal: bool
-) -> None:
+@pytest.mark.parametrize("nulls_equal", [False, True])
+def test_cat_is_in_with_lit_str_non_existent(nulls_equal: bool) -> None:
+    dtype = pl.Categorical()
     missing_value = False if nulls_equal else None
     s = pl.Series(["a", "b", "c", None], dtype=dtype)
     lit = ["d"]

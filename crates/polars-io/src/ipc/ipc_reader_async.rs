@@ -86,7 +86,7 @@ impl IpcReaderAsync {
     }
 
     async fn file_size(&self) -> PolarsResult<usize> {
-        Ok(self.object_metadata().await?.size)
+        Ok(self.object_metadata().await?.size as usize)
     }
 
     pub async fn metadata(&self) -> PolarsResult<FileMetadata> {

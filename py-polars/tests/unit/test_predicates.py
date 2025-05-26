@@ -1,14 +1,20 @@
+from __future__ import annotations
+
 import re
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
+from polars.io.plugins import register_io_source
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def test_predicate_4906() -> None:
@@ -205,7 +211,11 @@ def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
         .filter((pl.col("b") >= 1) & (pl.col("b") < 1))
     )
     assert (
-        re.search(r"FILTER.*FROM\n\s*DF", out.explain(predicate_pushdown=True)) is None
+        re.search(
+            r"FILTER.*FROM\n\s*DF",
+            out.explain(optimizations=pl.QueryOptFlags(predicate_pushdown=True)),
+        )
+        is None
     )
 
 
@@ -248,7 +258,7 @@ def test_predicate_pushdown_boundary_12102() -> None:
     )
 
     result = lf.collect()
-    result_no_ppd = lf.collect(predicate_pushdown=False)
+    result_no_ppd = lf.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False))
     assert_frame_equal(result, result_no_ppd)
 
 
@@ -260,7 +270,7 @@ def test_take_can_block_predicate_pushdown() -> None:
         .filter(pl.col("x") == pl.col("x").gather(0))
         .filter(pl.col("y"))
     )
-    result = lf.collect(predicate_pushdown=True)
+    result = lf.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
     assert result.to_dict(as_series=False) == {"x": [2], "y": [True]}
 
 
@@ -290,7 +300,6 @@ def test_multi_alias_pushdown() -> None:
     actual = lf.with_columns(m="a", n="b").filter((pl.col("m") + pl.col("n")) < 2)
     plan = actual.explain()
 
-    print(plan)
     assert plan.count("FILTER") == 1
     assert re.search(r"FILTER.*FROM\n\s*DF", plan, re.DOTALL) is not None
 
@@ -467,7 +476,7 @@ def test_hconcat_predicate() -> None:
             "b2": [6, 7, 8],
         }
     )
-    result = query.collect(predicate_pushdown=True)
+    result = query.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
     assert_frame_equal(result, expected)
 
 
@@ -525,7 +534,7 @@ def test_predicate_pushdown_block_join(how: Any) -> None:
         )
         .filter(pl.col("a") == 1)
     )
-    assert_frame_equal(q.collect(no_optimization=True), q.collect())
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), q.collect())
 
 
 def test_predicate_push_down_with_alias_15442() -> None:
@@ -533,12 +542,14 @@ def test_predicate_push_down_with_alias_15442() -> None:
     output = (
         df.lazy()
         .filter(pl.col("a").alias("x").drop_nulls() > 0)
-        .collect(predicate_pushdown=True)
+        .collect(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
     )
     assert output.to_dict(as_series=False) == {"a": [1]}
 
 
-def test_predicate_slice_pushdown_list_gather_17492() -> None:
+def test_predicate_slice_pushdown_list_gather_17492(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     lf = pl.LazyFrame({"val": [[1], [1, 1]], "len": [1, 2]})
 
     assert_frame_equal(
@@ -559,8 +570,16 @@ def test_predicate_slice_pushdown_list_gather_17492() -> None:
     # Also check slice pushdown
     q = lf.with_columns(pl.col("val").list.get(1).alias("b")).slice(1, 1)
 
-    with pytest.raises(ComputeError, match="get index is out of bounds"):
-        q.collect()
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "val": [[1, 1]],
+                "len": pl.Series([2], dtype=pl.Int64),
+                "b": pl.Series([1], dtype=pl.Int64),
+            }
+        ),
+    )
 
 
 def test_predicate_pushdown_struct_unnest_19632() -> None:
@@ -641,7 +660,7 @@ def test_predicate_pushdown_join_19772(
     if join_type == "right":
         expect = expect.select("v", "b", "k")
 
-    assert_frame_equal(q.collect(no_optimization=True), expect)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
     assert_frame_equal(q.collect(), expect)
 
 
@@ -662,7 +681,12 @@ def test_predicates_not_split_when_pushdown_disabled_20475() -> None:
     q = pl.LazyFrame({"a": 1, "b": 1, "c": 1}).filter(
         pl.col("a") > 0, pl.col("b") > 0, pl.col("c") > 0
     )
-    assert q.explain(predicate_pushdown=False).count("FILTER") == 1
+    assert (
+        q.explain(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).count(
+            "FILTER"
+        )
+        == 1
+    )
 
 
 def test_predicate_filtering_against_nulls() -> None:
@@ -748,4 +772,389 @@ def test_predicate_pushdown_lazy_rename_22373(
 
     # Ensure filter is pushed past rename
     plan = query.explain()
-    assert plan.index("FILTER") > plan.index("RENAME")
+    assert plan.index("FILTER") > plan.index("SELECT")
+
+
+@pytest.mark.parametrize(
+    "base_query",
+    [
+        (  # Fallible expr in earlier `with_columns()`
+            pl.LazyFrame({"a": [[1]]})
+            .with_columns(MARKER=1)
+            .with_columns(b=pl.col("a").list.get(1, null_on_oob=False))
+        ),
+        (  # Fallible expr in earlier `filter()`
+            pl.LazyFrame({"a": [[1]]})
+            .with_columns(MARKER=1)
+            .filter(
+                pl.col("a")
+                .list.get(1, null_on_oob=False)
+                .cast(pl.Boolean, strict=False)
+            )
+        ),
+        (  # Fallible expr in earlier `select()`
+            pl.LazyFrame({"a": [[1]]})
+            .with_columns(MARKER=1)
+            .select("a", "MARKER", b=pl.col("a").list.get(1, null_on_oob=False))
+        ),
+    ],
+)
+def test_predicate_pushdown_pushes_past_fallible(
+    base_query: pl.LazyFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Ensure baseline fails
+    with pytest.raises(ComputeError, match="index is out of bounds"):
+        base_query.collect()
+
+    q = base_query.filter(pl.col("a").list.len() > 1)
+
+    plan = q.explain()
+
+    assert plan.index("list.len") > plan.index("MARKER")
+
+    assert_frame_equal(q.collect(), pl.DataFrame(schema=q.collect_schema()))
+
+    monkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+
+    with pytest.raises(ComputeError, match="index is out of bounds"):
+        q.collect()
+
+
+def test_predicate_pushdown_fallible_exprs_22284(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    q = (
+        pl.LazyFrame({"a": ["xyz", "123", "456", "789"]})
+        .with_columns(MARKER=1)
+        .filter(pl.col.a.str.contains(r"^\d{3}$"))
+        .filter(pl.col.a.cast(pl.Int64) >= 123)
+    )
+
+    plan = q.explain()
+
+    assert (
+        plan.index('FILTER [(col("a").strict_cast(Int64)) >= (123)]')
+        < plan.index("MARKER")
+        < plan.index(r'FILTER col("a").str.contains(["^\d{3}$"])')
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a": ["123", "456", "789"],
+                "MARKER": 1,
+            }
+        ),
+    )
+
+    lf = pl.LazyFrame(
+        {
+            "str_date": ["2025-01-01", "20250101"],
+            "data_source": ["system_1", "system_2"],
+        }
+    )
+
+    q = lf.filter(pl.col("data_source") == "system_1").filter(
+        pl.col("str_date").str.to_datetime("%Y-%m-%d", strict=True)
+        == datetime(2025, 1, 1)
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "str_date": ["2025-01-01"],
+                "data_source": ["system_1"],
+            }
+        ),
+    )
+
+    q = lf.with_columns(
+        pl.col("str_date").str.to_datetime("%Y-%m-%d", strict=True)
+    ).filter(pl.col("data_source") == "system_1")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "str_date": [datetime(2025, 1, 1)],
+                "data_source": ["system_1"],
+            }
+        ),
+    )
+
+    monkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+
+    with pytest.raises(
+        InvalidOperationError, match=r"`str` to `datetime\[μs\]` failed"
+    ):
+        q.collect()
+
+
+def test_predicate_pushdown_single_fallible() -> None:
+    lf = pl.LazyFrame({"a": [0, 1]}).with_columns(MARKER=pl.lit(1, dtype=pl.Int64))
+
+    q = lf.filter(pl.col("a").cast(pl.Boolean))
+
+    plan = q.explain()
+
+    assert plan.index('FILTER col("a").strict_cast(Boolean)') > plan.index("MARKER")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1, "MARKER": 1}))
+
+
+def test_predicate_pushdown_split_pushable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lf = pl.LazyFrame({"a": [1, 999]}).with_columns(MARKER=pl.lit(1, dtype=pl.Int64))
+
+    q = lf.filter(
+        pl.col("a") == 1,  # pushable
+        pl.col("a").cast(pl.Int8) == 1,  # fallible
+    )
+
+    plan = q.explain()
+
+    assert (
+        plan.index('FILTER [(col("a").strict_cast(Int8)) == (1)]')
+        < plan.index("MARKER")
+        < plan.index('FILTER [(col("a")) == (1)]')
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1, "MARKER": 1}))
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+
+        with pytest.raises(
+            InvalidOperationError, match="conversion from `i64` to `i8` failed"
+        ):
+            q.collect()
+
+    q = lf.filter(
+        pl.col("a").cast(pl.UInt16) == 1,
+        pl.col("a").sort() == 1,
+    )
+
+    plan = q.explain()
+
+    assert plan.index(
+        'FILTER [([(col("a").strict_cast(UInt16)) == (1)]) & ([(col("a").sort(asc)) == (1)])]'
+    ) < plan.index("MARKER")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1, "MARKER": 1}))
+
+    with monkeypatch.context() as cx:
+        cx.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+        assert_frame_equal(q.collect(), pl.DataFrame({"a": 1, "MARKER": 1}))
+
+    # Ensure it is not pushed past a join
+
+    # Baseline
+    q = lf.join(
+        lf.drop("MARKER").collect().lazy(),
+        on="a",
+        how="inner",
+        coalesce=False,
+        maintain_order="left_right",
+    ).filter(pl.col("a_right") == 1)
+
+    plan = q.explain()
+
+    assert not plan.startswith("FILTER")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a": 1,
+                "MARKER": 1,
+                "a_right": 1,
+            }
+        ),
+    )
+
+    q = lf.join(
+        lf.drop("MARKER").collect().lazy(),
+        on="a",
+        how="inner",
+        coalesce=False,
+        maintain_order="left_right",
+    ).filter(pl.col("a_right").cast(pl.Int16) == 1)
+
+    plan = q.explain()
+
+    assert plan.startswith("FILTER")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a": 1,
+                "MARKER": 1,
+                "a_right": 1,
+            }
+        ),
+    )
+
+    # With a select node in between
+
+    q = (
+        lf.join(
+            lf.drop("MARKER").collect().lazy(),
+            on="a",
+            how="inner",
+            coalesce=False,
+            maintain_order="left_right",
+        )
+        .select(
+            "a",
+            "a_right",
+            "MARKER",
+        )
+        .filter(pl.col("a_right").cast(pl.Int16) == 1)
+    )
+
+    plan = q.explain()
+
+    assert plan.startswith("FILTER")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a": 1,
+                "a_right": 1,
+                "MARKER": 1,
+            }
+        ),
+    )
+
+
+def test_predicate_pushdown_fallible_literal_in_filter_expr() -> None:
+    # Fallible operations on literals inside of the predicate expr should not
+    # block pushdown.
+    lf = pl.LazyFrame(
+        {"column": "2025-01-01", "column_date": datetime(2025, 1, 1), "integer": 1}
+    )
+
+    q = lf.with_columns(
+        MARKER=1,
+    ).filter(
+        pl.col("column_date")
+        == pl.lit("2025-01-01").str.to_datetime("%Y-%m-%d", strict=True)
+    )
+
+    plan = q.explain()
+
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+    assert q.collect().height == 1
+
+    q = lf.with_columns(
+        MARKER=1,
+    ).filter(pl.col("integer") == pl.lit("1").cast(pl.Int64, strict=True))
+
+    plan = q.explain()
+
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+    assert q.collect().height == 1
+
+
+def test_predicate_does_not_split_barrier_expr() -> None:
+    q = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .with_row_index()
+        .filter(pl.col("a") > 1, pl.col("a").sort() == 3)
+    )
+
+    plan = q.explain()
+
+    assert plan.startswith(
+        'FILTER [([(col("a")) > (1)]) & ([(col("a").sort(asc)) == (3)])]'
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": 3}).with_row_index(offset=2),
+    )
+
+
+def test_predicate_passes_set_sorted_22397() -> None:
+    plan = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .with_columns(MARKER=1, b=pl.lit(1))
+        .set_sorted("a")
+        .filter(pl.col("a") <= 1)
+        .explain()
+    )
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+
+@pytest.mark.filterwarnings("ignore")
+def test_predicate_pass() -> None:
+    plan = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .with_columns(MARKER=pl.col("a"))
+        .filter(pl.col("a").map_elements(lambda x: x > 2, return_dtype=pl.Boolean))
+        .explain()
+    )
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+
+def test_predicate_pushdown_auto_disable_strict() -> None:
+    # Test that type-coercion automatically switches strict cast to
+    # non-strict/overflowing for compatible types, allowing the predicate to be
+    # pushed.
+    lf = pl.LazyFrame(
+        {"column": "2025-01-01", "column_date": datetime(2025, 1, 1), "integer": 1},
+        schema={
+            "column": pl.String,
+            "column_date": pl.Datetime("ns"),
+            "integer": pl.Int64,
+        },
+    )
+
+    q = lf.with_columns(
+        MARKER=1,
+    ).filter(
+        pl.col("column_date").cast(pl.Datetime("us")) == pl.lit(datetime(2025, 1, 1)),
+        pl.col("integer") == 1,
+    )
+
+    plan = q.explain()
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+    q = lf.with_columns(
+        MARKER=1,
+    ).filter(
+        pl.col("column_date").cast(pl.Datetime("us"), strict=False)
+        == pl.lit(datetime(2025, 1, 1)),
+        pl.col("integer").cast(pl.Int128, strict=True) == 1,
+    )
+
+    plan = q.explain()
+    assert plan.index("FILTER") > plan.index("MARKER")
+
+
+def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
+    def generator(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        df = pl.DataFrame({"row_nr": [1, 2, 3, 4, 5], "y": [0, 1, 0, 1, 1]})
+        assert predicate is not None
+        yield df.filter(predicate)
+
+    q = register_io_source(
+        io_source=generator, schema={"x": pl.Int64, "y": pl.Int64}
+    ).filter(pl.col("y").map_elements(bool))
+
+    plan = q.explain()
+    assert plan.index("map_list") > plan.index("PYTHON SCAN")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"row_nr": [2, 4, 5], "y": [1, 1, 1]}))

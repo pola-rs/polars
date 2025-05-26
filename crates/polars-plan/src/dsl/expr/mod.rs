@@ -1,19 +1,25 @@
+mod expr_dyn_fn;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use bytes::Bytes;
+pub use expr_dyn_fn::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
+pub mod named_serde;
+#[cfg(feature = "serde")]
+mod serde_expr;
 
-pub use super::expr_dyn_fn::*;
 use crate::prelude::*;
 
 #[derive(PartialEq, Clone, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum AggExpr {
     Min {
         input: Arc<Expr>,
@@ -72,6 +78,7 @@ impl AsRef<Expr> for AggExpr {
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Expr {
     Alias(Arc<Expr>, PlSmallStr),
     Column(PlSmallStr),
@@ -118,7 +125,10 @@ pub enum Expr {
         function: FunctionExpr,
         options: FunctionOptions,
     },
-    Explode(Arc<Expr>),
+    Explode {
+        input: Arc<Expr>,
+        skip_empty: bool,
+    },
     Filter {
         input: Arc<Expr>,
         by: Arc<Expr>,
@@ -146,10 +156,6 @@ pub enum Expr {
     Len,
     /// Take the nth column in the `DataFrame`
     Nth(i64),
-    RenameAlias {
-        function: SpecialEq<Arc<dyn RenameAliasFn>>,
-        expr: Arc<Expr>,
-    },
     #[cfg(feature = "dtype-struct")]
     Field(Arc<[PlSmallStr]>),
     AnonymousFunction {
@@ -169,17 +175,27 @@ pub enum Expr {
     /// `Expr::Wildcard`
     /// `Expr::Exclude`
     Selector(super::selector::Selector),
-}
-
-pub type OpaqueColumnUdf = LazySerde<SpecialEq<Arc<dyn ColumnsUdf>>>;
-pub(crate) fn new_column_udf<F: ColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
-    LazySerde::Deserialized(SpecialEq::new(Arc::new(func)))
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+    RenameAlias {
+        function: SpecialEq<Arc<dyn RenameAliasFn>>,
+        expr: Arc<Expr>,
+    },
 }
 
 #[derive(Clone)]
 pub enum LazySerde<T: Clone> {
     Deserialized(T),
     Bytes(Bytes),
+    // Used by cloud
+    Named {
+        // Name and payload are used by the NamedRegistry
+        // To load the function `T` at runtime.
+        name: String,
+        payload: Option<Bytes>,
+        // Sometimes we need the function `T` before sending
+        // to a different machine, so optionally set it as well.
+        value: Option<T>,
+    },
 }
 
 impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
@@ -189,6 +205,28 @@ impl<T: PartialEq + Clone> PartialEq for LazySerde<T> {
             (L::Deserialized(a), L::Deserialized(b)) => a == b,
             (L::Bytes(a), L::Bytes(b)) => {
                 std::ptr::eq(a.as_ptr(), b.as_ptr()) && a.len() == b.len()
+            },
+            (
+                L::Named {
+                    name: l,
+                    payload: pl,
+                    value: _,
+                },
+                L::Named {
+                    name: r,
+                    payload: pr,
+                    value: _,
+                },
+            ) => {
+                #[cfg(debug_assertions)]
+                {
+                    if l == r {
+                        assert_eq!(pl, pr, "name should point to unique payload")
+                    }
+                }
+                _ = pl;
+                _ = pr;
+                l == r
             },
             _ => false,
         }
@@ -200,19 +238,11 @@ impl<T: Clone> Debug for LazySerde<T> {
         match self {
             Self::Bytes(_) => write!(f, "lazy-serde<Bytes>"),
             Self::Deserialized(_) => write!(f, "lazy-serde<T>"),
-        }
-    }
-}
-
-impl OpaqueColumnUdf {
-    pub fn materialize(self) -> PolarsResult<SpecialEq<Arc<dyn ColumnsUdf>>> {
-        match self {
-            Self::Deserialized(t) => Ok(t),
-            Self::Bytes(_b) => {
-                feature_gated!("serde";"python", {
-                    crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(_b.as_ref()).map(SpecialEq::new)
-                })
-            },
+            Self::Named {
+                name,
+                payload: _,
+                value: _,
+            } => write!(f, "lazy-serde<Named>: {name}"),
         }
     }
 }
@@ -296,7 +326,10 @@ impl Hash for Expr {
                 sort_options.hash(state);
             },
             Expr::Agg(input) => input.hash(state),
-            Expr::Explode(input) => input.hash(state),
+            Expr::Explode { input, skip_empty } => {
+                skip_empty.hash(state);
+                input.hash(state)
+            },
             Expr::Window {
                 function,
                 partition_by,
@@ -348,6 +381,7 @@ impl Default for Expr {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Excluded {
     Name(PlSmallStr),
     Dtype(DataType),
@@ -446,6 +480,7 @@ impl Expr {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum Operator {
     Eq,
     EqValidity,

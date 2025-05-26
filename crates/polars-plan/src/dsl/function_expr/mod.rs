@@ -105,7 +105,7 @@ pub use self::cat::CategoricalFunction;
 pub use self::datetime::TemporalFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
-pub(super) use self::range::RangeFunction;
+pub use self::range::RangeFunction;
 #[cfg(feature = "rolling_window")]
 pub(super) use self::rolling::RollingFunction;
 #[cfg(feature = "rolling_window_by")]
@@ -119,6 +119,7 @@ pub use self::trigonometry::TrigonometricFunction;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug)]
 pub enum FunctionExpr {
     // Namespaces
@@ -159,7 +160,10 @@ pub enum FunctionExpr {
     #[cfg(feature = "index_of")]
     IndexOf,
     #[cfg(feature = "search_sorted")]
-    SearchSorted(SearchSortedSide),
+    SearchSorted {
+        side: SearchSortedSide,
+        descending: bool,
+    },
     #[cfg(feature = "range")]
     Range(RangeFunction),
     #[cfg(feature = "trigonometry")]
@@ -269,6 +273,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "round_series")]
     Round {
         decimals: u32,
+        mode: RoundMode,
     },
     #[cfg(feature = "round_series")]
     RoundSF {
@@ -397,7 +402,10 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "index_of")]
             IndexOf => {},
             #[cfg(feature = "search_sorted")]
-            SearchSorted(f) => f.hash(state),
+            SearchSorted { side, descending } => {
+                side.hash(state);
+                descending.hash(state);
+            },
             #[cfg(feature = "random")]
             Random { method, .. } => method.hash(state),
             #[cfg(feature = "cov")]
@@ -523,7 +531,10 @@ impl Hash for FunctionExpr {
             Exp => {},
             Unique(a) => a.hash(state),
             #[cfg(feature = "round_series")]
-            Round { decimals } => decimals.hash(state),
+            Round { decimals, mode } => {
+                decimals.hash(state);
+                mode.hash(state);
+            },
             #[cfg(feature = "round_series")]
             FunctionExpr::RoundSF { digits } => digits.hash(state),
             #[cfg(feature = "round_series")]
@@ -644,7 +655,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "index_of")]
             IndexOf => "index_of",
             #[cfg(feature = "search_sorted")]
-            SearchSorted(_) => "search_sorted",
+            SearchSorted { .. } => "search_sorted",
             #[cfg(feature = "range")]
             Range(func) => return write!(f, "{func}"),
             #[cfg(feature = "trigonometry")]
@@ -935,8 +946,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 map_as_slice!(index_of::index_of)
             },
             #[cfg(feature = "search_sorted")]
-            SearchSorted(side) => {
-                map_as_slice!(search_sorted::search_sorted_impl, side)
+            SearchSorted { side, descending } => {
+                map_as_slice!(search_sorted::search_sorted_impl, side, descending)
             },
             #[cfg(feature = "range")]
             Range(func) => func.into(),
@@ -1097,7 +1108,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Exp => map!(log::exp),
             Unique(stable) => map!(unique::unique, stable),
             #[cfg(feature = "round_series")]
-            Round { decimals } => map!(round::round, decimals),
+            Round { decimals, mode } => map!(round::round, decimals, mode),
             #[cfg(feature = "round_series")]
             RoundSF { digits } => map!(round::round_sig_figs, digits),
             #[cfg(feature = "round_series")]
@@ -1254,7 +1265,7 @@ impl FunctionExpr {
                 FunctionOptions::aggregation().with_casting_rules(CastingRules::FirstArgLossless)
             },
             #[cfg(feature = "search_sorted")]
-            F::SearchSorted(_) => FunctionOptions::groupwise().with_supertyping(
+            F::SearchSorted { .. } => FunctionOptions::groupwise().with_supertyping(
                 (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
             ),
             #[cfg(feature = "trigonometry")]
@@ -1275,7 +1286,8 @@ impl FunctionExpr {
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
             F::DropNans => FunctionOptions::row_separable(),
-            F::DropNulls => FunctionOptions::row_separable().with_allow_empty_inputs(true),
+            F::DropNulls => FunctionOptions::row_separable()
+                .with_flags(|f| f | FunctionFlags::ALLOW_EMPTY_INPUTS),
             #[cfg(feature = "mode")]
             F::Mode => FunctionOptions::groupwise(),
             #[cfg(feature = "moment")]
@@ -1289,15 +1301,15 @@ impl FunctionExpr {
             F::ArgUnique => FunctionOptions::groupwise(),
             #[cfg(feature = "rank")]
             F::Rank { .. } => FunctionOptions::groupwise(),
-            F::Repeat => FunctionOptions::groupwise()
-                .with_allow_rename(true)
-                .with_changes_length(true),
+            F::Repeat => {
+                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
+            },
             #[cfg(feature = "round_series")]
             F::Clip { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
-            F::AsStruct => FunctionOptions::elementwise()
-                .with_pass_name_to_apply(true)
-                .with_input_wildcard_expansion(true),
+            F::AsStruct => FunctionOptions::elementwise().with_flags(|f| {
+                f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::INPUT_WILDCARD_EXPANSION
+            }),
             #[cfg(feature = "top_k")]
             F::TopK { .. } => FunctionOptions::groupwise(),
             #[cfg(feature = "top_k")]
@@ -1310,13 +1322,15 @@ impl FunctionExpr {
             | F::CumMax { .. } => FunctionOptions::length_preserving(),
             F::Reverse => FunctionOptions::length_preserving(),
             #[cfg(feature = "dtype-struct")]
-            F::ValueCounts { .. } => FunctionOptions::groupwise().with_pass_name_to_apply(true),
+            F::ValueCounts { .. } => {
+                FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY)
+            },
             #[cfg(feature = "unique_counts")]
             F::UniqueCounts => FunctionOptions::groupwise(),
             #[cfg(feature = "approx_unique")]
             F::ApproxNUnique => FunctionOptions::aggregation(),
             F::Coalesce => FunctionOptions::elementwise()
-                .with_input_wildcard_expansion(true)
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
             F::ShrinkType => FunctionOptions::length_preserving(),
             #[cfg(feature = "diff")]
@@ -1342,7 +1356,7 @@ impl FunctionExpr {
             #[cfg(feature = "fused")]
             F::Fused(_) => FunctionOptions::elementwise(),
             F::ConcatExpr(_) => FunctionOptions::groupwise()
-                .with_input_wildcard_expansion(true)
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
             #[cfg(feature = "cov")]
             F::Correlation { .. } => {
@@ -1351,9 +1365,8 @@ impl FunctionExpr {
             #[cfg(feature = "peaks")]
             F::PeakMin | F::PeakMax => FunctionOptions::length_preserving(),
             #[cfg(feature = "cutqcut")]
-            F::Cut { .. } | F::QCut { .. } => {
-                FunctionOptions::length_preserving().with_pass_name_to_apply(true)
-            },
+            F::Cut { .. } | F::QCut { .. } => FunctionOptions::length_preserving()
+                .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),
             #[cfg(feature = "rle")]
             F::RLE => FunctionOptions::groupwise(),
             #[cfg(feature = "rle")]
@@ -1372,12 +1385,11 @@ impl FunctionExpr {
             F::SetSortedFlag(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "ffi_plugin")]
             F::FfiPlugin { flags, .. } => *flags,
-            F::MaxHorizontal | F::MinHorizontal => FunctionOptions::elementwise()
-                .with_input_wildcard_expansion(true)
-                .with_allow_rename(true),
-            F::MeanHorizontal { .. } | F::SumHorizontal { .. } => {
-                FunctionOptions::elementwise().with_input_wildcard_expansion(true)
-            },
+            F::MaxHorizontal | F::MinHorizontal => FunctionOptions::elementwise().with_flags(|f| {
+                f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::ALLOW_RENAME
+            }),
+            F::MeanHorizontal { .. } | F::SumHorizontal { .. } => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "ewma")]
             F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } => {
                 FunctionOptions::length_preserving()

@@ -2,7 +2,9 @@ use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::hive_partitions_from_paths;
+use polars_core::chunked_array::cast::CastOptions;
 
+use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::plans::conversion::expr_expansion::expand_selectors;
@@ -76,29 +78,37 @@ pub fn to_alp(
         lp_arena,
         conversion_optimizer,
         opt_flags,
+        nodes_scratch: &mut unitvec![],
+        pushdown_maintain_errors: optimizer::pushdown_maintain_errors(),
     };
 
     match to_alp_impl(lp, &mut ctxt) {
         Ok(out) => Ok(out),
         Err(err) => {
-            if let Some(ir_until_then) = lp_arena.last_node() {
-                let node_name = if let PolarsError::Context { msg, .. } = &err {
-                    msg
-                } else {
-                    "THIS_NODE"
-                };
-                let plan = IRPlan::new(
-                    ir_until_then,
-                    std::mem::take(lp_arena),
-                    std::mem::take(expr_arena),
-                );
-                let location = format!("{}", plan.display());
-                Err(err.wrap_msg(|msg| {
-                    format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
-                }))
+            if opt_flags.contains(OptFlags::EAGER) {
+                // If we dispatched to the lazy engine from the eager API, we don't want to resolve
+                // where in the query plan it went wrong. It is clear from the backtrace anyway.
+                return Err(err.remove_context());
+            };
+
+            let Some(ir_until_then) = lp_arena.last_node() else {
+                return Err(err);
+            };
+
+            let node_name = if let PolarsError::Context { msg, .. } = &err {
+                msg
             } else {
-                Err(err)
-            }
+                "THIS_NODE"
+            };
+            let plan = IRPlan::new(
+                ir_until_then,
+                std::mem::take(lp_arena),
+                std::mem::take(expr_arena),
+            );
+            let location = format!("{}", plan.display());
+            Err(err.wrap_msg(|msg| {
+                format!("{msg}\n\nResolved plan until failure:\n\n\t---> FAILED HERE RESOLVING {node_name} <---\n{location}")
+            }))
         },
     }
 }
@@ -108,6 +118,8 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) lp_arena: &'a mut Arena<IR>,
     pub(super) conversion_optimizer: ConversionOptimizer,
     pub(super) opt_flags: &'a mut OptFlags,
+    pub(super) nodes_scratch: &'a mut UnitVec<Node>,
+    pub(super) pushdown_maintain_errors: bool,
 }
 
 pub(super) fn run_conversion(
@@ -180,6 +192,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         FileScan::NDJson { .. } => {
                             sources.expand_paths(unified_scan_args, cloud_options)?
                         },
+                        #[cfg(feature = "python")]
+                        FileScan::PythonDataset { .. } => {
+                            // There are a lot of places that short-circuit if the paths is empty,
+                            // so we just give a dummy path here.
+                            ScanSources::Paths(Arc::from(["dummy".into()]))
+                        },
                         FileScan::Anonymous { .. } => sources,
                     };
 
@@ -244,6 +262,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         cloud_options,
                     )
                     .map_err(|e| e.context(failed_here!(ndjson scan)))?,
+                    #[cfg(feature = "python")]
+                    FileScan::PythonDataset { dataset_object, .. } => {
+                        if crate::dsl::DATASET_PROVIDER_VTABLE.get().is_none() {
+                            polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
+                        }
+
+                        let schema = dataset_object.schema()?;
+
+                        FileInfo {
+                            schema: schema.clone(),
+                            reader_schema: Some(either::Either::Right(schema)),
+                            row_estimation: (None, usize::MAX),
+                        }
+                    },
                     FileScan::Anonymous { .. } => {
                         file_info.expect("FileInfo should be set for AnonymousScan")
                     },
@@ -291,22 +323,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     // schema.
                     file_info.update_schema_with_hive_schema(hive_schema);
                 }
-
-                unified_scan_args.include_file_paths = unified_scan_args
-                    .include_file_paths
-                    .as_ref()
-                    .filter(|_| match &*scan_type {
-                        #[cfg(feature = "parquet")]
-                        FileScan::Parquet { .. } => true,
-                        #[cfg(feature = "ipc")]
-                        FileScan::Ipc { .. } => true,
-                        #[cfg(feature = "csv")]
-                        FileScan::Csv { .. } => true,
-                        #[cfg(feature = "json")]
-                        FileScan::NDJson { .. } => true,
-                        FileScan::Anonymous { .. } => false,
-                    })
-                    .cloned();
 
                 if let Some(ref file_path_col) = unified_scan_args.include_file_paths {
                     let schema = Arc::make_mut(&mut file_info.schema);
@@ -359,6 +375,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         scan_type,
                         output_schema: None,
                         unified_scan_args,
+                        id: Default::default(),
                     }
                 };
 
@@ -439,54 +456,46 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let predicate_ae = to_expr_ir(predicate.clone(), ctxt.expr_arena)?;
 
-            // TODO: We could do better here by using `pushdown_eligibility()`
-            return if ctxt.opt_flags.predicate_pushdown()
-                && permits_filter_pushdown_rec(
-                    ctxt.expr_arena.get(predicate_ae.node()),
+            if ctxt.opt_flags.predicate_pushdown() {
+                ctxt.nodes_scratch.clear();
+
+                if let Some(SplitPredicates { pushable, fallible }) = SplitPredicates::new(
+                    predicate_ae.node(),
                     ctxt.expr_arena,
+                    Some(ctxt.nodes_scratch),
+                    ctxt.pushdown_maintain_errors,
                 ) {
-                // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
-                // push them down independently. Especially if they refer columns from different tables
-                // this will be more performant.
-                // So:
-                // filter[foo == bar & ham == spam]
-                // filter [foo == bar]
-                // filter [ham == spam]
-                let mut predicates = vec![];
+                    let mut update_input = |predicate: Node| -> PolarsResult<()> {
+                        let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
+                        ctxt.conversion_optimizer
+                            .push_scratch(predicate.node(), ctxt.expr_arena);
+                        let lp = IR::Filter { input, predicate };
+                        input = run_conversion(lp, ctxt, "filter")?;
 
-                let mut stack = vec![predicate_ae.node()];
-                while let Some(n) = stack.pop() {
-                    if let AExpr::BinaryExpr {
-                        left,
-                        op: Operator::And | Operator::LogicalAnd,
-                        right,
-                    } = ctxt.expr_arena.get(n)
-                    {
-                        stack.push(*left);
-                        stack.push(*right);
-                    } else {
-                        predicates.push(n)
+                        Ok(())
+                    };
+
+                    // Pushables first, then fallible.
+
+                    for predicate in pushable {
+                        update_input(predicate)?;
                     }
-                }
 
-                for predicate in predicates {
-                    let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
-                    ctxt.conversion_optimizer
-                        .push_scratch(predicate.node(), ctxt.expr_arena);
-                    let lp = IR::Filter { input, predicate };
-                    input = run_conversion(lp, ctxt, "filter")?;
-                }
+                    if let Some(node) = fallible {
+                        update_input(node)?;
+                    }
 
-                Ok(input)
-            } else {
-                ctxt.conversion_optimizer
-                    .push_scratch(predicate_ae.node(), ctxt.expr_arena);
-                let lp = IR::Filter {
-                    input,
-                    predicate: predicate_ae,
+                    return Ok(input);
                 };
-                run_conversion(lp, ctxt, "filter")
             };
+
+            ctxt.conversion_optimizer
+                .push_scratch(predicate_ae.node(), ctxt.expr_arena);
+            let lp = IR::Filter {
+                input,
+                predicate: predicate_ae,
+            };
+            return run_conversion(lp, ctxt, "filter");
         },
         DslPlan::Slice { input, offset, len } => {
             let input =
@@ -729,6 +738,125 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             };
             return run_conversion(lp, ctxt, "with_columns");
         },
+        DslPlan::MatchToSchema {
+            input,
+            match_schema,
+            per_column,
+            extra_columns,
+        } => {
+            let input =
+                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
+            let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
+            assert_eq!(per_column.len(), match_schema.len());
+
+            if input_schema.as_ref() == &match_schema {
+                return Ok(input);
+            }
+
+            let mut exprs = Vec::with_capacity(match_schema.len());
+            let mut found_missing_columns = Vec::new();
+            let mut used_input_columns = 0;
+
+            for ((column, dtype), per_column) in match_schema.iter().zip(per_column.iter()) {
+                match input_schema.get(column) {
+                    None => match &per_column.missing_columns {
+                        MissingColumnsPolicyOrExpr::Raise => found_missing_columns.push(column),
+                        MissingColumnsPolicyOrExpr::Insert => exprs.push(Expr::Alias(
+                            Arc::new(Expr::Literal(LiteralValue::Scalar(Scalar::null(
+                                dtype.clone(),
+                            )))),
+                            column.clone(),
+                        )),
+                        MissingColumnsPolicyOrExpr::InsertWith(expr) => {
+                            exprs.push(Expr::Alias(Arc::new(expr.clone()), column.clone()))
+                        },
+                    },
+                    Some(input_dtype) if dtype == input_dtype => {
+                        used_input_columns += 1;
+                        exprs.push(Expr::Column(column.clone()))
+                    },
+                    Some(input_dtype) => {
+                        let from_dtype = input_dtype;
+                        let to_dtype = dtype;
+
+                        let policy = CastColumnsPolicy {
+                            integer_upcast: per_column.integer_cast == UpcastOrForbid::Upcast,
+                            float_upcast: per_column.float_cast == UpcastOrForbid::Upcast,
+                            float_downcast: false,
+                            datetime_nanoseconds_downcast: false,
+                            datetime_microseconds_downcast: false,
+                            datetime_convert_timezone: false,
+                            missing_struct_fields: per_column.missing_struct_fields,
+                            extra_struct_fields: per_column.extra_struct_fields,
+                        };
+
+                        let should_cast =
+                            policy.should_cast_column(column, to_dtype, from_dtype)?;
+
+                        let mut expr = Expr::Column(PlSmallStr::from_str(column));
+                        if should_cast {
+                            expr = Expr::Cast {
+                                expr: Arc::new(expr),
+                                dtype: to_dtype.clone(),
+                                options: CastOptions::NonStrict,
+                            };
+                        }
+
+                        used_input_columns += 1;
+                        exprs.push(expr);
+                    },
+                }
+            }
+
+            // Report the error for missing columns
+            if let Some(lst) = found_missing_columns.first() {
+                use std::fmt::Write;
+                let mut formatted = String::new();
+                write!(&mut formatted, "\"{}\"", found_missing_columns[0]).unwrap();
+                for c in &found_missing_columns[1..] {
+                    write!(&mut formatted, ", \"{c}\"").unwrap();
+                }
+
+                write!(&mut formatted, "\"{lst}\"").unwrap();
+                polars_bail!(SchemaMismatch: "missing columns in `match_to_schema`: {formatted}");
+            }
+
+            // Report the error for extra columns
+            if used_input_columns != input_schema.len()
+                && extra_columns == ExtraColumnsPolicy::Raise
+            {
+                let found_extra_columns = input_schema
+                    .iter_names()
+                    .filter(|n| !match_schema.contains(n))
+                    .collect::<Vec<_>>();
+
+                use std::fmt::Write;
+                let mut formatted = String::new();
+                write!(&mut formatted, "\"{}\"", found_extra_columns[0]).unwrap();
+                for c in &found_extra_columns[1..] {
+                    write!(&mut formatted, ", \"{c}\"").unwrap();
+                }
+
+                polars_bail!(SchemaMismatch: "extra columns in `match_to_schema`: {formatted}");
+            }
+
+            let exprs = to_expr_irs(exprs, ctxt.expr_arena)?;
+
+            ctxt.conversion_optimizer
+                .fill_scratch(&exprs, ctxt.expr_arena);
+            let lp = IR::Select {
+                input,
+                expr: exprs,
+                schema: match_schema.clone(),
+                options: ProjectionOptions {
+                    run_parallel: true,
+                    duplicate_check: false,
+                    should_broadcast: true,
+                },
+            };
+            return run_conversion(lp, ctxt, "match_to_schema");
+        },
         DslPlan::Distinct { input, options } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
@@ -925,6 +1053,65 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     };
                     return run_conversion(lp, ctxt, "stats");
                 },
+                DslFunction::Rename {
+                    existing,
+                    new,
+                    strict,
+                } => {
+                    assert_eq!(existing.len(), new.len());
+                    if existing.is_empty() {
+                        return Ok(input);
+                    }
+
+                    let existing_lut =
+                        PlIndexSet::from_iter(existing.iter().map(PlSmallStr::as_str));
+
+                    let mut schema = Schema::with_capacity(input_schema.len());
+                    let mut num_replaced = 0;
+
+                    // Turn the rename into a select.
+                    let expr = input_schema
+                        .iter()
+                        .map(|(n, dtype)| {
+                            Ok(match existing_lut.get_index_of(n.as_str()) {
+                                None => {
+                                    schema.try_insert(n.clone(), dtype.clone())?;
+                                    Expr::Column(n.clone())
+                                },
+                                Some(i) => {
+                                    num_replaced += 1;
+                                    schema.try_insert(new[i].clone(), dtype.clone())?;
+                                    Expr::Column(n.clone()).alias(new[i].clone())
+                                },
+                            })
+                        })
+                        .collect::<PolarsResult<Vec<_>>>()?;
+
+                    if strict && num_replaced != existing.len() {
+                        let col = existing.iter().find(|c| !input_schema.contains(c)).unwrap();
+                        polars_bail!(col_not_found = col);
+                    }
+
+                    // Nothing changed, make into a no-op.
+                    if num_replaced == 0 {
+                        return Ok(input);
+                    }
+
+                    let expr = to_expr_irs(expr, ctxt.expr_arena)?;
+                    ctxt.conversion_optimizer
+                        .fill_scratch(&expr, ctxt.expr_arena);
+
+                    IR::Select {
+                        input,
+                        expr,
+                        schema: Arc::new(schema),
+                        options: ProjectionOptions {
+                            run_parallel: false,
+                            duplicate_check: false,
+                            should_broadcast: false,
+                        },
+                    }
+                },
                 _ => {
                     let function = function.into_function_ir(&input_schema)?;
                     IR::MapFunction { input, function }
@@ -999,6 +1186,25 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         },
                     },
                     cloud_options: f.cloud_options,
+                    per_partition_sort_by: match f.per_partition_sort_by {
+                        None => None,
+                        Some(sort_by) => Some(
+                            sort_by
+                                .into_iter()
+                                .map(|s| {
+                                    let expr = to_expr_ir(s.expr, ctxt.expr_arena)?;
+                                    ctxt.conversion_optimizer
+                                        .push_scratch(expr.node(), ctxt.expr_arena);
+                                    Ok(SortColumnIR {
+                                        expr,
+                                        descending: s.descending,
+                                        nulls_last: s.nulls_last,
+                                    })
+                                })
+                                .collect::<PolarsResult<Vec<_>>>()?,
+                        ),
+                    },
+                    finish_callback: f.finish_callback,
                 }),
             };
 

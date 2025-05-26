@@ -32,22 +32,6 @@ impl GroupedReduction for LenReduce {
         Ok(())
     }
 
-    unsafe fn update_groups(
-        &mut self,
-        values: &Column,
-        group_idxs: &[IdxSize],
-        _seq_id: u64,
-    ) -> PolarsResult<()> {
-        assert!(values.len() == group_idxs.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for g in group_idxs.iter() {
-                *self.groups.get_unchecked_mut(*g as usize) += 1;
-            }
-        }
-        Ok(())
-    }
-
     unsafe fn update_groups_while_evicting(
         &mut self,
         _values: &Column,
@@ -69,23 +53,7 @@ impl GroupedReduction for LenReduce {
         Ok(())
     }
 
-    unsafe fn combine(
-        &mut self,
-        other: &dyn GroupedReduction,
-        group_idxs: &[IdxSize],
-    ) -> PolarsResult<()> {
-        let other = other.as_any().downcast_ref::<Self>().unwrap();
-        assert!(other.groups.len() == group_idxs.len());
-        unsafe {
-            // SAFETY: indices are in-bounds guaranteed by trait.
-            for (g, v) in group_idxs.iter().zip(other.groups.iter()) {
-                *self.groups.get_unchecked_mut(*g as usize) += v;
-            }
-        }
-        Ok(())
-    }
-
-    unsafe fn gather_combine(
+    unsafe fn combine_subset(
         &mut self,
         other: &dyn GroupedReduction,
         subset: &[IdxSize],

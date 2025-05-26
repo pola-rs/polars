@@ -2,6 +2,7 @@ use std::any::Any;
 
 use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
+use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::IdxSize;
 use polars_utils::hashing::HashPartitioner;
 
@@ -36,7 +37,7 @@ pub trait Grouper: Any + Send + Sync {
 
     /// Returns the keys in this Grouper in group order, that is the key for
     /// group i is returned in row i.
-    fn get_keys_in_group_order(&self) -> DataFrame;
+    fn get_keys_in_group_order(&self, schema: &Schema) -> DataFrame;
 
     /// Returns the (indices of the) keys found in the groupers. If
     /// invert is true it instead returns the keys not found in the groupers.
@@ -69,48 +70,26 @@ pub trait Grouper: Any + Send + Sync {
 
 pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
     if key_schema.len() > 1 {
-        Box::new(row_encoded::RowEncodedHashGrouper::new(key_schema))
+        Box::new(row_encoded::RowEncodedHashGrouper::new())
     } else {
-        use single_key::SingleKeyHashGrouper as SK;
-        let (name, dt) = key_schema.get_at_index(0).unwrap();
-        let (name, dt) = (name.clone(), dt.clone());
+        let (_name, dt) = key_schema.get_at_index(0).unwrap();
         match dt {
-            #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => Box::new(SK::<UInt8Type>::new(name, dt)),
-            #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => Box::new(SK::<UInt16Type>::new(name, dt)),
-            DataType::UInt32 => Box::new(SK::<UInt32Type>::new(name, dt)),
-            DataType::UInt64 => Box::new(SK::<UInt64Type>::new(name, dt)),
-            #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => Box::new(SK::<Int8Type>::new(name, dt)),
-            #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => Box::new(SK::<Int16Type>::new(name, dt)),
-            DataType::Int32 => Box::new(SK::<Int32Type>::new(name, dt)),
-            DataType::Int64 => Box::new(SK::<Int64Type>::new(name, dt)),
-            #[cfg(feature = "dtype-i128")]
-            DataType::Int128 => Box::new(SK::<Int128Type>::new(name, dt)),
-            DataType::Float32 => Box::new(SK::<Float32Type>::new(name, dt)),
-            DataType::Float64 => Box::new(SK::<Float64Type>::new(name, dt)),
-
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => Box::new(SK::<Int32Type>::new(name, dt)),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => Box::new(SK::<Int64Type>::new(name, dt)),
-            #[cfg(feature = "dtype-duration")]
-            DataType::Duration(_) => Box::new(SK::<Int64Type>::new(name, dt)),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => Box::new(SK::<Int64Type>::new(name, dt)),
-
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => Box::new(SK::<Int128Type>::new(name, dt)),
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(_, _) => Box::new(SK::<UInt32Type>::new(name, dt)),
-
-            DataType::String | DataType::Binary => {
-                Box::new(binview::BinviewHashGrouper::new(name, dt))
+            dt if dt.is_primitive_numeric() | dt.is_temporal() => {
+                with_match_physical_numeric_polars_type!(dt.to_physical(), |$T| {
+                    Box::new(single_key::SingleKeyHashGrouper::<$T>::new())
+                })
             },
 
-            _ => Box::new(row_encoded::RowEncodedHashGrouper::new(key_schema)),
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => {
+                Box::new(single_key::SingleKeyHashGrouper::<Int128Type>::new())
+            },
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(_, _) => Box::new(single_key::SingleKeyHashGrouper::<UInt32Type>::new()),
+
+            DataType::String | DataType::Binary => Box::new(binview::BinviewHashGrouper::new()),
+
+            _ => Box::new(row_encoded::RowEncodedHashGrouper::new()),
         }
     }
 }

@@ -128,9 +128,9 @@ impl ArrayNameSpace {
 
     #[cfg(feature = "is_in")]
     /// Check if the sub-array contains specific element
-    pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
+    pub fn contains<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Expr {
         self.0.map_binary(
-            FunctionExpr::ArrayExpr(ArrayFunction::Contains),
+            FunctionExpr::ArrayExpr(ArrayFunction::Contains { nulls_equal }),
             other.into(),
         )
     }
@@ -179,6 +179,8 @@ impl ArrayNameSpace {
     /// Returns a column with a separate row for every array element.
     pub fn explode(self) -> Expr {
         self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Explode))
+            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Explode {
+                skip_empty: false,
+            }))
     }
 }

@@ -7,18 +7,22 @@ use super::*;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ListToStructArgs {
     FixedWidth(Arc<[PlSmallStr]>),
     InferWidth {
         infer_field_strategy: ListToStructWidthStrategy,
+        // Can serialize only when None (null), so we override to `()` which serializes to null.
+        #[cfg_attr(feature = "dsl-schema", schemars(with = "()"))]
         get_index_name: Option<NameGenerator>,
-        /// If this is 0, it means unbounded.
-        max_fields: usize,
+        /// If this is None, it means unbounded.
+        max_fields: Option<usize>,
     },
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ListToStructWidthStrategy {
     FirstNonNull,
     MaxWidth,
@@ -44,9 +48,9 @@ impl ListToStructArgs {
             )),
             Self::InferWidth {
                 get_index_name,
-                max_fields,
+                max_fields: Some(max_fields),
                 ..
-            } if *max_fields > 0 => {
+            } => {
                 let get_index_name_func = get_index_name.as_ref().map_or(
                     &_default_struct_name_gen as &dyn Fn(usize) -> PlSmallStr,
                     |x| x.0.as_ref(),
@@ -104,7 +108,7 @@ impl ListToStructArgs {
                     },
                 };
 
-                if *max_fields > 0 {
+                if let Some(max_fields) = max_fields {
                     inferred.min(*max_fields)
                 } else {
                     inferred

@@ -4,6 +4,7 @@ use polars_core::chunked_array::ops::arity::broadcast_binary_elementwise;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
 pub enum TrigonometricFunction {
     Cos,
@@ -116,7 +117,7 @@ where
     T::Native: Float,
     ChunkedArray<T>: IntoColumn,
 {
-    let dtype = T::get_dtype();
+    let dtype = T::get_static_dtype();
     let x = x.cast(&dtype)?;
     let x = y
         .unpack_series_matching_type(x.as_materialized_series())

@@ -8,9 +8,10 @@ use std::borrow::Cow;
 use std::fmt;
 
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
-pub use format::{ExprIRDisplay, IRDisplay};
+pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursive};
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::unique_id::UniqueId;
 use polars_utils::unitvec;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -62,6 +63,16 @@ pub enum IR {
         scan_type: Box<FileScan>,
         /// generic options that can be used for all file types.
         unified_scan_args: Box<UnifiedScanArgs>,
+        /// This used as part of a hack to prevent deadlocks when we run the in-memory engine with
+        /// scans dispatched to new-streaming. This ID is used as the ID of the CacheExec that
+        /// wraps this scan. It will not be needed once everything runs in new-streaming.
+        ///
+        /// We use this instead of the Arc-address of the ScanSources as it's possible to pass the
+        /// same set of ScanSources with different scan options.
+        ///
+        /// NOTE: This must be reset to a new Arc during e.g. predicate / slice pushdown.
+        #[cfg_attr(feature = "serde", serde(skip, default))]
+        id: UniqueId,
     },
     DataFrameScan {
         df: Arc<DataFrame>,

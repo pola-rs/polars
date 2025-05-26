@@ -25,7 +25,9 @@ def test_scan_csv(io_files_path: Path) -> None:
 
 def test_scan_csv_no_cse_deadlock(io_files_path: Path) -> None:
     dfs = [pl.scan_csv(io_files_path / "small.csv")] * (pl.thread_pool_size() + 1)
-    pl.concat(dfs, parallel=True).collect(comm_subplan_elim=False)
+    pl.concat(dfs, parallel=True).collect(
+        optimizations=pl.QueryOptFlags(comm_subplan_elim=False)
+    )
 
 
 def test_scan_empty_csv(io_files_path: Path) -> None:
@@ -81,11 +83,16 @@ def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
     io_files_path: Path, file_name: str
 ) -> None:
     file_path = io_files_path / file_name
-    df = pl.scan_csv(
+    q = pl.scan_csv(
         file_path,
         schema_overrides={"calories_foo": pl.String, "fats_g_foo": pl.Float32},
         with_column_names=lambda names: [f"{a}_foo" for a in names],
-    ).collect()
+    )
+
+    assert q.collect_schema().dtypes() == [pl.String, pl.String, pl.Float32, pl.Int64]
+
+    df = q.collect()
+
     assert df.dtypes == [pl.String, pl.String, pl.Float32, pl.Int64]
     assert df.columns == [
         "category_foo",
@@ -202,7 +209,7 @@ def test_lazy_row_index_no_push_down(foods_file_path: Path) -> None:
         .with_row_index()
         .filter(pl.col("index") == 1)
         .filter(pl.col("category") == pl.lit("vegetables"))
-        .explain(predicate_pushdown=True)
+        .explain(optimizations=pl.QueryOptFlags(predicate_pushdown=True))
     )
     # related to row count is not pushed.
     assert 'FILTER [(col("index")) == (1)]\nFROM' in plan
@@ -461,3 +468,26 @@ def test_select_nonexistent_column() -> None:
 
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
         pl.scan_csv(f).select("b").collect()
+
+
+def test_scan_csv_provided_schema_with_extra_fields_22531() -> None:
+    data = b"""\
+a,b,c
+a,b,c
+"""
+
+    schema = {x: pl.String for x in ["a", "b", "c", "d", "e"]}
+
+    assert_frame_equal(
+        pl.scan_csv(data, schema=schema).collect(),
+        pl.DataFrame(
+            {
+                "a": "a",
+                "b": "b",
+                "c": "c",
+                "d": None,
+                "e": None,
+            },
+            schema=schema,
+        ),
+    )

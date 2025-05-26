@@ -404,7 +404,7 @@ def test_group_by_sorted_empty_dataframe_3680() -> None:
         .sort("key")
         .group_by("key")
         .tail(1)
-        .collect(_check_order=False)
+        .collect(optimizations=pl.QueryOptFlags(check_order_observe=False))
     )
     assert df.rows() == []
     assert df.shape == (0, 2)
@@ -1268,3 +1268,78 @@ def test_group_by_22328() -> None:
         .with_columns(pl.col("z").fill_null(0))
         .collect()
     ).shape == (20, 3)
+
+
+@pytest.mark.parametrize("maintain_order", [False, True])
+def test_group_by_arrays_22574(maintain_order: bool) -> None:
+    assert_frame_equal(
+        pl.Series("a", [[1], [2], [2]], pl.Array(pl.Int64, 1))
+        .to_frame()
+        .group_by("a", maintain_order=maintain_order)
+        .agg(pl.len()),
+        pl.DataFrame(
+            [
+                pl.Series("a", [[1], [2]], pl.Array(pl.Int64, 1)),
+                pl.Series("len", [1, 2], pl.get_index_type()),
+            ]
+        ),
+        check_row_order=maintain_order,
+    )
+
+    assert_frame_equal(
+        pl.Series(
+            "a", [[[1, 2]], [[2, 3]], [[2, 3]]], pl.Array(pl.Array(pl.Int64, 2), 1)
+        )
+        .to_frame()
+        .group_by("a", maintain_order=maintain_order)
+        .agg(pl.len()),
+        pl.DataFrame(
+            [
+                pl.Series(
+                    "a", [[[1, 2]], [[2, 3]]], pl.Array(pl.Array(pl.Int64, 2), 1)
+                ),
+                pl.Series("len", [1, 2], pl.get_index_type()),
+            ]
+        ),
+        check_row_order=maintain_order,
+    )
+
+
+def test_group_by_empty_rows_with_literal_21959() -> None:
+    out = (
+        pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [1, 1, 3]})
+        .filter(pl.col("c") == 99)
+        .group_by(pl.lit(1).alias("d"), pl.col("a"), pl.col("b"))
+        .agg()
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {"d": [], "a": [], "b": []},
+        schema={"d": pl.Int32, "a": pl.Int64, "b": pl.Int64},
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_empty_dtype_22716() -> None:
+    df = pl.DataFrame(schema={"a": pl.String, "b": pl.Int64})
+    out = df.group_by("a").agg(x=(pl.col("b") == pl.int_range(pl.len())).all())
+    assert_frame_equal(out, pl.DataFrame(schema={"a": pl.String, "x": pl.Boolean}))
+
+
+def test_group_by_implode_22870() -> None:
+    out = (
+        pl.DataFrame({"x": ["a", "b"]})
+        .group_by(pl.col.x)
+        .agg(
+            y=pl.col.x.replace_strict(
+                pl.lit(pl.Series(["a", "b"])).implode(),
+                pl.lit(pl.Series([1, 2])).implode(),
+                default=-1,
+            )
+        )
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"x": ["a", "b"], "y": [[1], [2]]}),
+        check_row_order=False,
+    )

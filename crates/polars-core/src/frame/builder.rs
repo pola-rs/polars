@@ -115,6 +115,83 @@ impl DataFrameBuilder {
         self.height += length.min(other.height().saturating_sub(start));
     }
 
+    /// Extends this builder with the contents of the given dataframe subslice, repeating it `repeats` times.
+    /// May panic if other does not match the schema of this builder.
+    pub fn subslice_extend_repeated(
+        &mut self,
+        other: &DataFrame,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    ) {
+        let columns = other.get_columns();
+        assert!(self.builders.len() == columns.len());
+        for (builder, column) in self.builders.iter_mut().zip(columns) {
+            match column {
+                Column::Series(s) => {
+                    builder.subslice_extend_repeated(s, start, length, repeats, share);
+                },
+                Column::Partitioned(p) => {
+                    // @scalar-opt
+                    builder.subslice_extend_repeated(
+                        p.as_materialized_series(),
+                        start,
+                        length,
+                        repeats,
+                        share,
+                    );
+                },
+                Column::Scalar(sc) => {
+                    let len = sc.len().saturating_sub(start).min(length);
+                    let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
+                    builder.subslice_extend_repeated(&scalar_as_series, 0, 1, len * repeats, share);
+                },
+            }
+        }
+
+        self.height += length.min(other.height().saturating_sub(start)) * repeats;
+    }
+
+    /// Extends this builder with the contents of the given dataframe subslice.
+    /// Each element is repeated repeats times. May panic if other does not
+    /// match the schema of this builder.
+    pub fn subslice_extend_each_repeated(
+        &mut self,
+        other: &DataFrame,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        share: ShareStrategy,
+    ) {
+        let columns = other.get_columns();
+        assert!(self.builders.len() == columns.len());
+        for (builder, column) in self.builders.iter_mut().zip(columns) {
+            match column {
+                Column::Series(s) => {
+                    builder.subslice_extend_each_repeated(s, start, length, repeats, share);
+                },
+                Column::Partitioned(p) => {
+                    // @scalar-opt
+                    builder.subslice_extend_each_repeated(
+                        p.as_materialized_series(),
+                        start,
+                        length,
+                        repeats,
+                        share,
+                    );
+                },
+                Column::Scalar(sc) => {
+                    let len = sc.len().saturating_sub(start).min(length);
+                    let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
+                    builder.subslice_extend_repeated(&scalar_as_series, 0, 1, len * repeats, share);
+                },
+            }
+        }
+
+        self.height += length.min(other.height().saturating_sub(start)) * repeats;
+    }
+
     /// Extends this builder with the contents of the given dataframe at the given
     /// indices. That is, `other[idxs[i]]` is appended to this builder in order,
     /// for each i=0..idxs.len(). May panic if other does not match the schema

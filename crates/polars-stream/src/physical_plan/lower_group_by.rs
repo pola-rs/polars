@@ -7,7 +7,7 @@ use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, DataFrameUdf, IR, IRAggExpr, NaiveExprMerger};
+use polars_plan::plans::{AExpr, DataFrameUdf, IR, IRAggExpr, NaiveExprMerger, write_group_by};
 use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -15,7 +15,7 @@ use polars_utils::unique_column_name;
 use recursive::recursive;
 use slotmap::SlotMap;
 
-use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
+use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::lower_expr::{
     build_select_stream, compute_output_schema, is_elementwise_rec_cached,
     is_fake_elementwise_function, is_input_independent,
@@ -34,6 +34,7 @@ fn build_group_by_fallback(
     apply: Option<Arc<dyn DataFrameUdf>>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    format_str: Option<String>,
 ) -> PolarsResult<PhysStream> {
     let input_schema = phys_sm[input.node].output_schema.clone();
     let lmdf = Arc::new(LateMaterializedDataFrame::default());
@@ -64,6 +65,7 @@ fn build_group_by_fallback(
                 let mut state = ExecutionState::new();
                 executor.lock().execute(&mut state)
             }),
+            format_str,
         },
     };
 
@@ -125,7 +127,7 @@ fn try_lower_elementwise_scalar_agg_expr(
         // in a streaming fashion but they change the length of the input which
         // means the same filter/explode should also be applied to the key
         // column, which is not (yet) supported.
-        AExpr::Explode(_) | AExpr::Filter { .. } => None,
+        AExpr::Explode { .. } | AExpr::Filter { .. } => None,
 
         AExpr::BinaryExpr { left, op, right } => {
             let (left, op, right) = (*left, *op, *right);
@@ -266,6 +268,7 @@ fn try_build_streaming_group_by(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
 ) -> Option<PolarsResult<PhysStream>> {
     if apply.is_some() || maintain_order {
         return None; // TODO
@@ -345,7 +348,7 @@ fn try_build_streaming_group_by(
     }
 
     let pre_select =
-        build_select_stream(input, &input_exprs, expr_arena, phys_sm, expr_cache).ok()?;
+        build_select_stream(input, &input_exprs, expr_arena, phys_sm, expr_cache, ctx).ok()?;
 
     let input_schema = &phys_sm[pre_select.node].output_schema;
     let group_by_output_schema = compute_output_schema(
@@ -369,6 +372,7 @@ fn try_build_streaming_group_by(
         expr_arena,
         phys_sm,
         expr_cache,
+        ctx,
     );
     let out = if let Some((offset, len)) = options.slice {
         post_select.map(|s| build_slice_stream(s, offset, len, phys_sm))
@@ -390,6 +394,7 @@ pub fn build_group_by_stream(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
+    ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
     let streaming = try_build_streaming_group_by(
         input,
@@ -401,10 +406,25 @@ pub fn build_group_by_stream(
         expr_arena,
         phys_sm,
         expr_cache,
+        ctx,
     );
     if let Some(stream) = streaming {
         stream
     } else {
+        let format_str = ctx.prepare_visualization.then(|| {
+            let mut buffer = String::new();
+            write_group_by(
+                &mut buffer,
+                0,
+                expr_arena,
+                keys,
+                aggs,
+                apply.as_deref(),
+                maintain_order,
+            )
+            .unwrap();
+            buffer
+        });
         build_group_by_fallback(
             input,
             keys,
@@ -415,6 +435,7 @@ pub fn build_group_by_stream(
             apply,
             expr_arena,
             phys_sm,
+            format_str,
         )
     }
 }

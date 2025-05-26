@@ -34,9 +34,10 @@ def test_pass_name_alias_18914() -> None:
 )
 def test_raises_udf(dtype: pl.DataType) -> None:
     def raise_f(item: Any) -> None:
-        raise ValueError
+        msg = "test error"
+        raise ValueError(msg)
 
-    with pytest.raises(pl.exceptions.ComputeError):
+    with pytest.raises(ValueError, match="test error"):
         pl.select(
             pl.lit(1).map_elements(
                 raise_f,

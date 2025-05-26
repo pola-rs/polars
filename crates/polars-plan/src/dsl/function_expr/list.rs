@@ -6,10 +6,13 @@ use crate::{map, map_as_slice, wrap};
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ListFunction {
     Concat,
     #[cfg(feature = "is_in")]
-    Contains,
+    Contains {
+        nulls_equal: bool,
+    },
     #[cfg(feature = "list_drop_nulls")]
     DropNulls,
     #[cfg(feature = "list_sample")]
@@ -66,7 +69,7 @@ impl ListFunction {
         match self {
             Concat => mapper.map_to_list_supertype(),
             #[cfg(feature = "is_in")]
-            Contains => mapper.with_dtype(DataType::Boolean),
+            Contains { nulls_equal: _ } => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "list_drop_nulls")]
             DropNulls => mapper.with_same_dtype(),
             #[cfg(feature = "list_sample")]
@@ -90,8 +93,12 @@ impl ListFunction {
             ArgMin => mapper.with_dtype(IDX_DTYPE),
             ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
-            Diff { .. } => mapper.map_dtype(|dt| {
-                let inner_dt = match dt.inner_dtype().unwrap() {
+            Diff { .. } => mapper.try_map_dtype(|dt| {
+                let DataType::List(inner) = dt else {
+                    polars_bail!(op = "list.diff", dt);
+                };
+
+                let inner_dt = match inner.as_ref() {
                     #[cfg(feature = "dtype-datetime")]
                     DataType::Datetime(tu, _) => DataType::Duration(*tu),
                     #[cfg(feature = "dtype-date")]
@@ -103,7 +110,8 @@ impl ListFunction {
                     DataType::UInt8 => DataType::Int16,
                     inner_dt => inner_dt.clone(),
                 };
-                DataType::List(Box::new(inner_dt))
+
+                Ok(DataType::List(Box::new(inner_dt)))
             }),
             Sort(_) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),
@@ -129,23 +137,19 @@ impl ListFunction {
         match self {
             L::Concat => FunctionOptions::elementwise(),
             #[cfg(feature = "is_in")]
-            L::Contains => FunctionOptions::elementwise(),
+            L::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_sample")]
             L::Sample { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
-            L::Gather(_) => FunctionOptions::groupwise(),
+            L::Gather(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_gather")]
             L::GatherEvery => FunctionOptions::elementwise(),
             #[cfg(feature = "list_sets")]
-            L::SetOperation(_) => FunctionOptions {
-                collect_groups: ApplyOptions::ElementWise,
-                cast_options: Some(CastingRules::Supertype(SuperTypeOptions {
+            L::SetOperation(_) => FunctionOptions::elementwise()
+                .with_casting_rules(CastingRules::Supertype(SuperTypeOptions {
                     flags: SuperTypeFlags::default() | SuperTypeFlags::ALLOW_IMPLODE_LIST,
-                })),
-
-                flags: FunctionFlags::default() & !FunctionFlags::RETURNS_SCALAR,
-                ..Default::default()
-            },
+                }))
+                .with_flags(|f| f & !FunctionFlags::RETURNS_SCALAR),
             #[cfg(feature = "diff")]
             L::Diff { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_drop_nulls")]
@@ -198,7 +202,7 @@ impl Display for ListFunction {
         let name = match self {
             Concat => "concat",
             #[cfg(feature = "is_in")]
-            Contains => "contains",
+            Contains { nulls_equal: _ } => "contains",
             #[cfg(feature = "list_drop_nulls")]
             DropNulls => "drop_nulls",
             #[cfg(feature = "list_sample")]
@@ -262,7 +266,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
         match func {
             Concat => wrap!(concat),
             #[cfg(feature = "is_in")]
-            Contains => wrap!(contains),
+            Contains { nulls_equal } => map_as_slice!(contains, nulls_equal),
             #[cfg(feature = "list_drop_nulls")]
             DropNulls => map!(drop_nulls),
             #[cfg(feature = "list_sample")]
@@ -319,21 +323,19 @@ impl From<ListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 }
 
 #[cfg(feature = "is_in")]
-pub(super) fn contains(args: &mut [Column]) -> PolarsResult<Option<Column>> {
+pub(super) fn contains(args: &mut [Column], nulls_equal: bool) -> PolarsResult<Column> {
     let list = &args[0];
     let item = &args[1];
     polars_ensure!(matches!(list.dtype(), DataType::List(_)),
         SchemaMismatch: "invalid series dtype: expected `List`, got `{}`", list.dtype(),
     );
-    polars_ops::prelude::is_in(
+    let mut ca = polars_ops::prelude::is_in(
         item.as_materialized_series(),
         list.as_materialized_series(),
-        true,
-    )
-    .map(|mut ca| {
-        ca.rename(list.name().clone());
-        Some(ca.into_column())
-    })
+        nulls_equal,
+    )?;
+    ca.rename(list.name().clone());
+    Ok(ca.into_column())
 }
 
 #[cfg(feature = "list_drop_nulls")]

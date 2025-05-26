@@ -34,6 +34,9 @@ def business_day_count(
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.
 
+    .. versionchanged:: 1.27.0
+        Parameters after `start` and `end` should now be passed as keyword arguments.
+
     Parameters
     ----------
     start

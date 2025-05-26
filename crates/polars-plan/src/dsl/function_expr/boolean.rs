@@ -9,6 +9,7 @@ use crate::wrap;
 use crate::{map, map_as_slice};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum BooleanFunction {
     Any {
@@ -83,9 +84,9 @@ impl BooleanFunction {
             ),
             #[cfg(feature = "is_in")]
             B::IsIn { .. } => FunctionOptions::elementwise().with_supertyping(Default::default()),
-            B::AllHorizontal | B::AnyHorizontal => FunctionOptions::elementwise()
-                .with_input_wildcard_expansion(true)
-                .with_allow_empty_inputs(true),
+            B::AllHorizontal | B::AnyHorizontal => FunctionOptions::elementwise().with_flags(|f| {
+                f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::ALLOW_EMPTY_INPUTS
+            }),
             B::Not => FunctionOptions::elementwise(),
         }
     }

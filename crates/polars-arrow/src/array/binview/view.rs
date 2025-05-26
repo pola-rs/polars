@@ -327,7 +327,7 @@ impl IsNull for View {
 
 impl Display for View {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 

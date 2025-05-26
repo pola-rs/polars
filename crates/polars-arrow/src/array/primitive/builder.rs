@@ -70,6 +70,33 @@ impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &PrimitiveArray<T>,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        self.values.reserve(length * repeats);
+
+        for value in other.values()[start..start + length].iter() {
+            unsafe {
+                for _ in 0..repeats {
+                    self.values.push_unchecked(*value);
+                }
+            }
+        }
+
+        self.validity
+            .subslice_extend_each_repeated_from_opt_validity(
+                other.validity(),
+                start,
+                length,
+                repeats,
+            );
+    }
+
     unsafe fn gather_extend(
         &mut self,
         other: &PrimitiveArray<T>,

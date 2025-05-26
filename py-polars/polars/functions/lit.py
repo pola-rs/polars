@@ -9,7 +9,13 @@ from zoneinfo import ZoneInfo
 import polars._reexport as pl
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import Date, Datetime, Duration
-from polars.dependencies import _check_for_numpy, _check_for_pytz, pytz
+from polars.dependencies import (
+    _check_for_numpy,
+    _check_for_pytz,
+    _check_for_torch,
+    pytz,
+    torch,
+)
 from polars.dependencies import numpy as np
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -158,6 +164,9 @@ def lit(
     elif _check_for_numpy(value) and isinstance(value, np.ndarray):
         return lit(pl.Series("literal", value, dtype=dtype))
 
+    elif _check_for_torch(value) and isinstance(value, torch.Tensor):
+        return lit(pl.Series("literal", value.numpy(force=False), dtype=dtype))
+
     elif isinstance(value, (list, tuple)):
         return wrap_expr(
             plr.lit(
@@ -173,25 +182,21 @@ def lit(
     if dtype:
         return wrap_expr(plr.lit(value, allow_object, is_scalar=True)).cast(dtype)
 
-    try:
-        # numpy literals like np.float32(0) have item/dtype
-        item = value.item()
-
-        # numpy item() is py-native datetime/timedelta when units < 'ns'
-        if isinstance(item, (datetime, timedelta)):
+    if _check_for_numpy(value) and isinstance(value, np.generic):
+        # note: the item() is a py-native datetime/timedelta when units < 'ns'
+        if isinstance(item := value.item(), (datetime, timedelta)):
             return lit(item)
 
         # handle 'ns' units
         if isinstance(item, int) and hasattr(value, "dtype"):
             dtype_name = value.dtype.name
             if dtype_name.startswith("datetime64["):
-                time_unit = dtype_name[len("datetime64[") : -1]
+                time_unit = dtype_name[len("datetime64[") : -1]  # type: ignore[assignment]
                 return lit(item).cast(Datetime(time_unit))
             if dtype_name.startswith("timedelta64["):
-                time_unit = dtype_name[len("timedelta64[") : -1]
+                time_unit = dtype_name[len("timedelta64[") : -1]  # type: ignore[assignment]
                 return lit(item).cast(Duration(time_unit))
-
-    except AttributeError:
+    else:
         item = value
 
     return wrap_expr(plr.lit(item, allow_object, is_scalar=True))

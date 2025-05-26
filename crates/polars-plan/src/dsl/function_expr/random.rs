@@ -6,6 +6,7 @@ use strum_macros::IntoStaticStr;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Copy, Clone, PartialEq, Debug, IntoStaticStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum RandomMethod {

@@ -155,6 +155,7 @@ performant = ["polars/performant"]
 timezones = ["polars/timezones"]
 cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
+list_filter = ["polars/list_filter"]
 list_gather = ["polars/list_gather"]
 list_count = ["polars/list_count"]
 array_count = ["polars/array_count", "polars/dtype-array"]
@@ -206,6 +207,7 @@ operations = [
   "sign",
   "performant",
   "list_gather",
+  "list_filter",
   "list_count",
   "list_sets",
   "list_any_all",
@@ -278,3 +280,6 @@ all = [
 default = [
   "all",
 ]
+
+[lints]
+workspace = true

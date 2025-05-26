@@ -36,9 +36,6 @@ jobs:
       matrix:
         package: [polars, polars-lts-cpu, polars-u64-idx]
 
-    env:
-      SED_INPLACE: ${{ matrix.os == 'macos-13' && '-i ''''' || '-i'}}
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,7 +63,7 @@ jobs:
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
       - name: Update optional dependencies
         if: matrix.package != 'polars'
-        run: sed $SED_INPLACE 's/polars\[/${{ matrix.package }}\[/' py-polars/pyproject.toml
+        run: sed -i 's/polars\[/${{ matrix.package }}\[/' py-polars/pyproject.toml
 
       - name: Create source distribution
         uses: PyO3/maturin-action@v1
@@ -94,21 +91,27 @@ jobs:
       fail-fast: false
       matrix:
         package: [polars, polars-lts-cpu, polars-u64-idx]
-        os: [ubuntu-latest, macos-13, windows-latest, windows-arm64-16gb]
+        # macos-13 is x86-64
+        # macos-15 is aarch64
+        os: [ubuntu-latest, macos-13, macos-15, windows-latest, windows-11-arm]
         architecture: [x86-64, aarch64]
         exclude:
           - os: windows-latest
             architecture: aarch64
-          - os: windows-arm64-16gb
+          - os: windows-11-arm
             architecture: x86-64
+          - os: macos-15
+            architecture: x86-64
+          - os: macos-13
+            architecture: aarch64
 
     env:
-      SED_INPLACE: ${{ matrix.os == 'macos-13' && '-i ''''' || '-i'}}
+      SED_INPLACE: ${{ startsWith(matrix.os, 'macos') && '-i ''''' || '-i' }}
       CPU_CHECK_MODULE: py-polars/polars/_cpu_check.py
 
     steps:
       - name: Setup build environment (ARM64 Windows)
-        if: matrix.os == 'windows-arm64-16gb'
+        if: matrix.os == 'windows-11-arm'
         shell:
           powershell
           # Notes
@@ -155,7 +158,7 @@ jobs:
           Get-Content $Env:GITHUB_PATH | Out-Host
 
       - name: Check build environment (ARM64 Windows)
-        if: matrix.os == 'windows-arm64-16gb'
+        if: matrix.os == 'windows-11-arm'
         run: |
           set -x
           bash --version
@@ -175,20 +178,20 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        if: matrix.os != 'windows-arm64-16gb'
+        if: matrix.os != 'windows-11-arm'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Set up Python (ARM64 Windows)
-        if: matrix.os == 'windows-arm64-16gb'
+        if: matrix.os == 'windows-11-arm'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
 
       # Otherwise can't find `tomlq` after `pip install yq`
       - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
-        if: matrix.os == 'windows-arm64-16gb'
+        if: matrix.os == 'windows-11-arm'
         run: |
           python -c "import sysconfig; print(sysconfig.get_path('scripts'))" >> $GITHUB_PATH
 
@@ -257,9 +260,9 @@ jobs:
         id: target
         run: |
           TARGET=$(
-            if [[ "${{ matrix.os }}" == "macos-13" ]]; then
+            if [[ "${{ matrix.os }}" == "macos-15" ]]; then
               echo "aarch64-apple-darwin";
-            elif [[ "${{ matrix.os }}" == "windows-arm64-16gb" ]]; then
+            elif [[ "${{ matrix.os }}" == "windows-11-arm" ]]; then
               echo "aarch64-pc-windows-msvc";
             else
               echo "aarch64-unknown-linux-gnu";
@@ -276,7 +279,7 @@ jobs:
         # Manual fix for:
         #   TomlError: Unknown character "46" at row 1, col 2, pos 1:
         #   1> ../rust-toolchain.toml
-        if: matrix.os == 'windows-arm64-16gb'
+        if: matrix.os == 'windows-11-arm'
         run: cp rust-toolchain.toml py-polars/
 
       - name: Build wheel
@@ -292,11 +295,11 @@ jobs:
           maturin-version: 1.8.3
 
       - name: Test wheel
-        # Only test on x86-64 for now as this matches the runner architecture
-        if: matrix.architecture == 'x86-64'
+        # For linux; only test on x86-64 for now as this matches the runner architecture
+        if: matrix.architecture == 'x86-64' || startsWith(matrix.os, 'macos') || startsWith(matrix.os, 'windows')
         run: |
           pip install --force-reinstall --verbose dist/*.whl
-          python -c 'import polars'
+          python -c 'import polars; polars.show_versions()'
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -326,9 +329,10 @@ jobs:
 
       - name: Disable incompatible features
         env:
-            FEATURES: parquet|async|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
+            FEATURES: csv|ipc|ipc_streaming|parquet|async|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
         run: |
-          sed -i 's/^  "json",$/  "serde_json",/' crates/polars-python/Cargo.toml
+          sed -i 's/serde_json = { workspace = true, optional = true }/serde_json = { workspace = true }/' crates/polars-python/Cargo.toml
+          sed -i 's/"serde_json", //' crates/polars-python/Cargo.toml
           sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/Cargo.toml
 
       - name: Setup emsdk

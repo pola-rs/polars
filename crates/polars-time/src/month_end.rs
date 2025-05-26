@@ -51,7 +51,7 @@ impl PolarsMonthEnd for DatetimeChunked {
             },
         };
         Ok(self
-            .0
+            .phys
             .try_apply_nonnull_values_generic(|t| {
                 roll_forward(
                     t,
@@ -68,7 +68,7 @@ impl PolarsMonthEnd for DatetimeChunked {
 impl PolarsMonthEnd for DateChunked {
     fn month_end(&self, _time_zone: Option<&Tz>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-        let ret = self.0.try_apply_nonnull_values_generic(|t| {
+        let ret = self.phys.try_apply_nonnull_values_generic(|t| {
             let fwd = roll_forward(
                 MSECS_IN_DAY * t as i64,
                 None,

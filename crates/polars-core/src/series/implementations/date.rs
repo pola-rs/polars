@@ -207,7 +207,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
                 .as_any_mut()
                 .downcast_mut::<DateChunked>()
                 .unwrap()
-                .0,
+                .phys,
         ))
     }
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -357,6 +357,10 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+
+    fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
+        self.0.find_validity_mismatch(other, idxs)
     }
 
     fn as_any(&self) -> &dyn Any {

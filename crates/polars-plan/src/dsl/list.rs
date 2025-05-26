@@ -250,9 +250,11 @@ impl ListNameSpace {
 
     #[cfg(feature = "is_in")]
     /// Check if the list array contain an element
-    pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
-        self.0
-            .map_binary(FunctionExpr::ListExpr(ListFunction::Contains), other.into())
+    pub fn contains<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::ListExpr(ListFunction::Contains { nulls_equal }),
+            other.into(),
+        )
     }
 
     #[cfg(feature = "list_count")]

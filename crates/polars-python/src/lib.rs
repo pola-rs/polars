@@ -13,6 +13,7 @@ pub mod catalog;
 pub mod cloud;
 pub mod conversion;
 pub mod dataframe;
+pub mod dataset;
 pub mod datatypes;
 pub mod error;
 pub mod exceptions;
@@ -22,6 +23,7 @@ pub mod file;
 #[cfg(feature = "pymethods")]
 pub mod functions;
 pub mod interop;
+pub mod io;
 pub mod lazyframe;
 pub mod lazygroupby;
 pub mod map;

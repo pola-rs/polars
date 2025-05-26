@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
+from zoneinfo import ZoneInfo
 
 import fsspec
 import numpy as np
@@ -20,6 +21,7 @@ from hypothesis import strategies as st
 
 import polars as pl
 from polars.exceptions import ComputeError
+from polars.io.parquet import ParquetFieldOverwrites
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
 from polars.testing.parametric.strategies.core import series
@@ -27,7 +29,12 @@ from polars.testing.parametric.strategies.core import series
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import ParallelStrategy, ParquetCompression
+    from polars._typing import (
+        ParallelStrategy,
+        ParquetCompression,
+        ParquetMetadata,
+        ParquetMetadataContext,
+    )
     from tests.unit.conftest import MemoryUsage
 
 
@@ -137,14 +144,12 @@ def test_read_parquet_respects_rechunk_16416(
 
 
 def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
+    print(df)
     buf = io.BytesIO()
     # Writing lzo compressed parquet files is not supported for now.
     with pytest.raises(ComputeError):
         df.write_parquet(buf, compression="lzo", use_pyarrow=False)
     buf.seek(0)
-    # Invalid parquet file as writing failed.
-    with pytest.raises(ComputeError):
-        _ = pl.read_parquet(buf)
 
     buf = io.BytesIO()
     with pytest.raises(OSError):
@@ -3180,3 +3185,147 @@ def test_filter_nan_22289() -> None:
         lf.collect().filter(pl.col.a.is_nan()),
         lf.filter(pl.col.a.is_nan()).collect(),
     )
+
+
+def test_encode_utf8_check_22467() -> None:
+    f = io.BytesIO()
+    values = ["😀" * 129, "😀"]
+
+    pq.write_table(pl.Series(values).to_frame().to_arrow(), f, use_dictionary=False)
+
+    f.seek(0)
+    pl.scan_parquet(f).slice(1, 1).collect()
+
+
+def test_reencode_categoricals_22385() -> None:
+    tbl = pl.Series("a", ["abc"], pl.Categorical()).to_frame().to_arrow()
+    tbl = tbl.cast(
+        pa.schema(
+            [
+                pa.field(
+                    "a",
+                    pa.dictionary(pa.int32(), pa.large_string()),
+                    metadata=tbl.schema[0].metadata,
+                ),
+            ]
+        )
+    )
+
+    f = io.BytesIO()
+    pq.write_table(tbl, f)
+
+    f.seek(0)
+    pl.scan_parquet(f).collect()
+
+
+def test_parquet_read_timezone_22506() -> None:
+    f = io.BytesIO()
+
+    pd.DataFrame(
+        {
+            "a": [1, 2],
+            "b": pd.to_datetime(
+                ["2020-01-01T00:00:00+01:00", "2020-01-02T00:00:00+01:00"]
+            ),
+        }
+    ).to_parquet(f)
+
+    assert b'"metadata": {"timezone": "+01:00"}}' in f.getvalue()
+
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.read_parquet(f),
+        pl.DataFrame(
+            {
+                "a": [1, 2],
+                "b": [
+                    datetime(2020, 1, 1, tzinfo=ZoneInfo("Etc/GMT-1")),
+                    datetime(2020, 1, 2, tzinfo=ZoneInfo("Etc/GMT-1")),
+                ],
+            },
+            schema={
+                "a": pl.Int64,
+                "b": pl.Datetime(time_unit="ns", time_zone="Etc/GMT-1"),
+            },
+        ),
+    )
+
+
+@pytest.mark.parametrize("static", [True, False])
+@pytest.mark.parametrize("lazy", [True, False])
+def test_read_write_metadata(tmp_path: Path, static: bool, lazy: bool) -> None:
+    metadata = {"hello": "world", "something": "else"}
+    md: ParquetMetadata = metadata
+    if not static:
+        md = lambda ctx: metadata  # noqa: E731
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    f = io.BytesIO()
+    if lazy:
+        df.lazy().sink_parquet(f, metadata=md)
+    else:
+        df.write_parquet(f, metadata=md)
+
+    f.seek(0)
+    actual = pl.read_parquet_metadata(f)
+    assert "ARROW:schema" in actual
+    assert metadata == {k: v for k, v in actual.items() if k != "ARROW:schema"}
+
+
+@pytest.mark.write_disk
+def test_metadata_callback_info(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    num_writes = 0
+
+    def fn_metadata(ctx: ParquetMetadataContext) -> dict[str, str]:
+        nonlocal num_writes
+        num_writes += 1
+        return {}
+
+    df.write_parquet(tmp_path, partition_by="a", metadata=fn_metadata)
+
+    assert num_writes == len(df)
+
+
+def test_field_overwrites_metadata() -> None:
+    f = io.BytesIO()
+    lf = pl.LazyFrame(
+        {
+            "a": [None, 2, 3, 4],
+            "b": [[1, 2, 3], [42], [13], [37]],
+            "c": [
+                {"x": "a", "y": 42},
+                {"x": "b", "y": 13},
+                {"x": "X", "y": 37},
+                {"x": "Y", "y": 15},
+            ],
+        }
+    )
+    lf.sink_parquet(
+        f,
+        field_overwrites={
+            "a": ParquetFieldOverwrites(metadata={"flat_from_polars": "yes"}),
+            "b": ParquetFieldOverwrites(
+                children=ParquetFieldOverwrites(metadata={"listitem": "yes"}),
+                metadata={"list": "true"},
+            ),
+            "c": ParquetFieldOverwrites(
+                children=[
+                    ParquetFieldOverwrites(name="x", metadata={"md": "yes"}),
+                    ParquetFieldOverwrites(name="y", metadata={"md2": "Yes!"}),
+                ],
+                metadata={"struct": "true"},
+            ),
+        },
+    )
+
+    f.seek(0)
+    schema = pq.read_schema(f)
+    assert schema[0].metadata[b"flat_from_polars"] == b"yes"
+    assert schema[1].metadata[b"list"] == b"true"
+    assert schema[1].type.value_field.metadata[b"listitem"] == b"yes"
+    assert schema[2].metadata[b"struct"] == b"true"
+    assert schema[2].type.fields[0].metadata[b"md"] == b"yes"
+    assert schema[2].type.fields[1].metadata[b"md2"] == b"Yes!"

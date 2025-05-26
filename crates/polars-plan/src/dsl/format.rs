@@ -39,7 +39,14 @@ impl fmt::Debug for Expr {
             },
             Nth(i) => write!(f, "nth({i})"),
             Len => write!(f, "len()"),
-            Explode(expr) => write!(f, "{expr:?}.explode()"),
+            Explode {
+                input: expr,
+                skip_empty: false,
+            } => write!(f, "{expr:?}.explode()"),
+            Explode {
+                input: expr,
+                skip_empty: true,
+            } => write!(f, "{expr:?}.explode(skip_empty)"),
             Alias(expr, name) => write!(f, "{expr:?}.alias(\"{name}\")"),
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
@@ -120,7 +127,7 @@ impl fmt::Debug for Expr {
                 dtype,
                 options,
             } => {
-                if options.strict() {
+                if options.is_strict() {
                     write!(f, "{expr:?}.strict_cast({dtype:?})")
                 } else {
                     write!(f, "{expr:?}.cast({dtype:?})")
@@ -143,11 +150,21 @@ impl fmt::Debug for Expr {
                     write!(f, "{:?}.{function}()", input[0])
                 }
             },
-            AnonymousFunction { input, options, .. } => {
+            AnonymousFunction {
+                input,
+                options,
+                function,
+                ..
+            } => {
+                let name = match function {
+                    LazySerde::Named { name, .. } => name,
+                    _ => options.fmt_str,
+                };
+
                 if input.len() >= 2 {
-                    write!(f, "{:?}.{}({:?})", input[0], options.fmt_str, &input[1..])
+                    write!(f, "{:?}.{}({:?})", input[0], name, &input[1..])
                 } else {
-                    write!(f, "{:?}.{}()", input[0], options.fmt_str)
+                    write!(f, "{:?}.{}()", input[0], name)
                 }
             },
             Slice {

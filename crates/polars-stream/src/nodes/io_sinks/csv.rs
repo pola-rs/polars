@@ -44,7 +44,7 @@ impl CsvSinkNode {
 
 impl SinkNode for CsvSinkNode {
     fn name(&self) -> &str {
-        "csv_sink"
+        "csv-sink"
     }
 
     fn is_sink_input_parallel(&self) -> bool {
