@@ -2,7 +2,6 @@ use std::borrow::Borrow;
 
 use self::type_check::TypeCheckRule;
 use super::*;
-use crate::dsl::python_dsl::PythonScanSource;
 
 /// Applies expression simplification and type coercion during conversion to IR.
 pub struct ConversionOptimizer {
@@ -97,12 +96,15 @@ impl ConversionOptimizer {
         // process the expressions on the stack and apply optimizations.
         let schema = get_schema(ir_arena, current_ir_node);
         let plan = ir_arena.get(current_ir_node);
-        let ctx = OptimizeExprContext {
-            in_pyarrow_scan: matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::Pyarrow),
-            in_io_plugin: matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::IOPlugin),
-            in_filter: matches!(plan, IR::Filter { .. }),
-            has_inputs: !get_input(ir_arena, current_ir_node).is_empty(),
+        let mut ctx = OptimizeExprContext::default();
+        #[cfg(feature = "python")]
+        {
+            use crate::dsl::python_dsl::PythonScanSource;
+            ctx.in_pyarrow_scan = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::Pyarrow);
+            ctx.in_io_plugin = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::IOPlugin);
         };
+        ctx.in_filter = matches!(plan, IR::Filter { .. });
+        ctx.has_inputs = !get_input(ir_arena, current_ir_node).is_empty();
 
         self.schemas.clear();
         while let Some((current_expr_node, schema_idx)) = self.scratch.pop() {

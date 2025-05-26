@@ -90,7 +90,7 @@ impl StackOptimizer {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 pub struct OptimizeExprContext {
     pub in_pyarrow_scan: bool,
     pub in_io_plugin: bool,
