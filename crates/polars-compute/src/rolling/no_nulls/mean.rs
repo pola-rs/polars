@@ -1,14 +1,15 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+
 use polars_error::polars_ensure;
 
 use super::*;
 
 pub struct MeanWindow<'a, T> {
-    sum: SumWindow<'a, T>,
+    sum: SumWindow<'a, T, f64>,
 }
 
-impl<
-    'a,
+impl<'a, T> RollingAggWindowNoNulls<'a, T> for MeanWindow<'a, T>
+where
     T: NativeType
         + IsFloat
         + std::iter::Sum
@@ -18,7 +19,6 @@ impl<
         + NumCast
         + Add<Output = T>
         + Sub<Output = T>,
-> RollingAggWindowNoNulls<'a, T> for MeanWindow<'a, T>
 {
     fn new(
         slice: &'a [T],
@@ -28,7 +28,7 @@ impl<
         window_size: Option<usize>,
     ) -> Self {
         Self {
-            sum: SumWindow::new(slice, start, end, params, window_size),
+            sum: SumWindow::<T, f64>::new(slice, start, end, params, window_size),
         }
     }
 
