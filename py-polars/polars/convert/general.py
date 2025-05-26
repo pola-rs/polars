@@ -477,8 +477,8 @@ def from_arrow(
     supported by Polars may be cast to the closest supported type.
 
     Note, it is generally recommended to directly use `pl.DataFrame()` or
-    `pl.Series()` instead of `from_arrow()` if the type of the output is
-    known.
+    `pl.Series()` instead if the types of the input/output objects are known
+    and do not need to be dynamic.
 
     Parameters
     ----------
@@ -635,6 +635,10 @@ def from_pandas(
     This operation clones data.
 
     This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
+
+    Note, it is generally recommended to directly use `pl.DataFrame()` or
+    `pl.Series()` instead if the types of the input/output objects are known
+    and do not need to be dynamic.
 
     Parameters
     ----------
