@@ -40,6 +40,8 @@ use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 pub type BinaryViewArray = BinaryViewArrayGeneric<[u8]>;
 pub type Utf8ViewArray = BinaryViewArrayGeneric<str>;
+pub type BinaryViewArrayBuilder = BinaryViewArrayGenericBuilder<[u8]>;
+pub type Utf8ViewArrayBuilder = BinaryViewArrayGenericBuilder<str>;
 pub use view::{View, validate_utf8_views};
 
 use super::Splitable;

@@ -17,6 +17,7 @@ polars-utils = { workspace = true }
 
 arrow = { workspace = true }
 bitflags = { workspace = true }
+boxcar = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
@@ -37,6 +38,7 @@ schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
+uuid = { workspace = true }
 xxhash-rust = { workspace = true }
 
 [dev-dependencies]

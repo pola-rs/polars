@@ -10,6 +10,8 @@
 mod _serde;
 mod aliases;
 mod any_value;
+#[cfg(feature = "dtype-categorical")]
+mod categories;
 mod dtype;
 mod field;
 mod into_scalar;
@@ -32,6 +34,8 @@ pub use arrow::datatypes::reshape::*;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
+#[cfg(feature = "dtype-categorical")]
+pub use categories::{CategoricalMapping, Categories, FrozenCategories};
 pub use dtype::*;
 pub use field::*;
 pub use into_scalar::*;
