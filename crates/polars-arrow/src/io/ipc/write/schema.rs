@@ -205,6 +205,16 @@ fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
             scale: *scale as i32,
             bit_width: 128,
         })),
+        Decimal32(precision, scale) => ipc::Type::Decimal(Box::new(ipc::Decimal {
+            precision: *precision as i32,
+            scale: *scale as i32,
+            bit_width: 32,
+        })),
+        Decimal64(precision, scale) => ipc::Type::Decimal(Box::new(ipc::Decimal {
+            precision: *precision as i32,
+            scale: *scale as i32,
+            bit_width: 64,
+        })),
         Decimal256(precision, scale) => ipc::Type::Decimal(Box::new(ipc::Decimal {
             precision: *precision as i32,
             scale: *scale as i32,
@@ -301,9 +311,11 @@ fn serialize_children(
         | LargeBinary
         | Utf8
         | LargeUtf8
-        | Decimal(_, _)
         | Utf8View
         | BinaryView
+        | Decimal(_, _)
+        | Decimal32(_, _)
+        | Decimal64(_, _)
         | Decimal256(_, _) => vec![],
         FixedSizeList(inner, _) | LargeList(inner) | List(inner) | Map(inner, _) => {
             vec![serialize_field(inner, &ipc_field.fields[0])]
