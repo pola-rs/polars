@@ -138,7 +138,7 @@ class IcebergDataset:
 
             return scan_parquet(
                 sources,
-                allow_missing_columns=True,
+                missing_columns="insert",
             )
 
         elif reader_override == "native":

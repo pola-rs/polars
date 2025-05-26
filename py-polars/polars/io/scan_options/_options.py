@@ -7,11 +7,15 @@ if TYPE_CHECKING:
 
 
 class ScanOptions:
+    """Holds options for UnifiedScanArgs."""
+
     def __init__(
         self,
         *,
         cast_options: ScanCastOptions | None,
         extra_columns: Literal["ignore", "raise"],
+        missing_columns: Literal["insert", "raise"] = "raise",
     ) -> None:
         self.cast_options = cast_options
         self.extra_columns = extra_columns
+        self.missing_columns = missing_columns
