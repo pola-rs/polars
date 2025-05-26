@@ -3233,7 +3233,7 @@ def test_with_columns_dict_direct_typeerror() -> None:
     data = {"a": pl.col("a") * 2}
     df = pl.select(a=1)
     with pytest.raises(
-        TypeError, match="Cannot pass a Dictionary as an argument to `with_columns`"
+        TypeError, match="Cannot pass a dictionary as a single positional argument"
     ):
         df.with_columns(data)
 
