@@ -175,6 +175,7 @@ impl fmt::Display for TreeFmtExpr<'_> {
             Expr::KeepName(_) => "keep_name",
             Expr::Nth(n) => return write!(f, "nth({n})"),
             Expr::RenameAlias { .. } => "rename_alias",
+            #[cfg(feature = "dtype-struct")]
             Expr::Field(_) => "field",
             Expr::SubPlan(_, _) => "subplan",
             Expr::Selector(_) => "selector",
