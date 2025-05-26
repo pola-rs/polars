@@ -643,39 +643,29 @@ impl PredicatePushDown<'_> {
             PythonScan { mut options } => {
                 let predicate = predicate_at_scan(acc_predicates, None, expr_arena);
                 if let Some(predicate) = predicate {
-                    // const LIMIT: usize = 1 << 16;
+                    match ExprPushdownGroup::Pushable.update_with_expr_rec(
+                        expr_arena.get(predicate.node()),
+                        expr_arena,
+                        None,
+                    ) {
+                        ExprPushdownGroup::Barrier => {
+                            if cfg!(debug_assertions) {
+                                // Expression should not be pushed here by the optimizer
+                                panic!()
+                            }
 
-                    // let literals_within_size_limit =
-                    //     (&*expr_arena)
-                    //         .iter(predicate.node())
-                    //         .all(|(_, ae)| match ae {
-                    //             AExpr::Literal(lv) => match lv {
-                    //                 LiteralValue::Scalar(v) => match v.as_any_value() {
-                    //                     AnyValue::Binary(v) => v.len() <= LIMIT,
-                    //                     AnyValue::String(v) => v.len() <= LIMIT,
-                    //                     _ => true,
-                    //                 },
-                    //                 LiteralValue::Series(s) => s.estimated_size() < LIMIT,
+                            return Ok(self.optional_apply_predicate(
+                                PythonScan { options },
+                                vec![predicate],
+                                lp_arena,
+                                expr_arena,
+                            ));
+                        },
 
-                    //                 // Don't accept dynamic types
-                    //                 LiteralValue::Dyn(_) => false,
-                    //                 _ => true,
-                    //             },
-                    //             _ => true,
-                    //         });
-
-                    // dbg!(literals_within_size_limit);
-
-                    // if !literals_within_size_limit {
-                    //     return Ok(self.optional_apply_predicate(
-                    //         PythonScan { options },
-                    //         vec![predicate],
-                    //         lp_arena,
-                    //         expr_arena,
-                    //     ));
-                    // }
-
-                    options.predicate = PythonPredicate::Polars(predicate);
+                        ExprPushdownGroup::Pushable | ExprPushdownGroup::Fallible => {
+                            options.predicate = PythonPredicate::Polars(predicate);
+                        },
+                    }
                 }
 
                 Ok(PythonScan { options })
