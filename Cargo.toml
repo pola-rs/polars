@@ -123,7 +123,7 @@ polars-utils = { version = "0.48.1", path = "crates/polars-utils", default-featu
 
 [workspace.dependencies.arrow-format]
 package = "polars-arrow-format"
-version = "0.1.0"
+version = "0.2.0"
 
 [workspace.dependencies.arrow]
 package = "polars-arrow"
