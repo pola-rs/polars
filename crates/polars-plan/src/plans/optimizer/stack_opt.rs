@@ -1,7 +1,6 @@
 use polars_core::prelude::PolarsResult;
 use polars_core::schema::Schema;
 
-use crate::dsl::python_dsl::PythonScanSource;
 use crate::plans::aexpr::AExpr;
 use crate::plans::ir::IR;
 use crate::plans::{get_input, get_schema};
@@ -55,12 +54,15 @@ impl StackOptimizer {
                 }
 
                 let input_schema = get_schema(lp_arena, current_node);
-                let ctx = OptimizeExprContext {
-                    in_pyarrow_scan: matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::Pyarrow),
-                    in_io_plugin: matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::IOPlugin),
-                    in_filter: matches!(plan, IR::Filter { .. }),
-                    has_inputs: !get_input(lp_arena, current_node).is_empty(),
+                let mut ctx = OptimizeExprContext::default();
+                #[cfg(feature = "python")]
+                {
+                    use crate::dsl::python_dsl::PythonScanSource;
+                    ctx.in_pyarrow_scan = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::Pyarrow);
+                    ctx.in_io_plugin = matches!(plan, IR::PythonScan { options } if options.python_source == PythonScanSource::IOPlugin);
                 };
+                ctx.in_filter = matches!(plan, IR::Filter { .. });
+                ctx.has_inputs = !get_input(ir_arena, current_ir_node).is_empty();
 
                 // process the expressions on the stack and apply optimizations.
                 while let Some(current_expr_node) = exprs.pop() {
