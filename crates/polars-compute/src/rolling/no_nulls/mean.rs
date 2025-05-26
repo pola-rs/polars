@@ -1,5 +1,4 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use core::f64;
 
 use polars_error::polars_ensure;
 
