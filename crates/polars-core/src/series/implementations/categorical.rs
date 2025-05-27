@@ -175,7 +175,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .as_any_mut()
             .downcast_mut::<CategoricalChunked>()
             .unwrap();
-        self.0.append_owned(std::mem::take(other))
+        self.0.append_owned(other.take())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {

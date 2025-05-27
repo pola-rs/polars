@@ -64,7 +64,7 @@ default = [
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
-serde = ["polars-core/serde", "polars-utils/serde", "ir_serde"]
+serde = ["polars-core/serde", "polars-utils/serde"]
 serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
@@ -240,7 +240,7 @@ zip_with = ["polars-core/zip_with"]
 
 bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx", "polars-utils/bigidx"]
 polars_cloud_client = ["polars-lazy?/polars_cloud_client"]
-polars_cloud_server = ["polars-lazy?/polars_cloud_server"]
+polars_cloud_server = ["polars-lazy?/polars_cloud_server", "ir_serde"]
 ir_serde = ["polars-plan/ir_serde"]
 
 test = [

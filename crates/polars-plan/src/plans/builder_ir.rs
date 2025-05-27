@@ -320,7 +320,7 @@ impl<'a> IRBuilder<'a> {
         other: Node,
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
-        options: Arc<JoinOptions>,
+        options: Arc<JoinOptionsIR>,
     ) -> Self {
         let schema_left = self.schema();
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);

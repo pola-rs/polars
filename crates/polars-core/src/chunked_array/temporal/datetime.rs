@@ -26,14 +26,14 @@ impl DatetimeChunked {
     }
 
     pub fn time_unit(&self) -> TimeUnit {
-        match self.dtype.as_ref().unwrap() {
+        match &self.dtype {
             DataType::Datetime(tu, _) => *tu,
             _ => unreachable!(),
         }
     }
 
     pub fn time_zone(&self) -> &Option<TimeZone> {
-        match self.dtype.as_ref().unwrap() {
+        match &self.dtype {
             DataType::Datetime(_, tz) => tz,
             _ => unreachable!(),
         }
@@ -160,7 +160,7 @@ impl DatetimeChunked {
 
     /// Change the underlying [`TimeUnit`]. This does not modify the data.
     pub fn set_time_unit(&mut self, time_unit: TimeUnit) {
-        self.dtype = Some(Datetime(time_unit, self.time_zone().clone()))
+        self.dtype = Datetime(time_unit, self.time_zone().clone());
     }
 
     /// Change the underlying [`TimeZone`]. This does not modify the data.
@@ -168,7 +168,7 @@ impl DatetimeChunked {
     /// already been validated.
     #[cfg(feature = "timezones")]
     pub fn set_time_zone(&mut self, time_zone: TimeZone) -> PolarsResult<()> {
-        self.dtype = Some(Datetime(self.time_unit(), Some(time_zone)));
+        self.dtype = Datetime(self.time_unit(), Some(time_zone));
         Ok(())
     }
 
@@ -181,7 +181,7 @@ impl DatetimeChunked {
         time_unit: TimeUnit,
         time_zone: TimeZone,
     ) -> PolarsResult<()> {
-        self.dtype = Some(Datetime(time_unit, Some(time_zone)));
+        self.dtype = Datetime(time_unit, Some(time_zone));
         Ok(())
     }
 }

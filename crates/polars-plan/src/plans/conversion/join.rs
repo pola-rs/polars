@@ -31,7 +31,7 @@ pub fn resolve_join(
     left_on: Vec<Expr>,
     right_on: Vec<Expr>,
     predicates: Vec<Expr>,
-    mut options: Arc<JoinOptions>,
+    mut options: JoinOptionsIR,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
     if !predicates.is_empty() {
@@ -71,7 +71,6 @@ pub fn resolve_join(
             turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
         }
         if turn_off_coalesce {
-            let options = Arc::make_mut(&mut options);
             if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
                 polars_warn!(
                     "coalescing join requested but not all join keys are column references, turning off key coalescing"
@@ -347,7 +346,7 @@ pub fn resolve_join(
         schema: join_schema.clone(),
         left_on,
         right_on,
-        options,
+        options: Arc::new(options),
     };
     let join_node = ctxt.lp_arena.add(ir);
 
@@ -391,7 +390,7 @@ fn resolve_join_where(
     input_left: Arc<DslPlan>,
     input_right: Arc<DslPlan>,
     predicates: Vec<Expr>,
-    mut options: Arc<JoinOptions>,
+    mut options: JoinOptionsIR,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
     // If not eager, respect the flag.
@@ -411,8 +410,7 @@ fn resolve_join_where(
         .schema(ctxt.lp_arena)
         .into_owned();
 
-    let opts = Arc::make_mut(&mut options);
-    opts.args.how = JoinType::Cross;
+    options.args.how = JoinType::Cross;
 
     let (mut last_node, join_node) = resolve_join(
         Either::Right(input_left),
@@ -420,7 +418,7 @@ fn resolve_join_where(
         vec![],
         vec![],
         vec![],
-        options.clone(),
+        options,
         ctxt,
     )?;
 

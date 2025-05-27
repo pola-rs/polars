@@ -48,7 +48,7 @@ use super::*;
 // - changing a name, type, or meaning of a field or an enum variant
 // - changing a default value of a field or a default enum variant
 // - restricting the range of allowed values a field can have
-pub static DSL_VERSION: (u16, u16) = (7, 0);
+pub static DSL_VERSION: (u16, u16) = (8, 0);
 static DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -316,58 +316,42 @@ impl DslPlan {
             );
         }
 
-        #[cfg(feature = "polars_cloud_server")]
-        {
-            // In cloud, we are more flexible and allow deserializing higher minor version,
-            // if there were no unknown fields encountered.
-            //
-            // This is not enabled outside of the cloud server, because it increases
-            // the size of the binary.
+        if minor > MINOR {
+            #[cfg(feature = "polars_cloud_server")]
+            {
+                // In cloud, we are more flexible and allow deserializing higher minor version,
+                // if there were no unknown fields encountered.
+                //
+                // This is not enabled outside of the cloud server, because it increases
+                // the size of the binary.
 
-            let (dsl, unknown_fields) = pl_serialize::SerializeOptions::default().deserialize_from_reader_with_unknown_fields(reader).map_err(|e| {
-                // The DSL serialization is forward compatible if there are no unknown fields
-                if minor > MINOR {
+                let (dsl, unknown_fields) = pl_serialize::SerializeOptions::default().deserialize_from_reader_with_unknown_fields(reader).map_err(|e| {
                     // Convey that the failure might also be due to broken forward compatibility
                     polars_err!(ComputeError:
                         "deserialization failed\n\ngiven DSL_VERSION: {major}.{minor} is higher than this Polars version which uses DSL_VERSION: {MAJOR}.{MINOR}\n{}\nerror: {e}",
                         "either the input is malformed, or the plan requires functionality not supported in this Polars version"
                     )
-                } else {
-                    polars_err!(ComputeError:
-                        "deserialization failed\n\nerror: {e}",
-                    )
-                }
-            })?;
-
-            if !unknown_fields.is_empty() {
-                if minor > MINOR {
+                })?;
+                if !unknown_fields.is_empty() {
                     polars_bail!(ComputeError:
                         "deserialization failed\n\ngiven DSL_VERSION: {major}.{minor} is higher than this Polars version which uses DSL_VERSION: {MAJOR}.{MINOR}\n{}\nencountered unknown fields: {:?}",
                         "the plan requires functionality not supported in this Polars version",
                         unknown_fields,
                     )
-                } else {
-                    polars_bail!(ComputeError:
-                        "deserialization failed\n\ngiven DSL_VERSION: {major}.{minor} should be supported in this Polars version which uses DSL_VERSION: {MAJOR}.{MINOR}\nencountered unknown fields: {:?}",
-                        unknown_fields,
-                    )
                 }
+                return Ok(dsl);
             }
-            Ok(dsl)
+
+            #[cfg(not(feature = "polars_cloud_server"))]
+            polars_bail!(ComputeError:
+                "deserialization failed\n\ngiven DSL_VERSION: {major}.{minor} is not compatible with this Polars version which uses DSL_VERSION: {MAJOR}.{MINOR}\n{}",
+                "error: can't deserialize DSL with a higher minor version"
+            );
         }
 
-        #[cfg(not(feature = "polars_cloud_server"))]
-        {
-            if minor > MINOR {
-                polars_bail!(ComputeError:
-                    "deserialization failed\n\ngiven DSL_VERSION: {major}.{minor} is not compatible with this Polars version which uses DSL_VERSION: {MAJOR}.{MINOR}\n{}",
-                    "error: can't deserialize DSL with a higher minor version"
-                );
-            }
-            pl_serialize::SerializeOptions::default()
-                .deserialize_from_reader::<_, _, true>(reader)
-                .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))
-        }
+        pl_serialize::SerializeOptions::default()
+            .deserialize_from_reader::<_, _, true>(reader)
+            .map_err(|e| polars_err!(ComputeError: "deserialization failed\n\nerror: {e}"))
     }
 
     #[cfg(feature = "dsl-schema")]

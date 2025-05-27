@@ -5,15 +5,13 @@ pub type DurationChunked = Logical<DurationType, Int64Type>;
 
 impl Int64Chunked {
     pub fn into_duration(self, timeunit: TimeUnit) -> DurationChunked {
-        let mut dt = DurationChunked::new_logical(self);
-        dt.dtype = Some(DataType::Duration(timeunit));
-        dt
+        DurationChunked::new_logical(self, DataType::Duration(timeunit))
     }
 }
 
 impl LogicalType for DurationChunked {
     fn dtype(&self) -> &DataType {
-        self.dtype.as_ref().unwrap()
+        &self.dtype
     }
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {

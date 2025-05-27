@@ -221,7 +221,7 @@ impl IR {
                     predicates: Default::default(),
                     left_on,
                     right_on,
-                    options,
+                    options: Arc::new(JoinOptions::from(Arc::unwrap_or_clone(options))),
                 }
             },
             IR::HStack {
