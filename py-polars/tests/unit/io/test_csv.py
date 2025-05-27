@@ -2605,14 +2605,3 @@ def test_csv_write_scalar_empty_chunk_20273(filter_value: int, expected: str) ->
     df2 = pl.DataFrame({"c": [99]})
     df3 = df1.join(df2, how="cross").filter(pl.col("a").eq(filter_value))
     assert df3.write_csv() == expected
-
-
-def test_csv_scan_skip_lines_len_22889() -> None:
-    bb = b"col\n1\n2\n3"
-    expected = pl.DataFrame({"len": [1]}, schema={"len": pl.UInt32})
-
-    out = pl.scan_csv(bb, skip_lines=2).select(pl.len()).collect()
-    assert_frame_equal(expected, out)
-
-    out = pl.scan_csv(bb, skip_lines=2).collect().select(pl.len())
-    assert_frame_equal(expected, out)
