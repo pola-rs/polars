@@ -278,7 +278,7 @@ class ArrayNameSpace:
 
     def head(self, n: int = 5) -> Series:
         """
-        Get the first `length` elements of each sub-array.
+        Get the first `n` elements of each sub-array.
 
         Parameters
         ----------

@@ -97,7 +97,7 @@ class ExprArrayNameSpace:
 
     def head(self, n: int = 5) -> Expr:
         """
-        Get the first `length` elements of the sub-arrays.
+        Get the first `n` elements of the sub-arrays.
 
         Parameters
         ----------
