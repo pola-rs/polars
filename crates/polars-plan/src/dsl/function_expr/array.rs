@@ -250,7 +250,8 @@ pub(super) fn slice(s: &Column, offset: i64, length: usize) -> PolarsResult<Colu
                     validity.push(false);
                     continue;
                 }
-                builder.subslice_extend(values, raw_offset, slice_len, ShareStrategy::Always);
+                let inner_offset = row * arr.size() + raw_offset;
+                builder.subslice_extend(values, inner_offset, slice_len, ShareStrategy::Always);
                 validity.push(true);
             }
             let values = builder.freeze_reset();
