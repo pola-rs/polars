@@ -40,7 +40,6 @@ job.result()  # Waits for the job to complete
 # --8<-- [end:write]
 """
 
-
 """
 # --8<-- [start:scan]
 import polars as pl
