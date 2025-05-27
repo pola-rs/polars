@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 from typing import TYPE_CHECKING, Any
 
+import pyarrow.ipc
 import pytest
 
 import polars as pl
@@ -106,3 +108,24 @@ def test_scan_ipc_local_with_async(
             }
         ),
     )
+
+
+def test_sink_ipc_compat_level_22930() -> None:
+    df = pl.DataFrame({"a": ["foo"]})
+
+    f1 = io.BytesIO()
+    f2 = io.BytesIO()
+
+    df.lazy().sink_ipc(f1, compat_level=0, engine="in-memory")
+    df.lazy().sink_ipc(f2, compat_level=0, engine="streaming")
+
+    f1.seek(0)
+    f2.seek(0)
+
+    t1 = pyarrow.ipc.open_file(f1)
+    assert "large_string" in str(t1.schema)
+    assert_frame_equal(pl.DataFrame(t1.read_all()), df)
+
+    t2 = pyarrow.ipc.open_file(f2)
+    assert "large_string" in str(t2.schema)
+    assert_frame_equal(pl.DataFrame(t2.read_all()), df)
