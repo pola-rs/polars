@@ -8,6 +8,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 
 fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
@@ -62,32 +63,31 @@ where
     }
 }
 
+fn cum_scan_numeric<T, F>(ca: &ChunkedArray<T>, reverse: bool, init: T::Native, update: F) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: FromIterator<Option<T::Native>>,
+    F: Fn(&mut T::Native, Option<T::Native>) -> Option<Option<T::Native>>
+{
+    let out: ChunkedArray<T> = match reverse {
+        false => ca.iter().scan(init, update).collect_trusted(),
+        true => ca.iter().rev().scan(init, update).collect_reversed(),
+    };
+    out.with_name(ca.name().clone())
+}
+
 fn cum_max_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: MinMax + Bounded,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
-    let init = Bounded::min_value();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_max).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_max).collect_reversed(),
+    let init = if T::Native::is_float() { 
+        T::Native::nan_value() 
+    } else { 
+        Bounded::min_value() 
     };
-    out.with_name(ca.name().clone())
-}
-
-fn cum_max_float<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: MinMax + Bounded + Float,
-    ChunkedArray<T>: FromIterator<Option<T::Native>>,
-{
-    let init = T::Native::neg_infinity();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_max).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_max).collect_reversed(),
-    };
-    out.with_name(ca.name().clone())
+    cum_scan_numeric(ca, reverse, init, det_max)
 }
 
 fn cum_min_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
@@ -96,26 +96,12 @@ where
     T::Native: MinMax + Bounded,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
-    let init = Bounded::max_value();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_min).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_min).collect_reversed(),
+    let init = if T::Native::is_float() { 
+        T::Native::nan_value() 
+    } else { 
+        Bounded::max_value() 
     };
-    out.with_name(ca.name().clone())
-}
-
-fn cum_min_float<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: MinMax + Bounded + Float,
-    ChunkedArray<T>: FromIterator<Option<T::Native>>,
-{
-    let init = T::Native::infinity();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_min).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_min).collect_reversed(),
-    };
-    out.with_name(ca.name().clone())
+    cum_scan_numeric(ca, reverse, init, det_min)
 }
 
 fn cum_max_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
@@ -277,35 +263,15 @@ pub fn cum_min(s: &Series, reverse: bool) -> PolarsResult<Series> {
         },
         dt if dt.to_physical().is_primitive_numeric() => {
             let s = s.to_physical_repr();
-            match s.dtype() {
-                DataType::Float32 => {
-                    let ca = s.f32()?;
-                    let out = cum_min_float(ca, reverse).into_series();
-                    if dt.is_logical() {
-                        out.cast(dt)
-                    } else {
-                        Ok(out)
-                    }
-                },
-                DataType::Float64 => {
-                    let ca = s.f64()?;
-                    let out = cum_min_float(ca, reverse).into_series();
-                    if dt.is_logical() {
-                        out.cast(dt)
-                    } else {
-                        Ok(out)
-                    }
-                },
-                _ => with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                    let out = cum_min_numeric(ca, reverse).into_series();
-                    if dt.is_logical() {
-                        out.cast(dt)
-                    } else {
-                        Ok(out)
-                    }
-                }),
-            }
+            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                let out = cum_min_numeric(ca, reverse).into_series();
+                if dt.is_logical() {
+                    out.cast(dt)
+                } else {
+                    Ok(out)
+                }
+            })
         },
         dt => polars_bail!(opq = cum_min, dt),
     }
@@ -325,35 +291,15 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
         },
         dt if dt.to_physical().is_primitive_numeric() => {
             let s = s.to_physical_repr();
-            match s.dtype() {
-                DataType::Float32 => {
-                    let ca = s.f32()?;
-                    let out = cum_max_float(ca, reverse).into_series();
-                    if dt.is_logical() {
-                        out.cast(dt)
-                    } else {
-                        Ok(out)
-                    }
-                },
-                DataType::Float64 => {
-                    let ca = s.f64()?;
-                    let out = cum_max_float(ca, reverse).into_series();
-                    if dt.is_logical() {
-                        out.cast(dt)
-                    } else {
-                        Ok(out)
-                    }
-                },
-                _ => with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                    let out = cum_max_numeric(ca, reverse).into_series();
-                    if dt.is_logical() {
-                        out.cast(dt)
-                    } else {
-                        Ok(out)
-                    }
-                }),
-            }
+            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                let out = cum_max_numeric(ca, reverse).into_series();
+                if dt.is_logical() {
+                    out.cast(dt)
+                } else {
+                    Ok(out)
+                }
+            })
         },
         dt => polars_bail!(opq = cum_max, dt),
     }
