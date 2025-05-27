@@ -276,7 +276,7 @@ class ArrayNameSpace:
         ]
         """
 
-    def head(self, length: int = 5) -> Series:
+    def head(self, n: int = 5) -> Series:
         """
         Get the first `length` elements of each sub-array.
 
@@ -312,9 +312,9 @@ class ArrayNameSpace:
         ]
         """
 
-    def tail(self, length: int = 5) -> Series:
+    def tail(self, n: int = 5) -> Series:
         """
-        Get the last `length` elements of each sub-array.
+        Get the last `n` elements of each sub-array.
 
         Parameters
         ----------
