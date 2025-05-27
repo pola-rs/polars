@@ -63,11 +63,16 @@ where
     }
 }
 
-fn cum_scan_numeric<T, F>(ca: &ChunkedArray<T>, reverse: bool, init: T::Native, update: F) -> ChunkedArray<T>
+fn cum_scan_numeric<T, F>(
+    ca: &ChunkedArray<T>,
+    reverse: bool,
+    init: T::Native,
+    update: F,
+) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
-    F: Fn(&mut T::Native, Option<T::Native>) -> Option<Option<T::Native>>
+    F: Fn(&mut T::Native, Option<T::Native>) -> Option<Option<T::Native>>,
 {
     let out: ChunkedArray<T> = match reverse {
         false => ca.iter().scan(init, update).collect_trusted(),
@@ -82,10 +87,10 @@ where
     T::Native: MinMax + Bounded,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
-    let init = if T::Native::is_float() { 
-        T::Native::nan_value() 
-    } else { 
-        Bounded::min_value() 
+    let init = if T::Native::is_float() {
+        T::Native::nan_value()
+    } else {
+        Bounded::min_value()
     };
     cum_scan_numeric(ca, reverse, init, det_max)
 }
@@ -96,10 +101,10 @@ where
     T::Native: MinMax + Bounded,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
-    let init = if T::Native::is_float() { 
-        T::Native::nan_value() 
-    } else { 
-        Bounded::max_value() 
+    let init = if T::Native::is_float() {
+        T::Native::nan_value()
+    } else {
+        Bounded::max_value()
     };
     cum_scan_numeric(ca, reverse, init, det_min)
 }
