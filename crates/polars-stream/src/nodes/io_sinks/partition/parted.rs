@@ -6,7 +6,7 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca_unordered;
-use polars_core::prelude::{AnyValue, IntoColumn, PlHashSet};
+use polars_core::prelude::{AnyValue, Column, IntoColumn, PlHashSet};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
@@ -24,6 +24,7 @@ use crate::nodes::io_sinks::{SinkInputPort, SinkNode};
 use crate::nodes::{JoinHandle, Morsel, TaskPriority};
 
 pub struct PartedPartitionSinkNode {
+    input_schema: SchemaRef,
     // This is not be the same as the input_schema, e.g. when include_key=false then this will not
     // include the keys columns.
     sink_input_schema: SchemaRef,
@@ -91,6 +92,7 @@ impl PartedPartitionSinkNode {
             });
 
         Self {
+            input_schema,
             sink_input_schema,
             key_cols,
             base_path,
@@ -149,6 +151,7 @@ impl SinkNode for PartedPartitionSinkNode {
                 sender: SinkSender,
                 join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
                 value: AnyValue<'static>,
+                keys: Vec<Column>,
                 node: Box<dyn SinkNode + Send + Sync>,
             }
 
@@ -193,7 +196,11 @@ impl SinkNode for PartedPartitionSinkNode {
                             if current_sink.value != value {
                                 drop(current_sink.sender);
                                 if retire_tx
-                                    .send((current_sink.join_handles, current_sink.node))
+                                    .send((
+                                        current_sink.join_handles,
+                                        current_sink.node,
+                                        current_sink.keys,
+                                    ))
                                     .await
                                     .is_err()
                                 {
@@ -207,6 +214,7 @@ impl SinkNode for PartedPartitionSinkNode {
                         let current_sink = match current_sink_opt.as_mut() {
                             Some(c) => c,
                             None => {
+                                let keys = parted_df.select_columns(key_cols.iter().cloned())?;
                                 let result = open_new_sink(
                                     base_path.as_path(),
                                     file_path_cb.as_ref(),
@@ -214,11 +222,7 @@ impl SinkNode for PartedPartitionSinkNode {
                                     file_idx,
                                     file_idx,
                                     0,
-                                    Some(
-                                        parted_df
-                                            .select_columns(key_cols.iter().cloned())?
-                                            .as_slice(),
-                                    ),
+                                    Some(keys.as_slice()),
                                     &create_new,
                                     sink_input_schema.clone(),
                                     "parted",
@@ -238,6 +242,7 @@ impl SinkNode for PartedPartitionSinkNode {
                                     value,
                                     join_handles,
                                     node,
+                                    keys,
                                 })
                             },
                         };
@@ -265,7 +270,11 @@ impl SinkNode for PartedPartitionSinkNode {
             if let Some(current_sink) = current_sink_opt.take() {
                 drop(current_sink.sender);
                 if retire_tx
-                    .send((current_sink.join_handles, current_sink.node))
+                    .send((
+                        current_sink.join_handles,
+                        current_sink.node,
+                        current_sink.keys,
+                    ))
                     .await
                     .is_err()
                 {
@@ -288,13 +297,18 @@ impl SinkNode for PartedPartitionSinkNode {
             spawn(TaskPriority::High, async move {
                 let mut partition_metrics = Vec::new();
 
-                while let Ok((mut join_handles, node)) = retire_rx.recv().await {
+                while let Ok((mut join_handles, node, keys)) = retire_rx.recv().await {
                     while let Some(ret) = join_handles.next().await {
                         ret.inspect_err(|_| {
                             has_error_occurred.store(true, Ordering::Relaxed);
                         })?;
                     }
-                    if let Some(metrics) = node.get_metrics()? {
+                    if let Some(mut metrics) = node.get_metrics()? {
+                        metrics.keys = Some(
+                            keys.into_iter()
+                                .map(|c| c.get(0).unwrap().into_static())
+                                .collect(),
+                        );
                         partition_metrics.push(metrics);
                     }
                     node.finish()?;
@@ -318,7 +332,11 @@ impl SinkNode for PartedPartitionSinkNode {
                     .into_iter()
                     .flatten()
                     .collect();
-            let df = WriteMetrics::collapse_to_df(written_partitions, &self.sink_input_schema);
+            let df = WriteMetrics::collapse_to_df(
+                written_partitions,
+                &self.sink_input_schema,
+                Some(&self.input_schema.try_project(self.key_cols.iter()).unwrap()),
+            );
             finish_callback.call(df)?;
         }
         Ok(())
