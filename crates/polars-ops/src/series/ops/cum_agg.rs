@@ -1,4 +1,4 @@
-use std::ops::{Add, AddAssign, Mul};
+use std::ops::{Add, AddAssign, Mul, MulAssign};
 
 use arity::unary_elementwise_values;
 use arrow::array::BooleanArray;
@@ -13,7 +13,7 @@ use polars_utils::min_max::MinMax;
 
 fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + AddAssign + Add<Output = T> + MinMax,
+    T: Copy + MinMax,
 {
     match v {
         Some(v) => {
@@ -26,7 +26,7 @@ where
 
 fn det_min<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + AddAssign + Add<Output = T> + MinMax,
+    T: Copy + MinMax,
 {
     match v {
         Some(v) => {
@@ -39,7 +39,7 @@ where
 
 fn det_sum<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + AddAssign + Add<Output = T>,
+    T: Copy + AddAssign,
 {
     match v {
         Some(v) => {
@@ -52,7 +52,7 @@ where
 
 fn det_prod<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
-    T: Copy + PartialOrd + Mul<Output = T>,
+    T: Copy + Mul<Output = T>,
 {
     match v {
         Some(v) => {
