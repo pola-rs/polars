@@ -138,7 +138,10 @@ impl DynLiteralValue {
                 Ok(Scalar::from(s).cast_with_options(dtype, CastOptions::Strict)?)
             },
             DynLiteralValue::Int(i) => {
-                Ok(Scalar::from(i).cast_with_options(dtype, CastOptions::Strict)?)
+                let dynamic_integer = materialize_dyn_int(i);
+                let dynamic_integer_type = dynamic_integer.dtype();
+                Ok(Scalar::new(dynamic_integer_type, dynamic_integer)
+                    .cast_with_options(dtype, CastOptions::Strict)?)
             },
             DynLiteralValue::Float(f) => {
                 Ok(Scalar::from(f).cast_with_options(dtype, CastOptions::Strict)?)
