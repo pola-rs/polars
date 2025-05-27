@@ -307,6 +307,7 @@ impl SinkNode for IpcSinkNode {
             let writer = BufWriter::new(&mut *file);
             let mut writer = IpcWriter::new(writer)
                 .with_compression(write_options.compression)
+                .with_compat_level(write_options.compat_level)
                 .with_parallel(false)
                 .batched(&input_schema)?;
 
