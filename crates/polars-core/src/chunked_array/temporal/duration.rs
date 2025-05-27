@@ -6,7 +6,7 @@ use crate::prelude::*;
 
 impl DurationChunked {
     pub fn time_unit(&self) -> TimeUnit {
-        match self.dtype.as_ref().unwrap() {
+        match &self.dtype {
             DataType::Duration(tu) => *tu,
             _ => unreachable!(),
         }
@@ -59,7 +59,7 @@ impl DurationChunked {
 
     /// Change the underlying [`TimeUnit`]. This does not modify the data.
     pub fn set_time_unit(&mut self, tu: TimeUnit) {
-        self.dtype = Some(Duration(tu))
+        self.dtype = Duration(tu);
     }
 
     /// Convert from [`Duration`] to String; note that `strftime` format

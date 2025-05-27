@@ -413,7 +413,7 @@ fn any_values_to_date(values: &[AnyValue], strict: bool) -> PolarsResult<DateChu
             },
         }
     }
-    Ok(builder.finish().into())
+    Ok(builder.finish().into_date())
 }
 
 #[cfg(feature = "dtype-time")]
@@ -434,7 +434,7 @@ fn any_values_to_time(values: &[AnyValue], strict: bool) -> PolarsResult<TimeChu
             },
         }
     }
-    Ok(builder.finish().into())
+    Ok(builder.finish().into_time())
 }
 
 #[cfg(feature = "dtype-datetime")]

@@ -9,9 +9,7 @@ pub type DecimalChunked = Logical<DecimalType, Int128Type>;
 impl Int128Chunked {
     #[inline]
     pub fn into_decimal_unchecked(self, precision: Option<usize>, scale: usize) -> DecimalChunked {
-        let mut dt = DecimalChunked::new_logical(self);
-        dt.dtype = Some(DataType::Decimal(precision, Some(scale)));
-        dt
+        DecimalChunked::new_logical(self, DataType::Decimal(precision, Some(scale)))
     }
 
     pub fn into_decimal(
@@ -38,7 +36,7 @@ impl Int128Chunked {
 
 impl LogicalType for DecimalChunked {
     fn dtype(&self) -> &DataType {
-        self.dtype.as_ref().unwrap()
+        &self.dtype
     }
 
     #[inline]
@@ -95,14 +93,14 @@ impl LogicalType for DecimalChunked {
 
 impl DecimalChunked {
     pub fn precision(&self) -> Option<usize> {
-        match self.dtype.as_ref().unwrap() {
+        match &self.dtype {
             DataType::Decimal(precision, _) => *precision,
             _ => unreachable!(),
         }
     }
 
     pub fn scale(&self) -> usize {
-        match self.dtype.as_ref().unwrap() {
+        match &self.dtype {
             DataType::Decimal(_, scale) => scale.unwrap_or_else(|| unreachable!()),
             _ => unreachable!(),
         }
