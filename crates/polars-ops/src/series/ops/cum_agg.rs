@@ -171,11 +171,7 @@ where
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
     let init = T::Native::zero();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_sum).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_sum).collect_reversed(),
-    };
-    out.with_name(ca.name().clone())
+    cum_scan_numeric(ca, reverse, init, det_sum)
 }
 
 fn cum_prod_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
@@ -184,11 +180,7 @@ where
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
     let init = T::Native::one();
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_prod).collect_trusted(),
-        true => ca.iter().rev().scan(init, det_prod).collect_reversed(),
-    };
-    out.with_name(ca.name().clone())
+    cum_scan_numeric(ca, reverse, init, det_prod)
 }
 
 /// Get an array with the cumulative product computed at every element.
