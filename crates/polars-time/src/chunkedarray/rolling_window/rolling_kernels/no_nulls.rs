@@ -246,14 +246,14 @@ where
         _ => group_by_values_iter(period, time, closed_window, tu, None),
     }?;
     if sorting_indices.is_none() {
-        rolling_apply_agg_window_sorted::<no_nulls::SumWindow<_>, _, _>(
+        rolling_apply_agg_window_sorted::<no_nulls::SumWindow<T, T>, _, _>(
             values,
             offset_iter,
             min_periods,
             None,
         )
     } else {
-        rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(
+        rolling_apply_agg_window::<no_nulls::SumWindow<T, T>, _, _>(
             values,
             offset_iter,
             min_periods,

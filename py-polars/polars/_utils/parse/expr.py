@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
@@ -119,6 +119,18 @@ def _parse_inputs_as_iterable(
 ) -> Iterable[Any]:
     if not inputs:
         return []
+
+    # Ensures that the outermost element cannot be a Dictionary (as an iterable)
+    if len(inputs) == 1 and isinstance(inputs[0], Mapping):
+        msg = (
+            "Cannot pass a dictionary as a single positional argument.\n"
+            "If you merely want the *keys*, use:\n"
+            "  • df.method(*your_dict.keys())\n"
+            "If you need the key value pairs, use one of:\n"
+            "  • unpack as keywords:    df.method(**your_dict)\n"
+            "  • build expressions:     df.method(expr.alias(k) for k, expr in your_dict.items())"
+        )
+        raise TypeError(msg)
 
     # Treat elements of a single iterable as separate inputs
     if len(inputs) == 1 and _is_iterable(inputs[0]):

@@ -194,11 +194,7 @@ fn deserialize_footer_blocks(
 
     let blocks = blocks
         .iter()
-        .map(|block| {
-            block.try_into().map_err(|err| {
-                polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err))
-            })
-        })
+        .map(|blockref| Ok(<arrow_format::ipc::Block>::from(blockref)))
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok((footer, blocks))
 }
@@ -226,11 +222,9 @@ pub(super) fn iter_recordbatch_blocks_from_footer(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingRecordBatches))?;
 
-    Ok(blocks.iter().map(|block| {
-        block
-            .try_into()
-            .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))
-    }))
+    Ok(blocks
+        .into_iter()
+        .map(|blockref| Ok(<arrow_format::ipc::Block>::from(blockref))))
 }
 
 pub(super) fn iter_dictionary_blocks_from_footer(
@@ -242,11 +236,9 @@ pub(super) fn iter_dictionary_blocks_from_footer(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferDictionaries(err)))?;
 
     Ok(dictionaries.map(|dicts| {
-        dicts.into_iter().map(|block| {
-            block.try_into().map_err(|err| {
-                polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err))
-            })
-        })
+        dicts
+            .into_iter()
+            .map(|blockref| Ok(<arrow_format::ipc::Block>::from(blockref)))
     }))
 }
 

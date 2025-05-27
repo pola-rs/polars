@@ -341,7 +341,7 @@ fn deserialize_all<'a>(
                 );
             }
         },
-        val => AnyValue::StringOwned(format!("{:#?}", val).into()),
+        val => AnyValue::StringOwned(format!("{val:#?}").into()),
     };
     Ok(out)
 }

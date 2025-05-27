@@ -13,6 +13,7 @@ use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[repr(u8)]
 pub enum CastOptions {
     /// Raises on overflow

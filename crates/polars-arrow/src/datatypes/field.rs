@@ -19,6 +19,7 @@ pub static DTYPE_CATEGORICAL: &str = "_PL_CATEGORICAL";
 /// to be serialized.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Field {
     /// Its name
     pub name: PlSmallStr,

@@ -49,7 +49,7 @@ impl FunctionExpr {
             #[cfg(feature = "index_of")]
             IndexOf => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "search_sorted")]
-            SearchSorted(_) => mapper.with_dtype(IDX_DTYPE),
+            SearchSorted { .. } => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "range")]
             Range(func) => func.get_field(mapper),
             #[cfg(feature = "trigonometry")]

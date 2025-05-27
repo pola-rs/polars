@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use arrow::array::*;
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute::arity::unary;
 use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::{Offset, Offsets};
@@ -9,6 +9,7 @@ use arrow::types::{NativeType, f16};
 use num_traits::{AsPrimitive, Float, ToPrimitive};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::vec::PushUnchecked;
 
 use super::CastOptionsImpl;
 use super::temporal::*;
@@ -67,6 +68,55 @@ impl SerPrimitive for f64 {
         f.extend_from_slice(value.as_bytes());
         value.len()
     }
+}
+
+fn fallible_unary<I, F, G, O>(
+    array: &PrimitiveArray<I>,
+    op: F,
+    fail: G,
+    dtype: ArrowDataType,
+) -> PrimitiveArray<O>
+where
+    I: NativeType,
+    O: NativeType,
+    F: Fn(I) -> O,
+    G: Fn(I) -> bool,
+{
+    let values = array.values();
+    let mut out = Vec::with_capacity(array.len());
+    let mut i = 0;
+
+    while i < array.len() && !fail(values[i]) {
+        // SAFETY: We allocated enough before.
+        unsafe { out.push_unchecked(op(values[i])) };
+        i += 1;
+    }
+
+    if out.len() == array.len() {
+        return PrimitiveArray::<O>::new(dtype, out.into(), array.validity().cloned());
+    }
+
+    let mut validity = BitmapBuilder::with_capacity(array.len());
+    validity.extend_constant(out.len(), true);
+
+    for &value in &values[out.len()..] {
+        // SAFETY: We allocated enough before.
+        unsafe {
+            out.push_unchecked(op(value));
+            validity.push_unchecked(!fail(value));
+        }
+    }
+
+    debug_assert_eq!(out.len(), array.len());
+    debug_assert_eq!(validity.len(), array.len());
+
+    let validity = validity.freeze();
+    let validity = match array.validity() {
+        None => validity,
+        Some(arr_validity) => arrow::bitmap::and(&validity, arr_validity),
+    };
+
+    PrimitiveArray::<O>::new(dtype, out.into(), Some(validity))
 }
 
 fn primitive_to_values_and_offsets<T: NativeType + SerPrimitive, O: Offset>(
@@ -423,9 +473,10 @@ pub fn date64_to_date32(from: &PrimitiveArray<i64>) -> PrimitiveArray<i32> {
 
 /// Conversion of times
 pub fn time32s_to_time32ms(from: &PrimitiveArray<i32>) -> PrimitiveArray<i32> {
-    unary(
+    fallible_unary(
         from,
-        |x| x * 1000,
+        |x| x.wrapping_mul(1000),
+        |x| x.checked_mul(1000).is_none(),
         ArrowDataType::Time32(TimeUnit::Millisecond),
     )
 }
@@ -437,9 +488,10 @@ pub fn time32ms_to_time32s(from: &PrimitiveArray<i32>) -> PrimitiveArray<i32> {
 
 /// Conversion of times
 pub fn time64us_to_time64ns(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
-    unary(
+    fallible_unary(
         from,
-        |x| x * 1000,
+        |x| x.wrapping_mul(1000),
+        |x| x.checked_mul(1000).is_none(),
         ArrowDataType::Time64(TimeUnit::Nanosecond),
     )
 }
@@ -466,7 +518,12 @@ pub fn timestamp_to_date64(from: &PrimitiveArray<i64>, from_unit: TimeUnit) -> P
     match to_size.cmp(&from_size) {
         std::cmp::Ordering::Less => unary(from, |x| (x / (from_size / to_size)), to_type),
         std::cmp::Ordering::Equal => primitive_to_same_primitive(from, &to_type),
-        std::cmp::Ordering::Greater => unary(from, |x| (x * (to_size / from_size)), to_type),
+        std::cmp::Ordering::Greater => fallible_unary(
+            from,
+            |x| x.wrapping_mul(to_size / from_size),
+            |x| x.checked_mul(to_size / from_size).is_none(),
+            to_type,
+        ),
     }
 }
 
@@ -485,9 +542,10 @@ pub fn time32_to_time64(
     let from_size = time_unit_multiple(from_unit);
     let to_size = time_unit_multiple(to_unit);
     let divisor = to_size / from_size;
-    unary(
+    fallible_unary(
         from,
-        |x| (x as i64 * divisor),
+        |x| (x as i64).wrapping_mul(divisor),
+        |x| (x as i64).checked_mul(divisor).is_none(),
         ArrowDataType::Time64(to_unit),
     )
 }
@@ -522,7 +580,12 @@ pub fn timestamp_to_timestamp(
     if from_size >= to_size {
         unary(from, |x| (x / (from_size / to_size)), to_type)
     } else {
-        unary(from, |x| (x * (to_size / from_size)), to_type)
+        fallible_unary(
+            from,
+            |x| x.wrapping_mul(to_size / from_size),
+            |x| x.checked_mul(to_size / from_size).is_none(),
+            to_type,
+        )
     }
 }
 

@@ -22,3 +22,6 @@ signal-hook = "0.3"
 
 [features]
 python = ["dep:pyo3"]
+
+[lints]
+workspace = true

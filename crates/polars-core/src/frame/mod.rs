@@ -49,6 +49,7 @@ use crate::series::IsSorted;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[strum(serialize_all = "snake_case")]
 pub enum UniqueKeepStrategy {
     /// Keep the first unique row.
@@ -282,7 +283,7 @@ impl DataFrame {
     /// ```
     pub fn new(columns: Vec<Column>) -> PolarsResult<Self> {
         DataFrame::validate_columns_slice(&columns)
-            .map_err(|e| e.wrap_msg(|e| format!("could not create a new DataFrame: {}", e)))?;
+            .map_err(|e| e.wrap_msg(|e| format!("could not create a new DataFrame: {e}")))?;
         Ok(unsafe { Self::new_no_checks_height_from_first(columns) })
     }
 
@@ -2077,6 +2078,8 @@ impl DataFrame {
             .and_then(|idx| self.columns.get_mut(idx))
             .ok_or_else(|| polars_err!(col_not_found = column))
             .map(|c| c.rename(name))?;
+        self.clear_schema();
+
         Ok(self)
     }
 

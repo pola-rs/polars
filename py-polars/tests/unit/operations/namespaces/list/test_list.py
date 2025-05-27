@@ -1232,3 +1232,8 @@ def test_list_contains() -> None:
         s.list.contains(1, nulls_equal=True),
         pl.Series([True, False, None], dtype=pl.Boolean),
     )
+
+
+def test_list_diff_invalid_type() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series([1, 2, 3]).list.diff()

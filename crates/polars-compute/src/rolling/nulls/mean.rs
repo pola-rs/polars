@@ -2,7 +2,7 @@
 use super::*;
 
 pub struct MeanWindow<'a, T> {
-    sum: SumWindow<'a, T>,
+    sum: SumWindow<'a, T, f64>,
 }
 
 impl<

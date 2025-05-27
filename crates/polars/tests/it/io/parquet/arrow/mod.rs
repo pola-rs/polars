@@ -720,7 +720,7 @@ fn assert_roundtrip(
     chunk: RecordBatchT<Box<dyn Array>>,
     limit: Option<usize>,
 ) -> PolarsResult<()> {
-    let r = integration_write(&schema, &[chunk.clone()])?;
+    let r = integration_write(&schema, std::slice::from_ref(&chunk))?;
 
     let (new_schema, new_chunks) = integration_read(&r, limit)?;
 

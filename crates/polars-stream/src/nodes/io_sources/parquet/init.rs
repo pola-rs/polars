@@ -180,10 +180,7 @@ impl ParquetReadImpl {
         let ideal_morsel_size = get_ideal_morsel_size();
 
         if verbose {
-            eprintln!(
-                "[ParquetFileReader]: ideal_morsel_size: {}",
-                ideal_morsel_size
-            );
+            eprintln!("[ParquetFileReader]: ideal_morsel_size: {ideal_morsel_size}");
         }
 
         let metadata = self.metadata.clone();

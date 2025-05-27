@@ -524,6 +524,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT AVG(column_1) FROM df;
     /// ```
     Avg,
+    /// SQL 'corr' function.
+    /// Returns the Pearson correlation coefficient between two columns.
+    /// ```sql
+    /// SELECT CORR(column_1, column_2) FROM df;
+    /// ```
+    Corr,
     /// SQL 'count' function.
     /// Returns the amount of elements in the grouping.
     /// ```sql
@@ -533,6 +539,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT COUNT(DISTINCT *) FROM df;
     /// ```
     Count,
+    /// SQL 'covar_pop' function.
+    /// Returns the population covariance between two columns.
+    /// ```sql
+    /// SELECT COVAR_POP(column_1, column_2) FROM df;
+    /// ```
+    CovarPop,
+    /// SQL 'covar_samp' function.
+    /// Returns the sample covariance between two columns.
+    /// ```sql
+    /// SELECT COVAR_SAMP(column_1, column_2) FROM df;
+    /// ```
+    CovarSamp,
     /// SQL 'first' function.
     /// Returns the first element of the grouping.
     /// ```sql
@@ -595,7 +613,6 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT VARIANCE(column_1) FROM df;
     /// ```
     Variance,
-
     // ----
     // Array functions
     // ----
@@ -721,11 +738,15 @@ impl PolarsSQLFunctions {
             "columns",
             "concat",
             "concat_ws",
+            "corr",
             "cos",
             "cosd",
             "cot",
             "cotd",
             "count",
+            "covar",
+            "covar_pop",
+            "covar_samp",
             "date",
             "date_part",
             "degrees",
@@ -899,7 +920,10 @@ impl PolarsSQLFunctions {
             // Aggregate functions
             // ----
             "avg" => Self::Avg,
+            "corr" => Self::Corr,
             "count" => Self::Count,
+            "covar_pop" => Self::CovarPop,
+            "covar" | "covar_samp" => Self::CovarSamp,
             "first" => Self::First,
             "last" => Self::Last,
             "max" => Self::Max,
@@ -1228,7 +1252,7 @@ impl SQLFunctionVisitor<'_> {
                                     if f.is_empty() {
                                         polars_bail!(SQLSyntax: "invalid/empty 'flags' for REGEXP_LIKE ({})", args[2]);
                                     };
-                                    lit(format!("(?{}){}", f, s))
+                                    lit(format!("(?{f}){s}"))
                                 },
                                 _ => {
                                     polars_bail!(SQLSyntax: "invalid arguments for REGEXP_LIKE ({}, {})", args[1], args[2]);
@@ -1407,7 +1431,10 @@ impl SQLFunctionVisitor<'_> {
             // Aggregate functions
             // ----
             Avg => self.visit_unary(Expr::mean),
+            Corr => self.visit_binary(polars_lazy::dsl::pearson_corr),
             Count => self.visit_count(),
+            CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
+            CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
@@ -1507,9 +1534,9 @@ impl SQLFunctionVisitor<'_> {
                         };
                         let pat = match pat {
                             _ if pat.starts_with('^') && pat.ends_with('$') => pat.to_string(),
-                            _ if pat.starts_with('^') => format!("{}.*$", pat),
-                            _ if pat.ends_with('$') => format!("^.*{}", pat),
-                            _ => format!("^.*{}.*$", pat),
+                            _ if pat.starts_with('^') => format!("{pat}.*$"),
+                            _ if pat.ends_with('$') => format!("^.*{pat}"),
+                            _ => format!("^.*{pat}.*$"),
                         };
                         if let Some(active_schema) = &active_schema {
                             let rx = polars_utils::regex_cache::compile_regex(&pat).unwrap();

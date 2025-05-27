@@ -7,6 +7,7 @@ Manipulation/selection
    :toctree: api/
 
     DataFrame.__getitem__
+    DataFrame.__setitem__
     DataFrame.bottom_k
     DataFrame.cast
     DataFrame.clear

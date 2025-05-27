@@ -54,7 +54,7 @@ impl LogicalType for DatetimeChunked {
                 };
                 match multiplier {
                     // scale to higher precision (eg: ms → us, ms → ns, us → ns)
-                    Some(m) => Ok((self.phys.as_ref() * m)
+                    Some(m) => Ok((self.phys.as_ref().checked_mul_scalar(m))
                         .into_datetime(*to_unit, tz.clone())
                         .into_series()),
                     // scale to lower precision (eg: ns → us, ns → ms, us → ms)
@@ -96,9 +96,9 @@ impl LogicalType for DatetimeChunked {
                 };
                 return Ok(self
                     .phys
-                    .apply_values(|v| {
-                        let t = v % scaled_mod * multiplier;
-                        t + (NS_IN_DAY * (t < 0) as i64)
+                    .apply(|v| {
+                        let t = (v? % scaled_mod).checked_mul(multiplier)?;
+                        t.checked_add(NS_IN_DAY * (t < 0) as i64)
                     })
                     .into_time()
                     .into_series());

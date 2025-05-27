@@ -35,14 +35,13 @@ impl std::fmt::Display for LocalCompareError {
         match self {
             Self::LastModifiedMismatch { expected, actual } => write!(
                 f,
-                "last modified time mismatch: expected {}, found {}",
-                expected, actual
+                "last modified time mismatch: expected {expected}, found {actual}"
             ),
             Self::SizeMismatch { expected, actual } => {
-                write!(f, "size mismatch: expected {}, found {}", expected, actual)
+                write!(f, "size mismatch: expected {expected}, found {actual}")
             },
             Self::DataFileReadError(err) => {
-                write!(f, "failed to read local file metadata: {}", err)
+                write!(f, "failed to read local file metadata: {err}")
             },
         }
     }

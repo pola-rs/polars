@@ -435,8 +435,8 @@ pub fn assert_series_nested_values_equal(
                     s2
                 ));
             } else {
-                let s1_series = Series::new("".into(), &[s1.clone()]);
-                let s2_series = Series::new("".into(), &[s2.clone()]);
+                let s1_series = Series::new("".into(), std::slice::from_ref(&s1));
+                let s2_series = Series::new("".into(), std::slice::from_ref(&s2));
 
                 match assert_series_values_equal(
                     &s1_series.explode(false)?,
@@ -553,4 +553,306 @@ pub fn assert_series_equal(
         options.atol,
         options.categorical_as_str,
     )
+}
+
+/// Configuration options for comparing DataFrame equality.
+///
+/// Controls the behavior of DataFrame equality comparisons by specifying
+/// which aspects to check and the tolerance for floating point comparisons.
+pub struct DataFrameEqualOptions {
+    /// Whether to check that rows appear in the same order.
+    pub check_row_order: bool,
+    /// Whether to check that columns appear in the same order.
+    pub check_column_order: bool,
+    /// Whether to check that the data types match for corresponding columns.
+    pub check_dtypes: bool,
+    /// Whether to check for exact equality (true) or approximate equality (false) for floating point values.
+    pub check_exact: bool,
+    /// Relative tolerance for approximate equality of floating point values.
+    pub rtol: f64,
+    /// Absolute tolerance for approximate equality of floating point values.
+    pub atol: f64,
+    /// Whether to compare categorical values as strings.
+    pub categorical_as_str: bool,
+}
+
+impl Default for DataFrameEqualOptions {
+    /// Creates a new `DataFrameEqualOptions` with default settings.
+    ///
+    /// Default configuration:
+    /// - Checks row order, column order, and data types
+    /// - Uses approximate equality comparisons for floating point values
+    /// - Sets relative tolerance to 1e-5 and absolute tolerance to 1e-8 for floating point comparisons
+    /// - Does not convert categorical values to strings for comparison
+    fn default() -> Self {
+        Self {
+            check_row_order: true,
+            check_column_order: true,
+            check_dtypes: true,
+            check_exact: false,
+            rtol: 1e-5,
+            atol: 1e-8,
+            categorical_as_str: false,
+        }
+    }
+}
+
+impl DataFrameEqualOptions {
+    /// Creates a new `DataFrameEqualOptions` with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets whether to check that rows appear in the same order.
+    pub fn with_check_row_order(mut self, value: bool) -> Self {
+        self.check_row_order = value;
+        self
+    }
+
+    /// Sets whether to check that columns appear in the same order.
+    pub fn with_check_column_order(mut self, value: bool) -> Self {
+        self.check_column_order = value;
+        self
+    }
+
+    /// Sets whether to check that data types match for corresponding columns.
+    pub fn with_check_dtypes(mut self, value: bool) -> Self {
+        self.check_dtypes = value;
+        self
+    }
+
+    /// Sets whether to check for exact equality (true) or approximate equality (false) for floating point values.
+    pub fn with_check_exact(mut self, value: bool) -> Self {
+        self.check_exact = value;
+        self
+    }
+
+    /// Sets the relative tolerance for approximate equality of floating point values.
+    pub fn with_rtol(mut self, value: f64) -> Self {
+        self.rtol = value;
+        self
+    }
+
+    /// Sets the absolute tolerance for approximate equality of floating point values.
+    pub fn with_atol(mut self, value: f64) -> Self {
+        self.atol = value;
+        self
+    }
+
+    /// Sets whether to compare categorical values as strings.
+    pub fn with_categorical_as_str(mut self, value: bool) -> Self {
+        self.categorical_as_str = value;
+        self
+    }
+}
+
+/// Compares DataFrame schemas for equality based on specified criteria.
+///
+/// This function validates that two DataFrames have compatible schemas by checking
+/// column names, their order, and optionally their data types according to the
+/// provided configuration parameters.
+///
+/// # Arguments
+///
+/// * `left` - The first DataFrame to compare
+/// * `right` - The second DataFrame to compare
+/// * `check_dtypes` - If true, requires data types to match for corresponding columns
+/// * `check_column_order` - If true, requires columns to appear in the same order
+///
+/// # Returns
+///
+/// * `Ok(())` if DataFrame schemas match according to specified criteria
+/// * `Err` with details about schema mismatches if DataFrames differ
+///
+/// # Behavior
+///
+/// The function performs schema validation in the following order:
+///
+/// 1. **Fast path**: Returns immediately if schemas are identical
+/// 2. **Column name validation**: Ensures both DataFrames have the same set of column names
+///    - Reports columns present in left but missing in right
+///    - Reports columns present in right but missing in left
+/// 3. **Column order validation**: If `check_column_order` is true, verifies columns appear in the same sequence
+/// 4. **Data type validation**: If `check_dtypes` is true, ensures corresponding columns have matching data types
+///    - When `check_column_order` is false, compares data type sets for equality
+///    - When `check_column_order` is true, performs more precise type checking
+///
+pub fn assert_dataframe_schema_equal(
+    left: &DataFrame,
+    right: &DataFrame,
+    check_dtypes: bool,
+    check_column_order: bool,
+) -> PolarsResult<()> {
+    let left_schema = left.schema();
+    let right_schema = right.schema();
+
+    let ordered_left_cols = left.get_column_names();
+    let ordered_right_cols = right.get_column_names();
+
+    let left_set: PlHashSet<&PlSmallStr> = ordered_left_cols.iter().copied().collect();
+    let right_set: PlHashSet<&PlSmallStr> = ordered_right_cols.iter().copied().collect();
+
+    let left_dtypes: PlHashSet<DataType> = left.dtypes().into_iter().collect();
+    let right_dtypes: PlHashSet<DataType> = right.dtypes().into_iter().collect();
+
+    // Fast path for equal DataFrames
+    if left_schema == right_schema {
+        return Ok(());
+    }
+
+    if left_set != right_set {
+        let left_not_right: Vec<_> = left_set
+            .iter()
+            .filter(|col| !right_set.contains(*col))
+            .collect();
+
+        if !left_not_right.is_empty() {
+            return Err(polars_err!(
+                assertion_error = "DataFrame",
+                format!(
+                    "columns mismatch: {:?} in left, but not in right",
+                    left_not_right
+                ),
+                format!("{:?}", left_set),
+                format!("{:?}", right_set)
+            ));
+        } else {
+            let right_not_left: Vec<_> = right_set
+                .iter()
+                .filter(|col| !left_set.contains(*col))
+                .collect();
+
+            return Err(polars_err!(
+                assertion_error = "DataFrame",
+                format!(
+                    "columns mismatch: {:?} in right, but not in left",
+                    right_not_left
+                ),
+                format!("{:?}", left_set),
+                format!("{:?}", right_set)
+            ));
+        }
+    }
+
+    if check_column_order && ordered_left_cols != ordered_right_cols {
+        return Err(polars_err!(
+            assertion_error = "DataFrame",
+            "columns are not in the same order",
+            format!("{:?}", ordered_left_cols),
+            format!("{:?}", ordered_right_cols)
+        ));
+    }
+
+    if check_dtypes && (check_column_order || left_dtypes != right_dtypes) {
+        return Err(polars_err!(
+            assertion_error = "DataFrame",
+            "data types do not match",
+            format!("{:?}", left_dtypes),
+            format!("{:?}", right_dtypes)
+        ));
+    }
+
+    Ok(())
+}
+
+/// Verifies that two DataFrames are equal according to a set of configurable criteria.
+///
+/// This function serves as the main entry point for comparing DataFrames, first validating
+/// schema compatibility and then comparing the actual data values column by column.
+///
+/// # Arguments
+///
+/// * `left` - The first DataFrame to compare
+/// * `right` - The second DataFrame to compare
+/// * `options` - A `DataFrameEqualOptions` struct containing configuration parameters:
+///   * `check_row_order` - If true, rows must be in the same order
+///   * `check_column_order` - If true, columns must be in the same order
+///   * `check_dtypes` - If true, verifies data types match for corresponding columns
+///   * `check_exact` - If true, requires exact equality for float values
+///   * `rtol` - Relative tolerance for float comparison
+///   * `atol` - Absolute tolerance for float comparison
+///   * `categorical_as_str` - If true, converts categorical values to strings before comparison
+///
+/// # Returns
+///
+/// * `Ok(())` if DataFrames match according to all specified criteria
+/// * `Err` with details about the first mismatch encountered:
+///   * Schema mismatches (column names, order, or data types)
+///   * Height (row count) mismatch
+///   * Value mismatches in specific columns
+///
+/// # Order of Checks
+///
+/// 1. Schema validation (column names, order, and data types via `assert_dataframe_schema_equal`)
+/// 2. DataFrame height (row count)
+/// 3. Row ordering (sorts both DataFrames if `check_row_order` is false)
+/// 4. Column-by-column value comparison (delegated to `assert_series_values_equal`)
+///
+/// # Behavior
+///
+/// When `check_row_order` is false, both DataFrames are sorted using all columns to ensure
+/// consistent ordering before value comparison. This allows for row-order-independent equality
+/// checking while maintaining deterministic results.
+///
+pub fn assert_dataframe_equal(
+    left: &DataFrame,
+    right: &DataFrame,
+    options: DataFrameEqualOptions,
+) -> PolarsResult<()> {
+    assert_dataframe_schema_equal(
+        left,
+        right,
+        options.check_dtypes,
+        options.check_column_order,
+    )?;
+
+    if left.height() != right.height() {
+        return Err(polars_err!(
+            assertion_error = "DataFrames",
+            "height (row count) mismatch",
+            left.height(),
+            right.height()
+        ));
+    }
+
+    let left_cols = left.get_column_names_owned();
+
+    let (left, right) = if !options.check_row_order {
+        (
+            left.sort(left_cols.clone(), SortMultipleOptions::default())?,
+            right.sort(left_cols.clone(), SortMultipleOptions::default())?,
+        )
+    } else {
+        (left.clone(), right.clone())
+    };
+
+    for col in left_cols.iter() {
+        let s_left = left.column(col)?;
+        let s_right = right.column(col)?;
+
+        let s_left_series = s_left.as_materialized_series();
+        let s_right_series = s_right.as_materialized_series();
+
+        match assert_series_values_equal(
+            s_left_series,
+            s_right_series,
+            true,
+            options.check_exact,
+            options.rtol,
+            options.atol,
+            options.categorical_as_str,
+        ) {
+            Ok(_) => {},
+            Err(err) => {
+                return Err(polars_err!(
+                    assertion_error = "DataFrame",
+                    format!("value mismatch for column {:?}:, {}", col, err),
+                    format!("{:?}", s_left_series),
+                    format!("{:?}", s_right_series)
+                ));
+            },
+        }
+    }
+
+    Ok(())
 }

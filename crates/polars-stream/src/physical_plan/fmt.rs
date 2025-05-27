@@ -273,13 +273,13 @@ fn visualize_plan_rec(
 
             match file_type {
                 #[cfg(feature = "parquet")]
-                FileType::Parquet(_) => (format!("{}[parquet]", variant), from_ref(input)),
+                FileType::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
                 #[cfg(feature = "ipc")]
-                FileType::Ipc(_) => (format!("{}[ipc]", variant), from_ref(input)),
+                FileType::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
                 #[cfg(feature = "csv")]
-                FileType::Csv(_) => (format!("{}[csv]", variant), from_ref(input)),
+                FileType::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
                 #[cfg(feature = "json")]
-                FileType::Json(_) => (format!("{}[ndjson]", variant), from_ref(input)),
+                FileType::Json(_) => (format!("{variant}[ndjson]"), from_ref(input)),
                 #[allow(unreachable_patterns)]
                 _ => todo!(),
             }
@@ -363,7 +363,7 @@ fn visualize_plan_rec(
             }
 
             if let Some(col_name) = include_file_paths {
-                write!(f, "\nfile path column: {}", col_name).unwrap();
+                write!(f, "\nfile path column: {col_name}").unwrap();
             }
 
             if let Some(pre_slice) = pre_slice {
@@ -386,7 +386,7 @@ fn visualize_plan_rec(
             }
 
             if let Some(v) = hive_parts.as_ref().map(|h| h.df().width()) {
-                write!(f, "\nhive: {} column", v).unwrap();
+                write!(f, "\nhive: {v} column").unwrap();
 
                 if v != 1 {
                     write!(f, "s").unwrap();
@@ -484,7 +484,7 @@ fn visualize_plan_rec(
             let mut out = "merge-sorted".to_string();
             let mut f = EscapeLabel(&mut out);
 
-            write!(f, "\nkey: {}", key).unwrap();
+            write!(f, "\nkey: {key}").unwrap();
 
             (out, &[*input_left, *input_right][..])
         },

@@ -1587,6 +1587,13 @@ def test_join_bad_input_type() -> None:
     ):
         left.join(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
 
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    right = DummyDataFrameSubclass(right)
+
+    left.join(right, on="a")
+
 
 def test_join_where() -> None:
     east = pl.DataFrame(
@@ -1663,6 +1670,17 @@ def test_join_where_bad_input_type() -> None:
             pl.col("dur") < pl.col("time"),
             pl.col("rev") < pl.col("cost"),
         )
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    west = DummyDataFrameSubclass(west)
+
+    east.join_where(
+        west,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") < pl.col("cost"),
+    )
 
 
 def test_str_concat() -> None:
@@ -2420,6 +2438,13 @@ def test_asof_bad_input_type() -> None:
         match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         lhs.join_asof(pl.Series([1, 2, 3]), on="a")  # type: ignore[arg-type]
+
+    class DummyDataFrameSubclass(pl.DataFrame):
+        pass
+
+    rhs = DummyDataFrameSubclass(rhs)
+
+    lhs.join_asof(rhs, on="a")
 
 
 def test_list_of_list_of_struct() -> None:
@@ -3224,3 +3249,29 @@ def test_nan_to_null() -> None:
     )
 
     assert_frame_equal(df1, df2)
+
+
+# Below 3 tests for https://github.com/pola-rs/polars/issues/17879
+
+
+def test_with_columns_dict_direct_typeerror() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1)
+    with pytest.raises(
+        TypeError, match="Cannot pass a dictionary as a single positional argument"
+    ):
+        df.with_columns(data)
+
+
+def test_with_columns_dict_unpacking() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1).with_columns(**data)
+    expected = pl.DataFrame({"a": [2]})
+    assert df.equals(expected)
+
+
+def test_with_columns_generator_alias() -> None:
+    data = {"a": pl.col("a") * 2}
+    df = pl.select(a=1).with_columns(expr.alias(name) for name, expr in data.items())
+    expected = pl.DataFrame({"a": [2]})
+    assert df.equals(expected)

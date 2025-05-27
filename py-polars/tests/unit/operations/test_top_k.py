@@ -544,3 +544,21 @@ def test_top_k_sorted_21260() -> None:
     assert s.bottom_k(3).sort().to_list() == [1, 2, 3]
     assert s.sort(descending=False).bottom_k(3).sort().to_list() == [1, 2, 3]
     assert s.sort(descending=True).bottom_k(3).sort().to_list() == [1, 2, 3]
+
+
+def test_top_k_by() -> None:
+    # expression
+    s = pl.Series("a", [3, 8, 1, 5, 2])
+
+    assert_series_equal(
+        s.top_k_by("a", 3), pl.Series("a", [8, 5, 3]), check_order=False
+    )
+
+
+def test_bottom_k_by() -> None:
+    # expression
+    s = pl.Series("a", [3, 8, 1, 5, 2])
+
+    assert_series_equal(
+        s.bottom_k_by("a", 4), pl.Series("a", [3, 2, 1, 5]), check_order=False
+    )

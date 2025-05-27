@@ -81,6 +81,21 @@ impl<'a, T: Deserialize<'a> + Clone> Deserialize<'a> for LazySerde<T> {
     }
 }
 
+#[cfg(feature = "dsl-schema")]
+impl<T: schemars::JsonSchema + Clone> schemars::JsonSchema for LazySerde<T> {
+    fn schema_name() -> String {
+        T::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        T::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
+    }
+}
+
 pub(super) fn deserialize_column_udf(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
     #[cfg(feature = "python")]
     if buf.starts_with(crate::dsl::python_dsl::PYTHON_SERDE_MAGIC_BYTE_MARK) {
@@ -113,6 +128,21 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 .map_err(|e| D::Error::custom(format!("{e}")))
                 .map(SpecialEq::new)
         })?
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for SpecialEq<Arc<dyn ColumnsUdf>> {
+    fn schema_name() -> String {
+        "ColumnsUdf".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "ColumnsUdf"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }
 
@@ -157,7 +187,7 @@ impl<'a> Deserialize<'a> for GetOutput {
                     Ok(LazySerde::Deserialized(SpecialEq::new(get_output)))
                 } else if buf.starts_with(NAMED_SERDE_MAGIC_BYTE_MARK) {
                     let (reg, name, _payload) = deserialize_named_registry(&buf)
-                        .map_err(|e| D::Error::custom(format!("{}", e)))?;
+                        .map_err(|e| D::Error::custom(format!("{e}")))?;
                     if let Some(func) = reg.get_output(name) {
                         Ok(LazySerde::Deserialized(SpecialEq::new(func)))
                     } else {
@@ -182,29 +212,18 @@ impl<'a> Deserialize<'a> for GetOutput {
     }
 }
 
-impl Serialize for SpecialEq<Arc<dyn RenameAliasFn>> {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        use serde::ser::Error;
-        let mut buf = vec![];
-        self.as_ref()
-            .try_serialize(&mut buf)
-            .map_err(|e| S::Error::custom(format!("{e}")))?;
-        serializer.serialize_bytes(&buf)
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for GetOutput {
+    fn schema_name() -> String {
+        "GetOutput".to_owned()
     }
-}
 
-impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn RenameAliasFn>> {
-    fn deserialize<D>(_deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        use serde::de::Error;
-        Err(D::Error::custom(
-            "deserialization not supported for this renaming function",
-        ))
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(std::concat!(std::module_path!(), "::", "GetOutput"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }
 
@@ -228,6 +247,21 @@ impl<'a> Deserialize<'a> for SpecialEq<Series> {
     }
 }
 
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for SpecialEq<Series> {
+    fn schema_name() -> String {
+        Series::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        Series::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Series::json_schema(generator)
+    }
+}
+
 impl<T: Serialize> Serialize for SpecialEq<Arc<T>> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -245,5 +279,20 @@ impl<'a, T: Deserialize<'a>> Deserialize<'a> for SpecialEq<Arc<T>> {
     {
         let t = T::deserialize(deserializer)?;
         Ok(SpecialEq::new(Arc::new(t)))
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl<T: schemars::JsonSchema> schemars::JsonSchema for SpecialEq<Arc<T>> {
+    fn schema_name() -> String {
+        T::schema_name()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        T::schema_id()
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        T::json_schema(generator)
     }
 }

@@ -6,6 +6,7 @@ use crate::{map, map_as_slice, wrap};
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum ListFunction {
     Concat,
     #[cfg(feature = "is_in")]
@@ -92,8 +93,12 @@ impl ListFunction {
             ArgMin => mapper.with_dtype(IDX_DTYPE),
             ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
-            Diff { .. } => mapper.map_dtype(|dt| {
-                let inner_dt = match dt.inner_dtype().unwrap() {
+            Diff { .. } => mapper.try_map_dtype(|dt| {
+                let DataType::List(inner) = dt else {
+                    polars_bail!(op = "list.diff", dt);
+                };
+
+                let inner_dt = match inner.as_ref() {
                     #[cfg(feature = "dtype-datetime")]
                     DataType::Datetime(tu, _) => DataType::Duration(*tu),
                     #[cfg(feature = "dtype-date")]
@@ -105,7 +110,8 @@ impl ListFunction {
                     DataType::UInt8 => DataType::Int16,
                     inner_dt => inner_dt.clone(),
                 };
-                DataType::List(Box::new(inner_dt))
+
+                Ok(DataType::List(Box::new(inner_dt)))
             }),
             Sort(_) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),

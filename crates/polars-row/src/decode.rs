@@ -149,6 +149,8 @@ fn dtype_and_data_to_encoded_item_len(
 
         D::Union(_) => todo!(),
         D::Map(_, _) => todo!(),
+        D::Decimal32(_, _) => todo!(),
+        D::Decimal64(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
         D::Extension(_) => todo!(),
         D::Unknown => todo!(),

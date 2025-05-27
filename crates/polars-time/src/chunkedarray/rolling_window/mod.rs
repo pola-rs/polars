@@ -14,6 +14,7 @@ use crate::prelude::*;
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "rolling_window_by", derive(PartialEq))]
 pub struct RollingOptionsDynamicWindow {
     /// The length of the window.
@@ -23,6 +24,6 @@ pub struct RollingOptionsDynamicWindow {
     /// Which side windows should be closed.
     pub closed_window: ClosedWindow,
     /// Optional parameters for the rolling
-    #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(default))]
     pub fn_params: Option<RollingFnParams>,
 }

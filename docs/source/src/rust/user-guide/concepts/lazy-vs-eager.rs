@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by(["species"])?
         .select(["sepal_width"])
         .mean()?;
-    println!("{}", df_agg);
+    println!("{df_agg}");
     // --8<-- [end:eager]
 
     // --8<-- [start:lazy]
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by(vec![col("species")])
         .agg([col("sepal_width").mean()]);
     let df = q.collect()?;
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:lazy]
 
     // --8<-- [start:explain]

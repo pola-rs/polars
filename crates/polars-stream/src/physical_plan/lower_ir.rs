@@ -276,6 +276,8 @@ pub fn lower_ir(
                 variant,
                 file_type,
                 cloud_options,
+                per_partition_sort_by,
+                finish_callback,
             }) => {
                 let base_path = base_path.clone();
                 let file_path_cb = file_path_cb.clone();
@@ -283,6 +285,8 @@ pub fn lower_ir(
                 let variant = variant.clone();
                 let file_type = file_type.clone();
                 let cloud_options = cloud_options.clone();
+                let per_partition_sort_by = per_partition_sort_by.clone();
+                let finish_callback = finish_callback.clone();
 
                 let mut input = lower_ir!(*input)?;
                 match &variant {
@@ -324,13 +328,15 @@ pub fn lower_ir(
                 };
 
                 PhysNodeKind::PartitionSink {
+                    input,
                     base_path,
                     file_path_cb,
                     sink_options,
                     variant,
                     file_type,
-                    input,
                     cloud_options,
+                    per_partition_sort_by,
+                    finish_callback,
                 }
             },
         },
@@ -574,13 +580,20 @@ pub fn lower_ir(
                                 .as_ref()
                                 .map(|x| x.as_str()),
                         );
-                    let has_projection = unified_scan_args.projection.is_some();
 
-                    // TODO: Add this to unified scan args.
-                    let extra_columns_policy = if has_projection {
-                        ExtraColumnsPolicy::Ignore
-                    } else {
-                        ExtraColumnsPolicy::Raise
+                    // TODO: We ignore the parameter for some scan types to maintain old behavior,
+                    // as they currently don't expose an API for it to be configured.
+                    let extra_columns_policy = match &*scan_type {
+                        #[cfg(feature = "parquet")]
+                        FileScan::Parquet { .. } => unified_scan_args.extra_columns_policy,
+
+                        _ => {
+                            if unified_scan_args.projection.is_some() {
+                                ExtraColumnsPolicy::Ignore
+                            } else {
+                                ExtraColumnsPolicy::Raise
+                            }
+                        },
                     };
 
                     let mut multi_scan_node = PhysNodeKind::MultiScan {

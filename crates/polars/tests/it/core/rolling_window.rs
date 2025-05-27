@@ -277,7 +277,6 @@ fn test_rolling_var() {
     });
     assert!(
         test_res,
-        "{:?} is not approximately equal to {:?}",
-        out, exp_res
+        "{out:?} is not approximately equal to {exp_res:?}"
     );
 }

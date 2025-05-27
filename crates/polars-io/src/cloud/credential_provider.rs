@@ -25,7 +25,7 @@ pub enum PlCredentialProvider {
     /// Prefer using [`PlCredentialProvider::from_func`] instead of constructing this directly
     Function(CredentialProviderFunction),
     #[cfg(feature = "python")]
-    Python(python_impl::PythonCredentialProvider),
+    Python(PythonCredentialProvider),
 }
 
 impl PlCredentialProvider {
@@ -374,7 +374,22 @@ impl serde::Serialize for PlCredentialProvider {
             return v.serialize(_serializer);
         }
 
-        Err(S::Error::custom(format!("cannot serialize {:?}", self)))
+        Err(S::Error::custom(format!("cannot serialize {self:?}")))
+    }
+}
+
+#[cfg(feature = "dsl-schema")]
+impl schemars::JsonSchema for PlCredentialProvider {
+    fn schema_name() -> String {
+        "PlCredentialProvider".to_owned()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PlCredentialProvider"))
+    }
+
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+        Vec::<u8>::json_schema(generator)
     }
 }
 
@@ -682,8 +697,7 @@ mod python_impl {
                                 },
                                 v => {
                                     return pyo3::PyResult::Err(PyValueError::new_err(format!(
-                                        "unknown configuration key for azure: {}, {}",
-                                        v, VALID_KEYS_MSG
+                                        "unknown configuration key for azure: {v}, {VALID_KEYS_MSG}"
                                     )));
                                 },
                             }
@@ -695,8 +709,7 @@ mod python_impl {
                     let Some(credentials) = credentials else {
                         return Err(PolarsError::ComputeError(
                             format!(
-                                "did not find a valid configuration key for azure, {}",
-                                VALID_KEYS_MSG
+                                "did not find a valid configuration key for azure, {VALID_KEYS_MSG}"
                             )
                             .into(),
                         ));

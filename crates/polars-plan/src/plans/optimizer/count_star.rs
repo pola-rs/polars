@@ -31,10 +31,7 @@ impl OptimizationRule for CountStar {
         {
             Ok("1") => Some(true),
             Ok("0") => Some(false),
-            Ok(v) => panic!(
-                "POLARS_FAST_FILE_COUNT_DISPATCH must be one of ('0', '1'), got: {}",
-                v
-            ),
+            Ok(v) => panic!("POLARS_FAST_FILE_COUNT_DISPATCH must be one of ('0', '1'), got: {v}"),
             Err(_) => None,
         };
 

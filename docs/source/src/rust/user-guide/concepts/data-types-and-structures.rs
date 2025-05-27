@@ -4,7 +4,7 @@ fn main() {
 
     let s = Series::new("ints".into(), &[1, 2, 3, 4, 5]);
 
-    println!("{}", s);
+    println!("{s}");
     // --8<-- [end:series]
 
     // --8<-- [start:series-dtype]
@@ -30,7 +30,7 @@ fn main() {
         "height" => [1.56, 1.77, 1.65, 1.75],  // (m)
     )
     .unwrap();
-    println!("{}", df);
+    println!("{df}");
     // --8<-- [end:df]
 
     // --8<-- [start:schema]
@@ -40,20 +40,20 @@ fn main() {
     // --8<-- [start:head]
     let df_head = df.head(Some(3));
 
-    println!("{}", df_head);
+    println!("{df_head}");
     // --8<-- [end:head]
 
     // --8<-- [start:tail]
     let df_tail = df.tail(Some(3));
 
-    println!("{}", df_tail);
+    println!("{df_tail}");
     // --8<-- [end:tail]
 
     // --8<-- [start:sample]
     let n = Series::new("".into(), &[2]);
     let sampled_df = df.sample_n(&n, false, false, None).unwrap();
 
-    println!("{}", sampled_df);
+    println!("{sampled_df}");
     // --8<-- [end:sample]
 
     // --8<-- [start:describe]

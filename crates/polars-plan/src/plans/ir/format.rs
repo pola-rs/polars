@@ -83,7 +83,7 @@ fn write_scan(
     )?;
 
     if let Some(scan_mem_id) = scan_mem_id {
-        write!(f, " [id: {}]", scan_mem_id)?;
+        write!(f, " [id: {scan_mem_id}]")?;
     }
 
     let total_columns = total_columns - usize::from(row_index.is_some());
@@ -635,7 +635,7 @@ impl fmt::Debug for DynLiteralValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Int(v) => write!(f, "dyn int: {v}"),
-            Self::Float(v) => write!(f, "dyn float: {}", v),
+            Self::Float(v) => write!(f, "dyn float: {v}"),
             Self::Str(v) => write!(f, "dyn str: {v}"),
             Self::List(_) => todo!(),
         }

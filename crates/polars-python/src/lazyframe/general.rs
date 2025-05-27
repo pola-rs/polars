@@ -21,6 +21,7 @@ use super::{PyLazyFrame, PyOptFlags, SinkTarget};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
+use crate::io::PyScanOptions;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
 use crate::utils::{EnterPolarsExt, to_py_err};
@@ -304,7 +305,7 @@ impl PyLazyFrame {
         source, sources, n_rows, cache, parallel, rechunk, row_index, low_memory, cloud_options,
         credential_provider, use_statistics, hive_partitioning, schema, hive_schema,
         try_parse_hive_dates, retries, glob, include_file_paths, allow_missing_columns,
-        cast_options,
+        scan_options,
     ))]
     fn new_from_parquet(
         source: Option<PyObject>,
@@ -326,7 +327,7 @@ impl PyLazyFrame {
         glob: bool,
         include_file_paths: Option<String>,
         allow_missing_columns: bool,
-        cast_options: Wrap<CastColumnsPolicy>,
+        scan_options: PyScanOptions,
     ) -> PyResult<Self> {
         use cloud::credential_provider::PlCredentialProvider;
         use polars_utils::slice_enum::Slice;
@@ -396,12 +397,13 @@ impl PyLazyFrame {
             projection: None,
             row_index,
             pre_slice: n_rows.map(|len| Slice::Positive { offset: 0, len }),
-            cast_columns_policy: cast_options.0,
+            cast_columns_policy: scan_options.extract_cast_options()?,
             missing_columns_policy: if allow_missing_columns {
                 MissingColumnsPolicy::Insert
             } else {
                 MissingColumnsPolicy::Raise
             },
+            extra_columns_policy: scan_options.extra_columns_policy()?,
             include_file_paths: include_file_paths.map(|x| x.into()),
         };
 
@@ -845,6 +847,8 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
+                    partition.per_partition_sort_by,
+                    partition.finish_callback,
                 ),
             }
             .into()
@@ -909,6 +913,8 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
+                    partition.per_partition_sort_by,
+                    partition.finish_callback,
                 ),
             }
         })
@@ -1001,6 +1007,8 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
+                    partition.per_partition_sort_by,
+                    partition.finish_callback,
                 ),
             }
         })
@@ -1052,6 +1060,8 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
+                    partition.per_partition_sort_by,
+                    partition.finish_callback,
                 ),
             }
         })

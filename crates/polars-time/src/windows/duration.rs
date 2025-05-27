@@ -28,6 +28,7 @@ use crate::windows::calendar::{DAYS_PER_MONTH, is_leap_year};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct Duration {
     // the number of months for the duration
     months: i64,
@@ -90,11 +91,11 @@ impl Display for Duration {
         if self.nsecs > 0 {
             let secs = self.nsecs / NANOSECONDS;
             if secs * NANOSECONDS == self.nsecs {
-                write!(f, "{}s", secs)?
+                write!(f, "{secs}s")?
             } else {
                 let us = self.nsecs / 1_000;
                 if us * 1_000 == self.nsecs {
-                    write!(f, "{}us", us)?
+                    write!(f, "{us}us")?
                 } else {
                     write!(f, "{}ns", self.nsecs)?
                 }
