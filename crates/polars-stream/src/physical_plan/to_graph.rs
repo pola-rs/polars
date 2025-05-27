@@ -12,7 +12,7 @@ use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
-use polars_plan::dsl::{JoinOptions, PartitionVariantIR, ScanSources};
+use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, ScanSources};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
 use polars_plan::prelude::{FileType, FunctionFlags};
@@ -648,7 +648,7 @@ fn to_graph_rec<'a>(
                 schema: node.output_schema.clone(),
                 left_on: left_on.clone(),
                 right_on: right_on.clone(),
-                options: Arc::new(JoinOptions {
+                options: Arc::new(JoinOptionsIR {
                     allow_parallel: true,
                     force_parallel: false,
                     args: args.clone(),

@@ -2516,7 +2516,6 @@ impl JoinBuilder {
                     allow_parallel: self.allow_parallel,
                     force_parallel: self.force_parallel,
                     args,
-                    ..Default::default()
                 }
                 .into(),
             )
@@ -2600,7 +2599,6 @@ impl JoinBuilder {
             allow_parallel: self.allow_parallel,
             force_parallel: self.force_parallel,
             args,
-            ..Default::default()
         };
 
         let lp = DslPlan::Join {

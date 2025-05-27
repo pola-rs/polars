@@ -13,7 +13,6 @@ use crate::constants::{get_len_name, get_literal_name};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum OutputName {
     /// No not yet set.
     #[default]
@@ -52,7 +51,6 @@ impl OutputName {
 
 #[derive(Debug)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ExprIR {
     /// Output name of this expression.
     output_name: OutputName,
@@ -60,7 +58,7 @@ pub struct ExprIR {
     /// Reduced expression.
     /// This expression is pruned from `alias` and already expanded.
     node: Node,
-    #[cfg_attr(any(feature = "ir_serde", feature = "dsl-schema"), serde(skip))]
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
     output_dtype: OnceLock<DataType>,
 }
 

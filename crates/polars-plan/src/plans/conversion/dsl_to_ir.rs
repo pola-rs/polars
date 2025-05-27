@@ -711,7 +711,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 left_on,
                 right_on,
                 predicates,
-                options,
+                JoinOptionsIR::from(Arc::unwrap_or_clone(options)),
                 ctxt,
             )
             .map_err(|e| e.context(failed_here!(join)))
