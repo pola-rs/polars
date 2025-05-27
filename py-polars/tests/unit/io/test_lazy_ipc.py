@@ -7,6 +7,7 @@ import pyarrow.ipc
 import pytest
 
 import polars as pl
+from polars.interchange.protocol import CompatLevel
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -116,8 +117,8 @@ def test_sink_ipc_compat_level_22930() -> None:
     f1 = io.BytesIO()
     f2 = io.BytesIO()
 
-    df.lazy().sink_ipc(f1, compat_level=0, engine="in-memory")
-    df.lazy().sink_ipc(f2, compat_level=0, engine="streaming")
+    df.lazy().sink_ipc(f1, compat_level=CompatLevel.oldest(), engine="in-memory")
+    df.lazy().sink_ipc(f2, compat_level=CompatLevel.oldest(), engine="streaming")
 
     f1.seek(0)
     f2.seek(0)
