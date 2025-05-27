@@ -259,7 +259,7 @@ pub(crate) fn det_join_schema(
     schema_right: &SchemaRef,
     left_on: &[ExprIR],
     right_on: &[ExprIR],
-    options: &JoinOptions,
+    options: &JoinOptionsIR,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<SchemaRef> {
     match &options.args.how {

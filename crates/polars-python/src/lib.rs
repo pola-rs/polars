@@ -9,8 +9,10 @@
 pub mod batched_csv;
 #[cfg(feature = "catalog")]
 pub mod catalog;
-#[cfg(any(feature = "polars_cloud_client", feature = "polars_cloud_server"))]
-pub mod cloud;
+#[cfg(feature = "polars_cloud_client")]
+pub mod cloud_client;
+#[cfg(feature = "polars_cloud_server")]
+pub mod cloud_server;
 pub mod conversion;
 pub mod dataframe;
 pub mod dataset;

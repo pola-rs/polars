@@ -107,7 +107,7 @@ pub(super) fn process_join(
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
     schema: SchemaRef,
-    options: Arc<JoinOptions>,
+    options: Arc<JoinOptionsIR>,
     acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;

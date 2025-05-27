@@ -184,6 +184,7 @@ pub struct FileSinkType {
 pub enum SinkTypeIR {
     Memory,
     File(FileSinkType),
+    #[cfg_attr(all(feature = "serde", not(feature = "ir_serde")), serde(skip))]
     Partition(PartitionSinkTypeIR),
 }
 
@@ -443,7 +444,7 @@ pub struct SortColumn {
     pub nulls_last: bool,
 }
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct SortColumnIR {
     pub expr: ExprIR,
@@ -465,7 +466,7 @@ pub struct PartitionSinkType {
     pub finish_callback: Option<SinkFinishCallback>,
 }
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkTypeIR {
     pub base_path: Arc<PathBuf>,
@@ -502,7 +503,7 @@ pub enum PartitionVariant {
     },
 }
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PartitionVariantIR {
     MaxSize(IdxSize),
