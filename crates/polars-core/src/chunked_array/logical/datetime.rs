@@ -91,31 +91,28 @@ impl LogicalType for DatetimeChunked {
                     TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
                 };
                 let cast_to_date = |tu_in_day: i64| {
-                    let values = 
-                        match self.dtype() {
-                            #[cfg(feature = "timezones")]
-                            Datetime(_, Some(tz)) => {
-                                let from_tz = tz.to_chrono()?;
-                                let ambiguous = StringChunked::from_iter(std::iter::once("raise"));
-                                self.phys.apply_values(|timestamp| {
-                                    let ndt = timestamp_to_datetime(timestamp);
-                                    let res = convert_to_naive_local(
-                                        &from_tz,
-                                        &Tz::UTC,
-                                        ndt,
-                                        Ambiguous::from_str(ambiguous.get(0).unwrap()).unwrap(),
-                                        NonExistent::Raise,
-                                    )
-                                    .unwrap();
-                                    res.map(datetime_to_timestamp)
-                                        .unwrap()
-                                        .div_euclid(tu_in_day)
+                    let values = match self.dtype() {
+                        #[cfg(feature = "timezones")]
+                        Datetime(_, Some(tz)) => {
+                            let from_tz = tz.to_chrono()?;
+                            let ambiguous = StringChunked::from_iter(std::iter::once("raise"));
+                            self.phys.apply_values(|timestamp| {
+                                let ndt = timestamp_to_datetime(timestamp);
+                                let res = convert_to_naive_local(
+                                    &from_tz,
+                                    &Tz::UTC,
+                                    ndt,
+                                    Ambiguous::from_str(ambiguous.get(0).unwrap()).unwrap(),
+                                    NonExistent::Raise,
+                                )
+                                .unwrap();
+                                res.map(datetime_to_timestamp)
+                                    .unwrap()
+                                    .div_euclid(tu_in_day)
                             })
-                            },
-                            _ => self.phys.apply_values(|v| {
-                                v.div_euclid(tu_in_day)
-                            }),
-                        };
+                        },
+                        _ => self.phys.apply_values(|v| v.div_euclid(tu_in_day)),
+                    };
 
                     let mut dt = values
                         .cast_with_options(&Int32, cast_options)
