@@ -35,6 +35,26 @@ impl PyScanOptions<'_> {
         )
     }
 
+    pub fn missing_columns_policy(&self) -> PyResult<MissingColumnsPolicy> {
+        let py = self.0.py();
+
+        Ok(
+            match &*self
+                .0
+                .getattr(intern!(py, "missing_columns"))?
+                .extract::<PyBackedStr>()?
+            {
+                "insert" => MissingColumnsPolicy::Insert,
+                "raise" => MissingColumnsPolicy::Raise,
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for missing_columns: {v}"
+                    )));
+                },
+            },
+        )
+    }
+
     pub fn extract_cast_options(&self) -> PyResult<CastColumnsPolicy> {
         let py = self.0.py();
         let ob = self.0.getattr(intern!(py, "cast_options"))?;
