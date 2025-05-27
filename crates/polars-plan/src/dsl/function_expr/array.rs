@@ -1,3 +1,8 @@
+use arrow::array::builder::{ShareStrategy, make_builder};
+use arrow::array::{Array, FixedSizeListArray};
+use arrow::bitmap::BitmapBuilder;
+use polars_core::prelude::arity::unary_kernel;
+use polars_core::utils::slice_offsets;
 use polars_ops::chunked_array::array::*;
 
 use super::*;
@@ -8,8 +13,6 @@ use crate::{map, map_as_slice};
 pub enum ArrayFunction {
     Length,
     Slice(i64, usize),
-    Head(usize),
-    Tail(usize),
     Min,
     Max,
     Sum,
@@ -54,9 +57,7 @@ impl ArrayFunction {
                 )?,
             )),
             Length => mapper.with_dtype(IDX_DTYPE),
-            Slice(_, len) => mapper.try_map_dtype(map_to_array_fixed_length(len)),
-            Head(len) => mapper.try_map_dtype(map_to_array_fixed_length(len)),
-            Tail(len) => mapper.try_map_dtype(map_to_array_fixed_length(len)),
+            Slice(offset, len) => mapper.try_map_dtype(map_to_array_fixed_length(offset, len)),
             Min | Max => mapper.map_to_list_and_array_inner_dtype(),
             Sum => mapper.nested_sum_type(),
             ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
@@ -92,8 +93,6 @@ impl ArrayFunction {
             A::CountMatches => FunctionOptions::elementwise(),
             A::Length
             | A::Slice(_, _)
-            | A::Head(_)
-            | A::Tail(_)
             | A::Min
             | A::Max
             | A::Sum
@@ -124,10 +123,14 @@ fn map_array_dtype_to_list_dtype(datatype: &DataType) -> PolarsResult<DataType> 
     }
 }
 
-fn map_to_array_fixed_length(length: &usize) -> impl FnOnce(&DataType) -> PolarsResult<DataType> {
+fn map_to_array_fixed_length(
+    offset: &i64,
+    length: &usize,
+) -> impl FnOnce(&DataType) -> PolarsResult<DataType> {
     move |datatype: &DataType| {
-        if let DataType::Array(inner, _) = datatype {
-            Ok(DataType::Array(inner.clone(), *length))
+        if let DataType::Array(inner, array_len) = datatype {
+            let (_, slice_offset) = slice_offsets(*offset, *length, *array_len);
+            Ok(DataType::Array(inner.clone(), slice_offset))
         } else {
             polars_bail!(ComputeError: "expected array dtype, got {}", datatype);
         }
@@ -141,8 +144,6 @@ impl Display for ArrayFunction {
             Concat => "concat",
             Length => "length",
             Slice(_, _) => "slice",
-            Head(_) => "head",
-            Tail(_) => "tail",
             Min => "min",
             Max => "max",
             Sum => "sum",
@@ -180,8 +181,6 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Concat => map_as_slice!(concat_arr),
             Length => map!(length),
             Slice(offset, length) => map!(slice, offset, length),
-            Head(length) => map!(head, length),
-            Tail(length) => map!(tail, length),
             Min => map!(min),
             Max => map!(max),
             Sum => map!(sum),
@@ -235,36 +234,41 @@ pub(super) fn length(s: &Column) -> PolarsResult<Column> {
 }
 
 pub(super) fn slice(s: &Column, offset: i64, length: usize) -> PolarsResult<Column> {
-    let ca = s.array()?;
+    let slice_arr: ArrayChunked = unary_kernel(
+        s.array()?,
+        move |arr: &FixedSizeListArray| -> FixedSizeListArray {
+            let (raw_offset, slice_len) = slice_offsets(offset, length, arr.size());
 
-    let series = ca.apply_to_inner(&|inner: Series| {
-        let sliced = inner.array()?.slice(offset, length);
-        Ok(sliced.into_series())
-    })?;
+            let mut builder = make_builder(arr.values().dtype());
+            builder.reserve(slice_len * arr.len());
 
-    Ok(series.into_column())
-}
+            let mut validity = BitmapBuilder::with_capacity(arr.len());
 
-pub(super) fn head(s: &Column, length: usize) -> PolarsResult<Column> {
-    let ca = s.array()?;
-
-    let series = ca.apply_to_inner(&|inner: Series| {
-        let sliced = inner.array()?.head(Some(length));
-        Ok(sliced.into_series())
-    })?;
-
-    Ok(series.into_column())
-}
-
-pub(super) fn tail(s: &Column, length: usize) -> PolarsResult<Column> {
-    let ca = s.array()?;
-
-    let series = ca.apply_to_inner(&|inner: Series| {
-        let sliced = inner.array()?.tail(Some(length));
-        Ok(sliced.into_series())
-    })?;
-
-    Ok(series.into_column())
+            let values = arr.values().as_ref();
+            for row in 0..arr.len() {
+                if !arr.is_valid(row) {
+                    validity.push(false);
+                    continue;
+                }
+                builder.subslice_extend(values, raw_offset, slice_len, ShareStrategy::Always);
+                validity.push(true);
+            }
+            let values = builder.freeze_reset();
+            let sliced_dtype = match arr.dtype() {
+                ArrowDataType::FixedSizeList(inner, _) => {
+                    ArrowDataType::FixedSizeList(inner.clone(), slice_len)
+                },
+                _ => unreachable!(),
+            };
+            FixedSizeListArray::new(
+                sliced_dtype,
+                arr.len(),
+                values,
+                validity.into_opt_validity(),
+            )
+        },
+    );
+    Ok(slice_arr.into_column())
 }
 
 pub(super) fn max(s: &Column) -> PolarsResult<Column> {

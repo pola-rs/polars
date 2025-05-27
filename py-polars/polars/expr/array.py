@@ -44,21 +44,17 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_len())
 
-    def slice(self, offset: int, length: int = 5) -> Expr:
+    def slice(self, offset: int, length: int | None) -> Expr:
         """
-        Slice the sub-arrays.
+        Slice every subarray.
 
         Parameters
         ----------
         offset
-            The starting index of the slice.
+            Start index. Negative indexing is supported.
         length
-            The length of the slice.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Array`.
+            Length of the slice. If set to `None` (default), the slice is taken to the
+            end of the list.
 
         Examples
         --------
@@ -99,7 +95,7 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_slice(offset, length))
 
-    def head(self, length: int = 5) -> Expr:
+    def head(self, n: int = 5) -> Expr:
         """
         Get the first `length` elements of the sub-arrays.
 
@@ -140,9 +136,9 @@ class ExprArrayNameSpace:
         │ [7, 8, 9, 10, 11, 12] ┆ [7, 8, 9]     │
         └───────────────────────┴───────────────┘
         """
-        return wrap_expr(self._pyexpr.arr_head(length))
+        return wrap_expr(self._pyexpr.arr_head(n))
 
-    def tail(self, length: int = 5) -> Expr:
+    def tail(self, n: int = 5) -> Expr:
         """
         Get the last `length` elements of the sub-arrays.
 
@@ -183,7 +179,7 @@ class ExprArrayNameSpace:
         │ [7, 8, 9, 10, 11, 12] ┆ [10, 11, 12]  │
         └───────────────────────┴───────────────┘
         """
-        return wrap_expr(self._pyexpr.arr_tail(length))
+        return wrap_expr(self._pyexpr.arr_tail(n))
 
     def min(self) -> Expr:
         """

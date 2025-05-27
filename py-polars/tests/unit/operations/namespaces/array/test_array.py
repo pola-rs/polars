@@ -91,18 +91,40 @@ def test_array_lengths() -> None:
 
 
 def test_arr_slice() -> None:
-    # TODO: Implement
+    df = pl.DataFrame(
+        {
+            "arr": [[1, 2, 3], [10, 2, 1]],
+        },
+        schema={"arr": pl.Array(pl.Int64, 3)},
+    )
+
+    assert df.select([pl.col("arr").arr.slice(0, 1)]).to_dict(as_series=False) == {
+        "arr": [[1], [10]]
+    }
+    assert df.select([pl.col("arr").arr.slice(1, 1)]).to_dict(as_series=False) == {
+        "arr": [[2], [2]]
+    }
+    assert df.select([pl.col("arr").arr.slice(-1, 1)]).to_dict(as_series=False) == {
+        "arr": [[3], [1]]
+    }
+    assert df.select([pl.col("arr").arr.slice(-2, 1)]).to_dict(as_series=False) == {
+        "arr": [[2], [2]]
+    }
+    assert df.select([pl.col("arr").arr.slice(-2, 2)]).to_dict(as_series=False) == {
+        "arr": [[2, 3], [2, 1]]
+    }
     return
 
 
-def test_arr_head() -> None:
-    # TODO: Implement
-    return
-
-
-def test_arr_tail() -> None:
-    # TODO: Implement
-    return
+def test_arr_slice_on_series() -> None:
+    vals = [[1, 2, 3, 4], [10, 2, 1, 2]]
+    s = pl.Series("a", vals, dtype=pl.Array(pl.Int64, 4))
+    assert s.arr.head(2).to_list() == [[1, 2], [10, 2]]
+    assert s.arr.tail(2).to_list() == [[3, 4], [1, 2]]
+    assert s.arr.tail(200).to_list() == vals
+    assert s.arr.head(200).to_list() == vals
+    assert s.arr.slice(1, 2).to_list() == [[2, 3], [2, 1]]
+    assert s.arr.slice(-5, 2).to_list() == [[1], [10]]
 
 
 def test_arr_unique() -> None:
