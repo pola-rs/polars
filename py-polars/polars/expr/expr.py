@@ -9093,7 +9093,8 @@ class Expr:
         Notes
         -----
         The argument must be in radians.
-        To convert from degrees to radians, call :meth:`.radians() <polars.Expr.radians>`.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return self._from_pyexpr(self._pyexpr.sin())
 
@@ -9136,7 +9137,8 @@ class Expr:
         Notes
         -----
         The argument must be in radians.
-        To convert from degrees to radians, call :meth:`.radians() <polars.Expr.radians>`.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return self._from_pyexpr(self._pyexpr.cos())
 
@@ -9178,7 +9180,8 @@ class Expr:
         Notes
         -----
         The argument must be in radians.
-        To convert from degrees to radians, call :meth:`.radians() <polars.Expr.radians>`.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return self._from_pyexpr(self._pyexpr.tan())
 
@@ -9220,7 +9223,8 @@ class Expr:
         Notes
         -----
         The argument must be in radians.
-        To convert from degrees to radians, call :meth:`.radians() <polars.Expr.radians>`.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return self._from_pyexpr(self._pyexpr.cot())
 
@@ -9261,7 +9265,8 @@ class Expr:
 
         Notes
         -----
-        To convert the result from radians to degrees, call :meth:`.degrees() <polars.Expr.degrees>`.
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
         """
         return self._from_pyexpr(self._pyexpr.arcsin())
 
@@ -9303,7 +9308,8 @@ class Expr:
 
         Notes
         -----
-        To convert the result from radians to degrees, call :meth:`.degrees() <polars.Expr.degrees>`.
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
         """
         return self._from_pyexpr(self._pyexpr.arccos())
 
@@ -9344,7 +9350,8 @@ class Expr:
 
         Notes
         -----
-        To convert the result from radians to degrees, call :meth:`.degrees() <polars.Expr.degrees>`.
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
         """
         return self._from_pyexpr(self._pyexpr.arctan())
 
