@@ -1,4 +1,4 @@
-use std::ops::{Add, AddAssign, Mul, MulAssign};
+use std::ops::{AddAssign, Mul};
 
 use arity::unary_elementwise_values;
 use arrow::array::BooleanArray;
