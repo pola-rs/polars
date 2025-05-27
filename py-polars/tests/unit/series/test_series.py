@@ -57,6 +57,15 @@ def test_cum_agg_with_nulls() -> None:
     assert_series_equal(s.cum_prod(), pl.Series("a", [None, 2, None, 14, 112, None]))
 
 
+def test_cum_agg_with_infs() -> None:
+    # confirm that inf values are handled correctly
+    s = pl.Series([float("inf"), 0.0, 1.0])
+    assert_series_equal(s.cum_min(), pl.Series([float("inf"), 0.0, 0.0]))
+
+    s = pl.Series([float("-inf"), 0.0, 1.0])
+    assert_series_equal(s.cum_max(), pl.Series([float("-inf"), 0.0, 1.0]))
+
+
 def test_cum_min_max_bool() -> None:
     s = pl.Series("a", [None, True, True, None, False, None, True, False, False, None])
     assert_series_equal(s.cum_min().cast(pl.Int32), s.cast(pl.Int32).cum_min())
