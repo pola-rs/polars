@@ -396,23 +396,24 @@ impl<K: Key + ?Sized, V> RawTable<K, V> {
         }
     }
 
-    unsafe fn init_entry_val(
+    unsafe fn try_init_entry_val<E>(
         &self,
         hash: usize,
         header: &AllocHeader<K, V>,
         entry: &AtomicPtr<EntryHeader<K, V>>,
         new_entry_ptr: *mut EntryHeader<K, V>,
-        val_f: impl FnOnce(&K) -> V,
-    ) -> *mut EntryHeader<K, V> {
+        val_f: impl FnOnce(&K) -> Result<V, E>,
+    ) -> Result<*mut EntryHeader<K, V>, E> {
         unsafe {
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let key_ptr = EntryHeader::key_ptr(new_entry_ptr);
                 let key = K::get(key_ptr);
-                EntryHeader::val_ptr(new_entry_ptr).write(val_f(key));
+                EntryHeader::val_ptr(new_entry_ptr).write(val_f(key)?);
+                Ok(())
             }));
             let state = &*EntryHeader::state_ptr(new_entry_ptr);
             let old_state;
-            if r.is_err() {
+            if !matches!(r, Ok(Ok(_))) {
                 let old_head = self.freelist_head.swap(new_entry_ptr, Ordering::AcqRel);
                 old_state = state.swap(old_head.map_addr(|a| a | DELETE_BIT), Ordering::Release);
                 entry.store(without_provenance_mut(DELETED), Ordering::Relaxed);
@@ -431,10 +432,10 @@ impl<K: Key + ?Sized, V> RawTable<K, V> {
                 self.waiting_for_init.notify_all();
             }
 
-            if let Err(panic) = r {
-                std::panic::resume_unwind(panic)
-            } else {
-                new_entry_ptr
+            match r {
+                Ok(Ok(())) => Ok(new_entry_ptr),
+                Ok(Err(e)) => Err(e),
+                Err(panic) => std::panic::resume_unwind(panic),
             }
         }
     }
@@ -491,15 +492,15 @@ impl<K: Key + ?Sized, V> RawTable<K, V> {
         }
     }
 
-    fn find_or_insert_impl(
+    fn try_find_or_insert_impl<E>(
         &self,
         orig_probe_alloc: *mut AllocHeader<K, V>,
         mut prober: Prober,
         hash: usize,
         key: &K,
-        val_f: impl FnOnce(&K) -> V,
+        val_f: impl FnOnce(&K) -> Result<V, E>,
         mut eq: impl FnMut(&K) -> bool,
-    ) -> *mut EntryHeader<K, V> {
+    ) -> Result<*mut EntryHeader<K, V>, E> {
         unsafe {
             let new_entry_ptr = EntryHeader::<K, V>::new(hash, key);
 
@@ -550,7 +551,7 @@ impl<K: Key + ?Sized, V> RawTable<K, V> {
                                     &self.alloc_lock,
                                     &self.waiting_for_alloc,
                                 );
-                                return self.init_entry_val(
+                                return self.try_init_entry_val(
                                     hash,
                                     header,
                                     entry,
@@ -575,7 +576,7 @@ impl<K: Key + ?Sized, V> RawTable<K, V> {
                                 EntryHeader::free(new_entry_ptr);
                                 header
                                     .abort_claim_attempt(&self.alloc_lock, &self.waiting_for_alloc);
-                                return entry_ptr;
+                                return Ok(entry_ptr);
                             }
                         }
                     }
@@ -665,17 +666,42 @@ impl<K: Key + ?Sized, V> RawTable<K, V> {
         &self,
         hash: u64,
         key: &K,
-        mut eq: impl FnMut(&K) -> bool,
+        eq: impl FnMut(&K) -> bool,
         val_f: impl FnOnce(&K) -> V,
     ) -> &V {
         unsafe {
+            self.try_get_or_insert_with::<()>(hash, key, eq, |k| Ok(val_f(k)))
+                .unwrap_unchecked()
+        }
+    }
+
+    /// Finds the value corresponding to a key with the given hash and equality function, or insert
+    /// a new one if the key does not exist.
+    ///
+    /// `val_f` is guaranteed to only be called when inserting a new key not currently found in the
+    /// table, even if multiple concurrent inserts occur. The key reference passed to `val_f` lives
+    /// as long as the new entry will.
+    pub fn try_get_or_insert_with<E>(
+        &self,
+        hash: u64,
+        key: &K,
+        mut eq: impl FnMut(&K) -> bool,
+        val_f: impl FnOnce(&K) -> Result<V, E>,
+    ) -> Result<&V, E> {
+        unsafe {
             let cur_alloc = self.cur_alloc.load(Ordering::Acquire);
             match Self::find_impl(cur_alloc, hash as usize, &mut eq) {
-                Ok((entry_ptr, _)) => &*EntryHeader::val_ptr(entry_ptr),
+                Ok((entry_ptr, _)) => Ok(&*EntryHeader::val_ptr(entry_ptr)),
                 Err(prober) => {
-                    let entry_ptr =
-                        self.find_or_insert_impl(cur_alloc, prober, hash as usize, key, val_f, eq);
-                    &*EntryHeader::val_ptr(entry_ptr)
+                    let entry_ptr = self.try_find_or_insert_impl(
+                        cur_alloc,
+                        prober,
+                        hash as usize,
+                        key,
+                        val_f,
+                        eq,
+                    )?;
+                    Ok(&*EntryHeader::val_ptr(entry_ptr))
                 },
             }
         }

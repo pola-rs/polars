@@ -1,22 +1,28 @@
 use std::hash::BuildHasher;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::parma::raw::RawTable;
 
-#[derive(Default)]
 pub struct CategoricalMapping {
     str_to_cat: RawTable<str, u32>,
     cat_to_str: boxcar::Vec<&'static str>,
+    max_categories: usize,
     upper_bound: AtomicUsize,
     hasher: PlSeedableRandomStateQuality,
 }
 
 impl CategoricalMapping {
-    pub fn with_hasher(hasher: PlSeedableRandomStateQuality) -> Self {
+    pub fn new(max_categories: usize) -> Self {
+        Self::with_hasher(max_categories, PlSeedableRandomStateQuality::default())
+    }
+
+    pub fn with_hasher(max_categories: usize, hasher: PlSeedableRandomStateQuality) -> Self {
         Self {
             str_to_cat: RawTable::default(),
             cat_to_str: boxcar::Vec::default(),
+            max_categories,
             upper_bound: AtomicUsize::new(0),
             hasher,
         }
@@ -42,29 +48,32 @@ impl CategoricalMapping {
 
     /// Convert a string to a categorical id.
     #[inline(always)]
-    pub fn insert_cat(&self, s: &str) -> u32 {
+    pub fn insert_cat(&self, s: &str) -> PolarsResult<u32> {
         let hash = self.hasher.hash_one(s);
         self.insert_cat_with_hash(s, hash)
     }
 
     /// Same as to_cat, but with the hash pre-computed.
     #[inline(always)]
-    pub fn insert_cat_with_hash(&self, s: &str, hash: u64) -> u32 {
-        *self.str_to_cat.get_or_insert_with(
-            hash,
-            s,
-            |k| k == s,
-            |k| {
-                self.upper_bound.fetch_add(1, Ordering::Relaxed);
-                let idx = self
-                    .cat_to_str
-                    .push(unsafe { core::mem::transmute::<&str, &'static str>(k) });
-                if idx >= (u32::MAX - 1) as usize {
-                    panic!("more than 2^32 - 1 entries in a categorical");
-                }
-                idx as u32
-            },
-        )
+    pub fn insert_cat_with_hash(&self, s: &str, hash: u64) -> PolarsResult<u32> {
+        self.str_to_cat
+            .try_get_or_insert_with(
+                hash,
+                s,
+                |k| k == s,
+                |k| {
+                    let old_upper_bound = self.upper_bound.fetch_add(1, Ordering::Relaxed);
+                    if old_upper_bound + 1 >= self.max_categories {
+                        self.upper_bound.fetch_sub(1, Ordering::Relaxed);
+                        polars_bail!(ComputeError: "attempted to insert more categories than the maximum allowed");
+                    }
+                    let idx = self
+                        .cat_to_str
+                        .push(unsafe { core::mem::transmute::<&str, &'static str>(k) });
+                    Ok(idx as u32)
+                },
+            )
+            .copied()
     }
 
     /// Try to convert a categorical id to its corresponding string, returning
@@ -89,7 +98,11 @@ impl CategoricalMapping {
     /// you have not synchronized with, there may be gaps when using `from_cat`.
     #[inline(always)]
     pub fn num_cats_upper_bound(&self) -> usize {
-        self.upper_bound.load(Ordering::Relaxed)
+        // We need to clamp to self.max_categories because a `fetch_add` may
+        // have (temporarily) pushed it beyond the max allowed.
+        self.upper_bound
+            .load(Ordering::Relaxed)
+            .min(self.max_categories)
     }
 
     /// Returns the number of categories in this mapping.
