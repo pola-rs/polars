@@ -36,25 +36,17 @@ use crate::prelude::*;
 /// This saves a lot of compiler bloat and allows us to reuse functionality.
 pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType> {
     pub phys: ChunkedArray<Physical>,
-    pub dtype: Option<DataType>,
+    pub dtype: DataType,
     _phantom: PhantomData<Logical>,
-}
-
-impl<K: PolarsDataType, T: PolarsDataType> Default for Logical<K, T> {
-    fn default() -> Self {
-        Self {
-            phys: Default::default(),
-            _phantom: Default::default(),
-            dtype: Default::default(),
-        }
-    }
 }
 
 impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
     fn clone(&self) -> Self {
-        let mut new = Logical::<K, _>::new_logical(self.phys.clone());
-        new.dtype.clone_from(&self.dtype);
-        new
+        Self {
+            phys: self.phys.clone(),
+            dtype: self.dtype.clone(),
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -73,11 +65,11 @@ impl<K: PolarsDataType, T: PolarsDataType> DerefMut for Logical<K, T> {
 }
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T> {
-    pub fn new_logical<J: PolarsDataType>(ca: ChunkedArray<T>) -> Logical<J, T> {
+    pub fn new_logical(phys: ChunkedArray<T>, dtype: DataType) -> Logical<K, T> {
         Logical {
-            phys: ca,
+            phys,
+            dtype,
             _phantom: PhantomData,
-            dtype: None,
         }
     }
 }

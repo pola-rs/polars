@@ -26,7 +26,7 @@ bitflags! {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct CategoricalChunked {
     physical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical
@@ -87,10 +87,8 @@ impl CategoricalChunked {
             RevMapping::Local(_, _) => {
                 // Change dtype from Enum to Categorical
                 let mut local = self.clone();
-                local.physical.dtype = Some(DataType::Categorical(
-                    Some(rev_map.clone()),
-                    self.get_ordering(),
-                ));
+                local.physical.dtype =
+                    DataType::Categorical(Some(rev_map.clone()), self.get_ordering());
                 return local;
             },
         };
@@ -208,7 +206,7 @@ impl CategoricalChunked {
 
     pub fn get_ordering(&self) -> CategoricalOrdering {
         if let DataType::Categorical(_, ordering) | DataType::Enum(_, ordering) =
-            &self.physical.dtype.as_ref().unwrap()
+            &self.physical.dtype
         {
             *ordering
         } else {
@@ -226,10 +224,8 @@ impl CategoricalChunked {
             dtype,
             DataType::Enum { .. } | DataType::Categorical { .. }
         ));
-        let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(idx);
-        logical.dtype = Some(dtype);
         Self {
-            physical: logical,
+            physical: Logical::new_logical(idx, dtype),
             bit_settings: Default::default(),
         }
     }
@@ -244,14 +240,13 @@ impl CategoricalChunked {
         is_enum: bool,
         ordering: CategoricalOrdering,
     ) -> Self {
-        let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(idx);
-        if is_enum {
-            logical.dtype = Some(DataType::Enum(Some(rev_map), ordering));
+        let dtype = if is_enum {
+            DataType::Enum(Some(rev_map), ordering)
         } else {
-            logical.dtype = Some(DataType::Categorical(Some(rev_map), ordering));
-        }
+            DataType::Categorical(Some(rev_map), ordering)
+        };
         Self {
-            physical: logical,
+            physical: Logical::new_logical(idx, dtype),
             bit_settings: Default::default(),
         }
     }
@@ -262,13 +257,10 @@ impl CategoricalChunked {
         keep_fast_unique: bool,
     ) -> Self {
         self.physical.dtype = match self.dtype() {
-            DataType::Enum(_, _) => {
-                Some(DataType::Enum(Some(self.get_rev_map().clone()), ordering))
+            DataType::Enum(_, _) => DataType::Enum(Some(self.get_rev_map().clone()), ordering),
+            DataType::Categorical(_, _) => {
+                DataType::Categorical(Some(self.get_rev_map().clone()), ordering)
             },
-            DataType::Categorical(_, _) => Some(DataType::Categorical(
-                Some(self.get_rev_map().clone()),
-                ordering,
-            )),
             _ => panic!("implementation error"),
         };
 
@@ -282,9 +274,9 @@ impl CategoricalChunked {
     /// The existing index values must be in bounds of the new [`RevMapping`].
     pub(crate) unsafe fn set_rev_map(&mut self, rev_map: Arc<RevMapping>, keep_fast_unique: bool) {
         self.physical.dtype = match self.dtype() {
-            DataType::Enum(_, _) => Some(DataType::Enum(Some(rev_map), self.get_ordering())),
+            DataType::Enum(_, _) => DataType::Enum(Some(rev_map), self.get_ordering()),
             DataType::Categorical(_, _) => {
-                Some(DataType::Categorical(Some(rev_map), self.get_ordering()))
+                DataType::Categorical(Some(rev_map), self.get_ordering())
             },
             _ => panic!("implementation error"),
         };
@@ -328,7 +320,7 @@ impl CategoricalChunked {
     /// Get a reference to the mapping of categorical types to the string values.
     pub fn get_rev_map(&self) -> &Arc<RevMapping> {
         if let DataType::Categorical(Some(rev_map), _) | DataType::Enum(Some(rev_map), _) =
-            &self.physical.dtype.as_ref().unwrap()
+            &self.physical.dtype
         {
             rev_map
         } else {
@@ -348,7 +340,7 @@ impl CategoricalChunked {
 
 impl LogicalType for CategoricalChunked {
     fn dtype(&self) -> &DataType {
-        self.physical.dtype.as_ref().unwrap()
+        &self.physical.dtype
     }
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {

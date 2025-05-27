@@ -27,7 +27,7 @@ impl DateChunked {
     /// Construct a new [`DateChunked`] from an iterator over [`NaiveDate`].
     pub fn from_naive_date<I: IntoIterator<Item = NaiveDate>>(name: PlSmallStr, v: I) -> Self {
         let unit = v.into_iter().map(naive_date_to_date).collect::<Vec<_>>();
-        Int32Chunked::from_vec(name, unit).into()
+        Int32Chunked::from_vec(name, unit).into_date()
     }
 
     /// Convert from Date into String with the given format.
@@ -60,6 +60,6 @@ impl DateChunked {
         v: I,
     ) -> Self {
         let unit = v.into_iter().map(|opt| opt.map(naive_date_to_date));
-        Int32Chunked::from_iter_options(name, unit).into()
+        Int32Chunked::from_iter_options(name, unit).into_date()
     }
 }

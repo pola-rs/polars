@@ -59,6 +59,6 @@ impl TimeMethods for TimeChunked {
             })
             .collect_trusted::<Int64Chunked>()
             .with_name(name)
-            .into()
+            .into_time()
     }
 }
