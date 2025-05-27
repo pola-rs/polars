@@ -54,9 +54,9 @@ impl ArrayFunction {
                 )?,
             )),
             Length => mapper.with_dtype(IDX_DTYPE),
-            Slice(_, _) => mapper.with_same_dtype(),
-            Head(_) => mapper.with_same_dtype(),
-            Tail(_) => mapper.with_same_dtype(),
+            Slice(_, len) => mapper.try_map_dtype(map_to_array_fixed_length(len)),
+            Head(len) => mapper.try_map_dtype(map_to_array_fixed_length(len)),
+            Tail(len) => mapper.try_map_dtype(map_to_array_fixed_length(len)),
             Min | Max => mapper.map_to_list_and_array_inner_dtype(),
             Sum => mapper.nested_sum_type(),
             ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
@@ -121,6 +121,16 @@ fn map_array_dtype_to_list_dtype(datatype: &DataType) -> PolarsResult<DataType> 
         Ok(DataType::List(inner.clone()))
     } else {
         polars_bail!(ComputeError: "expected array dtype")
+    }
+}
+
+fn map_to_array_fixed_length(length: &usize) -> impl FnOnce(&DataType) -> PolarsResult<DataType> {
+    move |datatype: &DataType| {
+        if let DataType::Array(inner, _) = datatype {
+            Ok(DataType::Array(inner.clone(), *length))
+        } else {
+            polars_bail!(ComputeError: "expected array dtype, got {}", datatype);
+        }
     }
 }
 
