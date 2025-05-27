@@ -1,7 +1,7 @@
 use std::hash::BuildHasher;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use polars_error::{PolarsResult, polars_bail, polars_ensure};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::parma::raw::RawTable;
 
