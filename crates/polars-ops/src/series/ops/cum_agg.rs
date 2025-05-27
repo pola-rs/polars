@@ -3,7 +3,7 @@ use std::ops::{Add, AddAssign, Mul};
 use arity::unary_elementwise_values;
 use arrow::array::BooleanArray;
 use arrow::bitmap::BitmapBuilder;
-use num_traits::{Bounded, Float, One, Zero};
+use num_traits::{Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
