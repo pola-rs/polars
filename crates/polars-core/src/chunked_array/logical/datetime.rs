@@ -80,7 +80,6 @@ impl LogicalType for DatetimeChunked {
             },
             #[cfg(feature = "dtype-date")]
             Date => {
-                let has_timezone = self.time_zone().is_some();
                 let timestamp_to_datetime = match self.time_unit() {
                     TimeUnit::Milliseconds => timestamp_ms_to_datetime,
                     TimeUnit::Microseconds => timestamp_us_to_datetime,
@@ -92,15 +91,11 @@ impl LogicalType for DatetimeChunked {
                     TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
                 };
                 let cast_to_date = |tu_in_day: i64| {
-                    let values = {
-                        #[cfg(feature = "timezones")]
-                        {
-                            if has_timezone {
-                                let from_tz = self
-                                    .time_zone()
-                                    .as_ref()
-                                    .unwrap_or(&TimeZone::UTC)
-                                    .to_chrono()?;
+                    let values = 
+                        match self.dtype() {
+                            #[cfg(feature = "timezones")]
+                            Datetime(_, Some(tz)) => {
+                                let from_tz = tz.to_chrono()?;
                                 let ambiguous = StringChunked::from_iter(std::iter::once("raise"));
                                 self.phys.apply_values(|timestamp| {
                                     let ndt = timestamp_to_datetime(timestamp);
@@ -115,16 +110,12 @@ impl LogicalType for DatetimeChunked {
                                     res.map(datetime_to_timestamp)
                                         .unwrap()
                                         .div_euclid(tu_in_day)
-                                })
-                            } else {
-                                self.phys.apply_values(|v| v.div_euclid(tu_in_day))
-                            }
-                        }
-                        #[cfg(not(feature = "timezones"))]
-                        {
-                            self.phys.apply_values(|v| v.div_euclid(tu_in_day))
-                        }
-                    };
+                            })
+                            },
+                            _ => self.phys.apply_values(|v| {
+                                v.div_euclid(tu_in_day)
+                            }),
+                        };
 
                     let mut dt = values
                         .cast_with_options(&Int32, cast_options)
