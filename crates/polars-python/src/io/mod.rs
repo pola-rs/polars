@@ -48,8 +48,7 @@ impl PyScanOptions<'_> {
                 "raise" => MissingColumnsPolicy::Raise,
                 v => {
                     return Err(PyValueError::new_err(format!(
-                        "unknown option for missing_columns: {}",
-                        v
+                        "unknown option for missing_columns: {v}"
                     )));
                 },
             },
