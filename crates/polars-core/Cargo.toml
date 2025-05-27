@@ -41,6 +41,9 @@ strum_macros = { workspace = true }
 uuid = { workspace = true }
 xxhash-rust = { workspace = true }
 
+[target.'cfg(target_family = "wasm")'.dependencies]
+uuid = { workspace = true, features = ["js"] }
+
 [dev-dependencies]
 bincode = { workspace = true }
 serde_json = { workspace = true }
