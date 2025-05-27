@@ -248,6 +248,8 @@ pub fn array_with_dtype(
         | ArrowDataType::Map(_, _)
         | ArrowDataType::Dictionary(..)
         | ArrowDataType::Decimal(..)
+        | ArrowDataType::Decimal32(..)
+        | ArrowDataType::Decimal64(..)
         | ArrowDataType::Decimal256(..)
         | ArrowDataType::Extension(..)
         | ArrowDataType::Unknown

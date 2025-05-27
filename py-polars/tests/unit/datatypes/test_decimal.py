@@ -9,6 +9,7 @@ from math import ceil, floor
 from random import choice, randrange, seed
 from typing import Any, Callable, NamedTuple
 
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -720,3 +721,32 @@ def test_decimal_min_over_21096() -> None:
     df = pl.Series("x", [1, 2], pl.Decimal(scale=2)).to_frame()
     result = df.select(pl.col("x").min().over("x"))
     assert result["x"].to_list() == [D("1.00"), D("2.00")]
+
+
+def test_decimal32_decimal64_22946() -> None:
+    tbl = pa.Table.from_pydict(
+        mapping={
+            "colx": [D("100.1"), D("200.2"), D("300.3")],
+            "coly": [D("400.4"), D("500.5"), D("600.6")],
+        },
+        schema=pa.schema(
+            [
+                ("colx", pa.decimal32(4, 1)),  # << note: decimal32
+                ("coly", pa.decimal64(4, 1)),  # << note: decimal64
+            ]
+        ),
+    )
+
+    assert_frame_equal(
+        pl.DataFrame(tbl),
+        pl.DataFrame(
+            [
+                pl.Series(
+                    "colx", [D("100.1"), D("200.2"), D("300.3")], pl.Decimal(4, 1)
+                ),
+                pl.Series(
+                    "coly", [D("400.4"), D("500.5"), D("600.6")], pl.Decimal(4, 1)
+                ),
+            ]
+        ),
+    )
