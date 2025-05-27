@@ -254,7 +254,7 @@ class CredentialProviderAzure(CredentialProvider):
         issue_unstable_warning(msg)
 
         self.account_name = _storage_account
-        self.scopes = (
+        self.scopes: list[str] = (
             scopes if scopes is not None else ["https://storage.azure.com/.default"]
         )
         self.tenant_id = tenant_id

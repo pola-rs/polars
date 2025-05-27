@@ -133,3 +133,14 @@ jobs:
             pip uninstall "$d" -y
             python -c 'import polars'
           done
+
+      - name: Check Pyright type completeness
+        if: github.ref_name != 'main' && matrix.python-version != '3.13t'
+        working-directory: py-polars
+        run: |
+          uv pip install pyright-cov
+          # The percentage slightly varies across Python versions / platforms.
+          # `90` should be low enough to not be noisy, but high enough to
+          # alert maintainers if a PR accidentally drastically lowers type completeness
+          # by introducing an unknown method or type to a commonly-used class.
+          pyright-cov --verifytypes polars --ignoreexternal --fail-under 90
