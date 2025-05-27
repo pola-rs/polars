@@ -17,7 +17,7 @@ impl ArrayNameSpace {
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Length))
     }
 
-    /// Get `length` items starting from `offset` of every subarray.
+    /// Slice every subarray.
     pub fn slice(self, offset: i64, length: usize) -> Expr {
         self.0
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Slice(
@@ -25,16 +25,14 @@ impl ArrayNameSpace {
             )))
     }
 
-    /// Get the first `length` items of every subarray.
-    pub fn head(self, length: usize) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Head(length)))
+    /// Get the head of every subarray
+    pub fn head(self, n: usize) -> Expr {
+        self.slice(0, n)
     }
 
-    /// Get the last `length` items of every subarray.
-    pub fn tail(self, length: usize) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Tail(length)))
+    /// Get the tail of every subarray
+    pub fn tail(self, n: usize) -> Expr {
+        self.slice(0i64 - i64::try_from(n).unwrap(), n)
     }
 
     /// Compute the maximum of the items in every subarray.
