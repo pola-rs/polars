@@ -794,5 +794,7 @@ def test_when_then_complex_conditional_22959() -> None:
 
     assert_series_equal(
         res["Result"],
-        pl.Series([None, {"X": None, "Y": None}, {"X": [3.0, None], "Y": None}]),
+        pl.Series(
+            "Result", [None, {"X": None, "Y": None}, {"X": [3.0, None], "Y": None}]
+        ),
     )
