@@ -501,7 +501,7 @@ fn create_physical_plan_impl(
                     state.has_cache_parent = true;
                     state.has_cache_child = true;
 
-                    // Safety: We do not drop the `scan_mem_id` (i.e. the IR) during physical plan creation.
+                    // Safety: We do not drop the `scan_mem_id` (i.e. the IR::Scan) during physical plan creation.
                     let scan_mem_id: usize = scan_mem_id.to_usize();
 
                     if !cache_nodes.contains_key(&scan_mem_id) {
