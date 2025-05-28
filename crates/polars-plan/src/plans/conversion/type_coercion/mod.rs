@@ -374,16 +374,10 @@ impl OptimizationRule for TypeCoercionRule {
                 // search_sorted() in particular.
                 #[cfg(feature = "search_sorted")]
                 if matches!(function, FunctionExpr::SearchSorted { .. }) {
-                    let (_, type_left) = unpack!(get_aexpr_and_type(
-                        expr_arena,
-                        input[0].node(),
-                        schema
-                    ));
-                    let (_, type_other) = unpack!(get_aexpr_and_type(
-                        expr_arena,
-                        input[1].node(),
-                        schema
-                    ));
+                    let (_, type_left) =
+                        unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                    let (_, type_other) =
+                        unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
 
                     let left_nl = type_left.nesting_level();
                     let right_nl = type_other.nesting_level();
