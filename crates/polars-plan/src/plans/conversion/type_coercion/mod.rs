@@ -90,8 +90,8 @@ impl OptimizationRule for TypeCoercionRule {
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
-        lp_arena: &Arena<IR>,
-        lp_node: Node,
+        schema: &Schema,
+        ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
         let out = match *expr {
@@ -106,12 +106,11 @@ impl OptimizationRule for TypeCoercionRule {
                 };
 
                 let input = expr_arena.get(input_expr).clone();
-
-                if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
+                if ctx.has_inputs {
                     if let CastOptions::Strict = options {
                         let cast_from = expr_arena
                             .get(input_expr)
-                            .to_field(&schema, Context::Default, expr_arena)?
+                            .to_field(schema, Context::Default, expr_arena)?
                             .dtype;
                         let cast_to = &dtype;
 
@@ -160,7 +159,7 @@ impl OptimizationRule for TypeCoercionRule {
                     }
                 }
 
-                inline_or_prune_cast(&input, &dtype, options, lp_node, lp_arena, expr_arena)?
+                inline_or_prune_cast(&input, &dtype, options, schema, expr_arena)?
             },
             AExpr::Agg(IRAggExpr::Implode(expr)) => inline_implode(expr, expr_arena)?,
             AExpr::Ternary {
@@ -168,11 +167,10 @@ impl OptimizationRule for TypeCoercionRule {
                 falsy: falsy_node,
                 predicate,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
                 let (truthy, type_true) =
-                    unpack!(get_aexpr_and_type(expr_arena, truthy_node, &input_schema));
+                    unpack!(get_aexpr_and_type(expr_arena, truthy_node, schema));
                 let (falsy, type_false) =
-                    unpack!(get_aexpr_and_type(expr_arena, falsy_node, &input_schema));
+                    unpack!(get_aexpr_and_type(expr_arena, falsy_node, schema));
 
                 if type_true == type_false {
                     return Ok(None);
@@ -214,7 +212,7 @@ impl OptimizationRule for TypeCoercionRule {
                 left: node_left,
                 op,
                 right: node_right,
-            } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
+            } => return process_binary(expr_arena, schema, node_left, op, node_right),
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 ref function,
@@ -248,16 +246,8 @@ impl OptimizationRule for TypeCoercionRule {
                     _ => unreachable!(),
                 };
 
-                let Some(result) = is_in::resolve_is_in(
-                    input,
-                    expr_arena,
-                    lp_arena,
-                    lp_node,
-                    is_contains,
-                    op,
-                    flat,
-                    nested,
-                )?
+                let Some(result) =
+                    is_in::resolve_is_in(input, expr_arena, schema, is_contains, op, flat, nested)?
                 else {
                     return Ok(None);
                 };
@@ -267,17 +257,10 @@ impl OptimizationRule for TypeCoercionRule {
                 use self::is_in::IsInTypeCoercionResult;
                 match result {
                     IsInTypeCoercionResult::SuperType(flat_type, nested_type) => {
-                        let input_schema = get_schema(lp_arena, lp_node);
-                        let (_, type_left) = unpack!(get_aexpr_and_type(
-                            expr_arena,
-                            input[flat].node(),
-                            &input_schema
-                        ));
-                        let (_, type_other) = unpack!(get_aexpr_and_type(
-                            expr_arena,
-                            input[nested].node(),
-                            &input_schema
-                        ));
+                        let (_, type_left) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
+                        let (_, type_other) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
                         cast_expr_ir(
                             &mut input[flat],
                             &type_left,
@@ -294,12 +277,8 @@ impl OptimizationRule for TypeCoercionRule {
                         )?;
                     },
                     IsInTypeCoercionResult::SelfCast { dtype, strict } => {
-                        let input_schema = get_schema(lp_arena, lp_node);
-                        let (_, type_self) = unpack!(get_aexpr_and_type(
-                            expr_arena,
-                            input[flat].node(),
-                            &input_schema
-                        ));
+                        let (_, type_self) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
                         let options = if strict {
                             CastOptions::Strict
                         } else {
@@ -308,12 +287,8 @@ impl OptimizationRule for TypeCoercionRule {
                         cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
                     },
                     IsInTypeCoercionResult::OtherCast { dtype, strict } => {
-                        let input_schema = get_schema(lp_arena, lp_node);
-                        let (_, type_other) = unpack!(get_aexpr_and_type(
-                            expr_arena,
-                            input[nested].node(),
-                            &input_schema
-                        ));
+                        let (_, type_other) =
+                            unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
                         let options = if strict {
                             CastOptions::Strict
                         } else {
@@ -341,16 +316,11 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
                 let left_node = input[0].node();
                 let fill_value_node = input[2].node();
-                let (left, type_left) =
-                    unpack!(get_aexpr_and_type(expr_arena, left_node, &input_schema));
-                let (fill_value, type_fill_value) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    fill_value_node,
-                    &input_schema
-                ));
+                let (left, type_left) = unpack!(get_aexpr_and_type(expr_arena, left_node, schema));
+                let (fill_value, type_fill_value) =
+                    unpack!(get_aexpr_and_type(expr_arena, fill_value_node, schema));
 
                 unpack!(early_escape(&type_left, &type_fill_value));
 
@@ -396,33 +366,29 @@ impl OptimizationRule for TypeCoercionRule {
                 mut options,
             } if options.cast_options.is_some() => {
                 let casting_rules = options.cast_options.unwrap();
-                let input_schema = get_schema(lp_arena, lp_node);
 
                 let function = function.clone();
                 let mut input = input.clone();
 
                 if let Some(dtypes) =
-                    functions::get_function_dtypes(&input, expr_arena, &input_schema, &function)?
+                    functions::get_function_dtypes(&input, expr_arena, schema, &function)?
                 {
                     let self_e = input[0].clone();
                     let (self_ae, type_self) =
-                        unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
+                        unpack!(get_aexpr_and_type(expr_arena, self_e.node(), schema));
                     let mut super_type = type_self.clone();
                     match casting_rules {
                         CastingRules::Supertype(super_type_opts) => {
                             for other in &input[1..] {
-                                let (other, type_other) = unpack!(get_aexpr_and_type(
-                                    expr_arena,
-                                    other.node(),
-                                    &input_schema
-                                ));
+                                let (other, type_other) =
+                                    unpack!(get_aexpr_and_type(expr_arena, other.node(), schema));
 
                                 let Some(new_st) = get_supertype_with_options(
                                     &super_type,
                                     &type_other,
                                     super_type_opts,
                                 ) else {
-                                    raise_supertype(&function, &input, &input_schema, expr_arena)?;
+                                    raise_supertype(&function, &input, schema, expr_arena)?;
                                     unreachable!()
                                 };
                                 if input.len() == 2 {
@@ -445,7 +411,7 @@ impl OptimizationRule for TypeCoercionRule {
                             if super_type.is_integer() {
                                 for other in &input[1..] {
                                     let other =
-                                        other.dtype(&input_schema, Context::Default, expr_arena)?;
+                                        other.dtype(schema, Context::Default, expr_arena)?;
                                     if other.is_float() {
                                         polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
                                     }
@@ -455,7 +421,7 @@ impl OptimizationRule for TypeCoercionRule {
                     }
 
                     if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
-                        raise_supertype(&function, &input, &input_schema, expr_arena)?;
+                        raise_supertype(&function, &input, schema, expr_arena)?;
                         unreachable!()
                     }
 
@@ -498,11 +464,8 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-
                 for (i, expr) in input.iter().enumerate() {
-                    let (_, dtype) =
-                        unpack!(get_aexpr_and_type(expr_arena, expr.node(), &input_schema));
+                    let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, expr.node(), schema));
 
                     if !matches!(dtype, DataType::Int64) {
                         let function = function.clone();
@@ -516,7 +479,7 @@ impl OptimizationRule for TypeCoercionRule {
                         )?;
                         for expr in &mut input[i + 1..] {
                             let (_, dtype) =
-                                unpack!(get_aexpr_and_type(expr_arena, expr.node(), &input_schema));
+                                unpack!(get_aexpr_and_type(expr_arena, expr.node(), schema));
                             cast_expr_ir(
                                 expr,
                                 &dtype,
@@ -542,17 +505,10 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-                let (_, type_left) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[0].node(),
-                    &input_schema
-                ));
-                let (_, type_other) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[1].node(),
-                    &input_schema
-                ));
+                let (_, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_other) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
 
                 let DataType::List(inner_dtype) = &type_other else {
                     // @HACK. This needs to happen until 2.0 because we support
@@ -599,17 +555,10 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-                let (_, type_left) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[0].node(),
-                    &input_schema
-                ));
-                let (_, type_other) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[1].node(),
-                    &input_schema
-                ));
+                let (_, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_other) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
 
                 let DataType::List(inner_dtype) = &type_other else {
                     // @HACK. This needs to happen until 2.0 because we support
@@ -650,22 +599,12 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-                let (_, type_left) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[0].node(),
-                    &input_schema
-                ));
-                let (_, type_patterns) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[1].node(),
-                    &input_schema
-                ));
-                let (_, type_replace_with) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[2].node(),
-                    &input_schema
-                ));
+                let (_, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_patterns) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                let (_, type_replace_with) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
 
                 let (
                     DataType::List(type_patterns_inner_dtype),
@@ -720,17 +659,10 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-                let (_, type_old) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[1].node(),
-                    &input_schema
-                ));
-                let (_, type_new) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[2].node(),
-                    &input_schema
-                ));
+                let (_, type_old) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                let (_, type_new) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
 
                 let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
                     let function = function.clone();
@@ -765,17 +697,10 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             } => {
                 polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype);
 
-                let input_schema = get_schema(lp_arena, lp_node);
-                let (_, type_start) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[0].node(),
-                    &input_schema
-                ));
-                let (_, type_end) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[1].node(),
-                    &input_schema
-                ));
+                let (_, type_start) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_end) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
 
                 if [&type_start, &type_end]
                     .into_iter()
@@ -809,22 +734,12 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 ref input,
                 options,
             } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-                let (_, type_start) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[0].node(),
-                    &input_schema
-                ));
-                let (_, type_end) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[1].node(),
-                    &input_schema
-                ));
-                let (_, type_step) = unpack!(get_aexpr_and_type(
-                    expr_arena,
-                    input[2].node(),
-                    &input_schema
-                ));
+                let (_, type_start) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
+                let (_, type_end) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                let (_, type_step) =
+                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
 
                 if [&type_start, &type_end, &type_step]
                     .into_iter()
@@ -852,12 +767,9 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 })
             },
             AExpr::Slice { offset, length, .. } => {
-                let input_schema = get_schema(lp_arena, lp_node);
-                let (_, offset_dtype) =
-                    unpack!(get_aexpr_and_type(expr_arena, offset, &input_schema));
+                let (_, offset_dtype) = unpack!(get_aexpr_and_type(expr_arena, offset, schema));
                 polars_ensure!(offset_dtype.is_integer(), InvalidOperation: "offset must be integral for slice expression, not {}", offset_dtype);
-                let (_, length_dtype) =
-                    unpack!(get_aexpr_and_type(expr_arena, length, &input_schema));
+                let (_, length_dtype) = unpack!(get_aexpr_and_type(expr_arena, length, schema));
                 polars_ensure!(length_dtype.is_integer() || length_dtype.is_null(), InvalidOperation: "length must be integral for slice expression, not {}", length_dtype);
                 None
             },
@@ -871,8 +783,7 @@ fn inline_or_prune_cast(
     aexpr: &AExpr,
     dtype: &DataType,
     options: CastOptions,
-    lp_node: Node,
-    lp_arena: &Arena<IR>,
+    input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     if !dtype.is_known() {
@@ -886,11 +797,9 @@ fn inline_or_prune_cast(
 
             match op {
                 LogicalOr | LogicalAnd => {
-                    if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
-                        let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
-                        if field.dtype == *dtype {
-                            return Ok(Some(aexpr.clone()));
-                        }
+                    let field = aexpr.to_field(input_schema, Context::Default, expr_arena)?;
+                    if field.dtype == *dtype {
+                        return Ok(Some(aexpr.clone()));
                     }
 
                     None

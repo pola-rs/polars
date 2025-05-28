@@ -443,6 +443,9 @@ on startup."#.trim_start())
     (duplicate = $name:expr) => {
         $crate::polars_err!(Duplicate: "column with name '{}' has more than one occurrence", $name)
     };
+    (duplicate_field = $name:expr) => {
+        $crate::polars_err!(Duplicate: "multiple fields with name '{}' found", $name)
+    };
     (col_not_found = $name:expr) => {
         $crate::polars_err!(ColumnNotFound: "{:?} not found", $name)
     };

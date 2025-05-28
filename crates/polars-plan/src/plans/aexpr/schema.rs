@@ -364,6 +364,30 @@ impl AExpr {
 
                 Ok(out)
             },
+            Eval { expr, evaluation } => {
+                let field = ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?;
+
+                let DataType::List(dtype) = field.dtype else {
+                    polars_bail!(op = "list.eval", field.dtype);
+                };
+
+                let schema = Schema::from_iter([(PlSmallStr::EMPTY, *dtype)]);
+
+                let mut ctx = ToFieldContext {
+                    schema: &schema,
+                    ctx: Context::Default,
+                    arena: ctx.arena,
+                    validate: ctx.validate,
+                };
+                let mut output_field = ctx
+                    .arena
+                    .get(*evaluation)
+                    .to_field_impl(&mut ctx, &mut false)?;
+                output_field.dtype = DataType::List(Box::new(output_field.dtype));
+                output_field.name = field.name;
+
+                Ok(output_field)
+            },
             Function {
                 function,
                 input,

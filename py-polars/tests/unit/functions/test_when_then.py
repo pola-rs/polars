@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError, ShapeError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_when_then() -> None:
@@ -776,3 +776,27 @@ def test_when_then_chunked_fill_null_22794() -> None:
     )
 
     assert_frame_equal(out, expected)
+
+
+def test_when_then_complex_conditional_22959() -> None:
+    df = pl.DataFrame(
+        {"B": [None, "T1", "T2"], "C": [None, None, [1.0]], "E": [None, 2.0, None]}
+    )
+
+    res = df.with_columns(
+        Result=(
+            pl.when(B="T1")
+            .then(pl.struct(X="C", Y="C"))
+            .when(B="T2")
+            .then(pl.struct(X=pl.concat_list([3.0, "E"])))
+        )
+    )
+
+    assert_series_equal(
+        res["Result"],
+        pl.Series(
+            "Result",
+            [None, {"X": None, "Y": None}, {"X": [3.0, None], "Y": None}],
+            pl.Struct({"X": pl.List(pl.Float64), "Y": pl.List(pl.Float64)}),
+        ),
+    )

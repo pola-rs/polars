@@ -61,6 +61,7 @@ pub fn propagate_nulls_list<O: Offset>(arr: &ListArray<O>) -> Option<ListArray<O
         let null_mask = null_mask.sliced(last_idx + 1, arr.len() - last_idx - 1);
 
         for i in null_mask.true_idx_iter() {
+            let i = i + last_idx + 1;
             let (start, end) = arr.offsets().start_end(i);
             if end == start {
                 continue;
@@ -112,7 +113,7 @@ pub fn propagate_nulls_fsl(arr: &FixedSizeListArray) -> Option<FixedSizeListArra
     }
 
     let start_point = match arr.values().validity() {
-        None => Some(0),
+        None => Some(validity.leading_ones()),
         Some(old_child_validity) => {
             // Find the first element that does not have propagated nulls.
             let null_mask = !validity;
@@ -130,9 +131,39 @@ pub fn propagate_nulls_fsl(arr: &FixedSizeListArray) -> Option<FixedSizeListArra
         // Nulls need to be propagated, create a new validity mask.
         let mut new_child_validity = BitmapBuilder::with_capacity(arr.size() * arr.len());
 
-        new_child_validity.subslice_extend_from_bitmap(validity, 0, start_point * arr.size());
-        for is_valid in validity.iter().skip(start_point) {
-            new_child_validity.extend_constant(arr.size(), is_valid);
+        let mut validity = validity.clone();
+        validity.slice(start_point, validity.len() - start_point);
+        match arr.values().validity() {
+            None => {
+                new_child_validity.extend_constant(start_point * arr.size(), true);
+
+                while !validity.is_empty() {
+                    let num_zeroes = validity.take_leading_zeros();
+                    new_child_validity.extend_constant(num_zeroes * arr.size(), false);
+
+                    let num_ones = validity.take_leading_ones();
+                    new_child_validity.extend_constant(num_ones * arr.size(), true);
+                }
+            },
+
+            Some(old_child_validity) => {
+                new_child_validity.subslice_extend_from_bitmap(
+                    old_child_validity,
+                    0,
+                    start_point * arr.size(),
+                );
+                while !validity.is_empty() {
+                    let num_zeroes = validity.take_leading_zeros();
+                    new_child_validity.extend_constant(num_zeroes * arr.size(), false);
+
+                    let num_ones = validity.take_leading_ones();
+                    new_child_validity.subslice_extend_from_bitmap(
+                        old_child_validity,
+                        new_child_validity.len(),
+                        num_ones * arr.size(),
+                    );
+                }
+            },
         }
 
         let new_child_validity = new_child_validity.freeze();
@@ -235,4 +266,21 @@ pub fn propagate_nulls_struct(arr: &StructArray) -> Option<StructArray> {
         new_values,
         Some(validity.clone()),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::array::proptest::array;
+    use proptest::proptest;
+
+    use crate::propagate_nulls::propagate_nulls;
+
+    proptest! {
+        #[test]
+        fn test_proptest(array in array(0..100)) {
+            if let Some(p_arr) = propagate_nulls(array.as_ref()) {
+                proptest::prop_assert_eq!(array, p_arr);
+            }
+        }
+    }
 }

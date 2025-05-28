@@ -852,6 +852,14 @@ fn to_graph_rec<'a>(
             let output_schema = options.output_schema.unwrap_or(options.schema);
             let validate_schema = options.validate_schema;
 
+            let simple_projection = with_columns.as_ref().and_then(|with_columns| {
+                (with_columns
+                    .iter()
+                    .zip(output_schema.iter_names())
+                    .any(|(a, b)| a != b))
+                .then(|| output_schema.clone())
+            });
+
             let (name, get_batch_fn) = match options.python_source {
                 S::Pyarrow => todo!(),
                 S::Cuda => todo!(),
@@ -932,6 +940,10 @@ fn to_graph_rec<'a>(
                         })?;
 
                         let Some(mut df) = df else { return Ok(None) };
+
+                        if let Some(simple_projection) = &simple_projection {
+                            df = df.project(simple_projection.clone())?;
+                        }
 
                         if validate_schema {
                             polars_ensure!(

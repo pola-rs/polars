@@ -8,6 +8,7 @@ use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "serde")]
@@ -167,6 +168,13 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
+    /// Evaluates the `evaluation` expression on the output of the `expr`.
+    ///
+    /// Consequently, `expr` is an input and `evaluation` is not and needs a different schema.
+    Eval {
+        expr: Arc<Expr>,
+        evaluation: Arc<Expr>,
+    },
     SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
     /// e.g.
@@ -175,9 +183,8 @@ pub enum Expr {
     /// `Expr::Wildcard`
     /// `Expr::Exclude`
     Selector(super::selector::Selector),
-    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     RenameAlias {
-        function: SpecialEq<Arc<dyn RenameAliasFn>>,
+        function: RenameAliasFn,
         expr: Arc<Expr>,
     },
 }
@@ -354,7 +361,10 @@ impl Hash for Expr {
                 input.hash(state);
                 excl.hash(state);
             },
-            Expr::RenameAlias { function: _, expr } => expr.hash(state),
+            Expr::RenameAlias { function, expr } => {
+                function.hash(state);
+                expr.hash(state);
+            },
             Expr::AnonymousFunction {
                 input,
                 function: _,
@@ -363,6 +373,13 @@ impl Hash for Expr {
             } => {
                 input.hash(state);
                 options.hash(state);
+            },
+            Expr::Eval {
+                expr: input,
+                evaluation,
+            } => {
+                input.hash(state);
+                evaluation.hash(state);
             },
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -581,3 +598,45 @@ impl Operator {
         !(self.is_comparison_or_bitwise())
     }
 }
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum RenameAliasFn {
+    Prefix(PlSmallStr),
+    Suffix(PlSmallStr),
+    ToLowercase,
+    ToUppercase,
+    #[cfg(feature = "python")]
+    Python(SpecialEq<Arc<polars_utils::python_function::PythonObject>>),
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+    Rust(SpecialEq<Arc<RenameAliasRustFn>>),
+}
+
+impl RenameAliasFn {
+    pub fn call(&self, name: &PlSmallStr) -> PolarsResult<PlSmallStr> {
+        let out = match self {
+            Self::Prefix(prefix) => format_pl_smallstr!("{prefix}{name}"),
+            Self::Suffix(suffix) => format_pl_smallstr!("{name}{suffix}"),
+            Self::ToLowercase => PlSmallStr::from_string(name.to_lowercase()),
+            Self::ToUppercase => PlSmallStr::from_string(name.to_uppercase()),
+            #[cfg(feature = "python")]
+            Self::Python(lambda) => {
+                let name = name.as_str();
+                pyo3::marker::Python::with_gil(|py| {
+                    let out: PlSmallStr = lambda
+                        .call1(py, (name,))?
+                        .extract::<std::borrow::Cow<str>>(py)?
+                        .as_ref()
+                        .into();
+                    pyo3::PyResult::<_>::Ok(out)
+                }).map_err(|e| polars_err!(ComputeError: "Python function in 'name.map' produced an error: {e}."))?
+            },
+            Self::Rust(f) => f(name)?,
+        };
+        Ok(out)
+    }
+}
+
+pub type RenameAliasRustFn =
+    dyn Fn(&PlSmallStr) -> PolarsResult<PlSmallStr> + 'static + Send + Sync;

@@ -295,7 +295,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                     .into_iter()
                     .flatten()
                     .collect();
-            let df = WriteMetrics::collapse_to_df(partition_metrics, &self.input_schema);
+            let df = WriteMetrics::collapse_to_df(partition_metrics, &self.input_schema, None);
             finish_callback.call(df)?;
         }
         Ok(())

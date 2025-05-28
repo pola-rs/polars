@@ -167,6 +167,10 @@ impl fmt::Debug for Expr {
                     write!(f, "{:?}.{}()", input[0], name)
                 }
             },
+            Eval {
+                expr: input,
+                evaluation,
+            } => write!(f, "{input:?}.list.eval({evaluation:?})"),
             Slice {
                 input,
                 offset,
