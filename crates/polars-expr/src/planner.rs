@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_plan::constants::MAP_LIST_NAME;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_plan::prelude::*;
 use recursive::recursive;
@@ -466,6 +467,43 @@ fn create_physical_expr_inner(
                 schema.clone(),
                 output_field,
                 is_scalar,
+            )))
+        },
+        Eval { expr, evaluation } => {
+            let is_user_apply = expr_arena.iter(*expr).any(|(_, e)| matches!(e, AExpr::AnonymousFunction { options, .. } if options.fmt_str == MAP_LIST_NAME));
+            let is_scalar = is_scalar_ae(expression, expr_arena);
+            let evaluation_is_scalar = is_scalar_ae(*evaluation, expr_arena);
+            let mut pd_group = ExprPushdownGroup::Pushable;
+            pd_group.update_with_expr_rec(expr_arena.get(*evaluation), expr_arena, None);
+            let output_field = expr_arena
+                .get(expression)
+                .to_field(schema, ctxt, expr_arena)?;
+            let input_field = expr_arena.get(*expr).to_field(schema, ctxt, expr_arena)?;
+            let expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
+
+            let DataType::List(dtype) = &input_field.dtype else {
+                unreachable!();
+            };
+
+            let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, dtype.as_ref().clone())]);
+            let evaluation = create_physical_expr_inner(
+                *evaluation,
+                Context::Default,
+                expr_arena,
+                &Arc::new(eval_schema),
+                state,
+            )?;
+
+            Ok(Arc::new(EvalExpr::new(
+                expr,
+                evaluation,
+                node_to_expr(expression, expr_arena),
+                state.allow_threading,
+                output_field,
+                is_scalar,
+                pd_group,
+                evaluation_is_scalar,
+                is_user_apply,
             )))
         },
         Function {

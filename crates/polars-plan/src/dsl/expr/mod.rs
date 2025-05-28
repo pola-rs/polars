@@ -167,6 +167,13 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
+    /// Evaluates the `evaluation` expression on the output of the `expr`.
+    ///
+    /// Consequently, `expr` is an input and `evaluation` is not and needs a different schema.
+    Eval {
+        expr: Arc<Expr>,
+        evaluation: Arc<Expr>,
+    },
     SubPlan(SpecialEq<Arc<DslPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
     /// e.g.
@@ -363,6 +370,13 @@ impl Hash for Expr {
             } => {
                 input.hash(state);
                 options.hash(state);
+            },
+            Expr::Eval {
+                expr: input,
+                evaluation,
+            } => {
+                input.hash(state);
+                evaluation.hash(state);
             },
             Expr::SubPlan(_, names) => names.hash(state),
             #[cfg(feature = "dtype-struct")]
