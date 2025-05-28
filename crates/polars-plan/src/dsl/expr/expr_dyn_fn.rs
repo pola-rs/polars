@@ -67,29 +67,6 @@ impl Default for SpecialEq<Arc<dyn BinaryUdfOutputField>> {
     }
 }
 
-pub trait RenameAliasFn: Send + Sync {
-    fn call(&self, name: &PlSmallStr) -> PolarsResult<PlSmallStr>;
-
-    fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
-        polars_bail!(ComputeError: "serialization not supported for this renaming function")
-    }
-}
-
-impl<F> RenameAliasFn for F
-where
-    F: Fn(&PlSmallStr) -> PolarsResult<PlSmallStr> + Send + Sync,
-{
-    fn call(&self, name: &PlSmallStr) -> PolarsResult<PlSmallStr> {
-        self(name)
-    }
-}
-
-impl Debug for dyn RenameAliasFn {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RenameAliasFn")
-    }
-}
-
 #[derive(Clone)]
 /// Wrapper type that has special equality properties
 /// depending on the inner type specialization
