@@ -686,10 +686,10 @@ impl PyExpr {
         self.inner.clone().cum_count(reverse).into()
     }
 
-    fn cumulative_eval(&self, expr: Self, min_periods: usize, parallel: bool) -> Self {
+    fn cumulative_eval(&self, expr: Self, min_samples: usize) -> Self {
         self.inner
             .clone()
-            .cumulative_eval(expr.inner, min_periods, parallel)
+            .cumulative_eval(expr.inner, min_samples)
             .into()
     }
 
