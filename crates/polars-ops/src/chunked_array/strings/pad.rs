@@ -59,13 +59,16 @@ fn zfill_fn<'a>(s: Option<&'a str>, len: Option<u64>, buf: &mut String) -> Optio
                 return Some(s);
             }
             buf.clear();
-            if let Some(stripped) = s.strip_prefix('-') {
+            let sign_opt = s.chars().next();
+            if let Some(sign) = sign_opt
+                && ['-', '+'].contains(&sign)
+            {
                 write!(
                     buf,
-                    "-{:0length$}{value}",
+                    "{sign}{:0length$}{value}",
                     0,
                     length = length as usize,
-                    value = stripped
+                    value = &s[1..]
                 )
                 .unwrap();
             } else {
