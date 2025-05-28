@@ -10,6 +10,7 @@ import polars.expr.meta
 import polars.functions
 import polars.io.ipc
 from polars._utils import polars_version
+from polars._utils.unstable import issue_unstable_warning
 from polars.datatypes import (
     Binary,
     Boolean,
@@ -45,6 +46,10 @@ def scan_bigquery(
 ) -> LazyFrame:
     """
     Lazily read from a BigQuery table.
+
+    .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Parameters
     ----------
@@ -93,6 +98,8 @@ def scan_bigquery(
     ...     pl.col("_PARTITIONDATE) > datetime.date(2025, 1, 1)
     ... ).collect()  # doctest: +SKIP
     """
+    issue_unstable_warning("`scan_bigquery` functionality is considered unstable.")
+
     bq_client = bigquery.Client(
         project=billing_project_id,
         credentials=credentials,
