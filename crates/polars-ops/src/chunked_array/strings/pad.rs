@@ -59,10 +59,9 @@ fn zfill_fn<'a>(s: Option<&'a str>, len: Option<u64>, buf: &mut String) -> Optio
                 return Some(s);
             }
             buf.clear();
-            let sign_opt = s.chars().next();
-            if let Some(sign) = sign_opt
-                && ['-', '+'].contains(&sign)
-            {
+            let sign = s.chars().next();
+            if sign.is_some() && [Some('-'), Some('+')].contains(&sign) {
+                let sign = sign.unwrap();
                 write!(
                     buf,
                     "{sign}{:0length$}{value}",
