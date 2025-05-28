@@ -88,6 +88,9 @@ fn count_all_rows_csv(
                 parse_options.comment_prefix.as_ref(),
                 parse_options.eol_char,
                 options.has_header,
+                options.skip_lines,
+                options.skip_rows,
+                options.skip_rows_after_header,
             ),
             _ => {
                 let memslice = source.to_memslice()?;
@@ -99,6 +102,9 @@ fn count_all_rows_csv(
                     parse_options.comment_prefix.as_ref(),
                     parse_options.eol_char,
                     options.has_header,
+                    options.skip_lines,
+                    options.skip_rows,
+                    options.skip_rows_after_header,
                 )
             },
         })
