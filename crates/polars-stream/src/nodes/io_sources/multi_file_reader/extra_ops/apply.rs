@@ -232,6 +232,8 @@ impl ApplyExtraOps {
             *df = df.slice(i64::try_from(offset).unwrap(), len)
         }
 
+        // Note: This branch is hit if we have negative slice + row index and the reader does not
+        // support them.
         if let Some(ri) = row_index {
             unsafe {
                 df.with_column_unchecked(Column::new_row_index(
