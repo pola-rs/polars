@@ -1,15 +1,14 @@
 use std::any::Any;
 use std::sync::Arc;
 
-/// Unique identifier.
-///
-/// By default, this constructs and uses the address of an `Arc<()>` to ensure uniqueness.
+/// Unique identifier potentially backed by an `Arc` address to protect against collisions.
 ///
 /// Note that a serialization roundtrip will force this to become a [`UniqueId::Plain`] variant.
 #[derive(Clone)]
 pub enum UniqueId {
     /// ID that derives from the memory address of an `Arc` to protect against collisions.
-    /// Having a `dyn Any` allows it to re-use an existing `Arc`.
+    /// Note that it internally stores as a `dyn Any` to allow it to re-use an existing `Arc` holding
+    /// any type.
     MemoryRef(Arc<dyn Any + Send + Sync>),
 
     /// Stores a plain `usize`. Unlike the `MemoryRef` variant, there is no internal protection against
@@ -136,8 +135,12 @@ mod tests {
     fn test_unique_id() {
         let id = UniqueId::default();
 
+        assert!(matches!(id, UniqueId::MemoryRef(_)));
+
         assert_eq!(id, id);
         assert_ne!(id, UniqueId::default());
+
+        assert_eq!(id, UniqueId::Plain(id.to_usize()));
 
         // Following code explains the memory layout
         let UniqueId::MemoryRef(arc_ref) = &id else {

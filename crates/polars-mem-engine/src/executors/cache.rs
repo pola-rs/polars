@@ -22,14 +22,14 @@ impl Executor for CacheExec {
                 if state.verbose() {
                     eprintln!("CACHE HIT: cache id: {:x}", self.id.to_usize());
                 }
-                let cache = state.get_df_cache(self.id.to_usize(), self.count);
+                let cache = state.get_df_cache(&self.id, self.count);
                 let out = cache.1.get().expect("prefilled").clone();
                 let previous = cache.0.fetch_sub(1, Ordering::Relaxed);
                 if previous == 0 {
                     if state.verbose() {
                         eprintln!("CACHE DROP: cache id: {:x}", self.id.to_usize());
                     }
-                    state.remove_df_cache(self.id.to_usize());
+                    state.remove_df_cache(&self.id);
                 }
 
                 Ok(out)
@@ -40,7 +40,7 @@ impl Executor for CacheExec {
                     eprintln!("CACHE SET: cache id: {:x}", self.id.to_usize());
                 }
                 let df = input.execute(state)?;
-                let cache = state.get_df_cache(self.id.to_usize(), self.count);
+                let cache = state.get_df_cache(&self.id, self.count);
                 cache.1.set(df).expect("should be empty");
                 Ok(DataFrame::empty())
             },
