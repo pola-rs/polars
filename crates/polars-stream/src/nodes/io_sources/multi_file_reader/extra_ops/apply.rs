@@ -235,6 +235,15 @@ impl ApplyExtraOps {
         // Note: This branch is hit if we have negative slice or predicate + row index and the reader
         // does not support them.
         if let Some(ri) = row_index {
+            // REMOVE
+            // For debugging
+            loop {
+                if local_slice_offset != 0 {
+                    panic!()
+                }
+                break;
+            }
+
             unsafe {
                 df.with_column_unchecked(Column::new_row_index(
                     ri.name.clone(),
