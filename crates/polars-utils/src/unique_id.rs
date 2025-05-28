@@ -50,9 +50,9 @@ mod tests {
 
     #[test]
     fn test_unique_id() {
-        let a = UniqueId::default();
-        let b = UniqueId::default();
+        let id = UniqueId::default();
 
-        assert_ne!(a, b);
+        assert_eq!(id, id);
+        assert_ne!(id, UniqueId::default());
     }
 }
