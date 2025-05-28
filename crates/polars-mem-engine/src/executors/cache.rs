@@ -2,13 +2,13 @@ use std::sync::atomic::Ordering;
 
 #[cfg(feature = "async")]
 use polars_io::pl_async;
-use polars_utils::unique_id::MemoryId;
+use polars_utils::unique_id::UniqueId;
 
 use super::*;
 
 pub struct CacheExec {
     pub input: Option<Box<dyn Executor>>,
-    pub id: MemoryId,
+    pub id: UniqueId,
     /// `(cache_hits_before_drop - 1)`
     pub count: u32,
     pub is_new_streaming_scan: bool,
@@ -49,7 +49,7 @@ impl Executor for CacheExec {
 }
 
 pub struct CachePrefiller {
-    pub caches: PlIndexMap<MemoryId, Box<CacheExec>>,
+    pub caches: PlIndexMap<UniqueId, Box<CacheExec>>,
     pub phys_plan: Box<dyn Executor>,
 }
 

@@ -1,7 +1,7 @@
 use std::hash::BuildHasher;
 
 use hashbrown::hash_map::RawEntryMut;
-use polars_utils::unique_id::MemoryId;
+use polars_utils::unique_id::UniqueId;
 
 use super::*;
 use crate::prelude::visitor::IRNode;
@@ -238,7 +238,7 @@ impl Visitor for LpIdentifierVisitor<'_> {
     }
 }
 
-pub(super) type CacheId2Caches = PlHashMap<MemoryId, (u32, Vec<Node>)>;
+pub(super) type CacheId2Caches = PlHashMap<UniqueId, (u32, Vec<Node>)>;
 
 struct CommonSubPlanRewriter<'a> {
     sp_count: &'a SubPlanCount,
@@ -250,7 +250,7 @@ struct CommonSubPlanRewriter<'a> {
     visited_idx: usize,
     /// Indicates if this expression is rewritten.
     rewritten: bool,
-    cache_id: IdentifierMap<MemoryId>,
+    cache_id: IdentifierMap<UniqueId>,
     // Maps cache_id : (cache_count and cache_nodes)
     cache_id_to_caches: CacheId2Caches,
 }
@@ -334,7 +334,7 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
 
         let cache_id = self
             .cache_id
-            .entry(id.clone(), MemoryId::default, &arena.0, &arena.1)
+            .entry(id.clone(), UniqueId::default, &arena.0, &arena.1)
             .clone();
         let cache_count = self.sp_count.get(id, &arena.0, &arena.1).unwrap().1;
 

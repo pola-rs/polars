@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use polars_utils::unique_id::MemoryId;
+use polars_utils::unique_id::UniqueId;
 
 use super::*;
 
@@ -153,9 +153,9 @@ pub(super) fn set_cache_states(
     #[derive(Default, Clone)]
     struct Frame {
         current: Node,
-        cache_id: Option<MemoryId>,
+        cache_id: Option<UniqueId>,
         parent: TwoParents,
-        previous_cache: Option<MemoryId>,
+        previous_cache: Option<UniqueId>,
     }
     let init = Frame {
         current: root,

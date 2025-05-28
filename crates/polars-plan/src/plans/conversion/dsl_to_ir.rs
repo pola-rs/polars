@@ -3,7 +3,7 @@ use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
-use polars_utils::unique_id::MemoryId;
+use polars_utils::unique_id::UniqueId;
 
 use super::convert_utils::SplitPredicates;
 use super::stack_opt::ConversionOptimizer;
@@ -639,7 +639,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             return run_conversion(lp, ctxt, "sort").map_err(|e| e.context(failed_here!(sort)));
         },
         DslPlan::Cache { input } => {
-            let id = MemoryId::from_arc(input.clone());
+            let id = UniqueId::from_arc(input.clone());
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(cache)))?;
             IR::Cache {

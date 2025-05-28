@@ -19,7 +19,7 @@ use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::slice_enum::Slice;
-use polars_utils::unique_id::MemoryId;
+use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, unique_column_name};
 use slotmap::SlotMap;
 
@@ -125,7 +125,7 @@ pub fn lower_ir(
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
-    cache_nodes: &mut PlHashMap<MemoryId, PhysStream>,
+    cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
     ctx: StreamingLowerIRContext,
 ) -> PolarsResult<PhysStream> {
     // Helper macro to simplify recursive calls.

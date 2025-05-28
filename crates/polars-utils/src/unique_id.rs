@@ -1,55 +1,58 @@
 use std::any::Any;
 use std::sync::Arc;
 
-/// Unique ref-counted identifier.
+/// Unique identifier.
+///
+/// By default, this constructs and uses the address of an `Arc<()>` to ensure uniqueness.
+///
+/// Note that a serialization roundtrip will force this to become a [`UniqueId::Plain`] variant.
 #[derive(Clone)]
-pub enum MemoryId {
-    /// We use an Arc to reserve a memory address rather than a static atomic counter, as the latter
-    /// may cause duplicate IDs on wrap-around.
-    ///
-    /// Notes:
-    /// * By having a dyn Any, we can be constructed from any Arc'ed type while still avoiding extra
-    ///   allocations for ZST's.
-    Arc(Arc<dyn Any + Send + Sync>),
+pub enum UniqueId {
+    /// ID that derives from the memory address of an `Arc` to protect against collisions.
+    /// Having a `dyn Any` allows it to re-use an existing `Arc`.
+    MemoryRef(Arc<dyn Any + Send + Sync>),
 
-    /// Stores a plain `usize`. This repr is used as the result of a serialization round-trip.
+    /// Stores a plain `usize`. Unlike the `MemoryRef` variant, there is no internal protection against
+    /// collisions - this must handled separately.
     ///
-    /// Due to not being bound to an `Arc`, it may collide with `Arc`-backed `MemoryId`s.
-    Unbinded(usize),
+    /// Note: This repr may also be constructed as the result of a serialization round-trip.
+    Plain(usize),
 }
 
-impl std::fmt::Debug for MemoryId {
+impl std::fmt::Debug for UniqueId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "MemoryId({})", self.to_usize())
+        write!(f, "UniqueId({})", self.to_usize())
     }
 }
 
-impl MemoryId {
+impl UniqueId {
     #[inline]
     pub fn to_usize(&self) -> usize {
         match self {
-            Self::Arc(v) => Arc::as_ptr(v) as *const () as usize,
-            Self::Unbinded(v) => *v,
+            Self::MemoryRef(v) => Arc::as_ptr(v) as *const () as usize,
+            Self::Plain(v) => *v,
         }
     }
 
+    /// Use an existing `Arc<T>` as backing for an ID.
     pub fn from_arc<T: Any + Send + Sync>(arc: Arc<T>) -> Self {
-        Self::Arc(arc.clone())
+        Self::MemoryRef(arc.clone())
     }
 
-    /// Downcasts to a concrete Arc type. Returns None `Self` is `Unbinded`.
+    /// Downcasts to a concrete Arc type. Returns None `Self` is `Plain`.
     ///
     /// # Panics
-    /// On a debug build, panics if `Self` is an `Arc` but does not contain `T`.
+    /// On a debug build, panics if `Self` is an `Arc` but does not contain `T`. On a release build
+    /// this will instead `None`.
     pub fn downcast_arc<T: Any>(self) -> Option<Arc<T>> {
         match self {
-            Self::Arc(inner) => {
+            Self::MemoryRef(inner) => {
                 // Note, ref type here must match exactly with T.
                 let v: &dyn Any = inner.as_ref();
 
                 if v.type_id() != std::any::TypeId::of::<T>() {
                     if cfg!(debug_assertions) {
-                        panic!("invalid downcast of MemoryId")
+                        panic!("invalid downcast of UniqueId")
                     } else {
                         // Just return None on release.
                         return None;
@@ -62,38 +65,38 @@ impl MemoryId {
                 Some(unsafe { Arc::from_raw(ptr) })
             },
 
-            Self::Unbinded(_) => None,
+            Self::Plain(_) => None,
         }
     }
 }
 
-impl Default for MemoryId {
+impl Default for UniqueId {
     fn default() -> Self {
-        Self::Arc(Arc::new(()))
+        Self::MemoryRef(Arc::new(()))
     }
 }
 
-impl PartialEq for MemoryId {
+impl PartialEq for UniqueId {
     fn eq(&self, other: &Self) -> bool {
         self.to_usize() == other.to_usize()
     }
 }
 
-impl Eq for MemoryId {}
+impl Eq for UniqueId {}
 
-impl PartialOrd for MemoryId {
+impl PartialOrd for UniqueId {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(Ord::cmp(self, other))
     }
 }
 
-impl Ord for MemoryId {
+impl Ord for UniqueId {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         Ord::cmp(&self.to_usize(), &other.to_usize())
     }
 }
 
-impl std::hash::Hash for MemoryId {
+impl std::hash::Hash for UniqueId {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.to_usize().hash(state)
     }
@@ -101,23 +104,23 @@ impl std::hash::Hash for MemoryId {
 
 #[cfg(feature = "serde")]
 mod _serde_impl {
-    use super::MemoryId;
+    use super::UniqueId;
 
-    impl serde::ser::Serialize for MemoryId {
+    impl serde::ser::Serialize for UniqueId {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
         {
-            self.to_usize().serialize(serializer)
+            usize::serialize(&self.to_usize(), serializer)
         }
     }
 
-    impl<'de> serde::de::Deserialize<'de> for MemoryId {
+    impl<'de> serde::de::Deserialize<'de> for UniqueId {
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: serde::Deserializer<'de>,
         {
-            usize::deserialize(deserializer).map(Self::Unbinded)
+            usize::deserialize(deserializer).map(Self::Plain)
         }
     }
 }
@@ -127,17 +130,17 @@ mod tests {
     use std::any::Any;
     use std::sync::Arc;
 
-    use super::MemoryId;
+    use super::UniqueId;
 
     #[test]
     fn test_unique_id() {
-        let id = MemoryId::default();
+        let id = UniqueId::default();
 
         assert_eq!(id, id);
-        assert_ne!(id, MemoryId::default());
+        assert_ne!(id, UniqueId::default());
 
         // Following code explains the memory layout
-        let MemoryId::Arc(arc_ref) = &id else {
+        let UniqueId::MemoryRef(arc_ref) = &id else {
             unreachable!()
         };
         let inner_ref: &dyn Any = arc_ref.as_ref();
@@ -153,11 +156,11 @@ mod tests {
 
     #[test]
     fn test_unique_id_downcast() {
-        let id = MemoryId::default();
+        let id = UniqueId::default();
         let _: Arc<()> = id.downcast_arc().unwrap();
 
         let inner: Arc<usize> = Arc::new(37);
-        let id = MemoryId::from_arc(inner);
+        let id = UniqueId::from_arc(inner);
 
         let out: Arc<usize> = id.downcast_arc().unwrap();
         assert_eq!(*out.as_ref(), 37);
