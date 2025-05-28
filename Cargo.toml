@@ -28,6 +28,7 @@ avro-schema = { version = "0.3" }
 base64 = "0.22.0"
 bincode = "1.3.3"
 bitflags = "2"
+boxcar = "0.2.12"
 bytemuck = { version = "1.22", features = ["derive", "extern_crate_alloc"] }
 bytes = { version = "1.10" }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
@@ -77,6 +78,7 @@ schemars = { version = "0.8.22", features = ["preserve_order"] }
 serde = { version = "1.0.188", features = ["derive", "rc"] }
 serde_ignored = "0.1.12"
 serde_json = "1"
+sha2 = "0.10"
 simd-json = { version = "0.14", features = ["known-key"] }
 simdutf8 = "0.1.4"
 skiplist = "0.5.1"
@@ -122,7 +124,7 @@ polars-utils = { version = "0.48.1", path = "crates/polars-utils", default-featu
 
 [workspace.dependencies.arrow-format]
 package = "polars-arrow-format"
-version = "0.1.0"
+version = "0.2.0"
 
 [workspace.dependencies.arrow]
 package = "polars-arrow"

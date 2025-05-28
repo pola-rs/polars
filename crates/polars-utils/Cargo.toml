@@ -53,9 +53,9 @@ serde = [
   "dep:bincode",
   "dep:flate2",
   "dep:serde_json",
-  "dep:serde_ignored",
 ]
 dsl-schema = ["dep:schemars"]
+polars_cloud_server = ["dep:serde_ignored"]
 python = ["pyo3", "polars-error/python"]
 
 [lints]

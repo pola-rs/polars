@@ -11,7 +11,7 @@ use polars_ops::frame::{IEJoinOptions, InequalityOperator};
 use polars_ops::frame::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_utils::arena::{Arena, Node};
 
-use super::{AExpr, ExprOrigin, IR, JoinOptions, aexpr_to_leaf_names_iter};
+use super::{AExpr, ExprOrigin, IR, JoinOptionsIR, aexpr_to_leaf_names_iter};
 use crate::dsl::{JoinTypeOptionsIR, Operator};
 use crate::plans::optimizer::join_utils::remove_suffix;
 use crate::plans::{ExprIR, MintermIter};
@@ -273,7 +273,7 @@ fn insert_fitting_join(
     remaining_predicates: &[Node],
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    mut options: JoinOptions,
+    mut options: JoinOptionsIR,
     input_left: Node,
     input_right: Node,
     schema: SchemaRef,

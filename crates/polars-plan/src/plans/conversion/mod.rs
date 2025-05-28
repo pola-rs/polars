@@ -12,7 +12,6 @@ mod ir_to_dsl;
 mod scans;
 mod stack_opt;
 
-use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 
 pub use dsl_to_ir::*;
@@ -221,7 +220,7 @@ impl IR {
                     predicates: Default::default(),
                     left_on,
                     right_on,
-                    options,
+                    options: Arc::new(JoinOptions::from(Arc::unwrap_or_clone(options))),
                 }
             },
             IR::HStack {
@@ -341,29 +340,5 @@ impl IR {
             },
             IR::Invalid => unreachable!(),
         }
-    }
-}
-
-fn get_input(lp_arena: &Arena<IR>, lp_node: Node) -> UnitVec<Node> {
-    let plan = lp_arena.get(lp_node);
-    let mut inputs: UnitVec<Node> = unitvec!();
-
-    // Used to get the schema of the input.
-    if is_scan(plan) {
-        inputs.push(lp_node);
-    } else {
-        plan.copy_inputs(&mut inputs);
-    };
-    inputs
-}
-
-fn get_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
-    let inputs = get_input(lp_arena, lp_node);
-    if inputs.is_empty() {
-        // Files don't have an input, so we must take their schema.
-        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
-    } else {
-        let input = inputs[0];
-        lp_arena.get(input).schema(lp_arena)
     }
 }

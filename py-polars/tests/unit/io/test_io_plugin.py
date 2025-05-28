@@ -175,3 +175,39 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
 
     column = column_cast.meta.pop()[0]
     assert column.meta == pl.col("timestamp")
+
+
+def test_reordered_columns_22731() -> None:
+    def my_scan() -> pl.LazyFrame:
+        schema = pl.Schema({"a": pl.Int64, "b": pl.Int64})
+
+        def source_generator(
+            with_columns: list[str] | None,
+            predicate: pl.Expr | None,
+            n_rows: int | None,
+            batch_size: int | None,
+        ) -> Iterator[pl.DataFrame]:
+            df = pl.DataFrame({"a": [1, 2, 3], "b": [42, 13, 37]})
+
+            if n_rows is not None:
+                df = df.head(min(n_rows, df.height))
+
+            maxrows = 0
+            if batch_size is not None:
+                maxrows = batch_size
+
+            while df.height > 0:
+                maxrows = min(maxrows, df.height)
+                cur = df.head(maxrows)
+                df = df.slice(maxrows)
+
+                if predicate is not None:
+                    cur = cur.filter(predicate)
+                if with_columns is not None:
+                    cur = cur.select(with_columns)
+
+                yield cur
+
+        return register_io_source(io_source=source_generator, schema=schema)
+
+    my_scan().select("b", "a").sink_parquet(io.BytesIO())

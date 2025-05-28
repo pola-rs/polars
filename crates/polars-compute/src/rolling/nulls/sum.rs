@@ -1,29 +1,34 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+
 use super::*;
 
-pub struct SumWindow<'a, T> {
+pub struct SumWindow<'a, T, S> {
     slice: &'a [T],
     validity: &'a Bitmap,
-    sum: Option<T>,
-    err: T,
+    sum: Option<S>,
+    err: S,
     last_start: usize,
     last_end: usize,
     pub(super) null_count: usize,
 }
 
-impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Output = T>>
-    SumWindow<'_, T>
+impl<T, S> SumWindow<'_, T, S>
+where
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast,
+    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     // Kahan summation
     fn add(&mut self, val: T) {
         if T::is_float() && val.is_finite() {
             self.sum = self.sum.map(|sum| {
+                let val: S = NumCast::from(val).unwrap();
                 let y = val - self.err;
                 let new_sum = sum + y;
                 self.err = (new_sum - sum) - y;
                 new_sum
             });
         } else {
+            let val: S = NumCast::from(val).unwrap();
             self.sum = self.sum.map(|v| v + val)
         }
     }
@@ -32,23 +37,29 @@ impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Out
         if T::is_float() && val.is_finite() {
             self.add(T::zeroed() - val)
         } else {
+            let val: S = NumCast::from(val).unwrap();
             self.sum = self.sum.map(|v| v - val)
         }
     }
 }
 
-impl<T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> SumWindow<'_, T> {
+impl<T, S> SumWindow<'_, T, S>
+where
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast,
+    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
+{
     // compute sum from the entire window
-    unsafe fn compute_sum_and_null_count(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn compute_sum_and_null_count(&mut self, start: usize, end: usize) -> Option<S> {
         let mut sum = None;
         let mut idx = start;
         self.null_count = 0;
         for value in &self.slice[start..end] {
+            let value: S = NumCast::from(*value).unwrap();
             let valid = self.validity.get_bit_unchecked(idx);
             if valid {
                 match sum {
-                    None => sum = Some(*value),
-                    Some(current) => sum = Some(*value + current),
+                    None => sum = Some(value),
+                    Some(current) => sum = Some(value + current),
                 }
             } else {
                 self.null_count += 1;
@@ -60,8 +71,10 @@ impl<T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> SumWindow<'_, 
     }
 }
 
-impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + AddAssign + SubAssign>
-    RollingAggWindowNulls<'a, T> for SumWindow<'a, T>
+impl<'a, T, S> RollingAggWindowNulls<'a, T> for SumWindow<'a, T, S>
+where
+    T: NativeType + IsFloat + Sub<Output = T> + NumCast,
+    S: NativeType + AddAssign + SubAssign + Sub<Output = S> + Add<Output = S> + NumCast,
 {
     unsafe fn new(
         slice: &'a [T],
@@ -75,7 +88,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + AddAssign
             slice,
             validity,
             sum: None,
-            err: T::zeroed(),
+            err: S::zeroed(),
             last_start: start,
             last_end: end,
             null_count: 0,
@@ -132,7 +145,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + AddAssign
                 if valid {
                     let value = *self.slice.get_unchecked(idx);
                     match self.sum {
-                        None => self.sum = Some(value),
+                        None => self.sum = NumCast::from(value),
                         _ => self.add(value),
                     }
                 } else {
@@ -142,7 +155,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + AddAssign
             }
         }
         self.last_end = end;
-        self.sum
+        self.sum.and_then(NumCast::from)
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
@@ -165,13 +178,14 @@ where
         + Add<Output = T>
         + Sub<Output = T>
         + SubAssign
-        + AddAssign,
+        + AddAssign
+        + NumCast,
 {
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }
     if center {
-        rolling_apply_agg_window::<SumWindow<_>, _, _>(
+        rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
@@ -180,7 +194,7 @@ where
             None,
         )
     } else {
-        rolling_apply_agg_window::<SumWindow<_>, _, _>(
+        rolling_apply_agg_window::<SumWindow<T, T>, _, _>(
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,

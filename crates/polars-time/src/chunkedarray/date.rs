@@ -115,7 +115,7 @@ impl DateMethods for DateChunked {
                     .map(|v| naive_date_to_date(*v))
             }),
         )
-        .into()
+        .into_date()
     }
 }
 

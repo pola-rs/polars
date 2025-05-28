@@ -6,20 +6,12 @@ use polars_plan::prelude::{Arena, Node};
 use polars_utils::pl_serialize;
 use pyo3::intern;
 use pyo3::prelude::{PyAnyMethods, PyModule, Python, *};
-use pyo3::types::{IntoPyDict, PyBytes};
+use pyo3::types::IntoPyDict;
 
+use crate::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::utils::EnterPolarsExt;
-use crate::{PyDataFrame, PyLazyFrame};
-
-#[pyfunction]
-pub fn prepare_cloud_plan(lf: PyLazyFrame, py: Python<'_>) -> PyResult<Bound<'_, PyBytes>> {
-    let plan = lf.ldf.logical_plan;
-    let bytes = polars::prelude::prepare_cloud_plan(plan).map_err(PyPolarsErr::from)?;
-
-    Ok(PyBytes::new(py, &bytes))
-}
 
 /// Take a serialized `IRPlan` and execute it on the GPU engine.
 ///

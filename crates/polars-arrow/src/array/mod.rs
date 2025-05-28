@@ -686,8 +686,9 @@ pub use binary::{
     BinaryArray, BinaryArrayBuilder, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray,
 };
 pub use binview::{
-    BinaryViewArray, BinaryViewArrayGeneric, BinaryViewArrayGenericBuilder, MutableBinaryViewArray,
-    MutablePlBinary, MutablePlString, Utf8ViewArray, View, ViewType,
+    BinaryViewArray, BinaryViewArrayBuilder, BinaryViewArrayGeneric, BinaryViewArrayGenericBuilder,
+    MutableBinaryViewArray, MutablePlBinary, MutablePlString, Utf8ViewArray, Utf8ViewArrayBuilder,
+    View, ViewType,
 };
 pub use boolean::{BooleanArray, BooleanArrayBuilder, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};

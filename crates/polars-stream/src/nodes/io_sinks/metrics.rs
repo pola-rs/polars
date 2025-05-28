@@ -1,12 +1,12 @@
 use arrow::array::builder::ShareStrategy;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    ChunkedBuilder, DataType, IntoColumn, PrimitiveChunkedBuilder, StringChunkedBuilder,
+    AnyValue, ChunkedBuilder, DataType, IntoColumn, PrimitiveChunkedBuilder, StringChunkedBuilder,
     StructChunked, UInt64Type,
 };
 use polars_core::schema::Schema;
-use polars_core::series::IntoSeries;
 use polars_core::series::builder::SeriesBuilder;
+use polars_core::series::{IntoSeries, Series};
 use polars_error::PolarsResult;
 use polars_expr::reduce::{GroupedReduction, new_max_reduction, new_min_reduction};
 use polars_utils::format_pl_smallstr;
@@ -20,6 +20,8 @@ pub struct WriteMetrics {
     pub num_rows: u64,
     /// Size of written file in bytes.
     pub file_size: u64,
+    /// Keys of the partition.
+    pub keys: Option<Vec<AnyValue<'static>>>,
     /// Metrics for each column.
     pub columns: Vec<WriteMetricsColumn>,
 }
@@ -46,6 +48,7 @@ impl WriteMetrics {
             path,
             file_size: 0,
             num_rows: 0,
+            keys: None,
             columns: schema
                 .iter_values()
                 .cloned()
@@ -79,7 +82,11 @@ impl WriteMetrics {
         Ok(())
     }
 
-    pub fn collapse_to_df(metrics: Vec<Self>, input_schema: &Schema) -> DataFrame {
+    pub fn collapse_to_df(
+        metrics: Vec<Self>,
+        input_schema: &Schema,
+        key_schema: Option<&Schema>,
+    ) -> DataFrame {
         let num_metrics = metrics.len();
 
         let mut path = StringChunkedBuilder::new(PlSmallStr::from_static("path"), num_metrics);
@@ -91,6 +98,11 @@ impl WriteMetrics {
             PlSmallStr::from_static("file_size"),
             num_metrics,
         );
+        let mut keys = key_schema.map(|s| {
+            (0..s.len())
+                .map(|_| Vec::with_capacity(metrics.len()))
+                .collect::<Vec<_>>()
+        });
         let mut columns = input_schema
             .iter_values()
             .map(|dtype| {
@@ -115,6 +127,15 @@ impl WriteMetrics {
             path.append_value(m.path);
             num_rows.append_value(m.num_rows);
             file_size.append_value(m.file_size);
+            match (&mut keys, m.keys) {
+                (None, None) => {},
+                (Some(keys), Some(m_keys)) => {
+                    for (key, m_key) in keys.iter_mut().zip(m_keys) {
+                        key.push(m_key);
+                    }
+                },
+                _ => unreachable!(),
+            }
 
             for (mut w, c) in m.columns.into_iter().zip(columns.iter_mut()) {
                 c.0.append_value(w.null_count);
@@ -124,10 +145,41 @@ impl WriteMetrics {
             }
         }
 
-        let mut df_columns = Vec::with_capacity(3 + input_schema.len());
+        let mut df_columns = Vec::with_capacity(4 + input_schema.len());
         df_columns.push(path.finish().into_column());
         df_columns.push(num_rows.finish().into_column());
         df_columns.push(file_size.finish().into_column());
+        match (keys, key_schema) {
+            (None, None) => df_columns.push(
+                StructChunked::from_series(
+                    PlSmallStr::from_static("keys"),
+                    num_metrics,
+                    [].into_iter(),
+                )
+                .unwrap()
+                .into_column(),
+            ),
+            (Some(keys), Some(key_schema)) => {
+                let keys = keys
+                    .into_iter()
+                    .zip(key_schema.iter())
+                    .map(|(key, (name, dtype))| {
+                        Series::from_any_values_and_dtype(name.clone(), key.as_slice(), dtype, true)
+                            .unwrap()
+                    })
+                    .collect::<Vec<Series>>();
+                df_columns.push(
+                    StructChunked::from_series(
+                        PlSmallStr::from_static("keys"),
+                        num_metrics,
+                        keys.iter(),
+                    )
+                    .unwrap()
+                    .into_column(),
+                );
+            },
+            _ => unreachable!(),
+        }
         for (name, column) in input_schema.iter_names().zip(columns) {
             let struct_ca = StructChunked::from_series(
                 format_pl_smallstr!("{name}_stats"),

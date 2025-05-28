@@ -1259,6 +1259,10 @@ fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
 
 impl Series {
     pub fn fmt_list(&self) -> String {
+        assert!(
+            !self.dtype().is_object(),
+            "nested Objects are not allowed\n\nYou probably got here by not setting a `return_dtype` on a UDF on Objects."
+        );
         if self.is_empty() {
             return "[]".to_owned();
         }

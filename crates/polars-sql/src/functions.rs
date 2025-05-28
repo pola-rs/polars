@@ -5,8 +5,6 @@ use polars_core::prelude::{
     DataType, PolarsResult, QuantileMethod, Schema, TimeUnit, polars_bail, polars_err,
 };
 use polars_lazy::dsl::Expr;
-#[cfg(feature = "list_eval")]
-use polars_lazy::dsl::ListNameSpaceExtension;
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
@@ -524,6 +522,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT AVG(column_1) FROM df;
     /// ```
     Avg,
+    /// SQL 'corr' function.
+    /// Returns the Pearson correlation coefficient between two columns.
+    /// ```sql
+    /// SELECT CORR(column_1, column_2) FROM df;
+    /// ```
+    Corr,
     /// SQL 'count' function.
     /// Returns the amount of elements in the grouping.
     /// ```sql
@@ -533,6 +537,18 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT COUNT(DISTINCT *) FROM df;
     /// ```
     Count,
+    /// SQL 'covar_pop' function.
+    /// Returns the population covariance between two columns.
+    /// ```sql
+    /// SELECT COVAR_POP(column_1, column_2) FROM df;
+    /// ```
+    CovarPop,
+    /// SQL 'covar_samp' function.
+    /// Returns the sample covariance between two columns.
+    /// ```sql
+    /// SELECT COVAR_SAMP(column_1, column_2) FROM df;
+    /// ```
+    CovarSamp,
     /// SQL 'first' function.
     /// Returns the first element of the grouping.
     /// ```sql
@@ -595,7 +611,6 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT VARIANCE(column_1) FROM df;
     /// ```
     Variance,
-
     // ----
     // Array functions
     // ----
@@ -721,11 +736,15 @@ impl PolarsSQLFunctions {
             "columns",
             "concat",
             "concat_ws",
+            "corr",
             "cos",
             "cosd",
             "cot",
             "cotd",
             "count",
+            "covar",
+            "covar_pop",
+            "covar_samp",
             "date",
             "date_part",
             "degrees",
@@ -899,7 +918,10 @@ impl PolarsSQLFunctions {
             // Aggregate functions
             // ----
             "avg" => Self::Avg,
+            "corr" => Self::Corr,
             "count" => Self::Count,
+            "covar_pop" => Self::CovarPop,
+            "covar" | "covar_samp" => Self::CovarSamp,
             "first" => Self::First,
             "last" => Self::Last,
             "max" => Self::Max,
@@ -1407,7 +1429,10 @@ impl SQLFunctionVisitor<'_> {
             // Aggregate functions
             // ----
             Avg => self.visit_unary(Expr::mean),
+            Corr => self.visit_binary(polars_lazy::dsl::pearson_corr),
             Count => self.visit_count(),
+            CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
+            CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
@@ -1781,7 +1806,7 @@ impl SQLFunctionVisitor<'_> {
                     } else {
                         e.cast(DataType::List(Box::from(DataType::String)))
                             .list()
-                            .eval(col("").fill_null(lit(lv.extract_str().unwrap())), false)
+                            .eval(col("").fill_null(lit(lv.extract_str().unwrap())))
                             .list()
                             .join(sep, false)
                     })

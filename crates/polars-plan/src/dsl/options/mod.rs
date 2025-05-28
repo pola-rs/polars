@@ -70,21 +70,15 @@ impl Default for StrptimeOptions {
 }
 
 #[derive(Clone, PartialEq, Eq, IntoStaticStr, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
 pub enum JoinTypeOptionsIR {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
-    #[cfg_attr(
-        all(
-            any(feature = "serde", feature = "dsl-schema"),
-            not(feature = "ir_serde")
-        ),
-        serde(skip)
-    )]
     // Fused cross join and filter (only in in-memory engine)
-    Cross { predicate: ExprIR },
+    Cross {
+        predicate: ExprIR,
+    },
 }
 
 impl Hash for JoinTypeOptionsIR {
@@ -117,9 +111,8 @@ impl JoinTypeOptionsIR {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct JoinOptions {
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct JoinOptionsIR {
     pub allow_parallel: bool,
     pub force_parallel: bool,
     pub args: JoinArgs,
@@ -130,6 +123,28 @@ pub struct JoinOptions {
     pub rows_right: (Option<usize>, usize),
 }
 
+impl From<JoinOptions> for JoinOptionsIR {
+    fn from(opts: JoinOptions) -> Self {
+        Self {
+            allow_parallel: opts.allow_parallel,
+            force_parallel: opts.force_parallel,
+            args: opts.args,
+            options: Default::default(),
+            rows_left: (None, usize::MAX),
+            rows_right: (None, usize::MAX),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct JoinOptions {
+    pub allow_parallel: bool,
+    pub force_parallel: bool,
+    pub args: JoinArgs,
+}
+
 impl Default for JoinOptions {
     fn default() -> Self {
         JoinOptions {
@@ -137,9 +152,16 @@ impl Default for JoinOptions {
             force_parallel: false,
             // Todo!: make default
             args: JoinArgs::new(JoinType::Left),
-            options: Default::default(),
-            rows_left: (None, usize::MAX),
-            rows_right: (None, usize::MAX),
+        }
+    }
+}
+
+impl From<JoinOptionsIR> for JoinOptions {
+    fn from(opts: JoinOptionsIR) -> Self {
+        Self {
+            allow_parallel: opts.allow_parallel,
+            force_parallel: opts.force_parallel,
+            args: opts.args,
         }
     }
 }

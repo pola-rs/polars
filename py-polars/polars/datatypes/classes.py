@@ -6,7 +6,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import tzinfo
 from inspect import isclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
 
 import polars._reexport as pl
 import polars.datatypes
@@ -29,12 +29,20 @@ if TYPE_CHECKING:
     )
 
 
-class classinstmethod(classmethod):  # type: ignore[type-arg]
+T = TypeVar("T")
+R = TypeVar("R")
+
+
+class classinstmethod(Generic[R]):
     """Decorator that allows a method to be called from the class OR instance."""
 
-    def __get__(self, instance: Any, type_: type) -> Any:  # type: ignore[override]
-        get = super().__get__ if instance is None else self.__func__.__get__
-        return get(instance, type_)
+    def __init__(self, func: Callable[..., R]) -> None:
+        self.func = func
+
+    def __get__(self, instance: Any, type_: Any) -> Callable[..., R]:
+        if instance is not None:
+            return self.func.__get__(instance, type_)
+        return self.func.__get__(type_, type_)
 
 
 class DataTypeClass(type):
@@ -135,7 +143,7 @@ class DataType(metaclass=DataTypeClass):
         """
         return cls
 
-    @classinstmethod  # type: ignore[arg-type]
+    @classinstmethod
     def is_(self, other: PolarsDataType) -> bool:
         """
         Check if this DataType is the same as another DataType.
@@ -227,7 +235,7 @@ class DataType(metaclass=DataTypeClass):
 
         return parse_into_dtype(py_type)
 
-    @classinstmethod  # type: ignore[arg-type]
+    @classinstmethod
     def to_python(self) -> PythonDataType:
         """
         Return the Python type corresponding to this Polars data type.

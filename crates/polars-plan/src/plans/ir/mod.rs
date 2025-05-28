@@ -71,7 +71,7 @@ pub enum IR {
         /// same set of ScanSources with different scan options.
         ///
         /// NOTE: This must be reset to a new Arc during e.g. predicate / slice pushdown.
-        #[cfg_attr(feature = "serde", serde(skip, default))]
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
         id: UniqueId,
     },
     DataFrameScan {
@@ -123,7 +123,7 @@ pub enum IR {
         schema: SchemaRef,
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
-        options: Arc<JoinOptions>,
+        options: Arc<JoinOptionsIR>,
     },
     HStack {
         input: Node,

@@ -29,7 +29,8 @@ either = { workspace = true }
 # Features used in this crate
 ffi_plugin = ["polars-python/ffi_plugin"]
 csv = ["polars-python/csv"]
-polars_cloud = ["polars-python/polars_cloud"]
+polars_cloud_client = ["polars-python/polars_cloud_client"]
+polars_cloud_server = ["polars-python/polars_cloud_server"]
 object = ["polars-python/object"]
 clipboard = ["polars-python/clipboard"]
 sql = ["polars-python/sql"]
@@ -99,7 +100,7 @@ optimizations = ["polars-python/optimizations"]
 all = [
   "ffi_plugin",
   "csv",
-  "polars_cloud",
+  "polars_cloud_client",
   "object",
   "clipboard",
   "sql",

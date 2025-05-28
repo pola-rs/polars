@@ -9,8 +9,12 @@ Aggregate
      - Description
    * - :ref:`AVG <avg>`
      - Returns the average (mean) of all the elements in the grouping.
+   * - :ref:`CORR <corr>`
+     - Returns the Pearson correlation coefficient between two columns.
    * - :ref:`COUNT <count>`
      - Returns the amount of elements in the grouping.
+   * - :ref:`COVAR <covar>`
+     - Returns the covariance between two columns.
    * - :ref:`FIRST <first>`
      - Returns the first element of the grouping.
    * - :ref:`LAST <last>`
@@ -56,6 +60,30 @@ Returns the average (mean) of all the elements in the grouping.
     # │ 25.0    │
     # └─────────┘
 
+.. _corr:
+
+CORR
+----
+Returns the Pearson correlation coefficient between two columns.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [1, 2, 3, 4, 5], "bar": [2, 4, 7, 5, 9]})
+    df.sql("""
+      SELECT CORR(foo, bar) AS corr FROM self
+    """)
+    # shape: (1, 1)
+    # ┌──────────┐
+    # │ corr     │
+    # │ ---      │
+    # │ f64      │
+    # ╞══════════╡
+    # │ 0.877809 │
+    # └──────────┘
+
+
 .. _count:
 
 COUNT
@@ -87,6 +115,35 @@ Returns the amount of elements in the grouping.
     # ╞═══════╪══════════════╡
     # │ 4     ┆ 3            │
     # └───────┴──────────────┘
+
+.. _covar:
+
+COVAR
+---
+Returns the covariance between two columns.
+
+.. admonition:: Aliases
+    
+   `COVAR`, `COVAR_SAMP`
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({"foo": [1, 2, 3, 4, 5], "bar": [2, 4, 7, 5, 9]})
+    df.sql("""
+      SELECT COVAR(foo, bar) AS covar FROM self
+    """)
+
+    # shape: (1, 1)
+    # ┌───────┐
+    # │ covar │
+    # │ ---   │
+    # │ f64   │
+    # ╞═══════╡
+    # │ 3.75  │
+    # └───────┘
+
 
 .. _first:
 

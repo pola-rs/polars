@@ -4,6 +4,7 @@ use pyo3::types::PyCFunction;
 
 use super::PySeries;
 use crate::error::PyPolarsErr;
+use crate::map::check_nested_object;
 use crate::map::series::{ApplyLambda, call_lambda_and_extract};
 use crate::prelude::*;
 use crate::py_modules::pl_series;
@@ -94,8 +95,13 @@ impl PySeries {
                     };
                     avs.push(out)
                 }
+                let out = Series::new(self.series.name().clone(), &avs);
+                let dtype = out.dtype();
+                if dtype.is_nested() {
+                    check_nested_object(dtype)?;
+                }
 
-                return Ok(Series::new(self.series.name().clone(), &avs).into());
+                return Ok(out.into());
             }
 
             let out = match return_dtype {
@@ -244,6 +250,7 @@ impl PySeries {
                     ca.into_series()
                 },
                 Some(DataType::List(inner)) => {
+                    check_nested_object(&inner)?;
                     // Make sure the function returns a Series of the correct data type.
                     let function_owned = function.clone().unbind();
                     let dtype_py = Wrap((*inner).clone());
