@@ -370,8 +370,6 @@ def scan_delta(
             msg = f"The table has set these reader features: {missing_features} but these are not yet supported by the polars delta scanner."
             raise DeltaProtocolError(msg)
 
-    # Requires conversion through arro3 because there is no direct way yet to
-    # convert a delta schema into a polars schema
     delta_schema = dl_tbl.schema().to_arrow()
     polars_schema = from_arrow(delta_schema.empty_table()).schema  # type: ignore[union-attr]
     partition_columns = dl_tbl.metadata().partition_columns
