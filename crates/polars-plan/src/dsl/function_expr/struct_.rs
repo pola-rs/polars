@@ -124,6 +124,7 @@ impl StructFunction {
                 }
             },
             MultipleFields(_) => panic!("should be expanded"),
+            #[cfg(feature = "python")]
             MapFieldNames(lambda) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
                     let fields = fields
