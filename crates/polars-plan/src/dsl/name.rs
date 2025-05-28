@@ -41,7 +41,7 @@ impl ExprNameNameSpace {
     pub fn map_udf(self, function: polars_utils::python_function::PythonObject) -> Expr {
         Expr::RenameAlias {
             expr: Arc::new(self.0),
-            function: RenameAliasFn::Python(Arc::new(function)),
+            function: RenameAliasFn::Python(SpecialEq::new(Arc::new(function))),
         }
     }
 
