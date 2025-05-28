@@ -440,7 +440,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             cache_hits,
         } => Cache {
             input: input.0,
-            id_: *id,
+            id_: id.to_usize(),
             cache_hits: *cache_hits,
         }
         .into_py_any(py),

@@ -11,7 +11,7 @@ pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursive};
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
-use polars_utils::unique_id::UniqueId;
+use polars_utils::unique_id::MemoryId;
 use polars_utils::unitvec;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -70,9 +70,8 @@ pub enum IR {
         /// We use this instead of the Arc-address of the ScanSources as it's possible to pass the
         /// same set of ScanSources with different scan options.
         ///
-        /// NOTE: This must be reset to a new Arc during e.g. predicate / slice pushdown.
-        #[cfg_attr(feature = "ir_serde", serde(skip))]
-        id: UniqueId,
+        /// NOTE: This must be reset to a new ID during e.g. predicate / slice pushdown.
+        id: MemoryId,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -102,8 +101,8 @@ pub enum IR {
     },
     Cache {
         input: Node,
-        // Unique ID.
-        id: usize,
+        /// This holds the `Arc<DslPlan>` to guarantee uniqueness.
+        id: MemoryId,
         /// How many hits the cache must be saved in memory.
         cache_hits: u32,
     },

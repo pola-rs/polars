@@ -162,7 +162,7 @@ fn test_cse_union2_4925() -> PolarsResult<()> {
             match lp {
                 Cache { id, cache_hits, .. } => {
                     assert_eq!(*cache_hits, 1);
-                    Some(*id)
+                    Some(id.clone())
                 },
                 _ => None,
             }
@@ -222,7 +222,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
                     assert_eq!(*cache_hits, 1);
                     assert!(matches!(lp_arena.get(*input), IR::SimpleProjection { .. }));
 
-                    Some(*id)
+                    Some(id.clone())
                 },
                 _ => None,
             }
@@ -282,7 +282,7 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
         .flat_map(|(_, lp)| {
             use IR::*;
             match lp {
-                Cache { id, .. } => Some(*id),
+                Cache { id, .. } => Some(id.clone()),
                 _ => None,
             }
         })

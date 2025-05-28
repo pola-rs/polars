@@ -806,7 +806,9 @@ pub fn write_ir_non_recursive(
         } => write!(
             f,
             "{:indent$}CACHE[id: {:x}, cache_hits: {}]",
-            "", *id, *cache_hits
+            "",
+            id.to_usize(),
+            *cache_hits
         ),
         IR::GroupBy {
             input: _,
