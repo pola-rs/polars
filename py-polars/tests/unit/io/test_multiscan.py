@@ -722,7 +722,6 @@ def test_all_force_empty_reader_capabilities(monkeypatch: pytest.MonkeyPatch) ->
             "",
             __file__,
         ],
-        stdin=sys.stdin,
         stdout=sys.stdout,
         stderr=sys.stderr,
     ).wait()
