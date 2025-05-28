@@ -90,7 +90,11 @@ def test_array_lengths() -> None:
     ).arr.len().to_list() == [3, None, 3]
 
 
-def test_arr_slice() -> None:
+@pytest.mark.parametrize(
+    ("as_array"),
+    [True, False],
+)
+def test_arr_slice(as_array: bool) -> None:
     df = pl.DataFrame(
         {
             "arr": [[1, 2, 3], [10, 2, 1]],
@@ -98,33 +102,37 @@ def test_arr_slice() -> None:
         schema={"arr": pl.Array(pl.Int64, 3)},
     )
 
-    assert df.select([pl.col("arr").arr.slice(0, 1)]).to_dict(as_series=False) == {
-        "arr": [[1], [10]]
-    }
-    assert df.select([pl.col("arr").arr.slice(1, 1)]).to_dict(as_series=False) == {
-        "arr": [[2], [2]]
-    }
-    assert df.select([pl.col("arr").arr.slice(-1, 1)]).to_dict(as_series=False) == {
-        "arr": [[3], [1]]
-    }
-    assert df.select([pl.col("arr").arr.slice(-2, 1)]).to_dict(as_series=False) == {
-        "arr": [[2], [2]]
-    }
-    assert df.select([pl.col("arr").arr.slice(-2, 2)]).to_dict(as_series=False) == {
-        "arr": [[2, 3], [2, 1]]
-    }
+    assert df.select([pl.col("arr").arr.slice(0, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[1], [10]]}
+    assert df.select([pl.col("arr").arr.slice(1, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[2], [2]]}
+    assert df.select([pl.col("arr").arr.slice(-1, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[3], [1]]}
+    assert df.select([pl.col("arr").arr.slice(-2, 1, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[2], [2]]}
+    assert df.select([pl.col("arr").arr.slice(-2, 2, as_array=as_array)]).to_dict(
+        as_series=False
+    ) == {"arr": [[2, 3], [2, 1]]}
     return
 
 
-def test_arr_slice_on_series() -> None:
+@pytest.mark.parametrize(
+    ("as_array"),
+    [True, False],
+)
+def test_arr_slice_on_series(as_array: bool) -> None:
     vals = [[1, 2, 3, 4], [10, 2, 1, 2]]
     s = pl.Series("a", vals, dtype=pl.Array(pl.Int64, 4))
-    assert s.arr.head(2).to_list() == [[1, 2], [10, 2]]
-    assert s.arr.tail(2).to_list() == [[3, 4], [1, 2]]
-    assert s.arr.tail(200).to_list() == vals
-    assert s.arr.head(200).to_list() == vals
-    assert s.arr.slice(1, 2).to_list() == [[2, 3], [2, 1]]
-    assert s.arr.slice(-5, 2).to_list() == [[1], [10]]
+    assert s.arr.head(2, as_array=as_array).to_list() == [[1, 2], [10, 2]]
+    assert s.arr.tail(2, as_array=as_array).to_list() == [[3, 4], [1, 2]]
+    assert s.arr.tail(10, as_array=as_array).to_list() == vals
+    assert s.arr.head(10, as_array=as_array).to_list() == vals
+    assert s.arr.slice(1, 2, as_array=as_array).to_list() == [[2, 3], [2, 1]]
+    assert s.arr.slice(-5, 2, as_array=as_array).to_list() == [[1], [10]]
 
 
 def test_arr_unique() -> None:

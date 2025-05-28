@@ -44,7 +44,13 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_len())
 
-    def slice(self, offset: int, length: int | None) -> Expr:
+    def slice(
+        self,
+        offset: int | str | Expr,
+        length: int | str | Expr | None = None,
+        *,
+        as_array: bool = False,
+    ) -> Expr:
         """
         Slice every subarray.
 
@@ -55,131 +61,135 @@ class ExprArrayNameSpace:
         length
             Length of the slice. If set to `None` (default), the slice is taken to the
             end of the list.
+        as_array
+            Return result as a fixed-length `Array`, otherwise as a `List`.
+            If true `length` and `offset` must be constant values.
 
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     data={"a": [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]]},
-        ...     schema={"a": pl.Array(pl.Int64, 6)},
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
         ... )
-        >>> df.with_columns(slice=pl.col("a").arr.slice(1))
-        shape: (2, 2)
-        ┌───────────────────────┬────────────────────┐
-        │ a                     ┆ slice              │
-        │ ---                   ┆ ---                │
-        │ array[i64, 6]         ┆ array[i64, 5]      │
-        ╞═══════════════════════╪════════════════════╡
-        │ [1, 2, 3, 4, 5, 6]    ┆ [2, 3, 4, 5, 6]    │
-        │ [7, 8, 9, 10, 11, 12] ┆ [8, 9, 10, 11, 12] │
-        └───────────────────────┴────────────────────┘
-        >>> df.with_columns(slice=pl.col("a").arr.slice(2, 3))
-        shape: (2, 2)
-        ┌───────────────────────┬───────────────┐
-        │ a                     ┆ slice         │
-        │ ---                   ┆ ---           │
-        │ array[i64, 6]         ┆ array[i64, 3] │
-        ╞═══════════════════════╪═══════════════╡
-        │ [1, 2, 3, 4, 5, 6]    ┆ [3, 4, 5]     │
-        │ [7, 8, 9, 10, 11, 12] ┆ [9, 10, 11]   │
-        └───────────────────────┴───────────────┘
-        >>> df.with_columns(slice=pl.col("a").arr.slice(-2))
-        shape: (2, 2)
-        ┌───────────────────────┬───────────────┐
-        │ a                     ┆ slice         │
-        │ ---                   ┆ ---           │
-        │ array[i64, 6]         ┆ array[i64, 2] │
-        ╞═══════════════════════╪═══════════════╡
-        │ [1, 2, 3, 4, 5, 6]    ┆ [5, 6]        │
-        │ [7, 8, 9, 10, 11, 12] ┆ [11, 12]      │
-        └───────────────────────┴───────────────┘
+        >>> df.select(pl.col("a").arr.slice(0, 1))
+        shape: (2, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1]       │
+        │ [4]       │
+        └───────────┘
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.slice(0, 1, as_array=True))
+        shape: (2, 1)
+        ┌───────────────┐
+        │ a             │
+        │ ---           │
+        │ array[i64, 1] │
+        ╞═══════════════╡
+        │ [1]           │
+        │ [4]           │
+        └───────────────┘
         """
-        return wrap_expr(self._pyexpr.arr_slice(offset, length))
+        offset = parse_into_expression(offset)
+        length = parse_into_expression(length) if length is not None else None
+        return wrap_expr(self._pyexpr.arr_slice(offset, length, as_array))
 
-    def head(self, n: int = 5) -> Expr:
+    def head(self, n: int | str | Expr = 5, *, as_array: bool = False) -> Expr:
         """
         Get the first `n` elements of the sub-arrays.
 
         Parameters
         ----------
-        length
-            The number of elements to return.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Array`.
+        n
+            Number of values to return for each sublist.
+        as_array
+            Return result as a fixed-length `Array`, otherwise as a `List`.
+            If true `n` must be a constant value.
 
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     data={"a": [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]]},
-        ...     schema={"a": pl.Array(pl.Int64, 6)},
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
         ... )
-        >>> df.with_columns(head=pl.col("a").arr.head())
-        shape: (2, 2)
-        ┌───────────────────────┬───────────────────┐
-        │ a                     ┆ head              │
-        │ ---                   ┆ ---               │
-        │ array[i64, 6]         ┆ array[i64, 5]     │
-        ╞═══════════════════════╪═══════════════════╡
-        │ [1, 2, 3, 4, 5, 6]    ┆ [1, 2, 3, 4, 5]   │
-        │ [7, 8, 9, 10, 11, 12] ┆ [7, 8, 9, 10, 11] │
-        └───────────────────────┴───────────────────┘
-        >>> df.with_columns(head=pl.col("a").arr.head(3))
-        shape: (2, 2)
-        ┌───────────────────────┬───────────────┐
-        │ a                     ┆ head          │
-        │ ---                   ┆ ---           │
-        │ array[i64, 6]         ┆ array[i64, 3] │
-        ╞═══════════════════════╪═══════════════╡
-        │ [1, 2, 3, 4, 5, 6]    ┆ [1, 2, 3]     │
-        │ [7, 8, 9, 10, 11, 12] ┆ [7, 8, 9]     │
-        └───────────────────────┴───────────────┘
+        >>> df.select(pl.col("a").arr.head(1))
+        shape: (2, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1]       │
+        │ [4]       │
+        └───────────┘
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.head(1, as_array=True))
+        shape: (2, 1)
+        ┌───────────────┐
+        │ a             │
+        │ ---           │
+        │ array[i64, 1] │
+        ╞═══════════════╡
+        │ [1]           │
+        │ [4]           │
+        └───────────────┘
         """
-        return wrap_expr(self._pyexpr.arr_head(n))
+        return self.slice(0, n, as_array=as_array)
 
-    def tail(self, n: int = 5) -> Expr:
+    def tail(self, n: int | str | Expr = 5, *, as_array: bool = False) -> Expr:
         """
-        Get the last `length` elements of the sub-arrays.
+        Slice the last `n` values of every sublist.
 
         Parameters
         ----------
-        length
-            The number of elements to return.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Array`.
+        n
+            Number of values to return for each sublist.
+        as_array
+            Return result as a fixed-length `Array`, otherwise as a `List`.
+            If true `n` must be a constant value.
 
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     data={"a": [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]]},
-        ...     schema={"a": pl.Array(pl.Int64, 6)},
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
         ... )
-        >>> df.with_columns(tail=pl.col("a").arr.tail())
-        shape: (2, 2)
-        ┌───────────────────────┬────────────────────┐
-        │ a                     ┆ tail               │
-        │ ---                   ┆ ---                │
-        │ array[i64, 6]         ┆ array[i64, 5]      │
-        ╞═══════════════════════╪════════════════════╡
-        │ [1, 2, 3, 4, 5, 6]    ┆ [2, 3, 4, 5, 6]    │
-        │ [7, 8, 9, 10, 11, 12] ┆ [8, 9, 10, 11, 12] │
-        └───────────────────────┴────────────────────┘
-        >>> df.with_columns(tail=pl.col("a").arr.tail(3))
-        shape: (2, 2)
-        ┌───────────────────────┬───────────────┐
-        │ a                     ┆ tail          │
-        │ ---                   ┆ ---           │
-        │ array[i64, 6]         ┆ array[i64, 3] │
-        ╞═══════════════════════╪═══════════════╡
-        │ [1, 2, 3, 4, 5, 6]    ┆ [4, 5, 6]     │
-        │ [7, 8, 9, 10, 11, 12] ┆ [10, 11, 12]  │
-        └───────────────────────┴───────────────┘
+        >>> df.select(pl.col("a").arr.tail(1))
+        shape: (2, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [2]       │
+        │ [3]       │
+        └───────────┘
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.tail(1, as_array=True))
+        shape: (2, 1)
+        ┌───────────────┐
+        │ a             │
+        │ ---           │
+        │ array[i64, 1] │
+        ╞═══════════════╡
+        │ [2]           │
+        │ [3]           │
+        └───────────────┘
         """
-        return wrap_expr(self._pyexpr.arr_tail(n))
+        n = parse_into_expression(n)
+        return wrap_expr(self._pyexpr.arr_tail(n, as_array))
 
     def min(self) -> Expr:
         """

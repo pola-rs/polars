@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
     from polars import Series
     from polars._typing import IntoExpr, IntoExprColumn
+    from polars.expr.expr import Expr
     from polars.polars import PySeries
 
 
@@ -231,7 +232,13 @@ class ArrayNameSpace:
         ]
         """
 
-    def slice(self, offset: int, length: int = 5) -> Series:
+    def slice(
+        self,
+        offset: int | Expr,
+        length: int | Expr | None = None,
+        *,
+        as_array: bool = False,
+    ) -> Series:
         """
         Slice the sub-arrays.
 
@@ -255,12 +262,12 @@ class ArrayNameSpace:
         ... )
         >>> s.arr.slice(1)
         shape: (2,)
-        Series: '' [array[i64, 5]]
+        Series: '' [list[i64]]
         [
-            [2, 3, 4, 5, 6]
-            [8, 9, 10, 11, 12]
+            [2, 3, … 6]
+            [8, 9, … 12]
         ]
-        >>> s.arr.slice(1, 3)
+        >>> s.arr.slice(1, 3, as_array=True)
         shape: (2,)
         Series: '' [array[i64, 3]]
         [
@@ -269,26 +276,24 @@ class ArrayNameSpace:
         ]
         >>> s.arr.slice(-2)
         shape: (2,)
-        Series: '' [array[i64, 2]]
+        Series: '' [list[i64]]
         [
             [5, 6]
             [11, 12]
         ]
         """
 
-    def head(self, n: int = 5) -> Series:
+    def head(self, n: int | Expr = 5, *, as_array: bool = False) -> Series:
         """
-        Get the first `n` elements of each sub-array.
+        Get the first `n` elements of the sub-arrays.
 
         Parameters
         ----------
-        length
-            The number of elements to return.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`Array`.
+        n
+            Number of values to return for each sublist.
+        as_array
+            Return result as a fixed-length `Array`, otherwise as a `List`.
+            If true `n` must be a constant value.
 
         Examples
         --------
@@ -298,12 +303,12 @@ class ArrayNameSpace:
         ... )
         >>> s.arr.head()
         shape: (2,)
-        Series: '' [array[i64, 5]]
+        Series: '' [list[i64]]
         [
-            [1, 2, 3, 4, 5]
-            [7, 8, 9, 10, 11]
+            [1, 2, … 5]
+            [7, 8, … 11]
         ]
-        >>> s.arr.head(3)
+        >>> s.arr.head(3, as_array=True)
         shape: (2,)
         Series: '' [array[i64, 3]]
         [
@@ -312,19 +317,17 @@ class ArrayNameSpace:
         ]
         """
 
-    def tail(self, n: int = 5) -> Series:
+    def tail(self, n: int | Expr = 5, *, as_array: bool = False) -> Series:
         """
-        Get the last `n` elements of each sub-array.
+        Slice the last `n` values of every sublist.
 
         Parameters
         ----------
-        length
-            The number of elements to return.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`Array`.
+        n
+            Number of values to return for each sublist.
+        as_array
+            Return result as a fixed-length `Array`, otherwise as a `List`.
+            If true `n` must be a constant value.
 
         Examples
         --------
@@ -334,12 +337,12 @@ class ArrayNameSpace:
         ... )
         >>> s.arr.tail()
         shape: (2,)
-        Series: '' [array[i64, 5]]
+        Series: '' [list[i64]]
         [
-            [2, 3, 4, 5, 6]
-            [8, 9, 10, 11, 12]
+            [2, 3, … 6]
+            [8, 9, … 12]
         ]
-        >>> s.arr.tail(3)
+        >>> s.arr.tail(3, as_array=True)
         shape: (2,)
         Series: '' [array[i64, 3]]
         [
