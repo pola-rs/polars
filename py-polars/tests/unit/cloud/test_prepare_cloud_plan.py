@@ -94,15 +94,12 @@ def test_prepare_cloud_plan_fail_on_local_data_source(lf: pl.LazyFrame) -> None:
     "lf",
     [
         pl.LazyFrame({"a": [{"x": 1, "y": 2}]})
-        .select(pl.col("a").name.map(lambda x: x.upper()))
-        .sink_parquet(DST, lazy=True),
-        pl.LazyFrame({"a": [{"x": 1, "y": 2}]})
         .select(pl.col("a").name.map_fields(lambda x: x.upper()))
         .sink_parquet(DST, lazy=True),
     ],
 )
 def test_prepare_cloud_plan_fail_on_serialization(lf: pl.LazyFrame) -> None:
     with pytest.raises(
-        ComputeError, match="cannot be serialized|serialization not supported"
+        ComputeError, match="serialization not supported"
     ):
         prepare_cloud_plan(lf)
