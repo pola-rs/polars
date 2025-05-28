@@ -482,20 +482,15 @@ fn create_physical_expr_inner(
             let output_field = expr_arena
                 .get(expression)
                 .to_field(schema, ctxt, expr_arena)?;
+            let non_aggregated_output_field =
+                expr_arena
+                    .get(expression)
+                    .to_field(schema, Context::Default, expr_arena)?;
             let input_field = expr_arena.get(*expr).to_field(schema, ctxt, expr_arena)?;
             let expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
 
-            let dtype = match variant {
-                EvalVariant::List => {
-                    let DataType::List(dtype) = &input_field.dtype else {
-                        unreachable!();
-                    };
-                    dtype.as_ref().clone()
-                },
-                EvalVariant::Cumulative { .. } => input_field.dtype.clone(),
-            };
-
-            let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, dtype)]);
+            let element_dtype = variant.element_dtype(&input_field.dtype)?;
+            let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
             let evaluation = create_physical_expr_inner(
                 *evaluation,
                 Context::Default,
@@ -507,10 +502,11 @@ fn create_physical_expr_inner(
             Ok(Arc::new(EvalExpr::new(
                 expr,
                 evaluation,
-                variant,
+                *variant,
                 node_to_expr(expression, expr_arena),
                 state.allow_threading,
                 output_field,
+                non_aggregated_output_field.dtype,
                 is_scalar,
                 pd_group,
                 evaluation_is_scalar,

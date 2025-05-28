@@ -667,6 +667,16 @@ impl Expr {
 
     /// Cumulatively count values from 0 to len.
     #[cfg(feature = "cum_agg")]
+    pub fn cumulative_eval(self, evaluation: Expr, min_samples: usize) -> Self {
+        Expr::Eval {
+            expr: Arc::new(self),
+            evaluation: Arc::new(evaluation),
+            variant: EvalVariant::Cumulative { min_samples },
+        }
+    }
+
+    /// Cumulatively count values from 0 to len.
+    #[cfg(feature = "cum_agg")]
     pub fn cum_count(self, reverse: bool) -> Self {
         self.map_unary(FunctionExpr::CumCount { reverse })
     }

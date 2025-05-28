@@ -371,17 +371,8 @@ impl AExpr {
             } => {
                 let field = ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?;
 
-                let dtype = match variant {
-                    EvalVariant::List => {
-                        let DataType::List(dtype) = field.dtype else {
-                            polars_bail!(op = "list.eval", field.dtype);
-                        };
-                        *dtype
-                    },
-                    EvalVariant::Cumulative { .. } => field.dtype.clone(),
-                };
-
-                let schema = Schema::from_iter([(PlSmallStr::EMPTY, dtype)]);
+                let element_dtype = variant.element_dtype(field.dtype())?;
+                let schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
 
                 let mut ctx = ToFieldContext {
                     schema: &schema,
@@ -393,7 +384,11 @@ impl AExpr {
                     .arena
                     .get(*evaluation)
                     .to_field_impl(&mut ctx, &mut false)?;
-                output_field.dtype = DataType::List(Box::new(output_field.dtype));
+
+                output_field.dtype = match variant {
+                    EvalVariant::List => DataType::List(Box::new(output_field.dtype)),
+                    EvalVariant::Cumulative { .. } => output_field.dtype,
+                };
                 output_field.name = field.name;
 
                 Ok(output_field)

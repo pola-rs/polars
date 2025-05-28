@@ -210,10 +210,11 @@ pub fn is_input_independent_rec(
         } => input
             .iter()
             .all(|expr| is_input_independent_rec(expr.node(), arena, cache)),
-        AExpr::Eval { expr, evaluation } => {
-            is_input_independent_rec(*expr, arena, cache)
-                && is_input_independent_rec(*evaluation, arena, cache)
-        },
+        AExpr::Eval {
+            expr,
+            evaluation: _,
+            variant: _,
+        } => is_input_independent_rec(*expr, arena, cache),
         AExpr::Window {
             function,
             partition_by,
@@ -753,11 +754,16 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(bin_expr));
             },
-            AExpr::Eval { expr, evaluation } => {
+            AExpr::Eval {
+                expr,
+                evaluation,
+                variant,
+            } => {
                 let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[expr], ctx)?;
                 let eval_expr = AExpr::Eval {
                     expr: trans_expr[0],
                     evaluation,
+                    variant,
                 };
                 input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(eval_expr));

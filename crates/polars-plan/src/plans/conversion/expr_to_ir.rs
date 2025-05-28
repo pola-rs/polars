@@ -356,7 +356,12 @@ pub(super) fn to_aexpr_impl(
                         }
                     }
                 },
-                EvalVariant::Cumulative { .. } => {},
+                EvalVariant::Cumulative { .. } => {
+                    polars_ensure!(
+                        is_scalar_ae(evaluation, arena),
+                        InvalidOperation: "`cumulative_eval` is not allowed with non-scalar output"
+                    )
+                },
             }
 
             AExpr::Eval {
