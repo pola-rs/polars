@@ -619,7 +619,15 @@ impl RenameAliasFn {
             Self::ToUppercase => PlSmallStr::from_string(name.to_uppercase()),
             #[cfg(feature = "python")]
             Self::Python(lambda) => {
-                let out = pyo3::marker::Python::with_gil(|py| lambda.call1(py, (name.as_str(),)));
+                let name = name.as_str();
+                let out = pyo3::marker::Python::with_gil(|py| {
+                    let out: PlSmallStr = lambda
+                        .call1(py, (name,))?
+                        .extract::<std::borrow::Cow<str>>(py)?
+                        .as_ref()
+                        .into();
+                    pyo3::PyResult::<_>::Ok(out)
+                });
                 match out {
                     Ok(out) => format_pl_smallstr!("{}", out),
                     Err(e) => {
