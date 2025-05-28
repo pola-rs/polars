@@ -702,6 +702,7 @@ def test_extra_columns_not_ignored_22218() -> None:
     )
 
 
+@pytest.mark.slow
 def test_all_force_empty_reader_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
     """Runs this whole file with all operations forced to the post-apply pipeline."""
     if os.getenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES") == "1":
