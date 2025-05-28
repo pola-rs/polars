@@ -8,6 +8,7 @@ use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "serde")]
@@ -182,9 +183,8 @@ pub enum Expr {
     /// `Expr::Wildcard`
     /// `Expr::Exclude`
     Selector(super::selector::Selector),
-    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     RenameAlias {
-        function: SpecialEq<Arc<dyn RenameAliasFn>>,
+        function: RenameAliasFn,
         expr: Arc<Expr>,
     },
 }
@@ -595,3 +595,51 @@ impl Operator {
         !(self.is_comparison_or_bitwise())
     }
 }
+
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum RenameAliasFn {
+    Prefix(PlSmallStr),
+    Suffix(PlSmallStr),
+    ToLowercase,
+    ToUppercase,
+    #[cfg(feature = "python")]
+    Python(Arc<polars_utils::python_function::PythonObject>),
+    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+    Rust(SpecialEq<Arc<RenameAliasRustFn>>),
+}
+
+impl RenameAliasFn {
+    pub fn call(&self, name: &PlSmallStr) -> PolarsResult<PlSmallStr> {
+        let out = match self {
+            Self::Prefix(prefix) => format_pl_smallstr!("{prefix}{name}"),
+            Self::Suffix(suffix) => format_pl_smallstr!("{name}{suffix}"),
+            Self::ToLowercase => PlSmallStr::from_string(name.to_lowercase()),
+            Self::ToUppercase => PlSmallStr::from_string(name.to_uppercase()),
+            #[cfg(feature = "python")]
+            Self::Python(lambda) => {
+                let name = name.as_str();
+                let out = pyo3::marker::Python::with_gil(|py| {
+                    let out: PlSmallStr = lambda
+                        .call1(py, (name,))?
+                        .extract::<std::borrow::Cow<str>>(py)?
+                        .as_ref()
+                        .into();
+                    pyo3::PyResult::<_>::Ok(out)
+                });
+                match out {
+                    Ok(out) => format_pl_smallstr!("{}", out),
+                    Err(e) => {
+                        polars_bail!(ComputeError: "Python function in 'name.map' produced an error: {e}.")
+                    },
+                }
+            },
+            Self::Rust(f) => f(name)?,
+        };
+        Ok(out)
+    }
+}
+
+pub type RenameAliasRustFn =
+    dyn Fn(&PlSmallStr) -> PolarsResult<PlSmallStr> + 'static + Send + Sync;
