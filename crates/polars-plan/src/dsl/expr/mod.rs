@@ -361,7 +361,10 @@ impl Hash for Expr {
                 input.hash(state);
                 excl.hash(state);
             },
-            Expr::RenameAlias { function: _, expr } => expr.hash(state),
+            Expr::RenameAlias { function, expr } => {
+                function.hash(state);
+                expr.hash(state);
+            },
             Expr::AnonymousFunction {
                 input,
                 function: _,
@@ -596,7 +599,7 @@ impl Operator {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum RenameAliasFn {
@@ -605,7 +608,7 @@ pub enum RenameAliasFn {
     ToLowercase,
     ToUppercase,
     #[cfg(feature = "python")]
-    Python(Arc<polars_utils::python_function::PythonObject>),
+    Python(SpecialEq<Arc<polars_utils::python_function::PythonObject>>),
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Rust(SpecialEq<Arc<RenameAliasRustFn>>),
 }
@@ -620,20 +623,14 @@ impl RenameAliasFn {
             #[cfg(feature = "python")]
             Self::Python(lambda) => {
                 let name = name.as_str();
-                let out = pyo3::marker::Python::with_gil(|py| {
+                pyo3::marker::Python::with_gil(|py| {
                     let out: PlSmallStr = lambda
                         .call1(py, (name,))?
                         .extract::<std::borrow::Cow<str>>(py)?
                         .as_ref()
                         .into();
                     pyo3::PyResult::<_>::Ok(out)
-                });
-                match out {
-                    Ok(out) => format_pl_smallstr!("{}", out),
-                    Err(e) => {
-                        polars_bail!(ComputeError: "Python function in 'name.map' produced an error: {e}.")
-                    },
-                }
+                }).map_err(|e| polars_err!(ComputeError: "Python function in 'name.map' produced an error: {e}."))?
             },
             Self::Rust(f) => f(name)?,
         };

@@ -88,7 +88,13 @@ impl<T: ?Sized> PartialEq for SpecialEq<Arc<T>> {
     }
 }
 
-impl<T> Eq for SpecialEq<Arc<T>> {}
+impl<T: ?Sized> Eq for SpecialEq<Arc<T>> {}
+
+impl<T: ?Sized> Hash for SpecialEq<Arc<T>> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(self).hash(state);
+    }
+}
 
 impl PartialEq for SpecialEq<Series> {
     fn eq(&self, other: &Self) -> bool {
