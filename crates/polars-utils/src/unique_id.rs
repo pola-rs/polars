@@ -142,7 +142,7 @@ mod tests {
 
         assert_eq!(id, UniqueId::Plain(id.to_usize()));
 
-        // Following code explains the memory layout
+        // Following code shows the memory layout
         let UniqueId::MemoryRef(arc_ref) = &id else {
             unreachable!()
         };
