@@ -59,26 +59,13 @@ fn zfill_fn<'a>(s: Option<&'a str>, len: Option<u64>, buf: &mut String) -> Optio
                 return Some(s);
             }
             buf.clear();
-            let sign = s.chars().next();
-            if sign.is_some() && [Some('-'), Some('+')].contains(&sign) {
-                let sign = sign.unwrap();
-                write!(
-                    buf,
-                    "{sign}{:0length$}{value}",
-                    0,
-                    length = length as usize,
-                    value = &s[1..]
-                )
-                .unwrap();
+            let length = length as usize;
+            if let Some(stripped) = s.strip_prefix('-') {
+                write!(buf, "-{:0length$}{stripped}", 0,).unwrap();
+            } else if let Some(stripped) = s.strip_prefix('+') {
+                write!(buf, "+{:0length$}{stripped}", 0,).unwrap();
             } else {
-                write!(
-                    buf,
-                    "{:0length$}{value}",
-                    0,
-                    length = length as usize,
-                    value = s
-                )
-                .unwrap();
+                write!(buf, "{:0length$}{s}", 0,).unwrap();
             };
             // extend lifetime
             // lifetime is bound to 'a
