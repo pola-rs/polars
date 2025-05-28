@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
-from hypothesis import example, given, reproduce_failure
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 import polars as pl
