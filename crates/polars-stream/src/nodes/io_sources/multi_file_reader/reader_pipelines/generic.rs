@@ -42,7 +42,7 @@ impl MultiScanTaskInitializer {
         predicate: Option<ScanIOPredicate>,
     ) -> PolarsResult<JoinHandle<PolarsResult<()>>> {
         let verbose = self.config.verbose;
-        let reader_capabilities = self.config.file_reader_builder.reader_capabilities();
+        let reader_capabilities = self.config.reader_capabilities();
 
         // Row index should only be pushed if we have a predicate or negative slice as there is a
         // serial synchronization cost.
