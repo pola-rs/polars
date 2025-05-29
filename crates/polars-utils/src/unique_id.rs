@@ -158,8 +158,6 @@ mod tests {
     fn test_unique_id() {
         let id = UniqueId::default();
 
-        eprintln!("{id} {id:?}");
-
         assert!(matches!(id, UniqueId::MemoryRef(_)));
 
         assert_eq!(id, id);
