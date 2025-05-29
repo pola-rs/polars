@@ -153,11 +153,17 @@ impl FileReader for CsvFileReader {
         };
 
         match &pre_slice {
+            Some(Slice::Negative { .. }) => unimplemented!(),
+
             // We don't account for comments when slicing lines. We should never hit this panic -
             // the FileReaderBuilder does not indicate PRE_SLICE support when we have a comment
             // prefix.
-            Some(..) if self.options.parse_options.comment_prefix.is_some() => panic!(),
-            Some(Slice::Negative { .. }) => unimplemented!(),
+            Some(pre_slice)
+                if self.options.parse_options.comment_prefix.is_some() && pre_slice.len() > 0 =>
+            {
+                panic!("{pre_slice:?}")
+            },
+
             _ => {},
         }
 
@@ -680,7 +686,7 @@ impl ChunkReader {
 
         if slice != NO_SLICE {
             assert!(slice != SLICE_ENDED);
-            assert!(n_lines_is_correct);
+            assert!(n_lines_is_correct || slice.1 == 0);
 
             df = df.slice(i64::try_from(slice.0).unwrap(), slice.1);
         }

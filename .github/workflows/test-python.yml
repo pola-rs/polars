@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+  RUSTFLAGS: -C debuginfo=0 # Do not produce debug symbols to keep memory usage down
   RUST_BACKTRACE: 1
   PYTHONUTF8: 1
 
@@ -113,6 +113,13 @@ jobs:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/
+
+      - name: Run tests multiscan force empty capabilities
+        if: github.ref_name != 'main' && matrix.python-version != '3.13t'
+        env:
+          POLARS_FORCE_EMPTY_READER_CAPABILITIES: 1
+          POLARS_TIMEOUT_MS: 60000
+        run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_multiscan.py
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.13' || matrix.python-version == '3.13t')
