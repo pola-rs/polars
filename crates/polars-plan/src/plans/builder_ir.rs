@@ -274,10 +274,63 @@ impl<'a> IRBuilder<'a> {
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
     ) -> Self {
+        // Only optimize if no apply, no dynamic, no rolling
+        let is_plain_groupby = apply.is_none()
+            && options.dynamic.is_none()
+            && options.rolling.is_none();
+        if is_plain_groupby {
+            let (literal_keys, non_literal_keys): (Vec<_>, Vec<_>) = keys.iter().cloned().partition(|k| {
+                matches!(self.expr_arena.get(k.node()), AExpr::Literal(_))
+            });
+            // If all keys are literals, just select the literals and aggs (no group by needed)
+            if non_literal_keys.is_empty() {
+                let mut projection = Vec::with_capacity(keys.len() + aggs.len());
+                projection.extend(keys.clone());
+                projection.extend(aggs.clone());
+                return self.with_columns(projection, ProjectionOptions::default());
+            }
+            // If some keys are literals, group by non-literals, then project all keys (in original order) and aggs
+            if !literal_keys.is_empty() {
+                let current_schema = self.schema();
+                let mut schema = expr_irs_to_schema(&non_literal_keys, &current_schema, Context::Default, self.expr_arena);
+                let agg_schema = expr_irs_to_schema(
+                    &aggs,
+                    &current_schema,
+                    Context::Aggregation,
+                    self.expr_arena,
+                );
+                schema.merge(agg_schema);
+                let lp = IR::GroupBy {
+                    input: self.root,
+                    keys: non_literal_keys.clone(),
+                    aggs: aggs.clone(),
+                    schema: Arc::new(schema),
+                    apply,
+                    maintain_order,
+                    options,
+                };
+                let builder = self.add_alp(lp);
+                let expr_arena = &builder.expr_arena;
+                let mut projection = Vec::with_capacity(keys.len() + aggs.len());
+                for k in &keys {
+                    if !matches!(expr_arena.get(k.node()), AExpr::Literal(_)) {
+                        let name = k.output_name_inner();
+                        let grouped_col = non_literal_keys.iter().find(|nk| nk.output_name_inner() == name).unwrap();
+                        projection.push(grouped_col.clone());
+                    }
+                }
+                for k in &keys {
+                    if matches!(expr_arena.get(k.node()), AExpr::Literal(_)) {
+                        projection.push(k.clone());
+                    }
+                }
+                projection.extend(aggs.clone());
+                return builder.with_columns(projection, ProjectionOptions::default());
+            }
+        }
+        // fallback: original logic
         let current_schema = self.schema();
-        let mut schema =
-            expr_irs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
-
+        let mut schema = expr_irs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
         #[cfg(feature = "dynamic_group_by")]
         {
             if let Some(options) = options.rolling.as_ref() {
@@ -294,7 +347,6 @@ impl<'a> IRBuilder<'a> {
                 schema.with_column(name.clone(), dtype.clone());
             }
         }
-
         let agg_schema = expr_irs_to_schema(
             &aggs,
             &current_schema,
@@ -302,7 +354,6 @@ impl<'a> IRBuilder<'a> {
             self.expr_arena,
         );
         schema.merge(agg_schema);
-
         let lp = IR::GroupBy {
             input: self.root,
             keys,
@@ -371,3 +422,4 @@ impl<'a> IRBuilder<'a> {
         self.add_alp(lp)
     }
 }
+
