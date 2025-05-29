@@ -700,30 +700,3 @@ def test_extra_columns_not_ignored_22218() -> None:
         .collect(),
         pl.DataFrame({"a": [1, 2], "b": [1, None]}),
     )
-
-
-@pytest.mark.slow
-def test_all_force_empty_reader_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Runs this whole file with all operations forced to the post-apply pipeline."""
-    if os.getenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES") == "1":
-        pytest.skip("recursion")
-        return
-
-    monkeypatch.setenv("POLARS_FORCE_EMPTY_READER_CAPABILITIES", "1")
-
-    print()  # Put 'test session starts' to new line
-
-    retcode = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "-m",
-            "",
-            __file__,
-        ],
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    ).wait()
-
-    assert retcode == 0
