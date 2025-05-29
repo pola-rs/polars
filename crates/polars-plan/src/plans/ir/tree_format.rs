@@ -258,11 +258,7 @@ impl<'a> TreeFmtNode<'a> {
                     } => ND(
                         wh(
                             h,
-                            &format!(
-                                "CACHE[id: {:x}, cache_hits: {}]",
-                                id.to_usize(),
-                                *cache_hits
-                            ),
+                            &format!("CACHE[id: {:x}, cache_hits: {}]", id, *cache_hits),
                         ),
                         vec![self.lp_node(None, *input)],
                     ),

@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::fmt::LowerHex;
 use std::sync::Arc;
 
 /// Unique identifier potentially backed by an `Arc` address to protect against collisions.
@@ -16,12 +17,6 @@ pub enum UniqueId {
     ///
     /// Note: This repr may also be constructed as the result of a serialization round-trip.
     Plain(usize),
-}
-
-impl std::fmt::Debug for UniqueId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "UniqueId({})", self.to_usize())
-    }
 }
 
 impl UniqueId {
@@ -101,6 +96,34 @@ impl std::hash::Hash for UniqueId {
     }
 }
 
+impl std::fmt::Display for UniqueId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.to_usize(), f)
+    }
+}
+
+impl std::fmt::Debug for UniqueId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use UniqueId::*;
+
+        write!(
+            f,
+            "UniqueId::{}({})",
+            match self {
+                MemoryRef(_) => "MemoryRef",
+                Plain(_) => "Plain",
+            },
+            self.to_usize()
+        )
+    }
+}
+
+impl LowerHex for UniqueId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        LowerHex::fmt(&self.to_usize(), f)
+    }
+}
+
 #[cfg(feature = "serde")]
 mod _serde_impl {
     use super::UniqueId;
@@ -134,6 +157,8 @@ mod tests {
     #[test]
     fn test_unique_id() {
         let id = UniqueId::default();
+
+        eprintln!("{id} {id:?}");
 
         assert!(matches!(id, UniqueId::MemoryRef(_)));
 
