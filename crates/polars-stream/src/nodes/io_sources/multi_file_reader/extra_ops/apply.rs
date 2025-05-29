@@ -217,15 +217,7 @@ impl ApplyExtraOps {
             unreachable!();
         };
 
-        if let Some(ri) = row_index {
-            unsafe {
-                df.with_column_unchecked(Column::new_row_index(
-                    ri.name.clone(),
-                    ri.offset.saturating_add(current_row_position),
-                    df.height(),
-                )?)
-            };
-        }
+        let mut local_slice_offset: IdxSize = 0;
 
         if let Some(pre_slice) = pre_slice.clone() {
             let Slice::Positive { offset, len } = pre_slice
@@ -235,7 +227,23 @@ impl ApplyExtraOps {
                 unreachable!()
             };
 
+            local_slice_offset = IdxSize::try_from(offset).unwrap_or(IdxSize::MAX);
+
             *df = df.slice(i64::try_from(offset).unwrap(), len)
+        }
+
+        // Note: This branch is hit if we have negative slice or predicate + row index and the reader
+        // does not support them.
+        if let Some(ri) = row_index {
+            unsafe {
+                df.with_column_unchecked(Column::new_row_index(
+                    ri.name.clone(),
+                    ri.offset
+                        .saturating_add(current_row_position)
+                        .saturating_add(local_slice_offset),
+                    df.height(),
+                )?)
+            };
         }
 
         if let Some(cast_columns) = cast_columns {

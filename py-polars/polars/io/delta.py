@@ -342,7 +342,6 @@ def scan_delta(
         msg = "To make use of pyarrow_options, set use_pyarrow to True"
         raise ValueError(msg)
 
-    import pyarrow as pa
     from deltalake.exceptions import DeltaProtocolError
     from deltalake.table import (
         MAX_SUPPORTED_READER_VERSION,
@@ -371,10 +370,8 @@ def scan_delta(
             msg = f"The table has set these reader features: {missing_features} but these are not yet supported by the polars delta scanner."
             raise DeltaProtocolError(msg)
 
-    # Requires conversion through pyarrow table because there is no direct way yet to
-    # convert a delta schema into a polars schema
-    delta_schema = dl_tbl.schema().to_pyarrow(as_large_types=True)
-    polars_schema = from_arrow(pa.Table.from_pylist([], delta_schema)).schema  # type: ignore[union-attr]
+    delta_schema = dl_tbl.schema().to_arrow()
+    polars_schema = from_arrow(delta_schema.empty_table()).schema  # type: ignore[union-attr]
     partition_columns = dl_tbl.metadata().partition_columns
 
     def _split_schema(

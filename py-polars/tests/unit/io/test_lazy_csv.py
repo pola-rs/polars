@@ -491,3 +491,13 @@ a,b,c
             schema=schema,
         ),
     )
+
+
+def test_csv_negative_slice_comment_char_22996() -> None:
+    f = b"""\
+a,b
+1,1
+"""
+
+    q = pl.scan_csv(2 * [f], comment_prefix="#").tail(100)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 1], "b": [1, 1]}))
