@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
-import subprocess
-import sys
 from typing import IO, TYPE_CHECKING, Any, Callable
 
 import pyarrow.parquet as pq
