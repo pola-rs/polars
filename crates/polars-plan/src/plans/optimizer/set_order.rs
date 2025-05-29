@@ -3,7 +3,7 @@ use polars_utils::unitvec;
 use super::*;
 
 // Can give false positives.
-fn is_order_dependent_top_level(ae: &AExpr, ctx: Context) -> bool {
+fn is_order_dependent_top_level(ae: &AExpr, _ctx: Context) -> bool {
     match ae {
         AExpr::Agg(agg) => match agg {
             IRAggExpr::Min { .. } => false,
@@ -21,25 +21,26 @@ fn is_order_dependent_top_level(ae: &AExpr, ctx: Context) -> bool {
             IRAggExpr::Var(_, _) => false,
             IRAggExpr::AggGroups(_) => true,
         },
-        AExpr::Column(_) => matches!(ctx, Context::Aggregation),
+        AExpr::Column(_) => false, //For review - does Aggregation Context matter?
         _ => true,
     }
 }
 
+// Check if the given node, or, recursively, any of its input nodes in its input
+// dependency tree contains an order_dependent operation.
+// Return true if an order_dependent node is found.
 // Can give false positives.
-fn is_order_dependent<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>, ctx: Context) -> bool {
+fn is_order_dependent_rec(node: Node, expr_arena: &Arena<AExpr>, ctx: Context) -> bool {
     let mut stack = unitvec![];
+    stack.push(node);
 
-    loop {
-        if is_order_dependent_top_level(ae, ctx) {
+    while let Some(node) = stack.pop() {
+        if is_order_dependent_top_level(expr_arena.get(node), ctx) {
             return true;
         }
 
-        let Some(node) = stack.pop() else {
-            break;
-        };
-
-        ae = expr_arena.get(node);
+        let ae = expr_arena.get(node);
+        ae.inputs_rev(&mut stack);
     }
 
     false
@@ -56,7 +57,7 @@ where
 {
     !nodes
         .iter()
-        .any(|n| is_order_dependent(expr_arena.get(n.into()), expr_arena, ctx))
+        .any(|n| is_order_dependent_rec(n.into(), expr_arena, ctx))
 }
 
 // Should run before slice pushdown.
