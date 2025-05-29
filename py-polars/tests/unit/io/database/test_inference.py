@@ -117,11 +117,11 @@ def test_infer_schema_length(tmp_sqlite_inference_db: Path) -> None:
         assert df.schema == {"name": pl.String, "value": pl.Float64}
 
     with pytest.raises(
-            ComputeError,
-            match='could not append value: "foo" of type: str.*`infer_schema_length`',
-        ):
-            pl.read_database(
-                connection=conn,
-                query="SELECT * FROM test_data",
-                infer_schema_length=1,
-            )
+        ComputeError,
+        match='could not append value: "foo" of type: str.*`infer_schema_length`',
+    ):
+        pl.read_database(
+            connection=conn,
+            query="SELECT * FROM test_data",
+            infer_schema_length=1,
+        )
