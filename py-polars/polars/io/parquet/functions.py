@@ -629,7 +629,7 @@ def scan_parquet(
             rechunk=rechunk,
             cache=cache,
             storage_options=(
-                [*storage_options.items()] if storage_options is not None else None
+                list(storage_options.items()) if storage_options is not None else None
             ),
             credential_provider=credential_provider_builder,
             retries=retries,
