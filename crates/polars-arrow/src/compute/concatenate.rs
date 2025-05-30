@@ -316,12 +316,13 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
                                 unprocessed_buffer_len.min(u32::MAX as usize),
                             ));
                         }
-                        view.offset = new_buffers.last().unwrap_unchecked().len() as u32;
-                        view.buffer_idx = new_buffers.len() as u32 - 1;
+                        let new_offset = new_buffers.last().unwrap_unchecked().len() as u32;
                         new_buffers
                             .last_mut()
                             .unwrap_unchecked()
                             .extend_from_slice(view.get_slice_unchecked(buffers));
+                        view.offset = new_offset;
+                        view.buffer_idx = new_buffers.len() as u32 - 1;
                         unprocessed_buffer_len -= view.length as usize;
                     }
                     views.push_unchecked(view);
