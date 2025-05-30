@@ -4,6 +4,7 @@ use polars_expr::state::ExecutionState;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::format_pl_smallstr;
+use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
 use self::expr_ir::OutputName;
@@ -208,7 +209,7 @@ fn create_physical_plan_impl(
     expr_arena: &mut Arena<AExpr>,
     state: &mut ConversionState,
     // Cache nodes in order of discovery
-    cache_nodes: &mut PlIndexMap<usize, Box<executors::CacheExec>>,
+    cache_nodes: &mut PlIndexMap<UniqueId, Box<executors::CacheExec>>,
     build_streaming_executor: Option<StreamingExecutorBuilder>,
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
@@ -501,8 +502,6 @@ fn create_physical_plan_impl(
                     state.has_cache_parent = true;
                     state.has_cache_child = true;
 
-                    let scan_mem_id: usize = scan_mem_id.to_usize();
-
                     if !cache_nodes.contains_key(&scan_mem_id) {
                         let build_func = build_streaming_executor
                             .expect("invalid build. Missing feature new-streaming");
@@ -510,10 +509,10 @@ fn create_physical_plan_impl(
                         let executor = build_func(root, lp_arena, expr_arena)?;
 
                         cache_nodes.insert(
-                            scan_mem_id,
+                            scan_mem_id.clone(),
                             Box::new(executors::CacheExec {
                                 input: Some(executor),
-                                id: scan_mem_id,
+                                id: scan_mem_id.clone(),
                                 // This is (n_hits - 1), because the drop logic is `fetch_sub(1) == 0`.
                                 count: 0,
                                 is_new_streaming_scan: true,
@@ -615,13 +614,13 @@ fn create_physical_plan_impl(
                 let input = recurse!(input, state)?;
 
                 let cache = Box::new(executors::CacheExec {
-                    id,
+                    id: id.clone(),
                     input: Some(input),
                     count: cache_hits,
                     is_new_streaming_scan: false,
                 });
 
-                cache_nodes.insert(id, cache);
+                cache_nodes.insert(id.clone(), cache);
             }
 
             Ok(Box::new(executors::CacheExec {

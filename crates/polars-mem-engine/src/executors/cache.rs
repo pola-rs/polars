@@ -2,12 +2,13 @@ use std::sync::atomic::Ordering;
 
 #[cfg(feature = "async")]
 use polars_io::pl_async;
+use polars_utils::unique_id::UniqueId;
 
 use super::*;
 
 pub struct CacheExec {
     pub input: Option<Box<dyn Executor>>,
-    pub id: usize,
+    pub id: UniqueId,
     /// `(cache_hits_before_drop - 1)`
     pub count: u32,
     pub is_new_streaming_scan: bool,
@@ -19,16 +20,16 @@ impl Executor for CacheExec {
             // Cache node
             None => {
                 if state.verbose() {
-                    eprintln!("CACHE HIT: cache id: {:x}", self.id);
+                    eprintln!("CACHE HIT: cache id: {:?}", self.id);
                 }
-                let cache = state.get_df_cache(self.id, self.count);
+                let cache = state.get_df_cache(&self.id, self.count);
                 let out = cache.1.get().expect("prefilled").clone();
                 let previous = cache.0.fetch_sub(1, Ordering::Relaxed);
                 if previous == 0 {
                     if state.verbose() {
-                        eprintln!("CACHE DROP: cache id: {:x}", self.id);
+                        eprintln!("CACHE DROP: cache id: {:?}", self.id);
                     }
-                    state.remove_df_cache(self.id);
+                    state.remove_df_cache(&self.id);
                 }
 
                 Ok(out)
@@ -36,10 +37,10 @@ impl Executor for CacheExec {
             // Cache Prefill node
             Some(input) => {
                 if state.verbose() {
-                    eprintln!("CACHE SET: cache id: {:x}", self.id);
+                    eprintln!("CACHE SET: cache id: {:?}", self.id);
                 }
                 let df = input.execute(state)?;
-                let cache = state.get_df_cache(self.id, self.count);
+                let cache = state.get_df_cache(&self.id, self.count);
                 cache.1.set(df).expect("should be empty");
                 Ok(DataFrame::empty())
             },
@@ -48,7 +49,7 @@ impl Executor for CacheExec {
 }
 
 pub struct CachePrefiller {
-    pub caches: PlIndexMap<usize, Box<CacheExec>>,
+    pub caches: PlIndexMap<UniqueId, Box<CacheExec>>,
     pub phys_plan: Box<dyn Executor>,
 }
 

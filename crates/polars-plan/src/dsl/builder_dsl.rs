@@ -128,8 +128,7 @@ impl DslBuilder {
 
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
-        let id = input.as_ref() as *const DslPlan as usize;
-        DslPlan::Cache { input, id }.into()
+        DslPlan::Cache { input }.into()
     }
 
     pub fn drop(self, to_drop: Vec<Selector>, strict: bool) -> Self {

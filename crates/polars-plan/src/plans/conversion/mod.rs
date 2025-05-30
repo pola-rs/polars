@@ -175,8 +175,10 @@ impl IR {
                 id,
                 cache_hits: _,
             } => {
-                let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::Cache { input, id }
+                let input: Arc<DslPlan> = id
+                    .downcast_arc()
+                    .unwrap_or_else(|| Arc::new(convert_to_lp(input, lp_arena)));
+                DslPlan::Cache { input }
             },
             IR::GroupBy {
                 input,

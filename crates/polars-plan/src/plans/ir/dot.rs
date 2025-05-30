@@ -110,7 +110,7 @@ impl<'a> IRDotDisplay<'a> {
         let parent = parent;
 
         let id = if let IR::Cache { id, .. } = root {
-            DotNode::Cache(*id)
+            DotNode::Cache(id.to_usize())
         } else {
             *last += 1;
             DotNode::Plain(*last)

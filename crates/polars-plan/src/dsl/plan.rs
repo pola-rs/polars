@@ -48,7 +48,7 @@ use super::*;
 // - changing a name, type, or meaning of a field or an enum variant
 // - changing a default value of a field or a default enum variant
 // - restricting the range of allowed values a field can have
-pub static DSL_VERSION: (u16, u16) = (8, 2);
+pub static DSL_VERSION: (u16, u16) = (9, 0);
 static DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -66,7 +66,6 @@ pub enum DslPlan {
     /// Cache the input at this point in the LP
     Cache {
         input: Arc<DslPlan>,
-        id: usize,
     },
     Scan {
         sources: ScanSources,
@@ -202,7 +201,7 @@ impl Clone for DslPlan {
             #[cfg(feature = "python")]
             Self::PythonScan { options } => Self::PythonScan { options: options.clone() },
             Self::Filter { input, predicate } => Self::Filter { input: input.clone(), predicate: predicate.clone() },
-            Self::Cache { input, id } => Self::Cache { input: input.clone(), id: id.clone() },
+            Self::Cache { input } => Self::Cache { input: input.clone() },
             Self::Scan { sources, file_info, unified_scan_args, scan_type, cached_ir } => Self::Scan { sources: sources.clone(), file_info: file_info.clone(), unified_scan_args: unified_scan_args.clone(), scan_type: scan_type.clone(), cached_ir: cached_ir.clone() },
             Self::DataFrameScan { df, schema, } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(),  },
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },

@@ -70,8 +70,7 @@ pub enum IR {
         /// We use this instead of the Arc-address of the ScanSources as it's possible to pass the
         /// same set of ScanSources with different scan options.
         ///
-        /// NOTE: This must be reset to a new Arc during e.g. predicate / slice pushdown.
-        #[cfg_attr(feature = "ir_serde", serde(skip))]
+        /// NOTE: This must be reset to a new ID during e.g. predicate / slice pushdown.
         id: UniqueId,
     },
     DataFrameScan {
@@ -102,8 +101,8 @@ pub enum IR {
     },
     Cache {
         input: Node,
-        // Unique ID.
-        id: usize,
+        /// This holds the `Arc<DslPlan>` to guarantee uniqueness.
+        id: UniqueId,
         /// How many hits the cache must be saved in memory.
         cache_hits: u32,
     },

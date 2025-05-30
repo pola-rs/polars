@@ -4,6 +4,7 @@ use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_utils::format_list_truncated;
 use polars_utils::slice_enum::Slice;
+use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
 use self::ir::dot::ScanSourcesDisplay;
@@ -73,7 +74,7 @@ fn write_scan(
     predicate: &Option<ExprIRDisplay<'_>>,
     pre_slice: Option<Slice>,
     row_index: Option<&RowIndex>,
-    scan_mem_id: Option<usize>,
+    scan_mem_id: Option<&UniqueId>,
 ) -> fmt::Result {
     write!(
         f,
@@ -735,7 +736,7 @@ pub fn write_ir_non_recursive(
                 &predicate,
                 unified_scan_args.pre_slice.clone(),
                 unified_scan_args.row_index.as_ref(),
-                Some(scan_mem_id.to_usize()),
+                Some(scan_mem_id),
             )
         },
         IR::DataFrameScan {
@@ -806,7 +807,7 @@ pub fn write_ir_non_recursive(
         } => write!(
             f,
             "{:indent$}CACHE[id: {:x}, cache_hits: {}]",
-            "", *id, *cache_hits
+            "", id, *cache_hits
         ),
         IR::GroupBy {
             input: _,
