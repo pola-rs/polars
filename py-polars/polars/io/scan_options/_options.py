@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 
 # TODO: Add `kw_only=True` after 3.9 support dropped
-@dataclass()
+@dataclass
 class ScanOptions:
     """
     Holds scan options that are generic over scan type.
