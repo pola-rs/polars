@@ -5,7 +5,6 @@ use polars::prelude::{
     CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, PlSmallStr, Schema,
     UnifiedScanArgs,
 };
-use polars_io::cloud::credential_provider::PlCredentialProvider;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
@@ -72,11 +71,13 @@ impl PyScanOptions<'_> {
         let cloud_options = if let Some(first_path) = first_path {
             #[cfg(feature = "cloud")]
             {
+                use polars_io::cloud::credential_provider::PlCredentialProvider;
+
+                use crate::prelude::parse_cloud_options;
+
                 let first_path_url = first_path.to_string_lossy();
-                let cloud_options = crate::prelude::parse_cloud_options(
-                    &first_path_url,
-                    cloud_options.unwrap_or_default(),
-                )?;
+                let cloud_options =
+                    parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
 
                 Some(
                     cloud_options
