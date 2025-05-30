@@ -17,10 +17,10 @@ use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedStr;
+use pyo3::sync::GILOnceCell;
 use pyo3::types::{
-    PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PySequence, PyString, PyTuple,
-    PyType,
+    PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList, PyMapping,
+    PyRange, PySequence, PyString, PyTime, PyTuple, PyType, PyTzInfo,
 };
 use pyo3::{IntoPyObjectExt, PyTypeCheck, intern};
 
@@ -269,15 +269,15 @@ pub(crate) fn py_object_to_any_value(
         let (ob, tzinfo) = if let Some(tz) = tzinfo
             .getattr(intern!(py, "zone"))
             .ok()
-            .and_then(|zone| zone.extract::<PyBackedStr>().ok()?.parse::<Tz>().ok())
+            .and_then(|tz| (!tz.is_none()).then_some(tz))
         {
-            let tzinfo = tz.into_pyobject(py)?;
+            let tzinfo = PyTzInfo::timezone(py, tz.downcast_into::<PyString>()?)?;
             (
                 &ob.call_method(intern!(py, "astimezone"), (&tzinfo,), None)?,
                 tzinfo,
             )
         } else {
-            (ob, tzinfo)
+            (ob, tzinfo.downcast_into()?)
         };
 
         let (timestamp, tz) = if tzinfo.hasattr(intern!(py, "key"))? {
@@ -518,51 +518,36 @@ pub(crate) fn py_object_to_any_value(
             Ok(get_struct)
         } else if PyMapping::type_check(ob) {
             Ok(get_mapping)
+        }
+        // datetime must be checked before date because
+        // Python datetime is an instance of date.
+        else if PyDateTime::type_check(ob) {
+            Ok(get_datetime as InitFn)
+        } else if PyDate::type_check(ob) {
+            Ok(get_date as InitFn)
+        } else if PyTime::type_check(ob) {
+            Ok(get_time as InitFn)
+        } else if PyDelta::type_check(ob) {
+            Ok(get_timedelta as InitFn)
+        } else if ob.is_instance_of::<PyRange>() {
+            Ok(get_list as InitFn)
         } else {
-            let ob_type = ob.get_type();
-            let type_name = ob_type.fully_qualified_name()?.to_string();
-            match type_name.as_str() {
-                // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
-                // so need this workaround instead of `isinstance(ob, datetime)`.
-                "datetime.date" => Ok(get_date as InitFn),
-                "datetime.time" => Ok(get_time as InitFn),
-                "datetime.datetime" => Ok(get_datetime as InitFn),
-                "datetime.timedelta" => Ok(get_timedelta as InitFn),
-                "decimal.Decimal" => Ok(get_decimal as InitFn),
-                "range" => Ok(get_list as InitFn),
-                _ => {
-                    // Support NumPy scalars.
-                    if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
-                        return Ok(get_int as InitFn);
-                    } else if ob.extract::<f64>().is_ok() {
-                        return Ok(get_float as InitFn);
-                    }
+            static DECIMAL_TYPE: GILOnceCell<Py<PyType>> = GILOnceCell::new();
+            if ob.is_instance(DECIMAL_TYPE.import(py, "decimal", "Decimal")?)? {
+                return Ok(get_decimal as InitFn);
+            }
 
-                    // Support custom subclasses of datetime/date.
-                    let ancestors = ob_type.getattr(intern!(py, "__mro__"))?;
-                    let ancestors_str_iter = ancestors
-                        .try_iter()?
-                        .map(|b| b.unwrap().str().unwrap().to_string());
-                    for c in ancestors_str_iter {
-                        match &*c {
-                            // datetime must be checked before date because
-                            // Python datetime is an instance of date.
-                            "<class 'datetime.datetime'>" => {
-                                return Ok(get_datetime as InitFn);
-                            },
-                            "<class 'datetime.date'>" => return Ok(get_date as InitFn),
-                            "<class 'datetime.timedelta'>" => return Ok(get_timedelta as InitFn),
-                            "<class 'datetime.time'>" => return Ok(get_time as InitFn),
-                            _ => (),
-                        }
-                    }
+            // Support NumPy scalars.
+            if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
+                return Ok(get_int as InitFn);
+            } else if ob.extract::<f64>().is_ok() {
+                return Ok(get_float as InitFn);
+            }
 
-                    if allow_object {
-                        Ok(get_object as InitFn)
-                    } else {
-                        Err(PyValueError::new_err(format!("Cannot convert {ob}")))
-                    }
-                },
+            if allow_object {
+                Ok(get_object as InitFn)
+            } else {
+                Err(PyValueError::new_err(format!("Cannot convert {ob}")))
             }
         }
     }
