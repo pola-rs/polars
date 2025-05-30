@@ -22,7 +22,7 @@ class ScanOptions:
     row_index: tuple[str, int] | None = None
     # (i64, usize)
     pre_slice: tuple[int, int] | None = None
-    cast_options: ScanCastOptions | None
+    cast_options: ScanCastOptions | None = None
     extra_columns: Literal["ignore", "raise"] = "raise"
     missing_columns: Literal["insert", "raise"] = "raise"
     include_file_paths: str | None = None
