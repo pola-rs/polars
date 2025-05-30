@@ -63,7 +63,7 @@ impl CategoricalMapping {
                 |k| k == s,
                 |k| {
                     let old_upper_bound = self.upper_bound.fetch_add(1, Ordering::Relaxed);
-                    if old_upper_bound + 1 >= self.max_categories {
+                    if old_upper_bound + 1 > self.max_categories {
                         self.upper_bound.fetch_sub(1, Ordering::Relaxed);
                         polars_bail!(ComputeError: "attempted to insert more categories than the maximum allowed");
                     }
