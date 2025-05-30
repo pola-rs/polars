@@ -1019,7 +1019,7 @@ pub(crate) mod test {
             &[Some("foo"), None, Some("bar"), Some("ham")],
         );
         let ca = ca
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
         let ca = ca.categorical().unwrap();
         let v: Vec<_> = ca.physical().into_iter().collect();

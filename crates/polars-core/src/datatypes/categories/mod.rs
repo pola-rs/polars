@@ -1,4 +1,6 @@
+use std::fmt::{self, Debug};
 use std::hash::{BuildHasher, Hasher};
+use std::str::FromStr;
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 
 use arrow::array::builder::StaticArrayBuilder;
@@ -17,6 +19,8 @@ pub use mapping::CategoricalMapping;
 
 /// The physical datatype backing a categorical / enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum CategoricalPhysical {
     U8,
     U16,
@@ -39,6 +43,23 @@ impl CategoricalPhysical {
             CategoricalPhysical::U8 => u8::MAX as usize,
             CategoricalPhysical::U16 => u16::MAX as usize,
             CategoricalPhysical::U32 => u32::MAX as usize,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CategoricalPhysical::U8 => "u8",
+            CategoricalPhysical::U16 => "u16",
+            CategoricalPhysical::U32 => "u32",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "u8" => Some(CategoricalPhysical::U8),
+            "u16" => Some(CategoricalPhysical::U16),
+            "u32" => Some(CategoricalPhysical::U32),
+            _ => None,
         }
     }
 }
@@ -157,6 +178,22 @@ impl Categories {
     pub fn name(&self) -> &PlSmallStr {
         &self.name
     }
+    
+    /// The physical dtype of the category ids.
+    pub fn physical(&self) -> CategoricalPhysical {
+        self.physical
+    }
+    
+    /// Whether or not this Categories object automatically wipes the CategoricalMapping
+    /// when the last reference to it is dropped.
+    pub fn gc(&self) -> bool {
+        matches!(self.mapping, MaybeGcMapping::Gc(_))
+    }
+
+    /// The uuid of this Categories object (unique).
+    pub fn uuid(&self) -> &Uuid {
+        &self.uuid
+    }
 
     /// The mapping for this Categories object. If no mapping currently exists
     /// it creates a new empty mapping.
@@ -178,7 +215,17 @@ impl Categories {
     pub fn freeze(&self, physical: CategoricalPhysical) -> Arc<FrozenCategories> {
         let mapping = self.mapping();
         let n = mapping.num_cats_upper_bound();
-        FrozenCategories::new(physical, (0..n).flat_map(|i| mapping.cat_to_str(i as u32))).unwrap()
+        FrozenCategories::new(physical, (0..n).flat_map(|i| mapping.cat_to_str(i as CatSize))).unwrap()
+    }
+}
+
+impl Debug for Categories {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Categories")
+            .field("name", &self.name)
+            .field("physical", &self.physical)
+            .field("uuid", &self.uuid)
+            .finish()
     }
 }
 
@@ -256,10 +303,30 @@ impl FrozenCategories {
             },
         }
     }
+    
+    /// The categories contained in this FrozenCategories object.
+    pub fn categories(&self) -> &Utf8ViewArray {
+        &self.categories
+    }
+
+    /// The physical dtype of the category ids.
+    pub fn physical(&self) -> CategoricalPhysical {
+        self.physical
+    }
 
     /// The mapping for this FrozenCategories object.
     pub fn mapping(&self) -> &Arc<CategoricalMapping> {
         &self.mapping
+    }
+}
+
+
+impl Debug for FrozenCategories {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FrozenCategories")
+            .field("physical", &self.physical)
+            .field("categories", &self.categories)
+            .finish()
     }
 }
 
@@ -272,4 +339,31 @@ impl Drop for FrozenCategories {
             entry.remove();
         }
     }
+}
+
+
+pub fn ensure_same_categories(left: &Arc<Categories>, right: &Arc<Categories>) -> PolarsResult<()> {
+    if Arc::ptr_eq(left, right) {
+        return Ok(());
+    }
+    
+    if left.name == right.name {
+        polars_bail!(ComputeError: r#"Categories mismatch between two different Categories with the same name.
+
+Two pl.Categories are equal if they are indeed the same object, simply sharing a name is not sufficient."#)
+    } else {
+        polars_bail!(ComputeError: "Categories mismatch, left: '{}', right: '{}'.
+
+Operations mixing different Categories are often not supported, you may have to cast.", left.name(), right.name())
+    }
+}
+
+pub fn ensure_same_frozen_categories(left: &Arc<FrozenCategories>, right: &Arc<FrozenCategories>) -> PolarsResult<()> {
+    if Arc::ptr_eq(left, right) {
+        return Ok(());
+    }
+    
+    polars_bail!(ComputeError: r#"Enum mismatch.
+
+Operations mixing different Enums are often not supported, you may have to cast."#)
 }
