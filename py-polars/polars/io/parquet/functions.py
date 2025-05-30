@@ -616,7 +616,11 @@ def scan_parquet(
         sources=sources,
         schema=schema,
         scan_options=ScanOptions(
-            row_index=(row_index_name, row_index_offset) if row_index_name else None,
+            row_index=(
+                (row_index_name, row_index_offset)
+                if row_index_name is not None
+                else None
+            ),
             pre_slice=(0, n_rows) if n_rows is not None else None,
             cast_options=cast_options,
             extra_columns=extra_columns,
