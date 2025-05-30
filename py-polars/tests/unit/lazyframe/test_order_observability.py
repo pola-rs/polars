@@ -15,6 +15,12 @@ def test_order_observability() -> None:
     assert "SORT" in q.group_by("a").last().explain(optimizations=opts)
     assert "SORT" in q.group_by("a").first().explain(optimizations=opts)
 
+    # (sort on column: keys) -- missed optimization opportunity for now
+    # assert "SORT" not in q.group_by("a").agg(pl.col("b")).explain(optimizations=opts)
+
+    # (sort on columns: agg) -- sort cannot be dropped
+    assert "SORT" in q.group_by("b").agg(pl.col("a")).explain(optimizations=opts)
+
 
 def test_order_observability_group_by_dynamic() -> None:
     assert (
@@ -55,6 +61,27 @@ def test_double_sort_maintain_order_18558() -> None:
     )
 
     assert_frame_equal(lf.collect(), expect)
+
+
+def test_sort_on_agg_maintain_order() -> None:
+    lf = pl.DataFrame(
+        {
+            "grp": [10, 10, 10, 30, 30, 30, 20, 20, 20],
+            "val": [1, 33, 2, 7, 99, 8, 4, 66, 5],
+        }
+    ).lazy()
+    opts = pl.QueryOptFlags(check_order_observe=True)
+
+    out = lf.sort(pl.col("val")).group_by("grp").agg(pl.col("val"))
+    assert "SORT" in out.explain(optimizations=opts)
+
+    expected = pl.DataFrame(
+        {
+            "grp": [10, 20, 30],
+            "val": [[1, 2, 33], [4, 5, 66], [7, 8, 99]],
+        }
+    )
+    assert_frame_equal(out.collect(optimizations=opts).sort("grp"), expected)
 
 
 @pytest.mark.parametrize(
