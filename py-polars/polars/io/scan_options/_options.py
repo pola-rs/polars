@@ -10,10 +10,9 @@ if TYPE_CHECKING:
 
 from dataclasses import dataclass
 
-decorator = dataclass(kw_only=True) if sys.version_info >= (3, 10) else dataclass()
 
-
-@decorator
+# TODO: Add `kw_only=True` after 3.9 support dropped
+@dataclass()
 class ScanOptions:
     """
     Holds scan options that are generic over scan type.
