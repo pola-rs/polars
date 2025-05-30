@@ -299,14 +299,16 @@ impl PySeries {
         py.enter_polars_series(|| self.series.zip_with(mask, &other.series))
     }
 
-    #[pyo3(signature = (separator, drop_first=false))]
+    #[pyo3(signature = (separator, drop_first=false, output_type=None))]
     fn to_dummies(
         &self,
         py: Python<'_>,
         separator: Option<&str>,
         drop_first: bool,
+        output_type: Option<Wrap<DataType>>,
     ) -> PyResult<PyDataFrame> {
-        py.enter_polars_df(|| self.series.to_dummies(separator, drop_first))
+        let output_type = output_type.map(|dt| dt.0);
+        py.enter_polars_df(|| self.series.to_dummies(separator, drop_first, &output_type))
     }
 
     fn get_list(&self, index: usize) -> Option<Self> {
