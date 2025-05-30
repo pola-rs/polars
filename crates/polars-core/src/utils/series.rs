@@ -69,7 +69,7 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
             - using `str.strptime`, `str.to_date`, or `str.to_datetime` and providing a format string"
         },
         #[cfg(feature = "dtype-categorical")]
-        (DataType::String, DataType::Enum(_, _)) => {
+        (DataType::String, DataType::NewEnum(_, _)) => {
             "\n\nEnsure that all values in the input column are present in the categories of the enum datatype."
         },
         _ if failures.len() < num_failures => {
