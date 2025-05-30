@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SyncOnCloseType"],"fn":["sync_on_close","tokio_sync_on_close"]};

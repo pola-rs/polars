@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["RevMapping"],"fn":["call_categorical_merge_operation","make_rhs_categoricals_compatible","make_rhs_list_categoricals_compatible"],"mod":["revmap","string_cache"],"struct":["CatIter","CategoricalChunked","CategoricalChunkedBuilder","GlobalRevMapMerger"],"trait":["CategoricalMergeOperation"]};

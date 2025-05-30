@@ -1,0 +1,40 @@
+﻿polars.QueryOptFlags
+====================
+
+.. currentmodule:: polars
+
+.. autoclass:: QueryOptFlags
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~QueryOptFlags.__init__
+      ~QueryOptFlags.no_optimizations
+      ~QueryOptFlags.none
+      ~QueryOptFlags.update
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~QueryOptFlags.check_order_observe
+      ~QueryOptFlags.cluster_with_columns
+      ~QueryOptFlags.collapse_joins
+      ~QueryOptFlags.comm_subexpr_elim
+      ~QueryOptFlags.comm_subplan_elim
+      ~QueryOptFlags.fast_projection
+      ~QueryOptFlags.predicate_pushdown
+      ~QueryOptFlags.projection_pushdown
+      ~QueryOptFlags.simplify_expression
+      ~QueryOptFlags.slice_pushdown
+   
+   

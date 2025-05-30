@@ -1,0 +1,6 @@
+﻿polars.Series.sinh
+==================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.sinh
