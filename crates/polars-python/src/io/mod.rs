@@ -108,6 +108,8 @@ impl PyScanOptions<'_> {
         };
 
         let unified_scan_args = UnifiedScanArgs {
+            // Schema is currently still stored inside the options per scan type, but we do eventually
+            // want to put it here instead.
             schema: None,
             cloud_options,
             hive_options,
