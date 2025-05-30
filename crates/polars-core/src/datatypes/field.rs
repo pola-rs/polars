@@ -1,5 +1,8 @@
 use arrow::datatypes::{DTYPE_ENUM_VALUES, Metadata};
 use polars_utils::pl_str::PlSmallStr;
+use uuid::Uuid;
+
+use crate::datatypes::categories::CategoricalPhysical;
 
 use super::*;
 pub static EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
@@ -178,42 +181,57 @@ impl DataType {
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
+
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(_, value_type, _) => {
-                if md.map(|md| md.is_enum()).unwrap_or(false) {
-                    let md = md.unwrap();
-                    let encoded = md.get(DTYPE_ENUM_VALUES).unwrap();
-                    let mut encoded = encoded.as_str();
-                    let mut cats = MutableBinaryViewArray::<str>::new();
+                // The metadata encoding here must match DataType::to_arrow_field.
+                if let Some(mut enum_md) = md.and_then(|md| md.pl_enum_metadata()) {
+                    // phys;(cat_len;cat)*
+                    let phys;
+                    (phys, enum_md) = enum_md.split_once(';').unwrap();
+                    let physical = CategoricalPhysical::from_str(phys).unwrap();
+                    
+                    let cats = move || {
+                        if enum_md.is_empty() {
+                            return None;
+                        }
 
-                    // Data is encoded as <len in ascii><sep ';'><payload>
-                    // We know thus that len is only [0-9] and the first ';' doesn't belong to the
-                    // payload.
-                    while let Some(pos) = encoded.find(';') {
-                        let (len, remainder) = encoded.split_at(pos);
-                        // Split off ';'
-                        encoded = &remainder[1..];
+                        let len;
+                        (len, enum_md) = enum_md.split_once(';').unwrap();
                         let len = len.parse::<usize>().unwrap();
+                        let cat;
+                        (cat, enum_md) = enum_md.split_at(len);
+                        Some(cat)
+                    };
 
-                        let (value, remainder) = encoded.split_at(len);
-                        cats.push_value(value);
-                        encoded = remainder;
-                    }
-                    DataType::Enum(
-                        Some(Arc::new(RevMapping::build_local(cats.into()))),
-                        Default::default(),
-                    )
-                } else if let Some(ordering) = md.and_then(|md| md.categorical()) {
-                    DataType::Categorical(None, ordering)
+                    let fcats = FrozenCategories::new(physical, std::iter::from_fn(cats)).unwrap();
+                    DataType::from_frozen_categories(fcats)
+                } else if let Some(mut cat_md) = md.and_then(|md| md.pl_categorical_metadata()) {
+                    // phys;uuid;gc;name
+                    let (phys, uuid, gc, name);
+                    (phys, cat_md) = cat_md.split_once(';').unwrap();
+                    (uuid, cat_md) = cat_md.split_once(';').unwrap();
+                    (gc, name) = cat_md.split_once(';').unwrap();
+                    let physical = CategoricalPhysical::from_str(phys).unwrap();
+                    let uuid: Uuid = uuid.parse().unwrap();
+                    let gc = match gc {
+                        "0" => false,
+                        "1" => true,
+                        _ => unreachable!(),
+                    };
+                    
+                    let cats = Categories::from_uuid(PlSmallStr::from_str(name), physical, gc, uuid);
+                    DataType::from_categories(cats)
                 } else if matches!(
                     value_type.as_ref(),
                     ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View
                 ) {
-                    DataType::Categorical(None, Default::default())
+                    DataType::from_categories(Categories::global())
                 } else {
                     Self::from_arrow(value_type, None)
                 }
             },
+            
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(fields) => {
                 DataType::Struct(fields.iter().map(|fld| fld.into()).collect())

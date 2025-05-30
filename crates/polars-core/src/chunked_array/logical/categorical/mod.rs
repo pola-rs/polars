@@ -596,3 +596,7 @@ mod test {
         Ok(())
     }
 }
+
+
+
+pub type NewCategoricalChunked<T> = Logical<T, <T as PolarsCategoricalKind>::PolarsPhysical>;
