@@ -72,18 +72,14 @@ pub enum AnyValue<'a> {
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     #[cfg(feature = "dtype-time")]
     Time(i64),
-    // If syncptr is_null the data is in the rev-map
-    // otherwise it is in the array pointer
     #[cfg(feature = "dtype-categorical")]
-    Categorical(u32, &'a RevMapping, SyncPtr<Utf8ViewArray>),
-    // If syncptr is_null the data is in the rev-map
-    // otherwise it is in the array pointer
+    Categorical(u32, &'a Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-categorical")]
-    CategoricalOwned(u32, Arc<RevMapping>, SyncPtr<Utf8ViewArray>),
+    CategoricalOwned(u32, Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-categorical")]
-    Enum(u32, &'a RevMapping, SyncPtr<Utf8ViewArray>),
+    Enum(u32, &'a Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-categorical")]
-    EnumOwned(u32, Arc<RevMapping>, SyncPtr<Utf8ViewArray>),
+    EnumOwned(u32, Arc<CategoricalMapping>),
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     #[cfg(feature = "dtype-array")]
@@ -391,11 +387,11 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-duration")]
             Duration(_, tu) => DataType::Duration(*tu),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _, _) | CategoricalOwned(_, _, _) => {
-                DataType::Categorical(None, Default::default())
+            Categorical(_, _) | CategoricalOwned(_, _) => {
+                unimplemented!("can not get dtype of Categorical AnyValue")
             },
             #[cfg(feature = "dtype-categorical")]
-            Enum(_, _, _) | EnumOwned(_, _, _) => DataType::Enum(None, Default::default()),
+            Enum(_, _) | EnumOwned(_, _) => unimplemented!("can not get dtype of Enum AnyValue"),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
             #[cfg(feature = "dtype-array")]
             Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
@@ -737,20 +733,11 @@ impl<'a> AnyValue<'a> {
             Self::StringOwned(s) => Cow::Owned(s.to_string()),
             Self::Null => Cow::Borrowed("null"),
             #[cfg(feature = "dtype-categorical")]
-            Self::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
-                if arr.is_null() {
-                    Cow::Borrowed(rev.get(*idx))
-                } else {
-                    unsafe { Cow::Borrowed(arr.deref_unchecked().value(*idx as usize)) }
-                }
+            Self::Categorical(cat, map) | Self::Enum(cat, map) => {
+                Cow::Borrowed(unsafe { map.cat_to_str_unchecked(*cat) })
             },
-            #[cfg(feature = "dtype-categorical")]
-            Self::CategoricalOwned(idx, rev, arr) | AnyValue::EnumOwned(idx, rev, arr) => {
-                if arr.is_null() {
-                    Cow::Owned(rev.get(*idx).to_string())
-                } else {
-                    unsafe { Cow::Borrowed(arr.deref_unchecked().value(*idx as usize)) }
-                }
+            Self::CategoricalOwned(cat, map) | Self::EnumOwned(cat, map) => {
+                Cow::Owned(unsafe { map.cat_to_str_unchecked(*cat) }.to_owned())
             },
             av => Cow::Owned(av.to_string()),
         }
@@ -790,10 +777,10 @@ impl<'a> AnyValue<'a> {
             Self::Time(v) => Self::Int64(v),
 
             #[cfg(feature = "dtype-categorical")]
-            Self::Categorical(v, _, _)
-            | Self::CategoricalOwned(v, _, _)
-            | Self::Enum(v, _, _)
-            | Self::EnumOwned(v, _, _) => Self::UInt32(v),
+            Self::Categorical(v, _)
+            | Self::CategoricalOwned(v, _)
+            | Self::Enum(v, _)
+            | Self::EnumOwned(v, _) => Self::UInt32(v),
             Self::List(series) => Self::List(series.to_physical_repr().into_owned()),
 
             #[cfg(feature = "dtype-array")]
@@ -915,10 +902,9 @@ impl AnyValue<'_> {
             #[cfg(feature = "dtype-time")]
             Time(v) => v.hash(state),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(v, _, _)
-            | CategoricalOwned(v, _, _)
-            | Enum(v, _, _)
-            | EnumOwned(v, _, _) => v.hash(state),
+            Categorical(v, _) | CategoricalOwned(v, _) | Enum(v, _) | EnumOwned(v, _) => {
+                v.hash(state)
+            },
             #[cfg(feature = "object")]
             Object(_) => {},
             #[cfg(feature = "object")]
@@ -1066,11 +1052,9 @@ impl<'a> AnyValue<'a> {
                 AnyValue::Datetime(*v, *tu, tz.as_ref().map(AsRef::as_ref))
             },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::CategoricalOwned(v, rev, arr) => {
-                AnyValue::Categorical(*v, rev.as_ref(), *arr)
-            },
+            AnyValue::CategoricalOwned(cat, map) => AnyValue::Categorical(*cat, map),
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::EnumOwned(v, rev, arr) => AnyValue::Enum(*v, rev.as_ref(), *arr),
+            AnyValue::EnumOwned(cat, map) => AnyValue::Enum(*cat, map),
             av => av.clone(),
         }
     }
@@ -1133,13 +1117,13 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-decimal")]
             Decimal(val, scale) => Decimal(val, scale),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(v, rev, arr) => CategoricalOwned(v, Arc::new(rev.clone()), arr),
+            Categorical(cat, map) => CategoricalOwned(cat, map.clone()),
             #[cfg(feature = "dtype-categorical")]
-            CategoricalOwned(v, rev, arr) => CategoricalOwned(v, rev, arr),
+            CategoricalOwned(cat, map) => CategoricalOwned(cat, map),
             #[cfg(feature = "dtype-categorical")]
-            Enum(v, rev, arr) => EnumOwned(v, Arc::new(rev.clone()), arr),
+            Enum(cat, map) => EnumOwned(cat, map.clone()),
             #[cfg(feature = "dtype-categorical")]
-            EnumOwned(v, rev, arr) => EnumOwned(v, rev, arr),
+            EnumOwned(cat, map) => EnumOwned(cat, map),
         }
     }
 
@@ -1149,22 +1133,12 @@ impl<'a> AnyValue<'a> {
             AnyValue::String(s) => Some(s),
             AnyValue::StringOwned(s) => Some(s.as_str()),
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
-                let s = if arr.is_null() {
-                    rev.get(*idx)
-                } else {
-                    unsafe { arr.deref_unchecked().value(*idx as usize) }
-                };
-                Some(s)
+            Self::Categorical(cat, map) | Self::Enum(cat, map) => {
+                Some(unsafe { map.cat_to_str_unchecked(*cat) })
             },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::CategoricalOwned(idx, rev, arr) | AnyValue::EnumOwned(idx, rev, arr) => {
-                let s = if arr.is_null() {
-                    rev.get(*idx)
-                } else {
-                    unsafe { arr.deref_unchecked().value(*idx as usize) }
-                };
-                Some(s)
+            Self::CategoricalOwned(cat, map) | Self::EnumOwned(cat, map) => {
+                Some(unsafe { map.cat_to_str_unchecked(*cat) })
             },
             _ => None,
         }
@@ -1238,13 +1212,13 @@ impl AnyValue<'_> {
                 *l == Datetime(*rv, *rtu, rtz.as_ref().map(|v| v.as_ref()))
             },
             #[cfg(feature = "dtype-categorical")]
-            (CategoricalOwned(lv, lrev, larr), r) => Categorical(*lv, lrev.as_ref(), *larr) == *r,
+            (CategoricalOwned(cat, map), r) => Categorical(*cat, map) == *r,
             #[cfg(feature = "dtype-categorical")]
-            (l, CategoricalOwned(rv, rrev, rarr)) => *l == Categorical(*rv, rrev.as_ref(), *rarr),
+            (l, CategoricalOwned(cat, map)) => *l == Categorical(*cat, map),
             #[cfg(feature = "dtype-categorical")]
-            (EnumOwned(lv, lrev, larr), r) => Enum(*lv, lrev.as_ref(), *larr) == *r,
+            (EnumOwned(cat, map), r) => Enum(*cat, map) == *r,
             #[cfg(feature = "dtype-categorical")]
-            (l, EnumOwned(rv, rrev, rarr)) => *l == Enum(*rv, rrev.as_ref(), *rarr),
+            (l, EnumOwned(cat, map)) => *l == Enum(*cat, map),
 
             // Comparison with null.
             (Null, Null) => null_equal,
@@ -1276,26 +1250,28 @@ impl AnyValue<'_> {
             },
             (List(l), List(r)) => l == r,
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(idx_l, rev_l, ptr_l), Categorical(idx_r, rev_r, ptr_r)) => {
-                if !same_revmap(rev_l, *ptr_l, rev_r, *ptr_r) {
+            (Categorical(cat_l, map_l), Categorical(cat_r, map_r)) => {
+                if !Arc::ptr_eq(map_l, map_r) {
                     // We can't support this because our Hash impl directly hashes the index. If you
                     // add support for this we must change the Hash impl.
                     unimplemented!(
-                        "comparing categoricals with different revmaps is not supported"
+                        "comparing categoricals with different Categories is not supported through AnyValue"
                     );
                 }
 
-                idx_l == idx_r
+                cat_l == cat_r
             },
             #[cfg(feature = "dtype-categorical")]
-            (Enum(idx_l, rev_l, ptr_l), Enum(idx_r, rev_r, ptr_r)) => {
-                // We can't support this because our Hash impl directly hashes the index. If you
-                // add support for this we must change the Hash impl.
-                if !same_revmap(rev_l, *ptr_l, rev_r, *ptr_r) {
-                    unimplemented!("comparing enums with different revmaps is not supported");
+            (Enum(cat_l, map_l), Enum(cat_r, map_r)) => {
+                if !Arc::ptr_eq(map_l, map_r) {
+                    // We can't support this because our Hash impl directly hashes the index. If you
+                    // add support for this we must change the Hash impl.
+                    unimplemented!(
+                        "comparing enums with different FrozenCategories is not supported through AnyValue"
+                    );
                 }
 
-                idx_l == idx_r
+                cat_l == cat_r
             },
             #[cfg(feature = "dtype-duration")]
             (Duration(l, tu_l), Duration(r, tu_r)) => l == r && tu_l == tu_r,
@@ -1416,17 +1392,13 @@ impl PartialOrd for AnyValue<'_> {
                 l.partial_cmp(&Datetime(*rv, *rtu, rtz.as_ref().map(|v| v.as_ref())))
             },
             #[cfg(feature = "dtype-categorical")]
-            (CategoricalOwned(lv, lrev, larr), r) => {
-                Categorical(*lv, lrev.as_ref(), *larr).partial_cmp(r)
-            },
+            (CategoricalOwned(cat, map), r) => Categorical(*cat, map).partial_cmp(r),
             #[cfg(feature = "dtype-categorical")]
-            (l, CategoricalOwned(rv, rrev, rarr)) => {
-                l.partial_cmp(&Categorical(*rv, rrev.as_ref(), *rarr))
-            },
+            (l, CategoricalOwned(cat, map)) => l.partial_cmp(&Categorical(*cat, map)),
             #[cfg(feature = "dtype-categorical")]
-            (EnumOwned(lv, lrev, larr), r) => Enum(*lv, lrev.as_ref(), *larr).partial_cmp(r),
+            (EnumOwned(cat, map), r) => Enum(*cat, map).partial_cmp(r),
             #[cfg(feature = "dtype-categorical")]
-            (l, EnumOwned(rv, rrev, rarr)) => l.partial_cmp(&Enum(*rv, rrev.as_ref(), *rarr)),
+            (l, EnumOwned(cat, map)) => l.partial_cmp(&Enum(*cat, map)),
 
             // Comparison with null.
             (Null, Null) => Some(Ordering::Equal),
@@ -1471,14 +1443,19 @@ impl PartialOrd for AnyValue<'_> {
             #[cfg(feature = "dtype-time")]
             (Time(l), Time(r)) => l.partial_cmp(r),
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(..), Categorical(..)) => {
-                unimplemented!(
-                    "can't order categoricals as AnyValues, dtype for ordering is needed"
-                )
+            (Categorical(l_cat, l_map), Categorical(r_cat, r_map)) => {
+                unsafe {
+                    let l_str = l_map.cat_to_str_unchecked(*l_cat);
+                    let r_str = r_map.cat_to_str_unchecked(*r_cat);
+                    l_str.partial_cmp(r_str)
+                }
             },
             #[cfg(feature = "dtype-categorical")]
-            (Enum(..), Enum(..)) => {
-                unimplemented!("can't order enums as AnyValues, dtype for ordering is needed")
+            (Enum(l_cat, l_map), Enum(r_cat, r_map)) => {
+                if !Arc::ptr_eq(l_map, r_map) {
+                    unimplemented!("can't order enums from different FrozenCategories")
+                }
+                l_cat.partial_cmp(r_cat)
             },
             (List(_), List(_)) => {
                 unimplemented!("ordering for List dtype is not supported")

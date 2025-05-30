@@ -1,3 +1,4 @@
+use std::fmt;
 use std::hash::BuildHasher;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -5,8 +6,10 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::parma::raw::RawTable;
 
+use crate::datatypes::CatSize;
+
 pub struct CategoricalMapping {
-    str_to_cat: RawTable<str, u32>,
+    str_to_cat: RawTable<str, CatSize>,
     cat_to_str: boxcar::Vec<&'static str>,
     max_categories: usize,
     upper_bound: AtomicUsize,
@@ -35,27 +38,27 @@ impl CategoricalMapping {
 
     /// Try to convert a string to a categorical id, but don't insert it if it is missing.
     #[inline(always)]
-    pub fn get_cat(&self, s: &str) -> Option<u32> {
+    pub fn get_cat(&self, s: &str) -> Option<CatSize> {
         let hash = self.hasher.hash_one(s);
         self.get_cat_with_hash(s, hash)
     }
 
     /// Same as get_cat, but with the hash pre-computed.
     #[inline(always)]
-    pub fn get_cat_with_hash(&self, s: &str, hash: u64) -> Option<u32> {
+    pub fn get_cat_with_hash(&self, s: &str, hash: u64) -> Option<CatSize> {
         self.str_to_cat.get(hash, |k| k == s).copied()
     }
 
     /// Convert a string to a categorical id.
     #[inline(always)]
-    pub fn insert_cat(&self, s: &str) -> PolarsResult<u32> {
+    pub fn insert_cat(&self, s: &str) -> PolarsResult<CatSize> {
         let hash = self.hasher.hash_one(s);
         self.insert_cat_with_hash(s, hash)
     }
 
     /// Same as to_cat, but with the hash pre-computed.
     #[inline(always)]
-    pub fn insert_cat_with_hash(&self, s: &str, hash: u64) -> PolarsResult<u32> {
+    pub fn insert_cat_with_hash(&self, s: &str, hash: u64) -> PolarsResult<CatSize> {
         self.str_to_cat
             .try_get_or_insert_with(
                 hash,
@@ -70,7 +73,7 @@ impl CategoricalMapping {
                     let idx = self
                         .cat_to_str
                         .push(unsafe { core::mem::transmute::<&str, &'static str>(k) });
-                    Ok(idx as u32)
+                    Ok(idx as CatSize)
                 },
             )
             .copied()
@@ -79,7 +82,7 @@ impl CategoricalMapping {
     /// Try to convert a categorical id to its corresponding string, returning
     /// None if the string is not in the data structure.
     #[inline(always)]
-    pub fn cat_to_str(&self, cat: u32) -> Option<&str> {
+    pub fn cat_to_str(&self, cat: CatSize) -> Option<&str> {
         self.cat_to_str.get(cat as usize).copied()
     }
 
@@ -89,7 +92,7 @@ impl CategoricalMapping {
     /// The categorical id must have been returned from `to_cat`, and you must
     /// have synchronized with the call which inserted it.
     #[inline(always)]
-    pub unsafe fn cat_to_str_unchecked(&self, cat: u32) -> &str {
+    pub unsafe fn cat_to_str_unchecked(&self, cat: CatSize) -> &str {
         unsafe { self.cat_to_str.get_unchecked(cat as usize) }
     }
 
@@ -114,5 +117,14 @@ impl CategoricalMapping {
     #[inline(always)]
     pub fn is_empty(&mut self) -> bool {
         self.len() == 0
+    }
+}
+
+impl fmt::Debug for CategoricalMapping {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CategoricalMapping")
+            .field("max_categories", &self.max_categories)
+            .field("upper_bound", &self.upper_bound.load(Ordering::Relaxed))
+            .finish()
     }
 }
