@@ -1,6 +1,7 @@
 """Functions for reading data."""
 
 from polars.io.avro import read_avro
+from polars.io.bigquery import scan_bigquery
 from polars.io.clipboard import read_clipboard
 from polars.io.csv import read_csv, read_csv_batched, scan_csv
 from polars.io.database import read_database, read_database_uri
@@ -53,6 +54,7 @@ __all__ = [
     "read_parquet",
     "read_parquet_metadata",
     "read_parquet_schema",
+    "scan_bigquery",
     "scan_csv",
     "scan_delta",
     "scan_iceberg",
