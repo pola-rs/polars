@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+from collections.abc import Sequence
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
@@ -605,7 +606,11 @@ def scan_parquet(
 
         missing_columns = "insert" if allow_missing_columns else "raise"
 
-    sources = source if isinstance(source, list) else [source]
+    sources = (
+        [source]
+        if not isinstance(source, Sequence) or isinstance(source, (str, bytes))
+        else source
+    )
 
     pylf = PyLazyFrame.new_from_parquet(
         sources=sources,
