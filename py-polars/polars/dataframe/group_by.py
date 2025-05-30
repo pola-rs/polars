@@ -61,7 +61,7 @@ class GroupBy:
             Additional column(s) to group by, specified as keyword arguments.
             The columns will be named as the keyword used.
         """
-        self.df = df
+        self.df: DataFrame = df
         self.by = by
         self.named_by = named_by
         self.maintain_order = maintain_order

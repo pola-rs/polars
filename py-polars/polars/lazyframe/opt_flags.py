@@ -268,7 +268,7 @@ QueryOptFlags {{
 DEFAULT_QUERY_OPT_FLAGS: QueryOptFlags
 try:  # Module not available when building docs
     DEFAULT_QUERY_OPT_FLAGS = QueryOptFlags()
-except (ImportError, NameError) as _:
+except (ImportError, NameError):
     DEFAULT_QUERY_OPT_FLAGS = ()  # type: ignore[assignment]
 
 
