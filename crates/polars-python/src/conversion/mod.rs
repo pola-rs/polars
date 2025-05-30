@@ -1212,8 +1212,12 @@ impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
 }
 
 #[cfg(feature = "cloud")]
-pub(crate) fn parse_cloud_options(uri: &str, kv: Vec<(String, String)>) -> PyResult<CloudOptions> {
-    let out = CloudOptions::from_untyped_config(uri, kv).map_err(PyPolarsErr::from)?;
+pub(crate) fn parse_cloud_options(
+    uri: &str,
+    kv: impl IntoIterator<Item = (String, String)>,
+) -> PyResult<CloudOptions> {
+    let iter: &mut dyn Iterator<Item = _> = &mut kv.into_iter();
+    let out = CloudOptions::from_untyped_config(uri, iter).map_err(PyPolarsErr::from)?;
     Ok(out)
 }
 
@@ -1235,16 +1239,14 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
     }
 }
 
-// Conversion from ScanCastOptions class from the Python side.
 impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if ob.is_none() {
             // Initialize the default ScanCastOptions from Python.
-
-            static DEFAULT: GILOnceCell<Wrap<CastColumnsPolicy>> = GILOnceCell::new();
+            static DEFAULT: GILOnceCell<CastColumnsPolicy> = GILOnceCell::new();
 
             let out = DEFAULT.get_or_try_init(ob.py(), || {
-                let ob = PyModule::import(ob.py(), "polars.io.cast_options")
+                let ob = PyModule::import(ob.py(), "polars.io.scan_options.cast_options")
                     .unwrap()
                     .getattr("ScanCastOptions")
                     .unwrap()
@@ -1256,13 +1258,18 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
                 // The default policy should match ERROR_ON_MISMATCH (but this can change).
                 debug_assert_eq!(&out.0, &CastColumnsPolicy::ERROR_ON_MISMATCH);
 
-                PyResult::Ok(out)
+                PyResult::Ok(out.0)
             })?;
 
-            return Ok(out.clone());
+            return Ok(Wrap(out.clone()));
         }
 
-        let integer_upcast = match &*ob.getattr("integer_cast")?.extract::<PyBackedStr>()? {
+        let py = ob.py();
+
+        let integer_upcast = match &*ob
+            .getattr(intern!(py, "integer_cast"))?
+            .extract::<PyBackedStr>()?
+        {
             "upcast" => true,
             "forbid" => false,
             v => {
@@ -1275,7 +1282,9 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
         let mut float_upcast = false;
         let mut float_downcast = false;
 
-        let mut parse_float_cast_option = |v: &str| -> PyResult<()> {
+        let float_cast_object = ob.getattr(intern!(py, "float_cast"))?;
+
+        parse_multiple_options("float_cast", float_cast_object, |v| {
             match v {
                 "forbid" => {},
                 "upcast" => float_upcast = true,
@@ -1288,20 +1297,14 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             }
 
             Ok(())
-        };
-
-        let float_cast_object = ob.getattr("float_cast")?;
-
-        parse_multiple_options(
-            "float_cast",
-            float_cast_object,
-            &mut parse_float_cast_option,
-        )?;
+        })?;
 
         let mut datetime_nanoseconds_downcast = false;
         let mut datetime_convert_timezone = false;
 
-        let mut parse_datetime_cast_option = |v: &str| -> PyResult<()> {
+        let datetime_cast_object = ob.getattr(intern!(py, "datetime_cast"))?;
+
+        parse_multiple_options("datetime_cast", datetime_cast_object, |v| {
             match v {
                 "forbid" => {},
                 "nanosecond-downcast" => datetime_nanoseconds_downcast = true,
@@ -1314,18 +1317,10 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             };
 
             Ok(())
-        };
-
-        let datetime_cast_object = ob.getattr("datetime_cast")?;
-
-        parse_multiple_options(
-            "datetime_cast",
-            datetime_cast_object,
-            &mut parse_datetime_cast_option,
-        )?;
+        })?;
 
         let missing_struct_fields = match &*ob
-            .getattr("missing_struct_fields")?
+            .getattr(intern!(py, "missing_struct_fields"))?
             .extract::<PyBackedStr>()?
         {
             "insert" => MissingColumnsPolicy::Insert,
@@ -1338,7 +1333,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
         };
 
         let extra_struct_fields = match &*ob
-            .getattr("extra_struct_fields")?
+            .getattr(intern!(py, "extra_struct_fields"))?
             .extract::<PyBackedStr>()?
         {
             "ignore" => ExtraColumnsPolicy::Ignore,
@@ -1361,10 +1356,10 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
             extra_struct_fields,
         }));
 
-        fn parse_multiple_options<'a>(
+        fn parse_multiple_options(
             parameter_name: &'static str,
-            py_object: Bound<'a, PyAny>,
-            parser_func: &mut dyn FnMut(&str) -> PyResult<()>,
+            py_object: Bound<'_, PyAny>,
+            mut parser_func: impl FnMut(&str) -> PyResult<()>,
         ) -> PyResult<()> {
             if let Ok(v) = py_object.extract::<PyBackedStr>() {
                 parser_func(&v)?;

@@ -21,7 +21,6 @@ from polars._utils.wrap import wrap_ldf
 from polars.convert import from_arrow
 from polars.dependencies import import_optional
 from polars.io._utils import (
-    parse_row_index_args,
     prepare_file_arg,
 )
 from polars.io.cloud.credential_provider._builder import (
@@ -40,7 +39,6 @@ if TYPE_CHECKING:
     from polars import DataFrame, DataType, LazyFrame
     from polars._typing import FileSource, ParallelStrategy, SchemaDict
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
     from polars.io.scan_options import ScanCastOptions
 
 
@@ -595,6 +593,8 @@ def scan_parquet(
         credential_provider, source, storage_options, "scan_parquet"
     )
 
+    del credential_provider
+
     if allow_missing_columns is not None:
         issue_deprecation_warning(
             "the parameter `allow_missing_columns` for `scan_parquet` is deprecated. "
@@ -605,87 +605,33 @@ def scan_parquet(
 
         missing_columns = "insert" if allow_missing_columns else "raise"
 
-    return _scan_parquet_impl(
-        source,  # type: ignore[arg-type]
-        n_rows=n_rows,
-        cache=cache,
-        parallel=parallel,
-        rechunk=rechunk,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
-        storage_options=storage_options,
-        credential_provider=credential_provider_builder,
-        low_memory=low_memory,
-        use_statistics=use_statistics,
-        hive_partitioning=hive_partitioning,
+    sources = source if isinstance(source, list) else [source]
+
+    pylf = PyLazyFrame.new_from_parquet(
+        sources=sources,
         schema=schema,
-        hive_schema=hive_schema,
-        try_parse_hive_dates=try_parse_hive_dates,
-        retries=retries,
-        glob=glob,
-        include_file_paths=include_file_paths,
         scan_options=ScanOptions(
+            row_index=(row_index_name, row_index_offset) if row_index_name else None,
+            pre_slice=(0, n_rows) if n_rows is not None else None,
             cast_options=cast_options,
             extra_columns=extra_columns,
             missing_columns=missing_columns,
+            include_file_paths=include_file_paths,
+            glob=glob,
+            hive_partitioning=hive_partitioning,
+            hive_schema=hive_schema,
+            try_parse_hive_dates=try_parse_hive_dates,
+            rechunk=rechunk,
+            cache=cache,
+            storage_options=(
+                [*storage_options.items()] if storage_options is not None else None
+            ),
+            credential_provider=credential_provider_builder,
+            retries=retries,
         ),
-    )
-
-
-def _scan_parquet_impl(
-    source: str | list[str] | list[Path] | IO[str] | IO[bytes],
-    *,
-    n_rows: int | None = None,
-    cache: bool = True,
-    parallel: ParallelStrategy = "auto",
-    rechunk: bool = False,
-    row_index_name: str | None = None,
-    row_index_offset: int = 0,
-    storage_options: dict[str, object] | None = None,
-    credential_provider: CredentialProviderBuilder | None = None,
-    low_memory: bool = False,
-    use_statistics: bool = True,
-    hive_partitioning: bool | None = None,
-    glob: bool = True,
-    schema: SchemaDict | None = None,
-    hive_schema: SchemaDict | None = None,
-    try_parse_hive_dates: bool = True,
-    retries: int = 2,
-    include_file_paths: str | None = None,
-    scan_options: ScanOptions,
-) -> LazyFrame:
-    if isinstance(source, list):
-        sources = source
-        source = None  # type: ignore[assignment]
-    else:
-        sources = []
-
-    if storage_options:
-        storage_options = list(storage_options.items())  # type: ignore[assignment]
-    else:
-        # Handle empty dict input
-        storage_options = None
-
-    pylf = PyLazyFrame.new_from_parquet(
-        source,
-        sources,
-        n_rows,
-        cache,
-        parallel,
-        rechunk,
-        parse_row_index_args(row_index_name, row_index_offset),
-        low_memory,
-        cloud_options=storage_options,
-        credential_provider=credential_provider,
+        parallel=parallel,
+        low_memory=low_memory,
         use_statistics=use_statistics,
-        hive_partitioning=hive_partitioning,
-        schema=schema,
-        hive_schema=hive_schema,
-        try_parse_hive_dates=try_parse_hive_dates,
-        retries=retries,
-        glob=glob,
-        include_file_paths=include_file_paths,
-        scan_options=scan_options,
     )
 
     return wrap_ldf(pylf)
