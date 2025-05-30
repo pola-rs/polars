@@ -336,7 +336,6 @@ pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
 }
 
 #[inline]
-#[doc(hidden)]
 pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
     let signed_start_offset = if offset < 0 {
         offset.saturating_add_unsigned(array_len as u64)
