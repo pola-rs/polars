@@ -583,6 +583,16 @@ def scan_parquet(
         msg = "The `cast_options` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
+    if allow_missing_columns is not None:
+        issue_deprecation_warning(
+            "the parameter `allow_missing_columns` for `scan_parquet` is deprecated. "
+            "Use the parameter `missing_columns` instead and pass one of "
+            "`('insert', 'raise')`.",
+            version="1.30.0",
+        )
+
+        missing_columns = "insert" if allow_missing_columns else "raise"
+
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
     elif is_path_or_str_sequence(source):
@@ -595,16 +605,6 @@ def scan_parquet(
     )
 
     del credential_provider
-
-    if allow_missing_columns is not None:
-        issue_deprecation_warning(
-            "the parameter `allow_missing_columns` for `scan_parquet` is deprecated. "
-            "Use the parameter `missing_columns` instead and pass one of "
-            "`('insert', 'raise')`.",
-            version="1.30.0",
-        )
-
-        missing_columns = "insert" if allow_missing_columns else "raise"
 
     sources = (
         [source]
