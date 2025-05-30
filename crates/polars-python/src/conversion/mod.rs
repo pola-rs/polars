@@ -1243,7 +1243,7 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if ob.is_none() {
             // Initialize the default ScanCastOptions from Python.
-            static DEFAULT: GILOnceCell<CastColumnsPolicy> = GILOnceCell::new();
+            static DEFAULT: GILOnceCell<Wrap<CastColumnsPolicy>> = GILOnceCell::new();
 
             let out = DEFAULT.get_or_try_init(ob.py(), || {
                 let ob = PyModule::import(ob.py(), "polars.io.scan_options.cast_options")
@@ -1258,10 +1258,10 @@ impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
                 // The default policy should match ERROR_ON_MISMATCH (but this can change).
                 debug_assert_eq!(&out.0, &CastColumnsPolicy::ERROR_ON_MISMATCH);
 
-                PyResult::Ok(out.0)
+                PyResult::Ok(out)
             })?;
 
-            return Ok(Wrap(out.clone()));
+            return Ok(out.clone());
         }
 
         let py = ob.py();
