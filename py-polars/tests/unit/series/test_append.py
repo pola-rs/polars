@@ -88,6 +88,22 @@ def test_struct_schema_on_append_extend_3452() -> None:
         housing1.extend(housing2)
 
 
+def test_append_mismatching_struct_with_null_22639() -> None:
+    a = pl.Series([{"x": "foo", "y": "bar"}])
+    b = pl.Series([{"z": "baz"}])
+    c = pl.Series([{"z": None}])
+    with pytest.raises(
+        SchemaError,
+    ):
+        a.append(b)
+    with pytest.raises(
+        SchemaError,
+    ):
+        a.append(c)
+
+    assert_series_equal(b.append(c), pl.Series([{"z": "baz"}, {"z": None}]))
+
+
 def test_append_null_series() -> None:
     a = pl.Series("a", [1, 2], pl.Int64)
     b = pl.Series("b", [None, None], pl.Null)
