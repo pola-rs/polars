@@ -2,61 +2,78 @@ use polars_utils::unitvec;
 
 use super::*;
 
-// Can give false positives.
-fn is_order_dependent_top_level(ae: &AExpr, ctx: Context) -> bool {
-    match ae {
-        AExpr::Agg(agg) => match agg {
-            IRAggExpr::Min { .. } => false,
-            IRAggExpr::Max { .. } => false,
-            IRAggExpr::Median(_) => false,
-            IRAggExpr::NUnique(_) => false,
-            IRAggExpr::First(_) => true,
-            IRAggExpr::Last(_) => true,
-            IRAggExpr::Mean(_) => false,
-            IRAggExpr::Implode(_) => true,
-            IRAggExpr::Quantile { .. } => false,
-            IRAggExpr::Sum(_) => false,
-            IRAggExpr::Count(_, _) => false,
-            IRAggExpr::Std(_, _) => false,
-            IRAggExpr::Var(_, _) => false,
-            IRAggExpr::AggGroups(_) => true,
-        },
-        AExpr::Column(_) => matches!(ctx, Context::Aggregation),
-        _ => true,
+// Check if the aggregate expression depends on the order of the data.
+fn is_order_independent_agg(agg: &IRAggExpr) -> bool {
+    match agg {
+        IRAggExpr::Min { .. } => true,
+        IRAggExpr::Max { .. } => true,
+        IRAggExpr::Median(_) => true,
+        IRAggExpr::NUnique(_) => true,
+        IRAggExpr::First(_) => false,
+        IRAggExpr::Last(_) => false,
+        IRAggExpr::Mean(_) => true,
+        IRAggExpr::Implode(_) => false,
+        IRAggExpr::Quantile { .. } => true,
+        IRAggExpr::Sum(_) => true,
+        IRAggExpr::Count(_, _) => true,
+        IRAggExpr::Std(_, _) => true,
+        IRAggExpr::Var(_, _) => true,
+        IRAggExpr::AggGroups(_) => false,
     }
 }
 
-// Can give false positives.
-fn is_order_dependent<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>, ctx: Context) -> bool {
-    let mut stack = unitvec![];
+// Check if the expression is a data source (e.g., Column), or keeps the underlying
+// data set unmodified, i.e., set(f(data)) == set(data).
+// Not exhaustive, e.g. changing the order would fall in here
+fn is_source_or_set_invariant(ae: &AExpr) -> bool {
+    matches!(ae, AExpr::Column(_))
+}
 
-    loop {
-        if is_order_dependent_top_level(ae, ctx) {
-            return true;
+// Check if the given node, or, recursively, any of its input nodes contains an
+// order_dependent operation. Return true if the output does not depend on ordering.
+// Can give false negatives.
+fn is_order_independent_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let mut contains_safe_aggregate = false;
+
+    let mut stack = unitvec![];
+    stack.push(node);
+
+    while let Some(node) = stack.pop() {
+        let ae = expr_arena.get(node);
+
+        // we need at least one 'safe' (order_independent) aggregation
+        if let AExpr::Agg(agg) = ae {
+            if is_order_independent_agg(agg) {
+                contains_safe_aggregate = true;
+            } else {
+                return false;
+            }
+        } else {
+            // intermediate data modification is not allowed, hence
+            // only data sources or set-invariant expressions are allowed
+            if !is_source_or_set_invariant(ae) {
+                return false;
+            }
         }
 
-        let Some(node) = stack.pop() else {
-            break;
-        };
-
-        ae = expr_arena.get(node);
+        ae.inputs_rev(&mut stack);
     }
 
-    false
+    contains_safe_aggregate
 }
 
-// Can give false negatives.
+// Not exhaustive - can give false negatives.
 pub(crate) fn all_order_independent<'a, N>(
     nodes: &'a [N],
     expr_arena: &Arena<AExpr>,
-    ctx: Context,
+    _ctx: Context,
 ) -> bool
 where
     Node: From<&'a N>,
 {
-    !nodes
+    nodes
         .iter()
-        .any(|n| is_order_dependent(expr_arena.get(n.into()), expr_arena, ctx))
+        .all(|n| is_order_independent_rec(n.into(), expr_arena))
 }
 
 // Should run before slice pushdown.
