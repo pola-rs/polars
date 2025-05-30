@@ -181,6 +181,7 @@ fn to_column_write_options_rec(
     let mut column_options = ColumnWriteOptions {
         field_id: None,
         metadata: Vec::new(),
+        required: None,
 
         // Dummy value.
         children: ChildWriteOptions::Leaf(FieldWriteOptions {
@@ -191,6 +192,7 @@ fn to_column_write_options_rec(
     if let Some(overwrites) = overwrites {
         column_options.field_id = overwrites.field_id;
         column_options.metadata = convert_metadata(&overwrites.metadata);
+        column_options.required = overwrites.required;
     }
 
     use arrow::datatypes::PhysicalType::*;
@@ -202,8 +204,9 @@ fn to_column_write_options_rec(
             });
         },
         List | FixedSizeList | LargeList => {
-            let child_overwrites = overwrites.map(|o| match &o.children {
-                ChildFieldOverwrites::ListLike(child_overwrites) => child_overwrites.as_ref(),
+            let child_overwrites = overwrites.and_then(|o| match &o.children {
+                ChildFieldOverwrites::None => None,
+                ChildFieldOverwrites::ListLike(child_overwrites) => Some(child_overwrites.as_ref()),
                 _ => unreachable!(),
             });
 
@@ -223,12 +226,13 @@ fn to_column_write_options_rec(
         },
         Struct => {
             if let ArrowDataType::Struct(fields) = field.dtype().to_logical_type() {
-                let children_overwrites = overwrites.map(|o| match &o.children {
-                    ChildFieldOverwrites::Struct(child_overwrites) => PlHashMap::from_iter(
+                let children_overwrites = overwrites.and_then(|o| match &o.children {
+                    ChildFieldOverwrites::None => None,
+                    ChildFieldOverwrites::Struct(child_overwrites) => Some(PlHashMap::from_iter(
                         child_overwrites
                             .iter()
                             .map(|f| (f.name.as_ref().unwrap(), f)),
-                    ),
+                    )),
                     _ => unreachable!(),
                 });
 

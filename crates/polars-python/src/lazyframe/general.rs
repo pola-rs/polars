@@ -1692,11 +1692,16 @@ impl<'py> FromPyObject<'py> for Wrap<polars_io::parquet::write::ParquetFieldOver
                 .collect()
         });
 
+        let required = PyDictMethods::get_item(&parsed, "required")?
+            .map(|v| v.extract::<bool>())
+            .transpose()?;
+
         Ok(Wrap(ParquetFieldOverwrites {
             name,
             children,
             field_id,
             metadata,
+            required,
         }))
     }
 }

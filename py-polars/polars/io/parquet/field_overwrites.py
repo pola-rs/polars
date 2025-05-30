@@ -43,6 +43,9 @@ def _parquet_field_overwrites_to_dict(pqo: ParquetFieldOverwrites) -> dict[str, 
     if pqo.metadata is not None:
         d["metadata"] = list(pqo.metadata.items())
 
+    if pqo.required is not None:
+        d["required"] = pqo.required
+
     return d
 
 
@@ -104,6 +107,7 @@ class ParquetFieldOverwrites:
     metadata: (
         dict[str, None | str] | None
     )  #: Arrow metadata added to the field before writing
+    required: bool | None = None  #: Is the field not allowed to have missing values
 
     def __init__(
         self,
@@ -117,6 +121,7 @@ class ParquetFieldOverwrites:
         ) = None,
         field_id: int | None = None,
         metadata: Mapping[str, None | str] | None = None,
+        required: bool | None = None,
     ) -> None:
         self.name = name
 
@@ -132,3 +137,4 @@ class ParquetFieldOverwrites:
             self.metadata = dict(metadata)
         else:
             self.metadata = metadata
+        self.required = required
