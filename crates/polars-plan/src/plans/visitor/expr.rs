@@ -91,7 +91,7 @@ impl TreeWalker for Expr {
             AnonymousFunction { input, function, output_type, options } => {
                 AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, output_type, options }
             },
-            Eval { expr: input, evaluation } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)? },
+            Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
             SubPlan(_, _) => self,
             Selector(_) => self,
         };

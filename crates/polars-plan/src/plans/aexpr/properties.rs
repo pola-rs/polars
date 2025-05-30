@@ -24,12 +24,12 @@ impl AExpr {
 
             Literal(v) => v.is_scalar(),
 
-            Eval { .. }
-            | Alias(_, _)
-            | BinaryExpr { .. }
-            | Column(_)
-            | Ternary { .. }
-            | Cast { .. } => true,
+            Eval { variant, .. } => match variant {
+                EvalVariant::List => true,
+                EvalVariant::Cumulative { min_samples: _ } => false,
+            },
+
+            Alias(_, _) | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
             Agg { .. }
             | Explode { .. }

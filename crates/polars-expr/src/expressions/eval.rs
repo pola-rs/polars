@@ -3,17 +3,18 @@ use std::sync::{Arc, Mutex};
 
 use arrow::array::{Array, ListArray};
 use polars_core::POOL;
+use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
-use polars_core::error::PolarsResult;
+use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    ChunkCast, ChunkNestingUtils, Column, CompatLevel, Field, GroupPositions, GroupsType,
-    IntoColumn, ListChunked,
+    AnyValue, ChunkCast, ChunkNestingUtils, Column, CompatLevel, DataType, Field, GroupPositions,
+    GroupsType, IntoColumn, ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_core::utils::CustomIterTools;
-use polars_plan::dsl::Expr;
+use polars_plan::dsl::{EvalVariant, Expr};
 use polars_plan::plans::ExprPushdownGroup;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -26,9 +27,11 @@ use crate::state::ExecutionState;
 pub struct EvalExpr {
     input: Arc<dyn PhysicalExpr>,
     evaluation: Arc<dyn PhysicalExpr>,
+    variant: EvalVariant,
     expr: Expr,
     allow_threading: bool,
     output_field: Field,
+    non_aggregated_output_dtype: DataType,
     is_scalar: bool,
     pd_group: ExprPushdownGroup,
     evaluation_is_scalar: bool,
@@ -65,9 +68,11 @@ impl EvalExpr {
     pub(crate) fn new(
         input: Arc<dyn PhysicalExpr>,
         evaluation: Arc<dyn PhysicalExpr>,
+        variant: EvalVariant,
         expr: Expr,
         allow_threading: bool,
         output_field: Field,
+        non_aggregated_output_dtype: DataType,
         is_scalar: bool,
         pd_group: ExprPushdownGroup,
         evaluation_is_scalar: bool,
@@ -76,9 +81,11 @@ impl EvalExpr {
         Self {
             input,
             evaluation,
+            variant,
             expr,
             allow_threading,
             output_field,
+            non_aggregated_output_dtype,
             is_scalar,
             pd_group,
             evaluation_is_scalar,
@@ -271,6 +278,72 @@ impl EvalExpr {
             self.run_per_sublist(lst, state)
         }
     }
+
+    fn evaluate_cumulative_eval(
+        &self,
+        input: &Series,
+        min_samples: usize,
+        state: &ExecutionState,
+    ) -> PolarsResult<Series> {
+        let finish = |out: Series| {
+            polars_ensure!(
+                out.len() <= 1,
+                ComputeError:
+                "expected single value, got a result with length {}, {:?}",
+                out.len(), out,
+            );
+            Ok(out.get(0).unwrap().into_static())
+        };
+
+        let input = input.clone().with_name(PlSmallStr::EMPTY);
+        let avs = if self.allow_threading {
+            POOL.install(|| {
+                (1..input.len() + 1)
+                    .into_par_iter()
+                    .map(|len| {
+                        let c = input.slice(0, len);
+                        if (len - c.null_count()) >= min_samples {
+                            let df = c.clone().into_frame();
+                            let out = self
+                                .evaluation
+                                .evaluate(&df, state)?
+                                .take_materialized_series();
+                            finish(out)
+                        } else {
+                            Ok(AnyValue::Null)
+                        }
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()
+            })?
+        } else {
+            let mut df_container = DataFrame::empty();
+            (1..input.len() + 1)
+                .map(|len| {
+                    let c = input.slice(0, len);
+                    if (len - c.null_count()) >= min_samples {
+                        unsafe {
+                            df_container.with_column_unchecked(c.into_column());
+                            let out = self
+                                .evaluation
+                                .evaluate(&df_container, state)?
+                                .take_materialized_series();
+                            df_container.clear_columns();
+                            finish(out)
+                        }
+                    } else {
+                        Ok(AnyValue::Null)
+                    }
+                })
+                .collect::<PolarsResult<Vec<_>>>()?
+        };
+
+        Series::from_any_values_and_dtype(
+            self.output_field.name().clone(),
+            &avs,
+            &self.non_aggregated_output_dtype,
+            true,
+        )
+    }
 }
 
 impl PhysicalExpr for EvalExpr {
@@ -280,8 +353,15 @@ impl PhysicalExpr for EvalExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
-        let lst = input.list()?;
-        self.evaluate_on_list_chunked(lst, state)
+        match self.variant {
+            EvalVariant::List => {
+                let lst = input.list()?;
+                self.evaluate_on_list_chunked(lst, state)
+            },
+            EvalVariant::Cumulative { min_samples } => self
+                .evaluate_cumulative_eval(input.as_materialized_series(), min_samples, state)
+                .map(Column::from),
+        }
     }
 
     fn evaluate_on_groups<'a>(
@@ -291,8 +371,31 @@ impl PhysicalExpr for EvalExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut input = self.input.evaluate_on_groups(df, groups, state)?;
-        let out = self.evaluate_on_list_chunked(input.get_values().list()?, state)?;
-        input.with_values(out, false, Some(&self.expr))?;
+        match self.variant {
+            EvalVariant::List => {
+                let out = self.evaluate_on_list_chunked(input.get_values().list()?, state)?;
+                input.with_values(out, false, Some(&self.expr))?;
+            },
+            EvalVariant::Cumulative { min_samples } => {
+                let mut builder = AnonymousOwnedListBuilder::new(
+                    self.output_field.name().clone(),
+                    input.groups().len(),
+                    Some(self.non_aggregated_output_dtype.clone()),
+                );
+                for group in input.iter_groups(false) {
+                    match group {
+                        None => {},
+                        Some(group) => {
+                            let out =
+                                self.evaluate_cumulative_eval(group.as_ref(), min_samples, state)?;
+                            builder.append_series(&out)?;
+                        },
+                    }
+                }
+
+                input.with_values(builder.finish().into_column(), true, Some(&self.expr))?;
+            },
+        }
         Ok(input)
     }
 
