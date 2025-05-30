@@ -298,7 +298,9 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
         }
 
         let mut unprocessed_buffer_len = total_buffer_len;
-        let mut new_buffers: Vec<Vec<u8>> = vec![Vec::with_capacity(unprocessed_buffer_len.min(u32::MAX as usize))];
+        let mut new_buffers: Vec<Vec<u8>> = vec![Vec::with_capacity(
+            unprocessed_buffer_len.min(u32::MAX as usize),
+        )];
         for arr in arrays {
             let arr: &BinaryViewArrayGeneric<V> = arr.as_ref().as_any().downcast_ref().unwrap();
             let buffers = arr.data_buffers();
@@ -307,12 +309,19 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
                 for mut view in arr.views().iter().copied() {
                     total_bytes_len += view.length as usize;
                     if view.length > 12 {
-                        if new_buffers.last().unwrap_unchecked().len() + view.length as usize >= u32::MAX as usize {
-                            new_buffers.push(Vec::with_capacity(unprocessed_buffer_len.min(u32::MAX as usize)));
+                        if new_buffers.last().unwrap_unchecked().len() + view.length as usize
+                            >= u32::MAX as usize
+                        {
+                            new_buffers.push(Vec::with_capacity(
+                                unprocessed_buffer_len.min(u32::MAX as usize),
+                            ));
                         }
                         view.offset = new_buffers.last().unwrap_unchecked().len() as u32;
                         view.buffer_idx = new_buffers.len() as u32 - 1;
-                        new_buffers.last_mut().unwrap_unchecked().extend_from_slice(view.get_slice_unchecked(buffers));
+                        new_buffers
+                            .last_mut()
+                            .unwrap_unchecked()
+                            .extend_from_slice(view.get_slice_unchecked(buffers));
                         unprocessed_buffer_len -= view.length as usize;
                     }
                     views.push_unchecked(view);
