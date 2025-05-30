@@ -12,7 +12,7 @@ use polars_utils::slice_enum::Slice;
 use pyo3::types::PyAnyMethods;
 use pyo3::{Bound, FromPyObject, PyObject, PyResult};
 
-use crate::prelude::{Wrap, parse_cloud_options};
+use crate::prelude::Wrap;
 
 /// Interface to `class ScanOptions` on the Python side
 pub struct PyScanOptions<'py>(Bound<'py, pyo3::PyAny>);
@@ -73,8 +73,10 @@ impl PyScanOptions<'_> {
             #[cfg(feature = "cloud")]
             {
                 let first_path_url = first_path.to_string_lossy();
-                let cloud_options =
-                    parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
+                let cloud_options = crate::prelude::parse_cloud_options(
+                    &first_path_url,
+                    cloud_options.unwrap_or_default(),
+                )?;
 
                 Some(
                     cloud_options
