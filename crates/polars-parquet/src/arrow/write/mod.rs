@@ -39,6 +39,7 @@ pub use crate::parquet::metadata::{
     Descriptor, FileMetadata, KeyValue, SchemaDescriptor, ThriftFileMetadata,
 };
 pub use crate::parquet::page::{CompressedDataPage, CompressedPage, Page};
+use crate::parquet::schema::Repetition;
 use crate::parquet::schema::types::PrimitiveType as ParquetPrimitiveType;
 pub use crate::parquet::schema::types::{
     FieldInfo, ParquetType, PhysicalType as ParquetPhysicalType,
@@ -95,6 +96,7 @@ pub struct WriteOptions {
 pub struct ColumnWriteOptions {
     pub field_id: Option<i32>,
     pub metadata: Vec<KeyValue>,
+    pub required: Option<bool>,
     pub children: ChildWriteOptions,
 }
 
@@ -129,6 +131,7 @@ impl ColumnWriteOptions {
         Self {
             field_id: None,
             metadata: Vec::new(),
+            required: None,
             children,
         }
     }
@@ -447,6 +450,10 @@ pub fn array_to_page_simple(
     encoding: Encoding,
 ) -> PolarsResult<Page> {
     let dtype = array.dtype();
+
+    if type_.field_info.repetition == Repetition::Required && array.null_count() > 0 {
+        polars_bail!(InvalidOperation: "writing a missing value to required parquet column '{}'", type_.field_info.name);
+    }
 
     match dtype.to_logical_type() {
         ArrowDataType::Boolean => boolean::array_to_page(
@@ -816,6 +823,12 @@ fn array_to_page_nested(
     options: WriteOptions,
     _encoding: Encoding,
 ) -> PolarsResult<Page> {
+    if type_.field_info.repetition == Repetition::Required
+        && array.validity().is_some_and(|v| v.unset_bits() > 0)
+    {
+        polars_bail!(InvalidOperation: "writing a missing value to required parquet column '{}'", type_.field_info.name);
+    }
+
     use ArrowDataType::*;
     match array.dtype().to_logical_type() {
         Null => {
