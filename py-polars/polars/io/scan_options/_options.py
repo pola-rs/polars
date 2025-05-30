@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -9,8 +10,10 @@ if TYPE_CHECKING:
 
 from dataclasses import dataclass
 
+decorator = dataclass(kw_only=True) if sys.version_info >= (3, 10) else dataclass()
 
-@dataclass(kw_only=True)
+
+@decorator
 class ScanOptions:
     """
     Holds scan options that are generic over scan type.
@@ -22,7 +25,7 @@ class ScanOptions:
     # (i64, usize)
     pre_slice: tuple[int, int] | None = None
     cast_options: ScanCastOptions | None
-    extra_columns: Literal["ignore", "raise"]
+    extra_columns: Literal["ignore", "raise"] = "raise"
     missing_columns: Literal["insert", "raise"] = "raise"
     include_file_paths: str | None = None
 
