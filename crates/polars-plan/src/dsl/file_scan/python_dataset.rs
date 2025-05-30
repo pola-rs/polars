@@ -6,7 +6,7 @@ use polars_core::schema::SchemaRef;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
 
-use crate::dsl::DslPlan;
+use crate::dsl::{DslPlan, IcebergWriteMode};
 
 /// This is for `polars-python` to inject so that the implementation can be done there:
 /// * The impls for converting from Python objects are there.
@@ -22,6 +22,12 @@ pub struct PythonDatasetProviderVTable {
         dataset_object: &PythonObject,
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
+    ) -> PolarsResult<DslPlan>,
+
+    pub to_dataset_sink: fn(
+        dataset_object: &PythonObject,
+        input: DslPlan,
+        mode: IcebergWriteMode,
     ) -> PolarsResult<DslPlan>,
 }
 
@@ -62,5 +68,9 @@ impl PythonDatasetProvider {
             limit,
             projection,
         )
+    }
+
+    pub fn to_dataset_sink(&self, input: DslPlan, mode: IcebergWriteMode) -> PolarsResult<DslPlan> {
+        (dataset_provider_vtable().unwrap().to_dataset_sink)(&self.dataset_object, input, mode)
     }
 }

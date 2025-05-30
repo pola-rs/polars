@@ -463,3 +463,5 @@ class ParquetMetadataContext:
 
 ParquetMetadataFn: TypeAlias = Callable[[ParquetMetadataContext], dict[str, str]]
 ParquetMetadata: TypeAlias = Union[dict[str, str], ParquetMetadataFn]
+
+IcebergWriteMode: TypeAlias = Literal["overwrite", "append"]
