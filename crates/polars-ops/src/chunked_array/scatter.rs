@@ -13,22 +13,6 @@ pub trait ChunkedSet<T: Copy> {
     where
         V: IntoIterator<Item = Option<T>>;
 }
-fn check_sorted(idx: &[IdxSize]) -> PolarsResult<()> {
-    if idx.is_empty() {
-        return Ok(());
-    }
-    let mut sorted = true;
-    let mut previous = idx[0];
-    for &i in &idx[1..] {
-        if i < previous {
-            // we will not break here as that prevents SIMD
-            sorted = false;
-        }
-        previous = i;
-    }
-    polars_ensure!(sorted, ComputeError: "set indices must be sorted");
-    Ok(())
-}
 
 trait PolarsOpsNumericType: PolarsNumericType {}
 
@@ -93,6 +77,20 @@ unsafe fn scatter_impl<V, T: NativeType>(
     }
 }
 
+fn sorted_index_value_pairs<I>(idx: &[IdxSize], values: I) -> Vec<(&IdxSize, I::Item)>
+where
+    I: IntoIterator,
+{
+    if idx.is_sorted() {
+        // Already sorted, just collect
+        idx.iter().zip(values).collect()
+    } else {
+        // Need to sort after collecting
+        let mut pairs: Vec<_> = idx.iter().zip(values).collect();
+        pairs.sort_by_key(|&(idx_item, _)| idx_item);
+        pairs
+    }
+}
 impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T>
 where
     ChunkedArray<T>: IntoSeries,
@@ -145,11 +143,12 @@ impl<'a> ChunkedSet<&'a str> for &'a StringChunked {
         V: IntoIterator<Item = Option<&'a str>>,
     {
         check_bounds(idx, self.len() as IdxSize)?;
-        check_sorted(idx)?;
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = StringChunkedBuilder::new(self.name().clone(), self.len());
 
-        for (current_idx, current_value) in idx.iter().zip(values) {
+        let idx_values = sorted_index_value_pairs(idx, values);
+
+        for (current_idx, current_value) in idx_values {
             for (cnt_idx, opt_val_self) in &mut ca_iter {
                 if cnt_idx == *current_idx as usize {
                     builder.append_option(current_value);
@@ -174,11 +173,12 @@ impl ChunkedSet<bool> for &BooleanChunked {
         V: IntoIterator<Item = Option<bool>>,
     {
         check_bounds(idx, self.len() as IdxSize)?;
-        check_sorted(idx)?;
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = BooleanChunkedBuilder::new(self.name().clone(), self.len());
 
-        for (current_idx, current_value) in idx.iter().zip(values) {
+        let idx_values = sorted_index_value_pairs(idx, values);
+
+        for (current_idx, current_value) in idx_values {
             for (cnt_idx, opt_val_self) in &mut ca_iter {
                 if cnt_idx == *current_idx as usize {
                     builder.append_option(current_value);
