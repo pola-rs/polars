@@ -1,9 +1,17 @@
-use polars::prelude::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
-use pyo3::exceptions::PyValueError;
-use pyo3::pybacked::PyBackedStr;
-use pyo3::sync::GILOnceCell;
-use pyo3::types::{PyAnyMethods, PyModule};
-use pyo3::{Bound, FromPyObject, PyAny, PyResult, intern};
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use polars::prelude::{
+    CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, PlSmallStr, Schema,
+    UnifiedScanArgs,
+};
+use polars_io::{HiveOptions, RowIndex};
+use polars_utils::IdxSize;
+use polars_utils::slice_enum::Slice;
+use pyo3::types::PyAnyMethods;
+use pyo3::{Bound, FromPyObject, PyObject, PyResult};
+
+use crate::prelude::Wrap;
 
 /// Interface to `class ScanOptions` on the Python side
 pub struct PyScanOptions<'py>(Bound<'py, pyo3::PyAny>);
@@ -15,187 +23,110 @@ impl<'py> FromPyObject<'py> for PyScanOptions<'py> {
 }
 
 impl PyScanOptions<'_> {
-    pub fn extra_columns_policy(&self) -> PyResult<ExtraColumnsPolicy> {
-        let py = self.0.py();
-
-        Ok(
-            match &*self
-                .0
-                .getattr(intern!(py, "extra_columns"))?
-                .extract::<PyBackedStr>()?
-            {
-                "ignore" => ExtraColumnsPolicy::Ignore,
-                "raise" => ExtraColumnsPolicy::Raise,
-                v => {
-                    return Err(PyValueError::new_err(format!(
-                        "unknown option for extra_columns: {v}"
-                    )));
-                },
-            },
-        )
-    }
-
-    pub fn missing_columns_policy(&self) -> PyResult<MissingColumnsPolicy> {
-        let py = self.0.py();
-
-        Ok(
-            match &*self
-                .0
-                .getattr(intern!(py, "missing_columns"))?
-                .extract::<PyBackedStr>()?
-            {
-                "insert" => MissingColumnsPolicy::Insert,
-                "raise" => MissingColumnsPolicy::Raise,
-                v => {
-                    return Err(PyValueError::new_err(format!(
-                        "unknown option for missing_columns: {v}"
-                    )));
-                },
-            },
-        )
-    }
-
-    pub fn extract_cast_options(&self) -> PyResult<CastColumnsPolicy> {
-        let py = self.0.py();
-        let ob = self.0.getattr(intern!(py, "cast_options"))?;
-
-        if ob.is_none() {
-            // Initialize the default ScanCastOptions from Python.
-            static DEFAULT: GILOnceCell<CastColumnsPolicy> = GILOnceCell::new();
-
-            let out = DEFAULT.get_or_try_init(ob.py(), || {
-                let ob = PyModule::import(ob.py(), "polars.io.scan_options.cast_options")
-                    .unwrap()
-                    .getattr("ScanCastOptions")
-                    .unwrap()
-                    .call_method0("_default")
-                    .unwrap();
-
-                let out = extract_cast_options_impl(ob)?;
-
-                // The default policy should match ERROR_ON_MISMATCH (but this can change).
-                debug_assert_eq!(&out, &CastColumnsPolicy::ERROR_ON_MISMATCH);
-
-                PyResult::Ok(out)
-            })?;
-
-            return Ok(out.clone());
+    pub fn extract_unified_scan_args(
+        &self,
+        // For cloud_options init
+        first_path: Option<&PathBuf>,
+    ) -> PyResult<UnifiedScanArgs> {
+        #[derive(FromPyObject)]
+        struct Extract {
+            row_index: Option<(Wrap<PlSmallStr>, IdxSize)>,
+            pre_slice: Option<(i64, usize)>,
+            cast_options: Wrap<CastColumnsPolicy>,
+            extra_columns: Wrap<ExtraColumnsPolicy>,
+            missing_columns: Wrap<MissingColumnsPolicy>,
+            include_file_paths: Option<Wrap<PlSmallStr>>,
+            glob: bool,
+            hive_partitioning: Option<bool>,
+            hive_schema: Option<Wrap<Schema>>,
+            try_parse_hive_dates: bool,
+            rechunk: bool,
+            cache: bool,
+            storage_options: Option<Vec<(String, String)>>,
+            credential_provider: Option<PyObject>,
+            retries: usize,
         }
 
-        extract_cast_options_impl(ob)
-    }
-}
+        let Extract {
+            row_index,
+            pre_slice,
+            cast_options,
+            extra_columns,
+            missing_columns,
+            include_file_paths,
+            glob,
+            hive_partitioning,
+            hive_schema,
+            try_parse_hive_dates,
+            rechunk,
+            cache,
+            storage_options,
+            credential_provider,
+            retries,
+        } = self.0.extract()?;
 
-fn extract_cast_options_impl(ob: Bound<'_, PyAny>) -> PyResult<CastColumnsPolicy> {
-    let py = ob.py();
+        let cloud_options = storage_options;
 
-    let integer_upcast = match &*ob
-        .getattr(intern!(py, "integer_cast"))?
-        .extract::<PyBackedStr>()?
-    {
-        "upcast" => true,
-        "forbid" => false,
-        v => {
-            return Err(PyValueError::new_err(format!(
-                "unknown option for integer_cast: {v}"
-            )));
-        },
-    };
+        let cloud_options = if let Some(first_path) = first_path {
+            #[cfg(feature = "cloud")]
+            {
+                use polars_io::cloud::credential_provider::PlCredentialProvider;
 
-    let mut float_upcast = false;
-    let mut float_downcast = false;
+                use crate::prelude::parse_cloud_options;
 
-    let float_cast_object = ob.getattr(intern!(py, "float_cast"))?;
+                let first_path_url = first_path.to_string_lossy();
+                let cloud_options =
+                    parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
 
-    parse_multiple_options("float_cast", float_cast_object, |v| {
-        match v {
-            "forbid" => {},
-            "upcast" => float_upcast = true,
-            "downcast" => float_downcast = true,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown option for float_cast: {v}"
-                )));
-            },
-        }
+                Some(
+                    cloud_options
+                        .with_max_retries(retries)
+                        .with_credential_provider(
+                            credential_provider.map(PlCredentialProvider::from_python_builder),
+                        ),
+                )
+            }
 
-        Ok(())
-    })?;
-
-    let mut datetime_nanoseconds_downcast = false;
-    let mut datetime_convert_timezone = false;
-
-    let datetime_cast_object = ob.getattr(intern!(py, "datetime_cast"))?;
-
-    parse_multiple_options("datetime_cast", datetime_cast_object, |v| {
-        match v {
-            "forbid" => {},
-            "nanosecond-downcast" => datetime_nanoseconds_downcast = true,
-            "convert-timezone" => datetime_convert_timezone = true,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown option for datetime_cast: {v}"
-                )));
-            },
+            #[cfg(not(feature = "cloud"))]
+            {
+                None
+            }
+        } else {
+            None
         };
 
-        Ok(())
-    })?;
+        let hive_schema = hive_schema.map(|s| Arc::new(s.0));
 
-    let missing_struct_fields = match &*ob
-        .getattr(intern!(py, "missing_struct_fields"))?
-        .extract::<PyBackedStr>()?
-    {
-        "insert" => MissingColumnsPolicy::Insert,
-        "raise" => MissingColumnsPolicy::Raise,
-        v => {
-            return Err(PyValueError::new_err(format!(
-                "unknown option for missing_struct_fields: {v}"
-            )));
-        },
-    };
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: name.0,
+            offset,
+        });
 
-    let extra_struct_fields = match &*ob
-        .getattr(intern!(py, "extra_struct_fields"))?
-        .extract::<PyBackedStr>()?
-    {
-        "ignore" => ExtraColumnsPolicy::Ignore,
-        "raise" => ExtraColumnsPolicy::Raise,
-        v => {
-            return Err(PyValueError::new_err(format!(
-                "unknown option for extra_struct_fields: {v}"
-            )));
-        },
-    };
+        let hive_options = HiveOptions {
+            enabled: hive_partitioning,
+            hive_start_idx: 0,
+            schema: hive_schema,
+            try_parse_dates: try_parse_hive_dates,
+        };
 
-    Ok(CastColumnsPolicy {
-        integer_upcast,
-        float_upcast,
-        float_downcast,
-        datetime_nanoseconds_downcast,
-        datetime_microseconds_downcast: false,
-        datetime_convert_timezone,
-        missing_struct_fields,
-        extra_struct_fields,
-    })
-}
+        let unified_scan_args = UnifiedScanArgs {
+            // Schema is currently still stored inside the options per scan type, but we do eventually
+            // want to put it here instead.
+            schema: None,
+            cloud_options,
+            hive_options,
+            rechunk,
+            cache,
+            glob,
+            projection: None,
+            row_index,
+            pre_slice: pre_slice.map(Slice::from),
+            cast_columns_policy: cast_options.0,
+            missing_columns_policy: missing_columns.0,
+            extra_columns_policy: extra_columns.0,
+            include_file_paths: include_file_paths.map(|x| x.0),
+        };
 
-fn parse_multiple_options(
-    parameter_name: &'static str,
-    py_object: Bound<'_, PyAny>,
-    mut parser_func: impl FnMut(&str) -> PyResult<()>,
-) -> PyResult<()> {
-    if let Ok(v) = py_object.extract::<PyBackedStr>() {
-        parser_func(&v)?;
-    } else if let Ok(v) = py_object.try_iter() {
-        for v in v {
-            parser_func(&v?.extract::<PyBackedStr>()?)?;
-        }
-    } else {
-        return Err(PyValueError::new_err(format!(
-            "unknown type for {parameter_name}: {py_object}"
-        )));
+        Ok(unified_scan_args)
     }
-
-    Ok(())
 }
