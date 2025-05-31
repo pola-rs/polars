@@ -615,6 +615,9 @@ def scan_parquet(
     pylf = PyLazyFrame.new_from_parquet(
         sources=sources,
         schema=schema,
+        parallel=parallel,
+        low_memory=low_memory,
+        use_statistics=use_statistics,
         scan_options=ScanOptions(
             row_index=(
                 (row_index_name, row_index_offset)
@@ -638,9 +641,6 @@ def scan_parquet(
             credential_provider=credential_provider_builder,
             retries=retries,
         ),
-        parallel=parallel,
-        low_memory=low_memory,
-        use_statistics=use_statistics,
     )
 
     return wrap_ldf(pylf)
