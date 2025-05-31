@@ -1239,6 +1239,7 @@ impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
     }
 }
 
+// Conversion from ScanCastOptions class from the Python side.
 impl<'py> FromPyObject<'py> for Wrap<CastColumnsPolicy> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if ob.is_none() {
