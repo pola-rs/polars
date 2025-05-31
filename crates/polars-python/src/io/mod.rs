@@ -29,23 +29,22 @@ impl PyScanOptions<'_> {
         first_path: Option<&PathBuf>,
     ) -> PyResult<UnifiedScanArgs> {
         #[derive(FromPyObject)]
-        #[rustfmt::skip]
         struct Extract {
-            row_index            : Option<(Wrap<PlSmallStr>, IdxSize)>,
-            pre_slice            : Option<(i64, usize)>               ,
-            cast_options         : Wrap<CastColumnsPolicy>            ,
-            extra_columns        : Wrap<ExtraColumnsPolicy>           ,
-            missing_columns      : Wrap<MissingColumnsPolicy>         ,
-            include_file_paths   : Option<Wrap<PlSmallStr>>           ,
-            glob                 : bool                               ,
-            hive_partitioning    : Option<bool>                       ,
-            hive_schema          : Option<Wrap<Schema>>               ,
-            try_parse_hive_dates : bool                               ,
-            rechunk              : bool                               ,
-            cache                : bool                               ,
-            storage_options      : Option<Vec<(String, String)>>      ,
-            credential_provider  : Option<PyObject>                   ,
-            retries              : usize                              ,
+            row_index: Option<(Wrap<PlSmallStr>, IdxSize)>,
+            pre_slice: Option<(i64, usize)>,
+            cast_options: Wrap<CastColumnsPolicy>,
+            extra_columns: Wrap<ExtraColumnsPolicy>,
+            missing_columns: Wrap<MissingColumnsPolicy>,
+            include_file_paths: Option<Wrap<PlSmallStr>>,
+            glob: bool,
+            hive_partitioning: Option<bool>,
+            hive_schema: Option<Wrap<Schema>>,
+            try_parse_hive_dates: bool,
+            rechunk: bool,
+            cache: bool,
+            storage_options: Option<Vec<(String, String)>>,
+            credential_provider: Option<PyObject>,
+            retries: usize,
         }
 
         let Extract {
