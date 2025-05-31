@@ -40,3 +40,10 @@ class InProcessQuery:
     def fetch_blocking(self) -> DataFrame:
         """Await the result synchronously."""
         return wrap_df(self._inner.fetch_blocking())
+
+    def fetch_timeout(self, timeout: float) -> DataFrame | None:
+        """Await the result with a timeout."""
+        if (out := self._inner.fetch_timeout(timeout)) is not None:
+            return wrap_df(out)
+        else:
+            return None
