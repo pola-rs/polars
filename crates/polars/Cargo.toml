@@ -261,7 +261,7 @@ test = [
   "ipc",
   "ipc_streaming",
   "json",
-  "line"
+  "line",
 ]
 
 # all opt-in datatypes
