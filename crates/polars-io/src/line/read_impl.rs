@@ -22,6 +22,7 @@ pub(crate) struct CoreReader<'a> {
     sample_size: usize,
 }
 impl<'a> CoreReader<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
         n_lines: Option<usize>,
@@ -79,7 +80,7 @@ impl<'a> CoreReader<'a> {
 
         let max_proxy = bytes.len() / n_threads / 2;
         let capacity = if self.low_memory {
-            usize::from(self.chunk_size)
+            self.chunk_size
         } else {
             std::cmp::min(lines_per_thread, max_proxy)
         };
@@ -111,7 +112,7 @@ impl<'a> CoreReader<'a> {
         let reader_bytes = self.reader_bytes.take().unwrap();
         let reader_bytes = skip_lines_naive(&reader_bytes, self.eol_char, self.skip_lines);
 
-        let mut df = self.read_lines(n_threads, &reader_bytes)?;
+        let mut df = self.read_lines(n_threads, reader_bytes)?;
 
         // if multi-threaded the n_lines was probabilistically determined.
         // Let's slice to correct number of rows if possible.
@@ -315,7 +316,7 @@ mod tests {
 
     #[test]
     fn get_file_chunks() {
-        let s = vec!["a".repeat(3), "a".repeat(10), "a".repeat(2)].join("\n");
+        let s = ["a".repeat(3), "a".repeat(10), "a".repeat(2)].join("\n");
         let res = super::get_file_chunks(s.as_bytes(), b'\n', 1);
         assert_eq!(res, vec![(0, 17)]);
 
@@ -325,7 +326,7 @@ mod tests {
         assert_eq!(res, vec![(0, 15), (15, 17)]);
 
         // there is no eol_char after the split point, so the second thread gets nothing
-        let s = vec!["a".repeat(3), "a".repeat(10)].join("\n");
+        let s = ["a".repeat(3), "a".repeat(10)].join("\n");
         let res = super::get_file_chunks(s.as_bytes(), b'\n', 2);
         assert_eq!(res, vec![(0, 14)]);
     }

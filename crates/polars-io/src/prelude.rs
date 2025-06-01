@@ -5,6 +5,8 @@ pub use crate::csv::{read::*, write::*};
 pub use crate::ipc::*;
 #[cfg(feature = "json")]
 pub use crate::json::*;
+#[cfg(feature = "line")]
+pub use crate::line::*;
 #[cfg(feature = "json")]
 pub use crate::ndjson::core::*;
 #[cfg(feature = "parquet")]
