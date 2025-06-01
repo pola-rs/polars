@@ -105,6 +105,9 @@ avro = ["polars-io", "polars-io/avro"]
 # support for arrows csv file parsing
 csv = ["polars-io", "polars-io/csv", "polars-lazy?/csv", "polars-sql?/csv", "new_streaming"]
 
+# support for line reading
+line = ["polars-io", "polars-io/line"]
+
 # slower builds
 performant = [
   "polars-core/performant",
@@ -258,6 +261,7 @@ test = [
   "ipc",
   "ipc_streaming",
   "json",
+  "line"
 ]
 
 # all opt-in datatypes
@@ -439,6 +443,7 @@ docs-selection = [
   "ir_serde",
   "cloud",
   "async",
+  "line",
 ]
 
 bench = [
