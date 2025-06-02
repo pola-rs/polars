@@ -469,7 +469,11 @@ fn create_physical_expr_inner(
                 is_scalar,
             )))
         },
-        Eval { expr, evaluation } => {
+        Eval {
+            expr,
+            evaluation,
+            variant,
+        } => {
             let is_user_apply = expr_arena.iter(*expr).any(|(_, e)| matches!(e, AExpr::AnonymousFunction { options, .. } if options.fmt_str == MAP_LIST_NAME));
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(*evaluation, expr_arena);
@@ -478,14 +482,15 @@ fn create_physical_expr_inner(
             let output_field = expr_arena
                 .get(expression)
                 .to_field(schema, ctxt, expr_arena)?;
+            let non_aggregated_output_field =
+                expr_arena
+                    .get(expression)
+                    .to_field(schema, Context::Default, expr_arena)?;
             let input_field = expr_arena.get(*expr).to_field(schema, ctxt, expr_arena)?;
             let expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
 
-            let DataType::List(dtype) = &input_field.dtype else {
-                unreachable!();
-            };
-
-            let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, dtype.as_ref().clone())]);
+            let element_dtype = variant.element_dtype(&input_field.dtype)?;
+            let eval_schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
             let evaluation = create_physical_expr_inner(
                 *evaluation,
                 Context::Default,
@@ -497,9 +502,11 @@ fn create_physical_expr_inner(
             Ok(Arc::new(EvalExpr::new(
                 expr,
                 evaluation,
+                *variant,
                 node_to_expr(expression, expr_arena),
                 state.allow_threading,
                 output_field,
+                non_aggregated_output_field.dtype,
                 is_scalar,
                 pd_group,
                 evaluation_is_scalar,
