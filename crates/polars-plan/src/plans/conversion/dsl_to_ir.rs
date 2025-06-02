@@ -1422,8 +1422,8 @@ fn resolve_group_by(
             polars_ensure!(names.insert(name.clone()), duplicate = name)
         }
     }
-    let keys = to_expr_irs(keys, expr_arena, &input_schema)?;
-    let aggs = to_expr_irs(aggs, expr_arena, &input_schema)?;
+    let keys = to_expr_irs(keys, expr_arena, input_schema)?;
+    let aggs = to_expr_irs(aggs, expr_arena, input_schema)?;
     validate_expressions(&keys, expr_arena, input_schema, "group by")?;
     validate_expressions(&aggs, expr_arena, input_schema, "group by")?;
 
