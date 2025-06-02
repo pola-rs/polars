@@ -36,7 +36,7 @@ pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
 #[cfg(feature = "dtype-categorical")]
-pub use categories::{CategoricalMapping, Categories, FrozenCategories, ensure_same_categories, ensure_same_frozen_categories};
+pub use categories::{CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories, ensure_same_categories, ensure_same_frozen_categories};
 pub use dtype::*;
 pub use field::*;
 pub use into_scalar::*;
@@ -120,25 +120,49 @@ pub trait PolarsFloatType: PolarsNumericType {}
 /// The in-register representation of category ids.
 pub type CatSize = u32;
 
-pub trait AsCat {
+pub trait CatNative {
     fn as_cat(&self) -> CatSize;
+    fn from_cat(cat: CatSize) -> Self;
 }
 
-impl AsCat for u8 {
+impl CatNative for u8 {
     fn as_cat(&self) -> CatSize { *self as CatSize }
+    fn from_cat(cat: CatSize) -> Self {
+        #[cfg(debug_assertions)]
+        { cat.try_into().unwrap() }
+
+        #[cfg(not(debug_assertions))]
+        { cat as Self }
+    }
 }
 
-impl AsCat for u16 {
+impl CatNative for u16 {
     fn as_cat(&self) -> CatSize { *self as CatSize }
+    fn from_cat(cat: CatSize) -> Self {
+        #[cfg(debug_assertions)]
+        { cat.try_into().unwrap() }
+
+        #[cfg(not(debug_assertions))]
+        { cat as Self }
+    }
 }
 
-impl AsCat for u32 {
-    fn as_cat(&self) -> CatSize { *self }
+impl CatNative for u32 {
+    fn as_cat(&self) -> CatSize { *self as CatSize }
+    fn from_cat(cat: CatSize) -> Self {
+        #[cfg(debug_assertions)]
+        { cat.try_into().unwrap() }
+
+        #[cfg(not(debug_assertions))]
+        { cat as Self }
+    }
 }
 
-pub trait PolarsCategoricalKind: PolarsDataType {
-    type Native: NumericNative + AsCat;
+pub trait PolarsCategoricalType: PolarsDataType {
+    type Native: NumericNative + CatNative;
     type PolarsPhysical: PolarsIntegerType<Native=Self::Native>;
+    
+    fn physical() -> CategoricalPhysical;
 }
 
 macro_rules! impl_polars_num_datatype {
@@ -209,6 +233,10 @@ macro_rules! impl_polars_categorical_datatype {
         impl PolarsCategoricalKind for $pdt {
             type Native = $native;
             type PolarsPhysical = $phys;
+
+            fn physical() -> CategoricalPhysical {
+                CategoricalPhysical::$phys_variant
+            }
         }
     }
 }
@@ -239,9 +267,9 @@ impl_polars_datatype!(CategoricalType, unimplemented!(), PrimitiveArray<u32>, 'a
 impl_polars_datatype!(DateType, DataType::Date, PrimitiveArray<i32>, 'a, i32, i32, i32, FalseT);
 impl_polars_datatype!(TimeType, DataType::Time, PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
 
-impl_polars_categorical_datatype!(Categorical8Type, UInt8Type, u8);
-impl_polars_categorical_datatype!(Categorical16Type, UInt16Type, u16);
-impl_polars_categorical_datatype!(Categorical32Type, UInt32Type, u32);
+impl_polars_categorical_datatype!(Categorical8Type, UInt8Type, u8, U8);
+impl_polars_categorical_datatype!(Categorical16Type, UInt16Type, u16, U16);
+impl_polars_categorical_datatype!(Categorical32Type, UInt32Type, u32, U32);
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}

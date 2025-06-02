@@ -74,6 +74,13 @@ impl BitmapBuilder {
         let words_available = self.bytes.capacity() / 8;
         self.bit_cap = words_available * 64;
     }
+    
+    pub fn clear(&mut self) {
+        self.buf = 0;
+        self.bit_len = 0;
+        self.set_bits_in_bytes = 0;
+        self.bytes.clear();
+    }
 
     #[inline(always)]
     pub fn push(&mut self, x: bool) {
