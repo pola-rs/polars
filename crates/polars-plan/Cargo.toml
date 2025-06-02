@@ -56,6 +56,7 @@ python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object"]
 serde = [
   "dep:serde",
   "polars-core/serde-lazy",
+  "polars-core/serde",
   "polars-time/serde",
   "polars-io/serde",
   "polars-ops/serde",

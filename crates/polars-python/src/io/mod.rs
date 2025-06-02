@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::{
     CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, PlSmallStr, Schema,
     UnifiedScanArgs,
@@ -45,6 +46,7 @@ impl PyScanOptions<'_> {
             storage_options: Option<Vec<(String, String)>>,
             credential_provider: Option<PyObject>,
             retries: usize,
+            deletion_files: Option<Wrap<DeletionFilesList>>,
         }
 
         let Extract {
@@ -63,6 +65,7 @@ impl PyScanOptions<'_> {
             storage_options,
             credential_provider,
             retries,
+            deletion_files,
         } = self.0.extract()?;
 
         let cloud_options = storage_options;
@@ -125,6 +128,7 @@ impl PyScanOptions<'_> {
             missing_columns_policy: missing_columns.0,
             extra_columns_policy: extra_columns.0,
             include_file_paths: include_file_paths.map(|x| x.0),
+            deletion_files: DeletionFilesList::filter_empty(deletion_files.map(|x| x.0)),
         };
 
         Ok(unified_scan_args)

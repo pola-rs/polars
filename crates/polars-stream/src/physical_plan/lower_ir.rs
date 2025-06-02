@@ -597,6 +597,13 @@ pub fn lower_ir(
                         },
                     };
 
+                    if unified_scan_args.deletion_files.is_some() {
+                        polars_bail!(
+                            ComputeError: "not implemented: deletion files {:?}",
+                            unified_scan_args.deletion_files
+                        )
+                    }
+
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
                         file_reader_builder,

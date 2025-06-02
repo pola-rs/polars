@@ -8,6 +8,7 @@ use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
 use self::ir::dot::ScanSourcesDisplay;
+use crate::dsl::deletion::DeletionFilesList;
 use crate::prelude::*;
 
 const INDENT_INCREMENT: usize = 2;
@@ -75,6 +76,7 @@ fn write_scan(
     pre_slice: Option<Slice>,
     row_index: Option<&RowIndex>,
     scan_mem_id: Option<&UniqueId>,
+    deletion_files: Option<&DeletionFilesList>,
 ) -> fmt::Result {
     write!(
         f,
@@ -108,6 +110,9 @@ fn write_scan(
         if row_index.offset != 0 {
             write!(f, " (offset: {})", row_index.offset)?;
         }
+    }
+    if let Some(deletion_files) = deletion_files {
+        write!(f, "\n{deletion_files}")?;
     }
     Ok(())
 }
@@ -700,6 +705,7 @@ pub fn write_ir_non_recursive(
                     .map(|len| polars_utils::slice_enum::Slice::Positive { offset: 0, len }),
                 None,
                 None,
+                None,
             )
         },
         IR::Slice {
@@ -747,6 +753,7 @@ pub fn write_ir_non_recursive(
                 unified_scan_args.pre_slice.clone(),
                 unified_scan_args.row_index.as_ref(),
                 Some(scan_mem_id),
+                unified_scan_args.deletion_files.as_ref(),
             )
         },
         IR::DataFrameScan {
@@ -817,7 +824,7 @@ pub fn write_ir_non_recursive(
         } => write!(
             f,
             "{:indent$}CACHE[id: {:x}, cache_hits: {}]",
-            "", id, *cache_hits
+            "", *id, *cache_hits
         ),
         IR::GroupBy {
             input: _,

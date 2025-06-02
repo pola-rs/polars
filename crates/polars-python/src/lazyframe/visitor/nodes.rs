@@ -1,5 +1,6 @@
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
+use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
 use polars_core::prelude::IdxSize;
 use polars_io::cloud::CloudOptions;
@@ -9,7 +10,7 @@ use polars_plan::prelude::{FileScan, FunctionIR, PythonPredicate, UnifiedScanArg
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyString;
+use pyo3::types::{PyDict, PyString};
 
 use super::expr_nodes::PyGroupbyOptions;
 use crate::PyDataFrame;
@@ -126,6 +127,29 @@ impl PyFileOptions {
     #[getter]
     fn include_file_paths(&self, _py: Python<'_>) -> Option<&str> {
         self.inner.include_file_paths.as_deref()
+    }
+
+    /// One of:
+    /// * None
+    /// * ("iceberg-position-delete", dict[int, list[str]])
+    #[getter]
+    fn deletion_files(&self, py: Python<'_>) -> PyResult<PyObject> {
+        Ok(match &self.inner.deletion_files {
+            None => py.None().into_any(),
+
+            Some(DeletionFilesList::IcebergPositionDelete(paths)) => {
+                let out = PyDict::new(py);
+
+                for (k, v) in paths.iter() {
+                    out.set_item(*k, v.as_ref())?;
+                }
+
+                ("iceberg-position-delete", out)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
+            },
+        })
     }
 }
 

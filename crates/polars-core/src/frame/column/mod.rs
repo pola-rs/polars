@@ -77,7 +77,14 @@ impl Column {
     }
 
     pub fn new_row_index(name: PlSmallStr, offset: IdxSize, length: usize) -> PolarsResult<Column> {
-        let length = IdxSize::try_from(length).unwrap_or(IdxSize::MAX);
+        let Ok(length) = IdxSize::try_from(length) else {
+            polars_bail!(
+                ComputeError:
+                "row index length {} overflows IdxSize::MAX ({})",
+                length,
+                IdxSize::MAX,
+            )
+        };
 
         if offset.checked_add(length).is_none() {
             polars_bail!(
