@@ -70,6 +70,7 @@ impl Hash for IRAggExpr {
                 method: interpol, ..
             } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
+            Self::Count(_, include_nulls) => include_nulls.hash(state),
             _ => {},
         }
     }
