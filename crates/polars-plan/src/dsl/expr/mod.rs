@@ -16,6 +16,7 @@ pub mod named_serde;
 #[cfg(feature = "serde")]
 mod serde_expr;
 
+use super::datatype_expr::DataTypeExpr;
 use crate::prelude::*;
 
 #[derive(PartialEq, Clone, Hash)]
@@ -94,7 +95,7 @@ pub enum Expr {
     },
     Cast {
         expr: Arc<Expr>,
-        dtype: DataType,
+        dtype: DataTypeExpr,
         options: CastOptions,
     },
     Sort {
@@ -420,7 +421,7 @@ impl Expr {
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let root = to_aexpr(self.clone(), expr_arena)?;
+        let root = to_aexpr(self.clone(), expr_arena, schema)?;
         expr_arena
             .get(root)
             .to_field_and_validate(schema, ctxt, expr_arena)
@@ -432,7 +433,7 @@ impl Expr {
             Expr::Literal(n) => n.extract_usize(),
             Expr::Cast { expr, dtype, .. } => {
                 // lit(x, dtype=...) are Cast expressions. We verify the inner expression is literal.
-                if dtype.is_integer() {
+                if dtype.as_literal().is_some_and(|dt| dt.is_integer()) {
                     expr.extract_usize()
                 } else {
                     polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")

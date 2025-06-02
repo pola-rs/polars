@@ -12,9 +12,13 @@ pub struct MetaNameSpace(pub(crate) Expr);
 
 impl MetaNameSpace {
     /// Pop latest expression and return the input(s) of the popped expression.
-    pub fn pop(self, _schema: Option<&Schema>) -> PolarsResult<Vec<Expr>> {
+    pub fn pop(self, schema: Option<&Schema>) -> PolarsResult<Vec<Expr>> {
+        let schema = match schema {
+            None => &Default::default(),
+            Some(s) => s,
+        };
         let mut arena = Arena::with_capacity(8);
-        let node = to_aexpr(self.0, &mut arena)?;
+        let node = to_aexpr(self.0, &mut arena, schema)?;
         let ae = arena.get(node);
         let mut inputs = Vec::with_capacity(2);
         ae.inputs_rev(&mut inputs);
@@ -30,9 +34,13 @@ impl MetaNameSpace {
     }
 
     /// A projection that only takes a column or a column + alias.
-    pub fn is_simple_projection(&self, _schema: Option<&Schema>) -> bool {
+    pub fn is_simple_projection(&self, schema: Option<&Schema>) -> bool {
+        let schema = match schema {
+            None => &Default::default(),
+            Some(s) => s,
+        };
         let mut arena = Arena::with_capacity(8);
-        to_aexpr(self.0.clone(), &mut arena)
+        to_aexpr(self.0.clone(), &mut arena, schema)
             .map(|node| aexpr_is_simple_projection(node, &arena))
             .unwrap_or(false)
     }
@@ -95,9 +103,9 @@ impl MetaNameSpace {
             Expr::Alias(_, _) => allow_aliasing,
             Expr::Cast {
                 expr,
-                dtype: DataType::Datetime(_, _),
+                dtype,
                 options: CastOptions::Strict,
-            } if matches!(&**expr, Expr::Literal(LiteralValue::Scalar(sc)) if matches!(sc.as_any_value(), AnyValue::Datetime(..))) => true,
+            } if matches!(dtype.as_literal(), Some(DataType::Datetime(_, _))) && matches!(&**expr, Expr::Literal(LiteralValue::Scalar(sc)) if matches!(sc.as_any_value(), AnyValue::Datetime(..))) => true,
             _ => false,
         })
     }
@@ -175,10 +183,14 @@ impl MetaNameSpace {
     pub fn into_tree_formatter(
         self,
         display_as_dot: bool,
-        _schema: Option<&Schema>,
+        schema: Option<&Schema>,
     ) -> PolarsResult<impl Display> {
+        let schema = match schema {
+            None => &Default::default(),
+            Some(s) => s,
+        };
         let mut arena = Default::default();
-        let node = to_aexpr(self.0, &mut arena)?;
+        let node = to_aexpr(self.0, &mut arena, schema)?;
         let mut visitor = TreeFmtVisitor::default();
         if display_as_dot {
             visitor.display = TreeFmtVisitorDisplay::DisplayDot;
