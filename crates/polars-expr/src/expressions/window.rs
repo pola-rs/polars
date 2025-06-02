@@ -170,14 +170,14 @@ impl WindowExpr {
                     .map(|s| format!("{}", s.get(first as usize).unwrap()))
                     .collect::<Vec<_>>();
                 polars_bail!(
-                    expr = self.expr, ComputeError:
+                    expr = self.expr, ShapeMismatch:
                     "the length of the window expression did not match that of the group\
                     \n> group: {}\n> group length: {}\n> output: '{:?}'",
                     comma_delimited(String::new(), &group), group.len(), output.unwrap()
                 );
             } else {
                 polars_bail!(
-                    expr = self.expr, ComputeError:
+                    expr = self.expr, ShapeMismatch:
                     "the length of the window expression did not match that of the group"
                 );
             };
