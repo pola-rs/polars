@@ -236,7 +236,7 @@ def test_sink_iceberg_no_partition(tmp_path: Path) -> None:
     from pyiceberg.table.name_mapping import MappedField, NameMapping
     from pyiceberg.types import StringType, TimestampType
 
-    tmp_path.mkdir()
+    tmp_path.mkdir(parents=True, exist_ok=True)
 
     warehouse_path = str(tmp_path)
     catalog = load_catalog(
@@ -308,7 +308,7 @@ def test_sink_iceberg_partition(tmp_path: Path) -> None:
     from pyiceberg.table.name_mapping import MappedField, NameMapping
     from pyiceberg.types import StringType, TimestampType
 
-    tmp_path.mkdir()
+    tmp_path.mkdir(parents=True, exist_ok=True)
 
     warehouse_path = str(tmp_path)
     catalog = load_catalog(
