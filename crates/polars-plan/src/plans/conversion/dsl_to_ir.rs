@@ -269,11 +269,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
                         }
 
-                        let schema = dataset_object.schema()?;
+                        let mut schema = dataset_object.schema()?;
+                        let reader_schema = schema.clone();
+
+                        if let Some(row_index) = &unified_scan_args.row_index {
+                            insert_row_index_to_schema(
+                                Arc::make_mut(&mut schema),
+                                row_index.name.clone(),
+                            )?;
+                        }
 
                         FileInfo {
-                            schema: schema.clone(),
-                            reader_schema: Some(either::Either::Right(schema)),
+                            schema,
+                            reader_schema: Some(either::Either::Right(reader_schema)),
                             row_estimation: (None, usize::MAX),
                         }
                     },

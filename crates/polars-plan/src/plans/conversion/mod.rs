@@ -7,7 +7,8 @@ mod ir_to_dsl;
     feature = "ipc",
     feature = "parquet",
     feature = "csv",
-    feature = "json"
+    feature = "json",
+    feature = "python"
 ))]
 mod scans;
 mod stack_opt;
@@ -26,7 +27,8 @@ use recursive::recursive;
     feature = "ipc",
     feature = "parquet",
     feature = "csv",
-    feature = "json"
+    feature = "json",
+    feature = "python"
 ))]
 pub use scans::*;
 mod functions;

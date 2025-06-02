@@ -8,24 +8,48 @@ use polars_io::utils::compression::maybe_decompress_bytes;
 
 use super::*;
 
-#[cfg(any(feature = "parquet", feature = "ipc"))]
-fn prepare_output_schema(mut schema: Schema, row_index: Option<&RowIndex>) -> SchemaRef {
-    if let Some(rc) = row_index {
-        let _ = schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE);
+pub(super) fn insert_row_index_to_schema(
+    schema: &mut Schema,
+    name: PlSmallStr,
+) -> PolarsResult<()> {
+    if schema.contains(&name) {
+        polars_bail!(
+            Duplicate:
+            "cannot add row_index with name '{}': \
+            column already exists in file.",
+            name,
+        )
     }
-    Arc::new(schema)
+
+    schema.insert_at_index(0, name, IDX_DTYPE)?;
+
+    Ok(())
+}
+
+#[cfg(any(feature = "parquet", feature = "ipc"))]
+fn prepare_output_schema(
+    mut schema: Schema,
+    row_index: Option<&RowIndex>,
+) -> PolarsResult<SchemaRef> {
+    if let Some(rc) = row_index {
+        insert_row_index_to_schema(&mut schema, rc.name.clone())?;
+    }
+    Ok(Arc::new(schema))
 }
 
 #[cfg(any(feature = "json", feature = "csv"))]
-fn prepare_schemas(mut schema: Schema, row_index: Option<&RowIndex>) -> (SchemaRef, SchemaRef) {
-    if let Some(rc) = row_index {
+fn prepare_schemas(
+    mut schema: Schema,
+    row_index: Option<&RowIndex>,
+) -> PolarsResult<(SchemaRef, SchemaRef)> {
+    Ok(if let Some(rc) = row_index {
         let reader_schema = schema.clone();
-        let _ = schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE);
+        insert_row_index_to_schema(&mut schema, rc.name.clone())?;
         (Arc::new(reader_schema), Arc::new(schema))
     } else {
         let schema = Arc::new(schema);
         (schema.clone(), schema)
-    }
+    })
 }
 
 #[cfg(feature = "parquet")]
@@ -67,7 +91,7 @@ pub(super) fn parquet_file_info(
     };
 
     let schema =
-        prepare_output_schema(Schema::from_arrow_schema(reader_schema.as_ref()), row_index);
+        prepare_output_schema(Schema::from_arrow_schema(reader_schema.as_ref()), row_index)?;
 
     let file_info = FileInfo::new(
         schema,
@@ -121,7 +145,7 @@ pub(super) fn ipc_file_info(
         prepare_output_schema(
             Schema::from_arrow_schema(metadata.schema.as_ref()),
             row_index,
-        ),
+        )?,
         Some(Either::Left(Arc::clone(&metadata.schema))),
         (None, 0),
     );
@@ -167,7 +191,7 @@ pub fn isolated_csv_file_info(
     let reader_schema = if let Some(rc) = row_index {
         let reader_schema = schema.clone();
         let mut output_schema = (*reader_schema).clone();
-        output_schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE)?;
+        insert_row_index_to_schema(&mut output_schema, rc.name.clone())?;
         schema = Arc::new(output_schema);
         reader_schema
     } else {
@@ -291,7 +315,7 @@ pub fn csv_file_info(
     let reader_schema = if let Some(rc) = row_index {
         let reader_schema = schema.clone();
         let mut output_schema = (*reader_schema).clone();
-        output_schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE)?;
+        insert_row_index_to_schema(&mut output_schema, rc.name.clone())?;
         schema = Arc::new(output_schema);
         reader_schema
     } else {
@@ -363,7 +387,7 @@ pub fn ndjson_file_info(
     let mut reader_schema = schema.clone();
 
     if row_index.is_some() {
-        (schema, reader_schema) = prepare_schemas(Arc::unwrap_or_clone(schema), row_index)
+        (schema, reader_schema) = prepare_schemas(Arc::unwrap_or_clone(schema), row_index)?
     }
 
     Ok(FileInfo::new(
