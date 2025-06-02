@@ -16,8 +16,6 @@ mod duration;
 pub use duration::*;
 #[cfg(feature = "dtype-categorical")]
 pub mod categorical;
-#[cfg(feature = "dtype-categorical")]
-pub mod enum_;
 #[cfg(feature = "dtype-time")]
 mod time;
 
@@ -100,11 +98,20 @@ impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T>
 where
     Self: LogicalType,
 {
-    pub fn physical(&self) -> &ChunkedArray<T> {
-        &self.phys
-    }
     pub fn field(&self) -> Field {
         let name = self.phys.ref_field().name();
         Field::new(name.clone(), LogicalType::dtype(self).clone())
+    }
+
+    pub fn physical(&self) -> &ChunkedArray<T> {
+        &self.phys
+    }
+
+    pub fn into_physical(self) -> ChunkedArray<T> {
+        self.phys
+    }
+
+    pub fn physical_mut(&mut self) -> &mut ChunkedArray<T> {
+        &mut self.phys
     }
 }
