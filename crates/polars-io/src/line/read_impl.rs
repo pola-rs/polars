@@ -138,28 +138,24 @@ impl<'a> CoreReader<'a> {
                 continue;
             }
 
-            if matches!(self.encoding, TextEncoding::LossyUtf8) | ignore_errors {
-                let parse_result = simdutf8::basic::from_utf8(bytes).is_ok();
+            let parse_result = simdutf8::basic::from_utf8(bytes).is_ok();
 
-                match parse_result {
-                    true => {
-                        let value = line;
-                        buf.push_value(value)
-                    },
-                    false => {
-                        if matches!(self.encoding, TextEncoding::LossyUtf8) {
-                            // TODO! do this without allocating
-                            let s = String::from_utf8_lossy(line);
-                            buf.push_value(s.as_ref().as_bytes())
-                        } else if ignore_errors {
-                            buf.push_null()
-                        } else {
-                            polars_bail!(ComputeError: "invalid utf-8 sequence");
-                        }
-                    },
-                }
-            } else {
-                buf.push_value(line)
+            match parse_result {
+                true => {
+                    let value = line;
+                    buf.push_value(value)
+                },
+                false => {
+                    if matches!(self.encoding, TextEncoding::LossyUtf8) {
+                        // TODO! do this without allocating
+                        let s = String::from_utf8_lossy(line);
+                        buf.push_value(s.as_ref().as_bytes())
+                    } else if ignore_errors {
+                        buf.push_null()
+                    } else {
+                        polars_bail!(ComputeError: "invalid utf-8 sequence");
+                    }
+                },
             }
         }
         Ok(StringChunked::with_chunk("lines".into(), unsafe {
@@ -252,15 +248,35 @@ fn get_file_chunks(bytes: &[u8], eol_char: u8, n_threads: usize) -> Vec<(usize, 
 mod tests {
     use std::io::Write;
 
-    use polars_core::prelude::DataType;
+    use polars_core::frame::DataFrame;
+    use polars_core::prelude::{AnyValue, Column, DataType};
     use tempfile::NamedTempFile;
 
     use crate::line::options::TextEncoding;
     use crate::line::read_impl::CoreReader;
     use crate::utils::get_reader_bytes;
 
+    fn collect_values(df: &DataFrame) -> Vec<String> {
+        df.iter()
+            .next()
+            .unwrap()
+            .str()
+            .iter()
+            .map(|v| {
+                v.into_iter()
+                    .map(|x| x.unwrap_or("").to_string())
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            })
+            .collect::<Vec<String>>()
+            .join("")
+            .split("\n")
+            .map(|v| v.to_string())
+            .collect::<Vec<String>>()
+    }
+
     #[test]
-    fn read() {
+    fn read_multithread() {
         let mut tmp_file = NamedTempFile::new().unwrap();
         let mut text = vec![];
         for i in 0..26u8 {
@@ -276,7 +292,7 @@ mod tests {
             bytes,
             None,
             0,
-            None,
+            Some(2),
             false,
             1024,
             1024,
@@ -294,41 +310,129 @@ mod tests {
         assert_eq!(cols[0].name(), "lines");
 
         // collect all rows sequentially and check if they are in the original order
-        let raw_values = df
-            .iter()
-            .next()
-            .unwrap()
-            .str()
-            .iter()
-            .map(|v| {
-                v.into_iter()
-                    .map(|x| x.unwrap_or("").to_string())
-                    .collect::<Vec<String>>()
-                    .join("\n")
-            })
-            .collect::<Vec<String>>()
-            .join("")
-            .split("\n")
-            .map(|v| v.to_string())
-            .collect::<Vec<String>>();
+        let raw_values = collect_values(&df);
         assert_eq!(raw_values, text);
+    }
+
+    #[test]
+    fn read_n_lines() {
+        let mut tmp_file = NamedTempFile::new().unwrap();
+        tmp_file.write_all(b"a\nb\nc\nd\ne").unwrap();
+        let mut file = polars_utils::open_file(tmp_file.path()).unwrap();
+        let bytes = get_reader_bytes(&mut file).unwrap();
+        let reader = CoreReader::new(
+            bytes,
+            Some(2),
+            0,
+            None,
+            false,
+            1024,
+            1024,
+            b'\n',
+            TextEncoding::Utf8,
+            None,
+        )
+        .unwrap();
+
+        let df = reader.finish().unwrap();
+        assert_eq!(df.size(), 2);
+        assert_eq!(collect_values(&df), ["a", "b"]);
+    }
+
+    #[test]
+    fn parse_lines_lossy_utf8() {
+        let tmp_file = NamedTempFile::new().unwrap();
+        let mut file = polars_utils::open_file(tmp_file.path()).unwrap();
+        let bytes = get_reader_bytes(&mut file).unwrap();
+
+        let reader = CoreReader::new(
+            bytes,
+            None,
+            0,
+            None,
+            false,
+            1024,
+            1024,
+            b'\n',
+            TextEncoding::LossyUtf8,
+            None,
+        )
+        .unwrap();
+
+        let res = reader.parse_lines(&[255], 1, true).unwrap();
+        assert_eq!(
+            res.select_at_idx(0).unwrap(),
+            &Column::new(
+                "lines".into(),
+                [AnyValue::StringOwned(
+                    String::from_utf8_lossy(&[255]).to_string().into()
+                )]
+            )
+        );
+
+        let res = reader.parse_lines(b"a", 1, false).unwrap();
+        assert_eq!(
+            res.select_at_idx(0).unwrap(),
+            &Column::new("lines".into(), ["a"])
+        );
+    }
+
+    #[test]
+    fn parse_lines_utf8() {
+        let tmp_file = NamedTempFile::new().unwrap();
+        let mut file = polars_utils::open_file(tmp_file.path()).unwrap();
+        let bytes = get_reader_bytes(&mut file).unwrap();
+        let reader = CoreReader::new(
+            bytes,
+            None,
+            0,
+            None,
+            false,
+            1024,
+            1024,
+            b'\n',
+            TextEncoding::Utf8,
+            None,
+        )
+        .unwrap();
+
+        let res = reader.parse_lines(&[255], 1, true).unwrap();
+        assert_eq!(
+            res.select_at_idx(0).unwrap(),
+            &Column::new("lines".into(), [AnyValue::Null])
+        );
+
+        let err = reader.parse_lines(&[255], 1, false).unwrap_err();
+        assert_eq!(err.to_string(), "invalid utf-8 sequence");
+
+        let res = reader.parse_lines(b"a", 1, false).unwrap();
+        assert_eq!(
+            res.select_at_idx(0).unwrap(),
+            &Column::new("lines".into(), ["a"])
+        );
+
+        let res = reader.parse_lines(b"\n", 1, false).unwrap();
+        assert_eq!(
+            res.select_at_idx(0).unwrap(),
+            &Column::new("lines".into(), ["", ""])
+        );
     }
 
     #[test]
     fn get_file_chunks() {
         let s = ["a".repeat(3), "a".repeat(10), "a".repeat(2)].join("\n");
         let res = super::get_file_chunks(s.as_bytes(), b'\n', 1);
-        assert_eq!(res, vec![(0, 17)]);
+        assert_eq!(res, [(0, 17)]);
 
         // the split point is at index 8, so the first thread should look for the
         // immediate next eol_char after that
         let res = super::get_file_chunks(s.as_bytes(), b'\n', 2);
-        assert_eq!(res, vec![(0, 15), (15, 17)]);
+        assert_eq!(res, [(0, 15), (15, 17)]);
 
         // there is no eol_char after the split point, so the second thread gets nothing
         let s = ["a".repeat(3), "a".repeat(10)].join("\n");
         let res = super::get_file_chunks(s.as_bytes(), b'\n', 2);
-        assert_eq!(res, vec![(0, 14)]);
+        assert_eq!(res, [(0, 14)]);
     }
 
     #[test]

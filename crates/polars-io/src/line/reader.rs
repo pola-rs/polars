@@ -38,12 +38,32 @@ where
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
 }
 
-impl<R> LineReader<R>
-where
-    R: MmapBytesReader,
-{
+impl<R: MmapBytesReader> LineReader<R> {
     pub fn _with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
         self.predicate = predicate;
+        self
+    }
+
+    fn core_reader(&mut self) -> PolarsResult<CoreReader> {
+        let reader_bytes = get_reader_bytes(&mut self.reader)?;
+
+        CoreReader::new(
+            reader_bytes,
+            self.options.n_lines,
+            self.options.skip_lines,
+            self.options.n_threads,
+            self.options.low_memory,
+            self.options.chunk_size,
+            1024,
+            self.options.eol_char,
+            self.options.encoding,
+            self.predicate.clone(),
+        )
+    }
+
+    /// Sets custom read options.
+    pub fn with_options(mut self, options: LineReadOptions) -> Self {
+        self.options = options;
         self
     }
 }
@@ -95,25 +115,6 @@ impl LineReadOptions {
     }
 }
 
-impl<R: MmapBytesReader> LineReader<R> {
-    fn core_reader(&mut self) -> PolarsResult<CoreReader> {
-        let reader_bytes = get_reader_bytes(&mut self.reader)?;
-
-        CoreReader::new(
-            reader_bytes,
-            self.options.n_lines,
-            self.options.skip_lines,
-            self.options.n_threads,
-            self.options.low_memory,
-            self.options.chunk_size,
-            1024,
-            self.options.eol_char,
-            self.options.encoding,
-            self.predicate.clone(),
-        )
-    }
-}
-
 impl<R> SerReader<R> for LineReader<R>
 where
     R: MmapBytesReader,
@@ -138,14 +139,6 @@ where
     }
 }
 
-impl<R: MmapBytesReader> LineReader<R> {
-    /// Sets custom read options.
-    pub fn with_options(mut self, options: LineReadOptions) -> Self {
-        self.options = options;
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::Write;
@@ -153,6 +146,7 @@ mod tests {
     use polars_core::prelude::DataType;
     use tempfile::NamedTempFile;
 
+    use super::{LineReadOptions, LineReader};
     use crate::SerReader;
 
     #[test]
@@ -162,7 +156,7 @@ mod tests {
         // should not set path twice
         assert!(
             std::panic::catch_unwind(|| {
-                super::LineReadOptions::default()
+                LineReadOptions::default()
                     .with_path(Some(path.clone()))
                     .try_into_reader_with_file_path(Some(path.clone()))
             })
@@ -170,12 +164,12 @@ mod tests {
         );
 
         // set path ok
-        let reader = super::LineReadOptions::default()
+        let reader = LineReadOptions::default()
             .try_into_reader_with_file_path(Some(path.clone()))
             .unwrap();
         assert_eq!(reader.options.path, Some(path.clone()));
 
-        let reader = super::LineReadOptions::default()
+        let reader = LineReadOptions::default()
             .with_path(Some(path.clone()))
             .try_into_reader_with_file_path(None)
             .unwrap();
@@ -184,17 +178,28 @@ mod tests {
         // should set path at least once
         assert!(
             std::panic::catch_unwind(|| {
-                super::LineReadOptions::default().try_into_reader_with_file_path(None)
+                LineReadOptions::default().try_into_reader_with_file_path(None)
             })
             .is_err()
         );
     }
 
     #[test]
+    fn reader_with_options() {
+        let mut tmp_file = NamedTempFile::new().unwrap();
+        tmp_file.write_all(b"a").unwrap();
+        let file = polars_utils::open_file(tmp_file.path()).unwrap();
+        let mut reader = LineReader::new(file);
+        assert_eq!(reader.options.eol_char, b'\n');
+        reader = reader.with_options(LineReadOptions::default().with_eol_char(b'!'));
+        assert_eq!(reader.options.eol_char, b'!');
+    }
+
+    #[test]
     fn read() {
         let mut tmp_file = NamedTempFile::new().unwrap();
         tmp_file.write_all("a\nb\nc".as_bytes()).unwrap();
-        let reader = super::LineReadOptions::default()
+        let reader = LineReadOptions::default()
             .try_into_reader_with_file_path(Some(tmp_file.path().to_path_buf()))
             .unwrap();
         let df = reader.finish().unwrap();
