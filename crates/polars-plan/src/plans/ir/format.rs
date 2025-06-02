@@ -535,10 +535,20 @@ impl Display for ExprIRDisplay<'_> {
                     write!(f, ".{}()", options.fmt_str)
                 }
             },
-            Eval { expr, evaluation } => {
+            Eval {
+                expr,
+                evaluation,
+                variant,
+            } => {
                 let expr = self.with_root(expr);
                 let evaluation = self.with_root(evaluation);
-                write!(f, "{expr}.list.eval({evaluation})")
+                match variant {
+                    EvalVariant::List => write!(f, "{expr}.list.eval({evaluation})"),
+                    EvalVariant::Cumulative { min_samples } => write!(
+                        f,
+                        "{expr}.cumulative_eval({evaluation}, min_samples={min_samples})"
+                    ),
+                }
             },
             Slice {
                 input,

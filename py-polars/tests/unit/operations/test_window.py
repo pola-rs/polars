@@ -632,10 +632,7 @@ def test_when_then_over_22478() -> None:
         out=pl.when(pl.Series(99 * [True])).then(pl.sum("key")).over("key")
     )
 
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match="the length of the window expression did not match that of the group",
-    ):
+    with pytest.raises(pl.exceptions.ShapeError):
         q.collect()
 
 

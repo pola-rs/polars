@@ -10208,9 +10208,7 @@ class Expr:
 
     @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
-    def cumulative_eval(
-        self, expr: Expr, *, min_samples: int = 1, parallel: bool = False
-    ) -> Expr:
+    def cumulative_eval(self, expr: Expr, *, min_samples: int = 1) -> Expr:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
 
@@ -10228,9 +10226,6 @@ class Expr:
         min_samples
             Number of valid values there should be in the window before the expression
             is evaluated. valid values = `length - null_count`
-        parallel
-            Run in parallel. Don't do this in a group by or another operation that
-            already has much parallelization.
 
         Warnings
         --------
@@ -10261,7 +10256,7 @@ class Expr:
         └────────┘
         """
         return self._from_pyexpr(
-            self._pyexpr.cumulative_eval(expr._pyexpr, min_samples, parallel)
+            self._pyexpr.cumulative_eval(expr._pyexpr, min_samples)
         )
 
     def set_sorted(self, *, descending: bool = False) -> Expr:

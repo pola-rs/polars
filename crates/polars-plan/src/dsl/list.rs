@@ -302,6 +302,7 @@ impl ListNameSpace {
         Expr::Eval {
             expr: Arc::new(self.0),
             evaluation: Arc::new(other.into()),
+            variant: EvalVariant::List,
         }
     }
 }

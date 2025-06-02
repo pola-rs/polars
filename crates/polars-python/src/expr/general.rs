@@ -686,10 +686,10 @@ impl PyExpr {
         self.inner.clone().cum_count(reverse).into()
     }
 
-    fn cumulative_eval(&self, expr: Self, min_periods: usize, parallel: bool) -> Self {
+    fn cumulative_eval(&self, expr: Self, min_samples: usize) -> Self {
         self.inner
             .clone()
-            .cumulative_eval(expr.inner, min_periods, parallel)
+            .cumulative_eval(expr.inner, min_samples)
             .into()
     }
 
@@ -950,7 +950,7 @@ impl PyExpr {
     fn skip_batch_predicate(&self, py: Python<'_>, schema: Wrap<Schema>) -> PyResult<Option<Self>> {
         let mut aexpr_arena = Arena::new();
         py.enter_polars(|| {
-            let node = to_aexpr(self.inner.clone(), &mut aexpr_arena)?;
+            let node = to_aexpr(self.inner.clone(), &mut aexpr_arena, &schema.0)?;
             let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
             else {
                 return Ok(None);

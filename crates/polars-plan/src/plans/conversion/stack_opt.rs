@@ -116,7 +116,12 @@ impl ConversionOptimizer {
 
             // Evaluation expressions still need to do rules on the evaluation expression but the
             // schema is not the same and it is not concluded in the inputs. Therefore, we handl
-            if let AExpr::Eval { expr, evaluation } = expr {
+            if let AExpr::Eval {
+                expr,
+                evaluation,
+                variant,
+            } = expr
+            {
                 let schema = if schema_idx == 0 {
                     &schema
                 } else {
@@ -125,8 +130,9 @@ impl ConversionOptimizer {
                 let expr = expr_arena
                     .get(*expr)
                     .get_type(schema, Context::Default, expr_arena)?;
-                let schema =
-                    Schema::from_iter([(PlSmallStr::EMPTY, expr.inner_dtype().unwrap().clone())]);
+
+                let element_dtype = variant.element_dtype(&expr)?;
+                let schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
                 self.schemas.push(schema);
                 self.scratch.push((*evaluation, self.schemas.len()));
             }
