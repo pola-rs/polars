@@ -85,6 +85,7 @@ Iceberg
    :toctree: api/
 
    scan_iceberg
+   LazyFrame.sink_iceberg
    DataFrame.write_iceberg
 
 JSON
