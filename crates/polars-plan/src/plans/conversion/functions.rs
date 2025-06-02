@@ -13,6 +13,7 @@ pub(super) fn convert_functions(
     mut options: FunctionOptions,
     arena: &mut Arena<AExpr>,
     ctx: &mut ConversionContext,
+    schema: &Schema,
 ) -> PolarsResult<Node> {
     use FunctionExpr as F;
 
@@ -20,10 +21,10 @@ pub(super) fn convert_functions(
     match function {
         // This can be created by col(*).is_null() on empty dataframes.
         F::Boolean(BooleanFunction::AllHorizontal) if input.is_empty() => {
-            return to_aexpr_impl(lit(true), arena, ctx);
+            return to_aexpr_impl(lit(true), arena, ctx, schema);
         },
         F::Boolean(BooleanFunction::AnyHorizontal) if input.is_empty() => {
-            return to_aexpr_impl(lit(false), arena, ctx);
+            return to_aexpr_impl(lit(false), arena, ctx, schema);
         },
         // Convert to binary expression as the optimizer understands those.
         // Don't exceed 128 expressions as we might stackoverflow.
@@ -34,7 +35,7 @@ pub(super) fn convert_functions(
                 if single {
                     expr = expr.cast(DataType::Boolean)
                 }
-                return to_aexpr_impl(expr, arena, ctx);
+                return to_aexpr_impl(expr, arena, ctx, schema);
             }
         },
         F::Boolean(BooleanFunction::AnyHorizontal) => {
@@ -44,14 +45,14 @@ pub(super) fn convert_functions(
                 if single {
                     expr = expr.cast(DataType::Boolean)
                 }
-                return to_aexpr_impl(expr, arena, ctx);
+                return to_aexpr_impl(expr, arena, ctx, schema);
             }
         },
         _ => {},
     }
 
     // Converts inputs
-    let e = to_expr_irs(input, arena)?;
+    let e = to_expr_irs(input, arena, schema)?;
 
     match function {
         #[cfg(feature = "diff")]

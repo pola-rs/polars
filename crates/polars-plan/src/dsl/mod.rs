@@ -17,6 +17,7 @@ pub mod binary;
 mod bitwise;
 mod builder_dsl;
 pub use builder_dsl::*;
+mod datatype_expr;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
@@ -50,6 +51,7 @@ mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
+pub use datatype_expr::DataTypeExpr;
 pub use expr::*;
 pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
@@ -391,28 +393,32 @@ impl Expr {
     /// Cast expression to another data type.
     /// Throws an error if conversion had overflows.
     /// Returns an Error if cast is invalid on rows after predicates are pushed down.
-    pub fn strict_cast(self, dtype: DataType) -> Self {
+    pub fn strict_cast(self, dtype: impl Into<DataTypeExpr>) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            dtype,
+            dtype: dtype.into(),
             options: CastOptions::Strict,
         }
     }
 
     /// Cast expression to another data type.
-    pub fn cast(self, dtype: DataType) -> Self {
+    pub fn cast(self, dtype: impl Into<DataTypeExpr>) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            dtype,
+            dtype: dtype.into(),
             options: CastOptions::NonStrict,
         }
     }
 
     /// Cast expression to another data type.
-    pub fn cast_with_options(self, dtype: DataType, cast_options: CastOptions) -> Self {
+    pub fn cast_with_options(
+        self,
+        dtype: impl Into<DataTypeExpr>,
+        cast_options: CastOptions,
+    ) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
-            dtype,
+            dtype: dtype.into(),
             options: cast_options,
         }
     }

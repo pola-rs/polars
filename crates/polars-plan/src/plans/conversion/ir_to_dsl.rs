@@ -33,7 +33,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             let exp = node_to_expr(expr, expr_arena);
             Expr::Cast {
                 expr: Arc::new(exp),
-                dtype,
+                dtype: dtype.into(),
                 options: strict,
             }
         },

@@ -107,8 +107,8 @@ pub fn resolve_join(
         );
     }
 
-    let mut left_on = to_expr_irs_ignore_alias(left_on, ctxt.expr_arena)?;
-    let mut right_on = to_expr_irs_ignore_alias(right_on, ctxt.expr_arena)?;
+    let mut left_on = to_expr_irs_ignore_alias(left_on, ctxt.expr_arena, &schema_left)?;
+    let mut right_on = to_expr_irs_ignore_alias(right_on, ctxt.expr_arena, &schema_right)?;
     let mut joined_on = PlHashSet::new();
 
     #[cfg(feature = "iejoin")]
@@ -432,7 +432,7 @@ fn resolve_join_where(
     let mut upcast_exprs = Vec::<(Node, DataType)>::new();
     for e in predicates {
         let arena = &mut ctxt.expr_arena;
-        let predicate = to_expr_ir_ignore_alias(e, arena)?;
+        let predicate = to_expr_ir_ignore_alias(e, arena, &schema_merged)?;
         let node = predicate.node();
 
         // Ensure the predicate dtype output of the root node is Boolean
