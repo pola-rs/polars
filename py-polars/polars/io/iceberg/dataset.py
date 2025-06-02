@@ -424,7 +424,6 @@ class IcebergDataset:
                 include_key=False,
                 finish_callback=_finish_callback,
             ),
-            mkdir=True,
             field_overwrites=field_overwrites,
             lazy=True,
         )
