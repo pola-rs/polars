@@ -32,10 +32,12 @@ def test_null_count(df: pl.DataFrame) -> None:
 def test_null_count_optimization_23031() -> None:
     df = pl.DataFrame(data=[None, 2, None, 4, None, 6], schema={"col": pl.Int64})
 
-    expected = pl.DataFrame([
-        pl.Series("count_all", [3], pl.UInt32()),
-        pl.Series("sum_all", [12], pl.Int64()),
-    ])
+    expected = pl.DataFrame(
+        [
+            pl.Series("count_all", [3], pl.UInt32()),
+            pl.Series("sum_all", [12], pl.Int64()),
+        ]
+    )
 
     assert_frame_equal(
         df.select(
