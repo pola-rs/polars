@@ -9,7 +9,7 @@ def test_cumulative_eval_sum() -> None:
         pl.DataFrame({"a": [1, 2, 3]}).with_columns(
             b=pl.col.a.cumulative_eval(pl.element().sum())
         ),
-        pl.DataFrame({"a": [1, 3, 6]}),
+        pl.DataFrame({"a": [1, 2, 3], "b": [1, 3, 6]}),
     )
 
 
