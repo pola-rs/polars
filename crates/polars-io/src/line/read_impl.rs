@@ -458,7 +458,8 @@ mod tests {
         assert_eq!(super::skip_lines_naive(s.as_bytes(), b'!', 2), b"c!!d!");
         assert_eq!(super::skip_lines_naive(s.as_bytes(), b'!', 3), b"!d!");
         assert_eq!(super::skip_lines_naive(s.as_bytes(), b'!', 4), b"d!");
-        // no more new lines so it returns the same thing
+        // no more lines to skip (trailing eol_char does not count)
+        // so it returns the same thing
         assert_eq!(super::skip_lines_naive(s.as_bytes(), b'!', 5), b"d!");
     }
 
