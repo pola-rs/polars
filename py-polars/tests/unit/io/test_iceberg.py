@@ -242,7 +242,7 @@ def test_sink_iceberg_no_partition(tmp_path: Path) -> None:
     catalog = load_catalog(
         "default",
         type="sql",
-        uri=f"sqlite:///{warehouse_path}/pyiceberg_catalog.db",
+        uri="sqlite:///:memory:",
         warehouse=f"file://{warehouse_path}",
     )
     catalog.create_namespace("default")
@@ -314,7 +314,7 @@ def test_sink_iceberg_partition(tmp_path: Path) -> None:
     catalog = load_catalog(
         "default",
         type="sql",
-        uri=f"sqlite:///{warehouse_path}/pyiceberg_catalog.db",
+        uri="sqlite:///:memory:",
         warehouse=f"file://{warehouse_path}",
     )
     catalog.create_namespace("default")
