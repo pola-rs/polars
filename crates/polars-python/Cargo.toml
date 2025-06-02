@@ -251,7 +251,7 @@ optimizations = [
 ]
 
 polars_cloud_client = ["polars/polars_cloud_client"]
-polars_cloud_server = ["polars/polars_cloud_server", "polars/ir_serde"]
+polars_cloud_server = ["polars/polars_cloud_server"]
 
 # also includes simd
 nightly = ["polars/nightly"]
