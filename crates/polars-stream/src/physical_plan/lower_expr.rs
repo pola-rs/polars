@@ -755,18 +755,26 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(bin_expr));
             },
             AExpr::Eval {
-                expr,
+                expr: inner,
                 evaluation,
                 variant,
-            } => {
-                let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[expr], ctx)?;
-                let eval_expr = AExpr::Eval {
-                    expr: trans_expr[0],
-                    evaluation,
-                    variant,
-                };
-                input_streams.insert(trans_input);
-                transformed_exprs.push(ctx.expr_arena.add(eval_expr));
+            } => match variant {
+                EvalVariant::List => {
+                    let (trans_input, trans_expr) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                    let eval_expr = AExpr::Eval {
+                        expr: trans_expr[0],
+                        evaluation,
+                        variant,
+                    };
+                    input_streams.insert(trans_input);
+                    transformed_exprs.push(ctx.expr_arena.add(eval_expr));
+                },
+                EvalVariant::Cumulative { .. } => {
+                    // Cumulative is not elementwise, this would need a special node.
+                    let out_name = unique_column_name();
+                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                },
             },
             AExpr::Ternary {
                 predicate,
