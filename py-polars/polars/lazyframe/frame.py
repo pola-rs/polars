@@ -3519,7 +3519,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if lazy:
             return lf
         lf.collect(engine="streaming")
-        return
+        return None
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
