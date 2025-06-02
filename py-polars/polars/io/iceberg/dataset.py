@@ -188,7 +188,9 @@ class IcebergDataset:
     ) -> pl.LazyFrame:
         """Write a LazyFrame into the Iceberg dataset."""
         import uuid
+        from pathlib import Path
 
+        import pyarrow as pa
         import pyiceberg.transforms as ts
         from pyiceberg.expressions import AlwaysTrue
         from pyiceberg.manifest import DataFile
@@ -259,6 +261,55 @@ class IcebergDataset:
             else:
                 return IcebergRecord()
 
+        def field_to_parquet_overwrites(field: pa.Field) -> ParquetFieldOverwrites:
+            field_id = field.metadata.pop(b"PARQUET:field_id")
+            field_id = int(field_id)
+
+            unsupported_types = [
+                "MapType",
+                "ExtensionType",
+                "UnionType",
+                "DictionaryType",
+                "SparseUnionType",
+                "DenseUnionType",
+                "Decimal256",
+                "ListViewType",
+                "LargeListViewType",
+                "FixedSizeBinaryType",
+                "BaseExtensionType",
+                "PyExtensionType",
+                "UnknownExtensionType",
+                "JsonType",
+                "Bool8Type",
+                "UuidType",
+                "OpaqueType",
+                "RunEndEncodedType",
+            ]
+            is_unsupported_type = any(
+                hasattr(pa, t) and isinstance(field.type, getattr(pa, t))
+                for t in unsupported_types
+            )
+            if is_unsupported_type:
+                msg = f"arrow `{field.type!r}` is not supported in polars Iceberg sinks"
+                raise NotImplementedError(msg)
+
+            children: (
+                None | ParquetFieldOverwrites | dict[str, ParquetFieldOverwrites]
+            ) = None
+            if isinstance(field.type, pa.StructType):
+                children = {
+                    f.name: field_to_parquet_overwrites(f) for f in field.type.fields
+                }
+            elif isinstance(field.type, (pa.LargeListType, pa.ListType)):
+                children = field_to_parquet_overwrites(field.type.value_field)
+
+            return ParquetFieldOverwrites(
+                name=field.name,
+                field_id=field_id,
+                required=not field.nullable,
+                children=children,
+            )
+
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         table = self.table()
@@ -288,20 +339,16 @@ class IcebergDataset:
         from polars.io.parquet import ParquetFieldOverwrites
 
         # Create mapping to map column name to unique integer
-        field_overwrites = []
-        field_ids = []
-        for field in pyarrow_schema:
-            field_id = field.metadata.pop(b"PARQUET:field_id")
-            field_id = int(field_id)
-
-            field_ids.append(field_id)
-            field_overwrites.append(
-                ParquetFieldOverwrites(name=field.name, field_id=field_id)
-            )
+        field_overwrites = [
+            field_to_parquet_overwrites(field) for field in pyarrow_schema
+        ]
+        field_ids = [f.field_id for f in field_overwrites]
 
         def _file_path_cb(_ctx: Any) -> str:
             name = f"{uuid.uuid4()}.parquet"
             path = location_provider.new_data_location(name, None)
+            if path.startswith("file://"):
+                Path(path[len("file://") :]).mkdir(parents=True, exist_ok=True)
             offset = path[len(location_provider.table_location) :]
             return offset
 
