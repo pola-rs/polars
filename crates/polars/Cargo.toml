@@ -436,7 +436,6 @@ docs-selection = [
   "unique_counts",
   "polars_cloud_client",
   "serde",
-  "ir_serde",
   "cloud",
   "async",
 ]
