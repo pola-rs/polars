@@ -73,13 +73,13 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-time")]
     Time(i64),
     #[cfg(feature = "dtype-categorical")]
-    Categorical(u32, &'a Arc<CategoricalMapping>),
+    Categorical(CatSize, &'a Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-categorical")]
-    CategoricalOwned(u32, Arc<CategoricalMapping>),
+    CategoricalOwned(CatSize, Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-categorical")]
-    Enum(u32, &'a Arc<CategoricalMapping>),
+    Enum(CatSize, &'a Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-categorical")]
-    EnumOwned(u32, Arc<CategoricalMapping>),
+    EnumOwned(CatSize, Arc<CategoricalMapping>),
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     #[cfg(feature = "dtype-array")]
