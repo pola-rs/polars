@@ -13,6 +13,7 @@ use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
+use strum_macros::IntoStaticStr;
 
 use super::{ExprIR, FileType};
 use crate::dsl::{AExpr, Expr, SpecialEq};
@@ -479,13 +480,35 @@ pub struct PartitionSinkTypeIR {
     pub finish_callback: Option<SinkFinishCallback>,
 }
 
+#[cfg(feature = "python")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, IntoStaticStr)]
+#[strum(serialize_all = "camelCase")]
+pub enum IcebergWriteMode {
+    Overwrite,
+    Append,
+}
+
+#[cfg(feature = "python")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug)]
+pub struct DatasetSinkType {
+    pub dataset: Arc<crate::dsl::python_dataset::PythonDatasetProvider>,
+    pub cloud_options: Option<polars_io::cloud::CloudOptions>,
+    pub mode: IcebergWriteMode,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug)]
 pub enum SinkType {
     Memory,
     File(FileSinkType),
     Partition(PartitionSinkType),
+    #[cfg(feature = "python")]
+    Dataset(DatasetSinkType),
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

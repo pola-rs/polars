@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use polars::prelude::sync_on_close::SyncOnCloseType;
-use polars::prelude::{PartitionVariant, SinkFinishCallback, SinkOptions, SortColumn, SpecialEq};
+use polars::prelude::{
+    IcebergWriteMode, PartitionVariant, SinkFinishCallback, SinkOptions, SortColumn, SpecialEq,
+};
 use polars_utils::IdxSize;
 use polars_utils::python_function::{PythonFunction, PythonObject};
 use pyo3::exceptions::PyValueError;
@@ -213,5 +215,20 @@ impl<'py> FromPyObject<'py> for Wrap<SinkOptions> {
             maintain_order,
             mkdir,
         }))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<IcebergWriteMode> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "overwrite" => IcebergWriteMode::Overwrite,
+            "append" => IcebergWriteMode::Append,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`mode` must be one of {{'overwrite', 'append'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
     }
 }
