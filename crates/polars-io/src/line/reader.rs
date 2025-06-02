@@ -39,11 +39,6 @@ where
 }
 
 impl<R: MmapBytesReader> LineReader<R> {
-    pub fn _with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
-        self.predicate = predicate;
-        self
-    }
-
     fn core_reader(&mut self) -> PolarsResult<CoreReader> {
         let reader_bytes = get_reader_bytes(&mut self.reader)?;
 
