@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from string import Formatter
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
@@ -797,17 +798,19 @@ def concat_str(
     return wrap_expr(plr.concat_str(exprs, separator, ignore_nulls))
 
 
-def format(f_string: str, *args: Expr | str) -> Expr:
+def format(f_string: str, *args: Expr | str, **kwargs: Expr | str) -> Expr:
     """
     Format expressions as a string.
 
     Parameters
     ----------
     f_string
-        A string that with placeholders.
-        For example: "hello_{}" or "{}_world
+        A string that with placeholders (named and unnamed).
+        For example: "hello_{}" or "{placeholder_name}_world
     args
-        Expression(s) that fill the placeholders
+        Expression(s) that fill the unnamed placeholders
+    kwargs
+        Expression(s) that fill the named placeholders
 
     Examples
     --------
@@ -819,7 +822,7 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     ... )
     >>> df.select(
     ...     [
-    ...         pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt"),
+    ...         pl.format("foo_{}_bar_{b}", pl.col("a"), b="b").alias("fmt"),
     ...     ]
     ... )
     shape: (3, 1)
@@ -833,19 +836,46 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     │ foo_c_bar_3 │
     └─────────────┘
     """
-    if f_string.count("{}") != len(args):
-        msg = "number of placeholders should equal the number of arguments"
-        raise ValueError(msg)
+    matches = list(Formatter().parse(f_string))
+
+    n_unnamed_placeholders = len([m for m in matches if m[1] == ""])
+    n_named_placeholders = len([m for m in matches if m[1] not in (None, "")])
+
+    if n_unnamed_placeholders != len(args):
+        error = (
+            f"Expected {n_unnamed_placeholders} unnamed placeholders, "
+            f"but got {len(args)} arguments."
+        )
+        raise ValueError(error)
+    if n_named_placeholders != len(kwargs):
+        error = (
+            f"Expected {n_named_placeholders} named placeholders, "
+            f"but got {len(kwargs)} keyword arguments."
+        )
+        raise ValueError(error)
+    if any(m[2] not in (None, "") or m[3] is not None for m in matches):
+        error = "Formatting specifiers and conversion flags are not supported in polars.format()."
+        raise ValueError(error)
 
     exprs = []
 
     arguments = iter(args)
-    for i, s in enumerate(f_string.split("{}")):
-        if i > 0:
-            e = wrap_expr(parse_into_expression(next(arguments)))
-            exprs.append(e)
 
-        if len(s) > 0:
-            exprs.append(F.lit(s))
+    for literal_text, field_name, _, _ in matches:
+        if len(literal_text) > 0:
+            exprs.append(F.lit(literal_text))
+
+        if field_name is None:
+            continue
+
+        if field_name == "":
+            e = wrap_expr(parse_into_expression(next(arguments)))
+        else:
+            if field_name in kwargs:
+                e = wrap_expr(parse_into_expression(kwargs[field_name]))
+            else:
+                error = f"Placeholder '{field_name}' not found in kwargs. Available keys: {list(kwargs.keys())}"
+                raise ValueError(error)
+        exprs.append(e)
 
     return concat_str(exprs, separator="")
