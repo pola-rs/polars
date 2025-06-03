@@ -373,6 +373,6 @@ mod test {
 
         a.append(&a.slice(0, 2)).unwrap();
         let a = a.rechunk();
-        assert!(a.categorical().unwrap().get_rev_map().len() > 0);
+        assert!(a.cat32().unwrap().get_mapping().num_cats_upper_bound() > 0);
     }
 }

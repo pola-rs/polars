@@ -181,7 +181,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
 
         let arr = <T::PolarsPhysical as PolarsDataType>::Array::from_vec(cat_ids).with_validity(validity.into_opt_validity());
         let phys = ChunkedArray::<T::PolarsPhysical>::with_chunk(name, arr);
-        Ok(Self::new_logical(phys, dtype))
+        Ok(unsafe { Self::from_cats_and_dtype_unchecked(phys, dtype) })
     }
 }
 
