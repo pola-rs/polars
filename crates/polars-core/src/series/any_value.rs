@@ -22,48 +22,6 @@ impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
     }
 }
 
-fn initialize_empty_categorical_revmap_rec(dtype: &DataType) -> Cow<'_, DataType> {
-    use DataType as T;
-    match dtype {
-        #[cfg(feature = "dtype-categorical")]
-        T::Categorical(None, o) => {
-            Cow::Owned(T::Categorical(Some(Arc::new(RevMapping::default())), *o))
-        },
-        T::List(inner_dtype) => match initialize_empty_categorical_revmap_rec(inner_dtype) {
-            Cow::Owned(inner_dtype) => Cow::Owned(T::List(Box::new(inner_dtype))),
-            _ => Cow::Borrowed(dtype),
-        },
-        #[cfg(feature = "dtype-array")]
-        T::Array(inner_dtype, width) => {
-            match initialize_empty_categorical_revmap_rec(inner_dtype) {
-                Cow::Owned(inner_dtype) => Cow::Owned(T::Array(Box::new(inner_dtype), *width)),
-                _ => Cow::Borrowed(dtype),
-            }
-        },
-        #[cfg(feature = "dtype-struct")]
-        T::Struct(fields) => {
-            for (i, field) in fields.iter().enumerate() {
-                if let Cow::Owned(field_dtype) =
-                    initialize_empty_categorical_revmap_rec(field.dtype())
-                {
-                    let mut new_fields = Vec::with_capacity(fields.len());
-                    new_fields.extend(fields[..i].iter().cloned());
-                    new_fields.push(Field::new(field.name().clone(), field_dtype));
-                    new_fields.extend(fields[i + 1..].iter().map(|field| {
-                        let field_dtype =
-                            initialize_empty_categorical_revmap_rec(field.dtype()).into_owned();
-                        Field::new(field.name().clone(), field_dtype)
-                    }));
-                    return Cow::Owned(T::Struct(new_fields));
-                }
-            }
-
-            Cow::Borrowed(dtype)
-        },
-        _ => Cow::Borrowed(dtype),
-    }
-}
-
 impl Series {
     /// Construct a new [`Series`] from a slice of AnyValues.
     ///
@@ -132,12 +90,7 @@ impl Series {
         strict: bool,
     ) -> PolarsResult<Self> {
         if values.is_empty() {
-            return Ok(Self::new_empty(
-                name,
-                // This is given categoricals with empty revmaps, but we need to always return
-                // categoricals with non-empty revmaps.
-                initialize_empty_categorical_revmap_rec(dtype).as_ref(),
-            ));
+            return Ok(Self::new_empty(name, dtype));
         }
 
         let mut s = match dtype {
@@ -172,9 +125,9 @@ impl Series {
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(tu) => any_values_to_duration(values, *tu, strict)?.into_series(),
             #[cfg(feature = "dtype-categorical")]
-            dt @ DataType::Categorical(_, _) => any_values_to_categorical(values, dt, strict)?,
+            dt @ DataType::NewCategorical(_, _) => any_values_to_categorical(values, dt, strict)?,
             #[cfg(feature = "dtype-categorical")]
-            dt @ DataType::Enum(_, _) => any_values_to_enum(values, dt, strict)?,
+            dt @ DataType::NewEnum(_, _) => any_values_to_enum(values, dt, strict)?,
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
@@ -498,11 +451,6 @@ fn any_values_to_categorical(
     dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<Series> {
-    let ordering = match dtype {
-        DataType::Categorical(_, ordering) => ordering,
-        _ => panic!("any_values_to_categorical with dtype={dtype:?}"),
-    };
-
     let mut builder = CategoricalChunkedBuilder::new(PlSmallStr::EMPTY, values.len(), *ordering);
 
     let mut owned = String::new(); // Amortize allocations.
