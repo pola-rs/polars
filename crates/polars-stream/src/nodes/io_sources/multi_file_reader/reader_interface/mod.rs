@@ -65,7 +65,6 @@ pub trait FileReader: Send + Sync {
     }
 
     /// Returns `Some(_)` if the row count is cheaply retrievable.
-    #[expect(unused)]
     async fn fast_n_rows_in_file(&mut self) -> PolarsResult<Option<IdxSize>> {
         Ok(None)
     }
@@ -177,7 +176,8 @@ pub struct FileReaderCallbacks {
     /// reader will have reached upon finishing.
     ///
     /// This callback should be sent as soon as possible, as it can be a serial dependency for the
-    /// next reader.
+    /// next reader. The returned value is allowed to exceed the slice limit (if provided), but must
+    /// not exceed the total number of rows in the file.
     ///
     /// Readers that know their total row count upfront can simply send this value immediately.
     /// Readers that don't have this information may instead track their position in the file during
