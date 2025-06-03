@@ -6,29 +6,10 @@ use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 use crate::utils::Container;
 
-#[cfg(feature = "dtype-categorical")]
-#[inline(always)]
-fn fill_rev_map(dtype: &DataType, rev_map_merger: &mut Option<Box<GlobalRevMapMerger>>) {
-    if let DataType::Categorical(Some(rev_map), _) = dtype {
-        assert!(
-            rev_map.is_active_global(),
-            "{}",
-            polars_err!(string_cache_mismatch)
-        );
-        if let Some(merger) = rev_map_merger {
-            merger.merge_map(rev_map).unwrap();
-        } else {
-            *rev_map_merger = Some(Box::new(GlobalRevMapMerger::new(rev_map.clone())));
-        }
-    }
-}
-
 /// A type-erased wrapper around ArrayBuilder.
 pub struct SeriesBuilder {
     dtype: DataType,
     builder: Box<dyn ArrayBuilder>,
-    #[cfg(feature = "dtype-categorical")]
-    rev_map_merger: Option<Box<GlobalRevMapMerger>>,
 }
 
 impl SeriesBuilder {
@@ -40,8 +21,6 @@ impl SeriesBuilder {
             return Self {
                 dtype,
                 builder,
-                #[cfg(feature = "dtype-categorical")]
-                rev_map_merger: None,
             };
         }
 
@@ -49,8 +28,6 @@ impl SeriesBuilder {
         Self {
             dtype,
             builder,
-            #[cfg(feature = "dtype-categorical")]
-            rev_map_merger: None,
         }
     }
 
@@ -59,22 +36,9 @@ impl SeriesBuilder {
         self.builder.reserve(additional);
     }
 
-    fn freeze_dtype(&mut self) -> DataType {
-        #[cfg(feature = "dtype-categorical")]
-        if let Some(rev_map_merger) = self.rev_map_merger.take() {
-            let DataType::Categorical(_, order) = self.dtype else {
-                unreachable!()
-            };
-            return DataType::Categorical(Some(rev_map_merger.finish()), order);
-        }
-
-        self.dtype.clone()
-    }
-
     pub fn freeze(mut self, name: PlSmallStr) -> Series {
         unsafe {
-            let dtype = self.freeze_dtype();
-            Series::from_chunks_and_dtype_unchecked(name, vec![self.builder.freeze()], &dtype)
+            Series::from_chunks_and_dtype_unchecked(name, vec![self.builder.freeze()], &self.dtype)
         }
     }
 
@@ -83,7 +47,7 @@ impl SeriesBuilder {
             Series::from_chunks_and_dtype_unchecked(
                 name,
                 vec![self.builder.freeze_reset()],
-                &self.freeze_dtype(),
+                &self.dtype,
             )
         }
     }
@@ -100,11 +64,6 @@ impl SeriesBuilder {
     /// other does not match the dtype of this builder.
     #[inline(always)]
     pub fn extend(&mut self, other: &Series, share: ShareStrategy) {
-        #[cfg(feature = "dtype-categorical")]
-        {
-            fill_rev_map(other.dtype(), &mut self.rev_map_merger);
-        }
-
         self.subslice_extend(other, 0, other.len(), share);
     }
 
@@ -117,11 +76,6 @@ impl SeriesBuilder {
         mut length: usize,
         share: ShareStrategy,
     ) {
-        #[cfg(feature = "dtype-categorical")]
-        {
-            fill_rev_map(other.dtype(), &mut self.rev_map_merger);
-        }
-
         if length == 0 || other.is_empty() {
             return;
         }
@@ -151,11 +105,6 @@ impl SeriesBuilder {
         repeats: usize,
         share: ShareStrategy,
     ) {
-        #[cfg(feature = "dtype-categorical")]
-        {
-            fill_rev_map(other.dtype(), &mut self.rev_map_merger);
-        }
-
         if length == 0 || other.is_empty() {
             return;
         }
@@ -179,11 +128,6 @@ impl SeriesBuilder {
         repeats: usize,
         share: ShareStrategy,
     ) {
-        #[cfg(feature = "dtype-categorical")]
-        {
-            fill_rev_map(other.dtype(), &mut self.rev_map_merger);
-        }
-
         if length == 0 || repeats == 0 || other.is_empty() {
             return;
         }
@@ -218,22 +162,12 @@ impl SeriesBuilder {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_extend(&mut self, other: &Series, idxs: &[IdxSize], share: ShareStrategy) {
-        #[cfg(feature = "dtype-categorical")]
-        {
-            fill_rev_map(other.dtype(), &mut self.rev_map_merger);
-        }
-
         let chunks = other.chunks();
         assert!(chunks.len() == 1);
         self.builder.gather_extend(&*chunks[0], idxs, share);
     }
 
     pub fn opt_gather_extend(&mut self, other: &Series, idxs: &[IdxSize], share: ShareStrategy) {
-        #[cfg(feature = "dtype-categorical")]
-        {
-            fill_rev_map(other.dtype(), &mut self.rev_map_merger);
-        }
-
         let chunks = other.chunks();
         assert!(chunks.len() == 1);
         self.builder.opt_gather_extend(&*chunks[0], idxs, share);
