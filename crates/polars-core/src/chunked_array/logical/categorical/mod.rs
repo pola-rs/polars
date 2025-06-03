@@ -7,6 +7,9 @@ use crate::prelude::*;
 use crate::utils::handle_casting_failures;
 
 pub type NewCategoricalChunked<T> = Logical<T, <T as PolarsCategoricalType>::PolarsPhysical>;
+pub type NewCategorical8Chunked = NewCategoricalChunked<Categorical8Type>;
+pub type NewCategorical16Chunked = NewCategoricalChunked<Categorical16Type>;
+pub type NewCategorical32Chunked = NewCategoricalChunked<Categorical32Type>;
 
 impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
     pub fn is_empty(&self) -> bool {
