@@ -321,8 +321,20 @@ impl Column {
         self.as_materialized_series().try_array()
     }
     #[cfg(feature = "dtype-categorical")]
-    pub fn try_categorical(&self) -> Option<&CategoricalChunked> {
-        self.as_materialized_series().try_categorical()
+    pub fn try_cat<T: PolarsCategoricalType>(&self) -> Option<&NewCategoricalChunked<T>> {
+        self.as_materialized_series().try_cat::<T>()
+    }
+    #[cfg(feature = "dtype-categorical")]
+    pub fn try_cat8(&self) -> Option<&NewCategorical8Chunked> {
+        self.as_materialized_series().try_cat8()
+    }
+    #[cfg(feature = "dtype-categorical")]
+    pub fn try_cat16(&self) -> Option<&NewCategorical16Chunked> {
+        self.as_materialized_series().try_cat16()
+    }
+    #[cfg(feature = "dtype-categorical")]
+    pub fn try_cat32(&self) -> Option<&NewCategorical32Chunked> {
+        self.as_materialized_series().try_cat32()
     }
     #[cfg(feature = "dtype-date")]
     pub fn try_date(&self) -> Option<&DateChunked> {
@@ -403,8 +415,20 @@ impl Column {
         self.as_materialized_series().array()
     }
     #[cfg(feature = "dtype-categorical")]
-    pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {
-        self.as_materialized_series().categorical()
+    pub fn cat<T: PolarsCategoricalType>(&self) -> PolarsResult<&NewCategoricalChunked<T>> {
+        self.as_materialized_series().cat::<T>()
+    }
+    #[cfg(feature = "dtype-categorical")]
+    pub fn cat8(&self) -> PolarsResult<&NewCategorical8Chunked> {
+        self.as_materialized_series().cat8()
+    }
+    #[cfg(feature = "dtype-categorical")]
+    pub fn cat16(&self) -> PolarsResult<&NewCategorical16Chunked> {
+        self.as_materialized_series().cat16()
+    }
+    #[cfg(feature = "dtype-categorical")]
+    pub fn cat32(&self) -> PolarsResult<&NewCategorical32Chunked> {
+        self.as_materialized_series().cat32()
     }
     #[cfg(feature = "dtype-date")]
     pub fn date(&self) -> PolarsResult<&DateChunked> {
