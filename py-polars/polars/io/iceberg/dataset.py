@@ -348,8 +348,10 @@ class IcebergDataset:
             name = f"{uuid.uuid4()}.parquet"
             path = location_provider.new_data_location(name, None)
             if path.startswith("file://"):
-                Path(path[len("file://") :]).mkdir(parents=True, exist_ok=True)
+                Path(path[len("file://") :]).parent.mkdir(parents=True, exist_ok=True)
             offset = path[len(location_provider.table_location) :]
+            if offset.startswith("/"):
+                offset = offset[1:]
             return offset
 
         def _finish_callback(df: pl.DataFrame) -> None:
