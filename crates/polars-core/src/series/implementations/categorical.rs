@@ -2,7 +2,7 @@ use super::*;
 use crate::chunked_array::comparison::*;
 use crate::prelude::*;
 
-unsafe impl IntoSeries for CategoricalChunked {
+unsafe impl<T: PolarsCategoricalType> IntoSeries for NewCategoricalChunked<T> {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }
@@ -131,7 +131,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 }
 
-impl SeriesTrait for SeriesWrap<CategoricalChunked> {
+impl<T: PolarsCategoricalType> SeriesTrait for SeriesWrap<NewCategoricalChunked<T>> {
     fn rename(&mut self, name: PlSmallStr) {
         self.0.physical_mut().rename(name);
     }
@@ -139,6 +139,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.0.physical().chunk_lengths()
     }
+
     fn name(&self) -> &PlSmallStr {
         self.0.physical().name()
     }
@@ -146,9 +147,11 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.physical().chunks()
     }
+
     unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         self.0.physical_mut().chunks_mut()
     }
+
     fn shrink_to_fit(&mut self) {
         self.0.physical_mut().shrink_to_fit()
     }
@@ -157,17 +160,21 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.with_state(false, |cats| cats.slice(offset, length))
             .into_series()
     }
+
     fn split_at(&self, offset: i64) -> (Series, Series) {
-        let (a, b) = self.0.physical().split_at(offset);
-        let a = self.finish_with_state(false, a).into_series();
-        let b = self.finish_with_state(false, b).into_series();
-        (a, b)
+        unsafe {
+            let (a, b) = self.0.physical().split_at(offset);
+            let a = NewCategoricalChunked::<T>::from_cats_and_dtype_unchecked(a, self.0.dtype().clone()).into_series();
+            let b = NewCategoricalChunked::<T>::from_cats_and_dtype_unchecked(b, self.0.dtype().clone()).into_series();
+            (a, b)
+        }
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         self.0.append(other.categorical().unwrap())
     }
+
     fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         let other = other
@@ -329,7 +336,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 }
 
-impl private::PrivateSeriesNumeric for SeriesWrap<CategoricalChunked> {
+impl<T: PolarsCategoricalType> private::PrivateSeriesNumeric for SeriesWrap<NewCategoricalChunked<T>> {
     fn bit_repr(&self) -> Option<BitRepr> {
         Some(BitRepr::Small(self.0.physical().clone()))
     }

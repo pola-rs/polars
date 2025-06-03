@@ -4,7 +4,8 @@ pub type DateChunked = Logical<DateType, Int32Type>;
 
 impl Int32Chunked {
     pub fn into_date(self) -> DateChunked {
-        DateChunked::new_logical(self, DataType::Date)
+        // SAFETY: no invalid states.
+        unsafe { DateChunked::new_logical(self, DataType::Date) }
     }
 }
 

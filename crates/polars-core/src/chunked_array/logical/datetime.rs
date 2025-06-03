@@ -6,7 +6,8 @@ pub type DatetimeChunked = Logical<DatetimeType, Int64Type>;
 
 impl Int64Chunked {
     pub fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> DatetimeChunked {
-        DatetimeChunked::new_logical(self, DataType::Datetime(timeunit, tz))
+        // SAFETY: no invalid states.
+        unsafe { DatetimeChunked::new_logical(self, DataType::Datetime(timeunit, tz)) }
     }
 }
 

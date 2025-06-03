@@ -63,7 +63,7 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
         dtype: DataType,
     ) -> Self {
         let phys = ChunkedArray::<<T as PolarsCategoricalType>::PolarsPhysical>::full_null(name, length);
-        Self::new_logical(phys, dtype)
+        unsafe { Self::from_cats_and_dtype_unchecked(phys, dtype) }
     }
 
     /// Create a [`CategoricalChunked`] from a physical array and dtype.
