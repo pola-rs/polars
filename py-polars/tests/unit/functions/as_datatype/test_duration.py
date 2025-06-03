@@ -204,7 +204,8 @@ def test_duration_from_i128_23050() -> None:
         ),
         pl.select(
             c=pl.duration(
-                seconds=pl.Series([2, 0]), microseconds=pl.Series([10702, 394088])
+                seconds=pl.lit(pl.Series([2, 0])),
+                microseconds=pl.lit(pl.Series([10702, 394088])),
             )
         ),
     )
