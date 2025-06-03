@@ -1,13 +1,16 @@
 pub(crate) mod array_chunks;
 pub(crate) mod filter;
 
+use std::fmt;
 use std::ops::Range;
+use std::sync::OnceLock;
 
 use arrow::array::{Array, IntoBoxedArray, Splitable};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
 use polars_compute::filter::filter_boolean_kernel;
+use polars_utils::pl_str::PlSmallStr;
 
 use self::filter::Filter;
 use super::{BasicDecompressor, InitNested, NestedState, PredicateFilter};
@@ -403,6 +406,48 @@ pub(super) trait Decoder: Sized {
     ) -> ParquetResult<Self::Output>;
 }
 
+enum DecodeType {
+    Plain,
+    Range,
+    Mask,
+    Predicate,
+}
+
+impl fmt::Display for DecodeType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            DecodeType::Plain => "plain",
+            DecodeType::Range => "range",
+            DecodeType::Mask => "mask",
+            DecodeType::Predicate => "predicate",
+        })
+    }
+}
+
+struct DecodeMetrics {
+    field_name: PlSmallStr,
+    num_compressed_bytes: u64,
+    num_uncompressed_bytes: u64,
+    num_decompressed_pages: u64,
+    num_micros_spent_decompressing: u128,
+    num_micros_spent_decoding: u128,
+    decode_type: DecodeType,
+}
+
+impl DecodeMetrics {
+    fn new(field_name: &str) -> Self {
+        Self {
+            field_name: PlSmallStr::from_str(field_name),
+            num_compressed_bytes: 0,
+            num_uncompressed_bytes: 0,
+            num_decompressed_pages: 0,
+            num_micros_spent_decompressing: 0,
+            num_micros_spent_decoding: 0,
+            decode_type: DecodeType::Plain,
+        }
+    }
+}
+
 pub struct PageDecoder<D: Decoder> {
     pub iter: BasicDecompressor,
     pub dtype: ArrowDataType,
@@ -410,10 +455,28 @@ pub struct PageDecoder<D: Decoder> {
     pub decoder: D,
 
     pub init_nested: Option<Vec<InitNested>>,
+
+    /// Used to track metrics with `POLARS_PARQUET_METRICS=1`.
+    metrics: Option<Box<DecodeMetrics>>,
 }
+
+#[inline(always)]
+fn option_time<T>(do_time: bool, f: impl FnOnce() -> T) -> (T, Option<u128>) {
+    if do_time {
+        let start = std::time::SystemTime::now();
+        let result = std::hint::black_box(f());
+        let elapsed = start.elapsed().unwrap().as_micros();
+        (result, Some(elapsed))
+    } else {
+        (f(), None)
+    }
+}
+
+static POLARS_PARQUET_METRICS: OnceLock<bool> = OnceLock::new();
 
 impl<D: Decoder> PageDecoder<D> {
     pub fn new(
+        field_name: &str,
         mut iter: BasicDecompressor,
         dtype: ArrowDataType,
         mut decoder: D,
@@ -423,6 +486,9 @@ impl<D: Decoder> PageDecoder<D> {
         let dict_page = iter.read_dict_page()?;
         let dict = dict_page.map(|d| decoder.deserialize_dict(d)).transpose()?;
 
+        let do_metrics = POLARS_PARQUET_METRICS
+            .get_or_init(|| std::env::var("POLARS_PARQUET_METRICS").as_deref() == Ok("1"));
+
         Ok(Self {
             iter,
             dtype,
@@ -430,6 +496,7 @@ impl<D: Decoder> PageDecoder<D> {
             decoder,
 
             init_nested,
+            metrics: do_metrics.then(|| Box::new(DecodeMetrics::new(field_name))),
         })
     }
 
@@ -467,6 +534,15 @@ impl<D: Decoder> PageDecoder<D> {
             }
         }
 
+        if let Some(metrics) = self.metrics.as_deref_mut() {
+            metrics.decode_type = match &filter {
+                None => DecodeType::Plain,
+                Some(Filter::Range(_)) => DecodeType::Range,
+                Some(Filter::Mask(_)) => DecodeType::Mask,
+                Some(Filter::Predicate(_)) => DecodeType::Predicate,
+            };
+        }
+
         while num_rows_remaining > 0 {
             let Some(page) = self.iter.next() else {
                 break;
@@ -498,56 +574,79 @@ impl<D: Decoder> PageDecoder<D> {
                 continue;
             }
 
-            let page = page.decompress(&mut self.iter)?;
+            if let Some(metrics) = self.metrics.as_deref_mut() {
+                metrics.num_compressed_bytes += page.page().buffer.len() as u64;
+                metrics.num_uncompressed_bytes += page.page().uncompressed_size() as u64;
+            }
+
+            let iter = &mut self.iter;
+            let (page, time) = option_time(self.metrics.is_some(), move || page.decompress(iter));
+            let page = page?;
+
+            if let Some(time) = time {
+                let metrics = self.metrics.as_deref_mut().unwrap();
+                metrics.num_micros_spent_decompressing += time;
+                metrics.num_decompressed_pages += 1;
+            }
 
             let state = State::new(&self.decoder, &page, self.dict.as_ref(), dict_mask.as_ref())?;
 
             let start_length = target.len();
-            match &state_filter {
-                // Handle the case where column is held equal to Null. This can be the same for all
-                // non-nested columns.
-                Some(Filter::Predicate(p))
-                    if p.predicate
-                        .to_equals_scalar()
-                        .is_some_and(|sc| sc.is_null()) =>
-                {
-                    if state.is_optional {
-                        match &state.page_validity {
-                            None => pred_true_mask.extend_constant(page.num_values(), false),
-                            Some(v) => {
-                                pred_true_mask.extend_from_bitmap(v);
-                                if p.include_values {
-                                    target.extend_nulls(v.set_bits());
-                                }
-                            },
+            let (result, time) = option_time(self.metrics.is_some(), || {
+                match &state_filter {
+                    // Handle the case where column is held equal to Null. This can be the same for all
+                    // non-nested columns.
+                    Some(Filter::Predicate(p))
+                        if p.predicate
+                            .to_equals_scalar()
+                            .is_some_and(|sc| sc.is_null()) =>
+                    {
+                        if state.is_optional {
+                            match &state.page_validity {
+                                None => pred_true_mask.extend_constant(page.num_values(), false),
+                                Some(v) => {
+                                    pred_true_mask.extend_from_bitmap(v);
+                                    if p.include_values {
+                                        target.extend_nulls(v.set_bits());
+                                    }
+                                },
+                            }
+                        } else {
+                            pred_true_mask.extend_constant(page.num_values(), false);
                         }
-                    } else {
-                        pred_true_mask.extend_constant(page.num_values(), false);
-                    }
-                    drop(state);
-                },
+                        drop(state);
+                    },
 
-                // For now, we have a function that indicates whether the predicate can actually be
-                // handled in the kernels. If it cannot be handled in the kernels, catch it here
-                // and load it as if it weren't filtered.
-                Some(Filter::Predicate(p))
-                    if !self.decoder.has_predicate_specialization(&state, p)? =>
-                {
-                    self.decoder.unspecialized_predicate_decode(
-                        state,
+                    // For now, we have a function that indicates whether the predicate can actually be
+                    // handled in the kernels. If it cannot be handled in the kernels, catch it here
+                    // and load it as if it weren't filtered.
+                    Some(Filter::Predicate(p))
+                        if !self.decoder.has_predicate_specialization(&state, p)? =>
+                    {
+                        self.decoder.unspecialized_predicate_decode(
+                            state,
+                            &mut target,
+                            &mut pred_true_mask,
+                            p,
+                            self.dict.clone(),
+                            &self.dtype,
+                        )?
+                    },
+                    _ => state.decode(
+                        &mut self.decoder,
                         &mut target,
                         &mut pred_true_mask,
-                        p,
-                        self.dict.clone(),
-                        &self.dtype,
-                    )?
-                },
-                _ => state.decode(
-                    &mut self.decoder,
-                    &mut target,
-                    &mut pred_true_mask,
-                    state_filter,
-                )?,
+                        state_filter,
+                    )?,
+                }
+
+                ParquetResult::Ok(())
+            });
+            result?;
+
+            if let Some(time) = time {
+                let metrics = self.metrics.as_deref_mut().unwrap();
+                metrics.num_micros_spent_decoding += time;
             }
 
             let end_length = target.len();
@@ -555,6 +654,19 @@ impl<D: Decoder> PageDecoder<D> {
             num_rows_remaining -= end_length - start_length;
 
             self.iter.reuse_page_buffer(page);
+        }
+
+        if let Some(metrics) = self.metrics.as_ref() {
+            eprintln!(
+                "PQ-Metrics: {},{},{},{},{},{},{}",
+                metrics.field_name,
+                metrics.num_micros_spent_decompressing,
+                metrics.num_micros_spent_decoding,
+                metrics.num_compressed_bytes,
+                metrics.num_uncompressed_bytes,
+                metrics.num_decompressed_pages,
+                metrics.decode_type,
+            );
         }
 
         let array = self.decoder.finalize(self.dtype, self.dict, target)?;
