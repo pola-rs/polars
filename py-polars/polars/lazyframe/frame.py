@@ -707,6 +707,13 @@ class LazyFrame:
         self._comparison_error("<=")
 
     def __contains__(self, key: str) -> bool:
+        issue_warning(
+            "Determining if a column name is present in a LazyFrame requires"
+            " resolving its schema, which is potentially an expensive"
+            " operation. Use `key in LazyFrame.collect_schema()` to check if"
+            " a column name is in a LazyFrame without this warning.",
+            category=PerformanceWarning,
+        )
         return key in self.collect_schema()
 
     def __copy__(self) -> LazyFrame:
