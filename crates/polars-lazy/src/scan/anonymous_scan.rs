@@ -56,6 +56,7 @@ impl LazyFrame {
                 missing_columns_policy: MissingColumnsPolicy::Raise,
                 extra_columns_policy: ExtraColumnsPolicy::Raise,
                 include_file_paths: None,
+                deletion_files: Default::default(),
             },
         )?
         .build()

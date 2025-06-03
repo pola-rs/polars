@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from polars._typing import SchemaDict
+    from polars._typing import DeletionFiles, SchemaDict
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
     from polars.io.scan_options.cast_options import ScanCastOptions
 
@@ -43,3 +43,5 @@ class ScanOptions:
     storage_options: list[tuple[str, str]] | None = None
     credential_provider: CredentialProviderBuilder | None = None
     retries: int = 2
+
+    deletion_files: DeletionFiles | None = None

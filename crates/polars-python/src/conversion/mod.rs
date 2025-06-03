@@ -15,6 +15,7 @@ use polars::frame::row::Row;
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
 use polars::io::cloud::CloudOptions;
+use polars::prelude::deletion::DeletionFilesList;
 use polars::series::ops::NullBehavior;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
@@ -1585,5 +1586,49 @@ impl<'py> FromPyObject<'py> for Wrap<MissingColumnsPolicyOrExpr> {
             },
         };
         Ok(Wrap(parsed))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<DeletionFilesList> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let (deletion_file_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
+
+        Ok(Wrap(match &*deletion_file_type {
+            "iceberg-position-delete" => {
+                let dict: Bound<'_, PyDict> = ob.extract()?;
+
+                let mut out = PlIndexMap::new();
+
+                for (k, v) in dict
+                    .try_iter()?
+                    .zip(dict.call_method0("values")?.try_iter()?)
+                {
+                    let k: usize = k?.extract()?;
+                    let v: Bound<'_, PyAny> = v?.extract()?;
+
+                    let files = v
+                        .try_iter()?
+                        .map(|x| {
+                            x.and_then(|x| {
+                                let x: String = x.extract()?;
+                                Ok(x)
+                            })
+                        })
+                        .collect::<PyResult<Arc<[String]>>>()?;
+
+                    if !files.is_empty() {
+                        out.insert(k, files);
+                    }
+                }
+
+                DeletionFilesList::IcebergPositionDelete(Arc::new(out))
+            },
+
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown deletion file type: {v}"
+                )));
+            },
+        }))
     }
 }
