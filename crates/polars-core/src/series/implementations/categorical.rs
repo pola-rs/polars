@@ -8,44 +8,29 @@ unsafe impl<T: PolarsCategoricalType> IntoSeries for NewCategoricalChunked<T> {
     }
 }
 
-impl SeriesWrap<CategoricalChunked> {
-    fn finish_with_state(&self, keep_fast_unique: bool, cats: UInt32Chunked) -> CategoricalChunked {
-        let mut out = unsafe {
-            CategoricalChunked::from_cats_and_rev_map_unchecked(
-                cats,
-                self.0.get_rev_map().clone(),
-                self.0.is_enum(),
-                self.0.get_ordering(),
-            )
-        };
-        if keep_fast_unique && self.0._can_fast_unique() {
-            out.set_fast_unique(true)
-        }
-        out
-    }
-
-    fn with_state<F>(&self, keep_fast_unique: bool, apply: F) -> CategoricalChunked
+impl<T: PolarsCategoricalType> SeriesWrap<NewCategoricalChunked<T>> {
+    unsafe fn apply_on_phys<F>(&self, apply: F) -> NewCategoricalChunked<T>
     where
-        F: Fn(&UInt32Chunked) -> UInt32Chunked,
+        F: Fn(&ChunkedArray<T::PolarsPhysical>) -> ChunkedArray<T::PolarsPhysical>,
     {
         let cats = apply(self.0.physical());
-        self.finish_with_state(keep_fast_unique, cats)
+        unsafe {
+            NewCategoricalChunked::from_cats_and_dtype_unchecked(cats, self.dtype().clone())
+        }
     }
 
-    fn try_with_state<'a, F>(
-        &'a self,
-        keep_fast_unique: bool,
-        apply: F,
-    ) -> PolarsResult<CategoricalChunked>
+    unsafe fn try_apply_on_phys<F>(&self, apply: F) -> PolarsResult<NewCategoricalChunked<T>>
     where
-        F: for<'b> Fn(&'a UInt32Chunked) -> PolarsResult<UInt32Chunked>,
+        F: Fn(&ChunkedArray<T::PolarsPhysical>) -> PolarsResult<ChunkedArray<T::PolarsPhysical>>,
     {
         let cats = apply(self.0.physical())?;
-        Ok(self.finish_with_state(keep_fast_unique, cats))
+        unsafe {
+            Ok(NewCategoricalChunked::from_cats_and_dtype_unchecked(cats, self.dtype().clone()))
+        }
     }
 }
 
-impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
+impl<T: PolarsCategoricalType> private::PrivateSeries for SeriesWrap<NewCategoricalChunked<T>> {
     fn compute_len(&mut self) {
         self.0.physical_mut().compute_len()
     }
@@ -69,9 +54,10 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         self.0
-            .zip_with(mask, other.categorical()?)
+            .zip_with(mask, other.cat::<T>()?)
             .map(|ca| ca.into_series())
     }
+
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         if self.0.uses_lexical_ordering() {
             (&self.0).into_total_ord_inner()
@@ -157,8 +143,7 @@ impl<T: PolarsCategoricalType> SeriesTrait for SeriesWrap<NewCategoricalChunked<
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
-        self.with_state(false, |cats| cats.slice(offset, length))
-            .into_series()
+        unsafe { self.apply_on_phys(|cats| cats.slice(offset, length)).into_series() }
     }
 
     fn split_at(&self, offset: i64) -> (Series, Series) {
@@ -172,61 +157,40 @@ impl<T: PolarsCategoricalType> SeriesTrait for SeriesWrap<NewCategoricalChunked<
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        self.0.append(other.categorical().unwrap())
+        self.0.append(other.cat::<T>().unwrap())
     }
 
     fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        let other = other
-            ._get_inner_mut()
-            .as_any_mut()
-            .downcast_mut::<CategoricalChunked>()
-            .unwrap();
-        self.0.append_owned(other.take())
+        let arc_any = other.0.as_arc_any();
+        let downcast = arc_any.downcast::<SeriesWrap<NewCategoricalChunked<T>>>().unwrap();
+        let other_ca = Arc::try_unwrap(downcast).ok().unwrap();
+        self.0.append_owned(other_ca.0)
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
-        let other_ca = other.categorical().unwrap();
-        // Fast path for globals of the same source
-        let rev_map_self = self.0.get_rev_map();
-        let rev_map_other = other_ca.get_rev_map();
-        match (&**rev_map_self, &**rev_map_other) {
-            (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
-                let mut rev_map_merger = GlobalRevMapMerger::new(rev_map_self.clone());
-                rev_map_merger.merge_map(rev_map_other)?;
-                self.0.physical_mut().extend(other_ca.physical())?;
-                // SAFETY: rev_maps are merged
-                unsafe { self.0.set_rev_map(rev_map_merger.finish(), false) };
-                Ok(())
-            },
-            _ => self.0.append(other_ca),
-        }
+        self.0.extend(other.cat::<T>().unwrap())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
-        self.try_with_state(false, |cats| cats.filter(filter))
-            .map(|ca| ca.into_series())
+        unsafe { Ok(self.try_apply_on_phys(|cats| cats.filter(filter))?.into_series()) }
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        self.try_with_state(false, |cats| cats.take(indices))
-            .map(|ca| ca.into_series())
+        unsafe { Ok(self.try_apply_on_phys(|cats| cats.take(indices))?.into_series() ) }
     }
 
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
-        self.with_state(false, |cats| cats.take_unchecked(indices))
-            .into_series()
+        unsafe { self.apply_on_phys(|cats| cats.take_unchecked(indices)).into_series() }
     }
 
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
-        self.try_with_state(false, |cats| cats.take(indices))
-            .map(|ca| ca.into_series())
+        unsafe { Ok(self.try_apply_on_phys(|cats| cats.take(indices))?.into_series()) }
     }
 
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
-        self.with_state(false, |cats| cats.take_unchecked(indices))
-            .into_series()
+        unsafe { self.apply_on_phys(|cats| cats.take_unchecked(indices)).into_series() }
     }
 
     fn len(&self) -> usize {
@@ -234,13 +198,11 @@ impl<T: PolarsCategoricalType> SeriesTrait for SeriesWrap<NewCategoricalChunked<
     }
 
     fn rechunk(&self) -> Series {
-        self.with_state(true, |ca| ca.rechunk().into_owned())
-            .into_series()
+        unsafe { self.apply_on_phys(|cats| cats.rechunk().into_owned()).into_series() }
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
-        self.with_state(false, |cats| cats.new_from_index(index, length))
-            .into_series()
+        unsafe { self.apply_on_phys(|cats| cats.new_from_index(index, length)).into_series() }
     }
 
     fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
@@ -292,7 +254,7 @@ impl<T: PolarsCategoricalType> SeriesTrait for SeriesWrap<NewCategoricalChunked<
     }
 
     fn reverse(&self) -> Series {
-        self.with_state(true, |cats| cats.reverse()).into_series()
+        unsafe { self.apply_on_phys(|cats| cats.reverse()).into_series() }
     }
 
     fn as_single_ptr(&mut self) -> PolarsResult<usize> {
@@ -300,7 +262,7 @@ impl<T: PolarsCategoricalType> SeriesTrait for SeriesWrap<NewCategoricalChunked<
     }
 
     fn shift(&self, periods: i64) -> Series {
-        self.with_state(false, |ca| ca.shift(periods)).into_series()
+        unsafe { self.apply_on_phys(|ca| ca.shift(periods)).into_series() }
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
