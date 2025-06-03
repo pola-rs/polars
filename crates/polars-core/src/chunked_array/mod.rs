@@ -1019,7 +1019,7 @@ pub(crate) mod test {
         let ca = ca
             .cast(&DataType::from_categories(cats.clone()))
             .unwrap();
-        let ca = ca.categorical().unwrap();
+        let ca = ca.cat32().unwrap();
         let v: Vec<_> = ca.physical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }

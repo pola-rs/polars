@@ -1538,24 +1538,6 @@ fn struct_to_avs_static(idx: usize, arr: &StructArray, fields: &[Field]) -> Vec<
         .collect()
 }
 
-#[cfg(feature = "dtype-categorical")]
-fn same_revmap(
-    rev_l: &RevMapping,
-    ptr_l: SyncPtr<Utf8ViewArray>,
-    rev_r: &RevMapping,
-    ptr_r: SyncPtr<Utf8ViewArray>,
-) -> bool {
-    if ptr_l.is_null() && ptr_r.is_null() {
-        match (rev_l, rev_r) {
-            (RevMapping::Global(_, _, id_l), RevMapping::Global(_, _, id_r)) => id_l == id_r,
-            (RevMapping::Local(_, id_l), RevMapping::Local(_, id_r)) => id_l == id_r,
-            _ => false,
-        }
-    } else {
-        ptr_l == ptr_r
-    }
-}
-
 pub trait GetAnyValue {
     /// # Safety
     ///
