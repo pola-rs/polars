@@ -420,7 +420,7 @@ impl ProjectionPushDown {
                         &ctx.acc_projections,
                         expr_arena,
                         &options.schema,
-                        true,
+                        false,
                     )?))
                 };
                 Ok(PythonScan { options })
