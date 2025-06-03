@@ -516,6 +516,7 @@ fn to_graph_rec<'a>(
             extra_columns_policy,
             cast_columns_policy,
             include_file_paths,
+            deletion_files,
             file_schema,
         } => {
             let hive_parts = hive_parts.clone();
@@ -552,6 +553,14 @@ fn to_graph_rec<'a>(
             let missing_columns_policy = *missing_columns_policy;
             let extra_columns_policy = *extra_columns_policy;
             let cast_columns_policy = cast_columns_policy.clone();
+            let deletion_files = deletion_files.clone();
+
+            if deletion_files.is_some() {
+                polars_bail!(
+                    ComputeError: "not implemented: deletion files {:?}",
+                    deletion_files
+                )
+            }
 
             let verbose = config::verbose();
 

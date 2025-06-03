@@ -8,6 +8,7 @@ use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_bail};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     ExtraColumnsPolicy, FileScan, FileSinkType, PartitionSinkTypeIR, PartitionVariantIR, SinkTypeIR,
 };
@@ -597,13 +598,6 @@ pub fn lower_ir(
                         },
                     };
 
-                    if unified_scan_args.deletion_files.is_some() {
-                        polars_bail!(
-                            ComputeError: "not implemented: deletion files {:?}",
-                            unified_scan_args.deletion_files
-                        )
-                    }
-
                     let mut multi_scan_node = PhysNodeKind::MultiScan {
                         scan_sources,
                         file_reader_builder,
@@ -618,6 +612,10 @@ pub fn lower_ir(
                         missing_columns_policy: unified_scan_args.missing_columns_policy,
                         extra_columns_policy,
                         include_file_paths: unified_scan_args.include_file_paths,
+                        // Set to None if empty for performance.
+                        deletion_files: DeletionFilesList::filter_empty(
+                            unified_scan_args.deletion_files,
+                        ),
                         file_schema,
                     };
 
