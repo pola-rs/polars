@@ -402,18 +402,18 @@ impl Debug for Series {
             #[cfg(feature = "object")]
             DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(_, _) => {
-                format_array!(f, self.categorical().unwrap(), "cat", self.name(), "Series")
+            DataType::NewCategorical(cats, _) => {
+                with_match_categorical_physical_type!(cats.physical(), |$C| {
+                    format_array!(f, self.cat::<$C>().unwrap(), "cat", self.name(), "Series")
+                })
             },
 
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewEnum(_, _) => format_array!(
-                f,
-                self.categorical().unwrap(),
-                "enum",
-                self.name(),
-                "Series"
-            ),
+            DataType::NewEnum(fcats, _) => {
+                with_match_categorical_physical_type!(fcats.physical(), |$C| {
+                    format_array!(f, self.cat::<$C>().unwrap(), "enum", self.name(), "Series")
+                })
+            },
             #[cfg(feature = "dtype-struct")]
             dt @ DataType::Struct(_) => format_array!(
                 f,
