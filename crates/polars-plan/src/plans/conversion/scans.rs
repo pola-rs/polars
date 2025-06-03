@@ -1,6 +1,5 @@
 use either::Either;
 use polars_io::RowIndex;
-use polars_io::path_utils::is_cloud_url;
 #[cfg(feature = "cloud")]
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::*;
@@ -62,9 +61,9 @@ pub(super) fn parquet_file_info(
 
     let (reader_schema, num_rows, metadata) = {
         if sources.is_cloud_url() {
-            let first_path = &sources.as_paths().unwrap()[0];
+            let first_path = &sources.first_address().unwrap();
             feature_gated!("cloud", {
-                let uri = first_path.to_string_lossy();
+                let uri = first_path.to_str();
                 get_runtime().block_in_place_on(async {
                     let mut reader =
                         ParquetObjectStore::from_uri(&uri, cloud_options, None).await?;
@@ -110,16 +109,17 @@ pub(super) fn ipc_file_info(
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
+    use polars_utils::address::AddressRef;
 
     let Some(first) = sources.first() else {
         polars_bail!(ComputeError: "expected at least 1 source");
     };
 
     let metadata = match first {
-        ScanSourceRef::Path(path) => {
-            if is_cloud_url(path) {
+        ScanSourceRef::Address(addr) => match addr {
+            AddressRef::Cloud(uri) => {
                 feature_gated!("cloud", {
-                    let uri = path.to_string_lossy();
+                    let uri = uri.to_string();
                     get_runtime().block_on(async {
                         polars_io::ipc::IpcReaderAsync::from_uri(&uri, cloud_options)
                             .await?
@@ -127,11 +127,10 @@ pub(super) fn ipc_file_info(
                             .await
                     })?
                 })
-            } else {
-                arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
-                    polars_utils::open_file(path)?,
-                ))?
-            }
+            },
+            AddressRef::Local(path) => arrow::io::ipc::read::read_file_metadata(
+                &mut std::io::BufReader::new(polars_utils::open_file(path)?),
+            )?,
         },
         ScanSourceRef::File(file) => {
             arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(file))?
@@ -229,17 +228,17 @@ pub fn csv_file_info(
     // * See if we can do this without downloading the entire file
 
     // prints the error message if paths is empty.
-    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
+    let run_async = sources.is_cloud_url() || (sources.is_addresses() && config::force_async());
 
     let cache_entries = {
         if run_async {
             feature_gated!("cloud", {
                 Some(polars_io::file_cache::init_entries_from_uri_list(
                     sources
-                        .as_paths()
+                        .as_addresses()
                         .unwrap()
                         .iter()
-                        .map(|path| Arc::from(path.to_str().unwrap()))
+                        .map(|addr| Arc::from(addr.to_str()))
                         .collect::<Vec<_>>()
                         .as_slice(),
                     cloud_options,
@@ -345,17 +344,17 @@ pub fn ndjson_file_info(
         polars_bail!(ComputeError: "expected at least 1 source");
     };
 
-    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
+    let run_async = sources.is_cloud_url() || (sources.is_addresses() && config::force_async());
 
     let cache_entries = {
         if run_async {
             feature_gated!("cloud", {
                 Some(polars_io::file_cache::init_entries_from_uri_list(
                     sources
-                        .as_paths()
+                        .as_addresses()
                         .unwrap()
                         .iter()
-                        .map(|path| Arc::from(path.to_str().unwrap()))
+                        .map(|addr| Arc::from(addr.to_str()))
                         .collect::<Vec<_>>()
                         .as_slice(),
                     cloud_options,

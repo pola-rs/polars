@@ -19,7 +19,7 @@ impl IpcSink {
         schema: &Schema,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<FilesSink> {
-        let writer = IpcWriter::new(try_get_writeable(path.to_str().unwrap(), cloud_options)?)
+        let writer = IpcWriter::new(try_get_writeable(polars_utils::address::AddressRef::Local(path), cloud_options)?)
             .with_compression(options.compression)
             .batched(schema)?;
 

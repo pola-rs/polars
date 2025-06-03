@@ -11,6 +11,7 @@ use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
+use polars_utils::address::Address;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 
@@ -37,7 +38,7 @@ pub struct PartitionByKeySinkNode {
     max_open_partitions: usize,
     include_key: bool,
 
-    base_path: Arc<PathBuf>,
+    base_path: Arc<Address>,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -54,7 +55,7 @@ impl PartitionByKeySinkNode {
     pub fn new(
         input_schema: SchemaRef,
         key_cols: Arc<[PlSmallStr]>,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<Address>,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
@@ -256,7 +257,7 @@ impl SinkNode for PartitionByKeySinkNode {
                                 },
                                 None => {
                                     let result = open_new_sink(
-                                        base_path.as_path(),
+                                        base_path.as_ref().as_ref(),
                                         file_path_cb.as_ref(),
                                         super::default_by_key_file_path_cb,
                                         file_idx,
@@ -313,7 +314,7 @@ impl SinkNode for PartitionByKeySinkNode {
                     OpenPartition::Sink { sender, join_handles, node, keys } => (sender, join_handles, node, keys),
                     OpenPartition::Buffer { buffered, keys } => {
                         let result = open_new_sink(
-                            base_path.as_path(),
+                            base_path.as_ref().as_ref(),
                             file_path_cb.as_ref(),
                             super::default_by_key_file_path_cb,
                             file_idx,

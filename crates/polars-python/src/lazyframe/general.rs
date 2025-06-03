@@ -105,7 +105,7 @@ impl PyLazyFrame {
 
         let sources = sources.0;
         let (first_path, sources) = match source {
-            None => (sources.first_path().map(|p| p.to_path_buf()), sources),
+            None => (sources.first_address().map(|p| p.to_path_buf()), sources),
             Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
         };
 
@@ -222,7 +222,7 @@ impl PyLazyFrame {
 
         let sources = sources.0;
         let (first_path, sources) = match source {
-            None => (sources.first_path().map(|p| p.to_path_buf()), sources),
+            None => (sources.first_address().map(|p| p.to_path_buf()), sources),
             Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
         };
 
@@ -324,7 +324,7 @@ impl PyLazyFrame {
         };
 
         let sources = sources.0;
-        let first_path = sources.first_path().map(|p| p.to_path_buf());
+        let first_path = sources.first_address().map(|p| p.to_path_buf());
 
         let unified_scan_args = scan_options.extract_unified_scan_args(first_path.as_ref())?;
 
@@ -385,7 +385,7 @@ impl PyLazyFrame {
 
         let sources = sources.0;
         let (first_path, sources) = match source {
-            None => (sources.first_path().map(|p| p.to_path_buf()), sources),
+            None => (sources.first_address().map(|p| p.to_path_buf()), sources),
             Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
         };
 

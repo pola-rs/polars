@@ -154,9 +154,9 @@ impl FileReader for IpcFileReader {
 
         // check_latest: IR resolution does not download IPC.
         // TODO: Streaming reads
-        if let ScanSourceRef::Path(p) = self.scan_source.as_scan_source_ref() {
+        if let ScanSourceRef::Address(addr) = self.scan_source.as_scan_source_ref() {
             polars_io::file_cache::init_entries_from_uri_list(
-                &[Arc::from(p.to_str().unwrap())],
+                &[Arc::from(addr.to_str())],
                 self.cloud_options.as_deref(),
             )?;
         }

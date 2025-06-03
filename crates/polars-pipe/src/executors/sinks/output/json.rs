@@ -28,7 +28,7 @@ impl JsonSink {
         _schema: &Schema,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<FilesSink> {
-        let writer = BatchedWriter::new(try_get_writeable(path.to_str().unwrap(), cloud_options)?);
+        let writer = BatchedWriter::new(try_get_writeable(polars_utils::address::AddressRef::Local(path), cloud_options)?);
         let writer = Box::new(writer) as Box<dyn SinkWriter + Send>;
 
         let morsels_per_sink = morsels_per_sink();

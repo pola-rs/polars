@@ -19,7 +19,7 @@ impl CsvSink {
         schema: &Schema,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<FilesSink> {
-        let writer = CsvWriter::new(try_get_writeable(path.to_str().unwrap(), cloud_options)?)
+        let writer = CsvWriter::new(try_get_writeable(polars_utils::address::AddressRef::Local(path), cloud_options)?)
             .include_bom(options.include_bom)
             .include_header(options.include_header)
             .with_separator(options.serialize_options.separator)

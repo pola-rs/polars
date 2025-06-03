@@ -71,15 +71,18 @@ impl ParquetSink {
         schema: &Schema,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
-        let writer = ParquetWriter::new(try_get_writeable(path.to_str().unwrap(), cloud_options)?)
-            .with_compression(options.compression)
-            .with_data_page_size(options.data_page_size)
-            .with_statistics(options.statistics)
-            .with_row_group_size(options.row_group_size)
-            // This is important! Otherwise we will deadlock
-            // See: #7074
-            .set_parallel(false)
-            .batched(schema)?;
+        let writer = ParquetWriter::new(try_get_writeable(
+            polars_utils::address::AddressRef::Local(path),
+            cloud_options,
+        )?)
+        .with_compression(options.compression)
+        .with_data_page_size(options.data_page_size)
+        .with_statistics(options.statistics)
+        .with_row_group_size(options.row_group_size)
+        // This is important! Otherwise we will deadlock
+        // See: #7074
+        .set_parallel(false)
+        .batched(schema)?;
 
         let writer = Arc::new(writer);
         let morsels_per_sink = morsels_per_sink();

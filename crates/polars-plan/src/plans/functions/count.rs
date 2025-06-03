@@ -15,6 +15,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::parquet::read::ParquetReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::pl_async::{get_runtime, with_concurrency_budget};
+use polars_utils::address::Address;
 
 use super::*;
 
@@ -81,8 +82,8 @@ fn count_all_rows_csv(
     sources
         .iter()
         .map(|source| match source {
-            ScanSourceRef::Path(path) => polars_io::csv::read::count_rows(
-                path,
+            ScanSourceRef::Address(addr) => polars_io::csv::read::count_rows(
+                addr,
                 parse_options.separator,
                 parse_options.quote_char,
                 parse_options.comment_prefix.as_ref(),
@@ -119,12 +120,11 @@ pub(super) fn count_rows_parquet(
     if sources.is_empty() {
         return Ok(0);
     };
-    let is_cloud = sources.is_cloud_url();
 
-    if is_cloud {
+    if sources.is_cloud_url() {
         feature_gated!("cloud", {
             get_runtime().block_on(count_rows_cloud_parquet(
-                sources.as_paths().unwrap(),
+                sources.as_addresses().unwrap(),
                 cloud_options,
             ))
         })
@@ -140,15 +140,15 @@ pub(super) fn count_rows_parquet(
 
 #[cfg(all(feature = "parquet", feature = "async"))]
 async fn count_rows_cloud_parquet(
-    paths: &[std::path::PathBuf],
+    addrs: &[Address],
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<usize> {
     use polars_io::prelude::ParquetObjectStore;
 
-    let collection = paths.iter().map(|path| {
+    let collection = addrs.iter().map(|addr| {
         with_concurrency_budget(1, || async {
             let mut reader =
-                ParquetObjectStore::from_uri(&path.to_string_lossy(), cloud_options, None).await?;
+                ParquetObjectStore::from_uri(&addr.to_str(), cloud_options, None).await?;
             reader.num_rows().await
         })
     });
@@ -171,7 +171,7 @@ pub(super) fn count_rows_ipc(
     if is_cloud {
         feature_gated!("cloud", {
             get_runtime().block_on(count_rows_cloud_ipc(
-                sources.as_paths().unwrap(),
+                sources.as_addresses().unwrap(),
                 cloud_options,
                 metadata,
             ))
@@ -189,15 +189,15 @@ pub(super) fn count_rows_ipc(
 
 #[cfg(all(feature = "ipc", feature = "async"))]
 async fn count_rows_cloud_ipc(
-    paths: &[std::path::PathBuf],
+    addrs: &[Address],
     cloud_options: Option<&CloudOptions>,
     metadata: Option<&arrow::io::ipc::read::FileMetadata>,
 ) -> PolarsResult<usize> {
     use polars_io::ipc::IpcReaderAsync;
 
-    let collection = paths.iter().map(|path| {
+    let collection = addrs.iter().map(|addr| {
         with_concurrency_budget(1, || async {
-            let reader = IpcReaderAsync::from_uri(&path.to_string_lossy(), cloud_options).await?;
+            let reader = IpcReaderAsync::from_uri(&addr.to_str(), cloud_options).await?;
             reader.count_rows(metadata).await
         })
     });
@@ -219,17 +219,17 @@ pub(super) fn count_rows_ndjson(
     }
 
     let is_cloud_url = sources.is_cloud_url();
-    let run_async = is_cloud_url || (sources.is_paths() && config::force_async());
+    let run_async = is_cloud_url || (sources.is_addresses() && config::force_async());
 
     let cache_entries = {
         if run_async {
             feature_gated!("cloud", {
                 Some(polars_io::file_cache::init_entries_from_uri_list(
                     sources
-                        .as_paths()
+                        .as_addresses()
                         .unwrap()
                         .iter()
-                        .map(|path| Arc::from(path.to_str().unwrap()))
+                        .map(|addr| Arc::from(addr.to_str()))
                         .collect::<Vec<_>>()
                         .as_slice(),
                     cloud_options,

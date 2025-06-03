@@ -27,6 +27,7 @@ mod to_graph;
 pub use fmt::visualize_plan;
 use polars_plan::dsl::ExtraColumnsPolicy;
 use polars_plan::prelude::FileType;
+use polars_utils::address::Address;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
@@ -149,7 +150,7 @@ pub enum PhysNodeKind {
 
     PartitionSink {
         input: PhysStream,
-        base_path: Arc<PathBuf>,
+        base_path: Arc<Address>,
         file_path_cb: Option<PartitionTargetCallback>,
         sink_options: SinkOptions,
         variant: PartitionVariantIR,
