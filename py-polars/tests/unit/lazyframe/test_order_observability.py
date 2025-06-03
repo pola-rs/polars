@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -12,6 +14,12 @@ def test_order_observability() -> None:
     assert "SORT" not in q.group_by("a").max().explain(optimizations=opts)
     assert "SORT" in q.group_by("a").last().explain(optimizations=opts)
     assert "SORT" in q.group_by("a").first().explain(optimizations=opts)
+
+    # (sort on column: keys) -- missed optimization opportunity for now
+    # assert "SORT" not in q.group_by("a").agg(pl.col("b")).explain(optimizations=opts)
+
+    # (sort on columns: agg) -- sort cannot be dropped
+    assert "SORT" in q.group_by("b").agg(pl.col("a")).explain(optimizations=opts)
 
 
 def test_order_observability_group_by_dynamic() -> None:
@@ -53,3 +61,52 @@ def test_double_sort_maintain_order_18558() -> None:
     )
 
     assert_frame_equal(lf.collect(), expect)
+
+
+def test_sort_on_agg_maintain_order() -> None:
+    lf = pl.DataFrame(
+        {
+            "grp": [10, 10, 10, 30, 30, 30, 20, 20, 20],
+            "val": [1, 33, 2, 7, 99, 8, 4, 66, 5],
+        }
+    ).lazy()
+    opts = pl.QueryOptFlags(check_order_observe=True)
+
+    out = lf.sort(pl.col("val")).group_by("grp").agg(pl.col("val"))
+    assert "SORT" in out.explain(optimizations=opts)
+
+    expected = pl.DataFrame(
+        {
+            "grp": [10, 20, 30],
+            "val": [[1, 2, 33], [4, 5, 66], [7, 8, 99]],
+        }
+    )
+    assert_frame_equal(out.collect(optimizations=opts).sort("grp"), expected)
+
+
+@pytest.mark.parametrize(
+    ("func", "result"),
+    [
+        (pl.col("val").cum_sum(), 16),  # (3  + (3+10)) after sort
+        (pl.col("val").cum_prod(), 33),  # (3  + (3*10)) after sort
+        (pl.col("val").cum_min(), 6),  # (3  + 3) after sort
+        (pl.col("val").cum_max(), 13),  # (3  + 10) after sort
+    ],
+)
+def test_sort_agg_with_nested_windowing_22918(func: pl.Expr, result: int) -> None:
+    # target pattern: df.sort().group_by().agg(_fooexpr()._barexpr())
+    # where _fooexpr is order dependent (e.g., cum_sum)
+    # and _barexpr is not order dependent (e.g., sum)
+
+    lf = pl.DataFrame(
+        data=[
+            {"val": 10, "id": 1, "grp": 0},
+            {"val": 3, "id": 0, "grp": 0},
+        ]
+    ).lazy()
+
+    out = lf.sort("id").group_by("grp").agg(func.sum())
+    expected = pl.DataFrame({"grp": 0, "val": result})  # (3  + (3+10)) after sort
+
+    assert_frame_equal(out.collect(), expected)
+    assert "SORT" in out.explain()
