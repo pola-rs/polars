@@ -124,7 +124,7 @@ impl PyPartitioning {
 impl<'py> FromPyObject<'py> for Wrap<polars_plan::dsl::SinkTarget> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if let Ok(v) = ob.extract::<PathBuf>() {
-            Ok(Wrap(polars::prelude::SinkTarget::Path(Arc::new(v))))
+            Ok(Wrap(polars::prelude::SinkTarget::Address(Arc::new(v))))
         } else {
             let writer = Python::with_gil(|py| {
                 let py_f = ob.clone();
@@ -158,7 +158,7 @@ impl SinkTarget {
     pub fn base_path(&self) -> Option<&Path> {
         match self {
             Self::File(t) => match t {
-                polars::prelude::SinkTarget::Path(p) => Some(p.as_path()),
+                polars::prelude::SinkTarget::Address(p) => Some(p.as_path()),
                 polars::prelude::SinkTarget::Dyn(_) => None,
             },
             Self::Partition(p) => Some(&p.base_path),

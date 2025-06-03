@@ -9,8 +9,10 @@ use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::{
-    FileType, PartitionTargetCallback, PartitionTargetContext, SinkOptions, SinkTarget,
+    FileType, PartitionTargetCallback, PartitionTargetCallbackResult, PartitionTargetContext,
+    SinkOptions, SinkTarget,
 };
+use polars_utils::address::AddressRef;
 use polars_utils::format_pl_smallstr;
 
 use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
@@ -124,11 +126,14 @@ fn default_by_key_file_path_cb(
     _part_idx: usize,
     in_part_idx: usize,
     columns: Option<&[Column]>,
-) -> PolarsResult<PathBuf> {
+    separator: char,
+) -> PolarsResult<String> {
+    use std::fmt::Write;
+
     let columns = columns.unwrap();
     assert!(!columns.is_empty());
 
-    let mut file_path = PathBuf::new();
+    let mut file_path = String::new();
     for c in columns {
         let name = c.name();
         let value = c.head(Some(1)).strict_cast(&DataType::String)?;
@@ -138,18 +143,20 @@ fn default_by_key_file_path_cb(
             .unwrap_or("__HIVE_DEFAULT_PARTITION__")
             .as_bytes();
         let value = percent_encoding::percent_encode(value, polars_io::utils::URL_ENCODE_CHAR_SET);
-        file_path = file_path.join(format!("{name}={value}"));
+        write!(&mut file_path, "{name}={value}").unwrap();
+        file_path.push(separator);
     }
-    file_path = file_path.join(format!("{in_part_idx}.{ext}"));
+    write!(&mut file_path, "{in_part_idx}.{ext}").unwrap();
 
     Ok(file_path)
 }
 
-type FilePathCallback = fn(&str, usize, usize, usize, Option<&[Column]>) -> PolarsResult<PathBuf>;
+type FilePathCallback =
+    fn(&str, usize, usize, usize, Option<&[Column]>, char) -> PolarsResult<String>;
 
 #[allow(clippy::too_many_arguments)]
 async fn open_new_sink(
-    base_path: &Path,
+    base_path: AddressRef<'_>,
     file_path_cb: Option<&PartitionTargetCallback>,
     default_file_path_cb: FilePathCallback,
     file_idx: usize,
@@ -170,8 +177,9 @@ async fn open_new_sink(
         Box<dyn SinkNode + Send + Sync>,
     )>,
 > {
-    let file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys)?;
-    let path = base_path.join(file_path.as_path());
+    let separator = base_path.separator();
+    let file_path = default_file_path_cb(ext, file_idx, part_idx, in_part_idx, keys, separator)?;
+    let path = base_path.join(file_path.as_str());
 
     // If the user provided their own callback, modify the path to that.
     let target = if let Some(file_path_cb) = file_path_cb {
@@ -192,18 +200,20 @@ async fn open_new_sink(
             file_path,
             full_path: path,
         })?;
-        // Offset the given path by the base_path.
         match target {
-            SinkTarget::Path(p) => SinkTarget::Path(Arc::new(base_path.join(p.as_path()))),
-            target => target,
+            // Offset the given path by the base_path.
+            PartitionTargetCallbackResult::Str(p) => {
+                SinkTarget::Address(Arc::new(base_path.join(p)))
+            },
+            PartitionTargetCallbackResult::Dyn(t) => SinkTarget::Dyn(t),
         }
     } else {
-        SinkTarget::Path(Arc::new(path))
+        SinkTarget::Address(Arc::new(path))
     };
 
     if verbose {
         match &target {
-            SinkTarget::Path(p) => eprintln!(
+            SinkTarget::Address(p) => eprintln!(
                 "[partition[{partition_name}]]: Start on new file '{}'",
                 p.display(),
             ),

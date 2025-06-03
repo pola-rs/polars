@@ -4,6 +4,7 @@ use expr_expansion::rewrite_projections;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_utils::address::Address;
 use polars_utils::unique_id::UniqueId;
 
 use super::convert_utils::SplitPredicates;

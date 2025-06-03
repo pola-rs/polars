@@ -16,6 +16,7 @@ use polars_plan::dsl::{JoinOptionsIR, PartitionVariantIR, ScanSources};
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
 use polars_plan::prelude::{FileType, FunctionFlags};
+use polars_utils::address::Address;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
@@ -995,7 +996,9 @@ fn to_graph_rec<'a>(
             }) as Arc<dyn FileReaderBuilder>;
 
             // Give multiscan a single scan source. (It doesn't actually read from this).
-            let sources = ScanSources::Paths(Arc::from([PathBuf::from("python-scan-0")]));
+            let sources = ScanSources::Addresses(Arc::from([Address::from_string(
+                "python-scan-0".to_string(),
+            )]));
             let cloud_options = None;
             let final_output_schema = output_schema.clone();
             let projected_file_schema = output_schema.clone();

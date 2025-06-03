@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
 use polars_io::prelude::schema_inference::{finish_infer_field_schema, infer_field_schema};
+use polars_utils::address::{Address, AddressRef};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -68,7 +69,7 @@ impl From<DataFrame> for HivePartitionsDf {
 /// # Safety
 /// `hive_start_idx <= [min path length]`
 pub fn hive_partitions_from_paths(
-    paths: &[PathBuf],
+    paths: &[Address],
     hive_start_idx: usize,
     schema: Option<SchemaRef>,
     reader_schema: &Schema,
@@ -78,8 +79,8 @@ pub fn hive_partitions_from_paths(
         return Ok(None);
     };
 
-    let sep = separator(path);
-    let path_string = path.to_str().unwrap();
+    let sep = separator(path.as_ref());
+    let path_string = path.to_str();
 
     fn parse_hive_string_and_decode(part: &'_ str) -> Option<(&'_ str, std::borrow::Cow<'_, str>)> {
         let (k, v) = parse_hive_string(part)?;
@@ -152,7 +153,8 @@ pub fn hive_partitions_from_paths(
 
         if !schema_inference_map.is_empty() {
             for path in paths {
-                for (name, value) in get_hive_parts_iter!(path.to_str().unwrap()) {
+                let path = path.to_str();
+                for (name, value) in get_hive_parts_iter!(path) {
                     let Some(entry) = schema_inference_map.get_mut(name) else {
                         continue;
                     };
@@ -183,7 +185,7 @@ pub fn hive_partitions_from_paths(
     )?;
 
     for path in paths {
-        let path = path.to_str().unwrap();
+        let path = path.to_str();
 
         for (name, value) in get_hive_parts_iter!(path) {
             let Some(index) = hive_schema.index_of(name) else {
@@ -218,13 +220,9 @@ pub fn hive_partitions_from_paths(
 }
 
 /// Determine the path separator for identifying Hive partitions.
-fn separator(url: &Path) -> &[char] {
-    if cfg!(target_family = "windows") {
-        if polars_io::path_utils::is_cloud_url(url) {
-            &['/']
-        } else {
-            &['/', '\\']
-        }
+fn separator(url: AddressRef) -> &[char] {
+    if url.is_local() {
+        &[std::path::MAIN_SEPARATOR]
     } else {
         &['/']
     }

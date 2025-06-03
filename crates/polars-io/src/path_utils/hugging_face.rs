@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use polars_error::{PolarsResult, polars_bail, to_compute_err};
+use polars_utils::address::Address;
 
 use crate::cloud::{
     CloudConfig, CloudOptions, Matcher, extract_prefix_expansion,
@@ -213,11 +214,11 @@ impl GetPages<'_> {
 }
 
 pub(super) async fn expand_paths_hf(
-    paths: &[PathBuf],
+    paths: &[Address],
     check_directory_level: bool,
     cloud_options: Option<&CloudOptions>,
     glob: bool,
-) -> PolarsResult<(usize, Vec<PathBuf>)> {
+) -> PolarsResult<(usize, Vec<Address>)> {
     assert!(!paths.is_empty());
 
     let client = reqwest::ClientBuilder::new().http1_only().https_only(true);
@@ -246,7 +247,7 @@ pub(super) async fn expand_paths_hf(
     };
 
     for (path_idx, path) in paths.iter().enumerate() {
-        let path_parts = &HFPathParts::try_from_uri(path.to_str().unwrap())?;
+        let path_parts = &HFPathParts::try_from_uri(&path.to_str())?;
         let repo_location = &HFRepoLocation::new(
             &path_parts.bucket,
             &path_parts.repository,
@@ -277,7 +278,7 @@ pub(super) async fn expand_paths_hf(
                 == 200
             {
                 hive_idx_tracker.update(0, path_idx)?;
-                out_paths.push(PathBuf::from(file_uri));
+                out_paths.push(Address::from_string(file_uri));
                 continue;
             }
         }
@@ -318,7 +319,7 @@ pub(super) async fn expand_paths_hf(
 
             for e in entries.drain(..) {
                 if e.is_file() {
-                    out_paths.push(PathBuf::from(repo_location.get_file_uri(&e.path)));
+                    out_paths.push(Address::from_string(repo_location.get_file_uri(&e.path)));
                 } else if e.is_directory() {
                     stack.push_back(e.path);
                 }

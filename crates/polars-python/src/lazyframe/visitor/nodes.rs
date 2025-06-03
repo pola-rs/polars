@@ -640,7 +640,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     alias,
                 } => {
                     let sources = sources
-                        .into_paths()
+                        .into_addresses()
                         .ok_or_else(|| {
                             PyNotImplementedError::new_err("FastCount with BytesIO sources")
                         })?
