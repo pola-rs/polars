@@ -98,7 +98,7 @@ impl RowCounter {
     pub fn sub(self, other: Self) -> Self {
         let func = |a: usize, b: usize| {
             a.checked_sub(b)
-                .unwrap_or_else(|| panic!("subtraction overflow: {self:?} + {other:?}"))
+                .unwrap_or_else(|| panic!("subtraction overflow: {self:?} - {other:?}"))
         };
 
         Self {
