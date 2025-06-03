@@ -725,14 +725,15 @@ mod test {
     fn test_cast_noop() {
         // check if we can cast categorical twice without panic
         let ca = StringChunked::new(PlSmallStr::from_static("foo"), &["bar", "ham"]);
+        let cats = Categories::global();
         let out = ca
             .cast_with_options(
-                &DataType::from_categories(Categories::global()),
+                &DataType::from_categories(cats),
                 CastOptions::Strict,
             )
             .unwrap();
         let out = out
-            .cast(&DataType::from_categories(Categories::global()))
+            .cast(&DataType::from_categories(cats))
             .unwrap();
         assert!(matches!(out.dtype(), &DataType::NewCategorical(_, _)))
     }

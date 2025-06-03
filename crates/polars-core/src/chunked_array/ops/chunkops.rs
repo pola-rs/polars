@@ -368,7 +368,7 @@ mod test {
     fn test_categorical_map_after_rechunk() {
         let s = Series::new(PlSmallStr::EMPTY, &["foo", "bar", "spam"]);
         let mut a = s
-            .cast(&DataType::Categorical(None, Default::default()))
+            .cast(&DataType::from_categories(Categories::global()))
             .unwrap();
 
         a.append(&a.slice(0, 2)).unwrap();

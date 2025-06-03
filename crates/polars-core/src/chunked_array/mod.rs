@@ -1011,15 +1011,13 @@ pub(crate) mod test {
     #[test]
     #[cfg(feature = "dtype-categorical")]
     fn test_iter_categorical() {
-        use crate::{SINGLE_LOCK, disable_string_cache};
-        let _lock = SINGLE_LOCK.lock();
-        disable_string_cache();
         let ca = StringChunked::new(
             PlSmallStr::EMPTY,
             &[Some("foo"), None, Some("bar"), Some("ham")],
         );
+        let cats = Categories::new(PlSmallStr::EMPTY, CategoricalPhysical::U32, false);
         let ca = ca
-            .cast(&DataType::from_categories(Categories::global()))
+            .cast(&DataType::from_categories(cats.clone()))
             .unwrap();
         let ca = ca.categorical().unwrap();
         let v: Vec<_> = ca.physical().into_iter().collect();
