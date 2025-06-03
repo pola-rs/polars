@@ -421,7 +421,7 @@ impl Expr {
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let root = to_aexpr(self.clone(), expr_arena, schema)?;
+        let root = to_expr_ir_ignore_alias(self.clone(), expr_arena, schema)?.node();
         expr_arena
             .get(root)
             .to_field_and_validate(schema, ctxt, expr_arena)

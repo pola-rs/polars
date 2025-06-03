@@ -6,7 +6,7 @@ use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
-use polars_plan::plans::{node_to_expr, to_aexpr};
+use polars_plan::plans::{node_to_expr, to_expr_ir};
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
@@ -950,7 +950,7 @@ impl PyExpr {
     fn skip_batch_predicate(&self, py: Python<'_>, schema: Wrap<Schema>) -> PyResult<Option<Self>> {
         let mut aexpr_arena = Arena::new();
         py.enter_polars(|| {
-            let node = to_aexpr(self.inner.clone(), &mut aexpr_arena, &schema.0)?;
+            let node = to_expr_ir(self.inner.clone(), &mut aexpr_arena, &schema.0)?.node();
             let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
             else {
                 return Ok(None);

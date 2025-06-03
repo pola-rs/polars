@@ -162,10 +162,6 @@ impl AExpr {
 
                 Ok(field)
             },
-            Alias(expr, name) => Ok(Field::new(
-                name.clone(),
-                ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?.dtype,
-            )),
             Column(name) => ctx
                 .schema
                 .get_field(name)

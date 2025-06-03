@@ -29,7 +29,7 @@ impl AExpr {
                 EvalVariant::Cumulative { min_samples: _ } => false,
             },
 
-            Alias(_, _) | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+            BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
             Agg { .. }
             | Explode { .. }

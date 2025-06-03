@@ -146,6 +146,7 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     }
 
     if opt_flags.simplify_expr() {
+        dbg!("fused: ", cfg!(feature = "fused"));
         #[cfg(feature = "fused")]
         rules.push(Box::new(fused::FusedArithmetic {}));
     }
@@ -287,6 +288,8 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
     {
+        dbg!(&prev_schema);
+        dbg!(&lp_arena.get(lp_top).schema(lp_arena));
         // only check by names because we may supercast types.
         assert_eq!(
             prev_schema.iter_names().collect::<Vec<_>>(),

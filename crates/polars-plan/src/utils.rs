@@ -49,7 +49,7 @@ pub(crate) fn is_scan(plan: &IR) -> bool {
 pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr>) -> bool {
     arena
         .iter(current_node)
-        .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
+        .all(|(_node, e)| matches!(e, AExpr::Column(_)))
 }
 
 pub fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
@@ -108,7 +108,6 @@ pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<PlSma
             // don't follow the partition by branch
             AExpr::Window { function, .. } => return aexpr_output_name(*function, arena),
             AExpr::Column(name) => return Ok(name.clone()),
-            AExpr::Alias(_, name) => return Ok(name.clone()),
             AExpr::Len => return Ok(get_len_name()),
             AExpr::Literal(val) => return Ok(val.output_column_name().clone()),
             AExpr::Ternary { truthy, .. } => return aexpr_output_name(*truthy, arena),

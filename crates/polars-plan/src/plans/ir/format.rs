@@ -410,10 +410,6 @@ impl Display for ExprIRDisplay<'_> {
                     write!(f, "{expr}.explode()")
                 }
             },
-            Alias(expr, name) => {
-                let expr = self.with_root(expr);
-                write!(f, "{expr}.alias(\"{name}\")")
-            },
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
             BinaryExpr { left, op, right } => {
@@ -492,10 +488,21 @@ impl Display for ExprIRDisplay<'_> {
                     NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
                     Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),
                     AggGroups(expr) => write!(f, "{}.groups()", self.with_root(expr)),
-                    Count(expr, _) => write!(f, "{}.count()", self.with_root(expr)),
+                    Count(expr, false) => write!(f, "{}.count()", self.with_root(expr)),
+                    Count(expr, true) => write!(f, "{}.len()", self.with_root(expr)),
                     Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
                     Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
-                    Quantile { expr, .. } => write!(f, "{}.quantile()", self.with_root(expr)),
+                    Quantile {
+                        expr,
+                        quantile,
+                        method,
+                    } => write!(
+                        f,
+                        "{}.quantile({}, interpolation='{}')",
+                        self.with_root(expr),
+                        self.with_root(quantile),
+                        <&'static str>::from(method),
+                    ),
                 }
             },
             Cast {

@@ -102,8 +102,6 @@ fn try_lower_elementwise_scalar_agg_expr(
     }
 
     match expr_arena.get(expr) {
-        AExpr::Alias(..) => unreachable!("alias found in physical plan"),
-
         AExpr::Column(_) => {
             // Implicit implode not yet supported.
             None

@@ -49,7 +49,7 @@ impl PhysicalPipedExpr for Len {
 }
 
 pub fn can_convert_to_hash_agg(
-    mut node: Node,
+    node: Node,
     expr_arena: &Arena<AExpr>,
     input_schema: &Schema,
 ) -> bool {
@@ -64,8 +64,7 @@ pub fn can_convert_to_hash_agg(
                 | AExpr::Literal(_)
                 | AExpr::Column(_)
                 | AExpr::BinaryExpr { .. }
-                | AExpr::Ternary { .. }
-                | AExpr::Alias(_, _) => {},
+                | AExpr::Ternary { .. } => {},
                 _ => {
                     can_run_partitioned = false;
                 },
@@ -77,10 +76,6 @@ pub fn can_convert_to_hash_agg(
         == 1
         && can_run_partitioned
     {
-        // last expression must be agg or agg.alias
-        if let AExpr::Alias(input, _) = expr_arena.get(node) {
-            node = *input
-        }
         match expr_arena.get(node) {
             AExpr::Len => true,
             ae @ AExpr::Agg(agg_fn) => {
@@ -134,7 +129,6 @@ where
     F: Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     match expr_arena.get(node) {
-        AExpr::Alias(input, _) => convert_to_hash_agg(*input, expr_arena, schema, to_physical),
         AExpr::Len => (
             IDX_DTYPE,
             Arc::new(Len {}),

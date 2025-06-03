@@ -44,6 +44,17 @@ impl OutputName {
         self.get().expect("no output name set")
     }
 
+    pub fn into_inner(self) -> Option<PlSmallStr> {
+        match self {
+            OutputName::Alias(name) => Some(name),
+            OutputName::ColumnLhs(name) => Some(name),
+            OutputName::LiteralLhs(name) => Some(name),
+            #[cfg(feature = "dtype-struct")]
+            OutputName::Field(name) => Some(name),
+            OutputName::None => None,
+        }
+    }
+
     pub(crate) fn is_none(&self) -> bool {
         matches!(self, OutputName::None)
     }
@@ -162,13 +173,6 @@ impl ExprIR {
                 AExpr::Len => {
                     out.output_name = OutputName::LiteralLhs(get_len_name());
                     break;
-                },
-                AExpr::Alias(_, _) => {
-                    // Should be removed during conversion.
-                    #[cfg(debug_assertions)]
-                    {
-                        unreachable!()
-                    }
                 },
                 _ => {},
             }
