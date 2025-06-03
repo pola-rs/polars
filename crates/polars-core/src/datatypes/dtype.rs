@@ -962,6 +962,15 @@ impl DataType {
         level
     }
     
+    /// If this dtype is a Categorical or Enum, returns the physical backing type.
+    pub fn cat_physical(&self) -> Option<CategoricalPhysical> {
+        match self {
+            DataType::NewCategorical(cats, _) => Some(cats.physical()),
+            DataType::NewEnum(fcats, _) => Some(fcats.physical()),
+            _ => None
+        }
+    }
+    
     pub fn from_categories(cats: Arc<Categories>) -> Self {
         let mapping = cats.mapping();
         Self::NewCategorical(cats, mapping)
