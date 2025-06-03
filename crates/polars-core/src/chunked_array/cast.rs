@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::flags::StatisticsFlags;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
+use crate::utils::handle_casting_failures;
 use crate::prelude::*;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Hash, Eq)]
@@ -450,9 +451,10 @@ impl ChunkCast for ListChunked {
             List(child_type) => {
                 match (ca.inner_dtype(), &**child_type) {
                     (old, new) if old == new => Ok(ca.into_owned().into_series()),
+                    // TODO @ cat-rework: can we implement this now?
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(None, _) | Enum(_, _))
-                        if !matches!(dt, Categorical(_, _) | Enum(_, _) | String | Null) =>
+                    (dt, NewCategorical(_, _) | NewEnum(_, _))
+                        if !matches!(dt, NewCategorical(_, _) | NewEnum(_, _) | String | Null) =>
                     {
                         polars_bail!(InvalidOperation: "cannot cast List inner type: '{:?}' to Categorical", dt)
                     },
@@ -475,9 +477,10 @@ impl ChunkCast for ListChunked {
             Array(child_type, width) => {
                 let physical_type = dtype.to_physical();
 
+                // TODO @ cat-rework: can we implement this now?
                 // TODO!: properly implement this recursively.
                 #[cfg(feature = "dtype-categorical")]
-                polars_ensure!(!matches!(&**child_type, Categorical(_, _)), InvalidOperation: "array of categorical is not yet supported");
+                polars_ensure!(!matches!(&**child_type, NewCategorical(_, _)), InvalidOperation: "array of categorical is not yet supported");
 
                 // cast to the physical type to avoid logical chunks.
                 let chunks = cast_chunks(ca.chunks(), &physical_type, options)?;
@@ -549,8 +552,9 @@ impl ChunkCast for ArrayChunked {
 
                 match (ca.inner_dtype(), &**child_type) {
                     (old, new) if old == new => Ok(ca.into_owned().into_series()),
+                    // TODO @ cat-rework: can we implement this now?
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(None, _) | Enum(_, _)) if !matches!(dt, String) => {
+                    (dt, NewCategorical(_, _) | NewEnum(_, _)) if !matches!(dt, String) => {
                         polars_bail!(InvalidOperation: "cannot cast Array inner type: '{:?}' to dtype: {:?}", dt, child_type)
                     },
                     _ => {
