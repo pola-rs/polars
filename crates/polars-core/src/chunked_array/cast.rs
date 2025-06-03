@@ -272,21 +272,21 @@ impl ChunkCast for StringChunked {
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match dtype {
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewCategorical(cats, mapping) => {
+            DataType::NewCategorical(cats, _mapping) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     Ok(NewCategoricalChunked::<$C>::from_str_iter(self.name().clone(), dtype.clone(), self.iter())?
                         .into_series())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::NewEnum(fcats, mapping) => {
+            DataType::NewEnum(fcats, _mapping) => {
                 let ret = with_match_categorical_physical_type!(fcats.physical(), |$C| {
                     NewCategoricalChunked::<$C>::from_str_iter(self.name().clone(), dtype.clone(), self.iter())?
                         .into_series()
                 });
                 
                 if options.is_strict() && self.null_count() != ret.null_count() {
-                    handle_casting_failures(&self.into_series(), &ret)?;
+                    handle_casting_failures(&self.clone().into_series(), &ret)?;
                 }
                 
                 Ok(ret)
@@ -732,7 +732,7 @@ mod test {
         let cats = Categories::global();
         let out = ca
             .cast_with_options(
-                &DataType::from_categories(cats),
+                &DataType::from_categories(cats.clone()),
                 CastOptions::Strict,
             )
             .unwrap();

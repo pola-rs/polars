@@ -516,7 +516,7 @@ impl Series {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     type CA = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = self.as_ref().as_any().downcast_ref::<CA>().unwrap();
-                    Ok(NewCategoricalChunked::from_cats_and_dtype_unchecked(
+                    Ok(NewCategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
                         ca.clone(),
                         dtype.clone(),
                     )
@@ -530,7 +530,7 @@ impl Series {
                 with_match_categorical_physical_type!(fcats.physical(), |$C| {
                     type CA = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = self.as_ref().as_any().downcast_ref::<CA>().unwrap();
-                    Ok(NewCategoricalChunked::from_cats_and_dtype_unchecked(
+                    Ok(NewCategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
                         ca.clone(),
                         dtype.clone(),
                     )
