@@ -133,7 +133,7 @@ impl CategoricalChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::{SINGLE_LOCK, disable_string_cache, enable_string_cache};
+    use crate::SINGLE_LOCK;
 
     fn assert_order(ca: &CategoricalChunked, cmp: &[&str]) {
         let s = ca.cast(&DataType::String).unwrap();
@@ -145,29 +145,16 @@ mod test {
     fn test_cat_lexical_sort() -> PolarsResult<()> {
         let init = &["c", "b", "a", "d"];
 
-        let _lock = SINGLE_LOCK.lock();
-        for use_string_cache in [true, false] {
-            disable_string_cache();
-            if use_string_cache {
-                enable_string_cache();
-            }
-
+        for gc in [false, true] {
+            let cats = Categories::new(PlSmallStr::EMPTY, CategoricalPhysical::U8, gc);
             let s = Series::new(PlSmallStr::EMPTY, init)
-                .cast(&DataType::Categorical(None, CategoricalOrdering::Lexical))?;
-            let ca = s.categorical()?;
-            let ca_lexical = ca.clone();
-
-            let out = ca_lexical.sort(false);
-            assert_order(&out, &["a", "b", "c", "d"]);
-
-            let s = Series::new(PlSmallStr::EMPTY, init)
-                .cast(&DataType::Categorical(None, Default::default()))?;
+                .cast(&DataType::from_categories(cats.clone()))?;
             let ca = s.categorical()?;
 
             let out = ca.sort(false);
-            assert_order(&out, init);
+            assert_order(&out, &["a", "b", "c", "d"]);
 
-            let out = ca_lexical.arg_sort(SortOptions {
+            let out = ca.arg_sort(SortOptions {
                 descending: false,
                 ..Default::default()
             });
@@ -181,19 +168,10 @@ mod test {
     fn test_cat_lexical_sort_multiple() -> PolarsResult<()> {
         let init = &["c", "b", "a", "a"];
 
-        let _lock = SINGLE_LOCK.lock();
-        for use_string_cache in [true, false] {
-            disable_string_cache();
-            if use_string_cache {
-                enable_string_cache();
-            }
-
-            let s = Series::new(PlSmallStr::EMPTY, init)
-                .cast(&DataType::Categorical(None, CategoricalOrdering::Lexical))?;
-            let ca = s.categorical()?;
-            let ca_lexical: CategoricalChunked = ca.clone();
-
-            let series = ca_lexical.into_series();
+        for gc in [false, true] {
+            let cats = Categories::new(PlSmallStr::EMPTY, CategoricalPhysical::U8, gc);
+            let series = Series::new(PlSmallStr::EMPTY, init)
+                .cast(&DataType::from_categories(cats.clone()))?;
 
             let df = df![
                 "cat" => &series,
@@ -216,6 +194,7 @@ mod test {
             let cat = out.as_materialized_series().categorical()?;
             assert_order(cat, &["b", "c", "a", "a"]);
         }
+
         Ok(())
     }
 }
