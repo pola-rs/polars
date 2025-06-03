@@ -927,6 +927,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StructFunction::SuffixFields(prefix) => {
                         (PyStructFunction::SuffixFields, prefix.as_str()).into_py_any(py)
                     },
+                    #[cfg(feature = "json")]
                     StructFunction::JsonEncode => (PyStructFunction::JsonEncode,).into_py_any(py),
                     StructFunction::WithFields => {
                         return Err(PyNotImplementedError::new_err("with_fields"));
