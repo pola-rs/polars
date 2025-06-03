@@ -949,6 +949,6 @@ def test_arrow_c_array_object_no_unnest_23068() -> None:
             return self.pa_array.__arrow_c_array__(requested_schema)
 
     data = [1, 2, 3]
-    result = cast(pl.Series, pl.from_arrow(ArrowLike(pa.array(data)))).to_series()
+    result = cast(pl.DataFrame, pl.from_arrow(ArrowLike(pa.array(data)))).to_series()
     expected = pl.Series(data)
     assert_series_equal(result, expected)
