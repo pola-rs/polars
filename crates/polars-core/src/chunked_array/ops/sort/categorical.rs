@@ -1,79 +1,72 @@
+use num_traits::Zero;
+
 use super::*;
 
-impl CategoricalChunked {
+impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
     #[must_use]
-    pub fn sort_with(&self, options: SortOptions) -> CategoricalChunked {
-        if self.uses_lexical_ordering() {
-            let mut vals = self
-                .physical()
-                .into_iter()
-                .zip(self.iter_str())
-                .collect_trusted::<Vec<_>>();
-
-            sort_unstable_by_branch(vals.as_mut_slice(), options, |a, b| a.1.cmp(&b.1));
-
-            let mut cats = Vec::with_capacity(self.len());
-            let mut validity =
-                (self.null_count() > 0).then(|| BitmapBuilder::with_capacity(self.len()));
-
-            if self.null_count() > 0 && !options.nulls_last {
-                cats.resize(self.null_count(), 0);
-                if let Some(validity) = &mut validity {
-                    validity.extend_constant(self.null_count(), false);
-                }
-            }
-
-            let valid_slice = if options.descending {
-                &vals[..self.len() - self.null_count()]
-            } else {
-                &vals[self.null_count()..]
-            };
-            cats.extend(valid_slice.iter().map(|(idx, _v)| idx.unwrap()));
-            if let Some(validity) = &mut validity {
-                validity.extend_constant(self.len() - self.null_count(), true);
-            }
-
-            if self.null_count() > 0 && options.nulls_last {
-                cats.resize(self.len(), 0);
-                if let Some(validity) = &mut validity {
-                    validity.extend_constant(self.null_count(), false);
-                }
-            }
-
-            let cats = PrimitiveArray::<u32>::new(
-                ArrowDataType::UInt32,
-                cats.into(),
-                validity.map(|v| v.freeze()),
-            );
-            let cats = UInt32Chunked::from_chunk_iter(self.name().clone(), Some(cats));
-
-            // SAFETY:
-            // we only reordered the indexes so we are still in bounds
+    pub fn sort_with(&self, options: SortOptions) -> NewCategoricalChunked<T> {
+        if !self.uses_lexical_ordering() {
+            let cats = self.physical().sort_with(options);
+            // SAFETY: we only reordered the indexes so we are still in bounds.
             return unsafe {
-                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                NewCategoricalChunked::<T>::from_cats_and_dtype_unchecked(
                     cats,
-                    self.get_rev_map().clone(),
-                    self.is_enum(),
-                    self.get_ordering(),
+                    self.dtype().clone()
                 )
             };
         }
-        let cats = self.physical().sort_with(options);
-        // SAFETY:
-        // we only reordered the indexes so we are still in bounds
+
+        let mut vals = self
+            .physical()
+            .into_iter()
+            .zip(self.iter_str())
+            .collect_trusted::<Vec<_>>();
+
+        sort_unstable_by_branch(vals.as_mut_slice(), options, |a, b| a.1.cmp(&b.1));
+
+        let mut cats = Vec::with_capacity(self.len());
+        let mut validity =
+            (self.null_count() > 0).then(|| BitmapBuilder::with_capacity(self.len()));
+
+        if self.null_count() > 0 && !options.nulls_last {
+            cats.resize(self.null_count(), T::Native::zero());
+            if let Some(validity) = &mut validity {
+                validity.extend_constant(self.null_count(), false);
+            }
+        }
+
+        let valid_slice = if options.descending {
+            &vals[..self.len() - self.null_count()]
+        } else {
+            &vals[self.null_count()..]
+        };
+        cats.extend(valid_slice.iter().map(|(idx, _v)| idx.unwrap()));
+        if let Some(validity) = &mut validity {
+            validity.extend_constant(self.len() - self.null_count(), true);
+        }
+
+        if self.null_count() > 0 && options.nulls_last {
+            cats.resize(self.len(), T::Native::zero());
+            if let Some(validity) = &mut validity {
+                validity.extend_constant(self.null_count(), false);
+            }
+        }
+
+        let arr = PrimitiveArray::from_vec(cats).with_validity(validity.map(|v| v.freeze()));
+        let cats = ChunkedArray::with_chunk(self.name().clone(), arr);
+
+        // SAFETY: we only reordered the indexes so we are still in bounds.
         unsafe {
-            CategoricalChunked::from_cats_and_rev_map_unchecked(
+            NewCategoricalChunked::<T>::from_cats_and_dtype_unchecked(
                 cats,
-                self.get_rev_map().clone(),
-                self.is_enum(),
-                self.get_ordering(),
+                self.dtype().clone()
             )
         }
     }
 
     /// Returned a sorted `ChunkedArray`.
     #[must_use]
-    pub fn sort(&self, descending: bool) -> CategoricalChunked {
+    pub fn sort(&self, descending: bool) -> NewCategoricalChunked<T> {
         self.sort_with(SortOptions {
             nulls_last: false,
             descending,
