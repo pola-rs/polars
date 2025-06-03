@@ -3,7 +3,11 @@ use std::marker::PhantomData;
 use arrow::bitmap::BitmapBuilder;
 use num_traits::Zero;
 
+use crate::chunked_array::ops::ChunkFullNull;
+use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::utils::handle_casting_failures;
 
 pub type NewCategoricalChunked<T> = Logical<T, <T as PolarsCategoricalType>::PolarsPhysical>;
@@ -51,6 +55,15 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
     /// of the string values when sorting.
     pub fn uses_lexical_ordering(&self) -> bool {
         !self.is_enum()
+    }
+    
+    pub fn full_null_with_dtype(
+        name: PlSmallStr,
+        length: usize,
+        dtype: DataType,
+    ) -> Self {
+        let phys = ChunkedArray::<<T as PolarsCategoricalType>::PolarsPhysical>::full_null(name, length);
+        Self::new_logical(phys, dtype)
     }
 
     /// Create a [`CategoricalChunked`] from a physical array and dtype.
@@ -148,12 +161,12 @@ impl<T: PolarsCategoricalType> NewCategoricalChunked<T> {
                     validity.push(opt_s.is_some());
                 }
             },
-            DataType::NewEnum(fcats, map) => {
+            DataType::NewEnum(fcats, mapping) => {
                 assert!(fcats.physical() == T::physical());
                 let mut validity = BitmapBuilder::with_capacity(hint);
                 for opt_s in strings {
                     cat_ids.push(
-                        if let Some(cat) = opt_s.and_then(|s| mapping.get(s)) {
+                        if let Some(cat) = opt_s.and_then(|s| mapping.get_cat(s)) {
                             validity.push(true);
                             T::Native::from_cat(cat)
                         } else {
