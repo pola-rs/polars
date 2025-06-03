@@ -310,6 +310,10 @@ impl ExternalFilterMask {
 
     /// Calculates the physical pre_slice that can be applied before performing row deletions.
     ///
+    /// By default, a `pre_slice` is applied after rows are deleted. This function takes a `pre_slice`
+    /// and translates it to `physical` positions (i.e. one that can be applied before row deletions).
+    /// This is done by expanding the range of the slice to account for the deleted rows.
+    ///
     /// This involves 2 `nth_set_bit` searches for offset and length.
     ///
     /// # Panics

@@ -85,7 +85,7 @@ pub trait FileReader: Send + Sync {
 
         let (mut morsel_receivers, handle) = self.begin_read(BeginReadArgs {
             pre_slice: Some(match pre_slice {
-                // Normalize positive slices, as some row-skipping codepaths are single-threaded.
+                // Normalize positive slices, as some row-skipping codepaths are single-threaded (e.g. NDJSON).
                 v @ Slice::Positive { .. } => Slice::Positive {
                     offset: 0,
                     len: v.end_position(),
