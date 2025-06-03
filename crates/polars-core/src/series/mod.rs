@@ -704,7 +704,7 @@ impl Series {
     /// * Duration -> Int64
     /// * Decimal -> Int128
     /// * Time -> Int64
-    /// * Categorical -> UInt32
+    /// * Categorical -> U8/U16/U32
     /// * List(inner) -> List(physical of inner)
     /// * Array(inner) -> Array(physical of inner)
     /// * Struct -> Struct with physical repr of each struct column
@@ -722,9 +722,11 @@ impl Series {
             #[cfg(feature = "dtype-time")]
             Time => Cow::Owned(self.time().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) | Enum(_, _) => {
-                let ca = self.categorical().unwrap();
-                Cow::Owned(ca.physical().clone().into_series())
+            dt @ (NewCategorical(_, _) | NewEnum(_, _)) => {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                    let ca = self.cat::<$C>().unwrap();
+                    Cow::Owned(ca.physical().clone().into_series())
+                })
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => Cow::Owned(self.decimal().unwrap().phys.clone().into_series()),
