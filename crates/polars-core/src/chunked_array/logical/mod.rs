@@ -63,7 +63,7 @@ impl<K: PolarsDataType, T: PolarsDataType> DerefMut for Logical<K, T> {
 }
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T> {
-    pub fn new_logical(phys: ChunkedArray<T>, dtype: DataType) -> Logical<K, T> {
+    pub unsafe fn new_logical(phys: ChunkedArray<T>, dtype: DataType) -> Logical<K, T> {
         Logical {
             phys,
             dtype,

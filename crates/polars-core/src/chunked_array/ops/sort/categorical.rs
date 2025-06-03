@@ -133,9 +133,8 @@ impl CategoricalChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::SINGLE_LOCK;
 
-    fn assert_order(ca: &CategoricalChunked, cmp: &[&str]) {
+    fn assert_order(ca: &NewCategorical8Chunked, cmp: &[&str]) {
         let s = ca.cast(&DataType::String).unwrap();
         let ca = s.str().unwrap();
         assert_eq!(ca.into_no_null_iter().collect::<Vec<_>>(), cmp);
@@ -149,7 +148,7 @@ mod test {
             let cats = Categories::new(PlSmallStr::EMPTY, CategoricalPhysical::U8, gc);
             let s = Series::new(PlSmallStr::EMPTY, init)
                 .cast(&DataType::from_categories(cats.clone()))?;
-            let ca = s.categorical()?;
+            let ca = s.cat8()?;
 
             let out = ca.sort(false);
             assert_order(&out, &["a", "b", "c", "d"]);
@@ -183,7 +182,7 @@ mod test {
                 SortMultipleOptions::default().with_order_descending_multi([false, false]),
             )?;
             let out = out.column("cat")?;
-            let cat = out.as_materialized_series().categorical()?;
+            let cat = out.as_materialized_series().cat8()?;
             assert_order(cat, &["a", "a", "b", "c"]);
 
             let out = df.sort(
@@ -191,7 +190,7 @@ mod test {
                 SortMultipleOptions::default().with_order_descending_multi([false, false]),
             )?;
             let out = out.column("cat")?;
-            let cat = out.as_materialized_series().categorical()?;
+            let cat = out.as_materialized_series().cat8()?;
             assert_order(cat, &["b", "c", "a", "a"]);
         }
 
