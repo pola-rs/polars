@@ -130,7 +130,7 @@ where
 }
 
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
-impl IntoGroupsType for CategoricalChunked {
+impl<T: PolarsCategoricalType> IntoGroupsType for NewCategoricalChunked<T> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         Ok(self.group_tuples_perfect(multithreaded, sorted))
     }

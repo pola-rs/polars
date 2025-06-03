@@ -2160,8 +2160,8 @@ impl DataFrame {
         // it will be complicated to do so
         #[cfg(feature = "dtype-categorical")]
         let is_not_categorical_enum =
-            !(matches!(by_column[0].dtype(), DataType::Categorical(_, _))
-                || matches!(by_column[0].dtype(), DataType::Enum(_, _)));
+            !(matches!(by_column[0].dtype(), DataType::NewCategorical(_, _))
+                || matches!(by_column[0].dtype(), DataType::NewEnum(_, _)));
 
         #[cfg(not(feature = "dtype-categorical"))]
         #[allow(non_upper_case_globals)]
