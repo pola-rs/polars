@@ -20,12 +20,14 @@ use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::File
 use crate::nodes::io_sources::multi_file_reader::reader_interface::{
     BeginReadArgs, FileReaderCallbacks,
 };
+#[cfg(feature = "parquet")]
 use crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder;
 
 #[derive(Clone)]
 pub enum DeletionFilesProvider {
     None,
 
+    #[cfg(feature = "parquet")]
     IcebergPositionDelete {
         paths: Arc<PlIndexMap<usize, Arc<[String]>>>,
         // Amortized allocations
@@ -41,6 +43,7 @@ impl DeletionFilesProvider {
         }
 
         match deletion_files.unwrap() {
+            #[cfg(feature = "parquet")]
             DeletionFilesList::IcebergPositionDelete(paths) => Self::IcebergPositionDelete {
                 paths,
                 reader_builder: ParquetReaderBuilder {
@@ -74,6 +77,7 @@ impl DeletionFilesProvider {
         match self {
             Self::None => None,
 
+            #[cfg(feature = "parquet")]
             Self::IcebergPositionDelete {
                 paths,
                 reader_builder,
