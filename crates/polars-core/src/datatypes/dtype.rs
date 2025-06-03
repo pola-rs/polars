@@ -909,6 +909,9 @@ impl DataType {
             },
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(l), DataType::Struct(r)) => {
+                if l.len() != r.len() {
+                    polars_bail!(SchemaMismatch: "structs have different number of fields: {} vs {}", l.len(), r.len());
+                }
                 let mut must_cast = false;
                 for (l, r) in l.iter().zip(r.iter()) {
                     must_cast |= l.dtype.matches_schema_type(&r.dtype)?;
