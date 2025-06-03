@@ -7,7 +7,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, PlIndexMap};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, feature_gated};
 use polars_io::cloud::CloudOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CastColumnsPolicy, ScanSource};
@@ -42,27 +42,29 @@ impl DeletionFilesProvider {
         }
 
         match deletion_files.unwrap() {
-            #[cfg(feature = "parquet")]
-            DeletionFilesList::IcebergPositionDelete(paths) => Self::IcebergPositionDelete {
-                paths,
-                reader_builder: ParquetReaderBuilder {
-                    first_metadata: None,
-                    options: Arc::new(polars_io::prelude::ParquetOptions {
-                        schema: Some(Arc::new(Schema::from_iter([
-                            (PlSmallStr::from_static("file_path"), DataType::String),
-                            (PlSmallStr::from_static("pos"), DataType::Int64),
-                        ]))),
+            DeletionFilesList::IcebergPositionDelete(paths) => feature_gated!(
+                "parquet",
+                Self::IcebergPositionDelete {
+                    paths,
+                    reader_builder: ParquetReaderBuilder {
+                        first_metadata: None,
+                        options: Arc::new(polars_io::prelude::ParquetOptions {
+                            schema: Some(Arc::new(Schema::from_iter([
+                                (PlSmallStr::from_static("file_path"), DataType::String),
+                                (PlSmallStr::from_static("pos"), DataType::Int64),
+                            ]))),
 
-                        parallel: polars_io::prelude::ParallelStrategy::Auto,
-                        low_memory: false,
-                        use_statistics: false,
-                    }),
-                },
-                projected_schema: Arc::new(Schema::from_iter([
-                    (PlSmallStr::from_static("file_path"), DataType::String),
-                    (PlSmallStr::from_static("pos"), DataType::Int64),
-                ])),
-            },
+                            parallel: polars_io::prelude::ParallelStrategy::Auto,
+                            low_memory: false,
+                            use_statistics: false,
+                        }),
+                    },
+                    projected_schema: Arc::new(Schema::from_iter([
+                        (PlSmallStr::from_static("file_path"), DataType::String),
+                        (PlSmallStr::from_static("pos"), DataType::Int64),
+                    ])),
+                }
+            ),
         }
     }
 
