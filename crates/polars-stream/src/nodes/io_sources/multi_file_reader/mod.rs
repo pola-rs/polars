@@ -4,6 +4,8 @@ pub mod initialization;
 pub mod post_apply_pipeline;
 pub mod reader_interface;
 pub mod reader_pipelines;
+#[expect(unused)]
+pub mod row_position;
 
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};

@@ -90,10 +90,11 @@ pub async fn read_parquet_metadata_bytes(
         if verbose && !matches!(byte_source, DynByteSource::MemSlice(_)) {
             eprintln!(
                 "[ParquetFileReader]: Fetched all bytes for metadata on first try \
-                (initial estimate = {}, actual size = {}, excess = {})",
+                (initial estimate = {}, actual size = {}, excess = {}, total file size = {})",
                 bytes.len(),
                 footer_size,
                 estimated_metadata_size - footer_size,
+                file_size,
             );
         }
 

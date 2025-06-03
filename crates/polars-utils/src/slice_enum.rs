@@ -32,6 +32,14 @@ impl Slice {
         }
     }
 
+    pub fn positive_offset(&self) -> usize {
+        let Slice::Positive { offset, len: _ } = self.clone() else {
+            panic!("cannot use positive_offset() on a negative slice");
+        };
+
+        offset
+    }
+
     /// Returns the end position of the slice (offset + len).
     ///
     /// # Panics
