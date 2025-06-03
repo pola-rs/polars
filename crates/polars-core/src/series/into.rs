@@ -18,7 +18,7 @@ impl Series {
 
     /// Convert a chunk in the Series to the correct Arrow type.
     /// This conversion is needed because polars doesn't use a
-    /// 1 on 1 mapping for logical/ categoricals, etc.
+    /// 1 on 1 mapping for logical/categoricals, etc.
     pub fn to_arrow(&self, chunk_idx: usize, compat_level: CompatLevel) -> ArrayRef {
         match self.dtype() {
             // make sure that we recursively apply all logical types.
