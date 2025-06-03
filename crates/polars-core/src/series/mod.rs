@@ -392,10 +392,6 @@ impl Series {
                 true
             },
             dt if dt.is_primitive() && dt == slf.dtype() => true,
-            #[cfg(feature = "dtype-categorical")]
-            D::Enum(None, _) => {
-                polars_bail!(InvalidOperation: "cannot cast / initialize Enum without categories present");
-            },
             _ => false,
         };
 
@@ -514,36 +510,33 @@ impl Series {
             },
 
             #[cfg(feature = "dtype-categorical")]
-            (D::UInt32, D::Categorical(revmap, ordering)) => match revmap {
-                Some(revmap) => Ok(unsafe {
-                    CategoricalChunked::from_cats_and_rev_map_unchecked(
-                        self.u32().unwrap().clone(),
-                        revmap.clone(),
-                        false,
-                        *ordering,
+            (phys, D::NewCategorical(cats, _))
+                if &cats.physical().dtype() == phys =>
+            {
+                with_match_categorical_physical_type!(cats.physical(), |$C| {
+                    type CA = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
+                    let ca = self.as_ref().as_any().downcast_ref::<CA>().unwrap();
+                    Ok(NewCategoricalChunked::from_cats_and_dtype_unchecked(
+                        ca.clone(),
+                        dtype.clone(),
                     )
-                }
-                .into_series()),
-                // In the streaming engine this is `None` and the global string cache is turned on
-                // for the duration of the query.
-                None => Ok(unsafe {
-                    CategoricalChunked::from_global_indices_unchecked(
-                        self.u32().unwrap().clone(),
-                        *ordering,
-                    )
-                    .into_series()
-                }),
+                    .into_series())
+                })
             },
             #[cfg(feature = "dtype-categorical")]
-            (D::UInt32, D::Enum(revmap, ordering)) => Ok(unsafe {
-                CategoricalChunked::from_cats_and_rev_map_unchecked(
-                    self.u32().unwrap().clone(),
-                    revmap.as_ref().unwrap().clone(),
-                    true,
-                    *ordering,
-                )
-            }
-            .into_series()),
+            (phys, D::NewEnum(fcats, _))
+                if &fcats.physical().dtype() == phys =>
+            {
+                with_match_categorical_physical_type!(fcats.physical(), |$C| {
+                    type CA = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
+                    let ca = self.as_ref().as_any().downcast_ref::<CA>().unwrap();
+                    Ok(NewCategoricalChunked::from_cats_and_dtype_unchecked(
+                        ca.clone(),
+                        dtype.clone(),
+                    )
+                    .into_series())
+                })
+            },
 
             (D::Int32, D::Date) => feature_gated!("dtype-time", Ok(self.clone().into_date())),
             (D::Int64, D::Datetime(tu, tz)) => feature_gated!(
@@ -991,13 +984,7 @@ impl Series {
     pub fn estimated_size(&self) -> usize {
         let mut size = 0;
         match self.dtype() {
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(Some(rv), _) | DataType::Enum(Some(rv), _) => match &**rv {
-                RevMapping::Local(arr, _) => size += estimated_bytes_size(arr),
-                RevMapping::Global(map, arr, _) => {
-                    size += map.capacity() * size_of::<u32>() * 2 + estimated_bytes_size(arr);
-                },
-            },
+            // TODO @ cat-rework: include mapping size here?
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 let ArrowDataType::FixedSizeBinary(size) = self.chunks()[0].dtype() else {
