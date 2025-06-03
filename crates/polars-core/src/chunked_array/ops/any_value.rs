@@ -1,6 +1,4 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-#[cfg(feature = "dtype-categorical")]
-use polars_utils::sync::SyncPtr;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
@@ -82,16 +80,22 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             }
         },
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(rev_map, _) => {
-            let arr = &*(arr as *const dyn Array as *const UInt32Array);
-            let v = arr.value_unchecked(idx);
-            AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
+        DataType::NewCategorical(cats, mapping) => {
+            with_match_categorical_physical_type!(cats.physical(), |$C| {
+                type A = <$C as PolarsCategoricalType>::Array;
+                let arr = &*(arr as *const dyn Array as *const A);
+                let cat_id = arr.value_unchecked(idx).as_cat();
+                AnyValue::Categorical(cat_id, mapping)
+            })
         },
         #[cfg(feature = "dtype-categorical")]
-        DataType::Enum(rev_map, _) => {
-            let arr = &*(arr as *const dyn Array as *const UInt32Array);
-            let v = arr.value_unchecked(idx);
-            AnyValue::Enum(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
+        DataType::NewEnum(fcats, mapping) => {
+            with_match_categorical_physical_type!(fcats.physical(), |$C| {
+                type A = <$C as PolarsCategoricalType>::Array;
+                let arr = &*(arr as *const dyn Array as *const A);
+                let cat_id = arr.value_unchecked(idx).as_cat();
+                AnyValue::Enum(cat_id, mapping)
+            })
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(flds) => {
@@ -143,55 +147,12 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
 
 #[cfg(feature = "dtype-struct")]
 impl<'a> AnyValue<'a> {
-    pub fn _iter_struct_av(&self) -> impl Iterator<Item = AnyValue<'_>> {
-        match self {
-            AnyValue::Struct(idx, arr, flds) => {
-                let idx = *idx;
-                unsafe {
-                    arr.values().iter().zip(*flds).map(move |(arr, fld)| {
-                        // The dictionary arrays categories don't have to map to the rev-map in the dtype
-                        // so we set the array pointer with values of the dictionary array.
-                        #[cfg(feature = "dtype-categorical")]
-                        {
-                            use arrow::legacy::is_valid::IsValid as _;
-                            if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
-                                let keys = arr.keys();
-                                let values = arr.values();
-                                let values =
-                                    values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                                let arr = &*(keys as *const dyn Array as *const UInt32Array);
-
-                                if arr.is_valid_unchecked(idx) {
-                                    let v = arr.value_unchecked(idx);
-                                    match fld.dtype() {
-                                        DataType::Categorical(Some(rev_map), _) => {
-                                            AnyValue::Categorical(
-                                                v,
-                                                rev_map,
-                                                SyncPtr::from_const(values),
-                                            )
-                                        },
-                                        DataType::Enum(Some(rev_map), _) => {
-                                            AnyValue::Enum(v, rev_map, SyncPtr::from_const(values))
-                                        },
-                                        _ => unimplemented!(),
-                                    }
-                                } else {
-                                    AnyValue::Null
-                                }
-                            } else {
-                                arr_to_any_value(&**arr, idx, fld.dtype())
-                            }
-                        }
-
-                        #[cfg(not(feature = "dtype-categorical"))]
-                        {
-                            arr_to_any_value(&**arr, idx, fld.dtype())
-                        }
-                    })
-                }
-            },
-            _ => unreachable!(),
+    pub fn _iter_struct_av(&self) -> impl Iterator<Item = AnyValue> {
+        let AnyValue::Struct(idx, arr, flds) = self else { unreachable!() };
+        unsafe {
+            arr.values().iter().zip(*flds).map(move |(arr, fld)| {
+                arr_to_any_value(&**arr, *idx, fld.dtype())
+            })
         }
     }
 
