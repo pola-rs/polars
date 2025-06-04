@@ -11,8 +11,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $c:ident, $push:ident, $push_owned:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_)
-            | IndexColumn(_) | Len => {},
+            Column(_) | Literal(_) | Len => {},
             #[cfg(feature = "dtype-struct")]
             Field(_) => {},
             Alias(e, _) => $push($c, e),
@@ -100,7 +99,6 @@ macro_rules! push_expr {
                 // latest, so that it is popped first
                 $push($c, input);
             },
-            Exclude(e, _) => $push($c, e),
             KeepName(e) => $push($c, e),
             RenameAlias { expr, .. } => $push($c, expr),
             SubPlan { .. } => {},

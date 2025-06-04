@@ -1,6 +1,11 @@
 use super::*;
 use crate::plans::conversion::functions::convert_functions;
 
+pub(super) enum ExpandedDslToIrExpr {
+    Simple(DslToIrExpr),
+    Expanded(Vec<DslToIrExpr>),
+}
+
 pub(super) struct DslToIrExpr {
     pub node: Node,
     pub output_name: PlSmallStr,
@@ -20,20 +25,138 @@ impl DslToIrExpr {
         self.node = expr_arena.add(f(self.node));
         self
     }
+
+    fn into_expr_ir(self) -> ExprIR {
+        ExprIR::new(self.node, OutputName::Alias(self.output_name))
+    }
 }
 
-pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>, schema: &Schema) -> PolarsResult<ExprIR> {
-    let DslToIrExpr { node, output_name } = to_aexpr_impl(expr, arena, schema)?;
-    Ok(ExprIR::new(node, OutputName::Alias(output_name)))
+impl ExpandedDslToIrExpr {
+    fn with_output_name(self, output_name: PlSmallStr) -> Self {
+        match self {
+            Self::Simple(e) => Self::Simple(e.with_output_name(output_name)),
+            Self::Expanded(e) => Self::Expanded(
+                e.into_iter()
+                    .map(|e| e.with_output_name(output_name.clone()))
+                    .collect(),
+            ),
+        }
+    }
+
+    pub fn map_expr(self, expr_arena: &mut Arena<AExpr>, f: impl Fn(Node) -> AExpr + Copy) -> Self {
+        match self {
+            Self::Simple(e) => Self::Simple(e.map_expr(expr_arena, f)),
+            Self::Expanded(e) => {
+                Self::Expanded(e.into_iter().map(|e| e.map_expr(expr_arena, f)).collect())
+            },
+        }
+    }
+
+    pub fn combine_expr(
+        self,
+        expr_arena: &mut Arena<AExpr>,
+        other: ExpandedDslToIrExpr,
+        f: impl Fn(Node, Node) -> AExpr + Copy,
+    ) -> PolarsResult<Self> {
+        match (self, other) {
+            (Self::Simple(l), Self::Simple(r)) => Ok(Self::Simple(DslToIrExpr {
+                node: expr_arena.add(f(l.node, r.node)),
+                output_name: l.output_name,
+            })),
+            (Self::Simple(l), Self::Expanded(r)) => Ok(Self::Expanded(
+                r.into_iter()
+                    .map(|r| DslToIrExpr {
+                        node: expr_arena.add(f(l.node, r.node)),
+                        output_name: l.output_name.clone(),
+                    })
+                    .collect(),
+            )),
+            (Self::Expanded(l), Self::Simple(r)) => Ok(Self::Expanded(
+                l.into_iter()
+                    .map(|l| DslToIrExpr {
+                        node: expr_arena.add(f(l.node, r.node)),
+                        output_name: l.output_name,
+                    })
+                    .collect(),
+            )),
+            (Self::Expanded(l), Self::Expanded(r)) => {
+                polars_ensure!(l.len() == r.len(), InvalidOperation: "cannot combine selector-based expressions that expanded to a different numbers of columns");
+                Ok(Self::Expanded(
+                    l.into_iter()
+                        .zip(r.into_iter())
+                        .map(|(l, r)| DslToIrExpr {
+                            node: expr_arena.add(f(l.node, r.node)),
+                            output_name: l.output_name,
+                        })
+                        .collect(),
+                ))
+            },
+        }
+    }
 }
 
-pub fn to_expr_ir_materialized_lit(
+pub fn to_expr_ir_no_selectors(
     expr: Expr,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
-) -> PolarsResult<ExprIR> {
-    let DslToIrExpr { node, output_name } = to_aexpr_impl_materialized_lit(expr, arena, schema)?;
-    Ok(ExprIR::new(node, OutputName::Alias(output_name)))
+) -> PolarsResult<Option<ExprIR>> {
+    Ok(match to_aexpr_impl(expr, arena, schema)? {
+        ExpandedDslToIrExpr::Simple(e) => Some(e.into_expr_ir()),
+        ExpandedDslToIrExpr::Expanded(_) => None,
+    })
+}
+
+pub fn to_expr_ir_materialized_lit_no_selectors(
+    expr: Expr,
+    arena: &mut Arena<AExpr>,
+    schema: &Schema,
+) -> PolarsResult<Option<ExprIR>> {
+    Ok(match to_aexpr_impl_materialized_lit(expr, arena, schema)? {
+        ExpandedDslToIrExpr::Simple(e) => Some(e.into_expr_ir()),
+        ExpandedDslToIrExpr::Expanded(_) => None,
+    })
+}
+
+pub fn extend_expr_ir(
+    expr: Expr,
+    arena: &mut Arena<AExpr>,
+    schema: &Schema,
+    expr_irs: &mut Vec<ExprIR>,
+) -> PolarsResult<()> {
+    match to_aexpr_impl(expr, arena, schema)? {
+        ExpandedDslToIrExpr::Simple(e) => expr_irs.push(e.into_expr_ir()),
+        ExpandedDslToIrExpr::Expanded(e) => {
+            expr_irs.extend(e.into_iter().map(DslToIrExpr::into_expr_ir))
+        },
+    }
+    Ok(())
+}
+
+pub fn extend_expr_ir_materialized_lit(
+    expr: Expr,
+    arena: &mut Arena<AExpr>,
+    schema: &Schema,
+    expr_irs: &mut Vec<ExprIR>,
+) -> PolarsResult<()> {
+    match to_aexpr_impl_materialized_lit(expr, arena, schema)? {
+        ExpandedDslToIrExpr::Simple(e) => expr_irs.push(e.into_expr_ir()),
+        ExpandedDslToIrExpr::Expanded(e) => {
+            expr_irs.extend(e.into_iter().map(DslToIrExpr::into_expr_ir))
+        },
+    }
+    Ok(())
+}
+
+pub fn expand_into_expr_irs(
+    input: Vec<Expr>,
+    arena: &mut Arena<AExpr>,
+    schema: &Schema,
+) -> PolarsResult<Vec<ExprIR>> {
+    let mut expanded = Vec::with_capacity(input.len());
+    for e in input {
+        extend_expr_ir(e, arena, schema, &mut expanded)?;
+    }
+    Ok(expanded)
 }
 
 pub(super) fn to_expr_irs(
@@ -41,17 +164,18 @@ pub(super) fn to_expr_irs(
     arena: &mut Arena<AExpr>,
     schema: &Schema,
 ) -> PolarsResult<Vec<ExprIR>> {
-    input
-        .into_iter()
-        .map(|e| to_expr_ir(e, arena, schema))
-        .collect()
+    let mut expanded = Vec::with_capacity(input.len());
+    for e in input {
+        extend_expr_ir(e, arena, schema, &mut expanded)?;
+    }
+    Ok(expanded)
 }
 
 fn to_aexpr_impl_materialized_lit(
     expr: Expr,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
-) -> PolarsResult<DslToIrExpr> {
+) -> PolarsResult<ExpandedDslToIrExpr> {
     // Already convert `Lit Float and Lit Int` expressions that are not used in a binary / function expression.
     // This means they can be materialized immediately
     let e = match expr {
@@ -73,7 +197,7 @@ pub(super) fn to_aexpr_impl(
     expr: Expr,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
-) -> PolarsResult<DslToIrExpr> {
+) -> PolarsResult<ExpandedDslToIrExpr> {
     let owned = Arc::unwrap_or_clone;
     Ok(match expr {
         Expr::Explode { input, skip_empty } => to_aexpr_impl(owned(input), arena, schema)?
@@ -81,20 +205,24 @@ pub(super) fn to_aexpr_impl(
         Expr::Alias(e, name) => to_aexpr_impl(owned(e), arena, schema)?.with_output_name(name),
         Expr::Literal(lv) => {
             let output_name = lv.output_column_name().clone();
-            DslToIrExpr {
+            ExpandedDslToIrExpr::Simple(DslToIrExpr {
                 node: arena.add(AExpr::Literal(lv)),
                 output_name,
-            }
+            })
         },
-        Expr::Column(name) => DslToIrExpr {
+        Expr::Column(name) => ExpandedDslToIrExpr::Simple(DslToIrExpr {
             node: arena.add(AExpr::Column(name.clone())),
             output_name: name,
-        },
+        }),
         Expr::BinaryExpr { left, op, right } => {
             let left = to_aexpr_impl(owned(left), arena, schema)?;
-            let right = to_aexpr_impl(owned(right), arena, schema)?.node;
+            let right = to_aexpr_impl(owned(right), arena, schema)?;
 
-            left.map_expr(arena, |left| AExpr::BinaryExpr { left, op, right })
+            left.combine_expr(arena, right, |left, right| AExpr::BinaryExpr {
+                left,
+                op,
+                right,
+            })?
         },
         Expr::Cast {
             expr,
@@ -104,7 +232,7 @@ pub(super) fn to_aexpr_impl(
             let dtype = dtype.into_datatype(schema)?;
             to_aexpr_impl(owned(expr), arena, schema)?.map_expr(arena, |expr| AExpr::Cast {
                 expr,
-                dtype,
+                dtype: dtype.clone(),
                 options,
             })
         },
@@ -114,12 +242,12 @@ pub(super) fn to_aexpr_impl(
             returns_scalar,
         } => {
             let expr = to_aexpr_impl(owned(expr), arena, schema)?;
-            let idx = to_aexpr_impl_materialized_lit(owned(idx), arena, schema)?.node;
-            expr.map_expr(arena, |expr| AExpr::Gather {
+            let idx = to_aexpr_impl_materialized_lit(owned(idx), arena, schema)?;
+            expr.combine_expr(arena, idx, |expr, idx| AExpr::Gather {
                 expr,
                 idx,
                 returns_scalar,
-            })
+            })?
         },
         Expr::Sort { expr, options } => to_aexpr_impl(owned(expr), arena, schema)?
             .map_expr(arena, |expr| AExpr::Sort { expr, options }),
@@ -128,21 +256,22 @@ pub(super) fn to_aexpr_impl(
             by,
             sort_options,
         } => {
-            let expr = to_aexpr_impl(owned(expr), arena, schema)?;
-            let by = by
-                .into_iter()
-                .map(|e| Ok(to_aexpr_impl(e, arena, schema)?.node))
-                .collect::<PolarsResult<_>>()?;
-            expr.map_expr(arena, |expr| AExpr::SortBy {
-                expr,
-                by,
-                sort_options,
-            })
+            todo!()
+            // let expr = to_aexpr_impl(owned(expr), arena, schema)?;
+            // let by = by
+            //     .into_iter()
+            //     .map(|e| Ok(to_aexpr_impl(e, arena, schema)?.node))
+            //     .collect::<PolarsResult<_>>()?;
+            // expr.map_expr(arena, |expr| AExpr::SortBy {
+            //     expr,
+            //     by,
+            //     sort_options,
+            // })
         },
         Expr::Filter { input, by } => {
             let input = to_aexpr_impl(owned(input), arena, schema)?;
-            let by = to_aexpr_impl(owned(by), arena, schema)?.node;
-            input.map_expr(arena, |input| AExpr::Filter { input, by })
+            let by = to_aexpr_impl(owned(by), arena, schema)?;
+            input.combine_expr(arena, by, |input, by| AExpr::Filter { input, by })?
         },
         Expr::Agg(agg) => match agg {
             AggExpr::Min {
@@ -193,15 +322,15 @@ pub(super) fn to_aexpr_impl(
                 method,
             } => {
                 let expr = to_aexpr_impl_materialized_lit(owned(expr), arena, schema)?;
-                let quantile = to_aexpr_impl_materialized_lit(owned(quantile), arena, schema)?.node;
+                let quantile = to_aexpr_impl_materialized_lit(owned(quantile), arena, schema)?;
 
-                expr.map_expr(arena, |expr| {
+                expr.combine_expr(arena, quantile, |expr, quantile| {
                     AExpr::Agg(IRAggExpr::Quantile {
                         expr,
                         quantile,
                         method,
                     })
-                })
+                })?
             },
             AggExpr::Sum(input) => to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
                 .map_expr(arena, |input| AExpr::Agg(IRAggExpr::Sum(input))),
@@ -223,15 +352,16 @@ pub(super) fn to_aexpr_impl(
             truthy,
             falsy,
         } => {
-            let predicate = to_aexpr_impl_materialized_lit(owned(predicate), arena, schema)?.node;
-            let truthy = to_aexpr_impl(owned(truthy), arena, schema)?;
-            let falsy = to_aexpr_impl(owned(falsy), arena, schema)?.node;
-
-            truthy.map_expr(arena, |truthy| AExpr::Ternary {
-                predicate,
-                truthy,
-                falsy,
-            })
+            todo!()
+            // let predicate = to_aexpr_impl_materialized_lit(owned(predicate), arena, schema)?.node;
+            // let truthy = to_aexpr_impl(owned(truthy), arena, schema)?;
+            // let falsy = to_aexpr_impl(owned(falsy), arena, schema)?.node;
+            //
+            // truthy.map_expr(arena, |truthy| AExpr::Ternary {
+            //     predicate,
+            //     truthy,
+            //     falsy,
+            // })
         },
         Expr::AnonymousFunction {
             input,
@@ -252,7 +382,8 @@ pub(super) fn to_aexpr_impl(
                 output_type,
                 options,
             });
-            DslToIrExpr { node, output_name }
+            dbg!();
+            ExpandedDslToIrExpr::Simple(DslToIrExpr { node, output_name })
         },
         Expr::Function {
             input,
@@ -265,41 +396,43 @@ pub(super) fn to_aexpr_impl(
             order_by,
             options,
         } => {
-            let function = to_aexpr_impl(owned(function), arena, schema)?;
-            let order_by = if let Some((e, options)) = order_by {
-                Some((
-                    to_aexpr_impl(owned(e.clone()), arena, schema)?.node,
-                    options,
-                ))
-            } else {
-                None
-            };
-            let partition_by = partition_by
-                .into_iter()
-                .map(|e| Ok(to_aexpr_impl_materialized_lit(e, arena, schema)?.node))
-                .collect::<PolarsResult<_>>()?;
-
-            function.map_expr(arena, |function| AExpr::Window {
-                function,
-                partition_by,
-                order_by,
-                options,
-            })
+            todo!();
+            // let function = to_aexpr_impl(owned(function), arena, schema)?;
+            // let order_by = if let Some((e, options)) = order_by {
+            //     Some((
+            //         to_aexpr_impl(owned(e.clone()), arena, schema)?.node,
+            //         options,
+            //     ))
+            // } else {
+            //     None
+            // };
+            // let partition_by = partition_by
+            //     .into_iter()
+            //     .map(|e| Ok(to_aexpr_impl_materialized_lit(e, arena, schema)?.node))
+            //     .collect::<PolarsResult<_>>()?;
+            //
+            // function.map_expr(arena, |function| AExpr::Window {
+            //     function,
+            //     partition_by,
+            //     order_by,
+            //     options,
+            // })
         },
         Expr::Slice {
             input,
             offset,
             length,
         } => {
-            let input = to_aexpr_impl(owned(input), arena, schema)?;
-            let offset = to_aexpr_impl_materialized_lit(owned(offset), arena, schema)?.node;
-            let length = to_aexpr_impl_materialized_lit(owned(length), arena, schema)?.node;
-
-            input.map_expr(arena, |input| AExpr::Slice {
-                input,
-                offset,
-                length,
-            })
+            todo!()
+            // let input = to_aexpr_impl(owned(input), arena, schema)?;
+            // let offset = to_aexpr_impl_materialized_lit(owned(offset), arena, schema)?.node;
+            // let length = to_aexpr_impl_materialized_lit(owned(length), arena, schema)?.node;
+            //
+            // input.map_expr(arena, |input| AExpr::Slice {
+            //     input,
+            //     offset,
+            //     length,
+            // })
         },
         Expr::Eval {
             expr,
@@ -307,7 +440,12 @@ pub(super) fn to_aexpr_impl(
             variant,
         } => {
             let expr = to_aexpr_impl(owned(expr), arena, schema)?;
-            let evaluation = to_aexpr_impl(owned(evaluation), arena, schema)?.node;
+            let ExpandedDslToIrExpr::Simple(evaluation) =
+                to_aexpr_impl(owned(evaluation), arena, schema)?
+            else {
+                polars_bail!(nyi = "selectors in `eval` expressions");
+            };
+            let evaluation = evaluation.node;
 
             match variant {
                 EvalVariant::List => {
@@ -347,24 +485,27 @@ pub(super) fn to_aexpr_impl(
                 variant,
             })
         },
-        Expr::Len => DslToIrExpr {
+        Expr::Len => ExpandedDslToIrExpr::Simple(DslToIrExpr {
             node: arena.add(AExpr::Len),
             output_name: get_len_name(),
+        }),
+        Expr::Selector(selector) => {
+            let columns = selector.into_columns(schema)?;
+            ExpandedDslToIrExpr::Expanded(
+                columns
+                    .into_iter()
+                    .map(|c| DslToIrExpr {
+                        node: arena.add(AExpr::Column(c.clone())),
+                        output_name: c,
+                    })
+                    .collect(),
+            )
         },
         #[cfg(feature = "dtype-struct")]
         e @ Expr::Field(_) => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
         },
-        e @ Expr::IndexColumn(_)
-        | e @ Expr::Wildcard
-        | e @ Expr::Nth(_)
-        | e @ Expr::SubPlan { .. }
-        | e @ Expr::KeepName(_)
-        | e @ Expr::Exclude(_, _)
-        | e @ Expr::RenameAlias { .. }
-        | e @ Expr::Columns { .. }
-        | e @ Expr::DtypeColumn { .. }
-        | e @ Expr::Selector(_) => {
+        e @ Expr::SubPlan { .. } | e @ Expr::KeepName(_) | e @ Expr::RenameAlias { .. } => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
         },
     })

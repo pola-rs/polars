@@ -1,12 +1,12 @@
 use core::fmt;
 
-use polars_core::error::PolarsResult;
+use polars_core::error::{polars_err, PolarsResult};
 use polars_core::prelude::DataType;
 use polars_core::schema::Schema;
 use polars_utils::arena::Arena;
 
 use super::Expr;
-use crate::plans::to_expr_ir;
+use crate::plans::{to_expr_ir_no_selectors};
 
 #[derive(Clone, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -22,7 +22,9 @@ fn into_datatype_impl(dt_expr: DataTypeExpr, schema: &Schema) -> PolarsResult<Da
         DataTypeExpr::Literal(dt) => dt,
         DataTypeExpr::OfExpr(expr) => {
             let mut arena = Arena::new();
-            let e = to_expr_ir(*expr, &mut arena, schema)?;
+            let e = to_expr_ir_no_selectors(*expr, &mut arena, schema)?.ok_or_else(
+                || polars_err!(InvalidOperation: "using a selector in a datatype expr"),
+            )?;
             arena
                 .get(e.node())
                 .to_dtype(schema, Default::default(), &arena)?

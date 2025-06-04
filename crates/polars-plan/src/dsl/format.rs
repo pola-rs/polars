@@ -37,7 +37,6 @@ impl fmt::Debug for Expr {
                     }
                 },
             },
-            Nth(i) => write!(f, "nth({i})"),
             Len => write!(f, "len()"),
             Explode {
                 input: expr,
@@ -183,14 +182,9 @@ impl fmt::Debug for Expr {
                 offset,
                 length,
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
-            Wildcard => write!(f, "*"),
-            Exclude(column, names) => write!(f, "{column:?}.exclude({names:?})"),
             KeepName(e) => write!(f, "{e:?}.name.keep()"),
             RenameAlias { expr, .. } => write!(f, ".rename_alias({expr:?})"),
-            Columns(names) => write!(f, "cols({names:?})"),
-            DtypeColumn(dt) => write!(f, "dtype_columns({dt:?})"),
-            IndexColumn(idxs) => write!(f, "index_columns({idxs:?})"),
-            Selector(_) => write!(f, "selector"),
+            Selector(_) => dbg!(write!(f, "selector")),
             #[cfg(feature = "dtype-struct")]
             Field(names) => write!(f, ".field({names:?})"),
         }

@@ -84,9 +84,6 @@ impl AsRef<Expr> for AggExpr {
 pub enum Expr {
     Alias(Arc<Expr>, PlSmallStr),
     Column(PlSmallStr),
-    Columns(Arc<[PlSmallStr]>),
-    DtypeColumn(Vec<DataType>),
-    IndexColumn(Arc<[i64]>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Arc<Expr>,
@@ -143,21 +140,15 @@ pub enum Expr {
         order_by: Option<(Arc<Expr>, SortOptions)>,
         options: WindowType,
     },
-    Wildcard,
     Slice {
         input: Arc<Expr>,
         /// length is not yet known so we accept negative offsets
         offset: Arc<Expr>,
         length: Arc<Expr>,
     },
-    /// Can be used in a select statement to exclude a column from selection
-    /// TODO: See if we can replace `Vec<Excluded>` with `Arc<Excluded>`
-    Exclude(Arc<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Arc<Expr>),
     Len,
-    /// Take the nth column in the `DataFrame`
-    Nth(i64),
     #[cfg(feature = "dtype-struct")]
     Field(Arc<[PlSmallStr]>),
     AnonymousFunction {
@@ -263,12 +254,8 @@ impl Hash for Expr {
         d.hash(state);
         match self {
             Expr::Column(name) => name.hash(state),
-            Expr::Columns(names) => names.hash(state),
-            Expr::DtypeColumn(dtypes) => dtypes.hash(state),
-            Expr::IndexColumn(indices) => indices.hash(state),
             Expr::Literal(lv) => std::mem::discriminant(lv).hash(state),
             Expr::Selector(s) => s.hash(state),
-            Expr::Nth(v) => v.hash(state),
             Expr::Filter { input, by } => {
                 input.hash(state);
                 by.hash(state);
@@ -324,7 +311,7 @@ impl Hash for Expr {
                 returns_scalar.hash(state);
             },
             // already hashed by discriminant
-            Expr::Wildcard | Expr::Len => {},
+            Expr::Len => {},
             Expr::SortBy {
                 expr,
                 by,
@@ -358,10 +345,6 @@ impl Hash for Expr {
                 input.hash(state);
                 offset.hash(state);
                 length.hash(state);
-            },
-            Expr::Exclude(input, excl) => {
-                input.hash(state);
-                excl.hash(state);
             },
             Expr::RenameAlias { function, expr } => {
                 function.hash(state);

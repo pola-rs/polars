@@ -13,7 +13,7 @@ pub(super) fn convert_functions(
     mut options: FunctionOptions,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
-) -> PolarsResult<DslToIrExpr> {
+) -> PolarsResult<ExpandedDslToIrExpr> {
     use FunctionExpr as F;
 
     // Return before converting inputs

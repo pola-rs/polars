@@ -103,22 +103,23 @@ impl DslFunction {
         let function = match self {
             #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
-                let on = expand_selectors(args.on, input_schema, &[])?;
-                let index = expand_selectors(args.index, input_schema, &[])?;
-                validate_columns_in_input(on.as_ref(), input_schema, "unpivot")?;
-                validate_columns_in_input(index.as_ref(), input_schema, "unpivot")?;
-
-                let args = UnpivotArgsIR {
-                    on: on.iter().cloned().collect(),
-                    index: index.iter().cloned().collect(),
-                    variable_name: args.variable_name.clone(),
-                    value_name: args.value_name.clone(),
-                };
-
-                FunctionIR::Unpivot {
-                    args: Arc::new(args),
-                    schema: Default::default(),
-                }
+                todo!()
+                // let on = expand_selectors(args.on, input_schema, &[])?;
+                // let index = expand_selectors(args.index, input_schema, &[])?;
+                // validate_columns_in_input(on.as_ref(), input_schema, "unpivot")?;
+                // validate_columns_in_input(index.as_ref(), input_schema, "unpivot")?;
+                //
+                // let args = UnpivotArgsIR {
+                //     on: on.iter().cloned().collect(),
+                //     index: index.iter().cloned().collect(),
+                //     variable_name: args.variable_name.clone(),
+                //     value_name: args.value_name.clone(),
+                // };
+                //
+                // FunctionIR::Unpivot {
+                //     args: Arc::new(args),
+                //     schema: Default::default(),
+                // }
             },
             DslFunction::FunctionIR(func) => func,
             DslFunction::RowIndex { name, offset } => FunctionIR::RowIndex {
@@ -127,9 +128,10 @@ impl DslFunction {
                 schema: Default::default(),
             },
             DslFunction::Unnest(selectors) => {
-                let columns = expand_selectors(selectors, input_schema, &[])?;
-                validate_columns_in_input(columns.as_ref(), input_schema, "unnest")?;
-                FunctionIR::Unnest { columns }
+                todo!()
+                // let columns = expand_selectors(selectors, input_schema, &[])?;
+                // validate_columns_in_input(columns.as_ref(), input_schema, "unnest")?;
+                // FunctionIR::Unnest { columns }
             },
             #[cfg(feature = "python")]
             DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),

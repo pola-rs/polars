@@ -218,22 +218,21 @@ pub fn column_node_to_name(node: ColumnNode, arena: &Arena<AExpr>) -> &PlSmallSt
 /// Get all leaf column expressions in the expression tree.
 pub(crate) fn expr_to_leaf_column_exprs_iter(expr: &Expr) -> impl Iterator<Item = &Expr> {
     expr.into_iter().flat_map(|e| match e {
-        Expr::Column(_) | Expr::Wildcard => Some(e),
+        Expr::Column(_) | Expr::Selector(Selector::Wildcard) => Some(e),
         _ => None,
     })
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
 pub fn expressions_to_schema(
-    expr: &[Expr],
+    expr: &[ExprIR],
+    arena: &Arena<AExpr>,
     schema: &Schema,
     ctxt: Context,
 ) -> PolarsResult<Schema> {
-    let mut expr_arena = Arena::with_capacity(4 * expr.len());
     expr.iter()
         .map(|expr| {
-            let mut field = expr.to_field_amortized(schema, ctxt, &mut expr_arena)?;
-
+            let mut field = expr.field(schema, ctxt, arena)?;
             field.dtype = field.dtype.materialize_unknown(true)?;
             Ok(field)
         })

@@ -79,6 +79,22 @@ impl Default for SQLContext {
     }
 }
 
+fn expressions_to_schema(
+    exprs: &[Expr],
+    input_schema: &Schema,
+    ctx: Context,
+) -> PolarsResult<Schema> {
+    let mut expr_arena = Arena::with_capacity(4);
+    expr.iter()
+        .map(|expr| {
+            let mut field = expr.to_field_amortized(schema, ctxt, &mut expr_arena)?;
+            expr_arena.clear();
+            field.dtype = field.dtype.materialize_unknown(true)?;
+            Ok(field)
+        })
+        .collect()
+}
+
 impl SQLContext {
     /// Create a new SQLContext.
     /// ```rust
