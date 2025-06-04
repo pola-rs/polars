@@ -6,7 +6,6 @@ use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
 
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
@@ -556,7 +555,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         }
 
         enum MutableSources {
-            Paths(Vec<PathBuf>),
+            Paths(Vec<PlPath>),
             Files(Vec<File>),
             Buffers(Vec<MemSlice>),
         }
@@ -1630,5 +1629,22 @@ impl<'py> FromPyObject<'py> for Wrap<DeletionFilesList> {
                 )));
             },
         }))
+    }
+}
+
+impl<'py> FromPyObject<'py> for Wrap<PlPath> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let path: PyBackedStr = ob.extract()?;
+        Ok(Wrap(PlPath::new(&path)))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<PlPath> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        self.0.to_str().into_pyobject(py)
     }
 }

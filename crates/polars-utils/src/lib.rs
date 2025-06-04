@@ -6,7 +6,6 @@
 #![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 pub mod abs_diff;
-pub mod address;
 pub mod algebraic_ops;
 pub mod arena;
 pub mod binary_search;
@@ -28,6 +27,7 @@ pub mod mem;
 pub mod min_max;
 pub mod parma;
 pub mod pl_str;
+pub mod plpath;
 pub mod priority;
 pub mod regex_cache;
 pub mod select;

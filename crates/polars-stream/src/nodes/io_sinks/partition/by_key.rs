@@ -1,5 +1,4 @@
 use std::cmp::Reverse;
-use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use futures::StreamExt;
@@ -11,8 +10,8 @@ use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
-use polars_utils::address::Address;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 use polars_utils::priority::Priority;
 
 use super::{CreateNewSinkFn, PerPartitionSortBy};
@@ -38,7 +37,7 @@ pub struct PartitionByKeySinkNode {
     max_open_partitions: usize,
     include_key: bool,
 
-    base_path: Arc<Address>,
+    base_path: Arc<PlPath>,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -55,7 +54,7 @@ impl PartitionByKeySinkNode {
     pub fn new(
         input_schema: SchemaRef,
         key_cols: Arc<[PlSmallStr]>,
-        base_path: Arc<Address>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,

@@ -640,10 +640,13 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     alias,
                 } => {
                     let sources = sources
-                        .into_addresses()
+                        .into_paths()
                         .ok_or_else(|| {
                             PyNotImplementedError::new_err("FastCount with BytesIO sources")
                         })?
+                        .iter()
+                        .map(|p| p.to_str())
+                        .collect::<Vec<_>>()
                         .into_py_any(py)?;
 
                     let scan_type = scan_type_to_pyobject(py, scan_type, cloud_options)?;

@@ -1,4 +1,3 @@
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -12,8 +11,8 @@ use polars_plan::dsl::{
     FileType, PartitionTargetCallback, PartitionTargetCallbackResult, PartitionTargetContext,
     SinkOptions, SinkTarget,
 };
-use polars_utils::address::AddressRef;
 use polars_utils::format_pl_smallstr;
+use polars_utils::plpath::PlPathRef;
 
 use super::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -156,7 +155,7 @@ type FilePathCallback =
 
 #[allow(clippy::too_many_arguments)]
 async fn open_new_sink(
-    base_path: AddressRef<'_>,
+    base_path: PlPathRef<'_>,
     file_path_cb: Option<&PartitionTargetCallback>,
     default_file_path_cb: FilePathCallback,
     file_idx: usize,
@@ -202,18 +201,16 @@ async fn open_new_sink(
         })?;
         match target {
             // Offset the given path by the base_path.
-            PartitionTargetCallbackResult::Str(p) => {
-                SinkTarget::Address(Arc::new(base_path.join(p)))
-            },
+            PartitionTargetCallbackResult::Str(p) => SinkTarget::Path(base_path.join(p)),
             PartitionTargetCallbackResult::Dyn(t) => SinkTarget::Dyn(t),
         }
     } else {
-        SinkTarget::Address(Arc::new(path))
+        SinkTarget::Path(path)
     };
 
     if verbose {
         match &target {
-            SinkTarget::Address(p) => eprintln!(
+            SinkTarget::Path(p) => eprintln!(
                 "[partition[{partition_name}]]: Start on new file '{}'",
                 p.display(),
             ),

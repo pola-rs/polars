@@ -6,10 +6,10 @@ use std::path::Path;
 pub use async_writeable::AsyncWriteable;
 use polars_core::config;
 use polars_error::{PolarsError, PolarsResult, feature_gated};
-use polars_utils::address::{AddressRef, CloudScheme};
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::ensure_not_mapped;
+use polars_utils::plpath::{CloudScheme, PlPathRef};
 
 use super::sync_on_close::SyncOnCloseType;
 use crate::cloud::CloudOptions;
@@ -57,13 +57,13 @@ pub enum Writeable {
 
 impl Writeable {
     pub fn try_new(
-        addr: AddressRef,
+        addr: PlPathRef,
         #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
         let verbose = config::verbose();
 
         match addr {
-            AddressRef::Cloud(p) => {
+            PlPathRef::Cloud(p) => {
                 feature_gated!("cloud", {
                     use crate::cloud::BlockingCloudWriter;
 
@@ -72,15 +72,16 @@ impl Writeable {
                     }
 
                     if p.scheme() == CloudScheme::File {
-                        create_file(Path::new(p.path()))?;
+                        create_file(Path::new(p.offset_path()))?;
                     }
 
-                    let writer = crate::pl_async::get_runtime()
-                        .block_in_place_on(BlockingCloudWriter::new(&p.to_string(), cloud_options))?;
+                    let writer = crate::pl_async::get_runtime().block_in_place_on(
+                        BlockingCloudWriter::new(&p.to_string(), cloud_options),
+                    )?;
                     Ok(Self::Cloud(writer))
                 })
             },
-            AddressRef::Local(path) if config::force_async() => {
+            PlPathRef::Local(path) if config::force_async() => {
                 feature_gated!("cloud", {
                     use crate::cloud::BlockingCloudWriter;
 
@@ -113,7 +114,7 @@ impl Writeable {
                     Ok(Self::Cloud(writer))
                 })
             },
-            AddressRef::Local(path) => {
+            PlPathRef::Local(path) => {
                 let path = resolve_homedir(&path);
                 create_file(&path)?;
 
@@ -199,7 +200,7 @@ impl DerefMut for Writeable {
 ///
 /// Open a path for writing. Supports cloud paths.
 pub fn try_get_writeable(
-    addr: AddressRef<'_>,
+    addr: PlPathRef<'_>,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Box<dyn WriteClose + Send>> {
     Writeable::try_new(addr, cloud_options).map(|x| match x {
@@ -218,8 +219,8 @@ mod async_writeable {
     use std::task::{Context, Poll};
 
     use polars_error::{PolarsError, PolarsResult};
-    use polars_utils::address::AddressRef;
     use polars_utils::file::ClosableFile;
+    use polars_utils::plpath::PlPathRef;
     use tokio::io::AsyncWriteExt;
     use tokio::task;
 
@@ -264,7 +265,7 @@ mod async_writeable {
 
     impl AsyncWriteable {
         pub async fn try_new(
-            addr: AddressRef<'_>,
+            addr: PlPathRef<'_>,
             cloud_options: Option<&CloudOptions>,
         ) -> PolarsResult<Self> {
             // TODO: Native async impl

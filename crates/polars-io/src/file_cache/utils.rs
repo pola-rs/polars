@@ -3,7 +3,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::UNIX_EPOCH;
 
 use polars_error::{PolarsError, PolarsResult};
-use polars_utils::address::AddressRef;
+use polars_utils::plpath::PlPathRef;
 
 use super::cache::{FILE_CACHE, get_env_file_cache_ttl};
 use super::entry::FileCacheEntry;
@@ -63,7 +63,7 @@ pub fn init_entries_from_uri_list(
         .map(|x| x.file_cache_ttl)
         .unwrap_or_else(get_env_file_cache_ttl);
 
-    if AddressRef::from_str(first_uri).is_cloud_url() {
+    if PlPathRef::new(first_uri).is_cloud_url() {
         let object_stores = pl_async::get_runtime().block_in_place_on(async {
             futures::future::try_join_all(
                 (0..if first_uri.starts_with("http") {

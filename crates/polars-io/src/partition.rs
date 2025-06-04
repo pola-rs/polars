@@ -1,11 +1,9 @@
 //! Functionality for writing a DataFrame partitioned into multiple files.
 
-use std::path::Path;
-
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_utils::address::AddressRef;
+use polars_utils::plpath::PlPathRef;
 use rayon::prelude::*;
 
 use crate::cloud::CloudOptions;
@@ -20,7 +18,7 @@ impl WriteDataFrameToFile for ParquetWriteOptions {
     fn write_df_to_file(
         &self,
         df: &mut DataFrame,
-        addr: AddressRef<'_>,
+        addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
         let f = try_get_writeable(addr, cloud_options)?;
@@ -34,7 +32,7 @@ impl WriteDataFrameToFile for IpcWriterOptions {
     fn write_df_to_file(
         &self,
         df: &mut DataFrame,
-        addr: AddressRef<'_>,
+        addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()> {
         let f = try_get_writeable(addr, cloud_options)?;
@@ -46,7 +44,7 @@ impl WriteDataFrameToFile for IpcWriterOptions {
 /// Write a partitioned parquet dataset. This functionality is unstable.
 pub fn write_partitioned_dataset(
     df: &mut DataFrame,
-    addr: AddressRef<'_>,
+    addr: PlPathRef<'_>,
     partition_by: Vec<PlSmallStr>,
     file_write_options: &(dyn WriteDataFrameToFile + Send + Sync),
     cloud_options: Option<&CloudOptions>,
@@ -98,7 +96,6 @@ pub fn write_partitioned_dataset(
     };
 
     let base_path = addr;
-    let is_cloud = base_path.is_cloud_url();
     let groups = df.group_by(partition_by)?.take_groups();
 
     let init_part_base_dir = |part_df: &DataFrame| {
@@ -106,7 +103,7 @@ pub fn write_partitioned_dataset(
         let dir = base_path.join(path_part);
 
         if let Some(dir) = dir.as_ref().as_local_path() {
-            std::fs::create_dir_all(&dir)?;
+            std::fs::create_dir_all(dir)?;
         }
 
         PolarsResult::Ok(dir)
@@ -123,7 +120,7 @@ pub fn write_partitioned_dataset(
         (n_files, rows_per_file)
     };
 
-    let write_part = |mut df: DataFrame, addr: AddressRef| {
+    let write_part = |mut df: DataFrame, addr: PlPathRef| {
         file_write_options.write_df_to_file(&mut df, addr, cloud_options)?;
         PolarsResult::Ok(())
     };
@@ -137,7 +134,10 @@ pub fn write_partitioned_dataset(
         let (n_files, rows_per_file) = get_n_files_and_rows_per_file(&df);
 
         if n_files == 1 {
-            write_part(df.clone(), dir_path.as_ref().join(get_path_for_index(0)).as_ref())
+            write_part(
+                df.clone(),
+                dir_path.as_ref().join(get_path_for_index(0)).as_ref(),
+            )
         } else {
             (0..df.height())
                 .step_by(rows_per_file)
@@ -149,7 +149,10 @@ pub fn write_partitioned_dataset(
                         .into_par_iter()
                         .map(|&(idx, slice_start)| {
                             let df = df.slice(slice_start as i64, rows_per_file);
-                            write_part(df.clone(), dir_path.as_ref().join(get_path_for_index(idx)).as_ref())
+                            write_part(
+                                df.clone(),
+                                dir_path.as_ref().join(get_path_for_index(idx)).as_ref(),
+                            )
                         })
                         .reduce(
                             || PolarsResult::Ok(()),

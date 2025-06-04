@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -9,9 +8,9 @@ use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_plan::dsl::{PartitionTargetCallback, SinkFinishCallback, SinkOptions};
-use polars_utils::address::Address;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 
 use super::{CreateNewSinkFn, PerPartitionSortBy};
 use crate::async_executor::{AbortOnDropHandle, spawn};
@@ -28,7 +27,7 @@ pub struct MaxSizePartitionSinkNode {
     input_schema: SchemaRef,
     max_size: IdxSize,
 
-    base_path: Arc<Address>,
+    base_path: Arc<PlPath>,
     file_path_cb: Option<PartitionTargetCallback>,
     create_new: CreateNewSinkFn,
     ext: PlSmallStr,
@@ -55,7 +54,7 @@ impl MaxSizePartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         max_size: IdxSize,
-        base_path: Arc<Address>,
+        base_path: Arc<PlPath>,
         file_path_cb: Option<PartitionTargetCallback>,
         create_new: CreateNewSinkFn,
         ext: PlSmallStr,
