@@ -232,7 +232,9 @@ impl ExprIR {
         let out = node_to_expr(self.node, expr_arena);
 
         match &self.output_name {
-            OutputName::Alias(name) => out.alias(name.clone()),
+            OutputName::Alias(name) if expr_arena.get(self.node).to_name(expr_arena) != name => {
+                out.alias(name.clone())
+            },
             _ => out,
         }
     }
