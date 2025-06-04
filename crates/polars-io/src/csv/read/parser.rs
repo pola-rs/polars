@@ -1,12 +1,10 @@
-use std::path::Path;
-
 use memchr::memchr2_iter;
 use num_traits::Pow;
 use polars_core::prelude::*;
 use polars_core::{POOL, config};
 use polars_error::feature_gated;
-use polars_utils::address::AddressRef;
 use polars_utils::mmap::MMapSemaphore;
+use polars_utils::plpath::PlPathRef;
 use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
@@ -22,7 +20,7 @@ use crate::utils::compression::maybe_decompress_bytes;
 /// useful for count(*) queries
 #[allow(clippy::too_many_arguments)]
 pub fn count_rows(
-    addr: AddressRef<'_>,
+    addr: PlPathRef<'_>,
     separator: u8,
     quote_char: Option<u8>,
     comment_prefix: Option<&CommentPrefix>,

@@ -4,8 +4,8 @@ use std::sync::{Arc, LazyLock, RwLock};
 
 use polars_core::config;
 use polars_error::PolarsResult;
-use polars_utils::address::AddressRef;
 use polars_utils::aliases::PlHashMap;
+use polars_utils::plpath::PlPathRef;
 
 use super::entry::{DATA_PREFIX, FileCacheEntry, METADATA_PREFIX};
 use super::eviction::EvictionManager;
@@ -100,7 +100,7 @@ impl FileCache {
         #[cfg(debug_assertions)]
         {
             // Local paths must be absolute or else the cache would be wrong.
-            if !AddressRef::from_str(uri.as_ref()).is_cloud_url() {
+            if !PlPathRef::new(uri.as_ref()).is_cloud_url() {
                 let path = Path::new(uri.as_ref());
                 assert_eq!(path, std::fs::canonicalize(path).unwrap().as_path());
             }
@@ -167,9 +167,9 @@ impl FileCache {
     }
 
     /// This function can accept relative local paths.
-    pub fn get_entry(&self, addr: AddressRef<'_>) -> Option<Arc<FileCacheEntry>> {
+    pub fn get_entry(&self, addr: PlPathRef<'_>) -> Option<Arc<FileCacheEntry>> {
         match addr {
-            AddressRef::Local(p) => {
+            PlPathRef::Local(p) => {
                 let p = std::fs::canonicalize(p).unwrap();
                 self.entries
                     .read()
@@ -177,7 +177,7 @@ impl FileCache {
                     .get(p.to_str().unwrap())
                     .map(Arc::clone)
             },
-            AddressRef::Cloud(p) => self
+            PlPathRef::Cloud(p) => self
                 .entries
                 .read()
                 .unwrap()

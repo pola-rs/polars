@@ -128,12 +128,14 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
 
         polars_utils::python_convert_registry::register_converters(PythonConvertRegistry {
             from_py: FromPythonConvertRegistry {
-                sink_target: Arc::new(|py_f| {
+                partition_target_cb_result: Arc::new(|py_f| {
                     Python::with_gil(|py| {
-                        Ok(
-                            Box::new(py_f.extract::<Wrap<polars_plan::dsl::SinkTarget>>(py)?.0)
-                                as _,
-                        )
+                        Ok(Box::new(
+                            py_f.extract::<Wrap<polars_plan::dsl::PartitionTargetCallbackResult>>(
+                                py,
+                            )?
+                            .0,
+                        ) as _)
                     })
                 }),
             },

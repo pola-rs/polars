@@ -19,22 +19,25 @@ impl CsvSink {
         schema: &Schema,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<FilesSink> {
-        let writer = CsvWriter::new(try_get_writeable(polars_utils::address::AddressRef::Local(path), cloud_options)?)
-            .include_bom(options.include_bom)
-            .include_header(options.include_header)
-            .with_separator(options.serialize_options.separator)
-            .with_line_terminator(options.serialize_options.line_terminator)
-            .with_quote_char(options.serialize_options.quote_char)
-            .with_batch_size(options.batch_size)
-            .with_datetime_format(options.serialize_options.datetime_format)
-            .with_date_format(options.serialize_options.date_format)
-            .with_time_format(options.serialize_options.time_format)
-            .with_float_scientific(options.serialize_options.float_scientific)
-            .with_float_precision(options.serialize_options.float_precision)
-            .with_null_value(options.serialize_options.null)
-            .with_quote_style(options.serialize_options.quote_style)
-            .n_threads(1)
-            .batched(schema)?;
+        let writer = CsvWriter::new(try_get_writeable(
+            polars_utils::plpath::PlPathRef::Local(path),
+            cloud_options,
+        )?)
+        .include_bom(options.include_bom)
+        .include_header(options.include_header)
+        .with_separator(options.serialize_options.separator)
+        .with_line_terminator(options.serialize_options.line_terminator)
+        .with_quote_char(options.serialize_options.quote_char)
+        .with_batch_size(options.batch_size)
+        .with_datetime_format(options.serialize_options.datetime_format)
+        .with_date_format(options.serialize_options.date_format)
+        .with_time_format(options.serialize_options.time_format)
+        .with_float_scientific(options.serialize_options.float_scientific)
+        .with_float_precision(options.serialize_options.float_precision)
+        .with_null_value(options.serialize_options.null)
+        .with_quote_style(options.serialize_options.quote_style)
+        .n_threads(1)
+        .batched(schema)?;
 
         let writer = Box::new(writer) as Box<dyn SinkWriter + Send>;
 

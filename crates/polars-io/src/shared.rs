@@ -4,7 +4,7 @@ use std::sync::Arc;
 use arrow::array::new_empty_array;
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
-use polars_utils::address::AddressRef;
+use polars_utils::plpath::PlPathRef;
 
 use crate::cloud::CloudOptions;
 use crate::options::RowIndex;
@@ -46,7 +46,7 @@ pub trait WriteDataFrameToFile {
     fn write_df_to_file(
         &self,
         df: &mut DataFrame,
-        addr: AddressRef<'_>,
+        addr: PlPathRef<'_>,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<()>;
 }

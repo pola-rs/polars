@@ -1227,7 +1227,7 @@ impl SQLContext {
         let tbl_name = alias
             .as_ref()
             .map(|a| a.name.value.clone())
-            .unwrap_or_else(|| tbl_name);
+            .unwrap_or_else(|| tbl_name.to_str().to_string());
 
         self.table_map.insert(tbl_name.clone(), lf.clone());
         Ok((tbl_name, lf))

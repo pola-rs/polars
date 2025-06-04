@@ -1,8 +1,6 @@
-use std::path::{Path, PathBuf};
-
 use polars_core::prelude::*;
 use polars_io::prelude::schema_inference::{finish_infer_field_schema, infer_field_schema};
-use polars_utils::address::{Address, AddressRef};
+use polars_utils::plpath::{PlPath, PlPathRef};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -69,7 +67,7 @@ impl From<DataFrame> for HivePartitionsDf {
 /// # Safety
 /// `hive_start_idx <= [min path length]`
 pub fn hive_partitions_from_paths(
-    paths: &[Address],
+    paths: &[PlPath],
     hive_start_idx: usize,
     schema: Option<SchemaRef>,
     reader_schema: &Schema,
@@ -220,7 +218,7 @@ pub fn hive_partitions_from_paths(
 }
 
 /// Determine the path separator for identifying Hive partitions.
-fn separator(url: AddressRef) -> &[char] {
+fn separator(url: PlPathRef) -> &[char] {
     if url.is_local() {
         &[std::path::MAIN_SEPARATOR]
     } else {

@@ -25,10 +25,10 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                 sources, scan_type, ..
             } => {
                 match sources {
-                    ScanSources::Addresses(addrs) => {
+                    ScanSources::Paths(addrs) => {
                         if addrs
                             .iter()
-                            .any(|p| !p.is_cloud_url() && p.to_str().as_ref() != POLARS_PLACEHOLDER)
+                            .any(|p| !p.is_cloud_url() && p.to_str() != POLARS_PLACEHOLDER)
                         {
                             return ineligible_error("contains scan of local file system");
                         }

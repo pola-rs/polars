@@ -3,7 +3,7 @@ use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
-use polars_utils::address::Address;
+use polars_utils::plpath::PlPath;
 use polars_utils::unique_id::UniqueId;
 
 use super::convert_utils::SplitPredicates;
@@ -178,32 +178,31 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
                 }
 
-                let sources =
-                    match &*scan_type {
-                        #[cfg(feature = "parquet")]
-                        FileScan::Parquet { .. } => sources
-                            .expand_paths_with_hive_update(unified_scan_args, cloud_options)?,
-                        #[cfg(feature = "ipc")]
-                        FileScan::Ipc { .. } => sources
-                            .expand_paths_with_hive_update(unified_scan_args, cloud_options)?,
-                        #[cfg(feature = "csv")]
-                        FileScan::Csv { .. } => {
-                            sources.expand_paths(unified_scan_args, cloud_options)?
-                        },
-                        #[cfg(feature = "json")]
-                        FileScan::NDJson { .. } => {
-                            sources.expand_paths(unified_scan_args, cloud_options)?
-                        },
-                        #[cfg(feature = "python")]
-                        FileScan::PythonDataset { .. } => {
-                            // There are a lot of places that short-circuit if the paths is empty,
-                            // so we just give a dummy path here.
-                            ScanSources::Addresses(Arc::from([Address::from_string(
-                                "dummy".to_string(),
-                            )]))
-                        },
-                        FileScan::Anonymous { .. } => sources,
-                    };
+                let sources = match &*scan_type {
+                    #[cfg(feature = "parquet")]
+                    FileScan::Parquet { .. } => {
+                        sources.expand_paths_with_hive_update(unified_scan_args, cloud_options)?
+                    },
+                    #[cfg(feature = "ipc")]
+                    FileScan::Ipc { .. } => {
+                        sources.expand_paths_with_hive_update(unified_scan_args, cloud_options)?
+                    },
+                    #[cfg(feature = "csv")]
+                    FileScan::Csv { .. } => {
+                        sources.expand_paths(unified_scan_args, cloud_options)?
+                    },
+                    #[cfg(feature = "json")]
+                    FileScan::NDJson { .. } => {
+                        sources.expand_paths(unified_scan_args, cloud_options)?
+                    },
+                    #[cfg(feature = "python")]
+                    FileScan::PythonDataset { .. } => {
+                        // There are a lot of places that short-circuit if the paths is empty,
+                        // so we just give a dummy path here.
+                        ScanSources::Paths(Arc::from([PlPath::from_string("dummy".to_string())]))
+                    },
+                    FileScan::Anonymous { .. } => sources,
+                };
 
                 let mut file_info = match &mut *scan_type {
                     #[cfg(feature = "parquet")]
@@ -302,7 +301,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 let hive_parts = if unified_scan_args.hive_options.enabled.unwrap()
                     && file_info.reader_schema.is_some()
                 {
-                    let addrs = sources.as_addresses().ok_or_else(|| {
+                    let addrs = sources.as_paths().ok_or_else(|| {
                         polars_err!(nyi = "Hive-partitioning of in-memory buffers")
                     })?;
 

@@ -2,7 +2,7 @@ use polars::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:streaming]
-    let q1 = LazyCsvReader::new("docs/assets/data/iris.csv")
+    let q1 = LazyCsvReader::new(PlPath::new("docs/assets/data/iris.csv"))
         .with_has_header(true)
         .finish()?
         .filter(col("sepal_length").gt(lit(5)))
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:example]
 
     // --8<-- [start:example2]
-    let q2 = LazyCsvReader::new("docs/assets/data/iris.csv")
+    let q2 = LazyCsvReader::new(PlPath::new("docs/assets/data/iris.csv"))
         .finish()?
         .with_columns(vec![
             col("sepal_length")

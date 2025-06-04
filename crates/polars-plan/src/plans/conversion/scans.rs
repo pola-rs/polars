@@ -61,12 +61,11 @@ pub(super) fn parquet_file_info(
 
     let (reader_schema, num_rows, metadata) = {
         if sources.is_cloud_url() {
-            let first_path = &sources.first_address().unwrap();
+            let first_path = &sources.first_path().unwrap();
             feature_gated!("cloud", {
                 let uri = first_path.to_str();
                 get_runtime().block_in_place_on(async {
-                    let mut reader =
-                        ParquetObjectStore::from_uri(&uri, cloud_options, None).await?;
+                    let mut reader = ParquetObjectStore::from_uri(uri, cloud_options, None).await?;
 
                     PolarsResult::Ok((
                         reader.schema().await?,
@@ -109,15 +108,15 @@ pub(super) fn ipc_file_info(
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
-    use polars_utils::address::AddressRef;
+    use polars_utils::plpath::PlPathRef;
 
     let Some(first) = sources.first() else {
         polars_bail!(ComputeError: "expected at least 1 source");
     };
 
     let metadata = match first {
-        ScanSourceRef::Address(addr) => match addr {
-            AddressRef::Cloud(uri) => {
+        ScanSourceRef::Path(addr) => match addr {
+            PlPathRef::Cloud(uri) => {
                 feature_gated!("cloud", {
                     let uri = uri.to_string();
                     get_runtime().block_on(async {
@@ -128,7 +127,7 @@ pub(super) fn ipc_file_info(
                     })?
                 })
             },
-            AddressRef::Local(path) => arrow::io::ipc::read::read_file_metadata(
+            PlPathRef::Local(path) => arrow::io::ipc::read::read_file_metadata(
                 &mut std::io::BufReader::new(polars_utils::open_file(path)?),
             )?,
         },
@@ -228,14 +227,14 @@ pub fn csv_file_info(
     // * See if we can do this without downloading the entire file
 
     // prints the error message if paths is empty.
-    let run_async = sources.is_cloud_url() || (sources.is_addresses() && config::force_async());
+    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
 
     let cache_entries = {
         if run_async {
             feature_gated!("cloud", {
                 Some(polars_io::file_cache::init_entries_from_uri_list(
                     sources
-                        .as_addresses()
+                        .as_paths()
                         .unwrap()
                         .iter()
                         .map(|addr| Arc::from(addr.to_str()))
@@ -344,14 +343,14 @@ pub fn ndjson_file_info(
         polars_bail!(ComputeError: "expected at least 1 source");
     };
 
-    let run_async = sources.is_cloud_url() || (sources.is_addresses() && config::force_async());
+    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
 
     let cache_entries = {
         if run_async {
             feature_gated!("cloud", {
                 Some(polars_io::file_cache::init_entries_from_uri_list(
                     sources
-                        .as_addresses()
+                        .as_paths()
                         .unwrap()
                         .iter()
                         .map(|addr| Arc::from(addr.to_str()))

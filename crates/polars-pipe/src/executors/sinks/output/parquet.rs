@@ -72,7 +72,7 @@ impl ParquetSink {
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Self> {
         let writer = ParquetWriter::new(try_get_writeable(
-            polars_utils::address::AddressRef::Local(path),
+            polars_utils::plpath::PlPathRef::Local(path),
             cloud_options,
         )?)
         .with_compression(options.compression)

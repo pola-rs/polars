@@ -1,12 +1,11 @@
+#![allow(unused)]
+
 use std::fs::File;
 
-use polars_core::error::feature_gated;
-use polars_core::{POOL, config};
+use polars_core::POOL;
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_plan::dsl::{ScanSources, UnifiedScanArgs};
-use polars_plan::global::_set_n_rows_for_scan;
 use polars_utils::itertools::Itertools;
-use polars_utils::slice_enum::Slice;
 
 use super::*;
 use crate::pipeline::determine_chunk_size;

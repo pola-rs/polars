@@ -73,7 +73,7 @@ where
             scan_type,
             id: _,
         } => {
-            let paths = sources.into_addresses();
+            let paths = sources.into_paths();
             let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
 
             // Add predicate to operators.
@@ -141,10 +141,9 @@ where
                     sink_options: _,
                     cloud_options,
                 }) => {
-                    let SinkTarget::Address(path) = target else {
+                    let SinkTarget::Path(path) = target else {
                         polars_bail!(InvalidOperation: "in-memory sinks are not supported for the old streaming engine");
                     };
-                    let path = path.as_ref();
                     let path = path.as_ref();
                     let path = path.as_local_path().unwrap();
                     match &file_type {
