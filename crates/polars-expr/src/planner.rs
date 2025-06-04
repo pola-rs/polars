@@ -173,7 +173,7 @@ fn create_physical_expr_inner(
             order_by,
             options,
         } => {
-            let mut function = *function;
+            let function = *function;
             state.set_window();
             let phys_function = create_physical_expr_inner(
                 function,
@@ -198,11 +198,6 @@ fn create_physical_expr_inner(
                 })
                 .transpose()?;
 
-            let mut out_name = None;
-            if let Alias(expr, name) = expr_arena.get(function) {
-                function = *expr;
-                out_name = Some(name.clone());
-            };
             let function_expr = node_to_expr(function, expr_arena);
             let expr = node_to_expr(expression, expr_arena);
 
@@ -242,7 +237,6 @@ fn create_physical_expr_inner(
                         group_by,
                         order_by,
                         apply_columns,
-                        out_name,
                         function: function_expr,
                         phys_function,
                         mapping: *mapping,
@@ -253,7 +247,6 @@ fn create_physical_expr_inner(
                 WindowType::Rolling(options) => Ok(Arc::new(RollingExpr {
                     function: function_expr,
                     phys_function,
-                    out_name,
                     options: options.clone(),
                     expr,
                 })),
@@ -574,14 +567,6 @@ fn create_physical_expr_inner(
                 schema.clone(),
                 field,
                 false,
-            )))
-        },
-        Alias(input, name) => {
-            let phys_expr = create_physical_expr_inner(*input, ctxt, expr_arena, schema, state)?;
-            Ok(Arc::new(AliasExpr::new(
-                phys_expr,
-                name.clone(),
-                node_to_expr(*input, expr_arena),
             )))
         },
     }

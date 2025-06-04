@@ -22,7 +22,6 @@ pub struct WindowExpr {
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortOptions)>,
     pub(crate) apply_columns: Vec<PlSmallStr>,
-    pub(crate) out_name: Option<PlSmallStr>,
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
@@ -525,16 +524,10 @@ impl PhysicalExpr for WindowExpr {
                 if ac.is_literal() {
                     out = out.new_from_index(0, df.height())
                 }
-                if let Some(name) = &self.out_name {
-                    out.rename(name.clone());
-                }
                 Ok(out.into_column())
             },
             Explode => {
-                let mut out = ac.aggregated().explode(false)?;
-                if let Some(name) = &self.out_name {
-                    out.rename(name.clone());
-                }
+                let out = ac.aggregated().explode(false)?;
                 Ok(out.into_column())
             },
             Map => {
@@ -638,12 +631,7 @@ impl PhysicalExpr for WindowExpr {
                             get_join_tuples()?
                         };
 
-                        let mut out = materialize_column(&join_opt_ids, &out_column);
-
-                        if let Some(name) = &self.out_name {
-                            out.rename(name.clone());
-                        }
-
+                        let out = materialize_column(&join_opt_ids, &out_column);
                         Ok(out.into_column())
                     },
                 }

@@ -205,14 +205,6 @@ impl RangeLiteralValue {
 }
 
 impl LiteralValue {
-    /// Get the output name as `&str`.
-    pub(crate) fn output_name(&self) -> &PlSmallStr {
-        match self {
-            LiteralValue::Series(s) => s.name(),
-            _ => get_literal_name(),
-        }
-    }
-
     /// Get the output name as [`PlSmallStr`].
     pub(crate) fn output_column_name(&self) -> &PlSmallStr {
         match self {

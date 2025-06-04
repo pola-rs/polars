@@ -554,11 +554,6 @@ impl PyGroupbyOptions {
 pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
     match expr {
         AExpr::Explode { .. } => Err(PyNotImplementedError::new_err("explode")),
-        AExpr::Alias(inner, name) => Alias {
-            expr: inner.0,
-            name: name.into_py_any(py)?,
-        }
-        .into_py_any(py),
         AExpr::Column(name) => Column {
             name: name.into_py_any(py)?,
         }

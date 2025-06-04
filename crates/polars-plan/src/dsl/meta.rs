@@ -18,8 +18,8 @@ impl MetaNameSpace {
             Some(s) => s,
         };
         let mut arena = Arena::with_capacity(8);
-        let node = to_aexpr(self.0, &mut arena, schema)?;
-        let ae = arena.get(node);
+        let expr = to_expr_ir(self.0, &mut arena, schema)?;
+        let ae = arena.get(expr.node());
         let mut inputs = Vec::with_capacity(2);
         ae.inputs_rev(&mut inputs);
         Ok(inputs
@@ -40,8 +40,8 @@ impl MetaNameSpace {
             Some(s) => s,
         };
         let mut arena = Arena::with_capacity(8);
-        to_aexpr(self.0.clone(), &mut arena, schema)
-            .map(|node| aexpr_is_simple_projection(node, &arena))
+        to_expr_ir(self.0.clone(), &mut arena, schema)
+            .map(|expr| aexpr_is_simple_projection(expr.node(), &arena))
             .unwrap_or(false)
     }
 
@@ -190,7 +190,7 @@ impl MetaNameSpace {
             Some(s) => s,
         };
         let mut arena = Default::default();
-        let node = to_aexpr(self.0, &mut arena, schema)?;
+        let node = to_expr_ir(self.0, &mut arena, schema)?.node();
         let mut visitor = TreeFmtVisitor::default();
         if display_as_dot {
             visitor.display = TreeFmtVisitorDisplay::DisplayDot;

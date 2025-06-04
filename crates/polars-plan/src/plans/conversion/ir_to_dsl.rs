@@ -10,10 +10,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             input: Arc::new(node_to_expr(expr, expr_arena)),
             skip_empty,
         },
-        AExpr::Alias(expr, name) => {
-            let exp = node_to_expr(expr, expr_arena);
-            Expr::Alias(Arc::new(exp), name)
-        },
         AExpr::Column(a) => Expr::Column(a),
         AExpr::Literal(s) => Expr::Literal(s),
         AExpr::BinaryExpr { left, op, right } => {
