@@ -13,6 +13,7 @@ use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{CastColumnsPolicy, ScanSource};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
@@ -100,7 +101,7 @@ impl DeletionFilesProvider {
                     .iter()
                     .enumerate()
                     .map(|(deletion_file_idx, path)| {
-                        let source = ScanSource::Path(Arc::from(Path::new(path)));
+                        let source = ScanSource::Path(PlPath::new(path));
                         let mut reader = reader_builder.build_file_reader(
                             source.clone(),
                             cloud_options.clone(),
