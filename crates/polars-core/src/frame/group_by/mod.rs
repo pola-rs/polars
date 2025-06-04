@@ -16,7 +16,6 @@ pub mod aggregations;
 pub mod expr;
 pub(crate) mod hashing;
 mod into_groups;
-mod perfect;
 mod position;
 
 pub use into_groups::*;
