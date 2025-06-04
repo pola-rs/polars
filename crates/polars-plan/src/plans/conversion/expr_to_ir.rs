@@ -6,6 +6,15 @@ pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>, schema: &Schema) -> Pola
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
 }
 
+pub fn to_expr_ir_materialized_lit(
+    expr: Expr,
+    arena: &mut Arena<AExpr>,
+    schema: &Schema,
+) -> PolarsResult<ExprIR> {
+    let (node, output_name) = to_aexpr_impl_materialized_lit(expr, arena, schema)?;
+    Ok(ExprIR::new(node, OutputName::Alias(output_name)))
+}
+
 pub(super) fn to_expr_irs(
     input: Vec<Expr>,
     arena: &mut Arena<AExpr>,
