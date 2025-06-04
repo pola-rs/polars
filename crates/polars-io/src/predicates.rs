@@ -458,7 +458,13 @@ pub struct ScanIOPredicate {
 
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub column_predicates: Arc<ColumnPredicates>,
+
+    /// Predicate parts only referring to hive columns.
+    pub hive_predicate: Option<Arc<dyn PhysicalIoExpr>>,
+
+    pub hive_predicate_is_full_predicate: bool,
 }
+
 impl ScanIOPredicate {
     pub fn set_external_constant_columns(&mut self, constant_columns: Vec<(PlSmallStr, Scalar)>) {
         if constant_columns.is_empty() {

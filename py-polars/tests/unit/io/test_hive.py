@@ -740,6 +740,9 @@ def test_hive_partition_dates(tmp_path: Path) -> None:
             df.with_columns(pl.col("date1", "date2").cast(pl.String)),
         )
 
+        lf = pl.scan_parquet(root).filter(pl.col("date1") == datetime(2024, 1, 1))
+        assert_frame_equal(lf.collect(), df.head(1))
+
 
 @pytest.mark.parametrize(
     ("scan_func", "write_func"),

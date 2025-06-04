@@ -33,6 +33,10 @@ pub struct ScanPredicate {
 
     /// Partial predicates for each column for filter when loading columnar formats.
     pub column_predicates: PhysicalColumnPredicates,
+
+    /// Predicate only referring to hive columns.
+    pub hive_predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub hive_predicate_is_full_predicate: bool,
 }
 
 impl fmt::Debug for ScanPredicate {
@@ -162,7 +166,9 @@ impl ScanPredicate {
             live_columns: Arc::new(live_columns),
             skip_batch_predicate,
             column_predicates: self.column_predicates.clone(), // Q? Maybe this should cull
-                                                               // predicates.
+            // predicates.
+            hive_predicate: None,
+            hive_predicate_is_full_predicate: false,
         }
     }
 
@@ -198,6 +204,8 @@ impl ScanPredicate {
                     .collect(),
                 is_sumwise_complete: self.column_predicates.is_sumwise_complete,
             }),
+            hive_predicate: self.hive_predicate.clone().map(phys_expr_to_io_expr),
+            hive_predicate_is_full_predicate: self.hive_predicate_is_full_predicate,
         }
     }
 }
