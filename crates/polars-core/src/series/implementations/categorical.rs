@@ -160,7 +160,7 @@ impl<T: PolarsCategoricalType> SeriesTrait for SeriesWrap<NewCategoricalChunked<
         self.0.append(other.cat::<T>().unwrap())
     }
 
-    fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         let arc_any = other.0.as_arc_any();
         let downcast = arc_any.downcast::<SeriesWrap<NewCategoricalChunked<T>>>().unwrap();
@@ -300,6 +300,6 @@ impl<T: PolarsCategoricalType> SeriesTrait for SeriesWrap<NewCategoricalChunked<
 
 impl<T: PolarsCategoricalType> private::PrivateSeriesNumeric for SeriesWrap<NewCategoricalChunked<T>> {
     fn bit_repr(&self) -> Option<BitRepr> {
-        Some(BitRepr::Small(self.0.physical().clone()))
+        Some(self.0.physical().to_bit_repr())
     }
 }
