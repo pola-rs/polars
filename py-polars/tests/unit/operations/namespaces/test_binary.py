@@ -309,7 +309,21 @@ def test_reinterpret_to_array_other_types(
 def test_reinterpret_to_array_invalid() -> None:
     series = pl.Series([b"short", b"justrite", None, b"waytoolong"])
     as_bin = series.bin.reinterpret(dtype=pl.Array(pl.UInt32(), 2), endianness="little")
-    assert as_bin.to_list() == [None, [1953723754, 1702127986], None, None]
+    assert as_bin.to_list() == [None, [0x7473756A, 0x65746972], None, None]
+    as_bin = series.bin.reinterpret(dtype=pl.Array(pl.UInt32(), 2), endianness="big")
+    assert as_bin.to_list() == [None, [0x6A757374, 0x72697465], None, None]
+
+
+def test_reinterpret_to_n_dimensional_array() -> None:
+    series = pl.Series([b"abcd"])
+    for endianness in ["big", "little"]:
+        with pytest.raises(
+            InvalidOperationError,
+            match="cast to a linear Array, and then use reshape",
+        ):
+            series.bin.reinterpret(
+                dtype=pl.Array(pl.UInt32(), (2, 2)), endianness=endianness
+            )
 
 
 def test_reinterpret_unsupported() -> None:
