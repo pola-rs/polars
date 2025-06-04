@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 import time
 from functools import lru_cache, partial
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars as pl
@@ -11,6 +10,8 @@ from polars._utils.wrap import wrap_df
 from polars.polars import _ir_nodes
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import pandas as pd
 
 
