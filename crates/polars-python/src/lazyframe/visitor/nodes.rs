@@ -10,7 +10,7 @@ use polars_plan::prelude::{FileScan, FunctionIR, PythonPredicate, UnifiedScanArg
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyString};
+use pyo3::types::{PyDict, PyList, PyString};
 
 use super::expr_nodes::PyGroupbyOptions;
 use crate::PyDataFrame;
@@ -396,18 +396,33 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             scan_type,
             unified_scan_args,
             id: _,
-        } => Scan {
-            paths: sources
-                .into_paths()
-                .ok_or_else(|| PyNotImplementedError::new_err("scan with BytesIO"))?
-                .into_py_any(py)?,
-            // TODO: file info
-            file_info: py.None(),
-            predicate: predicate.as_ref().map(|e| e.into()),
-            file_options: PyFileOptions {
-                inner: (**unified_scan_args).clone(),
-            },
-            scan_type: scan_type_to_pyobject(py, scan_type, &unified_scan_args.cloud_options)?,
+        } => {
+            Scan {
+                paths: {
+                    let paths = sources
+                        .into_paths()
+                        .ok_or_else(|| PyNotImplementedError::new_err("scan with BytesIO"))?;
+
+                    let out = PyList::new(py, [] as [(); 0])?;
+
+                    for path in paths.iter() {
+                        if let Some(path) = path.to_str() {
+                            out.append(path)?
+                        } else {
+                            out.append(path)?
+                        }
+                    }
+
+                    out.into_py_any(py)?
+                },
+                // TODO: file info
+                file_info: py.None(),
+                predicate: predicate.as_ref().map(|e| e.into()),
+                file_options: PyFileOptions {
+                    inner: (**unified_scan_args).clone(),
+                },
+                scan_type: scan_type_to_pyobject(py, scan_type, &unified_scan_args.cloud_options)?,
+            }
         }
         .into_py_any(py),
         IR::DataFrameScan {

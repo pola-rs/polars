@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import time
 from functools import lru_cache, partial
 from typing import TYPE_CHECKING, Any, Callable
@@ -134,3 +135,13 @@ def test_run_on_pandas() -> None:
         "pandas-scan",
         "pandas-join",
     ]
+
+
+def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:
+    path = f"file://{tmp_path / 'data.parquet'}"
+
+    df = pl.DataFrame({"x": 1})
+    df.write_parquet(path)
+
+    q = pl.scan_parquet(path)
+    assert q._ldf.visit().view_current_node().paths == [path]
