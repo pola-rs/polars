@@ -151,6 +151,10 @@ impl<'py> FromPyObject<'py> for Wrap<PartitionTargetCallbackResult> {
             Ok(Wrap(polars::prelude::PartitionTargetCallbackResult::Str(
                 v.to_string(),
             )))
+        } else if let Ok(v) = ob.extract::<std::path::PathBuf>() {
+            Ok(Wrap(polars::prelude::PartitionTargetCallbackResult::Str(
+                v.to_str().unwrap().to_string(),
+            )))
         } else {
             let writer = Python::with_gil(|py| {
                 let py_f = ob.clone();

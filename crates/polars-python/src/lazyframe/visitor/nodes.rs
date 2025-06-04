@@ -408,11 +408,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     // Manual conversion to preserve `uri://...` - converting Rust `Path` to `PosixPath`
                     // will corrupt to `uri:/...`
                     for path in paths.iter() {
-                        if let Some(path) = path.to_str() {
-                            out.append(path)?
-                        } else {
-                            out.append(path)?
-                        }
+                        out.append(path.to_str())?;
                     }
 
                     out.into_py_any(py)?
