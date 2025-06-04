@@ -975,12 +975,23 @@ impl Column {
     }
 
     pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
-        // @scalar-opt
-        self.into_materialized_series()
-            .append(other.as_materialized_series())?;
+        if let (Column::Scalar(l), Column::Scalar(r)) = (&mut *self, other) {
+            if l.scalar() == r.scalar() {
+                *l = l.resize(l.len() + r.len());
+                return Ok(self);
+            }
+        }
+        self.into_materialized_series().append(other.as_materialized_series())?;
         Ok(self)
     }
+
     pub fn append_owned(&mut self, other: Column) -> PolarsResult<&mut Self> {
+        if let (Column::Scalar(l), Column::Scalar(r)) = (&mut *self, &other) {
+            if l.scalar() == r.scalar() {
+                *l = l.resize(l.len() + r.len());
+                return Ok(self);
+            }
+        }
         self.into_materialized_series()
             .append_owned(other.take_materialized_series())?;
         Ok(self)
@@ -1156,7 +1167,12 @@ impl Column {
     }
 
     pub fn extend(&mut self, other: &Column) -> PolarsResult<&mut Self> {
-        // @scalar-opt
+        if let (Column::Scalar(l), Column::Scalar(r)) = (&mut *self, other) {
+            if l.scalar() == r.scalar() {
+                *l = l.resize(l.len() + r.len());
+                return Ok(self);
+            }
+        }
         self.into_materialized_series()
             .extend(other.as_materialized_series())?;
         Ok(self)
