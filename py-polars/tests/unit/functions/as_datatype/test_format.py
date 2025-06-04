@@ -28,8 +28,10 @@ def test_format_with_no_placeholders() -> None:
 def test_format_with_only_placeholders() -> None:
     df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
 
-    out = df.select([pl.format("{a}", a=pl.col("a")).alias("fmt")])
-    assert out["fmt"].to_list() == ["a", "b", "c"]
+    out = df.select(
+        [pl.format("{a}_{b}_{a}", a=pl.col("a"), b=pl.col("b")).alias("fmt")]
+    )
+    assert out["fmt"].to_list() == ["a_1_a", "b_2_b", "c_3_c"]
 
 
 def test_format_literal_brackets() -> None:
@@ -44,6 +46,13 @@ def test_format_empty_literal_brackets() -> None:
 
     out = df.with_columns([pl.format("test{{}}").alias("fmt")])
     assert out["fmt"].to_list() == ["test{}", "test{}", "test{}"]
+
+
+def test_format_literal_brackets_and_placeholders() -> None:
+    df = pl.DataFrame({"a": ["a", "b", "c"]})
+
+    out = df.select([pl.format("test{{a}}_{a}", a=pl.col("a")).alias("fmt")])
+    assert out["fmt"].to_list() == ["test{a}_a", "test{a}_b", "test{a}_c"]
 
 
 def test_format_raises_on_wrong_number_of_named_arguments() -> None:

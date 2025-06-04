@@ -839,7 +839,7 @@ def format(f_string: str, *args: Expr | str, **kwargs: Expr | str) -> Expr:
     matches = list(Formatter().parse(f_string))
 
     n_unnamed_placeholders = len([m for m in matches if m[1] == ""])
-    n_named_placeholders = len([m for m in matches if m[1] not in (None, "")])
+    n_named_placeholders = len({m[1] for m in matches if m[1] not in (None, "")})
 
     if n_unnamed_placeholders != len(args):
         error = (
