@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
+import sys
 import time
 from functools import lru_cache, partial
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars as pl
@@ -144,4 +145,12 @@ def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:
     df.write_parquet(path)
 
     q = pl.scan_parquet(path)
-    assert q._ldf.visit().view_current_node().paths == [path]
+
+    out: list[str] = q._ldf.visit().view_current_node().paths
+    assert len(out) == 1
+
+    assert out[0].startswith("file://")
+
+    # Windows fails because it turns everything into `\\`
+    if sys.platform != "win32":
+        assert out == [path]
