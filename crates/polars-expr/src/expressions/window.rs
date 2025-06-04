@@ -713,11 +713,7 @@ fn set_by_groups(
     }
 }
 
-fn set_numeric<T>(ca: &ChunkedArray<T>, groups: &GroupsType, len: usize) -> Series
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+fn set_numeric<T: PolarsNumericType>(ca: &ChunkedArray<T>, groups: &GroupsType, len: usize) -> Series {
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
     // SAFETY:
@@ -763,7 +759,7 @@ where
 
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
-        ChunkedArray::new_vec(ca.name().clone(), values).into_series()
+        ChunkedArray::<T>::new_vec(ca.name().clone(), values).into_series()
     } else {
         // We don't use a mutable bitmap as bits will have race conditions!
         // A single byte might alias if we write from single threads.

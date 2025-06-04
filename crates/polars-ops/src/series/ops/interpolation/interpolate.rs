@@ -195,10 +195,7 @@ fn interpolate_linear(s: &Series) -> Series {
     }
 }
 
-fn linear_interp_signed<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Series
-where
-    ChunkedArray<T>: IntoSeries,
-{
+fn linear_interp_signed<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Series {
     interpolate_impl(ca, signed_interp::<T::Native>).into_series()
 }
 

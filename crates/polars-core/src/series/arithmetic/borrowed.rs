@@ -45,11 +45,7 @@ impl<T: NumOpsDispatchInner> NumOpsDispatch for ChunkedArray<T> {
     }
 }
 
-impl<T> NumOpsDispatchInner for T
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsNumericType> NumOpsDispatchInner for T {
     fn subtract(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
         polars_ensure!(
             lhs.dtype() == rhs.dtype(),
@@ -187,7 +183,6 @@ pub mod checked {
     where
         T: PolarsIntegerType,
         T::Native: CheckedDiv<Output = T::Native> + CheckedDiv<Output = T::Native> + Zero + One,
-        ChunkedArray<T>: IntoSeries,
     {
         fn checked_div(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
             // SAFETY:
@@ -811,11 +806,7 @@ where
 /// We cannot override the left hand side behaviour. So we create a trait LhsNumOps.
 /// This allows for 1.add(&Series)
 ///
-impl<T> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsNumericType> ChunkedArray<T> {
     /// Apply lhs - self
     #[must_use]
     pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Self {
