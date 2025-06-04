@@ -94,7 +94,9 @@ def test_starts_ends_with() -> None:
         pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
         pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
         pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
-    ).to_dict(as_series=False) == {
+    ).to_dict(
+        as_series=False
+    ) == {
         "end_lit": [False, False, True, None],
         "end_none": [None, None, None, None],
         "end_expr": [True, False, None, None],
@@ -218,7 +220,6 @@ def test_reinterpret(
     [
         (pl.Array(pl.Int8, 3), 1, "b"),
         (pl.Array(pl.UInt8, 3), 1, "B"),
-        (pl.Array(pl.UInt8, (3, 4, 5)), 1, "B"),
         (pl.Array(pl.Int16, 3), 2, "h"),
         (pl.Array(pl.UInt16, 3), 2, "H"),
         (pl.Array(pl.Int32, 3), 4, "i"),
@@ -289,11 +290,6 @@ def test_reinterpret_to_array_numeric_types(
             pl.Array(pl.Time(), 1),
             b"\x58\x1b\x00\x00\x00\x00\x00\x00",
             [[time(microsecond=7)]],
-        ),
-        (
-            pl.Array(pl.Array(pl.UInt8(), 2), 2),
-            b"\x01\x02\x03\x04",
-            [[[1, 2], [3, 4]]],
         ),
         (
             pl.Array(pl.Int128(), 1),

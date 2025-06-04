@@ -3,7 +3,6 @@ use std::borrow::Cow;
 
 #[cfg(feature = "binary_encoding")]
 use arrow::array::Array;
-use arrow::array::FixedSizeListArray;
 #[cfg(feature = "binary_encoding")]
 use arrow::datatypes::PhysicalType;
 use arrow::with_match_primitive_type;
@@ -198,17 +197,16 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             },
             #[cfg(feature = "dtype-array")]
             PhysicalType::FixedSizeList => {
-                // We do the conversion for Arrays using a linear version of the dtype,
-                // and then later reshape into the correct size.
-                let linear_dtype = if let Some(ref shape) = dtype.get_shape() {
-                    &DataType::Array(Box::new(dtype.leaf_dtype().clone()), shape.iter().product())
-                } else {
-                    dtype
-                };
-                let arrow_data_type = linear_dtype.to_arrow(CompatLevel::newest());
+                if let Some(ref shape) = dtype.get_shape() {
+                    polars_ensure!(
+                        shape.len() == 1,
+                        InvalidOperation: "to cast to a nested Array, first cast to a linear Array, and then use reshape()"
+                    );
+                }
+                let arrow_data_type = dtype.to_arrow(CompatLevel::newest());
 
-                let leaf_dtype = dtype.leaf_dtype();
-                let leaf_physical_type = leaf_dtype
+                let leaf_physical_type = dtype
+                    .leaf_dtype()
                     .to_arrow(CompatLevel::newest())
                     .to_physical_type();
                 polars_ensure!(
@@ -219,7 +217,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 let PhysicalType::Primitive(primitive_type) = leaf_physical_type else {
                     panic!("Shouldn't ever be reached.")
                 };
-                let element_size = leaf_dtype.byte_size().unwrap();
+                let element_size = dtype.leaf_dtype().byte_size().unwrap();
 
                 let result: Vec<ArrayRef> = with_match_primitive_type!(primitive_type, |$T| {
                     unsafe {
@@ -233,27 +231,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                         }).collect::<Result<Vec<ArrayRef>, _>>()
                     }
                 })?;
-                if let Some(shape) = dtype.get_shape() {
-                    let mut dimensions: Vec<ReshapeDimension> = shape
-                        .iter()
-                        .map(|&v| ReshapeDimension::new(v as i64))
-                        .collect();
-                    dimensions.insert(0, ReshapeDimension::Infer);
-                    result
-                        .into_iter()
-                        .map(|arr| {
-                            let fixed_arr = arr
-                                .as_ref()
-                                .as_any()
-                                .downcast_ref::<FixedSizeListArray>()
-                                .unwrap();
-                            FixedSizeListArray::from_shape(fixed_arr.values().clone(), &dimensions)
-                                .map(|arr| arr.with_validity(fixed_arr.validity().cloned()))
-                        })
-                        .collect::<Result<Vec<ArrayRef>, _>>()
-                } else {
-                    Ok(result)
-                }
+                Ok(result)
             },
             _ => Err(
                 polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed."),
