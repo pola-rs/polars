@@ -981,7 +981,8 @@ impl Column {
                 return Ok(self);
             }
         }
-        self.into_materialized_series().append(other.as_materialized_series())?;
+        self.into_materialized_series()
+            .append(other.as_materialized_series())?;
         Ok(self)
     }
 
