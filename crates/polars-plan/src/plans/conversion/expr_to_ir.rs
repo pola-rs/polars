@@ -1,8 +1,29 @@
 use super::*;
 use crate::plans::conversion::functions::convert_functions;
 
+pub(super) struct DslToIrExpr {
+    pub node: Node,
+    pub output_name: PlSmallStr,
+}
+
+impl DslToIrExpr {
+    fn with_output_name(mut self, output_name: PlSmallStr) -> Self {
+        self.output_name = output_name;
+        self
+    }
+
+    pub fn map_expr(
+        mut self,
+        expr_arena: &mut Arena<AExpr>,
+        f: impl FnOnce(Node) -> AExpr,
+    ) -> Self {
+        self.node = expr_arena.add(f(self.node));
+        self
+    }
+}
+
 pub fn to_expr_ir(expr: Expr, arena: &mut Arena<AExpr>, schema: &Schema) -> PolarsResult<ExprIR> {
-    let (node, output_name) = to_aexpr_impl(expr, arena, schema)?;
+    let DslToIrExpr { node, output_name } = to_aexpr_impl(expr, arena, schema)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
 }
 
@@ -11,7 +32,7 @@ pub fn to_expr_ir_materialized_lit(
     arena: &mut Arena<AExpr>,
     schema: &Schema,
 ) -> PolarsResult<ExprIR> {
-    let (node, output_name) = to_aexpr_impl_materialized_lit(expr, arena, schema)?;
+    let DslToIrExpr { node, output_name } = to_aexpr_impl_materialized_lit(expr, arena, schema)?;
     Ok(ExprIR::new(node, OutputName::Alias(output_name)))
 }
 
@@ -30,7 +51,7 @@ fn to_aexpr_impl_materialized_lit(
     expr: Expr,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
-) -> PolarsResult<(Node, PlSmallStr)> {
+) -> PolarsResult<DslToIrExpr> {
     // Already convert `Lit Float and Lit Int` expressions that are not used in a binary / function expression.
     // This means they can be materialized immediately
     let e = match expr {
@@ -52,213 +73,165 @@ pub(super) fn to_aexpr_impl(
     expr: Expr,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
-) -> PolarsResult<(Node, PlSmallStr)> {
+) -> PolarsResult<DslToIrExpr> {
     let owned = Arc::unwrap_or_clone;
-    let (v, output_name) = match expr {
-        Expr::Explode { input, skip_empty } => {
-            let (expr, output_name) = to_aexpr_impl(owned(input), arena, schema)?;
-            (AExpr::Explode { expr, skip_empty }, output_name)
-        },
-        Expr::Alias(e, name) => return Ok((to_aexpr_impl(owned(e), arena, schema)?.0, name)),
+    Ok(match expr {
+        Expr::Explode { input, skip_empty } => to_aexpr_impl(owned(input), arena, schema)?
+            .map_expr(arena, |expr| AExpr::Explode { expr, skip_empty }),
+        Expr::Alias(e, name) => to_aexpr_impl(owned(e), arena, schema)?.with_output_name(name),
         Expr::Literal(lv) => {
             let output_name = lv.output_column_name().clone();
-            (AExpr::Literal(lv), output_name)
-        },
-        Expr::Column(name) => (AExpr::Column(name.clone()), name),
-        Expr::BinaryExpr { left, op, right } => {
-            let (l, output_name) = to_aexpr_impl(owned(left), arena, schema)?;
-            let (r, _) = to_aexpr_impl(owned(right), arena, schema)?;
-            (
-                AExpr::BinaryExpr {
-                    left: l,
-                    op,
-                    right: r,
-                },
+            DslToIrExpr {
+                node: arena.add(AExpr::Literal(lv)),
                 output_name,
-            )
+            }
+        },
+        Expr::Column(name) => DslToIrExpr {
+            node: arena.add(AExpr::Column(name.clone())),
+            output_name: name,
+        },
+        Expr::BinaryExpr { left, op, right } => {
+            let left = to_aexpr_impl(owned(left), arena, schema)?;
+            let right = to_aexpr_impl(owned(right), arena, schema)?.node;
+
+            left.map_expr(arena, |left| AExpr::BinaryExpr { left, op, right })
         },
         Expr::Cast {
             expr,
             dtype,
             options,
         } => {
-            let (expr, output_name) = to_aexpr_impl(owned(expr), arena, schema)?;
-            (
-                AExpr::Cast {
-                    expr,
-                    dtype: dtype.into_datatype(schema)?,
-                    options,
-                },
-                output_name,
-            )
+            let dtype = dtype.into_datatype(schema)?;
+            to_aexpr_impl(owned(expr), arena, schema)?.map_expr(arena, |expr| AExpr::Cast {
+                expr,
+                dtype,
+                options,
+            })
         },
         Expr::Gather {
             expr,
             idx,
             returns_scalar,
         } => {
-            let (expr, output_name) = to_aexpr_impl(owned(expr), arena, schema)?;
-            let (idx, _) = to_aexpr_impl_materialized_lit(owned(idx), arena, schema)?;
-            (
-                AExpr::Gather {
-                    expr,
-                    idx,
-                    returns_scalar,
-                },
-                output_name,
-            )
+            let expr = to_aexpr_impl(owned(expr), arena, schema)?;
+            let idx = to_aexpr_impl_materialized_lit(owned(idx), arena, schema)?.node;
+            expr.map_expr(arena, |expr| AExpr::Gather {
+                expr,
+                idx,
+                returns_scalar,
+            })
         },
-        Expr::Sort { expr, options } => {
-            let (expr, output_name) = to_aexpr_impl(owned(expr), arena, schema)?;
-            (AExpr::Sort { expr, options }, output_name)
-        },
+        Expr::Sort { expr, options } => to_aexpr_impl(owned(expr), arena, schema)?
+            .map_expr(arena, |expr| AExpr::Sort { expr, options }),
         Expr::SortBy {
             expr,
             by,
             sort_options,
         } => {
-            let (expr, output_name) = to_aexpr_impl(owned(expr), arena, schema)?;
+            let expr = to_aexpr_impl(owned(expr), arena, schema)?;
             let by = by
                 .into_iter()
-                .map(|e| Ok(to_aexpr_impl(e, arena, schema)?.0))
+                .map(|e| Ok(to_aexpr_impl(e, arena, schema)?.node))
                 .collect::<PolarsResult<_>>()?;
-
-            (
-                AExpr::SortBy {
-                    expr,
-                    by,
-                    sort_options,
-                },
-                output_name,
-            )
+            expr.map_expr(arena, |expr| AExpr::SortBy {
+                expr,
+                by,
+                sort_options,
+            })
         },
         Expr::Filter { input, by } => {
-            let (input, output_name) = to_aexpr_impl(owned(input), arena, schema)?;
-            let (by, _) = to_aexpr_impl(owned(by), arena, schema)?;
-            (AExpr::Filter { input, by }, output_name)
+            let input = to_aexpr_impl(owned(input), arena, schema)?;
+            let by = to_aexpr_impl(owned(by), arena, schema)?.node;
+            input.map_expr(arena, |input| AExpr::Filter { input, by })
         },
-        Expr::Agg(agg) => {
-            let (a_agg, output_name) = match agg {
-                AggExpr::Min {
-                    input,
-                    propagate_nans,
-                } => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (
-                        IRAggExpr::Min {
-                            input,
-                            propagate_nans,
-                        },
-                        output_name,
-                    )
+        Expr::Agg(agg) => match agg {
+            AggExpr::Min {
+                input,
+                propagate_nans,
+            } => to_aexpr_impl_materialized_lit(owned(input), arena, schema)?.map_expr(
+                arena,
+                |input| {
+                    AExpr::Agg(IRAggExpr::Min {
+                        input,
+                        propagate_nans,
+                    })
                 },
-                AggExpr::Max {
-                    input,
-                    propagate_nans,
-                } => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (
-                        IRAggExpr::Max {
-                            input,
-                            propagate_nans,
-                        },
-                        output_name,
-                    )
+            ),
+            AggExpr::Max {
+                input,
+                propagate_nans,
+            } => to_aexpr_impl_materialized_lit(owned(input), arena, schema)?.map_expr(
+                arena,
+                |input| {
+                    AExpr::Agg(IRAggExpr::Max {
+                        input,
+                        propagate_nans,
+                    })
                 },
-                AggExpr::Median(input) => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (IRAggExpr::Median(input), output_name)
-                },
-                AggExpr::NUnique(input) => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (IRAggExpr::NUnique(input), output_name)
-                },
-                AggExpr::First(input) => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (IRAggExpr::First(input), output_name)
-                },
-                AggExpr::Last(input) => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (IRAggExpr::Last(input), output_name)
-                },
-                AggExpr::Mean(input) => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (IRAggExpr::Mean(input), output_name)
-                },
-                AggExpr::Implode(input) => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (IRAggExpr::Implode(input), output_name)
-                },
-                AggExpr::Count(input, include_nulls) => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (IRAggExpr::Count(input, include_nulls), output_name)
-                },
-                AggExpr::Quantile {
-                    expr,
-                    quantile,
-                    method,
-                } => {
-                    let (expr, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(expr), arena, schema)?;
-                    let (quantile, _) =
-                        to_aexpr_impl_materialized_lit(owned(quantile), arena, schema)?;
-                    (
-                        IRAggExpr::Quantile {
-                            expr,
-                            quantile,
-                            method,
-                        },
-                        output_name,
-                    )
-                },
-                AggExpr::Sum(input) => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (IRAggExpr::Sum(input), output_name)
-                },
-                AggExpr::Std(input, ddof) => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (IRAggExpr::Std(input, ddof), output_name)
-                },
-                AggExpr::Var(input, ddof) => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (IRAggExpr::Var(input, ddof), output_name)
-                },
-                AggExpr::AggGroups(input) => {
-                    let (input, output_name) =
-                        to_aexpr_impl_materialized_lit(owned(input), arena, schema)?;
-                    (IRAggExpr::AggGroups(input), output_name)
-                },
-            };
-            (AExpr::Agg(a_agg), output_name)
+            ),
+            AggExpr::Median(input) => to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
+                .map_expr(arena, |input| AExpr::Agg(IRAggExpr::Median(input))),
+            AggExpr::NUnique(input) => to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
+                .map_expr(arena, |input| AExpr::Agg(IRAggExpr::NUnique(input))),
+            AggExpr::First(input) => to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
+                .map_expr(arena, |input| AExpr::Agg(IRAggExpr::First(input))),
+            AggExpr::Last(input) => to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
+                .map_expr(arena, |input| AExpr::Agg(IRAggExpr::Last(input))),
+            AggExpr::Mean(input) => to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
+                .map_expr(arena, |input| AExpr::Agg(IRAggExpr::Mean(input))),
+            AggExpr::Implode(input) => to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
+                .map_expr(arena, |input| AExpr::Agg(IRAggExpr::Implode(input))),
+            AggExpr::Count(input, include_nulls) => {
+                to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
+                    .map_expr(arena, |input| {
+                        AExpr::Agg(IRAggExpr::Count(input, include_nulls))
+                    })
+            },
+            AggExpr::Quantile {
+                expr,
+                quantile,
+                method,
+            } => {
+                let expr = to_aexpr_impl_materialized_lit(owned(expr), arena, schema)?;
+                let quantile = to_aexpr_impl_materialized_lit(owned(quantile), arena, schema)?.node;
+
+                expr.map_expr(arena, |expr| {
+                    AExpr::Agg(IRAggExpr::Quantile {
+                        expr,
+                        quantile,
+                        method,
+                    })
+                })
+            },
+            AggExpr::Sum(input) => to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
+                .map_expr(arena, |input| AExpr::Agg(IRAggExpr::Sum(input))),
+            AggExpr::Std(input, ddof) => {
+                to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
+                    .map_expr(arena, |input| AExpr::Agg(IRAggExpr::Std(input, ddof)))
+            },
+            AggExpr::Var(input, ddof) => {
+                to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
+                    .map_expr(arena, |input| AExpr::Agg(IRAggExpr::Var(input, ddof)))
+            },
+            AggExpr::AggGroups(input) => {
+                to_aexpr_impl_materialized_lit(owned(input), arena, schema)?
+                    .map_expr(arena, |input| AExpr::Agg(IRAggExpr::AggGroups(input)))
+            },
         },
         Expr::Ternary {
             predicate,
             truthy,
             falsy,
         } => {
-            let (p, _) = to_aexpr_impl_materialized_lit(owned(predicate), arena, schema)?;
-            let (t, output_name) = to_aexpr_impl(owned(truthy), arena, schema)?;
-            let (f, _) = to_aexpr_impl(owned(falsy), arena, schema)?;
-            (
-                AExpr::Ternary {
-                    predicate: p,
-                    truthy: t,
-                    falsy: f,
-                },
-                output_name,
-            )
+            let predicate = to_aexpr_impl_materialized_lit(owned(predicate), arena, schema)?.node;
+            let truthy = to_aexpr_impl(owned(truthy), arena, schema)?;
+            let falsy = to_aexpr_impl(owned(falsy), arena, schema)?.node;
+
+            truthy.map_expr(arena, |truthy| AExpr::Ternary {
+                predicate,
+                truthy,
+                falsy,
+            })
         },
         Expr::AnonymousFunction {
             input,
@@ -273,15 +246,13 @@ pub(super) fn to_aexpr_impl(
                 e[0].output_name().clone()
             };
 
-            (
-                AExpr::AnonymousFunction {
-                    input: e,
-                    function,
-                    output_type,
-                    options,
-                },
-                output_name,
-            )
+            let node = arena.add(AExpr::AnonymousFunction {
+                input: e,
+                function,
+                output_type,
+                options,
+            });
+            DslToIrExpr { node, output_name }
         },
         Expr::Function {
             input,
@@ -294,50 +265,49 @@ pub(super) fn to_aexpr_impl(
             order_by,
             options,
         } => {
-            let (function, output_name) = to_aexpr_impl(owned(function), arena, schema)?;
+            let function = to_aexpr_impl(owned(function), arena, schema)?;
             let order_by = if let Some((e, options)) = order_by {
-                Some((to_aexpr_impl(owned(e.clone()), arena, schema)?.0, options))
+                Some((
+                    to_aexpr_impl(owned(e.clone()), arena, schema)?.node,
+                    options,
+                ))
             } else {
                 None
             };
+            let partition_by = partition_by
+                .into_iter()
+                .map(|e| Ok(to_aexpr_impl_materialized_lit(e, arena, schema)?.node))
+                .collect::<PolarsResult<_>>()?;
 
-            (
-                AExpr::Window {
-                    function,
-                    partition_by: partition_by
-                        .into_iter()
-                        .map(|e| Ok(to_aexpr_impl_materialized_lit(e, arena, schema)?.0))
-                        .collect::<PolarsResult<_>>()?,
-                    order_by,
-                    options,
-                },
-                output_name,
-            )
+            function.map_expr(arena, |function| AExpr::Window {
+                function,
+                partition_by,
+                order_by,
+                options,
+            })
         },
         Expr::Slice {
             input,
             offset,
             length,
         } => {
-            let (input, output_name) = to_aexpr_impl(owned(input), arena, schema)?;
-            let (offset, _) = to_aexpr_impl_materialized_lit(owned(offset), arena, schema)?;
-            let (length, _) = to_aexpr_impl_materialized_lit(owned(length), arena, schema)?;
-            (
-                AExpr::Slice {
-                    input,
-                    offset,
-                    length,
-                },
-                output_name,
-            )
+            let input = to_aexpr_impl(owned(input), arena, schema)?;
+            let offset = to_aexpr_impl_materialized_lit(owned(offset), arena, schema)?.node;
+            let length = to_aexpr_impl_materialized_lit(owned(length), arena, schema)?.node;
+
+            input.map_expr(arena, |input| AExpr::Slice {
+                input,
+                offset,
+                length,
+            })
         },
         Expr::Eval {
             expr,
             evaluation,
             variant,
         } => {
-            let (expr, output_name) = to_aexpr_impl(owned(expr), arena, schema)?;
-            let (evaluation, _) = to_aexpr_impl(owned(evaluation), arena, schema)?;
+            let expr = to_aexpr_impl(owned(expr), arena, schema)?;
+            let evaluation = to_aexpr_impl(owned(evaluation), arena, schema)?.node;
 
             match variant {
                 EvalVariant::List => {
@@ -371,16 +341,16 @@ pub(super) fn to_aexpr_impl(
                 },
             }
 
-            (
-                AExpr::Eval {
-                    expr,
-                    evaluation,
-                    variant,
-                },
-                output_name,
-            )
+            expr.map_expr(arena, |expr| AExpr::Eval {
+                expr,
+                evaluation,
+                variant,
+            })
         },
-        Expr::Len => (AExpr::Len, get_len_name()),
+        Expr::Len => DslToIrExpr {
+            node: arena.add(AExpr::Len),
+            output_name: get_len_name(),
+        },
         #[cfg(feature = "dtype-struct")]
         e @ Expr::Field(_) => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
@@ -397,6 +367,5 @@ pub(super) fn to_aexpr_impl(
         | e @ Expr::Selector(_) => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
         },
-    };
-    Ok((arena.add(v), output_name))
+    })
 }

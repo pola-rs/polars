@@ -1,5 +1,5 @@
 use arrow::legacy::error::PolarsResult;
-use polars_utils::arena::{Arena, Node};
+use polars_utils::arena::Arena;
 use polars_utils::format_pl_smallstr;
 
 use super::*;
@@ -13,7 +13,7 @@ pub(super) fn convert_functions(
     mut options: FunctionOptions,
     arena: &mut Arena<AExpr>,
     schema: &Schema,
-) -> PolarsResult<(Node, PlSmallStr)> {
+) -> PolarsResult<DslToIrExpr> {
     use FunctionExpr as F;
 
     // Return before converting inputs
@@ -97,5 +97,5 @@ pub(super) fn convert_functions(
         function,
         options,
     };
-    Ok((arena.add(ae_function), output_name))
+    Ok(DslToIrExpr { node: arena.add(ae_function), output_name })
 }
