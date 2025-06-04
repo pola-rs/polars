@@ -32,6 +32,20 @@ def test_format_with_only_placeholders() -> None:
     assert out["fmt"].to_list() == ["a", "b", "c"]
 
 
+def test_format_literal_brackets() -> None:
+    df = pl.DataFrame({"a": ["a", "b", "c"]})
+
+    out = df.with_columns([pl.format("test{{a}}").alias("fmt")])
+    assert out["fmt"].to_list() == ["test{a}", "test{a}", "test{a}"]
+
+
+def test_format_empty_literal_brackets() -> None:
+    df = pl.DataFrame({"a": ["a", "b", "c"]})
+
+    out = df.with_columns([pl.format("test{{}}").alias("fmt")])
+    assert out["fmt"].to_list() == ["test{}", "test{}", "test{}"]
+
+
 def test_format_raises_on_wrong_number_of_named_arguments() -> None:
     with pytest.raises(
         ValueError,
