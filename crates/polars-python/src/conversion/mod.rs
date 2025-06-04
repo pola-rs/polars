@@ -1634,8 +1634,16 @@ impl<'py> FromPyObject<'py> for Wrap<DeletionFilesList> {
 
 impl<'py> FromPyObject<'py> for Wrap<PlPath> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let path: PyBackedStr = ob.extract()?;
-        Ok(Wrap(PlPath::new(&path)))
+        if let Ok(path) = ob.extract::<PyBackedStr>() {
+            Ok(Wrap(PlPath::new(&path)))
+        } else if let Ok(path) = ob.extract::<std::path::PathBuf>() {
+            Ok(Wrap(PlPath::Local(path.into())))
+        } else {
+            Err(
+                PyTypeError::new_err(format!("PlPath cannot be formed from '{}'", ob.get_type()))
+                    .into(),
+            )
+        }
     }
 }
 
