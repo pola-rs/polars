@@ -378,3 +378,19 @@ def test_order_observe_group_by() -> None:
 
     plan = q.explain()
     assert "AGGREGATE[maintain_order: true]" in plan
+
+
+def test_fused_correct_name() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+
+    lf = df.lazy().select(
+        (pl.col.x.alias("a") * pl.col.x.alias("b")) + pl.col.x.alias("c")
+    )
+
+    no_opts = lf.collect(optimizations=pl.QueryOptFlags.none())
+    opts = lf.collect()
+    assert_frame_equal(
+        no_opts,
+        opts,
+    )
+    assert_frame_equal(opts, pl.DataFrame({"a": [2, 6, 12]}))
