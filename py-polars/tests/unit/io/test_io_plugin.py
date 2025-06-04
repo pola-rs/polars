@@ -213,5 +213,16 @@ def test_reordered_columns_22731(validate: bool) -> None:
             io_source=source_generator, schema=schema, validate_schema=validate
         )
 
-    expected = pl.DataFrame({"b": [42, 13, 37], "a": [1, 2, 3]})
-    assert_frame_equal(my_scan().select("b", "a").collect(), expected)
+    expected_select = pl.DataFrame({"b": [42, 13, 37], "a": [1, 2, 3]})
+    assert_frame_equal(my_scan().select("b", "a").collect(), expected_select)
+
+    expected_ri = pl.DataFrame({"b": [42, 13, 37], "a": [1, 2, 3]}).with_row_index()
+    assert_frame_equal(
+        my_scan().select("b", "a").with_row_index().collect(),
+        expected_ri,
+    )
+
+    expected_with_columns = pl.DataFrame({"a": [1, 2, 3], "b": [42, 13, 37]})
+    assert_frame_equal(
+        my_scan().with_columns("b", "a").collect(), expected_with_columns
+    )
