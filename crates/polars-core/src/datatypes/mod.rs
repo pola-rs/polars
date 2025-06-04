@@ -138,12 +138,6 @@ macro_rules! impl_polars_num_datatype {
             }
         }
 
-        impl PolarsPhysicalType for $pdt {
-            fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
-                Series(Arc::new(SeriesWrap(ca)))
-            }
-        }
-
         impl PolarsNumericType for $pdt {
             type Native = $physical;
         }
@@ -152,7 +146,7 @@ macro_rules! impl_polars_num_datatype {
     };
 }
 
-macro_rules! impl_polars_physical_datatype {
+macro_rules! impl_polars_datatype {
     ($pdt:ident, $dtype:expr, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty, $has_views:ident) => {
         #[derive(Clone, Copy)]
         pub struct $pdt {}
@@ -164,35 +158,6 @@ macro_rules! impl_polars_physical_datatype {
             type Array = $arr;
             type IsNested = FalseT;
             type HasViews = $has_views;
-            type IsStruct = FalseT;
-            type IsObject = FalseT;
-
-            #[inline]
-            fn get_static_dtype() -> DataType {
-                $dtype
-            }
-        }
-
-        impl PolarsPhysicalType for $pdt {
-            fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
-                Series(Arc::new(SeriesWrap(ca)))
-            }
-        }
-    };
-}
-
-macro_rules! impl_polars_logical_datatype {
-    ($pdt:ident, $dtype:expr, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty) => {
-        #[derive(Clone, Copy)]
-        pub struct $pdt {}
-
-        unsafe impl PolarsDataType for $pdt {
-            type Physical<$lt> = $phys;
-            type OwnedPhysical = $owned_phys;
-            type ZeroablePhysical<$lt> = $zerophys;
-            type Array = $arr;
-            type IsNested = FalseT;
-            type HasViews = FalseT;
             type IsStruct = FalseT;
             type IsObject = FalseT;
 
@@ -217,18 +182,18 @@ impl_polars_num_datatype!(PolarsIntegerType, Int128Type, Int128, i128, i128);
 impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32, f32);
 impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64, f64);
 
-impl_polars_physical_datatype!(StringType, DataType::String, Utf8ViewArray, 'a, &'a str, Option<&'a str>, String, TrueT);
-impl_polars_physical_datatype!(BinaryType, DataType::Binary, BinaryViewArray, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, TrueT);
-impl_polars_physical_datatype!(BinaryOffsetType, DataType::BinaryOffset, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, FalseT);
-impl_polars_physical_datatype!(BooleanType, DataType::Boolean, BooleanArray, 'a, bool, bool, bool, FalseT);
+impl_polars_datatype!(StringType, DataType::String, Utf8ViewArray, 'a, &'a str, Option<&'a str>, String, TrueT);
+impl_polars_datatype!(BinaryType, DataType::Binary, BinaryViewArray, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, TrueT);
+impl_polars_datatype!(BinaryOffsetType, DataType::BinaryOffset, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, FalseT);
+impl_polars_datatype!(BooleanType, DataType::Boolean, BooleanArray, 'a, bool, bool, bool, FalseT);
 
 #[cfg(feature = "dtype-decimal")]
-impl_polars_logical_datatype!(DecimalType, unimplemented!(), PrimitiveArray<i128>, 'a, i128, i128, i128);
-impl_polars_logical_datatype!(DatetimeType, unimplemented!(), PrimitiveArray<i64>, 'a, i64, i64, i64);
-impl_polars_logical_datatype!(DurationType, unimplemented!(), PrimitiveArray<i64>, 'a, i64, i64, i64);
-impl_polars_logical_datatype!(CategoricalType, unimplemented!(), PrimitiveArray<u32>, 'a, u32, u32, u32);
-impl_polars_logical_datatype!(DateType, DataType::Date, PrimitiveArray<i32>, 'a, i32, i32, i32);
-impl_polars_logical_datatype!(TimeType, DataType::Time, PrimitiveArray<i64>, 'a, i64, i64, i64);
+impl_polars_datatype!(DecimalType, unimplemented!(), PrimitiveArray<i128>, 'a, i128, i128, i128, FalseT);
+impl_polars_datatype!(DatetimeType, unimplemented!(), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
+impl_polars_datatype!(DurationType, unimplemented!(), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
+impl_polars_datatype!(CategoricalType, unimplemented!(), PrimitiveArray<u32>, 'a, u32, u32, u32, FalseT);
+impl_polars_datatype!(DateType, DataType::Date, PrimitiveArray<i32>, 'a, i32, i32, i32, FalseT);
+impl_polars_datatype!(TimeType, DataType::Time, PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
@@ -280,13 +245,6 @@ unsafe impl PolarsDataType for StructType {
     }
 }
 
-#[cfg(feature = "dtype-struct")]
-impl PolarsPhysicalType for StructType {
-    fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
-        Series(Arc::new(SeriesWrap(ca)))
-    }
-}
-
 #[cfg(feature = "dtype-array")]
 pub struct FixedSizeListType {}
 #[cfg(feature = "dtype-array")]
@@ -303,13 +261,6 @@ unsafe impl PolarsDataType for FixedSizeListType {
     fn get_static_dtype() -> DataType {
         // Null as we cannot know anything without self.
         DataType::Array(Box::new(DataType::Null), 0)
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl PolarsPhysicalType for FixedSizeListType {
-    fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
-        Series(Arc::new(SeriesWrap(ca)))
     }
 }
 
@@ -330,6 +281,61 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
         DataType::Object(T::type_name())
     }
 }
+
+macro_rules! impl_phys_dtype {
+    ($pdt:ty) => {
+        impl PolarsPhysicalType for $pdt {
+            fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
+                Series(Arc::new(SeriesWrap(ca)))
+            }
+        }
+    };
+}
+
+macro_rules! impl_cond_phys_dtype {
+    ($pdt:ty, $feat:literal) => {
+        impl PolarsPhysicalType for $pdt {
+            fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
+                #[cfg(feature = $feat)]
+                {
+                    Series(Arc::new(SeriesWrap(ca)))
+                }
+
+                #[cfg(not(feature = $feat))]
+                {
+                    unimplemented!()
+                }
+            }
+        }
+    };
+}
+
+// Annoyingly these types always exist but may not have an implementation to refer to.
+impl_cond_phys_dtype!(UInt8Type, "dtype-u8");
+impl_cond_phys_dtype!(UInt16Type, "dtype-u16");
+impl_cond_phys_dtype!(Int8Type, "dtype-i8");
+impl_cond_phys_dtype!(Int16Type, "dtype-i16");
+
+impl_phys_dtype!(Int32Type);
+impl_phys_dtype!(Int64Type);
+impl_phys_dtype!(UInt32Type);
+impl_phys_dtype!(UInt64Type);
+impl_phys_dtype!(Float32Type);
+impl_phys_dtype!(Float64Type);
+
+impl_phys_dtype!(StringType);
+impl_phys_dtype!(BinaryType);
+impl_phys_dtype!(BinaryOffsetType);
+impl_phys_dtype!(BooleanType);
+
+#[cfg(feature = "dtype-i128")]
+impl_phys_dtype!(Int128Type);
+
+#[cfg(feature = "dtype-array")]
+impl_phys_dtype!(FixedSizeListType);
+
+#[cfg(feature = "dtype-struct")]
+impl_phys_dtype!(StructType);
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> PolarsPhysicalType for ObjectType<T> {
