@@ -233,7 +233,7 @@ class BinaryNameSpace:
         -------
         Series
             Series of data type `dtype`.
-            Note that if the binary array is too short or too long, the resulting
+            Note that rows of the binary array where the length does not match the width of the output array will become NULL.
             value will be null.
 
         Examples
