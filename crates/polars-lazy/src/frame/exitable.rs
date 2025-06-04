@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
 
 use polars_core::POOL;
-use polars_io::pl_async;
 
 use super::*;
 
@@ -15,10 +14,20 @@ impl LazyFrame {
         let token = state.cancel_token();
 
         if physical_plan.is_cache_prefiller() {
-            pl_async::get_runtime().spawn_blocking(move || {
-                let result = physical_plan.execute(&mut state);
-                tx.send(result).unwrap();
-            });
+            #[cfg(feature = "async")]
+            {
+                polars_io::pl_async::get_runtime().spawn_blocking(move || {
+                    let result = physical_plan.execute(&mut state);
+                    tx.send(result).unwrap();
+                });
+            }
+            #[cfg(not(feature = "async"))]
+            {
+                std::thread::spawn(move || {
+                    let result = physical_plan.execute(&mut state);
+                    tx.send(result).unwrap();
+                });
+            }
         } else {
             POOL.spawn_fifo(move || {
                 let result = physical_plan.execute(&mut state);
