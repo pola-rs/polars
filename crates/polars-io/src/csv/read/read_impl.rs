@@ -321,7 +321,7 @@ impl<'a> CoreReader<'a> {
     }
 
     // The code adheres to RFC 4180 in a strict sense, unless explicitly documented otherwise.
-    // Malformed CSV is common, see e.g. the use of lazy_quotes and whitespace.
+    // Malformed CSV is common, see e.g. the use of lazy_quotes, whitespace and comments.
     // In case malformed CSV is detected, a warning or an error will be issued.
     // Not all malformed CSV will be detected, as that would impact performance.
     fn parse_csv(&mut self, bytes: &[u8]) -> PolarsResult<DataFrame> {
@@ -452,10 +452,11 @@ impl<'a> CoreReader<'a> {
                         let result = slf
                             .read_chunk(b, projection, 0, count, Some(0), b.len())
                             .and_then(|mut df| {
+
                                 // Check malformed
-                                if df.height() != count {
+                                if df.height() > count || (df.height() < count && slf.parse_options.comment_prefix.is_none()) {
                                     // Note: in case data is malformed, df.height() is more likely to be correct than count.
-                                    let msg = format!("CSV malformed: expected {} rows vs actual {} rows in chunk starting at byte offset {}, length {}",
+                                    let msg = format!("CSV malformed: expected {} rows, actual {} rows, in chunk starting at byte offset {}, length {}",
                                         count, df.height(), previous_total_offset, b.len());
                                     if slf.ignore_errors {
                                         polars_warn!(msg);
