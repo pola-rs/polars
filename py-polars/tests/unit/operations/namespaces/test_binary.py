@@ -94,9 +94,7 @@ def test_starts_ends_with() -> None:
         pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
         pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
         pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
-    ).to_dict(
-        as_series=False
-    ) == {
+    ).to_dict(as_series=False) == {
         "end_lit": [False, False, True, None],
         "end_none": [None, None, None, None],
         "end_expr": [True, False, None, None],
@@ -322,7 +320,8 @@ def test_reinterpret_to_n_dimensional_array() -> None:
             match="cast to a linear Array, and then use reshape",
         ):
             series.bin.reinterpret(
-                dtype=pl.Array(pl.UInt32(), (2, 2)), endianness=endianness
+                dtype=pl.Array(pl.UInt32(), (2, 2)),
+                endianness=endianness,  # type: ignore[arg-type]
             )
 
 
