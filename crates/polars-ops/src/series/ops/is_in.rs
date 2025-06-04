@@ -54,7 +54,7 @@ fn is_in_helper_list_ca<'a, T>(
     nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked>
 where
-    T: PolarsDataType<IsLogical = FalseT>,
+    T: PolarsPhysicalType,
     for<'b> T::Physical<'b>: TotalHash + TotalEq + ToTotalOrd + Copy,
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
@@ -140,7 +140,7 @@ fn is_in_helper_array_ca<'a, T>(
     nulls_equal: bool,
 ) -> PolarsResult<BooleanChunked>
 where
-    T: PolarsDataType<IsLogical = FalseT>,
+    T: PolarsPhysicalType,
     for<'b> T::Physical<'b>: TotalHash + TotalEq + ToTotalOrd + Copy,
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {

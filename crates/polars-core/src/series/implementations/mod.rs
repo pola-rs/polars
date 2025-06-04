@@ -55,15 +55,9 @@ impl<T: PolarsDataType> Deref for SeriesWrap<ChunkedArray<T>> {
     }
 }
 
-unsafe impl<T: PolarsDataType + 'static> IntoSeries for ChunkedArray<T>
-where
-    SeriesWrap<ChunkedArray<T>>: SeriesTrait,
-{
-    fn into_series(self) -> Series
-    where
-        Self: Sized,
-    {
-        Series(Arc::new(SeriesWrap(self)))
+unsafe impl<T: PolarsPhysicalType> IntoSeries for ChunkedArray<T> {
+    fn into_series(self) -> Series {
+        T::ca_into_series(self)
     }
 }
 

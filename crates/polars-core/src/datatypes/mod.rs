@@ -23,6 +23,7 @@ use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
+use std::sync::Arc;
 
 mod schema;
 pub use aliases::*;
@@ -63,6 +64,7 @@ use crate::chunked_array::object::ObjectArray;
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use crate::utils::Wrap;
+use crate::series::implementations::SeriesWrap;
 
 pub struct TrueT;
 pub struct FalseT;
@@ -82,7 +84,6 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
     type HasViews;
     type IsStruct;
     type IsObject;
-    type IsLogical;
 
     /// Returns the DataType variant associated with this PolarsDataType.
     /// Not implemented for types whose DataTypes have parameters.
@@ -91,7 +92,13 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
         Self: Sized;
 }
 
-pub trait PolarsNumericType: 'static
+pub trait PolarsPhysicalType: PolarsDataType {
+    // A physical type is one backed by a ChunkedArray directly, as opposed to
+    // logical types which wrap physical data.
+    fn ca_into_series(ca: ChunkedArray<Self>) -> Series;
+}
+
+pub trait PolarsNumericType: PolarsPhysicalType + 'static
 where
     Self: for<'a> PolarsDataType<
             OwnedPhysical = Self::Native,
@@ -102,7 +109,6 @@ where
             HasViews = FalseT,
             IsStruct = FalseT,
             IsObject = FalseT,
-            IsLogical = FalseT,
         >,
 {
     type Native: NumericNative;
@@ -112,11 +118,11 @@ pub trait PolarsIntegerType: PolarsNumericType {}
 pub trait PolarsFloatType: PolarsNumericType {}
 
 macro_rules! impl_polars_num_datatype {
-    ($trait: ident, $ca:ident, $variant:ident, $physical:ty, $owned_phys:ty) => {
+    ($trait: ident, $pdt:ident, $variant:ident, $physical:ty, $owned_phys:ty) => {
         #[derive(Clone, Copy)]
-        pub struct $ca {}
+        pub struct $pdt {}
 
-        unsafe impl PolarsDataType for $ca {
+        unsafe impl PolarsDataType for $pdt {
             type Physical<'a> = $physical;
             type OwnedPhysical = $owned_phys;
             type ZeroablePhysical<'a> = $physical;
@@ -125,28 +131,33 @@ macro_rules! impl_polars_num_datatype {
             type HasViews = FalseT;
             type IsStruct = FalseT;
             type IsObject = FalseT;
-            type IsLogical = FalseT;
 
             #[inline]
             fn get_static_dtype() -> DataType {
                 DataType::$variant
             }
         }
+        
+        impl PolarsPhysicalType for $pdt {
+            fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
+                Series(Arc::new(SeriesWrap(ca)))
+            }
+        }
 
-        impl PolarsNumericType for $ca {
+        impl PolarsNumericType for $pdt {
             type Native = $physical;
         }
 
-        impl $trait for $ca {}
+        impl $trait for $pdt {}
     };
 }
 
-macro_rules! impl_polars_datatype_pass_dtype {
-    ($ca:ident, $dtype:expr, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty, $has_views:ident, $is_logical:ident) => {
+macro_rules! impl_polars_physical_datatype {
+    ($pdt:ident, $dtype:expr, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty, $has_views:ident) => {
         #[derive(Clone, Copy)]
-        pub struct $ca {}
+        pub struct $pdt {}
 
-        unsafe impl PolarsDataType for $ca {
+        unsafe impl PolarsDataType for $pdt {
             type Physical<$lt> = $phys;
             type OwnedPhysical = $owned_phys;
             type ZeroablePhysical<$lt> = $zerophys;
@@ -155,7 +166,35 @@ macro_rules! impl_polars_datatype_pass_dtype {
             type HasViews = $has_views;
             type IsStruct = FalseT;
             type IsObject = FalseT;
-            type IsLogical = $is_logical;
+
+            #[inline]
+            fn get_static_dtype() -> DataType {
+                $dtype
+            }
+        }
+        
+        impl PolarsPhysicalType for $pdt {
+            fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
+                Series(Arc::new(SeriesWrap(ca)))
+            }
+        }
+    };
+}
+
+macro_rules! impl_polars_logical_datatype {
+    ($pdt:ident, $dtype:expr, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty) => {
+        #[derive(Clone, Copy)]
+        pub struct $pdt {}
+
+        unsafe impl PolarsDataType for $pdt {
+            type Physical<$lt> = $phys;
+            type OwnedPhysical = $owned_phys;
+            type ZeroablePhysical<$lt> = $zerophys;
+            type Array = $arr;
+            type IsNested = FalseT;
+            type HasViews = FalseT;
+            type IsStruct = FalseT;
+            type IsObject = FalseT;
 
             #[inline]
             fn get_static_dtype() -> DataType {
@@ -165,61 +204,6 @@ macro_rules! impl_polars_datatype_pass_dtype {
     };
 }
 
-macro_rules! impl_polars_datatype_no_static_dtype {
-    ($ca:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty, $has_views:ident, $is_logical:ident) => {
-        #[derive(Clone, Copy)]
-        pub struct $ca {}
-
-        unsafe impl PolarsDataType for $ca {
-            type Physical<$lt> = $phys;
-            type OwnedPhysical = $owned_phys;
-            type ZeroablePhysical<$lt> = $zerophys;
-            type Array = $arr;
-            type IsNested = FalseT;
-            type HasViews = $has_views;
-            type IsStruct = FalseT;
-            type IsObject = FalseT;
-            type IsLogical = $is_logical;
-
-            #[inline]
-            fn get_static_dtype() -> DataType {
-                unimplemented!()
-            }
-        }
-    };
-}
-
-macro_rules! impl_polars_binview_datatype {
-    ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty) => {
-        impl_polars_datatype_pass_dtype!(
-            $ca,
-            DataType::$variant,
-            $arr,
-            $lt,
-            $phys,
-            $zerophys,
-            $owned_phys,
-            TrueT,
-            FalseT
-        );
-    };
-}
-
-macro_rules! impl_polars_datatype {
-    ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty, $is_logical:ident) => {
-        impl_polars_datatype_pass_dtype!(
-            $ca,
-            DataType::$variant,
-            $arr,
-            $lt,
-            $phys,
-            $zerophys,
-            $owned_phys,
-            FalseT,
-            $is_logical
-        );
-    };
-}
 
 impl_polars_num_datatype!(PolarsIntegerType, UInt8Type, UInt8, u8, u8);
 impl_polars_num_datatype!(PolarsIntegerType, UInt16Type, UInt16, u16, u16);
@@ -229,23 +213,23 @@ impl_polars_num_datatype!(PolarsIntegerType, Int8Type, Int8, i8, i8);
 impl_polars_num_datatype!(PolarsIntegerType, Int16Type, Int16, i16, i16);
 impl_polars_num_datatype!(PolarsIntegerType, Int32Type, Int32, i32, i32);
 impl_polars_num_datatype!(PolarsIntegerType, Int64Type, Int64, i64, i64);
-
 #[cfg(feature = "dtype-i128")]
 impl_polars_num_datatype!(PolarsIntegerType, Int128Type, Int128, i128, i128);
 impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32, f32);
 impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64, f64);
-impl_polars_datatype!(DateType, Date, PrimitiveArray<i32>, 'a, i32, i32, i32, TrueT);
-impl_polars_datatype!(TimeType, Time, PrimitiveArray<i64>, 'a, i64, i64, i64, TrueT);
-impl_polars_binview_datatype!(StringType, String, Utf8ViewArray, 'a, &'a str, Option<&'a str>, String);
-impl_polars_binview_datatype!(BinaryType, Binary, BinaryViewArray, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>);
-impl_polars_datatype!(BinaryOffsetType, BinaryOffset, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, FalseT);
-impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool, bool, bool, FalseT);
+
+impl_polars_physical_datatype!(StringType, DataType::String, Utf8ViewArray, 'a, &'a str, Option<&'a str>, String, TrueT);
+impl_polars_physical_datatype!(BinaryType, DataType::Binary, BinaryViewArray, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, TrueT);
+impl_polars_physical_datatype!(BinaryOffsetType, DataType::BinaryOffset, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, FalseT);
+impl_polars_physical_datatype!(BooleanType, DataType::Boolean, BooleanArray, 'a, bool, bool, bool, FalseT);
 
 #[cfg(feature = "dtype-decimal")]
-impl_polars_datatype_no_static_dtype!(DecimalType, PrimitiveArray<i128>, 'a, i128, i128, i128, FalseT, TrueT);
-impl_polars_datatype_no_static_dtype!(DatetimeType, PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT, TrueT);
-impl_polars_datatype_no_static_dtype!(DurationType, PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT, TrueT);
-impl_polars_datatype_no_static_dtype!(CategoricalType, PrimitiveArray<u32>, 'a, u32, u32, u32, FalseT, TrueT);
+impl_polars_logical_datatype!(DecimalType, unimplemented!(), PrimitiveArray<i128>, 'a, i128, i128, i128);
+impl_polars_logical_datatype!(DatetimeType, unimplemented!(), PrimitiveArray<i64>, 'a, i64, i64, i64);
+impl_polars_logical_datatype!(DurationType, unimplemented!(), PrimitiveArray<i64>, 'a, i64, i64, i64);
+impl_polars_logical_datatype!(CategoricalType, unimplemented!(), PrimitiveArray<u32>, 'a, u32, u32, u32);
+impl_polars_logical_datatype!(DateType, DataType::Date, PrimitiveArray<i32>, 'a, i32, i32, i32);
+impl_polars_logical_datatype!(TimeType, DataType::Time, PrimitiveArray<i64>, 'a, i64, i64, i64);
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
@@ -258,11 +242,16 @@ unsafe impl PolarsDataType for ListType {
     type HasViews = FalseT;
     type IsStruct = FalseT;
     type IsObject = FalseT;
-    type IsLogical = FalseT;
 
     fn get_static_dtype() -> DataType {
         // Null as we cannot know anything without self.
         DataType::List(Box::new(DataType::Null))
+    }
+}
+
+impl PolarsPhysicalType for ListType {
+    fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
+        Series(Arc::new(SeriesWrap(ca)))
     }
 }
 
@@ -283,13 +272,19 @@ unsafe impl PolarsDataType for StructType {
     type HasViews = FalseT;
     type IsStruct = TrueT;
     type IsObject = FalseT;
-    type IsLogical = FalseT;
 
     fn get_static_dtype() -> DataType
     where
         Self: Sized,
     {
         DataType::Struct(vec![])
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl PolarsPhysicalType for StructType {
+    fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
+        Series(Arc::new(SeriesWrap(ca)))
     }
 }
 
@@ -305,11 +300,17 @@ unsafe impl PolarsDataType for FixedSizeListType {
     type HasViews = FalseT;
     type IsStruct = FalseT;
     type IsObject = FalseT;
-    type IsLogical = FalseT;
 
     fn get_static_dtype() -> DataType {
         // Null as we cannot know anything without self.
         DataType::Array(Box::new(DataType::Null), 0)
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl PolarsPhysicalType for FixedSizeListType {
+    fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
+        Series(Arc::new(SeriesWrap(ca)))
     }
 }
 
@@ -325,10 +326,16 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type HasViews = FalseT;
     type IsStruct = FalseT;
     type IsObject = TrueT;
-    type IsLogical = FalseT;
 
     fn get_static_dtype() -> DataType {
         DataType::Object(T::type_name())
+    }
+}
+
+#[cfg(feature = "object")]
+impl<T: PolarsObject> PolarsPhysicalType for ObjectType<T> {
+    fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
+        Series(Arc::new(SeriesWrap(ca)))
     }
 }
 
