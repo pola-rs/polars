@@ -212,7 +212,8 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 polars_ensure!(
                     dtype.byte_size().is_some() && leaf_physical_type.is_primitive(),
                     InvalidOperation:
-                    "unsupported data type in from_buffer. Only numerical types are allowed in arrays."
+                    "cannot reinterpret from binary dtype to {:?}. Only numerical types are allowed when casting to arrays.",
+                    dtype,
                 );
                 let PhysicalType::Primitive(primitive_type) = leaf_physical_type else {
                     panic!("Shouldn't ever be reached.")

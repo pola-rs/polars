@@ -334,7 +334,8 @@ def test_reinterpret_unsupported() -> None:
         pl.Array(pl.Boolean(), 1),
     ]:
         with pytest.raises(
-            InvalidOperationError, match="unsupported data type in from_buffer"
+            InvalidOperationError,
+            match="cannot reinterpret.*Only numerical types are allowed when casting to arrays",
         ):
             series.bin.reinterpret(dtype=dtype)
 
