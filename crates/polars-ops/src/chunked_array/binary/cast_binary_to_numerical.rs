@@ -111,17 +111,13 @@ where
                 return Ok(());
             }
 
-            result.try_push(Some(
-                x.chunks_exact(element_size)
-                    .map(|val| {
-                        if is_little_endian {
-                            T::cast_le(val)
-                        } else {
-                            T::cast_be(val)
-                        }
-                    })
-                    .collect::<Vec<_>>(),
-            ))
+            result.try_push(Some(x.chunks_exact(element_size).map(|val| {
+                if is_little_endian {
+                    T::cast_le(val)
+                } else {
+                    T::cast_be(val)
+                }
+            })))
         } else {
             result.push_null();
             Ok(())
