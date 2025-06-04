@@ -405,6 +405,8 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
 
                     let out = PyList::new(py, [] as [(); 0])?;
 
+                    // Manual conversion to preserve `uri://...` - converting Rust `Path` to `PosixPath`
+                    // will corrupt to `uri:/...`
                     for path in paths.iter() {
                         if let Some(path) = path.to_str() {
                             out.append(path)?
