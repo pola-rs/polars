@@ -965,7 +965,13 @@ q = (
     .join(pl.scan_parquet(f), on="x", how="left")
 )
 
-results = [pl.DataFrame(), pl.DataFrame(), pl.DataFrame(), pl.DataFrame()]
+results = [
+    pl.DataFrame(),
+    pl.DataFrame(),
+    pl.DataFrame(),
+    pl.DataFrame(),
+    pl.DataFrame(),
+]
 
 
 def run():
@@ -988,12 +994,22 @@ def run():
 
     results[3] = pl.collect_all(3 * [pl.concat(3 * [q])])[0].head(1)
 
+    print("QUERY-FENCE", file=sys.stderr)
+
+    results[4] = q.collect(background=True).fetch_blocking()
+
 
 t = Thread(target=run, daemon=True)
 t.start()
 t.join(5)
 
-assert [x.equals(pl.DataFrame({"x": 1})) for x in results] == [True, True, True, True]
+assert [x.equals(pl.DataFrame({"x": 1})) for x in results] == [
+    True,
+    True,
+    True,
+    True,
+    True,
+]
 
 print("OK", end="", file=sys.stderr)
 """,
