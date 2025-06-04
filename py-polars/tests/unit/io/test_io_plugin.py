@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 from polars.io.plugins import register_io_source
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -177,7 +177,8 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
     assert column.meta == pl.col("timestamp")
 
 
-def test_reordered_columns_22731() -> None:
+@pytest.mark.parametrize(("validate"), [(True), (False)])
+def test_reordered_columns_22731(validate: bool) -> None:
     def my_scan() -> pl.LazyFrame:
         schema = pl.Schema({"a": pl.Int64, "b": pl.Int64})
 
@@ -192,7 +193,7 @@ def test_reordered_columns_22731() -> None:
             if n_rows is not None:
                 df = df.head(min(n_rows, df.height))
 
-            maxrows = 0
+            maxrows = 1
             if batch_size is not None:
                 maxrows = batch_size
 
@@ -208,6 +209,20 @@ def test_reordered_columns_22731() -> None:
 
                 yield cur
 
-        return register_io_source(io_source=source_generator, schema=schema)
+        return register_io_source(
+            io_source=source_generator, schema=schema, validate_schema=validate
+        )
 
-    my_scan().select("b", "a").sink_parquet(io.BytesIO())
+    expected_select = pl.DataFrame({"b": [42, 13, 37], "a": [1, 2, 3]})
+    assert_frame_equal(my_scan().select("b", "a").collect(), expected_select)
+
+    expected_ri = pl.DataFrame({"b": [42, 13, 37], "a": [1, 2, 3]}).with_row_index()
+    assert_frame_equal(
+        my_scan().select("b", "a").with_row_index().collect(),
+        expected_ri,
+    )
+
+    expected_with_columns = pl.DataFrame({"a": [1, 2, 3], "b": [42, 13, 37]})
+    assert_frame_equal(
+        my_scan().with_columns("b", "a").collect(), expected_with_columns
+    )
