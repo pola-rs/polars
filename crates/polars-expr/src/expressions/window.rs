@@ -713,7 +713,11 @@ fn set_by_groups(
     }
 }
 
-fn set_numeric<T: PolarsNumericType>(ca: &ChunkedArray<T>, groups: &GroupsType, len: usize) -> Series {
+fn set_numeric<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    groups: &GroupsType,
+    len: usize,
+) -> Series {
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
     // SAFETY:

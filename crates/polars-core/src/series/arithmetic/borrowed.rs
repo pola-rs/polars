@@ -192,13 +192,12 @@ pub mod checked {
             // The ChunkedArray with the wrong dtype is dropped after this operation
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
 
-            Ok(
+            let ca: ChunkedArray<T> =
                 arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
                     (Some(l), Some(r)) => l.checked_div(&r),
                     _ => None,
-                })
-                .into_series(),
-            )
+                });
+            Ok(ca.into_series())
         }
     }
 

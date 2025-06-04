@@ -63,8 +63,8 @@ use crate::chunked_array::object::ObjectArray;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
-use crate::utils::Wrap;
 use crate::series::implementations::SeriesWrap;
+use crate::utils::Wrap;
 
 pub struct TrueT;
 pub struct FalseT;
@@ -137,7 +137,7 @@ macro_rules! impl_polars_num_datatype {
                 DataType::$variant
             }
         }
-        
+
         impl PolarsPhysicalType for $pdt {
             fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
                 Series(Arc::new(SeriesWrap(ca)))
@@ -172,7 +172,7 @@ macro_rules! impl_polars_physical_datatype {
                 $dtype
             }
         }
-        
+
         impl PolarsPhysicalType for $pdt {
             fn ca_into_series(ca: ChunkedArray<Self>) -> Series {
                 Series(Arc::new(SeriesWrap(ca)))
@@ -203,7 +203,6 @@ macro_rules! impl_polars_logical_datatype {
         }
     };
 }
-
 
 impl_polars_num_datatype!(PolarsIntegerType, UInt8Type, UInt8, u8, u8);
 impl_polars_num_datatype!(PolarsIntegerType, UInt16Type, UInt16, u16, u16);

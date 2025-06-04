@@ -377,8 +377,7 @@ unsafe fn bitwise_agg<T: PolarsNumericType>(
     f: fn(&ChunkedArray<T>) -> Option<T::Native>,
 ) -> Series
 where
-    ChunkedArray<T>:
-        ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native>,
+    ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native>,
 {
     // Prevent a rechunk for every individual group.
 
@@ -414,8 +413,7 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>:
-        ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native>,
+    ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native>,
 {
     /// # Safety
     ///
