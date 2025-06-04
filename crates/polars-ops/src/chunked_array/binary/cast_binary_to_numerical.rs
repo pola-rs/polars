@@ -83,6 +83,9 @@ where
 }
 
 /// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any un-castable value a Null.
+///
+/// # Panics
+///    Panics if `to` is not `ArrowDataType::FixedSizeList`.
 pub(super) fn try_cast_binview_to_array_primitive<T>(
     from: &BinaryViewArray,
     to: &ArrowDataType,
@@ -95,21 +98,15 @@ where
     let ArrowDataType::FixedSizeList(_, size) = to else {
         panic!("Bug, non-Array passed in.")
     };
-    let size = *size;
+    let array_width = element_size * size;
     let mut result = MutableFixedSizeListArray::new(
-        MutablePrimitiveArray::<T>::with_capacity(
-            from.len()
-                * from
-                    .get(0)
-                    .map(|bytes| bytes.len() / element_size)
-                    .unwrap_or(0),
-        ),
-        size,
+        MutablePrimitiveArray::<T>::with_capacity(from.len() * array_width),
+        *size,
     );
 
     from.iter().try_for_each(|x| {
         if let Some(x) = x {
-            if x.len() != element_size * size {
+            if x.len() != array_width {
                 result.push_null();
                 return Ok(());
             }
