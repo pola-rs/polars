@@ -17,26 +17,6 @@ pub(super) fn to_expr_irs(
         .collect()
 }
 
-pub fn to_expr_ir_ignore_alias(
-    expr: Expr,
-    arena: &mut Arena<AExpr>,
-    schema: &Schema,
-) -> PolarsResult<ExprIR> {
-    let (node, output_name) = to_aexpr_impl_materialized_lit(expr, arena, schema)?;
-    Ok(ExprIR::new(node, OutputName::Alias(output_name)))
-}
-
-pub(super) fn to_expr_irs_ignore_alias(
-    input: Vec<Expr>,
-    arena: &mut Arena<AExpr>,
-    schema: &Schema,
-) -> PolarsResult<Vec<ExprIR>> {
-    input
-        .into_iter()
-        .map(|e| to_expr_ir_ignore_alias(e, arena, schema))
-        .collect()
-}
-
 fn to_aexpr_impl_materialized_lit(
     expr: Expr,
     arena: &mut Arena<AExpr>,

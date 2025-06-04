@@ -295,6 +295,10 @@ impl ExprIR {
         let name = self.output_name();
         Ok(Field::new(name.clone(), dtype.clone()))
     }
+
+    pub fn into_inner(self) -> (Node, OutputName) {
+        (self.node, self.output_name)
+    }
 }
 
 impl AsRef<ExprIR> for ExprIR {
