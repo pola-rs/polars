@@ -974,27 +974,40 @@ impl Column {
             .vec_hash_combine(build_hasher, hashes)
     }
 
-    pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
+    fn try_fast_append(&mut self, other: &Column) -> bool {
+        if other.is_empty() && self.dtype() == other.dtype() {
+            return true;
+        }
+
+        if self.is_empty() && self.dtype() == other.dtype() {
+            *self = other.clone();
+            return true;
+        }
+
         if let (Column::Scalar(l), Column::Scalar(r)) = (&mut *self, other) {
+            // Includes dtype check.
             if l.scalar() == r.scalar() {
                 *l = l.resize(l.len() + r.len());
-                return Ok(self);
+                return true;
             }
         }
-        self.into_materialized_series()
-            .append(other.as_materialized_series())?;
+
+        false
+    }
+
+    pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
+        if !self.try_fast_append(other) {
+            self.into_materialized_series()
+                .append(other.as_materialized_series())?;
+        }
         Ok(self)
     }
 
     pub fn append_owned(&mut self, other: Column) -> PolarsResult<&mut Self> {
-        if let (Column::Scalar(l), Column::Scalar(r)) = (&mut *self, &other) {
-            if l.scalar() == r.scalar() {
-                *l = l.resize(l.len() + r.len());
-                return Ok(self);
-            }
+        if !self.try_fast_append(&other) {
+            self.into_materialized_series()
+                .append_owned(other.take_materialized_series())?;
         }
-        self.into_materialized_series()
-            .append_owned(other.take_materialized_series())?;
         Ok(self)
     }
 
@@ -1168,14 +1181,10 @@ impl Column {
     }
 
     pub fn extend(&mut self, other: &Column) -> PolarsResult<&mut Self> {
-        if let (Column::Scalar(l), Column::Scalar(r)) = (&mut *self, other) {
-            if l.scalar() == r.scalar() {
-                *l = l.resize(l.len() + r.len());
-                return Ok(self);
-            }
+        if !self.try_fast_append(other) {
+            self.into_materialized_series()
+                .extend(other.as_materialized_series())?;
         }
-        self.into_materialized_series()
-            .extend(other.as_materialized_series())?;
         Ok(self)
     }
 
