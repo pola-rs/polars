@@ -714,9 +714,13 @@ def test_rolling_mean_f32_22936() -> None:
 
 
 def test_rolling_max_23066() -> None:
-    df = pl.DataFrame({"data": [3.0, None, 14.0, 40.0, 5.0, 10.0, 0.0, 0.0, 30.0, None]})
+    df = pl.DataFrame(
+        {"data": [3.0, None, 14.0, 40.0, 5.0, 10.0, 0.0, 0.0, 30.0, None]}
+    )
     result = df.select(pl.col.data.rolling_max(window_size=4, min_samples=4))
     assert_frame_equal(
         result,
-        pl.DataFrame({"data": [None, None, None, None, None, 40.0, 40.0, 10.0, 30.0, None]})
+        pl.DataFrame(
+            {"data": [None, None, None, None, None, 40.0, 40.0, 10.0, 30.0, None]}
+        ),
     )
