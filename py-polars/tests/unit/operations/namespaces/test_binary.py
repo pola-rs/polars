@@ -304,12 +304,12 @@ def test_reinterpret_to_array_other_types(
     assert_series_equal(result, pl.Series(expected_values, dtype=dtype))
 
 
-def test_reinterpret_to_array_invalid() -> None:
-    series = pl.Series([b"short", b"justrite", None, b"waytoolong"])
+def test_reinterpret_to_array_resulting_in_nulls() -> None:
+    series = pl.Series([None, b"short", b"justrite", None, b"waytoolong"])
     as_bin = series.bin.reinterpret(dtype=pl.Array(pl.UInt32(), 2), endianness="little")
-    assert as_bin.to_list() == [None, [0x7473756A, 0x65746972], None, None]
+    assert as_bin.to_list() == [None, None, [0x7473756A, 0x65746972], None, None]
     as_bin = series.bin.reinterpret(dtype=pl.Array(pl.UInt32(), 2), endianness="big")
-    assert as_bin.to_list() == [None, [0x6A757374, 0x72697465], None, None]
+    assert as_bin.to_list() == [None, None, [0x6A757374, 0x72697465], None, None]
 
 
 def test_reinterpret_to_n_dimensional_array() -> None:
@@ -334,7 +334,7 @@ def test_reinterpret_unsupported() -> None:
     ]:
         with pytest.raises(
             InvalidOperationError,
-            match="cannot reinterpret.*Only numerical types are allowed when casting to arrays",
+            match="cannot reinterpret.*the inner type must be physically represented by a numeric type",
         ):
             series.bin.reinterpret(dtype=dtype)
 
