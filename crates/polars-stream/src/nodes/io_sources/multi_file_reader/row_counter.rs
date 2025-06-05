@@ -150,6 +150,7 @@ impl RowCounter {
     }
 
     #[inline]
+    #[expect(unused)]
     pub fn num_physical_rows_idxsize_saturating(&self) -> IdxSize {
         IdxSize::try_from(self.physical_rows).unwrap_or(IdxSize::MAX)
     }
