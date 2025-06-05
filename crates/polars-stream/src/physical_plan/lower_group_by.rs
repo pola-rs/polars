@@ -77,6 +77,7 @@ fn build_group_by_fallback(
 /// Such an expression is defined as the elementwise combination of scalar
 /// aggregations of elementwise combinations of the input columns / scalar literals.
 #[recursive]
+#[allow(clippy::too_many_arguments)]
 fn try_lower_elementwise_scalar_agg_expr(
     expr: Node,
     outer_name: Option<PlSmallStr>,
