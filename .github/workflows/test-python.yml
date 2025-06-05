@@ -119,7 +119,9 @@ jobs:
         env:
           POLARS_FORCE_EMPTY_READER_CAPABILITIES: 1
           POLARS_TIMEOUT_MS: 60000
-        run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_multiscan.py
+        run: |
+          pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_multiscan.py
+          pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_scan_row_deletion.py
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.13' || matrix.python-version == '3.13t')

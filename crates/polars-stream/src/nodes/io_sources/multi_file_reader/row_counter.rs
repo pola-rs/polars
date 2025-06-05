@@ -70,6 +70,10 @@ impl RowCounter {
         self.num_rows().unwrap();
     }
 
+    /// Performs a saturating add if there are no deleted rows, otherwise performs a checked add.
+    ///
+    /// # Panics
+    /// Panics if there are deleted rows and addition overflows.
     #[inline]
     pub fn add(self, other: Self) -> Self {
         (|| {
