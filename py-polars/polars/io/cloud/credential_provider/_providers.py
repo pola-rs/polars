@@ -147,17 +147,27 @@ class CredentialProviderAWS(CredentialProvider):
             return {}
 
         try:
-            config = self._session()._session.get_scoped_config()
+            config = self._session()._session.get_scoped_config() or {}
         except ImportError:
             return {}
 
+        verbose = polars._utils.logging.verbose()
+
+        if verbose:
+            eprint(f"[CredentialProviderAWS]: Scoped config keys: {config.keys()}")
+
+        out = {}
+
         if endpoint_url := config.get("endpoint_url"):
-            if verbose():
-                eprint(f"[CredentialProviderAWS]: Loaded endpoint_url: {endpoint_url}")
+            out["endpoint_url"] = endpoint_url
 
-            return {"endpoint_url": endpoint_url}
+        if region := (config.get("region") or config.get("sso_region")):
+            out["region"] = region
 
-        return {}
+        if verbose and (names := out.keys()):
+            eprint(f"[CredentialProviderAWS]: Loaded scoped config keys: {names}")
+
+        return out
 
     # Called from Rust
     def _can_use_as_provider(self) -> bool:
