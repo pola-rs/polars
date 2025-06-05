@@ -280,17 +280,34 @@ def test_scan_row_deletion_single_large(
 
     deletion_positions_path = write_position_deletes(positions)
 
+    script_args = [
+        str(ideal_morsel_size),
+        "1" if force_empty_capabilities else "0",
+        str(path),
+        deletion_positions_path,
+    ]
+
     # Use a process to ensure ideal morsel size is set correctly.
     out = subprocess.check_output(
         [
             sys.executable,
             "-c",
-            f"""\
+            """\
 import os
+import sys
 
+(
+    _,
+    ideal_morsel_size,
+    force_empty_capabilities,
+    data_file_path,
+    deletion_positions_path,
+) = sys.argv
+
+os.environ["POLARS_VERBOSE"] = "0"
 os.environ["POLARS_MAX_THREADS"] = "1"
-os.environ["POLARS_IDEAL_MORSEL_SIZE"] = "{ideal_morsel_size}"
-os.environ["POLARS_FORCE_EMPTY_READER_CAPABILITIES"] = "{1 if force_empty_capabilities else 0}"
+os.environ["POLARS_IDEAL_MORSEL_SIZE"] = ideal_morsel_size
+os.environ["POLARS_FORCE_EMPTY_READER_CAPABILITIES"] = force_empty_capabilities
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -305,19 +322,19 @@ full_expected_physical = [
 
 deletion_files = (
     "iceberg-position-delete",
-    {{0: ["{deletion_positions_path}"]}},
+    {0: [deletion_positions_path]},
 )
 
-q = pl.scan_parquet("{path}", _deletion_files=deletion_files).with_row_index()
+q = pl.scan_parquet(data_file_path, _deletion_files=deletion_files).with_row_index()
 
 assert_frame_equal(
     q.collect(),
-    pl.DataFrame({{"physical_index": full_expected_physical}}).with_row_index(),
+    pl.DataFrame({"physical_index": full_expected_physical}).with_row_index(),
 )
 
 assert_frame_equal(
     q.tail(999).collect(),
-    pl.DataFrame({{"physical_index": full_expected_physical}}).with_row_index(),
+    pl.DataFrame({"physical_index": full_expected_physical}).with_row_index(),
 )
 
 # Note: The negative slice is important here. Otherwise row_index does not get
@@ -326,19 +343,20 @@ for negative_offset in range(1, 49):
     assert_frame_equal(
         q.tail(negative_offset).collect(),
         pl.DataFrame(
-            {{"physical_index": full_expected_physical[-negative_offset:]}}
+            {"physical_index": full_expected_physical[-negative_offset:]}
         ).with_row_index(offset=49 - negative_offset),
     )
 
 assert_frame_equal(
     q.slice(20).collect(),
-    pl.DataFrame({{"physical_index": full_expected_physical[20:]}}).with_row_index(
+    pl.DataFrame({"physical_index": full_expected_physical[20:]}).with_row_index(
         offset=20
     ),
 )
 
 print("OK", end="")
     """,
+            *script_args,
         ],
         stderr=subprocess.STDOUT,
     )
