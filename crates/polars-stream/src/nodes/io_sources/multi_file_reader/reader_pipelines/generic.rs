@@ -492,7 +492,8 @@ impl ReaderStarter {
                 if verbose {
                     eprintln!(
                         "[ReaderStarter]: scan_source_idx: {scan_source_idx}: \
-                        skip read ({skip_read_reason}): {n_rows_in_file:?}, \
+                        skip read ({skip_read_reason}): \
+                        n_rows_in_file: {n_rows_in_file:?}, \
                         pre_slice: {pre_slice_this_file:?}"
                     )
                 }
