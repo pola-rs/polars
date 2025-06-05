@@ -653,11 +653,22 @@ impl ReaderStarter {
             // TODO:
             // * Parallelize the CSV row count
             // * NDJSON skips rows (i.e. non-zero offset) in a single-threaded manner.
-            if let Some(mut rx) = row_position_on_end_rx {
-                // Note: This should always return the physical position.
-                if let Ok(num_physical_rows) = rx.recv().await {
-                    let Some(current_row_position) = current_row_position.as_mut() else {
-                        panic!()
+            if let Some(current_row_position) = current_row_position.as_mut() {
+                let mut row_position_this_file = RowCounter::default();
+
+                #[expect(clippy::never_loop)]
+                loop {
+                    if let Some(v) = n_rows_in_file {
+                        row_position_this_file = v;
+                        break;
+                    };
+
+                    let Some(mut rx) = row_position_on_end_rx else {
+                        break;
+                    };
+
+                    let Ok(num_physical_rows) = rx.recv().await else {
+                        break;
                     };
 
                     let num_deleted_rows = external_filter_mask.map_or(0, |external_filter_mask| {
@@ -666,11 +677,11 @@ impl ReaderStarter {
                             .num_deleted_rows()
                     });
 
-                    let row_position_this_file =
-                        RowCounter::new(num_physical_rows, num_deleted_rows);
-
-                    *current_row_position = current_row_position.add(row_position_this_file);
+                    row_position_this_file = RowCounter::new(num_physical_rows, num_deleted_rows);
+                    break;
                 }
+
+                *current_row_position = current_row_position.add(row_position_this_file);
             }
 
             if !skip_read && max_concurrent_scans == 1 {
