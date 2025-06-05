@@ -4266,18 +4266,6 @@ class DataFrame:
             elif if_table_exists == "append":
                 mode = "append"
             elif if_table_exists == "truncate":
-                # Truncate table before inserting
-                conn, can_close_conn = (
-                    (_open_adbc_connection(connection), True)
-                    if isinstance(connection, str)
-                    else (connection, False)
-                )
-                with (
-                    conn if can_close_conn else contextlib.nullcontext(),
-                    conn.cursor() as cursor,
-                ):
-                    catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
-                    cursor.execute(f"TRUNCATE TABLE {unpacked_table_name}")
                 mode = "append"
             else:
                 msg = (
@@ -4297,6 +4285,10 @@ class DataFrame:
             ):
                 catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
                 n_rows: int
+
+                if if_table_exists == "truncate":
+                    cursor.execute(f"TRUNCATE TABLE {unpacked_table_name}")
+
                 if adbc_version >= (0, 7):
                     if "sqlite" in conn.adbc_get_info()["driver_name"].lower():  # type: ignore[union-attr]
                         if if_table_exists == "replace":
@@ -4367,8 +4359,7 @@ class DataFrame:
             if if_table_exists == "truncate":
                 # Truncate the table before inserting
                 with sa_object.begin() as conn:
-                    full_table_name = f"{db_schema + '.' if db_schema else ''}{unpacked_table_name}"
-                    conn.execute(f"TRUNCATE TABLE {full_table_name}")
+                    conn.execute(f"TRUNCATE TABLE {unpacked_table_name}")
                 if_table_exists = "append"
 
             # ensure conversion to pandas uses the pyarrow extension array option
