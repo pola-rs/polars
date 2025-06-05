@@ -209,7 +209,7 @@ impl<T: PolarsCategoricalType> LogicalType for NewCategoricalChunked<T> {
 
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         if &self.dtype == dtype {
-            return Ok(self.into_series());
+            return Ok(self.clone().into_series());
         }
 
         match dtype {
@@ -246,7 +246,7 @@ impl<T: PolarsCategoricalType> LogicalType for NewCategoricalChunked<T> {
                 });
                 
                 if options.is_strict() && self.null_count() != ret.null_count() {
-                    handle_casting_failures(&self.into_series(), &ret)?;
+                    handle_casting_failures(&self.clone().into_series(), &ret)?;
                 }
                 
                 Ok(ret)

@@ -218,7 +218,7 @@ macro_rules! impl_polars_datatype {
 }
 
 macro_rules! impl_polars_categorical_datatype {
-    ($pdt:ident, $phys:ty, $native:ty) => {
+    ($pdt:ident, $phys:ty, $native:ty, $phys_variant:ident) => {
         impl_polars_datatype!(
             $pdt,
             unimplemented!(),
@@ -230,7 +230,7 @@ macro_rules! impl_polars_categorical_datatype {
             FalseT
         );
 
-        impl PolarsCategoricalKind for $pdt {
+        unsafe impl PolarsCategoricalType for $pdt {
             type Native = $native;
             type PolarsPhysical = $phys;
 
