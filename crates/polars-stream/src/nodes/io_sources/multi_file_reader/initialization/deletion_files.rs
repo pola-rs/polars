@@ -313,7 +313,7 @@ impl ExternalFilterMask {
     pub fn slice(&self, offset: usize, len: usize) -> Self {
         match self {
             Self::IcebergPositionDelete { mask } => {
-                // This is not a valid index, it's also a sentinel value from `RowCounter::MAX`.
+                // This is not a valid offset, it's also a sentinel value from `RowCounter::MAX`.
                 assert_ne!(offset, usize::MAX);
                 let offset = offset.min(mask.len());
                 let len = len.min(mask.len() - offset);

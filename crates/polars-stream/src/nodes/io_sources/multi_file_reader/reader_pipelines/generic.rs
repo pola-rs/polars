@@ -523,6 +523,7 @@ impl ReaderStarter {
 
             let mut skip_read = false;
 
+            // `fast_n_rows_in_file()` we know the exact row count here already.
             if let Some(n_rows_in_file) = n_rows_in_file.as_mut() {
                 if let Some(external_filter_mask) = external_filter_mask.as_ref() {
                     unsafe {
