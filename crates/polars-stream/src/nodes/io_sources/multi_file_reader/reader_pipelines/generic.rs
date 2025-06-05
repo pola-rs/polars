@@ -513,16 +513,6 @@ impl ReaderStarter {
                 ..extra_ops.clone()
             };
 
-            let (row_position_on_end_tx, row_position_on_end_rx) = if n_rows_in_file.is_none()
-                && extra_ops.has_row_index_or_slice()
-                && n_sources - scan_source_idx > 1
-            {
-                let (tx, rx) = connector::connector();
-                (Some(tx), Some(rx))
-            } else {
-                (None, None)
-            };
-
             let mut skip_read = false;
 
             // `fast_n_rows_in_file()` we know the exact row count here already.
@@ -557,6 +547,16 @@ impl ReaderStarter {
                     skip_read = true;
                 }
             }
+
+            let (row_position_on_end_tx, row_position_on_end_rx) = if n_rows_in_file.is_none()
+                && extra_ops.has_row_index_or_slice()
+                && n_sources - scan_source_idx > 1
+            {
+                let (tx, rx) = connector::connector();
+                (Some(tx), Some(rx))
+            } else {
+                (None, None)
+            };
 
             if skip_read {
                 if started_reader_tx.is_closed() {
