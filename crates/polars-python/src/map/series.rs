@@ -505,7 +505,6 @@ impl<'py, T> ApplyLambda<'py> for ChunkedArray<T>
 where
     T: PyPolarsNumericType,
     T::Native: IntoPyObject<'py> + FromPyObject<'py>,
-    ChunkedArray<T>: IntoSeries,
 {
     fn apply_lambda_unknown(
         &self,

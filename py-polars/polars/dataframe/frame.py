@@ -4675,8 +4675,8 @@ class DataFrame:
         if credential_provider_builder and (
             provider := credential_provider_builder.build_credential_provider()
         ):
-            credential_provider_creds = _get_credentials_from_provider_expiry_aware(
-                provider
+            credential_provider_creds = (
+                _get_credentials_from_provider_expiry_aware(provider) or {}
             )
 
         # We aren't calling into polars-native write functions so we just update

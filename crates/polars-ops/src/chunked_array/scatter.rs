@@ -93,10 +93,7 @@ unsafe fn scatter_impl<V, T: NativeType>(
     }
 }
 
-impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T>
-where
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
     fn scatter<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
     where
         V: IntoIterator<Item = Option<T::Native>>,

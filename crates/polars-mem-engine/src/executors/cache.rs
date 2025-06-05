@@ -54,6 +54,10 @@ pub struct CachePrefiller {
 }
 
 impl Executor for CachePrefiller {
+    fn is_cache_prefiller(&self) -> bool {
+        true
+    }
+
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         if state.verbose() {
             eprintln!("PREFILL CACHES")

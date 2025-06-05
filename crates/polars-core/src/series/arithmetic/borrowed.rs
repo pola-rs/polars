@@ -45,11 +45,7 @@ impl<T: NumOpsDispatchInner> NumOpsDispatch for ChunkedArray<T> {
     }
 }
 
-impl<T> NumOpsDispatchInner for T
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsNumericType> NumOpsDispatchInner for T {
     fn subtract(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
         polars_ensure!(
             lhs.dtype() == rhs.dtype(),
@@ -187,7 +183,6 @@ pub mod checked {
     where
         T: PolarsIntegerType,
         T::Native: CheckedDiv<Output = T::Native> + CheckedDiv<Output = T::Native> + Zero + One,
-        ChunkedArray<T>: IntoSeries,
     {
         fn checked_div(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
             // SAFETY:
@@ -197,13 +192,12 @@ pub mod checked {
             // The ChunkedArray with the wrong dtype is dropped after this operation
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
 
-            Ok(
+            let ca: ChunkedArray<T> =
                 arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
                     (Some(l), Some(r)) => l.checked_div(&r),
                     _ => None,
-                })
-                .into_series(),
-            )
+                });
+            Ok(ca.into_series())
         }
     }
 
@@ -811,11 +805,7 @@ where
 /// We cannot override the left hand side behaviour. So we create a trait LhsNumOps.
 /// This allows for 1.add(&Series)
 ///
-impl<T> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsNumericType> ChunkedArray<T> {
     /// Apply lhs - self
     #[must_use]
     pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Self {

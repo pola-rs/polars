@@ -11,7 +11,6 @@ impl AExpr {
 
         match self {
             Column(_) | Literal(_) | Len => {},
-            Alias(e, _) => container.extend([*e]),
             BinaryExpr { left, op: _, right } => {
                 container.extend([*right, *left]);
             },
@@ -78,7 +77,6 @@ impl AExpr {
         use AExpr::*;
         let input = match &mut self {
             Column(_) | Literal(_) | Len => return self,
-            Alias(input, _) => input,
             Cast { expr, .. } => expr,
             Explode { expr, .. } => expr,
             BinaryExpr { left, right, .. } => {

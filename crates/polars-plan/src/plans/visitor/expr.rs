@@ -164,7 +164,6 @@ impl AExpr {
     fn is_equal_node(&self, other: &Self) -> bool {
         use AExpr::*;
         match (self, other) {
-            (Alias(_, l), Alias(_, r)) => l == r,
             (Column(l), Column(r)) => l == r,
             (Literal(l), Literal(r)) => l == r,
             (Window { options: l, .. }, Window { options: r, .. }) => l == r,

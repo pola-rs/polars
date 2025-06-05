@@ -22,7 +22,6 @@ pub struct WindowExpr {
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortOptions)>,
     pub(crate) apply_columns: Vec<PlSmallStr>,
-    pub(crate) out_name: Option<PlSmallStr>,
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
@@ -525,16 +524,10 @@ impl PhysicalExpr for WindowExpr {
                 if ac.is_literal() {
                     out = out.new_from_index(0, df.height())
                 }
-                if let Some(name) = &self.out_name {
-                    out.rename(name.clone());
-                }
                 Ok(out.into_column())
             },
             Explode => {
-                let mut out = ac.aggregated().explode(false)?;
-                if let Some(name) = &self.out_name {
-                    out.rename(name.clone());
-                }
+                let out = ac.aggregated().explode(false)?;
                 Ok(out.into_column())
             },
             Map => {
@@ -638,12 +631,7 @@ impl PhysicalExpr for WindowExpr {
                             get_join_tuples()?
                         };
 
-                        let mut out = materialize_column(&join_opt_ids, &out_column);
-
-                        if let Some(name) = &self.out_name {
-                            out.rename(name.clone());
-                        }
-
+                        let out = materialize_column(&join_opt_ids, &out_column);
                         Ok(out.into_column())
                     },
                 }
@@ -713,11 +701,11 @@ fn set_by_groups(
     }
 }
 
-fn set_numeric<T>(ca: &ChunkedArray<T>, groups: &GroupsType, len: usize) -> Series
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+fn set_numeric<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    groups: &GroupsType,
+    len: usize,
+) -> Series {
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
     // SAFETY:
@@ -763,7 +751,7 @@ where
 
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
-        ChunkedArray::new_vec(ca.name().clone(), values).into_series()
+        ChunkedArray::<T>::new_vec(ca.name().clone(), values).into_series()
     } else {
         // We don't use a mutable bitmap as bits will have race conditions!
         // A single byte might alias if we write from single threads.

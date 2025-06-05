@@ -528,6 +528,7 @@ fn to_graph_rec<'a>(
                         pred,
                         ctx.expr_arena,
                         output_schema,
+                        hive_parts.as_ref().map(|hp| hp.df().schema().as_ref()),
                         &mut ctx.expr_conversion_state,
                         true, // create_skip_batch_predicate
                         file_reader_builder

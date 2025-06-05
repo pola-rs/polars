@@ -314,10 +314,7 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
     }
 }
 
-impl<T: PolarsNumericType> DatetimeInfer<T>
-where
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsNumericType> DatetimeInfer<T> {
     fn coerce_string(&mut self, ca: &StringChunked) -> Series {
         let chunks = ca.downcast_iter().map(|array| {
             let iter = array
@@ -325,7 +322,7 @@ where
                 .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
             PrimitiveArray::from_trusted_len_iter(iter)
         });
-        ChunkedArray::from_chunk_iter(ca.name().clone(), chunks)
+        ChunkedArray::<T>::from_chunk_iter(ca.name().clone(), chunks)
             .into_series()
             .cast(&self.logical_type)
             .unwrap()

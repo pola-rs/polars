@@ -14,9 +14,7 @@ def test_is_null_followed_by_all() -> None:
         pl.col("val").is_null().all()
     )
 
-    assert (
-        r'[[(col("val").count()) == (col("val").null_count())]]' in result_lf.explain()
-    )
+    assert r'[[(col("val").len()) == (col("val").null_count())]]' in result_lf.explain()
     assert "is_null" not in result_lf
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -82,9 +80,7 @@ def test_is_not_null_followed_by_any() -> None:
         pl.col("val").is_not_null().any()
     )
 
-    assert (
-        r'[[(col("val").null_count()) < (col("val").count())]]' in result_lf.explain()
-    )
+    assert r'[[(col("val").null_count()) < (col("val").len())]]' in result_lf.explain()
     assert "is_not_null" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -137,9 +133,7 @@ def test_is_not_null_followed_by_sum() -> None:
         pl.col("val").is_not_null().sum()
     )
 
-    assert (
-        r'[[(col("val").count()) - (col("val").null_count())]]' in result_lf.explain()
-    )
+    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
     assert "is_not_null" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -168,9 +162,7 @@ def test_drop_nulls_followed_by_len() -> None:
         pl.col("val").drop_nulls().len()
     )
 
-    assert (
-        r'[[(col("val").count()) - (col("val").null_count())]]' in result_lf.explain()
-    )
+    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
     assert "drop_nulls" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -194,9 +186,7 @@ def test_drop_nulls_followed_by_count() -> None:
         pl.col("val").drop_nulls().count()
     )
 
-    assert (
-        r'[[(col("val").count()) - (col("val").null_count())]]' in result_lf.explain()
-    )
+    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
     assert "drop_nulls" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -388,3 +378,19 @@ def test_order_observe_group_by() -> None:
 
     plan = q.explain()
     assert "AGGREGATE[maintain_order: true]" in plan
+
+
+def test_fused_correct_name() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+
+    lf = df.lazy().select(
+        (pl.col.x.alias("a") * pl.col.x.alias("b")) + pl.col.x.alias("c")
+    )
+
+    no_opts = lf.collect(optimizations=pl.QueryOptFlags.none())
+    opts = lf.collect()
+    assert_frame_equal(
+        no_opts,
+        opts,
+    )
+    assert_frame_equal(opts, pl.DataFrame({"a": [2, 6, 12]}))

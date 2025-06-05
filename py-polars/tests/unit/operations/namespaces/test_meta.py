@@ -14,17 +14,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_meta_pop_and_cmp() -> None:
-    e = pl.col("foo").alias("bar")
-
-    first = e.meta.pop()[0]
-    assert first.meta == pl.col("foo")
-    assert first.meta != pl.col("bar")
-
-    assert first.meta.eq(pl.col("foo"))
-    assert first.meta.ne(pl.col("bar"))
-
-
 def test_root_and_output_names() -> None:
     e = pl.col("foo") * pl.col("bar")
     assert e.meta.output_name() == "foo"

@@ -386,7 +386,7 @@ impl ExprIdentifierVisitor<'_> {
                     _ => REFUSE_ALLOW_MEMBER,
                 }
             },
-            AExpr::Column(_) | AExpr::Alias(_, _) => REFUSE_ALLOW_MEMBER,
+            AExpr::Column(_) => REFUSE_ALLOW_MEMBER,
             AExpr::Len => {
                 if self.is_group_by {
                     REFUSE_NO_MEMBER

@@ -147,7 +147,6 @@ pub enum AExpr {
         expr: Node,
         skip_empty: bool,
     },
-    Alias(Node, PlSmallStr),
     Column(PlSmallStr),
     Literal(LiteralValue),
     BinaryExpr {

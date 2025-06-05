@@ -178,11 +178,11 @@ impl<'a> IRDisplay<'a> {
         use IR::*;
 
         let ir_node = self.root();
-        let schema = ir_node.schema(self.lp.lp_arena);
-        let schema = schema.as_ref();
+        let output_schema = ir_node.schema(self.lp.lp_arena);
+        let output_schema = output_schema.as_ref();
         match ir_node {
             Union { inputs, options } => {
-                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, schema, indent)?;
+                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 let name = if let Some(slice) = options.slice {
                     format!("SLICED UNION: {slice:?}")
                 } else {
@@ -202,7 +202,7 @@ impl<'a> IRDisplay<'a> {
             },
             HConcat { inputs, .. } => {
                 let sub_sub_indent = sub_indent + INDENT_INCREMENT;
-                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, schema, indent)?;
+                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 for (i, plan) in inputs.iter().enumerate() {
                     write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
                     self.with_root(*plan)._format(f, sub_sub_indent)?;
@@ -210,7 +210,7 @@ impl<'a> IRDisplay<'a> {
                 write!(f, "\n{:indent$}END HCONCAT", "")
             },
             GroupBy { input, .. } => {
-                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, schema, indent)?;
+                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 write!(f, "\n{:sub_indent$}FROM", "")?;
                 self.with_root(*input)._format(f, sub_indent)?;
                 Ok(())
@@ -252,12 +252,12 @@ impl<'a> IRDisplay<'a> {
                 if let Some(streaming_lp) = function.to_streaming_lp() {
                     IRDisplay::new_streaming(streaming_lp)._format(f, indent)
                 } else {
-                    write_ir_non_recursive(f, ir_node, self.lp.expr_arena, schema, indent)?;
+                    write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                     self.with_root(*input)._format(f, sub_indent)
                 }
             },
             SinkMultiple { inputs } => {
-                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, schema, indent)?;
+                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
 
                 // 3 levels of indentation
                 // - 0 => SINK_MULTIPLE ... END SINK_MULTIPLE
@@ -276,7 +276,7 @@ impl<'a> IRDisplay<'a> {
                 input_right,
                 key: _,
             } => {
-                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, schema, indent)?;
+                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 write!(f, ":")?;
 
                 write!(f, "\n{:indent$}LEFT PLAN:", "")?;
@@ -286,7 +286,7 @@ impl<'a> IRDisplay<'a> {
                 write!(f, "\n{:indent$}END MERGE_SORTED", "")
             },
             ir_node => {
-                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, schema, indent)?;
+                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 for input in ir_node.get_inputs().iter() {
                     self.with_root(*input)._format(f, sub_indent)?;
                 }
@@ -410,10 +410,6 @@ impl Display for ExprIRDisplay<'_> {
                     write!(f, "{expr}.explode()")
                 }
             },
-            Alias(expr, name) => {
-                let expr = self.with_root(expr);
-                write!(f, "{expr}.alias(\"{name}\")")
-            },
             Column(name) => write!(f, "col(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
             BinaryExpr { left, op, right } => {
@@ -492,10 +488,21 @@ impl Display for ExprIRDisplay<'_> {
                     NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
                     Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),
                     AggGroups(expr) => write!(f, "{}.groups()", self.with_root(expr)),
-                    Count(expr, _) => write!(f, "{}.count()", self.with_root(expr)),
+                    Count(expr, false) => write!(f, "{}.count()", self.with_root(expr)),
+                    Count(expr, true) => write!(f, "{}.len()", self.with_root(expr)),
                     Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
                     Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
-                    Quantile { expr, .. } => write!(f, "{}.quantile()", self.with_root(expr)),
+                    Quantile {
+                        expr,
+                        quantile,
+                        method,
+                    } => write!(
+                        f,
+                        "{}.quantile({}, interpolation='{}')",
+                        self.with_root(expr),
+                        self.with_root(quantile),
+                        <&'static str>::from(method),
+                    ),
                 }
             },
             Cast {
@@ -574,7 +581,11 @@ impl Display for ExprIRDisplay<'_> {
             OutputName::ColumnLhs(_) => {},
             #[cfg(feature = "dtype-struct")]
             OutputName::Field(_) => {},
-            OutputName::Alias(name) => write!(f, r#".alias("{name}")"#)?,
+            OutputName::Alias(name) => {
+                if root.to_name(self.expr_arena) != name {
+                    write!(f, r#".alias("{name}")"#)?;
+                }
+            },
         }
 
         Ok(())
@@ -673,7 +684,7 @@ pub fn write_ir_non_recursive(
     f: &mut dyn fmt::Write,
     ir: &IR,
     expr_arena: &Arena<AExpr>,
-    schema: &Schema,
+    output_schema: &Schema,
     indent: usize,
 ) -> fmt::Result {
     match ir {
@@ -782,7 +793,7 @@ pub fn write_ir_non_recursive(
         },
         IR::SimpleProjection { input: _, columns } => {
             let num_columns = columns.as_ref().len();
-            let total_columns = schema.len();
+            let total_columns = output_schema.len();
 
             let columns = ColumnsDisplay(columns.as_ref());
             write!(

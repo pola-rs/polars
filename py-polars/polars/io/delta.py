@@ -318,8 +318,8 @@ def scan_delta(
     if credential_provider_builder and (
         provider := credential_provider_builder.build_credential_provider()
     ):
-        credential_provider_creds = _get_credentials_from_provider_expiry_aware(
-            provider
+        credential_provider_creds = (
+            _get_credentials_from_provider_expiry_aware(provider) or {}
         )
 
     dl_tbl = _get_delta_lake_table(

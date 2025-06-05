@@ -19,7 +19,6 @@ pub struct SingleKeyHashHotGrouper<T: PolarsDataType> {
 
 impl<K, T: PolarsDataType> SingleKeyHashHotGrouper<T>
 where
-    ChunkedArray<T>: IntoSeries,
     for<'a> T: PolarsDataType<Physical<'a> = K>,
     K: Default + TotalHash + TotalEq + Send + Sync + 'static,
 {
@@ -86,8 +85,7 @@ where
 
 impl<K, T> HotGrouper for SingleKeyHashHotGrouper<T>
 where
-    ChunkedArray<T>: IntoSeries,
-    for<'a> T: PolarsDataType<Physical<'a> = K>,
+    for<'a> T: PolarsPhysicalType<Physical<'a> = K>,
     K: Default + TotalHash + TotalEq + Clone + Send + Sync + 'static,
 {
     fn new_empty(&self, max_groups: usize) -> Box<dyn HotGrouper> {

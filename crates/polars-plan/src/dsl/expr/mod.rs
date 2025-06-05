@@ -421,10 +421,10 @@ impl Expr {
         ctxt: Context,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<Field> {
-        let root = to_aexpr(self.clone(), expr_arena, schema)?;
-        expr_arena
-            .get(root)
-            .to_field_and_validate(schema, ctxt, expr_arena)
+        let expr = to_expr_ir(self.clone(), expr_arena, schema)?;
+        let (node, output_name) = expr.into_inner();
+        let dtype = expr_arena.get(node).to_dtype(schema, ctxt, expr_arena)?;
+        Ok(Field::new(output_name.into_inner().unwrap(), dtype))
     }
 
     /// Extract a constant usize from an expression.

@@ -88,7 +88,6 @@ impl<P, T> Reducer for NumFirstLastReducer<P, T>
 where
     P: Policy,
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
 {
     type Dtype = T;
     type Value = (Option<T::Native>, u64);

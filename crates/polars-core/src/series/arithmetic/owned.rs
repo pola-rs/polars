@@ -29,7 +29,6 @@ fn apply_operation_mut<T, F>(mut lhs: Series, mut rhs: Series, op: F) -> Series
 where
     T: PolarsNumericType,
     F: Fn(ChunkedArray<T>, ChunkedArray<T>) -> ChunkedArray<T> + Copy,
-    ChunkedArray<T>: IntoSeries,
 {
     let lhs_ca: &mut ChunkedArray<T> = lhs._get_inner_mut().as_mut();
     let rhs_ca: &mut ChunkedArray<T> = rhs._get_inner_mut().as_mut();

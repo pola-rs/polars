@@ -137,7 +137,6 @@ fn new_primitive<'py, T>(
 ) -> PyResult<PySeries>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
     T::Native: FromPyObject<'py>,
 {
     let len = values.len()?;

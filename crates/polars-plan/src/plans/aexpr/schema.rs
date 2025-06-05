@@ -2,6 +2,7 @@
 use polars_core::chunked_array::arithmetic::{
     _get_decimal_scale_add_sub, _get_decimal_scale_div, _get_decimal_scale_mul,
 };
+use polars_utils::format_pl_smallstr;
 use recursive::recursive;
 
 use super::*;
@@ -162,10 +163,6 @@ impl AExpr {
 
                 Ok(field)
             },
-            Alias(expr, name) => Ok(Field::new(
-                name.clone(),
-                ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?.dtype,
-            )),
             Column(name) => ctx
                 .schema
                 .get_field(name)
@@ -174,7 +171,7 @@ impl AExpr {
                 *agg_list = false;
                 Ok(match sv {
                     LiteralValue::Series(s) => s.field().into_owned(),
-                    _ => Field::new(sv.output_name().clone(), sv.get_datatype()),
+                    _ => Field::new(sv.output_column_name().clone(), sv.get_datatype()),
                 })
             },
             BinaryExpr { left, right, op } => {
@@ -422,6 +419,60 @@ impl AExpr {
 
                 ctx.arena.get(*input).to_field_impl(ctx, agg_list)
             },
+        }
+    }
+
+    pub fn to_name(&self, expr_arena: &Arena<AExpr>) -> PlSmallStr {
+        use AExpr::*;
+        use IRAggExpr::*;
+        match self {
+            Len => crate::constants::get_len_name(),
+            Window {
+                function: expr,
+                options: _,
+                partition_by: _,
+                order_by: _,
+            }
+            | BinaryExpr { left: expr, .. }
+            | Explode { expr, .. }
+            | Sort { expr, .. }
+            | Gather { expr, .. }
+            | SortBy { expr, .. }
+            | Filter { input: expr, .. }
+            | Cast { expr, .. }
+            | Ternary { truthy: expr, .. }
+            | Eval { expr, .. }
+            | Slice { input: expr, .. }
+            | Agg(Max { input: expr, .. })
+            | Agg(Min { input: expr, .. })
+            | Agg(First(expr))
+            | Agg(Last(expr))
+            | Agg(Sum(expr))
+            | Agg(Median(expr))
+            | Agg(Mean(expr))
+            | Agg(Implode(expr))
+            | Agg(Std(expr, _))
+            | Agg(Var(expr, _))
+            | Agg(NUnique(expr))
+            | Agg(Count(expr, _))
+            | Agg(AggGroups(expr))
+            | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
+            AnonymousFunction { input, options, .. } => {
+                if input.is_empty() {
+                    options.fmt_str.into()
+                } else {
+                    input[0].output_name().clone()
+                }
+            },
+            Function {
+                input, function, ..
+            } => match function.output_name().and_then(|v| v.into_inner()) {
+                Some(name) => name.clone(),
+                None if input.is_empty() => format_pl_smallstr!("{}", &function),
+                None => input[0].output_name().clone(),
+            },
+            Column(name) => name.clone(),
+            Literal(lv) => lv.output_column_name().clone(),
         }
     }
 }

@@ -79,7 +79,6 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
 where
-    ChunkedArray<K>: IntoSeries,
     K::Native: Hash + DirtyHash,
 {
     pub(crate) fn new(
@@ -352,7 +351,6 @@ where
 impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
 where
     K::Native: Hash + Eq + Debug + Hash + DirtyHash,
-    ChunkedArray<K>: IntoSeries,
 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         if self.ooc_state.ooc {
