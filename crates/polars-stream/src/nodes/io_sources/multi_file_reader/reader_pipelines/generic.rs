@@ -648,6 +648,7 @@ impl ReaderStarter {
                         break;
                     };
 
+                    // Note, can be None on the last scan source.
                     let Some(mut rx) = row_position_on_end_rx else {
                         break;
                     };
