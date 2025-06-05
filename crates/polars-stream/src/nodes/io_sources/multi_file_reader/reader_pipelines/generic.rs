@@ -513,17 +513,21 @@ impl ReaderStarter {
                 ..extra_ops.clone()
             };
 
-            let (mut row_position_on_end_tx, row_position_on_end_rx) =
-                if extra_ops.has_row_index_or_slice() && n_sources - scan_source_idx > 1 {
-                    let (tx, rx) = connector::connector();
-                    (Some(tx), Some(rx))
-                } else {
-                    (None, None)
-                };
+            let (row_position_on_end_tx, row_position_on_end_rx) = if n_rows_in_file.is_none()
+                && extra_ops.has_row_index_or_slice()
+                && n_sources - scan_source_idx > 1
+            {
+                let (tx, rx) = connector::connector();
+                (Some(tx), Some(rx))
+            } else {
+                (None, None)
+            };
 
             let mut skip_read = false;
 
             // `fast_n_rows_in_file()` we know the exact row count here already.
+            // After this point, if n_rows_in_file is `Some`, it should contain the exact physical
+            // and deleted row counts.
             if let Some(n_rows_in_file) = n_rows_in_file.as_mut() {
                 if let Some(external_filter_mask) = external_filter_mask.as_ref() {
                     unsafe {
@@ -542,25 +546,6 @@ impl ReaderStarter {
 
                     skip_read = true;
                 }
-
-                if let Some(mut row_position_on_end_tx) = row_position_on_end_tx.take() {
-                    // Notes:
-                    // * This callback expects the physical position.
-                    // * We do not apply the slice limit to this count - the definition of the
-                    //   callback does not require us to apply the slice limit, and we also cannot
-                    //   properly do so at this point as there can be row deletions.
-                    _ = row_position_on_end_tx
-                        .try_send(n_rows_in_file.num_physical_rows_idxsize_saturating());
-                }
-            }
-
-            if skip_read && row_position_on_end_tx.is_some() {
-                if cfg!(debug_assertions) {
-                    // Callback should have been resolved.
-                    panic!()
-                }
-
-                skip_read = false;
             }
 
             if skip_read {
