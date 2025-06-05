@@ -4265,10 +4265,24 @@ class DataFrame:
                 mode = "replace"
             elif if_table_exists == "append":
                 mode = "append"
+            elif if_table_exists == "truncate":
+                # Truncate table before inserting
+                conn, can_close_conn = (
+                    (_open_adbc_connection(connection), True)
+                    if isinstance(connection, str)
+                    else (connection, False)
+                )
+                with (
+                    conn if can_close_conn else contextlib.nullcontext(),
+                    conn.cursor() as cursor,
+                ):
+                    catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
+                    cursor.execute(f"TRUNCATE TABLE {unpacked_table_name}")
+                mode = "append"
             else:
                 msg = (
                     f"unexpected value for `if_table_exists`: {if_table_exists!r}"
-                    f"\n\nChoose one of {{'fail', 'replace', 'append'}}"
+                    f"\n\nChoose one of {{'fail', 'replace', 'append', 'truncate'}}"
                 )
                 raise ValueError(msg)
 
@@ -4349,6 +4363,13 @@ class DataFrame:
             if catalog:
                 msg = f"Unexpected three-part table name; provide the database/catalog ({catalog!r}) on the connection URI"
                 raise ValueError(msg)
+
+            if if_table_exists == "truncate":
+                # Truncate the table before inserting
+                with sa_object.begin() as conn:
+                    full_table_name = f"{db_schema + '.' if db_schema else ''}{unpacked_table_name}"
+                    conn.execute(f"TRUNCATE TABLE {full_table_name}")
+                if_table_exists = "append"
 
             # ensure conversion to pandas uses the pyarrow extension array option
             # so that we can make use of the sql/db export *without* copying data
