@@ -22,6 +22,7 @@ impl From<RecordBatch> for DataFrame {
                         vec![arr],
                         field.dtype(),
                         field.metadata.as_deref(),
+                        None,
                     )
                 }
                 .unwrap()
