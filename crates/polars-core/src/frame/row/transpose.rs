@@ -182,15 +182,11 @@ unsafe fn add_value<T: NumericNative>(
 
 // This just fills a pre-allocated mutable series vector, which may have a name column.
 // Nothing is returned and the actual DataFrame is constructed above.
-pub(super) fn numeric_transpose<T>(
+pub(super) fn numeric_transpose<T: PolarsNumericType>(
     cols: &[Column],
     names_out: &[PlSmallStr],
     cols_t: &mut Vec<Column>,
-) where
-    T: PolarsNumericType,
-    //S: AsRef<str>,
-    ChunkedArray<T>: IntoSeries,
-{
+) {
     let new_width = cols[0].len();
     let new_height = cols.len();
 
@@ -281,7 +277,7 @@ pub(super) fn numeric_transpose<T>(
                 values.into(),
                 validity,
             );
-            ChunkedArray::with_chunk(name.clone(), arr).into_column()
+            ChunkedArray::<T>::with_chunk(name.clone(), arr).into_column()
         });
     POOL.install(|| cols_t.par_extend(par_iter));
 }

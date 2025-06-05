@@ -11,11 +11,7 @@ pub trait AggList {
     unsafe fn agg_list(&self, _groups: &GroupsType) -> Series;
 }
 
-impl<T> AggList for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-{
+impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         let ca = self.rechunk();
 
