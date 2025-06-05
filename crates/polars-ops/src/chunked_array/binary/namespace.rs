@@ -210,15 +210,14 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                     .to_arrow(CompatLevel::newest())
                     .to_physical_type();
                 polars_ensure!(
-                    dtype.byte_size().is_some() && leaf_physical_type.is_primitive(),
+                    dtype.inner_dtype().map(|dt| dt.to_physical().is_primitive_numeric()) == Some(true),
                     InvalidOperation:
-                    "cannot reinterpret from binary dtype to {:?}. Only numerical types are allowed when casting to arrays.",
+                    "cannot reinterpret from binary dtype to {:?}. When casting to arrays, the inner type must be physically represented by a numeric type.",
                     dtype,
                 );
                 let PhysicalType::Primitive(primitive_type) = leaf_physical_type else {
                     panic!("Shouldn't ever be reached.")
                 };
-                let element_size = dtype.leaf_dtype().byte_size().unwrap();
 
                 let result: Vec<ArrayRef> = with_match_primitive_type!(primitive_type, |$T| {
                     unsafe {
@@ -226,8 +225,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                             cast_binview_to_array_primitive_dyn::<$T>(
                                 &**chunk,
                                 &arrow_data_type,
-                                is_little_endian,
-                                element_size
+                                is_little_endian
                             )
                         }).collect::<Result<Vec<ArrayRef>, _>>()
                     }

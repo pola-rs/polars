@@ -90,23 +90,23 @@ pub(super) fn try_cast_binview_to_array_primitive<T>(
     from: &BinaryViewArray,
     to: &ArrowDataType,
     is_little_endian: bool,
-    element_size: usize,
 ) -> PolarsResult<FixedSizeListArray>
 where
     T: Cast + NativeType,
 {
-    let ArrowDataType::FixedSizeList(_, size) = to else {
+    let ArrowDataType::FixedSizeList(_, array_size) = to else {
         panic!("Bug, non-Array passed in.")
     };
-    let array_width = element_size * size;
+    let element_size = std::mem::size_of::<T>();
+    let array_size = *array_size;
     let mut result = MutableFixedSizeListArray::new(
-        MutablePrimitiveArray::<T>::with_capacity(from.len() * array_width),
-        *size,
+        MutablePrimitiveArray::<T>::with_capacity(from.len() * array_size),
+        array_size,
     );
 
     from.iter().try_for_each(|x| {
         if let Some(x) = x {
-            if x.len() != array_width {
+            if x.len() != element_size * array_size {
                 result.push_null();
                 return Ok(());
             }
@@ -131,7 +131,6 @@ pub(super) fn cast_binview_to_array_primitive_dyn<T>(
     from: &dyn Array,
     to: &ArrowDataType,
     is_little_endian: bool,
-    element_size: usize,
 ) -> PolarsResult<Box<dyn Array>>
 where
     T: Cast + NativeType,
@@ -142,6 +141,5 @@ where
         from,
         to,
         is_little_endian,
-        element_size,
     )?))
 }
