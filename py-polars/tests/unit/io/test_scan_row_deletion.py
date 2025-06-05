@@ -256,6 +256,7 @@ def test_scan_row_deletions(
     )
 
 
+@pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.parametrize("ideal_morsel_size", [999, 50, 33])
 @pytest.mark.parametrize("force_empty_capabilities", [True, False])
