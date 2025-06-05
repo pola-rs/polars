@@ -46,6 +46,7 @@ if TYPE_CHECKING:
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+
 def read_csv(
     source: str | Path | IO[str] | IO[bytes] | bytes,
     *,
@@ -279,6 +280,11 @@ def read_csv(
 
     projection, columns = parse_columns_arg(columns)
     storage_options = storage_options or {}
+
+    if isinstance(source, (str, Path)):
+        path = Path(source)
+        if path.is_file() and path.stat().st_size == 0:
+            return pl.DataFrame()
 
     if columns and not has_header:
         for column in columns:

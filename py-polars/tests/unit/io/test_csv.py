@@ -4,12 +4,14 @@ import gzip
 import io
 import os
 import sys
+import tempfile
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
 from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, TypedDict
+from pathlib import Path
 
 import numpy as np
 import pyarrow as pa
@@ -32,6 +34,18 @@ if TYPE_CHECKING:
 @pytest.fixture
 def foods_file_path(io_files_path: Path) -> Path:
     return io_files_path / "foods1.csv"
+
+def test_read_csv_returns_empty_df_on_empty_file():
+    # Create a temporary empty CSV file
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as tmp:
+        empty_path = Path(tmp.name)
+
+    # Call the read_csv function
+    df = pl.read_csv(empty_path)
+
+    # Assertions
+    assert isinstance(df, pl.DataFrame), "Expected result to be a polars DataFrame"
+    assert df.shape == (0, 0), f"Expected empty DataFrame, got shape {df.shape}"
 
 
 def test_quoted_date() -> None:
