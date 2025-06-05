@@ -489,7 +489,13 @@ class CredentialProviderGCP(CredentialProvider):
 
 def _get_credentials_from_provider_expiry_aware(
     credential_provider: CredentialProviderFunction,
-) -> dict[str, str]:
+) -> dict[str, str] | None:
+    if (
+        isinstance(credential_provider, CredentialProviderAWS)
+        and not credential_provider._can_use_as_provider()
+    ):
+        return None
+
     creds, opt_expiry = credential_provider()
 
     if (
