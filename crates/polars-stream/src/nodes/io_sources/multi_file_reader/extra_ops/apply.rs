@@ -11,7 +11,6 @@ use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::ScanSource;
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
 use super::ExtraOperations;
@@ -288,12 +287,9 @@ impl ApplyExtraOps {
             );
 
             let offset = ri.offset.saturating_add(
-                IdxSize::try_from(
-                    current_row_position
-                        .add(local_offset_adjustment)
-                        .num_rows()?,
-                )
-                .unwrap_or(IdxSize::MAX),
+                current_row_position
+                    .add(local_offset_adjustment)
+                    .num_rows_idxsize_saturating()?,
             );
 
             unsafe {
