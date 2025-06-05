@@ -536,11 +536,21 @@ impl ReaderStarter {
                 }
 
                 // Potentially skip reading the file entirely if all of the rows are deleted.
-                if n_rows_in_file.num_rows()? == 0 {
+                if n_rows_in_file.num_rows()? == 0
+                    || pre_slice_this_file.as_ref().is_some_and(|phys_slice| {
+                        phys_slice
+                            .slice
+                            .clone()
+                            .restrict_to_bounds(n_rows_in_file.num_physical_rows())
+                            .len()
+                            == 0
+                    })
+                {
                     if verbose {
                         eprintln!(
                             "[ReaderStarter]: scan_source_idx: {scan_source_idx}: \
-                            skip read (0 rows): {n_rows_in_file:?}"
+                            skip read (0 rows): {n_rows_in_file:?}, \"
+                            pre_slice: {pre_slice_this_file:?}"
                         )
                     }
 
