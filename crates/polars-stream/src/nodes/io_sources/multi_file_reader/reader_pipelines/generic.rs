@@ -430,17 +430,75 @@ impl ReaderStarter {
             let pre_slice_this_file: Option<PhysicalSlice> = pre_slice_this_file
                 .map(|pre_slice| PhysicalSlice::new(pre_slice, external_filter_mask.as_ref()));
 
-            if skip_files_mask
+            let row_index_this_file = {
+                let current_row_position = if let Some(current_row_position) = current_row_position
+                {
+                    current_row_position.num_rows_idxsize_saturating()?
+                } else {
+                    IdxSize::MAX
+                };
+
+                extra_ops.row_index.clone().map(|mut ri| {
+                    ri.offset = ri.offset.saturating_add(current_row_position);
+                    ri
+                })
+            };
+
+            let extra_ops_this_file = ExtraOperations {
+                row_index: row_index_this_file,
+                pre_slice: pre_slice_this_file
+                    .as_ref()
+                    .map(|phys_slice: &PhysicalSlice| phys_slice.slice.clone()),
+                // Other operations don't need updating per file
+                ..extra_ops.clone()
+            };
+
+            // &str that holds the reason
+            let mut skip_read_reason: Option<&'static str> = skip_files_mask
                 .as_ref()
                 .is_some_and(|x| x.get_bit(scan_source_idx))
-            {
-                // If this is not the case then the reader does not need to be sent here.
-                debug_assert!(extra_ops.has_row_index_or_slice());
+                .then_some("skip_files_mask");
 
+            if skip_read_reason.is_some() {
+                // If this is not the case then the reader does not need to be sent here.
+                debug_assert!(extra_ops.has_row_index_or_slice())
+            }
+
+            // `fast_n_rows_in_file()` we know the exact row count here already.
+            // After this point, if n_rows_in_file is `Some`, it should contain the exact physical
+            // and deleted row counts.
+            if let Some(n_rows_in_file) = n_rows_in_file.as_mut() {
+                if let Some(external_filter_mask) = external_filter_mask.as_ref() {
+                    unsafe {
+                        n_rows_in_file.set_deleted_rows(external_filter_mask.num_deleted_rows())
+                    }
+                }
+
+                if n_rows_in_file.num_rows()? == 0 {
+                    skip_read_reason = Some("0 rows")
+                } else if pre_slice_this_file.as_ref().is_some_and(|phys_slice| {
+                    phys_slice
+                        .slice
+                        .clone()
+                        .restrict_to_bounds(n_rows_in_file.num_physical_rows())
+                        .len()
+                        == 0
+                }) {
+                    skip_read_reason = Some("0 rows after slice")
+                }
+            }
+
+            if let Some(skip_read_reason) = skip_read_reason {
                 if verbose {
                     eprintln!(
-                        "[ReaderStarter]: scan_source_idx: {scan_source_idx}: skip read (skip_files_mask)"
+                        "[ReaderStarter]: scan_source_idx: {scan_source_idx}: \
+                        skip read ({skip_read_reason}): {n_rows_in_file:?}, \"
+                        pre_slice: {pre_slice_this_file:?}"
                     )
+                }
+
+                if started_reader_tx.is_closed() {
+                    break;
                 }
 
                 // We are tracking the row position so we need the row count from this file even if it's skipped.
@@ -490,64 +548,6 @@ impl ReaderStarter {
                 continue;
             }
 
-            let row_index_this_file = {
-                let current_row_position = if let Some(current_row_position) = current_row_position
-                {
-                    current_row_position.num_rows_idxsize_saturating()?
-                } else {
-                    IdxSize::MAX
-                };
-
-                extra_ops.row_index.clone().map(|mut ri| {
-                    ri.offset = ri.offset.saturating_add(current_row_position);
-                    ri
-                })
-            };
-
-            let extra_ops_this_file = ExtraOperations {
-                row_index: row_index_this_file,
-                pre_slice: pre_slice_this_file
-                    .as_ref()
-                    .map(|phys_slice: &PhysicalSlice| phys_slice.slice.clone()),
-                // Other operations don't need updating per file
-                ..extra_ops.clone()
-            };
-
-            let mut skip_read = false;
-
-            // `fast_n_rows_in_file()` we know the exact row count here already.
-            // After this point, if n_rows_in_file is `Some`, it should contain the exact physical
-            // and deleted row counts.
-            if let Some(n_rows_in_file) = n_rows_in_file.as_mut() {
-                if let Some(external_filter_mask) = external_filter_mask.as_ref() {
-                    unsafe {
-                        n_rows_in_file.set_deleted_rows(external_filter_mask.num_deleted_rows())
-                    }
-                }
-
-                // Potentially skip reading the file entirely if all of the rows are deleted.
-                if n_rows_in_file.num_rows()? == 0
-                    || pre_slice_this_file.as_ref().is_some_and(|phys_slice| {
-                        phys_slice
-                            .slice
-                            .clone()
-                            .restrict_to_bounds(n_rows_in_file.num_physical_rows())
-                            .len()
-                            == 0
-                    })
-                {
-                    if verbose {
-                        eprintln!(
-                            "[ReaderStarter]: scan_source_idx: {scan_source_idx}: \
-                            skip read (0 rows): {n_rows_in_file:?}, \"
-                            pre_slice: {pre_slice_this_file:?}"
-                        )
-                    }
-
-                    skip_read = true;
-                }
-            }
-
             let (row_position_on_end_tx, row_position_on_end_rx) = if n_rows_in_file.is_none()
                 && extra_ops.has_row_index_or_slice()
                 && n_sources - scan_source_idx > 1
@@ -558,84 +558,77 @@ impl ReaderStarter {
                 (None, None)
             };
 
-            if skip_read {
-                if started_reader_tx.is_closed() {
-                    break;
-                }
+            let callbacks = FileReaderCallbacks {
+                row_position_on_end_tx,
+                ..Default::default()
+            };
+
+            let mut extra_ops_post = extra_ops_this_file;
+
+            let (row_index, pre_slice, predicate, external_filter_mask) = ReaderOperationPushdown {
+                reader_capabilities,
+                external_filter_mask: external_filter_mask.clone(),
+                extra_ops_post: &mut extra_ops_post,
+            }
+            .push_operations();
+
+            // Position of the first morsel sent by the reader.
+            let first_morsel_position = if pre_slice.is_some() {
+                // Pre-slice was pushed to reader.
+                let Some(PhysicalSlice {
+                    slice: _,
+                    slice_start_position,
+                }) = pre_slice_this_file
+                else {
+                    panic!("{pre_slice_this_file:?}")
+                };
+
+                slice_start_position
             } else {
-                let callbacks = FileReaderCallbacks {
-                    row_position_on_end_tx,
-                    ..Default::default()
-                };
+                RowCounter::default()
+            };
 
-                let mut extra_ops_post = extra_ops_this_file;
-
-                let (row_index, pre_slice, predicate, external_filter_mask) =
-                    ReaderOperationPushdown {
-                        reader_capabilities,
-                        external_filter_mask: external_filter_mask.clone(),
-                        extra_ops_post: &mut extra_ops_post,
-                    }
-                    .push_operations();
-
-                // Position of the first morsel sent by the reader.
-                let first_morsel_position = if pre_slice.is_some() {
-                    // Pre-slice was pushed to reader.
-                    let Some(PhysicalSlice {
-                        slice: _,
-                        slice_start_position,
-                    }) = pre_slice_this_file
-                    else {
-                        panic!("{pre_slice_this_file:?}")
-                    };
-
-                    slice_start_position
-                } else {
-                    RowCounter::default()
-                };
-
-                if verbose {
-                    eprintln!(
-                        "[ReaderStarter]: scan_source_idx: {scan_source_idx}: \
+            if verbose {
+                eprintln!(
+                    "[ReaderStarter]: scan_source_idx: {scan_source_idx}: \
                         pre_slice_to_reader: {pre_slice:?}, \
                         external_filter_mask: {}",
-                        ExternalFilterMask::log_display(external_filter_mask.as_ref()),
-                    )
-                }
-
-                let begin_read_args = BeginReadArgs {
-                    projected_schema: constant_args.projected_file_schema.clone(),
-                    row_index,
-                    pre_slice,
-                    predicate,
-                    cast_columns_policy: extra_ops_post.cast_columns_policy.clone(),
-                    num_pipelines,
-                    callbacks,
-                };
-
-                let start_args_this_file = StartReaderArgsPerFile {
-                    scan_source,
-                    scan_source_idx,
-                    reader,
-                    begin_read_args,
-                    extra_ops_post,
-                    row_deletions,
-                    first_morsel_position,
-                };
-
-                let reader_start_task_handle = AbortOnDropHandle::new(async_executor::spawn(
-                    TaskPriority::Low,
-                    start_reader_impl(constant_args.clone(), start_args_this_file),
-                ));
-
-                if started_reader_tx
-                    .send((reader_start_task_handle, wait_group.token()))
-                    .await
-                    .is_err()
-                {
-                    break;
-                };
+                    ExternalFilterMask::log_display(external_filter_mask.as_ref()),
+                )
             }
+
+            let begin_read_args = BeginReadArgs {
+                projected_schema: constant_args.projected_file_schema.clone(),
+                row_index,
+                pre_slice,
+                predicate,
+                cast_columns_policy: extra_ops_post.cast_columns_policy.clone(),
+                num_pipelines,
+                callbacks,
+            };
+
+            let start_args_this_file = StartReaderArgsPerFile {
+                scan_source,
+                scan_source_idx,
+                reader,
+                begin_read_args,
+                extra_ops_post,
+                row_deletions,
+                first_morsel_position,
+            };
+
+            let reader_start_task_handle = AbortOnDropHandle::new(async_executor::spawn(
+                TaskPriority::Low,
+                start_reader_impl(constant_args.clone(), start_args_this_file),
+            ));
+
+            if started_reader_tx
+                .send((reader_start_task_handle, wait_group.token()))
+                .await
+                .is_err()
+            {
+                break;
+            };
 
             // If we have row index or slice, we must wait for the row position callback before
             // we can start the next reader. This will be very fast for e.g. Parquet / IPC, but
@@ -680,7 +673,7 @@ impl ReaderStarter {
                 *current_row_position = current_row_position.add(row_position_this_file);
             }
 
-            if !skip_read && max_concurrent_scans == 1 {
+            if skip_read_reason.is_none() && max_concurrent_scans == 1 {
                 if verbose {
                     eprintln!("[ReaderStarter]: max_concurrent_scans is 1, waiting..")
                 }
