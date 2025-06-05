@@ -472,6 +472,7 @@ fn create_physical_plan_impl(
                         &predicate,
                         expr_arena,
                         output_schema.as_ref().unwrap_or(&file_info.schema),
+                        None, // hive_schema
                         &mut expr_conversion_state,
                         create_skip_batch_predicate,
                         false,
@@ -898,12 +899,90 @@ pub fn create_scan_predicate(
     predicate: &ExprIR,
     expr_arena: &mut Arena<AExpr>,
     schema: &Arc<Schema>,
+    hive_schema: Option<&Schema>,
     state: &mut ExpressionConversionState,
     create_skip_batch_predicate: bool,
     create_column_predicates: bool,
 ) -> PolarsResult<ScanPredicate> {
+    let mut predicate = predicate.clone();
+
+    let mut hive_predicate = None;
+    let mut hive_predicate_is_full_predicate = false;
+
+    #[expect(clippy::never_loop)]
+    loop {
+        let Some(hive_schema) = hive_schema else {
+            break;
+        };
+
+        let mut hive_predicate_parts = vec![];
+        let mut non_hive_predicate_parts = vec![];
+
+        for predicate_part in MintermIter::new(predicate.node(), expr_arena) {
+            if aexpr_to_leaf_names_iter(predicate_part, expr_arena)
+                .all(|name| hive_schema.contains(&name))
+            {
+                hive_predicate_parts.push(predicate_part)
+            } else {
+                non_hive_predicate_parts.push(predicate_part)
+            }
+        }
+
+        if hive_predicate_parts.is_empty() {
+            break;
+        }
+
+        if non_hive_predicate_parts.is_empty() {
+            hive_predicate_is_full_predicate = true;
+            break;
+        }
+
+        {
+            let mut iter = hive_predicate_parts.into_iter();
+            let mut node = iter.next().unwrap();
+
+            for next_node in iter {
+                node = expr_arena.add(AExpr::BinaryExpr {
+                    left: node,
+                    op: Operator::And,
+                    right: next_node,
+                });
+            }
+
+            hive_predicate = Some(create_physical_expr(
+                &ExprIR::from_node(node, expr_arena),
+                Context::Default,
+                expr_arena,
+                schema,
+                state,
+            )?)
+        }
+
+        {
+            let mut iter = non_hive_predicate_parts.into_iter();
+            let mut node = iter.next().unwrap();
+
+            for next_node in iter {
+                node = expr_arena.add(AExpr::BinaryExpr {
+                    left: node,
+                    op: Operator::And,
+                    right: next_node,
+                });
+            }
+
+            predicate = ExprIR::from_node(node, expr_arena);
+        }
+
+        break;
+    }
+
     let phys_predicate =
-        create_physical_expr(predicate, Context::Default, expr_arena, schema, state)?;
+        create_physical_expr(&predicate, Context::Default, expr_arena, schema, state)?;
+
+    if hive_predicate_is_full_predicate {
+        hive_predicate = Some(phys_predicate.clone());
+    }
+
     let live_columns = Arc::new(PlIndexSet::from_iter(aexpr_to_leaf_names_iter(
         predicate.node(),
         expr_arena,
@@ -995,5 +1074,7 @@ pub fn create_scan_predicate(
         live_columns,
         skip_batch_predicate,
         column_predicates,
+        hive_predicate,
+        hive_predicate_is_full_predicate,
     })
 }
