@@ -4300,7 +4300,6 @@ class DataFrame:
                         if if_table_exists == "truncate":
                             # note: sqlite doesn't support 'truncate'
                             cursor.execute(f"DELETE FROM {table_name}")
-                            cursor.execute(f"DELETE FROM sqlite_sequence WHERE name = '{table_name}'")
 
                         catalog, db_schema = db_schema, None
 
