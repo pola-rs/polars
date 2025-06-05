@@ -36,8 +36,7 @@ pub enum ApplyExtraOps {
         scan_source: ScanSource,
         scan_source_idx: usize,
         hive_parts: Option<Arc<HivePartitionsDf>>,
-        /// E.g. Iceberg deletion files. This should begin from the physical row position of the
-        /// first morsel sent by the reader.
+        /// E.g. Iceberg deletion files.
         external_filter_mask: Option<ExternalFilterMask>,
     },
 
@@ -275,7 +274,7 @@ impl ApplyExtraOps {
         if let Some(ri) = row_index {
             // Adjustment needed for `current_row_position`.
             let local_offset_adjustment = RowCounter::new(
-                // Number of physical rows skipped
+                // Number of physical rows skipped in the current function
                 local_slice_offset,
                 // How many of those skipped rows were deleted
                 external_filter_mask.as_ref().map_or(0, |mask| {

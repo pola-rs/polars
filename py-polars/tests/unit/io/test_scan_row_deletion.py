@@ -346,7 +346,7 @@ print("OK", end="")
 
 
 @pytest.mark.write_disk
-def test_scan_row_deletion_file_read_skipped_if_all_rows_deleted(
+def test_scan_row_deletion_skips_file_with_all_rows_deleted(
     tmp_path: Path,
     write_position_deletes: WritePositionDeletes,
 ) -> None:

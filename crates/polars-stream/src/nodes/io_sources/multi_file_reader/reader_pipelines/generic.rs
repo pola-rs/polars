@@ -414,8 +414,6 @@ impl ReaderStarter {
             // Note: We `.await` here for the row deletions to be fully loaded.
             //       For this reason it's important that we already spawn background tasks to fully
             //       load them at the reader pre-initialization stage.
-            //
-            // * `pre_slice` is modified at this point to physical offsets (i.e. apply before deleting rows).
             let (external_filter_mask, row_deletions) = if let Some(row_deletions) = row_deletions {
                 let external_filter_mask = row_deletions.into_external_filter_mask().await?;
 
@@ -427,6 +425,8 @@ impl ReaderStarter {
                 (None, row_deletions)
             };
 
+            // * This translates the `pre_slice` to physical offsets (i.e. apply before deleting rows).
+            //   The slice remains the same if there are no row deletions.
             let pre_slice_this_file: Option<PhysicalSlice> = pre_slice_this_file
                 .map(|pre_slice| PhysicalSlice::new(pre_slice, external_filter_mask.as_ref()));
 
@@ -443,6 +443,7 @@ impl ReaderStarter {
                     )
                 }
 
+                // We are tracking the row position so we need the row count from this file even if it's skipped.
                 if extra_ops.has_row_index_or_slice() {
                     let Some(current_row_position) = current_row_position.as_mut() else {
                         panic!()
@@ -567,15 +568,12 @@ impl ReaderStarter {
                 }
             } else {
                 let callbacks = FileReaderCallbacks {
-                    // Note: If a reader does not support this we can also have the post apply pipeline do
-                    // this callback for us (but it will be slightly slower).
                     row_position_on_end_tx,
                     ..Default::default()
                 };
 
                 let mut extra_ops_post = extra_ops_this_file;
 
-                // Note: The `external_filter_mask` returned may be re-written.
                 let (row_index, pre_slice, predicate, external_filter_mask) =
                     ReaderOperationPushdown {
                         reader_capabilities,
@@ -878,15 +876,13 @@ async fn start_reader_impl(
     // Note: We assume that if we have an Initialized ops_applier, then the first_morsel is Some(_).
 
     if verbose {
-        if verbose {
-            eprintln!(
-                "start_reader_impl: \
+        eprintln!(
+            "start_reader_impl: \
                 scan_source_idx: {scan_source_idx}, \
                 ApplyExtraOps::{}, \
                 first_morsel_position: {first_morsel_position:?}",
-                ops_applier.variant_name(),
-            );
-        }
+            ops_applier.variant_name(),
+        );
     }
 
     let (bridge_recv_port, post_apply_pipeline_handle) = match ops_applier {
@@ -987,6 +983,7 @@ impl AttachReaderToBridge {
 struct ReaderOperationPushdown<'a> {
     reader_capabilities: ReaderCapabilities,
     external_filter_mask: Option<ExternalFilterMask>,
+    /// Operations will be `take()`en out when pushed.
     extra_ops_post: &'a mut ExtraOperations,
 }
 
@@ -1007,6 +1004,8 @@ impl ReaderOperationPushdown<'_> {
 
         let unsupported_external_filter_mask = external_filter_mask.is_some()
             && !reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK);
+
+        // Note, the order in which we do this is important here.
 
         let row_index = if !unsupported_external_filter_mask
             && reader_capabilities.contains(ReaderCapabilities::ROW_INDEX)
@@ -1059,8 +1058,8 @@ impl ReaderOperationPushdown<'_> {
 #[derive(Debug)]
 struct PhysicalSlice {
     slice: Slice,
-    /// This is a separate counter that records the number of physical and deleted rows. The `num_rows()`
-    /// of this counter is guaranteed to be equal to `slice.offset`.
+    /// Counter that records the number of physical and deleted rows that make up the slice offset,
+    /// and `slice_start_position.num_rows() == slice.offset`
     slice_start_position: RowCounter,
 }
 
