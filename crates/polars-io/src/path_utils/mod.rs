@@ -143,7 +143,7 @@ pub fn get_glob_start_idx(path: &[u8]) -> Option<usize> {
 /// Returns `true` if `expanded_paths` were expanded from a single directory
 pub fn expanded_from_single_directory(addrs: &[PlPath], expanded_addrs: &[PlPath]) -> bool {
     // Single input that isn't a glob
-    addrs.len() == 1 && get_glob_start_idx(addrs[0].as_ref().offset_path().as_bytes()).is_none()
+    addrs.len() == 1 && get_glob_start_idx(addrs[0].as_ref().strip_scheme().as_bytes()).is_none()
     // And isn't a file
     && {
         (
