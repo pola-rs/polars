@@ -262,6 +262,7 @@ macro_rules! impl_trivial_total {
 
 // We can't do a blanket impl because Rust complains f32 might implement
 // Ord / Eq someday.
+impl_trivial_total!(());
 impl_trivial_total!(bool);
 impl_trivial_total!(u8);
 impl_trivial_total!(u16);
