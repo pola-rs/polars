@@ -427,8 +427,37 @@ impl ReaderStarter {
 
             // * This translates the `pre_slice` to physical offsets (i.e. apply before deleting rows).
             //   The slice remains the same if there are no row deletions.
-            let pre_slice_this_file: Option<PhysicalSlice> = pre_slice_this_file
-                .map(|pre_slice| PhysicalSlice::new(pre_slice, external_filter_mask.as_ref()));
+            let pre_slice_this_file: Option<PhysicalSlice> =
+                pre_slice_this_file.map(|pre_slice| match pre_slice {
+                    Slice::Positive { .. } => {
+                        PhysicalSlice::new(pre_slice, external_filter_mask.as_ref())
+                    },
+
+                    // This is hit here for NDJSON single file negative slice
+                    Slice::Negative { .. } => {
+                        if external_filter_mask.is_some() {
+                            unimplemented!(
+                                "{pre_slice:?} {}",
+                                ExternalFilterMask::log_display(external_filter_mask.as_ref())
+                            )
+                        }
+
+                        assert!(
+                            (extra_ops.row_index.is_none()
+                                || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
+                                && (external_filter_mask.is_none()
+                                    || reader_capabilities
+                                        .contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
+                        );
+
+                        PhysicalSlice {
+                            slice: pre_slice,
+                            // Note, this is not the correct starting position. The assertion above
+                            // should ensure this value is not used in post-apply.
+                            slice_start_position: RowCounter::default(),
+                        }
+                    },
+                });
 
             let row_index_this_file = {
                 let current_row_position = if let Some(current_row_position) = current_row_position
@@ -1078,20 +1107,10 @@ struct PhysicalSlice {
 }
 
 impl PhysicalSlice {
+    /// # Panics
+    /// Panics if `slice` is [`Slice::Negative`]
     fn new(slice: Slice, external_filter_mask: Option<&ExternalFilterMask>) -> Self {
-        if let Slice::Negative { .. } = slice {
-            if external_filter_mask.is_some() {
-                unimplemented!(
-                    "{slice:?} {}",
-                    ExternalFilterMask::log_display(external_filter_mask)
-                )
-            }
-
-            PhysicalSlice {
-                slice,
-                slice_start_position: RowCounter::default(),
-            }
-        } else if let Some(external_filter_mask) = external_filter_mask {
+        if let Some(external_filter_mask) = external_filter_mask {
             let requested_offset = slice.positive_offset();
 
             let physical_slice = external_filter_mask.calc_physical_slice(slice);
