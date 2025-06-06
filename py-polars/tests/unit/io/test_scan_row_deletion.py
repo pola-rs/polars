@@ -280,7 +280,7 @@ def test_scan_row_deletion_single_large(
 
     deletion_positions_path = write_position_deletes(positions)
 
-    script_args = [
+    script_args: list[str] = [
         str(ideal_morsel_size),
         "1" if force_empty_capabilities else "0",
         str(path),

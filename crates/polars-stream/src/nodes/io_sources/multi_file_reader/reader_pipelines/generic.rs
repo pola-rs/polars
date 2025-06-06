@@ -1080,7 +1080,17 @@ struct PhysicalSlice {
 impl PhysicalSlice {
     fn new(slice: Slice, external_filter_mask: Option<&ExternalFilterMask>) -> Self {
         if let Slice::Negative { .. } = slice {
-            Self::_new_negative(slice, external_filter_mask)
+            if external_filter_mask.is_some() {
+                unimplemented!(
+                    "{slice:?} {}",
+                    ExternalFilterMask::log_display(external_filter_mask)
+                )
+            }
+
+            PhysicalSlice {
+                slice,
+                slice_start_position: RowCounter::default(),
+            }
         } else if let Some(external_filter_mask) = external_filter_mask {
             let requested_offset = slice.positive_offset();
 
@@ -1102,21 +1112,6 @@ impl PhysicalSlice {
                 slice,
                 slice_start_position,
             }
-        }
-    }
-
-    #[cold]
-    fn _new_negative(slice: Slice, external_filter_mask: Option<&ExternalFilterMask>) -> Self {
-        if external_filter_mask.is_some() {
-            unimplemented!(
-                "{slice:?} {}",
-                ExternalFilterMask::log_display(external_filter_mask)
-            )
-        }
-
-        PhysicalSlice {
-            slice,
-            slice_start_position: RowCounter::default(),
         }
     }
 }
