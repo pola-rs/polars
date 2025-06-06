@@ -40,6 +40,7 @@ pub mod series;
 #[cfg(feature = "sql")]
 pub mod sql;
 pub mod timeout;
+pub mod testing;
 pub mod utils;
 
 use crate::conversion::Wrap;
