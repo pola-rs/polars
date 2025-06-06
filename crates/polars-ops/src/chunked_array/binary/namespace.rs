@@ -197,10 +197,10 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             },
             #[cfg(feature = "dtype-array")]
             PhysicalType::FixedSizeList => {
-                if let Some(ref shape) = dtype.get_shape() {
-                    polars_ensure!(
-                        shape.len() == 1,
-                        InvalidOperation: "to cast to a nested Array, first cast to a linear Array, and then use reshape()"
+                if matches!(dtype.inner_dtype(), Some(DataType::Array(..))) {
+                    polars_bail!(
+                        InvalidOperation:
+                        "to cast to a nested Array, first cast to a linear Array, and then use reshape()"
                     );
                 }
                 let arrow_data_type = dtype.to_arrow(CompatLevel::newest());
