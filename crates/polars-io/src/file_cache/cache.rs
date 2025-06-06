@@ -177,12 +177,7 @@ impl FileCache {
                     .get(p.to_str().unwrap())
                     .map(Arc::clone)
             },
-            PlPathRef::Cloud(p) => self
-                .entries
-                .read()
-                .unwrap()
-                .get(p.to_string().as_str())
-                .map(Arc::clone),
+            PlPathRef::Cloud(p) => self.entries.read().unwrap().get(p.uri()).map(Arc::clone),
         }
     }
 }
