@@ -14,7 +14,6 @@ use crate::prelude::*;
 const INDENT_INCREMENT: usize = 2;
 
 pub struct IRDisplay<'a> {
-    is_streaming: bool,
     lp: IRPlanRef<'a>,
 }
 
@@ -119,19 +118,7 @@ fn write_scan(
 
 impl<'a> IRDisplay<'a> {
     pub fn new(lp: IRPlanRef<'a>) -> Self {
-        if let Some(streaming_lp) = lp.extract_streaming_plan() {
-            return Self::new_streaming(streaming_lp);
-        }
-
         Self {
-            is_streaming: false,
-            lp,
-        }
-    }
-
-    fn new_streaming(lp: IRPlanRef<'a>) -> Self {
-        Self {
-            is_streaming: true,
             lp,
         }
     }
@@ -142,7 +129,6 @@ impl<'a> IRDisplay<'a> {
 
     fn with_root(&self, root: Node) -> Self {
         Self {
-            is_streaming: false,
             lp: self.lp.with_root(root),
         }
     }
@@ -164,15 +150,9 @@ impl<'a> IRDisplay<'a> {
 
     #[recursive]
     fn _format(&self, f: &mut Formatter, indent: usize) -> fmt::Result {
-        let indent = if self.is_streaming {
-            writeln!(f, "{:indent$}STREAMING:", "")?;
-            indent + INDENT_INCREMENT
-        } else {
-            if indent != 0 {
-                writeln!(f)?;
-            }
-            indent
-        };
+        if indent != 0 {
+            writeln!(f)?;
+        }
 
         let sub_indent = indent + INDENT_INCREMENT;
         use IR::*;
@@ -247,14 +227,10 @@ impl<'a> IRDisplay<'a> {
                 }
             },
             MapFunction {
-                input, function, ..
+                input, ..
             } => {
-                if let Some(streaming_lp) = function.to_streaming_lp() {
-                    IRDisplay::new_streaming(streaming_lp)._format(f, indent)
-                } else {
-                    write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
-                    self.with_root(*input)._format(f, sub_indent)
-                }
+                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
+                self.with_root(*input)._format(f, sub_indent)
             },
             SinkMultiple { inputs } => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;

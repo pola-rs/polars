@@ -604,11 +604,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     streamable: _,
                     fmt_str: _,
                 } => return Err(PyNotImplementedError::new_err("opaque rust mapfunction")),
-                FunctionIR::Pipeline {
-                    function: _,
-                    schema: _,
-                    original: _,
-                } => return Err(PyNotImplementedError::new_err("pipeline mapfunction")),
                 FunctionIR::Unnest { columns } => (
                     "unnest",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),

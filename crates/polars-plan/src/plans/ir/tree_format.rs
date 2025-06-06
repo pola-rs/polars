@@ -106,21 +106,8 @@ fn multiline_expression(expr: &str) -> std::borrow::Cow<'_, str> {
 
 impl<'a> TreeFmtNode<'a> {
     pub fn root_logical_plan(lp: IRPlanRef<'a>) -> Self {
-        if let Some(streaming_lp) = lp.extract_streaming_plan() {
-            return Self::streaming_root_logical_plan(streaming_lp);
-        }
-
         Self {
             h: None,
-            content: TreeFmtNodeContent::LogicalPlan(lp.lp_top),
-
-            lp,
-        }
-    }
-
-    fn streaming_root_logical_plan(lp: IRPlanRef<'a>) -> Self {
-        Self {
-            h: Some("Streaming".to_string()),
             content: TreeFmtNodeContent::LogicalPlan(lp.lp_top),
 
             lp,
@@ -348,17 +335,10 @@ impl<'a> TreeFmtNode<'a> {
                         vec![self.lp_node(None, *input)],
                     ),
                     MapFunction { input, function } => {
-                        if let Some(streaming_lp) = function.to_streaming_lp() {
-                            ND(
-                                String::default(),
-                                vec![TreeFmtNode::streaming_root_logical_plan(streaming_lp)],
-                            )
-                        } else {
-                            ND(
-                                wh(h, &format!("{function}")),
-                                vec![self.lp_node(None, *input)],
-                            )
-                        }
+                        ND(
+                            wh(h, &format!("{function}")),
+                            vec![self.lp_node(None, *input)],
+                        )
                     },
                     ExtContext { input, .. } => {
                         ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
