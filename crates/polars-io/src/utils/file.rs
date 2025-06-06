@@ -72,7 +72,7 @@ impl Writeable {
                     }
 
                     if p.scheme() == CloudScheme::File {
-                        create_file(Path::new(p.offset_path()))?;
+                        create_file(Path::new(p.strip_scheme()))?;
                     }
 
                     let writer = crate::pl_async::get_runtime().block_in_place_on(

@@ -57,7 +57,7 @@ impl PlCloudPath {
         }
     }
 
-    pub fn offset_path(&self) -> &str {
+    pub fn strip_scheme(&self) -> &str {
         &self.uri[self.scheme.as_str().len() + 3..]
     }
 }
@@ -78,8 +78,8 @@ impl PlCloudPathRef<'_> {
         self.uri
     }
 
-    pub fn offset_path(&self) -> &str {
-        &self.uri[self.scheme.as_str().len() + 3..]
+    pub fn strip_scheme(&self) -> &str {
+        &self.uri[self.scheme.as_str().len() + "://".len()..]
     }
 }
 
@@ -238,10 +238,10 @@ impl<'a> PlPathRef<'a> {
         }
     }
 
-    pub fn offset_path(&self) -> &str {
+    pub fn strip_scheme(&self) -> &str {
         match self {
             Self::Local(p) => p.to_str().unwrap(),
-            Self::Cloud(p) => p.offset_path(),
+            Self::Cloud(p) => p.strip_scheme(),
         }
     }
 
@@ -267,7 +267,7 @@ impl<'a> PlPathRef<'a> {
     }
 
     pub fn extension(&self) -> Option<&str> {
-        let offset_path = self.offset_path();
+        let offset_path = self.strip_scheme();
         let separator = match self {
             Self::Local(_) => std::path::MAIN_SEPARATOR,
             Self::Cloud(_) => '/',
