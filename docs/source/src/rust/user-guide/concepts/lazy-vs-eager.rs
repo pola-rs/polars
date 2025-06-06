@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:eager]
 
     // --8<-- [start:lazy]
-    let q = LazyCsvReader::new("docs/assets/data/iris.csv")
+    let q = LazyCsvReader::new(PlPath::new("docs/assets/data/iris.csv"))
         .with_has_header(true)
         .finish()?
         .filter(col("sepal_length").gt(lit(5)))
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:lazy]
 
     // --8<-- [start:explain]
-    let q = LazyCsvReader::new("docs/assets/data/iris.csv")
+    let q = LazyCsvReader::new(PlPath::new("docs/assets/data/iris.csv"))
         .with_has_header(true)
         .finish()?
         .filter(col("sepal_length").gt(lit(5)))

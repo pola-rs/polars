@@ -27,6 +27,7 @@ pub mod mem;
 pub mod min_max;
 pub mod parma;
 pub mod pl_str;
+pub mod plpath;
 pub mod priority;
 pub mod regex_cache;
 pub mod select;

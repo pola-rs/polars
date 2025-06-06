@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[macro_export]
@@ -150,6 +151,13 @@ impl From<String> for PlSmallStr {
     #[inline(always)]
     fn from(value: String) -> Self {
         Self::from_string(value)
+    }
+}
+
+impl From<Cow<'_, str>> for PlSmallStr {
+    #[inline(always)]
+    fn from(value: Cow<str>) -> Self {
+        Self(Inner::from(value))
     }
 }
 

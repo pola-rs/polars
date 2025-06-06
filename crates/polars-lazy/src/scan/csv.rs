@@ -1,5 +1,3 @@
-use std::path::{Path, PathBuf};
-
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
@@ -10,6 +8,7 @@ use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::get_reader_bytes;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::mmap::MemSlice;
+use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::prelude::*;
@@ -36,7 +35,7 @@ impl LazyCsvReader {
         self
     }
 
-    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
+    pub fn new_paths(paths: Arc<[PlPath]>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -51,8 +50,8 @@ impl LazyCsvReader {
         }
     }
 
-    pub fn new(path: impl AsRef<Path>) -> Self {
-        Self::new_with_sources(ScanSources::Paths([path.as_ref().to_path_buf()].into()))
+    pub fn new(path: PlPath) -> Self {
+        Self::new_with_sources(ScanSources::Paths([path].into()))
     }
 
     /// Skip this number of rows after the header location.
@@ -282,7 +281,9 @@ impl LazyCsvReader {
                     polars_bail!(ComputeError: "no paths specified for this reader");
                 };
 
-                infer_schema(MemSlice::from_file(&polars_utils::open_file(path)?)?)?
+                infer_schema(MemSlice::from_file(&polars_utils::open_file(
+                    path.as_ref().as_local_path().unwrap(),
+                )?)?)?
             },
             ScanSources::Files(files) => {
                 let Some(file) = files.first() else {

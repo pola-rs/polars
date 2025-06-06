@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{df}");
 
     // --8<-- [start:scan]
-    let lf = LazyCsvReader::new("docs/assets/data/path.csv")
+    let lf = LazyCsvReader::new(PlPath::new("docs/assets/data/path.csv"))
         .finish()
         .unwrap();
     // --8<-- [end:scan]

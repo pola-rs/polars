@@ -1,6 +1,7 @@
 use polars_io::RowIndex;
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
+use polars_utils::plpath::PlPath;
 use polars_utils::slice_enum::Slice;
 
 use super::*;
@@ -365,7 +366,7 @@ fn test_parquet_globbing() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let glob = "../../examples/datasets/foods*.parquet";
     let df = LazyFrame::scan_parquet(
-        glob,
+        PlPath::new(glob),
         ScanArgsParquet {
             n_rows: None,
             cache: true,
@@ -392,7 +393,9 @@ fn test_scan_parquet_limit_9001() {
         rechunk: true,
         ..Default::default()
     };
-    let q = LazyFrame::scan_parquet(path, args).unwrap().limit(3);
+    let q = LazyFrame::scan_parquet(PlPath::new(path), args)
+        .unwrap()
+        .limit(3);
     let IRPlan {
         lp_top, lp_arena, ..
     } = q.to_alp_optimized().unwrap();
@@ -415,7 +418,7 @@ fn test_ipc_globbing() -> PolarsResult<()> {
     init_files();
     let glob = "../../examples/datasets/foods*.ipc";
     let df = LazyFrame::scan_ipc(
-        glob,
+        PlPath::new(glob),
         ScanArgsIpc {
             n_rows: None,
             cache: true,
@@ -448,7 +451,7 @@ fn slice_at_union(lp_arena: &Arena<IR>, lp: Node) -> bool {
 #[test]
 fn test_csv_globbing() -> PolarsResult<()> {
     let glob = "../../examples/datasets/foods*.csv";
-    let full_df = LazyCsvReader::new(glob).finish()?.collect()?;
+    let full_df = LazyCsvReader::new(PlPath::new(glob)).finish()?.collect()?;
 
     // all 5 files * 27 rows
     assert_eq!(full_df.shape(), (135, 4));
@@ -457,11 +460,16 @@ fn test_csv_globbing() -> PolarsResult<()> {
     assert_eq!(cal.get(53)?, AnyValue::Int64(194));
 
     let glob = "../../examples/datasets/foods*.csv";
-    let lf = LazyCsvReader::new(glob).finish()?.slice(0, 100);
+    let lf = LazyCsvReader::new(PlPath::new(glob))
+        .finish()?
+        .slice(0, 100);
 
     let df = lf.clone().collect()?;
     assert_eq!(df, full_df.slice(0, 100));
-    let df = LazyCsvReader::new(glob).finish()?.slice(20, 60).collect()?;
+    let df = LazyCsvReader::new(PlPath::new(glob))
+        .finish()?
+        .slice(20, 60)
+        .collect()?;
     assert_eq!(df, full_df.slice(20, 60));
 
     let mut expr_arena = Arena::with_capacity(16);
@@ -469,7 +477,7 @@ fn test_csv_globbing() -> PolarsResult<()> {
     let node = lf.optimize(&mut lp_arena, &mut expr_arena)?;
     assert!(slice_at_union(&lp_arena, node));
 
-    let lf = LazyCsvReader::new(glob)
+    let lf = LazyCsvReader::new(PlPath::new(glob))
         .finish()?
         .filter(col("sugars_g").lt(lit(1i32)))
         .slice(0, 100);
@@ -485,7 +493,9 @@ fn test_ndjson_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();
     let glob = "../../examples/datasets/foods*.ndjson";
-    let df = LazyJsonLineReader::new(glob).finish()?.collect()?;
+    let df = LazyJsonLineReader::new(PlPath::new(glob))
+        .finish()?
+        .collect()?;
     assert_eq!(df.shape(), (54, 4));
     let cal = df.column("calories")?;
     assert_eq!(cal.get(0)?, AnyValue::Int64(45));
@@ -509,7 +519,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
     // a union vstacks columns and aggscan optimization determines columns to aggregate in a
     // hashmap, if that doesn't set them sorted the vstack will panic.
     let lf1: LazyFrame = DslBuilder::scan_parquet(
-        ScanSources::Paths([GLOB_PARQUET.into()].into()),
+        ScanSources::Paths([PlPath::new(GLOB_PARQUET)].into()),
         Default::default(),
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
@@ -521,7 +531,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
     .into();
 
     let lf2: LazyFrame = DslBuilder::scan_ipc(
-        ScanSources::Paths([GLOB_IPC.into()].into()),
+        ScanSources::Paths([PlPath::new(GLOB_IPC)].into()),
         Default::default(),
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
@@ -533,7 +543,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
     .into();
 
     let lf3: LazyFrame = DslBuilder::scan_csv(
-        ScanSources::Paths([GLOB_CSV.into()].into()),
+        ScanSources::Paths([PlPath::new(GLOB_CSV)].into()),
         Default::default(),
         UnifiedScanArgs {
             extra_columns_policy: ExtraColumnsPolicy::Ignore,
@@ -609,7 +619,7 @@ fn test_slice_filter() -> PolarsResult<()> {
 
 #[test]
 fn skip_rows_and_slice() -> PolarsResult<()> {
-    let out = LazyCsvReader::new(FOODS_CSV)
+    let out = LazyCsvReader::new(PlPath::new(FOODS_CSV))
         .with_skip_rows(4)
         .finish()?
         .limit(1)
@@ -623,7 +633,7 @@ fn skip_rows_and_slice() -> PolarsResult<()> {
 fn test_row_index_on_files() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     for offset in [0 as IdxSize, 10] {
-        let lf = LazyCsvReader::new(FOODS_CSV)
+        let lf = LazyCsvReader::new(PlPath::new(FOODS_CSV))
             .with_row_index(Some(RowIndex {
                 name: PlSmallStr::from_static("index"),
                 offset,
@@ -638,7 +648,7 @@ fn test_row_index_on_files() -> PolarsResult<()> {
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf = LazyFrame::scan_parquet(FOODS_PARQUET, Default::default())?
+        let lf = LazyFrame::scan_parquet(PlPath::new(FOODS_PARQUET), Default::default())?
             .with_row_index("index", Some(offset));
         assert!(row_index_at_scan(lf.clone()));
         let df = lf.collect()?;
@@ -648,7 +658,7 @@ fn test_row_index_on_files() -> PolarsResult<()> {
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf = LazyFrame::scan_ipc(FOODS_IPC, Default::default())?
+        let lf = LazyFrame::scan_ipc(PlPath::new(FOODS_IPC), Default::default())?
             .with_row_index("index", Some(offset));
 
         assert!(row_index_at_scan(lf.clone()));
@@ -672,7 +682,7 @@ fn test_row_index_on_files() -> PolarsResult<()> {
 
 #[test]
 fn scan_predicate_on_set_null_values() -> PolarsResult<()> {
-    let df = LazyCsvReader::new(FOODS_CSV)
+    let df = LazyCsvReader::new(PlPath::new(FOODS_CSV))
         .with_null_values(Some(NullValues::Named(vec![("fats_g".into(), "0".into())])))
         .with_infer_schema_length(Some(0))
         .finish()?
@@ -781,7 +791,7 @@ fn scan_small_dtypes() -> PolarsResult<()> {
         DataType::UInt16,
     ];
     for dt in small_dt {
-        let df = LazyCsvReader::new(FOODS_CSV)
+        let df = LazyCsvReader::new(PlPath::new(FOODS_CSV))
             .with_has_header(true)
             .with_dtype_overwrite(Some(Arc::new(Schema::from_iter([Field::new(
                 "sugars_g".into(),

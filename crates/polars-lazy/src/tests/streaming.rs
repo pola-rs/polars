@@ -4,17 +4,17 @@ use super::*;
 
 fn get_csv_file() -> LazyFrame {
     let file = "../../examples/datasets/foods1.csv";
-    LazyCsvReader::new(file).finish().unwrap()
+    LazyCsvReader::new(PlPath::new(file)).finish().unwrap()
 }
 
 fn get_parquet_file() -> LazyFrame {
     let file = "../../examples/datasets/foods1.parquet";
-    LazyFrame::scan_parquet(file, Default::default()).unwrap()
+    LazyFrame::scan_parquet(PlPath::new(file), Default::default()).unwrap()
 }
 
 fn get_csv_glob() -> LazyFrame {
     let file = "../../examples/datasets/foods*.csv";
-    LazyCsvReader::new(file).finish().unwrap()
+    LazyCsvReader::new(PlPath::new(file)).finish().unwrap()
 }
 
 fn assert_streaming_with_default(q: LazyFrame, check_shape_only: bool) {

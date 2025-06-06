@@ -13,6 +13,7 @@ use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::plpath::PlPath;
 
 use super::{ExprIR, FileType};
 use crate::dsl::{AExpr, Expr, SpecialEq};
@@ -46,7 +47,7 @@ type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Box<dyn DynWriteable>
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum SinkTarget {
-    Path(Arc<PathBuf>),
+    Path(PlPath),
     Dyn(DynSinkTarget),
 }
 
@@ -57,13 +58,12 @@ impl SinkTarget {
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Writeable> {
         match self {
-            SinkTarget::Path(path) => {
+            SinkTarget::Path(addr) => {
                 if sink_options.mkdir {
-                    polars_io::utils::mkdir::mkdir_recursive(path.as_path())?;
+                    polars_io::utils::mkdir::mkdir_recursive(addr.as_ref())?;
                 }
 
-                let path = path.as_ref().display().to_string();
-                polars_io::utils::file::Writeable::try_new(&path, cloud_options)
+                polars_io::utils::file::Writeable::try_new(addr.as_ref(), cloud_options)
             },
             SinkTarget::Dyn(memory_writer) => Ok(Writeable::Dyn(
                 memory_writer.lock().unwrap().take().unwrap(),
@@ -87,13 +87,12 @@ impl SinkTarget {
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<Writeable> {
         match self {
-            SinkTarget::Path(path) => {
+            SinkTarget::Path(addr) => {
                 if sink_options.mkdir {
-                    polars_io::utils::mkdir::tokio_mkdir_recursive(path.as_path()).await?;
+                    polars_io::utils::mkdir::tokio_mkdir_recursive(addr.as_ref()).await?;
                 }
 
-                let path = path.as_ref().display().to_string();
-                polars_io::utils::file::Writeable::try_new(&path, cloud_options)
+                polars_io::utils::file::Writeable::try_new(addr.as_ref(), cloud_options)
             },
             SinkTarget::Dyn(memory_writer) => Ok(Writeable::Dyn(
                 memory_writer.lock().unwrap().take().unwrap(),
@@ -150,7 +149,7 @@ impl<'de> serde::Deserialize<'de> for SinkTarget {
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(Self::Path(Arc::new(PathBuf::deserialize(deserializer)?)))
+        Ok(Self::Path(PlPath::deserialize(deserializer)?))
     }
 }
 
@@ -201,8 +200,8 @@ pub struct PartitionTargetContext {
     pub part_idx: usize,
     pub in_part_idx: usize,
     pub keys: Vec<PartitionTargetContextKey>,
-    pub file_path: PathBuf,
-    pub full_path: PathBuf,
+    pub file_path: String,
+    pub full_path: PlPath,
 }
 
 #[cfg(feature = "python")]
@@ -225,12 +224,12 @@ impl PartitionTargetContext {
         self.keys.clone()
     }
     #[getter]
-    pub fn file_path(&self) -> &std::path::Path {
-        self.file_path.as_path()
+    pub fn file_path(&self) -> &str {
+        self.file_path.as_str()
     }
     #[getter]
-    pub fn full_path(&self) -> &std::path::Path {
-        self.full_path.as_path()
+    pub fn full_path(&self) -> &str {
+        self.full_path.to_str()
     }
 }
 #[cfg(feature = "python")]
@@ -264,7 +263,15 @@ impl PartitionTargetContextKey {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PartitionTargetCallback {
-    Rust(SpecialEq<Arc<dyn Fn(PartitionTargetContext) -> PolarsResult<SinkTarget> + Send + Sync>>),
+    Rust(
+        SpecialEq<
+            Arc<
+                dyn Fn(PartitionTargetContext) -> PolarsResult<PartitionTargetCallbackResult>
+                    + Send
+                    + Sync,
+            >,
+        >,
+    ),
     #[cfg(feature = "python")]
     Python(polars_utils::python_function::PythonFunction),
 }
@@ -310,18 +317,28 @@ impl SinkFinishCallback {
     }
 }
 
+#[derive(Clone)]
+pub enum PartitionTargetCallbackResult {
+    Str(String),
+    Dyn(DynSinkTarget),
+}
+
 impl PartitionTargetCallback {
-    pub fn call(&self, ctx: PartitionTargetContext) -> PolarsResult<SinkTarget> {
+    pub fn call(&self, ctx: PartitionTargetContext) -> PolarsResult<PartitionTargetCallbackResult> {
         match self {
             Self::Rust(f) => f(ctx),
             #[cfg(feature = "python")]
             Self::Python(f) => pyo3::Python::with_gil(|py| {
-                let sink_target = f.call1(py, (ctx,))?;
+                let partition_target = f.call1(py, (ctx,))?;
                 let converter =
                     polars_utils::python_convert_registry::get_python_convert_registry();
-                let sink_target = (converter.from_py.sink_target)(sink_target)?;
-                let sink_target = sink_target.downcast_ref::<SinkTarget>().unwrap().clone();
-                PolarsResult::Ok(sink_target)
+                let partition_target =
+                    (converter.from_py.partition_target_cb_result)(partition_target)?;
+                let partition_target = partition_target
+                    .downcast_ref::<PartitionTargetCallbackResult>()
+                    .unwrap()
+                    .clone();
+                PolarsResult::Ok(partition_target)
             }),
         }
     }
@@ -456,7 +473,7 @@ pub struct SortColumnIR {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkType {
-    pub base_path: Arc<PathBuf>,
+    pub base_path: Arc<PlPath>,
     pub file_path_cb: Option<PartitionTargetCallback>,
     pub file_type: FileType,
     pub sink_options: SinkOptions,
@@ -469,7 +486,7 @@ pub struct PartitionSinkType {
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionSinkTypeIR {
-    pub base_path: Arc<PathBuf>,
+    pub base_path: Arc<PlPath>,
     pub file_path_cb: Option<PartitionTargetCallback>,
     pub file_type: FileType,
     pub sink_options: SinkOptions,

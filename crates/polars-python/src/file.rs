@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
+use polars::prelude::PlPath;
 use polars::prelude::file::DynWriteable;
 use polars::prelude::sync_on_close::SyncOnCloseType;
 use polars_error::polars_err;
@@ -263,7 +264,7 @@ impl EitherRustPythonFile {
 
 pub(crate) enum PythonScanSourceInput {
     Buffer(MemSlice),
-    Path(PathBuf),
+    Path(PlPath),
     File(ClosableFile),
 }
 
@@ -386,7 +387,12 @@ pub(crate) fn get_python_scan_source_input(
         }
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {
-            let file_path = resolve_homedir(&&*s);
+            let mut file_path = PlPath::new(&s);
+            if let Some(p) = file_path.as_ref().as_local_path() {
+                if p.starts_with("~/") {
+                    file_path = PlPath::Local(resolve_homedir(&p).into());
+                }
+            }
             Ok(PythonScanSourceInput::Path(file_path))
         } else {
             Ok(try_get_pyfile(py, py_f, write)?.0.into_scan_source_input())
