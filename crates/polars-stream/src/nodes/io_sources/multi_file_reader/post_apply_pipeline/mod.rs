@@ -59,16 +59,14 @@ impl PostApplyPipeline {
                 );
 
                 loop {
-                    // Note that we technically won't have the real physical / deleted counts if the
-                    // reader has already performed row deletions, we would instead have:
-                    // * physical_rows: (actual_physical_rows - deleted_rows)
-                    // * deleted_rows: 0
-                    //
-                    // But that's perfectly fine, as the `RowCounter` will still give the correct
-                    // `num_rows()`. The downstream pipeline in this case will behave as if there
-                    // were no row deletions at all, which should still give the correct result.
                     let row_count_this_morsel = {
                         let physical_rows = morsel.df().height();
+                        // # Multiple cases
+                        // * If row deletions are being done in post-apply, we'll have the deleted row count here.
+                        // * If row deletions were pushed to the reader, `external_filter_mask` here is `None`, so we'll
+                        //   have 0 deleted rows in the `deleted_rows` counter.
+                        //   * Instead, `physical_rows` will be a counter that has the `deleted_rows` count subtracted
+                        //     from it (because we are taking the height of the morsels after the rows are deleted).
                         let deleted_rows = external_filter_mask.as_ref().map_or(0, |mask| {
                             let Slice::Positive { offset, len } = Slice::Positive {
                                 offset: row_counter.num_physical_rows(),
