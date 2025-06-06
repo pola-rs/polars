@@ -2630,3 +2630,27 @@ x"y,b,c
         pl.read_csv(malformed_long, has_header=False)
     with pytest.raises(pl.exceptions.ComputeError):
         pl.scan_csv(malformed_long, has_header=False).collect()
+
+
+# TODO:
+# floating_scientific: none, true, false
+# floating_precision: none, 0, n
+# separator: ';'
+# large floats to trigger scientific (autoformat)
+# @pytest.mark.parametrize(
+def test_write_csv_decimal_comma() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [123.45, 123.45],
+            "b": [6.0, 6],
+            "c": [0.0, 0.0],
+            "d": [90, 90],
+            # "e": [12345678901234567890.1234567890, 123.45],  # TODO - reader is unable to parse scientific notation
+        }
+    )
+
+    buf = io.BytesIO()
+    df.write_csv(buf, decimal_comma=True, separator=";")
+    buf.seek(0)
+    out = pl.read_csv(buf, decimal_comma=True, separator=";")
+    assert_frame_equal(df, out)
