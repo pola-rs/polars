@@ -605,6 +605,21 @@ impl DataType {
         }
     }
 
+    pub fn contains_unknown_recursive(&self) -> bool {
+        use DataType as D;
+        match self {
+            D::Unknown(_) => true,
+            D::List(inner) => inner.contains_list_recursive(),
+            #[cfg(feature = "dtype-array")]
+            D::Array(inner, _) => inner.contains_list_recursive(),
+            #[cfg(feature = "dtype-struct")]
+            D::Struct(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_list_recursive()),
+            _ => false,
+        }
+    }
+
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         #[cfg(feature = "dtype-categorical")]

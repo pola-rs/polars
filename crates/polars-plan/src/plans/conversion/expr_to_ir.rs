@@ -371,6 +371,20 @@ pub(super) fn to_aexpr_impl(
                 },
             }
 
+            // Materialize the output datatype.
+            let dtype = arena
+                .get(evaluation)
+                .get_type(schema, Context::Default, arena)?;
+            let mut evaluation = evaluation;
+            if dtype.contains_unknown_recursive() {
+                let materialized = dtype.materialize_unknown(false)?;
+                evaluation = arena.add(AExpr::Cast {
+                    expr: evaluation,
+                    dtype: materialized,
+                    options: polars_core::chunked_array::cast::CastOptions::Strict,
+                });
+            }
+
             (
                 AExpr::Eval {
                     expr,

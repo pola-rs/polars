@@ -369,7 +369,8 @@ impl AExpr {
                 let field = ctx.arena.get(*expr).to_field_impl(ctx, agg_list)?;
 
                 let element_dtype = variant.element_dtype(field.dtype())?;
-                let schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype.clone())]);
+                let element_dtype = element_dtype.clone().materialize_unknown(false)?;
+                let schema = Schema::from_iter([(PlSmallStr::EMPTY, element_dtype)]);
 
                 let mut ctx = ToFieldContext {
                     schema: &schema,
