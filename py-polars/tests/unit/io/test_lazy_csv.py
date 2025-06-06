@@ -4,14 +4,17 @@ import io
 import tempfile
 from collections import OrderedDict
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars._typing import EngineType
 from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 @pytest.fixture
