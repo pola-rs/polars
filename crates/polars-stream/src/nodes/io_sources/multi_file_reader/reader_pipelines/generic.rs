@@ -592,8 +592,8 @@ impl ReaderStarter {
             if verbose {
                 eprintln!(
                     "[ReaderStarter]: scan_source_idx: {scan_source_idx}: \
-                        pre_slice_to_reader: {pre_slice:?}, \
-                        external_filter_mask: {}",
+                    pre_slice_to_reader: {pre_slice:?}, \
+                    external_filter_mask: {}",
                     ExternalFilterMask::log_display(external_filter_mask.as_ref()),
                 )
             }
