@@ -368,7 +368,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::STREAMING),
+                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
                 validate_output,
             }),
         }
@@ -394,7 +394,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::STREAMING),
+                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
                 fmt_str: name,
             }),
         }

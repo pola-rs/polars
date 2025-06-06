@@ -3646,7 +3646,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=False,
             _eager=False,
             _check_order=_check_order,
             new_streaming=False,

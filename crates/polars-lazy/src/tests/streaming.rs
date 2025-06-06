@@ -260,7 +260,7 @@ fn test_streaming_slice() -> PolarsResult<()> {
     .lazy();
 
     let q = lf_a.clone().cross_join(lf_a, None).slice(10, 20);
-    let a = q.with_streaming(true).collect().unwrap();
+    let a = q.with_new_streaming(true).collect().unwrap();
     assert_eq!(a.shape(), (20, 2));
 
     Ok(())
@@ -383,7 +383,7 @@ fn test_sort_maintain_order_streaming() -> PolarsResult<()> {
                 .with_maintain_order(true),
         )
         .slice(0, 3)
-        .with_streaming(true)
+        .with_new_streaming(true)
         .collect()?;
     assert!(res.equals(&df![
         "A" => [1, 1, 1],
@@ -412,7 +412,7 @@ fn test_streaming_full_outer_join() -> PolarsResult<()> {
 
     // Toggle so that the join order is swapped.
     for toggle in [true, true] {
-        assert_streaming_with_default(q.clone().with_streaming(toggle), false);
+        assert_streaming_with_default(q.clone().with_new_streaming(toggle), false);
     }
 
     Ok(())

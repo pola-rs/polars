@@ -60,6 +60,5 @@ flag_getter_setters! {
     (FAST_PROJECTION, get_fast_projection, set_fast_projection, clear=true)
 
     (EAGER, get_eager, set_eager, clear=true)
-    (STREAMING, get_old_streaming, set_old_streaming, clear=true)
     (NEW_STREAMING, get_streaming, set_streaming, clear=true)
 }

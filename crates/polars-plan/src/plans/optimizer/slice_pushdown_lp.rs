@@ -11,7 +11,6 @@ mod inner {
     use polars_utils::unitvec;
 
     pub struct SlicePushDown {
-        pub streaming: bool,
         #[expect(unused)]
         pub new_streaming: bool,
         scratch: UnitVec<Node>,
@@ -19,9 +18,8 @@ mod inner {
     }
 
     impl SlicePushDown {
-        pub fn new(streaming: bool, maintain_errors: bool, new_streaming: bool) -> Self {
+        pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
             Self {
-                streaming,
                 new_streaming,
                 scratch: unitvec![],
                 maintain_errors,
@@ -277,17 +275,9 @@ impl SlicePushDown {
                         lp_arena.replace(*input, input_lp);
                     }
                 }
-                // The in-memory union node is slice aware.
-                // We still set this information, but the streaming engine will ignore it.
                 options.slice = Some((state.offset, state.len as usize));
                 let lp = Union {inputs, options};
-
-                if self.streaming {
-                    // Ensure the slice node remains.
-                    self.no_pushdown_finish_opt(lp, Some(state), lp_arena)
-                } else {
-                    Ok(lp)
-                }
+                Ok(lp)
             },
             (Join {
                 input_left,
@@ -296,7 +286,7 @@ impl SlicePushDown {
                 left_on,
                 right_on,
                 mut options
-            }, Some(state)) if !self.streaming && !matches!(options.options, Some(JoinTypeOptionsIR::Cross { .. })) => {
+            }, Some(state)) if !matches!(options.options, Some(JoinTypeOptionsIR::Cross { .. })) => {
                 // first restart optimization in both inputs and get the updated LP
                 let lp_left = lp_arena.take(input_left);
                 let lp_left = self.pushdown(lp_left, None, lp_arena, expr_arena)?;

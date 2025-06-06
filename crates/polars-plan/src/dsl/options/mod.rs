@@ -227,7 +227,6 @@ pub struct UnpivotArgsDSL {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Engine {
     Auto,
-    OldStreaming,
     Streaming,
     InMemory,
     Gpu,
@@ -242,10 +241,10 @@ impl FromStr for Engine {
             "auto" => Ok(Engine::Auto),
             "cpu" | "in-memory" => Ok(Engine::InMemory),
             "streaming" => Ok(Engine::Streaming),
-            "old-streaming" => Ok(Engine::OldStreaming),
             "gpu" => Ok(Engine::Gpu),
+            "old-streaming" => Err("the 'old-streaming' engine has been removed".to_owned()),
             v => Err(format!(
-                "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'old-streaming', 'gpu'}}, got {v}",
+                "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'gpu'}}, got {v}",
             )),
         }
     }
@@ -255,7 +254,6 @@ impl Engine {
     pub fn into_static_str(self) -> &'static str {
         match self {
             Self::Auto => "auto",
-            Self::OldStreaming => "old-streaming",
             Self::Streaming => "streaming",
             Self::InMemory => "in-memory",
             Self::Gpu => "gpu",

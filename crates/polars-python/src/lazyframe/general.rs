@@ -522,7 +522,6 @@ impl PyLazyFrame {
         comm_subexpr_elim: bool,
         cluster_with_columns: bool,
         collapse_joins: bool,
-        streaming: bool,
         _eager: bool,
         _check_order: bool,
         #[allow(unused_variables)] new_streaming: bool,
@@ -539,11 +538,6 @@ impl PyLazyFrame {
             .with_check_order(_check_order)
             ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);
-
-        #[cfg(feature = "streaming")]
-        {
-            ldf = ldf.with_streaming(streaming);
-        }
 
         #[cfg(feature = "new_streaming")]
         {
@@ -1507,7 +1501,7 @@ impl PyLazyFrame {
         opt.set(OptFlags::PREDICATE_PUSHDOWN, predicate_pushdown);
         opt.set(OptFlags::PROJECTION_PUSHDOWN, projection_pushdown);
         opt.set(OptFlags::SLICE_PUSHDOWN, slice_pushdown);
-        opt.set(OptFlags::STREAMING, streamable);
+        opt.set(OptFlags::NEW_STREAMING, streamable);
 
         self.ldf
             .clone()
