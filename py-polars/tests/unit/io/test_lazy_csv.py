@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars._typing import EngineType
 from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal
 
@@ -384,8 +385,8 @@ def test_file_list_schema_mismatch(
 
 
 @pytest.mark.may_fail_auto_streaming
-@pytest.mark.parametrize("streaming", [True, False])
-def test_file_list_schema_supertype(tmp_path: Path, streaming: bool) -> None:
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_file_list_schema_supertype(tmp_path: Path, engine: EngineType) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     data_lst = [
@@ -408,9 +409,7 @@ c
             f.write(data)
 
     expect = pl.Series("a", ["1", "2", "b", "c"]).to_frame()
-    out = pl.scan_csv(paths).collect(  # type: ignore[call-overload]
-        engine="old-streaming" if streaming else "in-memory"
-    )
+    out = pl.scan_csv(paths).collect(engine=engine)
 
     assert_frame_equal(out, expect)
 
