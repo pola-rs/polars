@@ -40,7 +40,6 @@ version_check = { workspace = true }
 [features]
 catalog = ["polars-io/catalog"]
 nightly = ["polars-core/nightly", "polars-plan/nightly"]
-streaming = ["polars-plan/streaming", "polars-ops/chunked_ids", "polars-expr/streaming"]
 new_streaming = ["polars-stream"]
 parquet = [
   "polars-io/parquet",
@@ -409,7 +408,6 @@ features = [
   "semi_anti_join",
   "serde",
   "sign",
-  "streaming",
   "string_encoding",
   "string_normalize",
   "string_pad",

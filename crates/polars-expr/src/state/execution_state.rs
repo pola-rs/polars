@@ -69,9 +69,6 @@ bitflags! {
         const CACHE_WINDOW_EXPR = 0x02;
         /// Indicates the expression has a window function
         const HAS_WINDOW = 0x04;
-        /// If set, the expression is evaluated in the
-        /// streaming engine.
-        const IN_STREAMING = 0x08;
     }
 }
 

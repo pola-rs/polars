@@ -46,7 +46,7 @@ required-features = ["polars/lazy", "polars/csv"]
 [[bin]]
 name = "concepts-streaming"
 path = "user-guide/concepts/streaming.rs"
-required-features = ["polars/lazy", "polars/csv", "polars/streaming"]
+required-features = ["polars/lazy", "polars/csv", "polars/new_streaming"]
 
 [[bin]]
 name = "expressions-aggregation"
