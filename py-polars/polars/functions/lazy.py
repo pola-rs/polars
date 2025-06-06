@@ -1888,7 +1888,7 @@ def collect_all(
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
-    if engine in ("streaming", "old-streaming"):
+    if engine == "streaming":
         issue_unstable_warning("streaming mode is considered unstable.")
 
     lfs = [lf._ldf for lf in lazy_frames]
@@ -1985,7 +1985,7 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    if engine in ("streaming", "old-streaming"):
+    if engine == "streaming":
         issue_unstable_warning("streaming mode is considered unstable.")
 
     result: (

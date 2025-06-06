@@ -74,12 +74,6 @@ def test_cse_expr_group_by() -> None:
         optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
     )
 
-    s = q.explain(
-        optimizations=pl.QueryOptFlags(comm_subexpr_elim=True, comm_subplan_elim=False),
-        engine="old-streaming",  # type: ignore[arg-type]
-    )
-    assert s.startswith("STREAMING")
-
     expected = pl.DataFrame(
         {"a": [1, 2, 3, 4], "sum": [1, 4, 9, 16], "min": [1, 4, 9, 16]}
     )

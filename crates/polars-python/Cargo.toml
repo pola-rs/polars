@@ -138,7 +138,6 @@ cross_join = ["polars/cross_join"]
 pct_change = ["polars/pct_change"]
 repeat_by = ["polars/repeat_by"]
 
-streaming = ["polars/streaming"]
 meta = ["polars/meta"]
 index_of = ["polars/index_of"]
 search_sorted = ["polars/search_sorted"]
@@ -247,7 +246,6 @@ io = [
 optimizations = [
   "cse",
   "polars/fused",
-  "streaming",
 ]
 
 polars_cloud_client = ["polars/polars_cloud_client"]

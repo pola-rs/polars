@@ -64,7 +64,6 @@ serde = [
   "polars-compute/serde",
   "either/serde",
 ]
-streaming = []
 parquet = ["polars-io/parquet", "polars-parquet"]
 async = ["polars-io/async", "futures"]
 cloud = ["async", "polars-io/cloud"]
@@ -309,7 +308,6 @@ features = [
   "coalesce",
   "dot_diagram",
   "trigonometry",
-  "streaming",
   "true_div",
   "sign",
 ]

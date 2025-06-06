@@ -199,8 +199,7 @@ def _gpu_engine_callback(
 ) -> Callable[[Any, int | None], None] | None:
     is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
     if not (
-        is_config_obj
-        or engine in ("auto", "cpu", "in-memory", "streaming", "old-streaming", "gpu")
+        is_config_obj or engine in ("auto", "cpu", "in-memory", "streaming", "gpu")
     ):
         msg = f"Invalid engine argument {engine=}"
         raise ValueError(msg)
@@ -1283,14 +1282,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         engine = _select_engine(engine)
 
-        if engine in ("streaming", "old-streaming"):
+        if engine == "streaming":
             issue_unstable_warning("streaming mode is considered unstable.")
 
         if optimized:
             optimizations = optimizations.__copy__()
             optimizations._pyoptflags.streaming = engine == "streaming"
-            optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
-
             ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
             if format == "tree":
                 return ldf.describe_optimized_plan_tree()
@@ -1434,11 +1431,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         engine = _select_engine(engine)
 
-        if engine in ("streaming", "old-streaming"):
+        if engine == "streaming":
             issue_unstable_warning("streaming mode is considered unstable.")
 
         optimizations = optimizations.__copy__()
-        optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
         optimizations._pyoptflags.streaming = engine == "streaming"
         _ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
@@ -2009,12 +2005,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine = _select_engine(engine)
 
         optimizations = optimizations.__copy__()
-        optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
         callback = _gpu_engine_callback(
             engine,
-            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
+            streaming=False,
             background=False,
             new_streaming=False,
             _eager=False,
@@ -2312,12 +2307,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if new_streaming:
             engine = "streaming"
 
-        if engine in ("old-streaming", "streaming"):
+        if engine == "streaming":
             issue_unstable_warning("streaming mode is considered unstable.")
 
         callback = _gpu_engine_callback(
             engine,
-            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
+            streaming=False,
             background=background,
             new_streaming=new_streaming,
             _eager=optimizations._pyoptflags.eager,
@@ -2445,7 +2440,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         engine = _select_engine(engine)
 
-        if engine in ("streaming", "old-streaming"):
+        if engine == "streaming":
             issue_unstable_warning("streaming mode is considered unstable.")
 
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
@@ -3646,7 +3641,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=False,
             _eager=False,
             _check_order=_check_order,
             new_streaming=False,

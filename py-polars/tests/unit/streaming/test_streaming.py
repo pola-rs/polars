@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from datetime import date
 from pathlib import Path
@@ -55,22 +54,28 @@ def test_streaming_block_on_literals_6054() -> None:
 
 @pytest.mark.may_fail_auto_streaming
 def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    calls = 0
+
+    def func(df: pl.DataFrame) -> pl.DataFrame:
+        nonlocal calls
+        calls += 1
+        return df.with_columns(pl.col("a").alias("b"))
+
     assert (
-        pl.DataFrame({"a": [1, 2, 3]})
+        pl.DataFrame({"a": list(range(100))})
         .lazy()
         .map_batches(
-            function=lambda df: df.with_columns(pl.col("a").alias("b")),
+            function=func,
             schema={"a": pl.Int64, "b": pl.Int64},
             streamable=True,
         )
-    ).collect(engine="old-streaming").to_dict(as_series=False) == {  # type: ignore[call-overload]
-        "a": [1, 2, 3],
-        "b": [1, 2, 3],
+    ).collect(engine="streaming").to_dict(as_series=False) == {
+        "a": list(range(100)),
+        "b": list(range(100)),
     }
 
-    (_, err) = capfd.readouterr()
-    assert "df -> function -> ordered_sink" in err
+    assert calls > 1
 
 
 @pytest.mark.slow
@@ -78,9 +83,7 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
 def test_cross_join_stack() -> None:
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
-    # this should be instant if directly pushed into sink
-    # if not the cross join will first fill the stack with all matches of a single chunk
-    assert a.join(a, how="cross").head().collect(engine="old-streaming").shape == (5, 2)  # type: ignore[call-overload]
+    assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)
     t1 = time.time()
     assert (t1 - t0) < 0.5
 
@@ -126,20 +129,8 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
         (
             q.select(
                 pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
-            ).collect(engine="old-streaming")  # type: ignore[call-overload]
+            ).collect(engine="streaming")
         )
-
-
-def test_streaming_ternary() -> None:
-    q = pl.LazyFrame({"a": [1, 2, 3]})
-
-    assert (
-        q.with_columns(
-            pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
-        )
-        .explain(engine="old-streaming")  # type: ignore[arg-type]
-        .startswith("STREAMING")
-    )
 
 
 def test_streaming_sortedness_propagation_9494() -> None:
@@ -307,20 +298,6 @@ def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_custom_temp_dir(tmp_path: Path, monkeypatch: Any) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    monkeypatch.setenv("POLARS_TEMP_DIR", str(tmp_path))
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-
-    s = pl.arange(0, 100_000, eager=True).rename("idx")
-    df = s.shuffle().to_frame()
-    df.lazy().sort("idx").collect(engine="old-streaming")  # type: ignore[call-overload]
-
-    assert os.listdir(tmp_path), f"Temp directory '{tmp_path}' is empty"
-
-
-@pytest.mark.write_disk
 def test_streaming_with_hconcat(tmp_path: Path) -> None:
     df1 = pl.DataFrame(
         {
@@ -404,10 +381,3 @@ def test_i128_sum_reduction() -> None:
         .item()
         == 6
     )
-
-
-def test_streaming_flag_21799() -> None:
-    with pytest.raises(DeprecationWarning):
-        pl.LazyFrame({"a": 1}).collect(streaming=False)  # type: ignore[call-overload]
-    with pytest.raises(DeprecationWarning):
-        pl.LazyFrame({"a": 1}).collect(streaming=True)  # type: ignore[call-overload]
