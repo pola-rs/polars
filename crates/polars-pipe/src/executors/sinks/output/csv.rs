@@ -31,6 +31,7 @@ impl CsvSink {
             .with_time_format(options.serialize_options.time_format)
             .with_float_scientific(options.serialize_options.float_scientific)
             .with_float_precision(options.serialize_options.float_precision)
+            .with_decimal_comma(options.serialize_options.decimal_comma)
             .with_null_value(options.serialize_options.null)
             .with_quote_style(options.serialize_options.quote_style)
             .n_threads(1)
