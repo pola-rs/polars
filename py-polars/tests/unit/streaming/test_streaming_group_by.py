@@ -329,7 +329,7 @@ def test_streaming_group_by_all_numeric_types_stability_8570() -> None:
                 .with_columns(pl.col("z").cast(dtype))
                 .group_by(keys)
                 .agg(pl.col("z").sum().alias("z_sum"))
-                .collect(engine="streaming")  # type: ignore[call-overload]
+                .collect(engine="streaming")
             )
             assert dfd["z_sum"].sum() == dfc["z"].sum()
 

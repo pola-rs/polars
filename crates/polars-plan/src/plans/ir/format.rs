@@ -118,9 +118,7 @@ fn write_scan(
 
 impl<'a> IRDisplay<'a> {
     pub fn new(lp: IRPlanRef<'a>) -> Self {
-        Self {
-            lp,
-        }
+        Self { lp }
     }
 
     fn root(&self) -> &IR {
@@ -226,9 +224,7 @@ impl<'a> IRDisplay<'a> {
                     write!(f, "\n{:indent$}END {how} JOIN", "")
                 }
             },
-            MapFunction {
-                input, ..
-            } => {
+            MapFunction { input, .. } => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 self.with_root(*input)._format(f, sub_indent)
             },

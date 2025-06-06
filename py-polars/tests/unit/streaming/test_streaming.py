@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from datetime import date
 from pathlib import Path
@@ -57,6 +56,7 @@ def test_streaming_block_on_literals_6054() -> None:
 def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     calls = 0
+
     def func(df: pl.DataFrame) -> pl.DataFrame:
         nonlocal calls
         calls += 1
@@ -70,11 +70,11 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
             schema={"a": pl.Int64, "b": pl.Int64},
             streamable=True,
         )
-    ).collect(engine="streaming").to_dict(as_series=False) == {  # type: ignore[call-overload]
+    ).collect(engine="streaming").to_dict(as_series=False) == {
         "a": list(range(100)),
         "b": list(range(100)),
     }
-    
+
     assert calls > 1
 
 
@@ -83,7 +83,7 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
 def test_cross_join_stack() -> None:
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
-    assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)  # type: ignore[call-overload]
+    assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)
     t1 = time.time()
     assert (t1 - t0) < 0.5
 
@@ -129,7 +129,7 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
         (
             q.select(
                 pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
-            ).collect(engine="streaming")  # type: ignore[call-overload]
+            ).collect(engine="streaming")
         )
 
 
@@ -295,7 +295,6 @@ def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
     )
     assert df.height == 0
     assert df.schema == schema
-
 
 
 @pytest.mark.write_disk

@@ -90,7 +90,6 @@ impl FileInfo {
     }
 }
 
-
 pub(crate) fn det_join_schema(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,

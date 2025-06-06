@@ -334,12 +334,10 @@ impl<'a> TreeFmtNode<'a> {
                         wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
                         vec![self.lp_node(None, *input)],
                     ),
-                    MapFunction { input, function } => {
-                        ND(
-                            wh(h, &format!("{function}")),
-                            vec![self.lp_node(None, *input)],
-                        )
-                    },
+                    MapFunction { input, function } => ND(
+                        wh(h, &format!("{function}")),
+                        vec![self.lp_node(None, *input)],
+                    ),
                     ExtContext { input, .. } => {
                         ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
                     },

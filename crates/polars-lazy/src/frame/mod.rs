@@ -241,10 +241,7 @@ impl LazyFrame {
     ///
     /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan_tree(&self) -> PolarsResult<String> {
-        Ok(self
-            .clone()
-            .to_alp_optimized()?
-            .describe_tree_format())
+        Ok(self.clone().to_alp_optimized()?.describe_tree_format())
     }
 
     /// Return a String describing the logical plan.
@@ -562,8 +559,7 @@ impl LazyFrame {
 
     pub fn to_alp_optimized(mut self) -> PolarsResult<IRPlan> {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
-        let node =
-            self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![])?;
+        let node = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut vec![])?;
 
         Ok(IRPlan::new(node, lp_arena, expr_arena))
     }
@@ -637,8 +633,7 @@ impl LazyFrame {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
 
         let mut scratch = vec![];
-        let lp_top =
-            self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch)?;
+        let lp_top = self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch)?;
 
         post_opt(
             lp_top,

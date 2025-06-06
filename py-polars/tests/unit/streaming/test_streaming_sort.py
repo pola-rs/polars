@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -73,23 +73,20 @@ def test_streaming_sort_multiple_columns_logical_types() -> None:
     assert_frame_equal(result, expected)
 
 
-
 def test_streaming_sort() -> None:
     assert (
         pl.Series(np.random.randint(0, 100, 100))
         .to_frame("s")
         .lazy()
         .sort("s")
-        .collect(engine="streaming")["s"]  # type: ignore[call-overload]
+        .collect(engine="streaming")["s"]
         .is_sorted()
     )
 
 
-def test_streaming_sort_multiple_columns(
-    str_ints_df: pl.DataFrame
-) -> None:
+def test_streaming_sort_multiple_columns(str_ints_df: pl.DataFrame) -> None:
     df = str_ints_df
-    out = df.lazy().sort(["strs", "vals"]).collect(engine="streaming")  # type: ignore[call-overload]
+    out = df.lazy().sort(["strs", "vals"]).collect(engine="streaming")
     assert_frame_equal(out, out.sort(["strs", "vals"]))
 
 

@@ -49,9 +49,7 @@ fn write_label<'a, 'b>(
 
 impl<'a> IRDotDisplay<'a> {
     pub fn new(lp: IRPlanRef<'a>) -> Self {
-        Self {
-            lp,
-        }
+        Self { lp }
     }
 
     fn with_root(&self, root: Node) -> Self {
