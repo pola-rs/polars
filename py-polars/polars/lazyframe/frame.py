@@ -1289,8 +1289,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if optimized:
             optimizations = optimizations.__copy__()
             optimizations._pyoptflags.streaming = engine == "streaming"
-            optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
-
             ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
             if format == "tree":
                 return ldf.describe_optimized_plan_tree()
@@ -1438,7 +1436,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("streaming mode is considered unstable.")
 
         optimizations = optimizations.__copy__()
-        optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
         optimizations._pyoptflags.streaming = engine == "streaming"
         _ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
@@ -2009,7 +2006,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine = _select_engine(engine)
 
         optimizations = optimizations.__copy__()
-        optimizations._pyoptflags.old_streaming = engine == "old-streaming"  # type: ignore[comparison-overlap]
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
         callback = _gpu_engine_callback(
