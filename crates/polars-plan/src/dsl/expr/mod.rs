@@ -125,7 +125,7 @@ pub enum Expr {
         input: Vec<Expr>,
         /// function to apply
         function: FunctionExpr,
-        options: FunctionOptions,
+
     },
     Explode {
         input: Arc<Expr>,
@@ -167,7 +167,11 @@ pub enum Expr {
         function: OpaqueColumnUdf,
         /// output dtype of the function
         output_type: GetOutput,
+
         options: FunctionOptions,
+        /// used for formatting
+        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+        fmt_str: PlSmallStr,
     },
     /// Evaluates the `evaluation` expression on the output of the `expr`.
     ///
@@ -308,11 +312,9 @@ impl Hash for Expr {
             Expr::Function {
                 input,
                 function,
-                options,
             } => {
                 input.hash(state);
                 std::mem::discriminant(function).hash(state);
-                options.hash(state);
             },
             Expr::Gather {
                 expr,
@@ -372,9 +374,11 @@ impl Hash for Expr {
                 function: _,
                 output_type: _,
                 options,
+                fmt_str,
             } => {
                 input.hash(state);
                 options.hash(state);
+                fmt_str.hash(state);
             },
             Expr::Eval {
                 expr: input,
@@ -490,11 +494,9 @@ impl Expr {
     #[inline]
     pub fn n_ary(function: impl Into<FunctionExpr>, input: Vec<Expr>) -> Expr {
         let function = function.into();
-        let options = function.function_options();
         Expr::Function {
             input,
             function,
-            options,
         }
     }
 }

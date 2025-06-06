@@ -1,5 +1,6 @@
 mod evaluate;
 #[cfg(feature = "cse")]
+mod function_expr;
 mod hash;
 mod minterm_iter;
 pub mod predicates;
@@ -17,6 +18,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
+pub use function_expr::*;
 pub use scalar::is_scalar_ae;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -188,6 +190,7 @@ pub enum AExpr {
         function: OpaqueColumnUdf,
         output_type: GetOutput,
         options: FunctionOptions,
+        fmt_str: PlSmallStr,
     },
     /// Evaluates the `evaluation` expression on the output of the `expr`.
     ///
@@ -208,7 +211,7 @@ pub enum AExpr {
         /// Therefor we need [`ExprIr`].
         input: Vec<ExprIR>,
         /// function to apply
-        function: FunctionExpr,
+        function: IRFunctionExpr,
         options: FunctionOptions,
     },
     Window {

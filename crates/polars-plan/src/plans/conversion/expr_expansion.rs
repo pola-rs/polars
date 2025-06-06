@@ -206,7 +206,6 @@ fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
         Expr::Function {
             input,
             function: FunctionExpr::StructExpr(sf),
-            options,
         } => {
             if let StructFunction::FieldByIndex(index) = sf {
                 let dtype = input[0].to_field(schema, Context::Default)?.dtype;
@@ -218,13 +217,11 @@ fn struct_index_to_field(expr: Expr, schema: &Schema) -> PolarsResult<Expr> {
                 Ok(Expr::Function {
                     input,
                     function: FunctionExpr::StructExpr(StructFunction::FieldByName(name)),
-                    options,
                 })
             } else {
                 Ok(Expr::Function {
                     input,
                     function: FunctionExpr::StructExpr(sf),
-                    options,
                 })
             }
         },
@@ -296,7 +293,6 @@ fn replace_struct_multiple_fields_with_field(
         Expr::Function {
             function,
             input,
-            options,
         } => {
             if matches!(
                 function,
@@ -308,13 +304,11 @@ fn replace_struct_multiple_fields_with_field(
                     function: FunctionExpr::StructExpr(StructFunction::FieldByName(
                         column_name.clone(),
                     )),
-                    options,
                 }
             } else {
                 Expr::Function {
                     input,
                     function,
-                    options,
                 }
             }
         },
@@ -357,7 +351,6 @@ Try setting the output data type for that operation.",
                         Expr::Function {
                             input: _,
                             function,
-                            options: _,
                         } => {
                             if matches!(
                                 function,
@@ -561,9 +554,12 @@ fn expand_function_inputs(
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Expr> {
     expr.try_map_expr(|mut e| match &mut e {
-        Expr::AnonymousFunction { input, options, .. } | Expr::Function { input, options, .. }
-            if options
-                .flags
+        Expr::Function { .. } => {
+            dbg!();
+            todo!();
+        },
+        Expr::AnonymousFunction { input, options, .. }
+            if options.flags
                 .contains(FunctionFlags::INPUT_WILDCARD_EXPANSION) =>
         {
             *input = rewrite_projections(core::mem::take(input), schema, &[], opt_flags)?;

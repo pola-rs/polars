@@ -76,6 +76,7 @@ impl OptimizationRule for SlicePushDown {
                         function,
                         output_type,
                         options,
+                        fmt_str,
                     } = m.clone()
                     {
                         input.iter_mut().for_each(|e| {
@@ -88,6 +89,7 @@ impl OptimizationRule for SlicePushDown {
                             function,
                             output_type,
                             options,
+                            fmt_str,
                         })
                     } else {
                         unreachable!()

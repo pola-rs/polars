@@ -180,11 +180,13 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             function,
             output_type,
             options,
+            fmt_str,
         } => Expr::AnonymousFunction {
             input: expr_irs_to_exprs(input, expr_arena),
             function,
             output_type,
             options,
+            fmt_str,
         },
         AExpr::Eval {
             expr,
@@ -198,11 +200,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::Function {
             input,
             function,
-            options,
+            options: _,
         } => Expr::Function {
             input: expr_irs_to_exprs(input, expr_arena),
-            function,
-            options,
+            function: ir_function_to_dsl(function),
         },
         AExpr::Window {
             function,
@@ -266,4 +267,9 @@ pub fn node_to_lp(node: Node, expr_arena: &Arena<AExpr>, lp_arena: &mut Arena<IR
         lp_arena,
         expr_arena,
     )
+}
+
+pub fn ir_function_to_dsl(function: IRFunctionExpr) -> FunctionExpr {
+    dbg!();
+    todo!()
 }

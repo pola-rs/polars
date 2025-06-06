@@ -598,7 +598,10 @@ fn test_anonymous_function_returns_scalar_all_null_20679() {
         input: vec![col("b")],
         function: LazySerde::Deserialized(SpecialEq::new(Arc::new(f))),
         output_type: Default::default(),
-        options: FunctionOptions::aggregation().with_fmt_str(""),
+        check_lengths: false,
+        flags: FunctionOptions::aggregation().flags,
+        fmt_str: "",
+        cast_options: None,
     };
 
     let grouped_df = df

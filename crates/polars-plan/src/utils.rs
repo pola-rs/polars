@@ -95,6 +95,25 @@ pub(crate) fn is_column_independent(expr: &Expr) -> bool {
     })
 }
 
+/// Check if expression is independent from any column.
+pub(crate) fn is_column_independent_aexpr(expr: Node, arena: &Arena<AExpr>) -> bool {
+    !has_aexpr(expr, arena, |e| match e {
+        AExpr::Column(_) | AExpr::Len => true,
+        #[cfg(feature = "dtype-struct")]
+        AExpr::Function {
+            input: _,
+            function:
+                IRFunctionExpr::StructExpr(
+                    IRStructFunction::FieldByIndex(_)
+                    | IRStructFunction::FieldByName(_)
+                    | IRStructFunction::MultipleFields(_),
+                ),
+            options: _,
+        } => true,
+        _ => false,
+    })
+}
+
 pub fn has_null(current_expr: &Expr) -> bool {
     has_expr(
         current_expr,

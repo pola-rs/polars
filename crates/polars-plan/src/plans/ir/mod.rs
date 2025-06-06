@@ -20,7 +20,7 @@ use strum_macros::IntoStaticStr;
 use self::hive::HivePartitionsDf;
 use crate::prelude::*;
 
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IRPlan {
     pub lp_top: Node,
     pub lp_arena: Arena<IR>,

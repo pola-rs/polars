@@ -1,9 +1,9 @@
 use super::*;
 use crate::{map, map_as_slice};
 
-impl From<TemporalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
-    fn from(func: TemporalFunction) -> Self {
-        use TemporalFunction::*;
+impl From<IRTemporalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
+    fn from(func: IRTemporalFunction) -> Self {
+        use IRTemporalFunction::*;
         match func {
             Millennium => map!(datetime::millennium),
             Century => map!(datetime::century),

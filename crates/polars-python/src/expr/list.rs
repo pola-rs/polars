@@ -89,7 +89,6 @@ impl PyExpr {
             .clone()
             .list()
             .mean()
-            .with_fmt("list.mean")
             .into()
     }
 
@@ -98,7 +97,6 @@ impl PyExpr {
             .clone()
             .list()
             .median()
-            .with_fmt("list.median")
             .into()
     }
 
@@ -107,7 +105,6 @@ impl PyExpr {
             .clone()
             .list()
             .std(ddof)
-            .with_fmt("list.std")
             .into()
     }
 
@@ -116,7 +113,6 @@ impl PyExpr {
             .clone()
             .list()
             .var(ddof)
-            .with_fmt("list.var")
             .into()
     }
 
@@ -158,7 +154,7 @@ impl PyExpr {
     }
 
     fn list_sum(&self) -> Self {
-        self.inner.clone().list().sum().with_fmt("list.sum").into()
+        self.inner.clone().list().sum().into()
     }
 
     #[cfg(feature = "list_drop_nulls")]
