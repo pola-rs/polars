@@ -464,7 +464,7 @@ impl ReaderStarter {
                 debug_assert!(extra_ops.has_row_index_or_slice())
             }
 
-            // `fast_n_rows_in_file()` we know the exact row count here already.
+            // `fast_n_rows_in_file()` or negative slice, we know the exact row count here already.
             // After this point, if n_rows_in_file is `Some`, it should contain the exact physical
             // and deleted row counts.
             if let Some(n_rows_in_file) = n_rows_in_file.as_mut() {
@@ -517,33 +517,43 @@ impl ReaderStarter {
                         panic!();
                     }
 
-                    let external_filter_mask = if let Some(row_deletions) = row_deletions {
-                        Some(row_deletions.into_external_filter_mask().await?)
-                    } else {
-                        None
+                    let get_row_count = async {
+                        let external_filter_mask = if let Some(row_deletions) = row_deletions {
+                            Some(row_deletions.into_external_filter_mask().await?)
+                        } else {
+                            None
+                        };
+
+                        let num_physical_rows =
+                            reader.row_position_after_slice(pre_slice_this_file).await?;
+
+                        let num_deleted_rows = external_filter_mask.map_or(0, |mask| {
+                            mask.slice(
+                                0,
+                                mask.len().min(usize::try_from(num_physical_rows).unwrap()),
+                            )
+                            .num_deleted_rows()
+                        });
+
+                        let file_row_count = RowCounter::new(num_physical_rows, num_deleted_rows);
+
+                        if verbose {
+                            eprintln!(
+                                "[ReaderStarter]: scan_source_idx: {scan_source_idx}: \
+                                file_row_count: {file_row_count:?}"
+                            )
+                        }
+
+                        PolarsResult::Ok(file_row_count)
                     };
 
-                    let num_physical_rows =
-                        reader.row_position_after_slice(pre_slice_this_file).await?;
-
-                    let num_deleted_rows = external_filter_mask.map_or(0, |mask| {
-                        mask.slice(
-                            0,
-                            mask.len().min(usize::try_from(num_physical_rows).unwrap()),
-                        )
-                        .num_deleted_rows()
-                    });
-
-                    let file_row_count = RowCounter::new(num_physical_rows, num_deleted_rows);
-
-                    if verbose {
-                        eprintln!(
-                            "[ReaderStarter]: scan_source_idx: {scan_source_idx}: \
-                            file_row_count: {file_row_count:?}"
-                        )
+                    if n_rows_in_file.is_none() {
+                        n_rows_in_file = Some(get_row_count.await?)
+                    } else if cfg!(debug_assertions) {
+                        assert_eq!(n_rows_in_file.unwrap(), get_row_count.await?)
                     }
 
-                    *current_row_position = current_row_position.add(file_row_count);
+                    *current_row_position = current_row_position.add(n_rows_in_file.unwrap());
                 }
 
                 continue;
