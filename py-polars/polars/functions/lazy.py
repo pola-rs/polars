@@ -9,6 +9,7 @@ import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
+    deprecate_streaming_parameter,
     deprecated,
     issue_deprecation_warning,
 )
@@ -1782,6 +1783,7 @@ def arg_sort_by(
     )
 
 
+@deprecate_streaming_parameter()
 @forward_old_opt_flags()
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
@@ -1919,6 +1921,7 @@ def collect_all_async(
 
 
 @unstable()
+@deprecate_streaming_parameter()
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,

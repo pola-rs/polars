@@ -30,6 +30,7 @@ from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
+    deprecate_streaming_parameter,
     deprecated,
     issue_deprecation_warning,
 )
@@ -1142,6 +1143,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         df_summary.insert_column(0, pl.Series("statistic", metrics))
         return df_summary
 
+    @deprecate_streaming_parameter()
     @forward_old_opt_flags()
     def explain(
         self,
@@ -1297,6 +1299,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             return self._ldf.describe_plan()
 
+    @deprecate_streaming_parameter()
     @forward_old_opt_flags()
     def show_graph(
         self,
@@ -2094,6 +2097,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> DataFrame: ...
 
+    @deprecate_streaming_parameter()
     @forward_old_opt_flags()
     def collect(
         self,
@@ -2344,6 +2348,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> Awaitable[DataFrame]: ...
 
+    @deprecate_streaming_parameter()
     def collect_async(
         self,
         *,
