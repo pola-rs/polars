@@ -9,7 +9,6 @@ import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
-    deprecate_streaming_parameter,
     deprecated,
     issue_deprecation_warning,
 )
@@ -1783,7 +1782,6 @@ def arg_sort_by(
     )
 
 
-@deprecate_streaming_parameter()
 @forward_old_opt_flags()
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
@@ -1888,7 +1886,7 @@ def collect_all(
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
-    if engine in ("streaming", "old-streaming"):
+    if engine == "streaming":
         issue_unstable_warning("streaming mode is considered unstable.")
 
     lfs = [lf._ldf for lf in lazy_frames]
@@ -1921,7 +1919,6 @@ def collect_all_async(
 
 
 @unstable()
-@deprecate_streaming_parameter()
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
@@ -1985,7 +1982,7 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    if engine in ("streaming", "old-streaming"):
+    if engine == "streaming":
         issue_unstable_warning("streaming mode is considered unstable.")
 
     result: (
