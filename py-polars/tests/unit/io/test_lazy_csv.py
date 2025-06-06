@@ -409,7 +409,7 @@ c
 
     expect = pl.Series("a", ["1", "2", "b", "c"]).to_frame()
     out = pl.scan_csv(paths).collect(  # type: ignore[call-overload]
-        engine="old-streaming" if streaming else "in-memory"
+        engine="streaming" if streaming else "in-memory"
     )
 
     assert_frame_equal(out, expect)
