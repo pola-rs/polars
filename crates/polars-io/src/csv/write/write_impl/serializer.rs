@@ -7,19 +7,19 @@
 //!  - The simplest escaping mechanism are [`QuoteStyle::Always`] and [`QuoteStyle::Never`].
 //!    For `Never` we just never quote. For `Always` we pass any serializer that never quotes
 //!    to [`quote_serializer()`] then it becomes quoted properly.
-//!  - [`QuoteStyle::Necessary`] (the default) is only relevant for strings, as it is the only type that
-//!    can have newlines (row separators), commas (column separators) or quotes. String
-//!    escaping is complicated anyway, and it is all inside [`string_serializer()`].
+//!  - [`QuoteStyle::Necessary`] (the default) is only relevant for strings and floats with decimal_comma,
+//!    as these are the only types that can have newlines (row separators), commas (default column separators)
+//!    or quotes. String escaping is complicated anyway, and it is all inside [`string_serializer()`].
 //!  - The real complication is [`QuoteStyle::NonNumeric`], that doesn't quote numbers and nulls,
 //!    and quotes any other thing. The problem is that nulls can be within any type, so we need to handle
 //!    two possibilities of quoting everywhere.
 //!
 //! So in case the chosen style is anything but `NonNumeric`, we statically know for each column except strings
-//! whether it should be quoted (and for strings too when not `Necessary`). There we use `quote_serializer()`
-//! or nothing.
+//! and floats_with_comma whether it should be quoted (and for strings and floats_with_comma too when
+//! not `Necessary`). There we use `quote_serializer()` or nothing.
 //!
 //! But to help with `NonNumeric`, each serializer carry the potential to distinguish between nulls and non-nulls,
-//! and quote the later and not the former. But in order to not have the branch when we statically know the answer,
+//! and quote the latter and not the former. But in order to not have the branch when we statically know the answer,
 //! we have an option to statically disable it with a const generic flag `QUOTE_NON_NULL`. Numbers (that should never
 //! be quoted with `NonNumeric`) just always disable this flag.
 //!
@@ -38,7 +38,7 @@ use arrow::legacy::time_zone::Tz;
 use arrow::types::NativeType;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
-use memchr::{memchr_iter, memchr3};
+use memchr::{memchr, memchr_iter, memchr3};
 use num_traits::NumCast;
 use polars_core::prelude::*;
 
@@ -141,6 +141,32 @@ fn float_serializer_no_precision_autoformat<I: NativeType + ryu::Float>(
     })
 }
 
+fn float_serializer_no_precision_autoformat_decimal_comma<I: NativeType + ryu::Float>(
+    array: &PrimitiveArray<I>,
+) -> impl Serializer {
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let mut buffer = ryu::Buffer::new();
+        let value = buffer.format(item).as_bytes();
+        let standard_notation = memchr(b'e', value).is_none();
+
+        for ch in value {
+            buf.push(if standard_notation && *ch == b'.' {
+                b','
+            } else {
+                *ch
+            });
+        }
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<I>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
 fn float_serializer_no_precision_scientific<I: NativeType + LowerExp>(
     array: &PrimitiveArray<I>,
 ) -> impl Serializer {
@@ -158,13 +184,69 @@ fn float_serializer_no_precision_scientific<I: NativeType + LowerExp>(
     })
 }
 
+fn float_serializer_no_precision_scientific_decimal_comma<I: NativeType + LowerExp>(
+    array: &PrimitiveArray<I>,
+) -> impl Serializer {
+    let mut scratch = Vec::new();
+
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        // Float writing into a buffer of `Vec<u8>` cannot fail.
+        let _ = write!(&mut scratch, "{item:.e}");
+        for c in &mut scratch {
+            if *c == b'.' {
+                *c = b',';
+                break;
+            }
+        }
+        buf.extend_from_slice(&scratch);
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<I>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
 fn float_serializer_no_precision_positional<I: NativeType + NumCast>(
     array: &PrimitiveArray<I>,
 ) -> impl Serializer {
+    let mut scratch = Vec::new();
+
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        scratch.clear();
         let v: f64 = NumCast::from(item).unwrap();
-        let value = v.to_string();
-        buf.extend_from_slice(value.as_bytes());
+        let _ = write!(&mut scratch, "{}", v);
+        buf.extend_from_slice(&scratch);
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<I>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
+fn float_serializer_no_precision_positional_decimal_comma<I: NativeType + NumCast>(
+    array: &PrimitiveArray<I>,
+) -> impl Serializer {
+    let mut scratch = Vec::new();
+
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        scratch.clear();
+        let v: f64 = NumCast::from(item).unwrap();
+        let _ = write!(&mut scratch, "{}", v);
+        for c in &mut scratch {
+            if *c == b'.' {
+                *c = b',';
+                break;
+            }
+        }
+        buf.extend_from_slice(&scratch);
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -194,6 +276,34 @@ fn float_serializer_with_precision_scientific<I: NativeType + LowerExp>(
     })
 }
 
+fn float_serializer_with_precision_scientific_decimal_comma<I: NativeType + LowerExp>(
+    array: &PrimitiveArray<I>,
+    precision: usize,
+) -> impl Serializer {
+    let mut scratch = Vec::new();
+
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        scratch.clear();
+        // Float writing into a buffer of `Vec<u8>` cannot fail.
+        let _ = write!(&mut scratch, "{item:.precision$e}");
+        for c in &mut scratch {
+            if *c == b'.' {
+                *c = b',';
+                break;
+            }
+        }
+        buf.extend_from_slice(&scratch);
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<I>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
 fn float_serializer_with_precision_positional<I: NativeType>(
     array: &PrimitiveArray<I>,
     precision: usize,
@@ -201,6 +311,33 @@ fn float_serializer_with_precision_positional<I: NativeType>(
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         // Float writing into a buffer of `Vec<u8>` cannot fail.
         let _ = write!(buf, "{item:.precision$}");
+    };
+
+    make_serializer::<_, _, false>(f, array.iter(), |array| {
+        array
+            .as_any()
+            .downcast_ref::<PrimitiveArray<I>>()
+            .expect(ARRAY_MISMATCH_MSG)
+            .iter()
+    })
+}
+
+fn float_serializer_with_precision_positional_decimal_comma<I: NativeType>(
+    array: &PrimitiveArray<I>,
+    precision: usize,
+) -> impl Serializer {
+    let mut scratch = Vec::new();
+
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        scratch.clear();
+        let _ = write!(&mut scratch, "{item:.precision$}");
+        for c in &mut scratch {
+            if *c == b'.' {
+                *c = b',';
+                break;
+            }
+        }
+        buf.extend_from_slice(&scratch);
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -526,6 +663,18 @@ pub(super) fn serializer_for<'a>(
         ($make_serializer:path) => { quote_if_always!($make_serializer,) };
     }
 
+    macro_rules! quote_if_condition {
+        ($make_serializer:path, if $cond:expr, $($arg:tt)*) => {{
+            let serializer = $make_serializer(array.as_any().downcast_ref().unwrap(), $($arg)*);
+            if $cond {
+                Box::new(quote_serializer(serializer)) as Box<dyn Serializer + Send>
+            } else {
+                Box::new(serializer)
+            }
+        }};
+        ($make_serializer:path, if $cond:expr) => { quote_if_pattern!($make_serializer, if $cond,) };
+    }
+
     let serializer = match dtype {
         DataType::Int8 => quote_if_always!(integer_serializer::<i8>),
         DataType::UInt8 => quote_if_always!(integer_serializer::<u8>),
@@ -548,19 +697,132 @@ pub(super) fn serializer_for<'a>(
                 Some(false) => quote_if_always!(float_serializer_no_precision_positional::<f32>),
                 None => quote_if_always!(float_serializer_no_precision_autoformat::<f32>),
             },
+            //TODO: decimal_comma
         },
-        DataType::Float64 => match options.float_precision {
-            Some(precision) => match options.float_scientific {
-                Some(true) => {
-                    quote_if_always!(float_serializer_with_precision_scientific::<f64>, precision)
-                },
-                _ => quote_if_always!(float_serializer_with_precision_positional::<f64>, precision),
-            },
-            None => match options.float_scientific {
-                Some(true) => quote_if_always!(float_serializer_no_precision_scientific::<f64>),
-                Some(false) => quote_if_always!(float_serializer_no_precision_positional::<f64>),
-                None => quote_if_always!(float_serializer_no_precision_autoformat::<f64>),
-            },
+        DataType::Float64 => {
+            if !options.decimal_comma {
+                match options.float_precision {
+                    Some(precision) => match options.float_scientific {
+                        Some(true) => {
+                            quote_if_always!(
+                                float_serializer_with_precision_scientific::<f64>,
+                                precision
+                            )
+                        },
+                        _ => quote_if_always!(
+                            float_serializer_with_precision_positional::<f64>,
+                            precision
+                        ),
+                    },
+                    None => match options.float_scientific {
+                        Some(true) => {
+                            quote_if_always!(float_serializer_no_precision_scientific::<f64>)
+                        },
+                        Some(false) => {
+                            quote_if_always!(float_serializer_no_precision_positional::<f64>)
+                        },
+                        None => quote_if_always!(float_serializer_no_precision_autoformat::<f64>),
+                    },
+                }
+            } else {
+                // Float string will use a comma as the decimal separator. Subsequently, any
+                // float string that contains a comma may require quoting.
+                // More specifically, quoting is required when:
+                // - quote_style is Always, or
+                // - quote_style is Necessary, the separator is also a comma, and the float string
+                //   field contains a comma character (no precision or precision > 0)
+
+                let mut should_quote = options.separator == b',';
+
+                match options.float_precision {
+                    Some(precision) => {
+                        should_quote &= precision > 0;
+
+                        match options.float_scientific {
+                            Some(true) => {
+                                quote_if_condition!(float_serializer_with_precision_scientific_decimal_comma::<f64>,
+                                    if matches!(options.quote_style, QuoteStyle::Always | QuoteStyle::Necessary if should_quote),
+                                    precision)
+                                // match options.quote_style {
+                                //     QuoteStyle::Necessary if should_quote => {
+                                //         let array = array.as_any().downcast_ref().unwrap();
+                                //         Box::new(quote_serializer(
+                                //         float_serializer_with_precision_scientific_decimal_comma::<
+                                //             f64,
+                                //         >(array, precision),
+                                //     ))
+                                //         as Box<dyn Serializer + Send>
+                                //     },
+                                //     _ => {
+                                //         quote_if_always!(
+                                //     float_serializer_with_precision_scientific_decimal_comma::<f64>,
+                                //     precision
+                                // )
+                                //     },
+                                // }
+                            },
+                            _ => match options.quote_style {
+                                QuoteStyle::Necessary if should_quote => {
+                                    let array = array.as_any().downcast_ref().unwrap();
+                                    Box::new(quote_serializer(
+                                        float_serializer_with_precision_positional_decimal_comma::<
+                                            f64,
+                                        >(array, precision),
+                                    ))
+                                        as Box<dyn Serializer + Send>
+                                },
+                                _ => quote_if_always!(
+                                    float_serializer_with_precision_positional_decimal_comma::<f64>,
+                                    precision
+                                ),
+                            },
+                        }
+                    },
+                    None => match options.float_scientific {
+                        Some(true) => match options.quote_style {
+                            QuoteStyle::Necessary if should_quote => {
+                                let array = array.as_any().downcast_ref().unwrap();
+                                Box::new(quote_serializer(
+                                    float_serializer_no_precision_scientific_decimal_comma::<f64>(
+                                        array,
+                                    ),
+                                )) as Box<dyn Serializer + Send>
+                            },
+                            _ => {
+                                quote_if_always!(
+                                    float_serializer_no_precision_scientific_decimal_comma::<f64>,
+                                )
+                            },
+                        },
+                        Some(false) => match options.quote_style {
+                            QuoteStyle::Necessary if should_quote => {
+                                let array = array.as_any().downcast_ref().unwrap();
+                                Box::new(quote_serializer(
+                                    float_serializer_no_precision_positional_decimal_comma::<f64>(
+                                        array,
+                                    ),
+                                )) as Box<dyn Serializer + Send>
+                            },
+                            _ => quote_if_always!(
+                                float_serializer_no_precision_positional_decimal_comma::<f64>
+                            ),
+                        },
+                        None => match options.quote_style {
+                            QuoteStyle::Necessary if should_quote => {
+                                let array = array.as_any().downcast_ref().unwrap();
+                                Box::new(quote_serializer(
+                                    float_serializer_no_precision_autoformat_decimal_comma::<f64>(
+                                        array,
+                                    ),
+                                )) as Box<dyn Serializer + Send>
+                            },
+                            _ => quote_if_always!(
+                                float_serializer_no_precision_autoformat_decimal_comma::<f64>
+                            ),
+                        },
+                    },
+                }
+            }
         },
         DataType::Null => quote_if_always!(null_serializer),
         DataType::Boolean => {
