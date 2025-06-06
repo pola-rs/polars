@@ -149,7 +149,7 @@ impl fmt::Display for CloudScheme {
 }
 
 crate::regex_cache::cached_regex! {
-    static CLOUD_URL = r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?|hf)://";
+    static CLOUD_SCHEME_REGEX = r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?|hf)$";
 }
 
 impl<'a> PlPathRef<'a> {
@@ -222,11 +222,9 @@ impl<'a> PlPathRef<'a> {
 
     pub fn new(uri: &'a str) -> Self {
         if let Some(i) = uri.find([':', '/']) {
-            if uri.len() >= i + 3 && &uri.as_bytes()[i..i + 3] != b"://" {
-                if CLOUD_URL.is_match(&uri[..i]) {
-                    let scheme = CloudScheme::from_str(&uri[..i]).unwrap();
-                    return Self::Cloud(PlCloudPathRef { scheme, uri });
-                }
+            if uri[i..].starts_with("://") && CLOUD_SCHEME_REGEX.is_match(&uri[..i]) {
+                let scheme = CloudScheme::from_str(&uri[..i]).unwrap();
+                return Self::Cloud(PlCloudPathRef { scheme, uri });
             }
         }
 
