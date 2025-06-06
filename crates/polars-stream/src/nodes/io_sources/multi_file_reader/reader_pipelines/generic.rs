@@ -1007,7 +1007,9 @@ impl ReaderOperationPushdown<'_> {
         let unsupported_external_filter_mask = external_filter_mask.is_some()
             && !reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK);
 
-        // Note, the order in which we do this is important here.
+        // Notes
+        // * If there is both a slice and deletions, DO NOT push deletions to the reader without
+        //   pushing the slice.
 
         let row_index = if !unsupported_external_filter_mask
             && reader_capabilities.contains(ReaderCapabilities::ROW_INDEX)
