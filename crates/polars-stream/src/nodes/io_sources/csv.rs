@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use polars_core::StringCacheHolder;
 use polars_core::prelude::{Column, Field};
 use polars_core::schema::{SchemaExt, SchemaRef};
-use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::_csv_read_internal::{
@@ -683,6 +683,25 @@ impl ChunkReader {
 
         let height = df.height();
         let n_lines_is_correct = df.height() == n_lines;
+
+        // Check malformed
+        if df.height() > n_lines
+            || (df.height() < n_lines && self.parse_options.comment_prefix.is_none())
+        {
+            // Note: in case data is malformed, df.height() is more likely to be correct than n_lines.
+            let msg = format!(
+                "CSV malformed: expected {} rows, actual {} rows, in chunk starting at row_offset {}, length {}",
+                n_lines,
+                df.height(),
+                chunk_row_offset,
+                chunk.len()
+            );
+            if self.ignore_errors {
+                polars_warn!(msg);
+            } else {
+                polars_bail!(ComputeError: msg);
+            }
+        }
 
         if slice != NO_SLICE {
             assert!(slice != SLICE_ENDED);
