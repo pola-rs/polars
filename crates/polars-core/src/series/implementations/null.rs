@@ -4,7 +4,7 @@ use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use self::compare_inner::TotalOrdInner;
 use super::*;
-use crate::chunked_array::ops::compare_inner::{NonNull, IntoTotalEqInner, TotalEqInner};
+use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, NonNull, TotalEqInner};
 use crate::chunked_array::ops::sort::arg_sort_multiple::arg_sort_multiple_impl;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
@@ -155,7 +155,9 @@ impl PrivateSeries for NullChunked {
         by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
-        let vals = (0..self.len()).map(|i| (i as IdxSize, NonNull(()))).collect();
+        let vals = (0..self.len())
+            .map(|i| (i as IdxSize, NonNull(())))
+            .collect();
         arg_sort_multiple_impl(vals, by, options)
     }
 }

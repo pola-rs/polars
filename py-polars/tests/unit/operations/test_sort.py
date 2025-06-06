@@ -235,7 +235,7 @@ def test_arg_sort_by_nulls() -> None:
     df = pl.DataFrame({"x": [None] * 5, "y": [None] * 5, "z": order})
     assert_frame_equal(
         df.select(pl.arg_sort_by("x", "y", "z")),
-        pl.DataFrame({"x": order}, schema={"x": pl.get_index_type()})
+        pl.DataFrame({"x": order}, schema={"x": pl.get_index_type()}),
     )
 
 
