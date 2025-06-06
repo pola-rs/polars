@@ -433,7 +433,8 @@ impl ReaderStarter {
                         PhysicalSlice::new(pre_slice, external_filter_mask.as_ref())
                     },
 
-                    // This is hit here for NDJSON single file negative slice
+                    // This is hit here for NDJSON single file negative slice, we just passthrough
+                    // in this case.
                     Slice::Negative { .. } => {
                         if external_filter_mask.is_some() {
                             unimplemented!(
