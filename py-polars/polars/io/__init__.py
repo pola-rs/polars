@@ -3,6 +3,7 @@
 from polars.io.avro import read_avro
 from polars.io.clipboard import read_clipboard
 from polars.io.csv import read_csv, read_csv_batched, scan_csv
+from polars.io.fwf import scan_fwf
 from polars.io.database import read_database, read_database_uri
 from polars.io.delta import read_delta, scan_delta
 from polars.io.iceberg import scan_iceberg
@@ -54,6 +55,7 @@ __all__ = [
     "read_parquet_metadata",
     "read_parquet_schema",
     "scan_csv",
+    "scan_fwf"
     "scan_delta",
     "scan_iceberg",
     "scan_ipc",
