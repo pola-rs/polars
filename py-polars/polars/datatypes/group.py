@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from polars.datatypes.classes import (
     Array,
@@ -30,25 +30,28 @@ if TYPE_CHECKING:
     import sys
     from collections.abc import Iterable
 
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
+
     from polars._typing import (
         PolarsDataType,
         PolarsIntegerType,
         PolarsTemporalType,
     )
 
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
+
+_DataTypeT = TypeVar("_DataTypeT", bound="DataType | DataTypeClass")
 
 
-class DataTypeGroup(frozenset):  # type: ignore[type-arg]
+class DataTypeGroup(frozenset[_DataTypeT]):
     """Group of data types."""
 
     _match_base_type: bool
 
     def __new__(
-        cls, items: Iterable[DataType | DataTypeClass], *, match_base_type: bool = True
+        cls, items: Iterable[_DataTypeT], *, match_base_type: bool = True
     ) -> Self:
         """
         Construct a DataTypeGroup.
@@ -122,7 +125,7 @@ DURATION_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     ]
 )
 TEMPORAL_DTYPES: frozenset[PolarsTemporalType] = DataTypeGroup(
-    frozenset([Date, Time]) | DATETIME_DTYPES | DURATION_DTYPES
+    frozenset([Date, Time]) | DATETIME_DTYPES | DURATION_DTYPES  # type: ignore[arg-type, operator]
 )
 
 NESTED_DTYPES: frozenset[PolarsDataType] = DataTypeGroup([List, Struct, Array])

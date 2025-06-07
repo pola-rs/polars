@@ -3,11 +3,10 @@ from __future__ import annotations
 import contextlib
 import functools
 import re
-import sys
 from collections.abc import Collection
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from polars.datatypes.classes import (
     Array,
@@ -48,15 +47,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 
-OptionType = type(Optional[type])
-if sys.version_info >= (3, 10):
-    from types import NoneType, UnionType
-else:
-    # infer equivalent class
-    NoneType = type(None)
-    UnionType = type(Union[int, float])
-
 if TYPE_CHECKING:
+    import sys
+
     from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
     if sys.version_info >= (3, 10):
@@ -252,7 +245,7 @@ class _DataTypeMappings:
 
 
 # Initialize once (poor man's singleton :)
-DataTypeMappings = _DataTypeMappings()
+DataTypeMappings: _DataTypeMappings = _DataTypeMappings()
 
 
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:
