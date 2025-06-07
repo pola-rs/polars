@@ -106,7 +106,7 @@ avro = ["polars-io", "polars-io/avro"]
 csv = ["polars-io", "polars-io/csv", "polars-lazy?/csv", "polars-sql?/csv", "new_streaming"]
 
 # support for arrows fwf file parsing
-fwf = ["polars-io", "polars-io/fwf", "new_streaming"]
+fwf = ["polars-io", "polars-io/fwf", "polars-plan?/fwf", "new_streaming"]
 
 
 # slower builds

@@ -141,7 +141,7 @@ impl FileReader for FwfFileReader {
         }
 
         let slice = self.normalize_slice(pre_slice.clone());
-        if slice.len() == 0 {
+        if slice.is_empty() {
             let (_, rx) = FileReaderOutputSend::new_serial();
             if verbose {
                 eprintln!(
@@ -191,7 +191,7 @@ impl FileReader for FwfFileReader {
                 let endians = endians.clone();
                 let offsets = self.offsets.clone();
                 let widths = self.widths.clone();
-                let row_width = self.row_width.clone();
+                let row_width = self.row_width;
                 let source_token = SourceToken::new();
                 AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
                     let mut offset = range.start;

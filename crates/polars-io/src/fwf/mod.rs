@@ -72,6 +72,7 @@ pub fn get_arrow_field_width(dtype: &ArrowDataType) -> PolarsResult<usize> {
     Ok(size)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn decode_fwf(
     buffer: &[u8], // or &Mmap
     schema: SchemaRef,
