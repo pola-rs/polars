@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "temporal")]
 use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::chunked_array::cast::CastOptions;
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
 use polars_utils::hashing::hash_to_partition;
@@ -138,6 +139,9 @@ impl DynLiteralValue {
                 Ok(Scalar::from(s).cast_with_options(dtype, CastOptions::Strict)?)
             },
             DynLiteralValue::Int(i) => {
+                #[cfg(not(feature = "dtype-i128"))]
+                let i: i64 = i.try_into().expect("activate dtype-i128 feature");
+
                 Ok(Scalar::from(i).cast_with_options(dtype, CastOptions::Strict)?)
             },
             DynLiteralValue::Float(f) => {
