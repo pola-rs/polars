@@ -233,6 +233,9 @@ impl SlicePushDown {
                 #[cfg(feature = "csv")]
                 FileScan::Csv { .. } => true,
 
+                #[cfg(feature = "fwf")]
+                FileScan::Fwf { .. } => true,
+
                 #[cfg(feature = "json")]
                 FileScan::NDJson { .. } => true,
 

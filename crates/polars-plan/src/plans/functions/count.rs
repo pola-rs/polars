@@ -4,7 +4,8 @@ use arrow::io::ipc::read::get_row_count as count_rows_ipc_sync;
     feature = "parquet",
     feature = "ipc",
     feature = "json",
-    feature = "csv"
+    feature = "csv",
+    feature = "fwf"
 ))]
 use polars_core::error::feature_gated;
 #[cfg(any(feature = "json", feature = "parquet"))]
@@ -29,7 +30,8 @@ pub fn count_rows(
         feature = "parquet",
         feature = "ipc",
         feature = "json",
-        feature = "csv"
+        feature = "csv",
+        feature = "fwf"
     )))]
     {
         unreachable!()
@@ -39,12 +41,15 @@ pub fn count_rows(
         feature = "parquet",
         feature = "ipc",
         feature = "json",
-        feature = "csv"
+        feature = "csv",
+        feature = "fwf"
     ))]
     {
         let count: PolarsResult<usize> = match scan_type {
             #[cfg(feature = "csv")]
             FileScan::Csv { options } => count_all_rows_csv(sources, options),
+            #[cfg(feature = "csv")]
+            FileScan::Fwf { options } => count_all_rows_fwf(sources, options),
             #[cfg(feature = "parquet")]
             FileScan::Parquet { .. } => count_rows_parquet(sources, cloud_options),
             #[cfg(feature = "ipc")]
@@ -109,6 +114,18 @@ fn count_all_rows_csv(
             },
         })
         .sum()
+}
+
+#[cfg(feature = "fwf")]
+fn count_all_rows_fwf(
+    sources: &ScanSources,
+    options: &polars_io::fwf::FwfReadOptions,
+) -> PolarsResult<usize> {
+    let row_width = options.get_row_width()?;
+    sources
+        .iter()
+        .map(|source| source.to_memslice().map(|mem| mem.len() / row_width))
+        .try_fold(0usize, |acc, x| x.map(|v| acc + v))
 }
 
 #[cfg(feature = "parquet")]

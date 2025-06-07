@@ -144,6 +144,7 @@ search_sorted = ["polars/search_sorted"]
 decompress = ["polars/decompress"]
 regex = ["polars/regex"]
 csv = ["polars/csv", "polars-mem-engine/csv"]
+fwf = ["polars/fwf"]
 clipboard = ["arboard"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
@@ -239,6 +240,7 @@ io = [
   "ipc_streaming",
   "avro",
   "csv",
+  "fwf",
   "cloud",
   "clipboard",
 ]

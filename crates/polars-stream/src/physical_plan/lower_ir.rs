@@ -526,6 +526,11 @@ pub fn lower_ir(
                     FileScan::Csv { options } => {
                         Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>
                     },
+                    
+                    #[cfg(feature = "fwf")]
+                    FileScan::Fwf { options } => {
+                        Arc::new(Arc::new(options.clone())) as Arc<dyn FileReaderBuilder>
+                    },
 
                     #[cfg(feature = "json")]
                     FileScan::NDJson { options } => {

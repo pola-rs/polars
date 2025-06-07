@@ -30,6 +30,14 @@ fn scan_type_to_pyobject(
                 .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
             Ok(("csv", options, cloud_options).into_py_any(py)?)
         },
+        #[cfg(feature = "fwf")]
+        FileScan::Fwf { options } => {
+            let options = serde_json::to_string(options)
+                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+            let cloud_options = serde_json::to_string(cloud_options)
+                .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+            Ok(("fwf", options, cloud_options).into_py_any(py)?)
+        },
         #[cfg(feature = "parquet")]
         FileScan::Parquet { options, .. } => {
             let options = serde_json::to_string(options)

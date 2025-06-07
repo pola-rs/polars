@@ -1,18 +1,13 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use arrow::array::{FixedSizeBinaryArray, FixedSizeListArray, PrimitiveArray};
-use arrow::datatypes::ArrowDataType;
-use arrow::types::{NativeType, f16};
 use async_trait::async_trait;
 use polars_core::config;
-use polars_core::prelude::{CompatLevel, DataType, Field};
 use polars_core::schema::{SchemaExt, SchemaRef};
-use polars_core::series::Series;
 use polars_error::{PolarsResult, polars_bail};
 use polars_io::cloud::CloudOptions;
+use polars_io::fwf::{decode_fwf, get_field_width, Endianness, FwfReadOptions};
 use polars_plan::prelude::ScanSource;
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 use polars_utils::mmap::MemSlice;
 use polars_utils::slice_enum::Slice;
@@ -29,26 +24,7 @@ use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_file_reader::reader_interface::capabilities::ReaderCapabilities;
 
-#[derive(Debug, Clone, Copy)]
-pub enum Endianness {
-    Little,
-    Big,
-}
-// pub enum EndiannessOption {
-//     All(Endianness),
-//     Separate(Vec<Endianness>)
-// }
 
-pub struct FwfOptions {
-    file_schema: SchemaRef,
-    endianness: Endianness,
-}
-
-#[derive(Debug, Clone)]
-pub struct FwfReadOptions {
-    schema: SchemaRef,
-    endianness: Arc<Vec<Endianness>>,
-}
 
 impl FileReaderBuilder for Arc<FwfReadOptions> {
     fn reader_name(&self) -> &str {
@@ -68,7 +44,7 @@ impl FileReaderBuilder for Arc<FwfReadOptions> {
         _scan_source_idx: usize,
     ) -> Box<dyn FileReader> {
         let scan_source = source;
-        let schema = self.schema.clone();
+        let schema = self.schema();
         let verbose = config::verbose();
         let mut offsets = Vec::with_capacity(schema.len());
         let mut widths = Vec::with_capacity(schema.len());
@@ -85,7 +61,7 @@ impl FileReaderBuilder for Arc<FwfReadOptions> {
             scan_source,
             cloud_options,
             schema,
-            endianness: self.endianness.clone(),
+            endianness: self.endianness(),
             verbose,
             row_width,
             offsets,
@@ -227,7 +203,7 @@ impl FileReader for FwfFileReader {
                         if offset == end {
                             break;
                         }
-                        let df = decode_table_polars(
+                        let df = decode_fwf(
                             buffer.as_ref(),
                             schema.clone(),
                             offset..end,
@@ -315,204 +291,4 @@ fn split_range(start: usize, end: usize, n_slices: usize) -> Vec<std::ops::Range
         begin = next;
     }
     out
-}
-
-pub fn decode_table_polars(
-    buffer: &[u8], // or &Mmap
-    schema: SchemaRef,
-    range: Range<usize>,
-    selected_cols: &[usize],
-    offsets: &[usize],
-    widths:  &[usize],
-    row_size: &usize,
-    endians: &[Endianness],
-) -> PolarsResult<DataFrame> {
-    if buffer.len() % row_size != 0 {
-        polars_bail!(ComputeError: "File size is not a multiple of row size")
-    }
-    // 3. For each selected column, decode directly from the buffer
-    let mut columns = Vec::with_capacity(selected_cols.len());
-    for (i, &col_idx) in selected_cols.iter().enumerate() {
-        let offset = offsets[col_idx];
-        let width = widths[col_idx];
-        let (name, dtype) = schema.get_at_index(col_idx).unwrap();
-        let endian = &endians[i];
-        // Efficient: pass the full buffer, n_rows, column offset/stride, and width
-        let s = decode_stream_polars(buffer, &range, offset, width, name, dtype, endian)?;
-        columns.push(s.into());
-    }
-    DataFrame::new_with_height(range.len(), columns)
-}
-
-fn get_field_width(field: &Field) -> PolarsResult<usize> {
-    get_arrow_field_width(&field.dtype().to_physical().to_arrow(CompatLevel::newest()))
-}
-fn get_arrow_field_width(dtype: &ArrowDataType) -> PolarsResult<usize> {
-    let size = match dtype {
-        arrow::datatypes::ArrowDataType::Int8 => 1,
-        arrow::datatypes::ArrowDataType::Int16 => 2,
-        arrow::datatypes::ArrowDataType::Int32 => 4,
-        arrow::datatypes::ArrowDataType::Int64 => 8,
-        arrow::datatypes::ArrowDataType::Int128 => 16,
-        arrow::datatypes::ArrowDataType::UInt8 => 1,
-        arrow::datatypes::ArrowDataType::UInt16 => 2,
-        arrow::datatypes::ArrowDataType::UInt32 => 4,
-        arrow::datatypes::ArrowDataType::UInt64 => 8,
-        arrow::datatypes::ArrowDataType::Float16 => 2,
-        arrow::datatypes::ArrowDataType::Float32 => 4,
-        arrow::datatypes::ArrowDataType::Float64 => 8,
-        arrow::datatypes::ArrowDataType::FixedSizeBinary(size) => *size,
-        arrow::datatypes::ArrowDataType::FixedSizeList(inner_field, size) => {
-            get_arrow_field_width(inner_field.dtype())? * size
-        },
-        _ => polars_bail!(ComputeError: "Unsupported DataType in fwf get_feild_width: {dtype:?}"),
-    };
-    Ok(size)
-}
-
-pub fn decode_stream_polars(
-    bytes: &[u8],
-    slice: &Range<usize>,
-    offset: usize,
-    width: usize,
-    name: &PlSmallStr,
-    dtype: &DataType,
-    endian: &Endianness,
-) -> PolarsResult<Series> {
-    let n_rows = slice.len();
-    macro_rules! dispatch {
-        ($ty:ty) => {{
-            let elem_size = std::mem::size_of::<$ty>();
-            assert!(width == elem_size, "Width mismatch for primitive type.");
-            let mut vec = Vec::with_capacity(n_rows);
-            match endian {
-                Endianness::Little => {
-                    for row in slice.clone() {
-                        let start = row * offset;
-                        let chunk = &bytes[start..start + width];
-                        let val = <$ty>::from_le_bytes(chunk.try_into().unwrap());
-                        vec.push(val);
-                    }
-                },
-                Endianness::Big => {
-                    for row in slice.clone() {
-                        let start = row * offset;
-                        let chunk = &bytes[start..start + width];
-                        let val = <$ty>::from_be_bytes(chunk.try_into().unwrap());
-                        vec.push(val);
-                    }
-                },
-            }
-            let arr = PrimitiveArray::from_vec(vec);
-            unsafe {
-                Ok(Series::from_chunks_and_dtype_unchecked(
-                    name.clone(),
-                    vec![Box::new(arr)],
-                    dtype,
-                ))
-            }
-        }};
-    }
-    match dtype.to_physical().to_arrow(CompatLevel::newest()) {
-        arrow::datatypes::ArrowDataType::Int8 => dispatch!(i8),
-        arrow::datatypes::ArrowDataType::Int16 => dispatch!(i16),
-        arrow::datatypes::ArrowDataType::Int32 => dispatch!(i32),
-        arrow::datatypes::ArrowDataType::Int64 => dispatch!(i64),
-        arrow::datatypes::ArrowDataType::Int128 => dispatch!(i128),
-        arrow::datatypes::ArrowDataType::UInt8 => dispatch!(u8),
-        arrow::datatypes::ArrowDataType::UInt16 => dispatch!(u16),
-        arrow::datatypes::ArrowDataType::UInt32 => dispatch!(u32),
-        arrow::datatypes::ArrowDataType::UInt64 => dispatch!(u64),
-        arrow::datatypes::ArrowDataType::Float16 => dispatch!(f16),
-        arrow::datatypes::ArrowDataType::Float32 => dispatch!(f32),
-        arrow::datatypes::ArrowDataType::Float64 => dispatch!(f64),
-        arrow::datatypes::ArrowDataType::FixedSizeBinary(size) => {
-            let mut chunks = Vec::with_capacity(n_rows);
-            assert!(width == size, "Width mismatch for fixed width binary type.");
-            for row in slice.clone() {
-                let start = row * offset;
-                chunks.push(Some(&bytes[start..start + size]));
-            }
-            let arr = FixedSizeBinaryArray::from_iter(chunks, size);
-            unsafe {
-                Ok(Series::from_chunks_and_dtype_unchecked(
-                    name.clone(),
-                    vec![Box::new(arr)],
-                    dtype,
-                ))
-            }
-        },
-        arrow::datatypes::ArrowDataType::FixedSizeList(inner_field, list_size) => {
-            let inner_dtype = inner_field.dtype();
-            let inner_width = get_arrow_field_width(inner_dtype)?;
-            let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
-            assert!(
-                width / list_size == inner_width,
-                "Width mismatch for fixed width binary type."
-            );
-            macro_rules! list_dispatch {
-                ($ty:ty) => {{
-                    let mut vec = Vec::with_capacity(n_rows);
-                    match endian {
-                        Endianness::Little => {
-                            for row in slice.clone() {
-                                let start = row * offset;
-                                for i in 0..list_size {
-                                    let off = start + i * inner_width;
-                                    let chunk = &bytes[off..off + inner_width];
-                                    let val = <$ty>::from_le_bytes(chunk.try_into().unwrap());
-                                    vec.push(val);
-                                }
-                            }
-                        },
-                        Endianness::Big => {
-                            for row in slice.clone() {
-                                let start = row * offset;
-                                for i in 0..list_size {
-                                    let off = start + i * inner_width;
-                                    let chunk = &bytes[off..off + inner_width];
-                                    let val = <$ty>::from_be_bytes(chunk.try_into().unwrap());
-                                    vec.push(val);
-                                }
-                            }
-                        },
-                    }
-                    let values = PrimitiveArray::from_vec(vec);
-                    let arr = FixedSizeListArray::try_new(
-                        arrow_dtype,
-                        list_size,
-                        Box::new(values),
-                        None,
-                    )?;
-                    unsafe {
-                        Ok(Series::from_chunks_and_dtype_unchecked(
-                            name.clone(),
-                            vec![Box::new(arr)],
-                            dtype,
-                        ))
-                    }
-                }};
-            }
-            match inner_dtype {
-                arrow::datatypes::ArrowDataType::Int8 => list_dispatch!(i8),
-                arrow::datatypes::ArrowDataType::Int16 => list_dispatch!(i16),
-                arrow::datatypes::ArrowDataType::Int32 => list_dispatch!(i32),
-                arrow::datatypes::ArrowDataType::Int64 => list_dispatch!(i64),
-                arrow::datatypes::ArrowDataType::Int128 => list_dispatch!(i128),
-                arrow::datatypes::ArrowDataType::UInt8 => list_dispatch!(u8),
-                arrow::datatypes::ArrowDataType::UInt16 => list_dispatch!(u16),
-                arrow::datatypes::ArrowDataType::UInt32 => list_dispatch!(u32),
-                arrow::datatypes::ArrowDataType::UInt64 => list_dispatch!(u64),
-                arrow::datatypes::ArrowDataType::Float16 => list_dispatch!(f16),
-                arrow::datatypes::ArrowDataType::Float32 => list_dispatch!(f32),
-                arrow::datatypes::ArrowDataType::Float64 => list_dispatch!(f64),
-                _ => {
-                    polars_bail!(ComputeError: "Unsupported DataType in fwf decode_stream_polars (for fixed width list): {inner_dtype:?}")
-                },
-            }
-        },
-        _ => {
-            polars_bail!(ComputeError: "Unsupported DataType in fwf decode_stream_polars: {dtype:?}")
-        },
-    }
 }

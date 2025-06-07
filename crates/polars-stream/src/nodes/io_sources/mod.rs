@@ -3,7 +3,7 @@ pub mod multi_file_reader;
 pub mod batch;
 #[cfg(feature = "csv")]
 pub mod csv;
-#[cfg(feature = "fwf")]
+// #[cfg(feature = "fwf")]
 pub mod fwf;
 #[cfg(feature = "ipc")]
 pub mod ipc;

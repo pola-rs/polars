@@ -14,6 +14,8 @@ use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::parquet::read::ParquetOptions;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::slice_enum::Slice;
+#[cfg(feature = "fwf")]
+use polars_io::fwf::FwfReadOptions;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -40,6 +42,9 @@ bitflags::bitflags! {
 pub enum FileScan {
     #[cfg(feature = "csv")]
     Csv { options: CsvReadOptions },
+    
+    #[cfg(feature = "fwf")]
+    Fwf { options: FwfReadOptions },
 
     #[cfg(feature = "json")]
     NDJson { options: NDJsonReadOptions },
@@ -265,6 +270,11 @@ mod _file_scan_eq_hash {
             options: &'a polars_io::csv::read::CsvReadOptions,
         },
 
+        #[cfg(feature = "fwf")]
+        Fwf {
+            options: &'a polars_io::fwf::FwfReadOptions,
+        },
+
         #[cfg(feature = "json")]
         NDJson {
             options: &'a crate::prelude::NDJsonReadOptions,
@@ -303,6 +313,9 @@ mod _file_scan_eq_hash {
             match value {
                 #[cfg(feature = "csv")]
                 FileScan::Csv { options } => FileScanEqHashWrap::Csv { options },
+
+                #[cfg(feature = "fwf")]
+                FileScan::Fwf { options } => FileScanEqHashWrap::Fwf { options },
 
                 #[cfg(feature = "json")]
                 FileScan::NDJson { options } => FileScanEqHashWrap::NDJson { options },

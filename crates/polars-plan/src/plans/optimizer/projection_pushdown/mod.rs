@@ -456,6 +456,8 @@ impl ProjectionPushDown {
                     FileScan::Ipc { .. } => true,
                     #[cfg(feature = "csv")]
                     FileScan::Csv { .. } => true,
+                    #[cfg(feature = "fwf")]
+                    FileScan::Fwf { .. } => true,
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => true,
                     // MultiScan will handle it if the PythonDataset cannot do projections.

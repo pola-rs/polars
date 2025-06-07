@@ -70,6 +70,7 @@ cloud = ["async", "polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
 csv = ["polars-io/csv"]
+fwf = ["polars-io/fwf"]
 temporal = [
   "chrono",
   "polars-core/temporal",

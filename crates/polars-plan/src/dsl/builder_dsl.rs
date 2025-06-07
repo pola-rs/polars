@@ -3,6 +3,8 @@ use std::sync::Arc;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
+#[cfg(feature = "fwf")]
+use polars_io::fwf::FwfReadOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
@@ -89,6 +91,24 @@ impl DslBuilder {
         }
         .into())
     }
+
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "fwf")]
+    pub fn scan_fwf(
+        sources: ScanSources,
+        options: FwfReadOptions,
+        unified_scan_args: UnifiedScanArgs,
+    ) -> PolarsResult<Self> {
+        Ok(DslPlan::Scan {
+            sources,
+            file_info: None,
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScan::Fwf { options }),
+            cached_ir: Default::default(),
+        }
+        .into())
+    }
+
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]

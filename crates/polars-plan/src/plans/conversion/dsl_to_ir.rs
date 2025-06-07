@@ -189,6 +189,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         FileScan::Csv { .. } => {
                             sources.expand_paths(unified_scan_args, cloud_options)?
                         },
+                        #[cfg(feature = "fwf")]
+                        FileScan::Fwf { .. } => {
+                            sources.expand_paths(unified_scan_args, cloud_options)?
+                        },
                         #[cfg(feature = "json")]
                         FileScan::NDJson { .. } => {
                             sources.expand_paths(unified_scan_args, cloud_options)?
@@ -254,6 +258,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             cloud_options,
                         )
                         .map_err(|e| e.context(failed_here!(csv scan)))?
+                    },
+                    #[cfg(feature = "fwf")]
+                    FileScan::Fwf { .. } => {
+                        file_info.expect("FileInfo should be set for Fwf")
                     },
                     #[cfg(feature = "json")]
                     FileScan::NDJson { options } => scans::ndjson_file_info(
