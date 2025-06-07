@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.convert_time_zone
+================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.convert_time_zone

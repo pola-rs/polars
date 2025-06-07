@@ -1,0 +1,31 @@
+﻿polars.io.parquet.ParquetFieldOverwrites
+========================================
+
+.. currentmodule:: polars.io.parquet
+
+.. autoclass:: ParquetFieldOverwrites
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~ParquetFieldOverwrites.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~ParquetFieldOverwrites.field_id
+      ~ParquetFieldOverwrites.name
+      ~ParquetFieldOverwrites.children
+      ~ParquetFieldOverwrites.metadata
+   
+   

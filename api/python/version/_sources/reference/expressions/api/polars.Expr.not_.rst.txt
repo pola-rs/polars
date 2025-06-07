@@ -1,0 +1,6 @@
+﻿polars.Expr.not\_
+=================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.not_
