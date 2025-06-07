@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal as D
 from typing import TYPE_CHECKING
 
@@ -15,7 +15,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, PolarsTemporalType
 
 
 def test_struct_logical_is_in() -> None:
@@ -737,3 +737,72 @@ def test_null_propagate_all_paths_cat(nulls_equal: bool) -> None:
     missing_value = True if nulls_equal else None
     expected = pl.Series([True, False, missing_value])
     assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("dt_left", "dt_right", "should_succeed"),
+    [
+        (pl.Date, pl.Date, True),
+        (pl.Date, pl.Datetime("ms"), True),
+        (pl.Date, pl.Datetime("us"), True),
+        (pl.Date, pl.Datetime("ns"), True),
+        (pl.Datetime("ms"), pl.Date, False),
+        (pl.Datetime("ms"), pl.Datetime("ms"), True),
+        (pl.Datetime("ms"), pl.Datetime("us"), True),
+        (pl.Datetime("ms"), pl.Datetime("ns"), True),
+        (pl.Datetime("us"), pl.Date, False),
+        (pl.Datetime("us"), pl.Datetime("ms"), False),
+        (pl.Datetime("us"), pl.Datetime("us"), True),
+        (pl.Datetime("us"), pl.Datetime("ns"), True),
+        (pl.Datetime("ns"), pl.Date, False),
+        (pl.Datetime("ns"), pl.Datetime("ms"), False),
+        (pl.Datetime("ns"), pl.Datetime("us"), False),
+        (pl.Datetime("ns"), pl.Datetime("ns"), True),
+    ],
+)
+def test_is_in_date_datetime_conversion(
+    dt_left: PolarsTemporalType,
+    dt_right: PolarsTemporalType,
+    should_succeed: bool,
+) -> None:
+    s1 = pl.Series([date(2025, 1, 1), date(2025, 1, 2), date(2025, 1, 3)]).cast(dt_left)
+    s2 = pl.Series([date(2025, 1, 1), date(2025, 1, 3)]).cast(dt_right)
+
+    if not should_succeed:
+        with pytest.raises(InvalidOperationError):
+            s1.is_in(s2)
+    else:
+        result = s1.is_in(s2)
+        expected = pl.Series([True, False, True])
+        assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("dt_left", "dt_right", "should_succeed"),
+    [
+        (pl.Duration("ms"), pl.Duration("ms"), True),
+        (pl.Duration("ms"), pl.Duration("us"), True),
+        (pl.Duration("ms"), pl.Duration("ns"), True),
+        (pl.Duration("us"), pl.Duration("ms"), False),
+        (pl.Duration("us"), pl.Duration("us"), True),
+        (pl.Duration("us"), pl.Duration("ns"), True),
+        (pl.Duration("ns"), pl.Duration("ms"), False),
+        (pl.Duration("ns"), pl.Duration("us"), False),
+        (pl.Duration("ns"), pl.Duration("ns"), True),
+    ],
+)
+def test_is_in_duration_conversion(
+    dt_left: PolarsTemporalType,
+    dt_right: PolarsTemporalType,
+    should_succeed: bool,
+) -> None:
+    s1 = pl.Series([timedelta(1), timedelta(2), timedelta(3)]).cast(dt_left)
+    s2 = pl.Series([timedelta(1), timedelta(3)]).cast(dt_right)
+
+    if not should_succeed:
+        with pytest.raises(InvalidOperationError):
+            s1.is_in(s2)
+    else:
+        result = s1.is_in(s2)
+        expected = pl.Series([True, False, True])
+        assert_series_equal(result, expected)
