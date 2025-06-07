@@ -11,10 +11,30 @@ use crate::prelude::*;
 pub struct ArrayNameSpace(pub Expr);
 
 impl ArrayNameSpace {
+    /// Compute the length of every subarray.
     pub fn len(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Length))
     }
+
+    /// Slice every subarray.
+    pub fn slice(self, offset: i64, length: usize) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Slice(
+                offset, length,
+            )))
+    }
+
+    /// Get the head of every subarray
+    pub fn head(self, n: usize) -> Expr {
+        self.slice(0, n)
+    }
+
+    /// Get the tail of every subarray
+    pub fn tail(self, n: usize) -> Expr {
+        self.slice(0i64 - i64::try_from(n).unwrap(), n)
+    }
+
     /// Compute the maximum of the items in every subarray.
     pub fn max(self) -> Expr {
         self.0
