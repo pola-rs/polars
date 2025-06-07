@@ -16,6 +16,8 @@ pub mod file_cache;
 pub mod ipc;
 #[cfg(feature = "json")]
 pub mod json;
+#[cfg(feature = "line")]
+pub mod line;
 pub mod mmap;
 #[cfg(feature = "json")]
 pub mod ndjson;
