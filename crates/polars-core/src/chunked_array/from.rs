@@ -1,85 +1,12 @@
-use arrow::compute::concatenate::concatenate_unchecked;
-
 use super::*;
 
 #[allow(clippy::all)]
 fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataType {
     // ensure we don't get List<null>
-    let dtype = if let Some(arr) = chunks.get(0) {
+    if let Some(arr) = chunks.get(0) {
         DataType::from_arrow_dtype(arr.dtype())
     } else {
         dtype
-    };
-
-    match dtype {
-        #[cfg(feature = "dtype-categorical")]
-        // arrow dictionaries are not nested as dictionaries, but only by their keys, so we must
-        // change the list-value array to the keys and store the dictionary values in the datatype.
-        // if a global string cache is set, we also must modify the keys.
-        DataType::List(inner)
-            if matches!(
-                *inner,
-                DataType::Categorical(None, _) | DataType::Enum(None, _)
-            ) =>
-        {
-            let array = concatenate_unchecked(chunks).unwrap();
-            let list_arr = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
-            let values_arr = list_arr.values();
-            let cat = unsafe {
-                Series::_try_from_arrow_unchecked(
-                    PlSmallStr::EMPTY,
-                    vec![values_arr.clone()],
-                    values_arr.dtype(),
-                )
-                .unwrap()
-            };
-
-            // we nest only the physical representation
-            // the mapping is still in our rev-map
-            let arrow_dtype = ListArray::<i64>::default_datatype(ArrowDataType::UInt32);
-            let new_array = ListArray::new(
-                arrow_dtype,
-                list_arr.offsets().clone(),
-                cat.array_ref(0).clone(),
-                list_arr.validity().cloned(),
-            );
-            chunks.clear();
-            chunks.push(Box::new(new_array));
-            DataType::List(Box::new(cat.dtype().clone()))
-        },
-        #[cfg(all(feature = "dtype-array", feature = "dtype-categorical"))]
-        DataType::Array(inner, width)
-            if matches!(
-                *inner,
-                DataType::Categorical(None, _) | DataType::Enum(None, _)
-            ) =>
-        {
-            let array = concatenate_unchecked(chunks).unwrap();
-            let list_arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
-            let values_arr = list_arr.values();
-            let cat = unsafe {
-                Series::_try_from_arrow_unchecked(
-                    PlSmallStr::EMPTY,
-                    vec![values_arr.clone()],
-                    values_arr.dtype(),
-                )
-                .unwrap()
-            };
-
-            // we nest only the physical representation
-            // the mapping is still in our rev-map
-            let arrow_dtype = FixedSizeListArray::default_datatype(ArrowDataType::UInt32, width);
-            let new_array = FixedSizeListArray::new(
-                arrow_dtype,
-                values_arr.len(),
-                cat.array_ref(0).clone(),
-                list_arr.validity().cloned(),
-            );
-            chunks.clear();
-            chunks.push(Box::new(new_array));
-            DataType::Array(Box::new(cat.dtype().clone()), width)
-        },
-        _ => dtype,
     }
 }
 
