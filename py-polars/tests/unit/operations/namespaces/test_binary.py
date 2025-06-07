@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import random
 import struct
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.exceptions import InvalidOperationError
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import SizeUnit, TransferEncoding
+    from polars._typing import PolarsDataType, SizeUnit, TransferEncoding
 
 
 def test_binary_conversions() -> None:
@@ -208,6 +211,132 @@ def test_reinterpret(
         )
 
         assert_frame_equal(result, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "inner_type_size", "struct_type"),
+    [
+        (pl.Array(pl.Int8, 3), 1, "b"),
+        (pl.Array(pl.UInt8, 3), 1, "B"),
+        (pl.Array(pl.Int16, 3), 2, "h"),
+        (pl.Array(pl.UInt16, 3), 2, "H"),
+        (pl.Array(pl.Int32, 3), 4, "i"),
+        (pl.Array(pl.UInt32, 3), 4, "I"),
+        (pl.Array(pl.Int64, 3), 8, "q"),
+        (pl.Array(pl.UInt64, 3), 8, "Q"),
+        (pl.Array(pl.Float32, 3), 4, "f"),
+        (pl.Array(pl.Float64, 3), 8, "d"),
+    ],
+)
+def test_reinterpret_to_array_numeric_types(
+    dtype: pl.Array,
+    inner_type_size: int,
+    struct_type: str,
+) -> None:
+    # Make test reproducible
+    random.seed(42)
+
+    type_size = inner_type_size
+    shape = dtype.shape
+    if isinstance(shape, int):
+        shape = (shape,)
+    for dim_size in dtype.shape:
+        type_size *= dim_size
+
+    byte_arr = [random.randbytes(type_size) for _ in range(3)]
+    df = pl.DataFrame({"x": byte_arr}, orient="row")
+
+    for endianness in ["little", "big"]:
+        result = df.select(
+            pl.col("x").bin.reinterpret(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
+        )
+
+        # So that mypy doesn't complain
+        struct_endianness = "<" if endianness == "little" else ">"
+        expected = []
+        for elem_bytes in byte_arr:
+            vals = [
+                struct.unpack_from(
+                    f"{struct_endianness}{struct_type}",
+                    elem_bytes[idx : idx + inner_type_size],
+                )[0]
+                for idx in range(0, type_size, inner_type_size)
+            ]
+            if len(shape) > 1:
+                vals = np.reshape(vals, shape).tolist()
+            expected.append(vals)
+        expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
+
+        assert_frame_equal(result, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "binary_value", "expected_values"),
+    [
+        (pl.Array(pl.Date(), 1), b"\x06\x00\x00\x00", [[date(1970, 1, 7)]]),
+        (
+            pl.Array(pl.Datetime(), 1),
+            b"\x40\xb6\xfd\xe3\x7c\x00\x00\x00",
+            [[datetime(1970, 1, 7, 5, 0, 1)]],
+        ),
+        (
+            pl.Array(pl.Duration(), 1),
+            b"\x03\x00\x00\x00\x00\x00\x00\x00",
+            [[timedelta(microseconds=3)]],
+        ),
+        (
+            pl.Array(pl.Time(), 1),
+            b"\x58\x1b\x00\x00\x00\x00\x00\x00",
+            [[time(microsecond=7)]],
+        ),
+        (
+            pl.Array(pl.Int128(), 1),
+            b"\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            [[6]],
+        ),
+    ],
+)
+def test_reinterpret_to_array_other_types(
+    dtype: PolarsDataType, binary_value: bytes, expected_values: list[object]
+) -> None:
+    series = pl.Series([binary_value])
+    result = series.bin.reinterpret(dtype=dtype, endianness="little")
+    assert_series_equal(result, pl.Series(expected_values, dtype=dtype))
+
+
+def test_reinterpret_to_array_resulting_in_nulls() -> None:
+    series = pl.Series([None, b"short", b"justrite", None, b"waytoolong"])
+    as_bin = series.bin.reinterpret(dtype=pl.Array(pl.UInt32(), 2), endianness="little")
+    assert as_bin.to_list() == [None, None, [0x7473756A, 0x65746972], None, None]
+    as_bin = series.bin.reinterpret(dtype=pl.Array(pl.UInt32(), 2), endianness="big")
+    assert as_bin.to_list() == [None, None, [0x6A757374, 0x72697465], None, None]
+
+
+def test_reinterpret_to_n_dimensional_array() -> None:
+    series = pl.Series([b"abcd"])
+    for endianness in ["big", "little"]:
+        with pytest.raises(
+            InvalidOperationError,
+            match="cast to a linear Array, and then use reshape",
+        ):
+            series.bin.reinterpret(
+                dtype=pl.Array(pl.UInt32(), (2, 2)),
+                endianness=endianness,  # type: ignore[arg-type]
+            )
+
+
+def test_reinterpret_unsupported() -> None:
+    series = pl.Series([b"1234"])
+    for dtype in [
+        pl.Array(pl.List(pl.UInt8()), 1),
+        pl.Array(pl.Null(), 1),
+        pl.Array(pl.Boolean(), 1),
+    ]:
+        with pytest.raises(
+            InvalidOperationError,
+            match="cannot reinterpret.*the inner type must be physically represented by a numeric type",
+        ):
+            series.bin.reinterpret(dtype=dtype)
 
 
 @pytest.mark.parametrize(
