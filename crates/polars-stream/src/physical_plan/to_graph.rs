@@ -556,13 +556,6 @@ fn to_graph_rec<'a>(
             let cast_columns_policy = cast_columns_policy.clone();
             let deletion_files = deletion_files.clone();
 
-            if deletion_files.is_some() {
-                polars_bail!(
-                    ComputeError: "not implemented: deletion files {:?}",
-                    deletion_files
-                )
-            }
-
             let verbose = config::verbose();
 
             ctx.graph.add_node(
@@ -582,6 +575,7 @@ fn to_graph_rec<'a>(
                         missing_columns_policy,
                         extra_columns_policy,
                         cast_columns_policy,
+                        deletion_files,
                         // Initialized later
                         num_pipelines: AtomicUsize::new(0),
                         n_readers_pre_init: AtomicUsize::new(0),
@@ -1014,6 +1008,7 @@ fn to_graph_rec<'a>(
             let missing_columns_policy = MissingColumnsPolicy::Raise;
             let extra_columns_policy = ExtraColumnsPolicy::Ignore;
             let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
+            let deletion_files = None;
             let verbose = config::verbose();
 
             ctx.graph.add_node(
@@ -1033,6 +1028,7 @@ fn to_graph_rec<'a>(
                         missing_columns_policy,
                         extra_columns_policy,
                         cast_columns_policy,
+                        deletion_files,
                         // Initialized later
                         num_pipelines: AtomicUsize::new(0),
                         n_readers_pre_init: AtomicUsize::new(0),

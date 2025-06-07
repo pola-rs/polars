@@ -65,7 +65,6 @@ pub trait FileReader: Send + Sync {
     }
 
     /// Returns `Some(_)` if the row count is cheaply retrievable.
-    #[expect(unused)]
     async fn fast_n_rows_in_file(&mut self) -> PolarsResult<Option<IdxSize>> {
         Ok(None)
     }
